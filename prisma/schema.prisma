@@ -1,0 +1,45 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  // Prisma 7 removed `url` from the schema's datasource block. The CLI
+  // (migrate/seed) now reads DATABASE_URL (the cnap_owner role) from
+  // prisma.config.ts. The running app overrides the connection at runtime
+  // with a driver adapter built from APP_DATABASE_URL (cnap_app) in
+  // PrismaService.
+  provider = "postgresql"
+}
+
+model Organisation {
+  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  name      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  users     User[]
+  notes     Note[]
+
+  @@map("organisations")
+}
+
+model User {
+  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  email     String   @unique
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  org       Organisation @relation(fields: [orgId], references: [id])
+
+  @@index([orgId])
+  @@map("users")
+}
+
+model Note {
+  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  body      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  org       Organisation @relation(fields: [orgId], references: [id])
+
+  @@index([orgId])
+  @@map("notes")
+}

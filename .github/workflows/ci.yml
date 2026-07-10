@@ -1,0 +1,39 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      # Owner role (Prisma CLI: migrate/generate) and restricted app role,
+      # provisioned below by the same db/init/00-init.sql script the local
+      # docker-compose db service runs automatically via
+      # docker-entrypoint-initdb.d. The postgres:18 service container above
+      # has no equivalent auto-init hook, so we run it explicitly as a step.
+      DATABASE_URL: postgresql://cnap_owner:cnap_owner_dev_pw@localhost:5432/cnap
+      APP_DATABASE_URL: postgresql://cnap_app:cnap_app_dev_pw@localhost:5432/cnap
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Provision roles and database
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -f db/init/00-init.sql
+      - run: pnpm prisma migrate deploy
+      - run: pnpm prisma generate
+      - run: pnpm lint
+      - run: pnpm build
+      - run: pnpm test
