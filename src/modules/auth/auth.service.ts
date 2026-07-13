@@ -20,9 +20,11 @@ interface UserWithOrg {
   consentedAt: Date | null;
   failedLoginAttempts: number;
   lockedUntil: Date | null;
+  mustChangePassword: boolean;
   org: {
     id: string; name: string; logoUrl: string | null; region: string | null;
     email: string | null; sector: string | null; villages: string[]; isActive: boolean; createdAt: Date;
+    purpose: string | null; registrationNumber: string | null;
   };
 }
 
@@ -154,7 +156,8 @@ export class AuthService {
       id: u.org.id, name: u.org.name, logoUrl: u.org.logoUrl, region: u.org.region,
       email: u.org.email, sector: u.org.sector, villages: u.org.villages,
       isActive: u.org.isActive, createdAt: u.org.createdAt.toISOString(),
+      purpose: u.org.purpose, registrationNumber: u.org.registrationNumber,
     };
-    return { token, user, organization, role };
+    return { token, user, organization, role, mustChangePassword: u.mustChangePassword };
   }
 }

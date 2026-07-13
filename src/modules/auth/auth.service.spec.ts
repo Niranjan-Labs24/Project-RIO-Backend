@@ -12,6 +12,7 @@ const auditStub = { record: async () => {} };
 const orgFixture = {
   id: 'o1', name: 'Demo NGO', logoUrl: null, region: 'North', email: 'admin@demo-ngo.org',
   sector: 'wash', villages: ['A'], isActive: true, createdAt: new Date('2026-01-01T00:00:00Z'),
+  purpose: 'Water access', registrationNumber: 'RN-001',
 };
 
 function fakeTenant(user: unknown) {
@@ -29,7 +30,8 @@ describe('AuthService.login', () => {
     const passwordHash = await passwords.hash('Passw0rd!');
     user = {
       id: 'u1', name: 'Demo Admin', email: 'admin@demo-ngo.org', roleId: 'role_ngo_admin',
-      passwordHash, consentedAt: null, failedLoginAttempts: 0, lockedUntil: null, org: orgFixture,
+      passwordHash, consentedAt: null, failedLoginAttempts: 0, lockedUntil: null,
+      mustChangePassword: false, org: orgFixture,
     };
   });
 
@@ -42,6 +44,9 @@ describe('AuthService.login', () => {
     expect(session.organization.name).toBe('Demo NGO');
     expect(session.role.key).toBe('ngo_admin');
     expect(session.role.permissions).toHaveLength(12);
+    expect(session.mustChangePassword).toBe(false);
+    expect(session.organization.purpose).toBe('Water access');
+    expect(session.organization.registrationNumber).toBe('RN-001');
   });
 
   it('throws 401 on a wrong password', async () => {
