@@ -13,6 +13,7 @@ export class AuthController {
 
   // Open route (no @RequirePermission): this is how a caller obtains a token.
   @Post('login')
+  @HttpCode(200)
   login(@Body() body: LoginBody): Promise<SessionContext> {
     const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
     const password = typeof body?.password === 'string' ? body.password : '';
