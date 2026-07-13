@@ -17,6 +17,10 @@ export const EnvSchema = Type.Object({
   // app must never require or hold owner-role credentials. Extra env keys
   // (like DATABASE_URL) are ignored by ajv, so .env can still define it.
   APP_DATABASE_URL: Type.String({ minLength: 1 }),
+  // Cross-org read-only connection (cnap_supervisor, NOBYPASSRLS). The running
+  // app legitimately holds this at runtime for crossEntity roles' read path
+  // (runAsSupervisor) — unlike DATABASE_URL (owner), which stays CLI-only.
+  SUPERVISOR_DATABASE_URL: Type.String({ minLength: 1 }),
   LOG_LEVEL: Type.Union(
     [
       Type.Literal('fatal'),

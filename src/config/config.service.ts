@@ -16,6 +16,9 @@ export class ConfigService {
   get appDatabaseUrl(): string {
     return this.config.APP_DATABASE_URL;
   }
+  get supervisorDatabaseUrl(): string {
+    return this.config.SUPERVISOR_DATABASE_URL;
+  }
   get port(): number {
     return this.config.PORT;
   }
