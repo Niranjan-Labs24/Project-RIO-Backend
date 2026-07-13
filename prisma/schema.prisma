@@ -12,34 +12,152 @@ datasource db {
   provider = "postgresql"
 }
 
+enum Sector {
+  education
+  healthcare
+  agriculture
+  wash
+  livelihoods
+  disaster_relief
+  other
+}
+
+enum UserStatus {
+  active
+  invited
+}
+
+enum PermissionModule {
+  entityTeam
+  rolesPermissions
+  onboardingConsent
+  methodologyQuestionBank
+  studySurvey
+  dataCollection
+  dataImport
+  citizenChannel
+  aiReview
+  priorityScoring
+  reportsDashboards
+  archiveSharingAudit
+}
+
+// ──────── Reference (global, seeded, read-only to cnap_app) ────────
+model Role {
+  id          String   @id @db.VarChar(64) // stable seeded id "role_<key>" (matches the FE)
+  key         String   @unique @db.VarChar(64)
+  name        String   @db.VarChar(120)
+  description String
+  crossEntity Boolean  @map("cross_entity")
+
+  permissions RolePermission[]
+  users       User[]
+
+  @@map("roles")
+}
+
+model RolePermission {
+  id      String           @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  roleId  String           @map("role_id") @db.VarChar(64)
+  module  PermissionModule
+  read    Boolean          @default(false)
+  write   Boolean          @default(false)
+  create  Boolean          @default(false)
+  approve Boolean          @default(false)
+  export  Boolean          @default(false)
+  share   Boolean          @default(false)
+
+  role Role @relation(fields: [roleId], references: [id])
+
+  @@unique([roleId, module])
+  @@map("role_permissions")
+}
+
+model ConsentPolicy {
+  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  version   String   @unique @db.VarChar(64)
+  text      String
+  active    Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("consent_policies")
+}
+
+// ──────── Tenancy & identity ────────
 model Organisation {
   id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  name      String
+  name      String   @db.VarChar(200)
+  region    String?  @db.VarChar(200)
+  email     String?  @db.VarChar(320)
+  sector    Sector?
+  logoUrl   String?  @map("logo_url")
+  villages  String[] @default([])
+  isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
   users     User[]
-  notes     Note[]
+  consents  ConsentAcceptance[]
+  auditLogs AuditLog[]
 
   @@map("organisations")
 }
 
 model User {
-  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  orgId     String   @map("org_id") @db.Uuid
-  email     String   @unique
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  org       Organisation @relation(fields: [orgId], references: [id])
+  id                  String     @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId               String     @map("org_id") @db.Uuid
+  roleId              String     @map("role_id") @db.VarChar(64)
+  name                String     @db.VarChar(200)
+  email               String     @unique @db.VarChar(320)
+  status              UserStatus @default(invited)
+  passwordHash        String?    @map("password_hash") @db.VarChar(255)
+  consentedAt         DateTime?  @map("consented_at") @db.Timestamptz(6)
+  failedLoginAttempts Int        @default(0) @map("failed_login_attempts")
+  lockedUntil         DateTime?  @map("locked_until") @db.Timestamptz(6)
+  lastLoginAt         DateTime?  @map("last_login_at") @db.Timestamptz(6)
+  createdAt           DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org      Organisation        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  role     Role                @relation(fields: [roleId], references: [id])
+  consents ConsentAcceptance[]
 
   @@index([orgId])
+  @@index([roleId])
   @@map("users")
 }
 
-model Note {
-  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  orgId     String   @map("org_id") @db.Uuid
-  body      String
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  org       Organisation @relation(fields: [orgId], references: [id])
+model ConsentAcceptance {
+  id            String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  policyVersion String   @map("policy_version") @db.VarChar(64)
+  policyText    String   @map("policy_text")
+  acceptedAt    DateTime @default(now()) @map("accepted_at") @db.Timestamptz(6)
+
+  org  Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
-  @@map("notes")
+  @@map("consent_acceptances")
+}
+
+model AuditLog {
+  id             String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  organisationId String?  @map("organisation_id") @db.Uuid
+  actorUserId    String?  @map("actor_user_id") @db.Uuid
+  action         String   @db.VarChar(64)
+  entityType     String   @map("entity_type") @db.VarChar(64)
+  entityId       String?  @map("entity_id") @db.Uuid
+  entityLabel    String   @map("entity_label")
+  metadata       Json?
+  ipAddress      String?  @map("ip_address") @db.VarChar(64)
+  userAgent      String?  @map("user_agent")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org Organisation? @relation(fields: [organisationId], references: [id])
+
+  @@index([organisationId])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
 }

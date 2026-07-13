@@ -8,21 +8,10 @@ export function buildOpenApiDocument(): Record<string, unknown> {
     openapi: '3.1.0',
     info: { title: 'cnap-api', version: '0.1.0' },
     paths: {
-      '/notes': {
+      '/api/roles': {
         get: {
-          summary: 'List notes for the caller org',
+          summary: 'List the fixed role/permission matrix (rolesPermissions:read)',
           responses: { '200': { description: 'OK' } },
-        },
-        post: {
-          summary: 'Create a note in the caller org',
-          requestBody: {
-            content: {
-              'application/json': {
-                schema: { $ref: '#/components/schemas/CreateNoteBody' },
-              },
-            },
-          },
-          responses: { '201': { description: 'Created' } },
         },
       },
     },

@@ -7,7 +7,6 @@ import { PrismaModule } from './prisma/prisma.module';
 import { TenancyModule } from './tenancy/tenancy.module';
 import { OrgContextMiddleware } from './tenancy/org-context.middleware';
 import { HealthModule } from './health/health.module';
-import { NotesModule } from './modules/notes/notes.module';
 
 @Module({
   imports: [
@@ -20,7 +19,6 @@ import { NotesModule } from './modules/notes/notes.module';
     PrismaModule,
     TenancyModule,
     HealthModule,
-    NotesModule,
   ],
   controllers: [],
   providers: [],
