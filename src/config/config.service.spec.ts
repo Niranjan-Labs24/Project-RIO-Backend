@@ -4,6 +4,7 @@ const valid = {
   NODE_ENV: 'development',
   PORT: '3000',
   APP_DATABASE_URL: 'postgresql://cnap_app:pw@localhost:5432/cnap',
+  SUPERVISOR_DATABASE_URL: 'postgresql://cnap_supervisor:pw@localhost:5432/cnap',
   LOG_LEVEL: 'info',
 };
 
@@ -17,6 +18,11 @@ describe('validateEnv', () => {
   it('throws when a required var is missing', () => {
     const { APP_DATABASE_URL: _omit, ...rest } = valid;
     expect(() => validateEnv(rest)).toThrow(/APP_DATABASE_URL/);
+  });
+
+  it('requires SUPERVISOR_DATABASE_URL (runtime cross-org read creds)', () => {
+    const { SUPERVISOR_DATABASE_URL: _omit, ...rest } = valid;
+    expect(() => validateEnv(rest)).toThrow(/SUPERVISOR_DATABASE_URL/);
   });
 
   it('throws when NODE_ENV is not an allowed value', () => {

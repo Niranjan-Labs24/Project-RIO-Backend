@@ -9,6 +9,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { TenancyModule } from './tenancy/tenancy.module';
 import { OrgContextMiddleware } from './tenancy/org-context.middleware';
 import { HealthModule } from './health/health.module';
+import { RolesModule } from './modules/roles/roles.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { HealthModule } from './health/health.module';
     PrismaModule,
     TenancyModule,
     HealthModule,
+    RolesModule,
   ],
   controllers: [],
   providers: [{ provide: APP_GUARD, useClass: PermissionGuard }],
