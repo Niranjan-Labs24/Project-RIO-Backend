@@ -6,6 +6,8 @@ export interface OrgStore {
   orgId?: string;
   actorId?: string;
   role?: string; // role key of the authenticated caller (populated by auth/dev seam)
+  ip?: string; // client IP, captured by the middleware for audit rows
+  userAgent?: string; // client UA, captured by the middleware for audit rows
 }
 
 export const orgContext = new AsyncLocalStorage<OrgStore>();
