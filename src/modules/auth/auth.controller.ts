@@ -1,4 +1,7 @@
-import { BadRequestException, Body, Controller, Get, HttpCode, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, HttpCode, Post, Res } from '@nestjs/common';
+import type { Response } from 'express';
+import { ConfigService } from '../../config/config.service';
+import { SESSION_COOKIE_NAME, sessionCookieOptions } from '../../auth/session-cookie';
 import { AuthService } from './auth.service';
 import type { SessionContext } from './session.types';
 
@@ -9,18 +12,23 @@ interface LoginBody {
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly config: ConfigService,
+  ) {}
 
   // Open route (no @RequirePermission): this is how a caller obtains a token.
   @Post('login')
   @HttpCode(200)
-  login(@Body() body: LoginBody): Promise<SessionContext> {
+  async login(@Body() body: LoginBody, @Res({ passthrough: true }) res: Response): Promise<SessionContext> {
     const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
     const password = typeof body?.password === 'string' ? body.password : '';
     if (!email || !password) {
       throw new BadRequestException({ error: { code: 'VALIDATION_ERROR', message: 'email and password are required' } });
     }
-    return this.auth.login(email, password);
+    const session = await this.auth.login(email, password);
+    res.cookie(SESSION_COOKIE_NAME, session.token, sessionCookieOptions(this.config.nodeEnv === 'production'));
+    return session;
   }
 
   @Get('me')
@@ -30,12 +38,13 @@ export class AuthController {
 
   @Post('logout')
   @HttpCode(204)
-  logout(): Promise<void> {
-    return this.auth.logout();
+  async logout(@Res({ passthrough: true }) res: Response): Promise<void> {
+    await this.auth.logout();
+    res.clearCookie(SESSION_COOKIE_NAME, { path: '/' });
   }
 
   @Post('consent')
-  consent(): Promise<{ consentedAt: string }> {
+  consent(): Promise<{ consentedAt: string; policyVersion: string | null }> {
     return this.auth.consent();
   }
 }
