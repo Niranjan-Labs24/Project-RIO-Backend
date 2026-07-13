@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 
 export interface OrgStore {
   requestId: string;
@@ -30,4 +30,16 @@ export function requireOrgId(): string {
     throw new MissingOrgContextError();
   }
   return store.orgId;
+}
+
+// For routes that require an authenticated caller but no specific module
+// permission (me/logout/consent). Throws a clean 401 when no actor is set.
+export function requireActor(): string {
+  const store = orgContext.getStore();
+  if (!store?.actorId) {
+    throw new UnauthorizedException({
+      error: { code: 'UNAUTHENTICATED', message: 'Authentication required' },
+    });
+  }
+  return store.actorId;
 }
