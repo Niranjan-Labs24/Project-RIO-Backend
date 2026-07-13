@@ -1,5 +1,6 @@
 import { JwtService } from '@nestjs/jwt';
 import { UnauthorizedException } from '@nestjs/common';
+import { orgContext } from '../../tenancy/org-context';
 import { AuthService } from './auth.service';
 import { PasswordService } from '../../auth/password.service';
 import { TokenService } from '../../auth/token.service';
@@ -51,5 +52,24 @@ describe('AuthService.login', () => {
   it('throws 401 when the user does not exist', async () => {
     const svc = new AuthService(fakeTenant(null) as never, passwords, tokens, auditStub as never);
     await expect(svc.login('nobody@x.org', 'whatever')).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+});
+
+describe('AuthService.consent', () => {
+  it('sets consentedAt and writes a versioned consent_acceptances snapshot', async () => {
+    const created: Record<string, unknown>[] = [];
+    const tenant = {
+      runInOrgContext: async (fn: (tx: unknown) => unknown) =>
+        fn({
+          consentPolicy: { findFirst: async () => ({ version: 'v1', text: 'policy text' }) },
+          user: { update: async () => ({}) },
+          consentAcceptance: { create: async ({ data }: { data: Record<string, unknown> }) => { created.push(data); return data; } },
+        }),
+    };
+    const svc = new AuthService(tenant as never, passwords, tokens, auditStub as never);
+    const res = await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'u1' }, () => svc.consent());
+    expect(res.policyVersion).toBe('v1');
+    expect(created).toHaveLength(1);
+    expect(created[0]).toMatchObject({ orgId: 'o1', userId: 'u1', policyVersion: 'v1', policyText: 'policy text' });
   });
 });

@@ -54,6 +54,15 @@ describe('Auth (e2e)', () => {
       .expect(204);
   });
 
+  it('records consent with a versioned acceptance snapshot', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/auth/consent')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(201);
+    expect(typeof res.body.consentedAt).toBe('string');
+    expect(res.body.policyVersion).toBe('v1');
+  });
+
   it('rejects a wrong password with 401 + top-level message', async () => {
     const res = await request(app.getHttpServer())
       .post('/api/auth/login')

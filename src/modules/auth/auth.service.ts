@@ -1,6 +1,6 @@
 import { HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
-import { getOrgStore, requireActor } from '../../tenancy/org-context';
+import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { PasswordService } from '../../auth/password.service';
 import { TokenService } from '../../auth/token.service';
 import { ROLE_MATRIX, type RoleDef } from '../../rbac/role-matrix';
@@ -97,13 +97,22 @@ export class AuthService {
     await this.audit.record({ action: 'logout', entityType: 'user', entityId: actorId, entityLabel: actorId });
   }
 
-  async consent(): Promise<{ consentedAt: string }> {
+  async consent(): Promise<{ consentedAt: string; policyVersion: string | null }> {
     const actorId = requireActor();
+    const orgId = requireOrgId();
     const now = new Date();
-    await this.tenant.runInOrgContext((tx) =>
-      tx.user.update({ where: { id: actorId }, data: { consentedAt: now } }),
-    );
-    return { consentedAt: now.toISOString() };
+    const policyVersion = await this.tenant.runInOrgContext(async (tx) => {
+      const policy = await tx.consentPolicy.findFirst({ where: { active: true }, orderBy: { createdAt: 'desc' } });
+      await tx.user.update({ where: { id: actorId }, data: { consentedAt: now } });
+      // Snapshot the versioned policy the user accepted (immutable acceptance record).
+      if (policy) {
+        await tx.consentAcceptance.create({
+          data: { orgId, userId: actorId, policyVersion: policy.version, policyText: policy.text, acceptedAt: now },
+        });
+      }
+      return policy?.version ?? null;
+    });
+    return { consentedAt: now.toISOString(), policyVersion };
   }
 
   private roleOf(roleId: string): RoleDef {
