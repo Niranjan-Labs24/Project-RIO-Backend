@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { OrganizationsService } from './organizations.service';
 import type {
@@ -24,8 +24,8 @@ export class OrganizationsController {
 
   @Get()
   @RequirePermission('entityTeam', 'read')
-  listAll(): Promise<OrganizationSummary[]> {
-    return this.orgs.listAll();
+  listAll(@Query('limit') limit?: string, @Query('offset') offset?: string): Promise<OrganizationSummary[]> {
+    return this.orgs.listAll({ limit: limit ? Number(limit) : undefined, offset: offset ? Number(offset) : undefined });
   }
 
   @Get(':id')

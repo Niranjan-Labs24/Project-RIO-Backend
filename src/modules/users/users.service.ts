@@ -18,8 +18,9 @@ export class UsersService {
     private readonly audit: AuditService,
   ) {}
 
-  async list(): Promise<OrgUser[]> {
-    const rows = (await this.tenant.runInOrgContext((tx) => tx.user.findMany({ orderBy: { createdAt: 'asc' } }))) as UserRow[];
+  async list(opts: { limit?: number; offset?: number } = {}): Promise<OrgUser[]> {
+    const { take, skip } = this.page(opts);
+    const rows = (await this.tenant.runInOrgContext((tx) => tx.user.findMany({ orderBy: { createdAt: 'asc' }, take, skip }))) as UserRow[];
     return rows.map((r) => this.toOrgUser(r));
   }
 
@@ -49,10 +50,11 @@ export class UsersService {
   }
 
   // System-Admin cross-org list.
-  async listForOrg(organizationId: string): Promise<OrgUser[]> {
+  async listForOrg(organizationId: string, opts: { limit?: number; offset?: number } = {}): Promise<OrgUser[]> {
     this.assertCrossEntity();
+    const { take, skip } = this.page(opts);
     const rows = (await this.tenant.runAsSupervisor((tx) =>
-      tx.user.findMany({ where: { orgId: organizationId }, orderBy: { createdAt: 'asc' } }),
+      tx.user.findMany({ where: { orgId: organizationId }, orderBy: { createdAt: 'asc' }, take, skip }),
     )) as UserRow[];
     return rows.map((r) => this.toOrgUser(r));
   }
@@ -66,6 +68,11 @@ export class UsersService {
     )) as UserRow;
     await this.audit.record({ action: 'create', entityType: 'user', entityId: created.id, entityLabel: created.email });
     return this.toOrgUser(created);
+  }
+
+  // Bounded pagination (NFR-006): default 100, hard cap 200.
+  private page(opts: { limit?: number; offset?: number }): { take: number; skip: number } {
+    return { take: Math.min(Math.max(opts.limit ?? 100, 1), 200), skip: Math.max(opts.offset ?? 0, 0) };
   }
 
   private assertCrossEntity(): void {

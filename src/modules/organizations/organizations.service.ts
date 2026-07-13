@@ -71,10 +71,12 @@ export class OrganizationsService {
     return this.toOrganization(org);
   }
 
-  async listAll(): Promise<OrganizationSummary[]> {
+  async listAll(opts: { limit?: number; offset?: number } = {}): Promise<OrganizationSummary[]> {
     this.assertCrossEntity();
+    const take = Math.min(Math.max(opts.limit ?? 100, 1), 200);
+    const skip = Math.max(opts.offset ?? 0, 0);
     const rows = await this.tenant.runAsSupervisor((tx) =>
-      tx.organisation.findMany({ include: { _count: { select: { users: true } } }, orderBy: { createdAt: 'desc' } }),
+      tx.organisation.findMany({ include: { _count: { select: { users: true } } }, orderBy: { createdAt: 'desc' }, take, skip }),
     );
     return (rows as (OrgRow & { _count: { users: number } })[]).map((r) => ({ ...this.toOrganization(r), memberCount: r._count.users }));
   }

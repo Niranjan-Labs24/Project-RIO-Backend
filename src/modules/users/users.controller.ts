@@ -10,8 +10,13 @@ export class UsersController {
   // ?organizationId → System-Admin cross-org list (crossEntity enforced in the service).
   @Get()
   @RequirePermission('entityTeam', 'read')
-  list(@Query('organizationId') organizationId?: string): Promise<OrgUser[]> {
-    return organizationId ? this.users.listForOrg(organizationId) : this.users.list();
+  list(
+    @Query('organizationId') organizationId?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ): Promise<OrgUser[]> {
+    const page = { limit: limit ? Number(limit) : undefined, offset: offset ? Number(offset) : undefined };
+    return organizationId ? this.users.listForOrg(organizationId, page) : this.users.list(page);
   }
 
   @Post()

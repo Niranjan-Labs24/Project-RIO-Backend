@@ -54,6 +54,12 @@ describe('Users (e2e)', () => {
     expect(res.body.status).toBe('active');
   });
 
+  it('bounds the user list with limit (NFR-006 pagination)', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/users?limit=1').set('Authorization', `Bearer ${adminToken}`).expect(200);
+    expect(res.body.length).toBeLessThanOrEqual(1);
+  });
+
   it('forbids a non-crossEntity role from cross-org listing (RLS boundary)', async () => {
     const res = await request(app.getHttpServer())
       .get('/api/users?organizationId=00000000-0000-0000-0000-000000000009')
