@@ -33,19 +33,25 @@ export class AllExceptionsFilter implements ExceptionFilter {
         this.logException(exception);
       }
       if (isEnvelope(payload)) {
-        res.status(status).json(payload);
+        // Surface the enveloped code/message at the top level too — the FE
+        // client reads payload.message (+ machine code) directly (DV-8).
+        res.status(status).json({ ...payload, message: payload.error.message, code: payload.error.code });
         return;
       }
       const message =
         typeof payload === 'string'
           ? payload
           : ((payload as { message?: unknown }).message?.toString() ?? exception.message);
-      res.status(status).json({ error: { code: `HTTP_${status}`, message } });
+      res.status(status).json({ error: { code: `HTTP_${status}`, message }, message, code: `HTTP_${status}` });
       return;
     }
 
     this.logException(exception);
-    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } });
+    res.status(500).json({
+      error: { code: 'INTERNAL_ERROR', message: 'Internal server error' },
+      message: 'Internal server error',
+      code: 'INTERNAL_ERROR',
+    });
   }
 
   private logException(exception: unknown): void {

@@ -14,6 +14,7 @@ async function bootstrap(): Promise<void> {
   app.useLogger(app.get(Logger));
   app.use(helmet());
   app.use(cookieParser());
+  app.setGlobalPrefix('api');
   app.useGlobalFilters(new AllExceptionsFilter());
   app.enableShutdownHooks();
   setupOpenApi(app);

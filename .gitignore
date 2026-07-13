@@ -7,3 +7,11 @@ dist/
 coverage/
 prisma/*.db
 src/generated/
+
+# Claude Code / AI assistant local files and dependency docs
+.claude/
+.superpowers/
+.mcp.json
+CLAUDE.md
+CLAUDE.local.md
+**/CLAUDE.md

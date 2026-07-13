@@ -5,6 +5,7 @@ export interface OrgStore {
   requestId: string;
   orgId?: string;
   actorId?: string;
+  role?: string; // role key of the authenticated caller (populated by auth/dev seam)
 }
 
 export const orgContext = new AsyncLocalStorage<OrgStore>();

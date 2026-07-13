@@ -35,7 +35,7 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: production
-      PORT: 3000
+      PORT: 4000
       # Inside the compose network the api reaches the db container by its
       # service name on the container's *internal* port (always 5432,
       # regardless of DB_HOST_PORT — that variable only remaps the host-side
@@ -53,9 +53,10 @@ services:
     # `pnpm prisma migrate deploy` before/while this service starts — see
     # README.md "Quick start" and "Migrations in Docker".
     ports:
-      # Host port defaults to 3000. Override with API_HOST_PORT in your local
-      # .env if 3000 is already taken on your machine.
-      - '${API_HOST_PORT:-3000}:3000'
+      # Host port defaults to 4000 (the FE default NEXT_PUBLIC_API_BASE_URL is
+      # http://localhost:4000/api). Override with API_HOST_PORT in your local
+      # .env if 4000 is already taken on your machine.
+      - '${API_HOST_PORT:-4000}:4000'
 
 volumes:
   cnap-db-data:
