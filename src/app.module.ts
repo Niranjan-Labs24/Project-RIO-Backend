@@ -1,5 +1,7 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
+import { PermissionGuard } from './common/guards/permission.guard';
 import { ConfigModule } from './config/config.module';
 import { ConfigService } from './config/config.service';
 import { buildLoggerConfig } from './common/logger/logger.config';
@@ -21,7 +23,7 @@ import { HealthModule } from './health/health.module';
     HealthModule,
   ],
   controllers: [],
-  providers: [],
+  providers: [{ provide: APP_GUARD, useClass: PermissionGuard }],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
