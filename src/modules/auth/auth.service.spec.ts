@@ -6,6 +6,7 @@ import { TokenService } from '../../auth/token.service';
 
 const passwords = new PasswordService();
 const tokens = new TokenService(new JwtService({ secret: 'x'.repeat(32), signOptions: { expiresIn: '12h' } }));
+const auditStub = { record: async () => {} };
 
 const orgFixture = {
   id: 'o1', name: 'Demo NGO', logoUrl: null, region: 'North', email: 'admin@demo-ngo.org',
@@ -32,7 +33,7 @@ describe('AuthService.login', () => {
   });
 
   it('returns a SessionContext with token, user, org and role on valid credentials', async () => {
-    const svc = new AuthService(fakeTenant(user) as never, passwords, tokens);
+    const svc = new AuthService(fakeTenant(user) as never, passwords, tokens, auditStub as never);
     const session = await svc.login('admin@demo-ngo.org', 'Passw0rd!');
     expect(session.token).toBeTruthy();
     expect(tokens.verify(session.token).sub).toBe('u1');
@@ -43,12 +44,12 @@ describe('AuthService.login', () => {
   });
 
   it('throws 401 on a wrong password', async () => {
-    const svc = new AuthService(fakeTenant(user) as never, passwords, tokens);
+    const svc = new AuthService(fakeTenant(user) as never, passwords, tokens, auditStub as never);
     await expect(svc.login('admin@demo-ngo.org', 'wrong')).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('throws 401 when the user does not exist', async () => {
-    const svc = new AuthService(fakeTenant(null) as never, passwords, tokens);
+    const svc = new AuthService(fakeTenant(null) as never, passwords, tokens, auditStub as never);
     await expect(svc.login('nobody@x.org', 'whatever')).rejects.toBeInstanceOf(UnauthorizedException);
   });
 });

@@ -1,9 +1,10 @@
 import { HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
-import { requireActor } from '../../tenancy/org-context';
+import { getOrgStore, requireActor } from '../../tenancy/org-context';
 import { PasswordService } from '../../auth/password.service';
 import { TokenService } from '../../auth/token.service';
 import { ROLE_MATRIX, type RoleDef } from '../../rbac/role-matrix';
+import { AuditService } from '../audit/audit.service';
 import type { SessionContext, SessionOrg, SessionUser } from './session.types';
 
 const MAX_FAILED = 5;
@@ -31,6 +32,7 @@ export class AuthService {
     private readonly tenant: TenantPrismaService,
     private readonly passwords: PasswordService,
     private readonly tokens: TokenService,
+    private readonly audit: AuditService,
   ) {}
 
   async login(email: string, password: string): Promise<SessionContext> {
@@ -63,6 +65,16 @@ export class AuthService {
     );
 
     const role = this.roleOf(found.roleId);
+    // Populate the request store with the now-authenticated identity so the
+    // audit write (and any later work in this request) has an org context.
+    const store = getOrgStore();
+    if (store) {
+      store.orgId = found.org.id;
+      store.actorId = found.id;
+      store.role = role.key;
+    }
+    await this.audit.record({ action: 'login', entityType: 'user', entityId: found.id, entityLabel: found.email });
+
     const token = this.tokens.sign({ sub: found.id, orgId: found.org.id, roleKey: role.key });
     return this.buildSession(found, role, token);
   }
@@ -80,8 +92,9 @@ export class AuthService {
     return this.buildSession(found, role, token);
   }
 
-  logout(): void {
-    requireActor(); // 401 if not authenticated; stateless — client drops the token
+  async logout(): Promise<void> {
+    const actorId = requireActor(); // 401 if not authenticated; stateless — client drops the token
+    await this.audit.record({ action: 'logout', entityType: 'user', entityId: actorId, entityLabel: actorId });
   }
 
   async consent(): Promise<{ consentedAt: string }> {

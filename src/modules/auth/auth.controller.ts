@@ -30,8 +30,8 @@ export class AuthController {
 
   @Post('logout')
   @HttpCode(204)
-  logout(): void {
-    this.auth.logout();
+  logout(): Promise<void> {
+    return this.auth.logout();
   }
 
   @Post('consent')

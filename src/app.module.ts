@@ -14,6 +14,7 @@ import { OrgContextMiddleware } from './tenancy/org-context.middleware';
 import { HealthModule } from './health/health.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { AuditModule } from './modules/audit/audit.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { AuthModule } from './modules/auth/auth.module';
     HealthModule,
     RolesModule,
     AuthModule,
+    AuditModule,
   ],
   controllers: [],
   providers: [
