@@ -25,6 +25,13 @@ export const EnvSchema = Type.Object({
   // runtime — the app issues/verifies its own session tokens.
   JWT_SECRET: Type.String({ minLength: 32 }),
   JWT_EXPIRES_IN: Type.String({ default: '12h' }),
+  // TLS (encryption in transit, RIO-NFR-001). Optional: when both are set the
+  // app serves HTTPS directly; otherwise it serves HTTP and TLS is expected to
+  // be terminated at an ingress/reverse proxy in front of it.
+  TLS_CERT_PATH: Type.Optional(Type.String()),
+  TLS_KEY_PATH: Type.Optional(Type.String()),
+  // When true, the app connects to Postgres over TLS (self-signed accepted).
+  DB_SSL: Type.Boolean({ default: false }),
   LOG_LEVEL: Type.Union(
     [
       Type.Literal('fatal'),

@@ -15,3 +15,5 @@ src/generated/
 CLAUDE.md
 CLAUDE.local.md
 **/CLAUDE.md
+# TLS dev certs / private keys — never commit keys
+certs/
