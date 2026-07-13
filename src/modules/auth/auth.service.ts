@@ -1,11 +1,15 @@
-import { ForbiddenException, HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, HttpException, HttpStatus, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { PasswordService } from '../../auth/password.service';
 import { TokenService } from '../../auth/token.service';
 import { ROLE_MATRIX, type RoleDef } from '../../rbac/role-matrix';
 import { AuditService } from '../audit/audit.service';
-import type { SessionContext, SessionOrg, SessionUser } from './session.types';
+import { ConfigService } from '../../config/config.service';
+import { MailerService } from '../../mailer/mailer.service';
+import { AuthRepository, conflictFor, generateTemporaryPassword } from './auth.repository';
+import type { SessionContext, SessionOrg, SessionUser, SignupResponseView } from './session.types';
+import type { SignupDto } from './auth.contract';
 
 const MAX_FAILED = 5;
 const LOCK_MINUTES = 15;
@@ -36,11 +40,16 @@ interface UserWithOrg {
 // is deferred; keep JWT_EXPIRES_IN short in security-sensitive deployments.
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly tenant: TenantPrismaService,
     private readonly passwords: PasswordService,
     private readonly tokens: TokenService,
     private readonly audit: AuditService,
+    private readonly repo: AuthRepository,
+    private readonly mailer: MailerService,
+    private readonly config: ConfigService,
   ) {}
 
   async login(email: string, password: string): Promise<SessionContext> {
@@ -137,6 +146,56 @@ export class AuthService {
       return policy?.version ?? null;
     });
     return { consentedAt: now.toISOString(), policyVersion };
+  }
+
+  // Public NGO signup: creates the organisation + its first NGO Admin (RLS via
+  // runAsOrg inside the repository), records consent, and issues a session —
+  // same shape login() returns, plus how the temp password was delivered.
+  async signup(dto: SignupDto): Promise<SignupResponseView> {
+    // Friendly pre-checks (the DB unique constraint is still the source of
+    // truth, handled inside the repository for the concurrent-signup race —
+    // hence the duplicated error envelopes via the shared conflictFor()).
+    if (await this.repo.findByRegistrationNumber(dto.registrationNumber)) {
+      throw conflictFor('registrationNumber');
+    }
+    if (await this.repo.findUserByEmail(dto.email)) {
+      throw conflictFor('email');
+    }
+
+    const temporaryPassword = generateTemporaryPassword();
+    const passwordHash = await this.passwords.hash(temporaryPassword);
+    const now = new Date();
+
+    const { org, user } = await this.repo.createOrganisationAndAdmin({
+      organizationName: dto.organizationName,
+      purpose: dto.purpose,
+      registrationNumber: dto.registrationNumber,
+      email: dto.email,
+      passwordHash,
+      now,
+    });
+
+    const role = this.roleOf(user.roleId);
+    const store = getOrgStore();
+    if (store) {
+      store.orgId = org.id;
+      store.actorId = user.id;
+      store.role = role.key;
+    }
+    await this.audit.record({ action: 'create', entityType: 'organization', entityId: org.id, entityLabel: org.name, organizationId: org.id });
+
+    const token = this.tokens.sign({ sub: user.id, orgId: org.id, roleKey: role.key });
+    const session = this.buildSession({ ...user, org } as never, role, token);
+
+    const emailed = await this.mailer.sendTemporaryPassword(user.email, org.name, temporaryPassword);
+    if (emailed) {
+      return { ...session, temporaryPasswordEmailed: true };
+    }
+    if (this.config.nodeEnv !== 'production') {
+      this.logger.log(`[dev-only] Temporary password for ${user.email}: ${temporaryPassword}`);
+      return { ...session, temporaryPasswordEmailed: false, temporaryPassword };
+    }
+    return { ...session, temporaryPasswordEmailed: false };
   }
 
   private roleOf(roleId: string): RoleDef {

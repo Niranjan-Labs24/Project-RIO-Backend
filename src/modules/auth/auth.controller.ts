@@ -2,8 +2,10 @@ import { BadRequestException, Body, Controller, Get, HttpCode, Post, Res } from 
 import type { Response } from 'express';
 import { ConfigService } from '../../config/config.service';
 import { SESSION_COOKIE_NAME, sessionCookieOptions } from '../../auth/session-cookie';
+import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
+import { SignupBody, type SignupDto } from './auth.contract';
 import { AuthService } from './auth.service';
-import type { SessionContext } from './session.types';
+import type { SessionContext, SignupResponseView } from './session.types';
 
 interface LoginBody {
   email?: unknown;
@@ -29,6 +31,18 @@ export class AuthController {
     const session = await this.auth.login(email, password);
     res.cookie(SESSION_COOKIE_NAME, session.token, sessionCookieOptions(this.config.nodeEnv === 'production'));
     return session;
+  }
+
+  // Open route (no @RequirePermission): public NGO signup creates the org +
+  // first admin and issues a session, same as login.
+  @Post('signup')
+  async signup(
+    @Body(new TypeBoxValidationPipe(SignupBody)) body: SignupDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<SignupResponseView> {
+    const result = await this.auth.signup(body);
+    res.cookie(SESSION_COOKIE_NAME, result.token, sessionCookieOptions(this.config.nodeEnv === 'production'));
+    return result;
   }
 
   @Get('me')

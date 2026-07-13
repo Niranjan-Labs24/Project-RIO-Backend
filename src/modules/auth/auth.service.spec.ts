@@ -1,13 +1,22 @@
+import { vi } from 'vitest';
 import { JwtService } from '@nestjs/jwt';
 import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { orgContext } from '../../tenancy/org-context';
 import { AuthService } from './auth.service';
 import { PasswordService } from '../../auth/password.service';
 import { TokenService } from '../../auth/token.service';
+import type { ConfigService } from '../../config/config.service';
 
 const passwords = new PasswordService();
 const tokens = new TokenService(new JwtService({ secret: 'x'.repeat(32), signOptions: { expiresIn: '12h' } }));
 const auditStub = { record: async () => {} };
+
+// Task 6 additions: AuthRepository/MailerService/ConfigService mocks used by
+// signup(). login/me/logout/consent tests don't exercise these, so a bare
+// stub repo (never called) is enough for the constructor's widened arity.
+const repoStub = { findByRegistrationNumber: vi.fn(), findUserByEmail: vi.fn(), createOrganisationAndAdmin: vi.fn() };
+const mailerStub = { sendTemporaryPassword: vi.fn() };
+const configStub = { nodeEnv: 'development' } as unknown as ConfigService;
 
 const orgFixture = {
   id: 'o1', name: 'Demo NGO', logoUrl: null, region: 'North', email: 'admin@demo-ngo.org',
@@ -36,7 +45,7 @@ describe('AuthService.login', () => {
   });
 
   it('returns a SessionContext with token, user, org and role on valid credentials', async () => {
-    const svc = new AuthService(fakeTenant(user) as never, passwords, tokens, auditStub as never);
+    const svc = new AuthService(fakeTenant(user) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub);
     const session = await svc.login('admin@demo-ngo.org', 'Passw0rd!');
     expect(session.token).toBeTruthy();
     expect(tokens.verify(session.token).sub).toBe('u1');
@@ -50,18 +59,18 @@ describe('AuthService.login', () => {
   });
 
   it('throws 401 on a wrong password', async () => {
-    const svc = new AuthService(fakeTenant(user) as never, passwords, tokens, auditStub as never);
+    const svc = new AuthService(fakeTenant(user) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub);
     await expect(svc.login('admin@demo-ngo.org', 'wrong')).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('throws 401 when the user does not exist', async () => {
-    const svc = new AuthService(fakeTenant(null) as never, passwords, tokens, auditStub as never);
+    const svc = new AuthService(fakeTenant(null) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub);
     await expect(svc.login('nobody@x.org', 'whatever')).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('refuses valid credentials when the org is deactivated (403 ORG_INACTIVE)', async () => {
     const inactive = { ...user, org: { ...orgFixture, isActive: false } };
-    const svc = new AuthService(fakeTenant(inactive) as never, passwords, tokens, auditStub as never);
+    const svc = new AuthService(fakeTenant(inactive) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub);
     await expect(svc.login('admin@demo-ngo.org', 'Passw0rd!')).rejects.toBeInstanceOf(ForbiddenException);
   });
 });
@@ -77,10 +86,64 @@ describe('AuthService.consent', () => {
           consentAcceptance: { create: async ({ data }: { data: Record<string, unknown> }) => { created.push(data); return data; } },
         }),
     };
-    const svc = new AuthService(tenant as never, passwords, tokens, auditStub as never);
+    const svc = new AuthService(tenant as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub);
     const res = await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'u1' }, () => svc.consent());
     expect(res.policyVersion).toBe('v1');
     expect(created).toHaveLength(1);
     expect(created[0]).toMatchObject({ orgId: 'o1', userId: 'u1', policyVersion: 'v1', policyText: 'policy text' });
+  });
+});
+
+describe('AuthService.signup', () => {
+  const tenant = {}; // signup goes through the repo, not the tenant, directly
+  const audit = { record: vi.fn() };
+  const repo = { findByRegistrationNumber: vi.fn(), findUserByEmail: vi.fn(), createOrganisationAndAdmin: vi.fn() };
+  const mailer = { sendTemporaryPassword: vi.fn() };
+  const config = { nodeEnv: 'development' } as unknown as ConfigService;
+
+  let service: AuthService;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    service = new AuthService(tenant as never, passwords as never, tokens as never, audit as never, repo as never, mailer as never, config);
+  });
+
+  it('signup: creates org+admin, records audit, returns emailed=true when mailer succeeds', async () => {
+    repo.findByRegistrationNumber.mockResolvedValue(null);
+    repo.findUserByEmail.mockResolvedValue(null);
+    repo.createOrganisationAndAdmin.mockResolvedValue({
+      org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: 'RN1', logoUrl: null, region: null, email: null, sector: null, villages: [], isActive: true, createdAt: new Date() },
+      user: { id: 'u1', name: 'Org Admin', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h', consentedAt: new Date(), failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: true },
+    });
+    mailer.sendTemporaryPassword.mockResolvedValue(true);
+
+    const res = await service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test' });
+
+    expect(res.temporaryPasswordEmailed).toBe(true);
+    expect(res.temporaryPassword).toBeUndefined();
+    expect(res.mustChangePassword).toBe(true);
+    expect(res.organization.registrationNumber).toBe('RN1');
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'create', entityType: 'organization' }));
+  });
+
+  it('signup: rejects a duplicate registration number before creating', async () => {
+    repo.findByRegistrationNumber.mockResolvedValue({ id: 'existing' });
+    await expect(service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test' }))
+      .rejects.toMatchObject({ response: { error: { code: 'ORGANIZATION_ALREADY_REGISTERED' } } });
+    expect(repo.createOrganisationAndAdmin).not.toHaveBeenCalled();
+  });
+
+  it('signup: reveals temporaryPassword only outside production when mailer is unconfigured', async () => {
+    repo.findByRegistrationNumber.mockResolvedValue(null);
+    repo.findUserByEmail.mockResolvedValue(null);
+    repo.createOrganisationAndAdmin.mockResolvedValue({
+      org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: 'RN1', logoUrl: null, region: null, email: null, sector: null, villages: [], isActive: true, createdAt: new Date() },
+      user: { id: 'u1', name: 'Org Admin', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h', consentedAt: new Date(), failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: true },
+    });
+    mailer.sendTemporaryPassword.mockResolvedValue(false);
+    // config mock nodeEnv = 'development'
+    const res = await service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test' });
+    expect(res.temporaryPasswordEmailed).toBe(false);
+    expect(typeof res.temporaryPassword).toBe('string');
   });
 });
