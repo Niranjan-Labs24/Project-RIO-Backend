@@ -15,6 +15,7 @@ import { HealthModule } from './health/health.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { AuditModule } from './modules/audit/audit.module';
+import { OrganizationsModule } from './modules/organizations/organizations.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { AuditModule } from './modules/audit/audit.module';
     RolesModule,
     AuthModule,
     AuditModule,
+    OrganizationsModule,
   ],
   controllers: [],
   providers: [
