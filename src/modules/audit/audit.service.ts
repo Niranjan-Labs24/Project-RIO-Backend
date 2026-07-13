@@ -60,26 +60,35 @@ export class AuditService {
 
   // Own-org (ambient) by default; crossEntity roles (system_admin,
   // center_supervisor) read across orgs (all, or a specific organizationId).
-  async list(opts: { limit?: number; organizationId?: string }): Promise<AuditEvent[]> {
+  // Filters (entityType/entityId/actorId) support decision→source→actor→time
+  // traceability (NFR-004); limit/offset bound the result set (NFR-006).
+  async list(opts: {
+    limit?: number; offset?: number; organizationId?: string;
+    entityType?: string; entityId?: string; actorId?: string;
+  }): Promise<AuditEvent[]> {
     const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+    const offset = Math.max(opts.offset ?? 0, 0);
     const roleKey = getOrgStore()?.role;
     const crossEntity = roleKey ? roleByKey(roleKey)?.crossEntity === true : false;
 
+    const filters: Record<string, unknown> = {};
+    if (opts.entityType) filters.entityType = opts.entityType;
+    if (opts.entityId) filters.entityId = opts.entityId;
+    if (opts.actorId) filters.actorUserId = opts.actorId;
+
+    const query = async (tx: Prisma.TransactionClient, where: Record<string, unknown>) => {
+      const logs = (await tx.auditLog.findMany({ where, orderBy: { createdAt: 'desc' }, take: limit, skip: offset })) as AuditRow[];
+      const actors = await this.loadActors(tx, logs);
+      return { logs, actors };
+    };
+
     if (crossEntity) {
-      const where = opts.organizationId ? { organisationId: opts.organizationId } : {};
-      const { logs, actors } = await this.tenant.runAsSupervisor(async (tx) => {
-        const logs = (await tx.auditLog.findMany({ where, orderBy: { createdAt: 'desc' }, take: limit })) as AuditRow[];
-        const actors = await this.loadActors(tx, logs);
-        return { logs, actors };
-      });
+      const where = { ...filters, ...(opts.organizationId ? { organisationId: opts.organizationId } : {}) };
+      const { logs, actors } = await this.tenant.runAsSupervisor((tx) => query(tx, where));
       return this.mapRows(logs, actors);
     }
 
-    const { logs, actors } = await this.tenant.runInOrgContext(async (tx) => {
-      const logs = (await tx.auditLog.findMany({ orderBy: { createdAt: 'desc' }, take: limit })) as AuditRow[];
-      const actors = await this.loadActors(tx, logs);
-      return { logs, actors };
-    });
+    const { logs, actors } = await this.tenant.runInOrgContext((tx) => query(tx, filters));
     return this.mapRows(logs, actors);
   }
 
