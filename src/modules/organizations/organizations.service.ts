@@ -67,7 +67,9 @@ export class OrganizationsService {
     if (process.env.NODE_ENV !== 'production') {
       console.log(`Created org ${payload.name}: admin ${payload.adminEmail} temp password: ${tempPassword}`);
     }
-    await this.audit.record({ action: 'create', entityType: 'organization', entityId: org.id, entityLabel: org.name });
+    // File under the newly-created org (not the acting system_admin's org) so
+    // the creation event is traceable from the new entity's audit trail.
+    await this.audit.record({ action: 'create', entityType: 'organization', entityId: org.id, entityLabel: org.name, organizationId: org.id });
     return this.toOrganization(org);
   }
 

@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { PasswordService } from '../../auth/password.service';
@@ -26,6 +26,12 @@ interface UserWithOrg {
   };
 }
 
+// NOTE on session revocation: auth is stateless JWT (JWT_EXPIRES_IN, default
+// 12h) with no server-side denylist. Login and me() re-check org.isActive and
+// re-read the role from the DB, but a token already in a client's hands stays
+// valid until it expires even if the user's role/status or the org changes.
+// Full revocation (short-lived access tokens + refresh, or a token/jti denylist)
+// is deferred; keep JWT_EXPIRES_IN short in security-sensitive deployments.
 @Injectable()
 export class AuthService {
   constructor(
@@ -41,6 +47,9 @@ export class AuthService {
     )) as UserWithOrg | null;
 
     if (!found || !found.passwordHash) {
+      // Burn a comparable amount of CPU as a real verify so an attacker cannot
+      // distinguish "no such user" from "wrong password" by response time.
+      await this.passwords.verifyDummy(password);
       throw new UnauthorizedException({ error: { code: 'INVALID_CREDENTIALS', message: 'Invalid email or password' } });
     }
     if (found.lockedUntil && found.lockedUntil.getTime() > Date.now()) {
@@ -58,6 +67,13 @@ export class AuthService {
         tx.user.update({ where: { id: found.id }, data: { failedLoginAttempts: attempts, lockedUntil } }),
       );
       throw new UnauthorizedException({ error: { code: 'INVALID_CREDENTIALS', message: 'Invalid email or password' } });
+    }
+
+    // Credentials are valid — but a deactivated org must not yield a session.
+    // (Checked post-verification so org state is never revealed to an
+    // unauthenticated caller.)
+    if (!found.org.isActive) {
+      throw new ForbiddenException({ error: { code: 'ORG_INACTIVE', message: 'This organization is not active' } });
     }
 
     await this.tenant.runAsOrg(found.org.id, (tx) =>
@@ -86,6 +102,12 @@ export class AuthService {
     )) as UserWithOrg | null;
     if (!found) {
       throw new UnauthorizedException({ error: { code: 'UNAUTHENTICATED', message: 'Authentication required' } });
+    }
+    // Stop refreshing a session (and re-issuing a token) once the org is
+    // deactivated. NOTE: this does not revoke an already-issued token before it
+    // expires — stateless JWTs have no server-side revocation yet (see below).
+    if (!found.org.isActive) {
+      throw new ForbiddenException({ error: { code: 'ORG_INACTIVE', message: 'This organization is not active' } });
     }
     const role = this.roleOf(found.roleId);
     const token = this.tokens.sign({ sub: found.id, orgId: found.org.id, roleKey: role.key });

@@ -14,6 +14,11 @@ export interface RecordAuditInput {
   entityLabel: string;
   changes?: AuditChange[];
   metadata?: Record<string, unknown>;
+  // Explicit org to file this event under. Used by cross-org admin actions
+  // (e.g. system_admin creating an org/user) so the event is traceable under
+  // the AFFECTED org rather than the acting admin's own org. When omitted the
+  // event is filed under the caller's ambient org context.
+  organizationId?: string;
 }
 
 export interface AuditActor {

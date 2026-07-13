@@ -13,4 +13,10 @@ describe('PasswordService', () => {
   it('returns false (not throw) when the stored hash is malformed', async () => {
     expect(await svc.verify('not-a-hash', 'whatever')).toBe(false);
   });
+
+  it('verifyDummy always returns false (timing-equaliser for the not-found login path)', async () => {
+    expect(await svc.verify('not-a-hash', 'whatever')).toBe(false);
+    expect(await svc.verifyDummy('anything')).toBe(false);
+    expect(await svc.verifyDummy('anything')).toBe(false); // second call reuses the cached hash
+  });
 });

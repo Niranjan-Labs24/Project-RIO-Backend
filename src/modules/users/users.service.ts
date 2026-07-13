@@ -1,5 +1,5 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { UserStatus } from '../../generated/prisma';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma, UserStatus } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore, requireOrgId } from '../../tenancy/org-context';
 import { ROLE_MATRIX, roleByKey, type RoleDef } from '../../rbac/role-matrix';
@@ -27,9 +27,11 @@ export class UsersService {
   async invite(payload: InviteUserPayload): Promise<OrgUser> {
     const role = this.validateRole(payload.roleId);
     const orgId = requireOrgId();
-    const created = (await this.tenant.runInOrgContext((tx) =>
-      tx.user.create({ data: { orgId, name: payload.name, email: payload.email, roleId: role.id, status: UserStatus.invited } }),
-    )) as UserRow;
+    const created = await this.createUser(() =>
+      this.tenant.runInOrgContext((tx) =>
+        tx.user.create({ data: { orgId, name: payload.name, email: payload.email, roleId: role.id, status: UserStatus.invited } }),
+      ),
+    );
     await this.audit.record({ action: 'create', entityType: 'user', entityId: created.id, entityLabel: created.email });
     return this.toOrgUser(created);
   }
@@ -63,10 +65,13 @@ export class UsersService {
   async createForOrg(payload: CreateForOrgPayload): Promise<OrgUser> {
     this.assertCrossEntity();
     const role = this.validateRole(payload.roleId);
-    const created = (await this.tenant.runAsOrg(payload.organizationId, (tx) =>
-      tx.user.create({ data: { orgId: payload.organizationId, name: payload.name, email: payload.email, roleId: role.id, status: UserStatus.invited } }),
-    )) as UserRow;
-    await this.audit.record({ action: 'create', entityType: 'user', entityId: created.id, entityLabel: created.email });
+    const created = await this.createUser(() =>
+      this.tenant.runAsOrg(payload.organizationId, (tx) =>
+        tx.user.create({ data: { orgId: payload.organizationId, name: payload.name, email: payload.email, roleId: role.id, status: UserStatus.invited } }),
+      ),
+    );
+    // Attribute the audit event to the affected org, not the acting admin's org.
+    await this.audit.record({ action: 'create', entityType: 'user', entityId: created.id, entityLabel: created.email, organizationId: payload.organizationId });
     return this.toOrgUser(created);
   }
 
@@ -87,7 +92,33 @@ export class UsersService {
     if (!role || role.key === 'citizen_guest') {
       throw new BadRequestException({ error: { code: 'INVALID_ROLE', message: 'roleId is not a valid assignable role' } });
     }
+    // Privilege-escalation guard: only a crossEntity caller (e.g. system_admin)
+    // may grant a crossEntity role. Without this a tenant-scoped admin
+    // (ngo_admin) could mint a platform-wide account and read/write across every
+    // organization, defeating tenant isolation.
+    if (role.crossEntity) {
+      const callerRole = roleByKey(getOrgStore()?.role ?? '');
+      if (callerRole?.crossEntity !== true) {
+        throw new ForbiddenException({
+          error: { code: 'FORBIDDEN_ROLE_ASSIGNMENT', message: 'You are not allowed to assign a cross-entity role' },
+        });
+      }
+    }
     return role;
+  }
+
+  // Runs a user-creating transaction, translating a duplicate-email unique
+  // violation into a clean 409 (instead of a leaked 500) so a globally-unique
+  // email collision is reported as a conflict, not an internal error.
+  private async createUser(create: () => Promise<unknown>): Promise<UserRow> {
+    try {
+      return (await create()) as UserRow;
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        throw new ConflictException({ error: { code: 'EMAIL_TAKEN', message: 'A user with this email already exists' } });
+      }
+      throw e;
+    }
   }
 
   private buildUpdateData(patch: UpdateUserPayload): Record<string, unknown> {

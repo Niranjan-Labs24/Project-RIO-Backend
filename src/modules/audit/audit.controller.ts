@@ -1,5 +1,6 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { RequirePermission } from '../../common/guards/permission.guard';
+import { parseIntParam } from '../../common/http/query.util';
 import { AuditService } from './audit.service';
 import type { AuditEvent } from './audit.types';
 
@@ -18,8 +19,8 @@ export class AuditController {
     @Query('actorId') actorId?: string,
   ): Promise<AuditEvent[]> {
     return this.audit.list({
-      limit: limit ? Number(limit) : undefined,
-      offset: offset ? Number(offset) : undefined,
+      limit: parseIntParam(limit),
+      offset: parseIntParam(offset),
       organizationId: organizationId || undefined,
       entityType: entityType || undefined,
       entityId: entityId || undefined,

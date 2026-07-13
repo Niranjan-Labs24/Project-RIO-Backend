@@ -1,5 +1,5 @@
 import { JwtService } from '@nestjs/jwt';
-import { UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { orgContext } from '../../tenancy/org-context';
 import { AuthService } from './auth.service';
 import { PasswordService } from '../../auth/password.service';
@@ -52,6 +52,12 @@ describe('AuthService.login', () => {
   it('throws 401 when the user does not exist', async () => {
     const svc = new AuthService(fakeTenant(null) as never, passwords, tokens, auditStub as never);
     await expect(svc.login('nobody@x.org', 'whatever')).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('refuses valid credentials when the org is deactivated (403 ORG_INACTIVE)', async () => {
+    const inactive = { ...user, org: { ...orgFixture, isActive: false } };
+    const svc = new AuthService(fakeTenant(inactive) as never, passwords, tokens, auditStub as never);
+    await expect(svc.login('admin@demo-ngo.org', 'Passw0rd!')).rejects.toBeInstanceOf(ForbiddenException);
   });
 });
 

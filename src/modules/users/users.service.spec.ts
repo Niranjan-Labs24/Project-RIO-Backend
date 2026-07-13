@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { orgContext } from '../../tenancy/org-context';
 import { UsersService } from './users.service';
 import type { UserRow } from './users.types';
@@ -47,6 +47,28 @@ describe('UsersService', () => {
     expect(u.status).toBe('invited');
     expect(u.role.key).toBe('field_researcher');
     expect(recorded).toHaveLength(1);
+  });
+
+  it('forbids a tenant admin (non-crossEntity) from assigning a crossEntity role (privilege escalation)', async () => {
+    const svc = new UsersService(fakeTenant({}) as never, auditStub as never);
+    // ngo_admin trying to mint a system_admin (crossEntity) must be blocked.
+    await expect(
+      orgContext.run({ requestId: 'r', orgId: 'o1', role: 'ngo_admin' }, () =>
+        svc.invite({ name: 'X', email: 'x@x.org', roleId: 'role_system_admin' })),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+
+    const current: UserRow = { id: 'u1', name: 'Me', email: 'me@x.org', roleId: 'role_ngo_admin', status: 'active', createdAt: new Date('2026-01-01T00:00:00Z') };
+    await expect(
+      orgContext.run({ requestId: 'r', orgId: 'o1', role: 'ngo_admin' }, () =>
+        new UsersService(fakeTenant({ current }) as never, auditStub as never).update('u1', { roleId: 'role_center_supervisor' })),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('allows a crossEntity admin (system_admin) to assign a crossEntity role', async () => {
+    const svc = new UsersService(fakeTenant({}) as never, auditStub as never);
+    const u = await orgContext.run({ requestId: 'r', orgId: 'o1', role: 'system_admin' }, () =>
+      svc.invite({ name: 'Sup', email: 'sup@x.org', roleId: 'role_center_supervisor' }));
+    expect(u.role.key).toBe('center_supervisor');
   });
 
   it('update computes changes and records an edit', async () => {

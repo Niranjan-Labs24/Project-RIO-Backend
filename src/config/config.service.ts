@@ -34,6 +34,12 @@ export class ConfigService {
   get dbSsl(): boolean {
     return this.config.DB_SSL;
   }
+  get dbSslRejectUnauthorized(): boolean {
+    return this.config.DB_SSL_REJECT_UNAUTHORIZED;
+  }
+  get dbSslCaPath(): string | undefined {
+    return this.config.DB_SSL_CA;
+  }
   get port(): number {
     return this.config.PORT;
   }

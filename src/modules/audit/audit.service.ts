@@ -38,10 +38,14 @@ export class AuditService {
     if (input.changes && input.changes.length > 0) {
       metadata.changes = input.changes;
     }
-    await this.tenant.runInOrgContext((tx) =>
+    // File the event under the explicit org when given (cross-org admin action),
+    // otherwise under the caller's ambient org. The RLS WITH CHECK requires
+    // organisation_id to equal the transaction's org GUC, so both must match.
+    const orgId = input.organizationId ?? store?.orgId ?? null;
+    const write = (tx: Prisma.TransactionClient): Promise<unknown> =>
       tx.auditLog.create({
         data: {
-          organisationId: store?.orgId ?? null,
+          organisationId: orgId,
           actorUserId: store?.actorId ?? null,
           action: input.action,
           entityType: input.entityType,
@@ -54,8 +58,12 @@ export class AuditService {
           ipAddress: store?.ip ?? null,
           userAgent: store?.userAgent ?? null,
         },
-      }),
-    );
+      });
+    if (input.organizationId) {
+      await this.tenant.runAsOrg(input.organizationId, write);
+    } else {
+      await this.tenant.runInOrgContext(write);
+    }
   }
 
   // Own-org (ambient) by default; crossEntity roles (system_admin,

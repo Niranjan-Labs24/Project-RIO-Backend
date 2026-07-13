@@ -1,5 +1,8 @@
-import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { RequirePermission } from '../../common/guards/permission.guard';
+import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
+import { parseIntParam } from '../../common/http/query.util';
+import { CreateOrganizationBody, UpdateOrganizationBody } from './organizations.contract';
 import { OrganizationsService } from './organizations.service';
 import type {
   CreateOrganizationPayload, Organization, OrganizationSummary, UpdateOrganizationPayload,
@@ -18,14 +21,14 @@ export class OrganizationsController {
 
   @Patch('current')
   @RequirePermission('entityTeam', 'write')
-  updateCurrent(@Body() body: UpdateOrganizationPayload): Promise<Organization> {
+  updateCurrent(@Body(new TypeBoxValidationPipe(UpdateOrganizationBody)) body: UpdateOrganizationPayload): Promise<Organization> {
     return this.orgs.updateCurrent(body ?? {});
   }
 
   @Get()
   @RequirePermission('entityTeam', 'read')
   listAll(@Query('limit') limit?: string, @Query('offset') offset?: string): Promise<OrganizationSummary[]> {
-    return this.orgs.listAll({ limit: limit ? Number(limit) : undefined, offset: offset ? Number(offset) : undefined });
+    return this.orgs.listAll({ limit: parseIntParam(limit), offset: parseIntParam(offset) });
   }
 
   @Get(':id')
@@ -36,12 +39,7 @@ export class OrganizationsController {
 
   @Post()
   @RequirePermission('entityTeam', 'create')
-  createWithAdmin(@Body() body: CreateOrganizationPayload): Promise<Organization> {
-    if (!body?.name || !body?.adminName || !body?.adminEmail) {
-      throw new BadRequestException({
-        error: { code: 'VALIDATION_ERROR', message: 'name, adminName and adminEmail are required' },
-      });
-    }
+  createWithAdmin(@Body(new TypeBoxValidationPipe(CreateOrganizationBody)) body: CreateOrganizationPayload): Promise<Organization> {
     return this.orgs.createWithAdmin(body);
   }
 }

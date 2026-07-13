@@ -32,6 +32,11 @@ export const EnvSchema = Type.Object({
   TLS_KEY_PATH: Type.Optional(Type.String()),
   // When true, the app connects to Postgres over TLS (self-signed accepted).
   DB_SSL: Type.Boolean({ default: false }),
+  // Verify the Postgres server certificate. Defaults to false (dev self-signed);
+  // set true in production to authenticate the DB and defeat MITM.
+  DB_SSL_REJECT_UNAUTHORIZED: Type.Boolean({ default: false }),
+  // Optional CA/chain PEM path to trust when verifying a non-system-CA cert.
+  DB_SSL_CA: Type.Optional(Type.String()),
   LOG_LEVEL: Type.Union(
     [
       Type.Literal('fatal'),

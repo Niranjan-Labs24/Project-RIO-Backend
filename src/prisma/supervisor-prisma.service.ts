@@ -11,7 +11,7 @@ import { pgSslOption } from './pg-ssl';
 @Injectable()
 export class SupervisorPrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   constructor(config: ConfigService) {
-    super({ adapter: new PrismaPg({ connectionString: config.supervisorDatabaseUrl, ssl: pgSslOption(config.dbSsl) }) });
+    super({ adapter: new PrismaPg({ connectionString: config.supervisorDatabaseUrl, ssl: pgSslOption({ enabled: config.dbSsl, rejectUnauthorized: config.dbSslRejectUnauthorized, caPath: config.dbSslCaPath }) }) });
   }
 
   async onModuleInit(): Promise<void> {
