@@ -16,11 +16,17 @@ export class OrgContextMiddleware implements NestMiddleware {
     // until real auth is wired in a later phase. Never trust a client-supplied
     // org header in production.
     let orgId: string | undefined;
+    let role: string | undefined;
     if (this.config.nodeEnv !== 'production') {
       const orgHeader = req.headers['x-org-id'];
       orgId = typeof orgHeader === 'string' && orgHeader.length > 0 ? orgHeader : undefined;
+      // DEV/TEST-ONLY seam (same non-prod gate as x-org-id): real auth populates
+      // role from the session/token. Never trust a client-supplied role header
+      // in production.
+      const roleHeader = req.headers['x-role'];
+      role = typeof roleHeader === 'string' && roleHeader.length > 0 ? roleHeader : undefined;
     }
-    const store: OrgStore = { requestId, orgId };
+    const store: OrgStore = { requestId, orgId, role };
     res.setHeader('x-request-id', requestId);
     orgContext.run(store, () => next());
   }
