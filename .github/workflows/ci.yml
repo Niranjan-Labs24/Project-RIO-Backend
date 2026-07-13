@@ -15,13 +15,21 @@ jobs:
           --health-cmd "pg_isready -U postgres" --health-interval 5s
           --health-timeout 5s --health-retries 10
     env:
-      # Owner role (Prisma CLI: migrate/generate) and restricted app role,
+      # `test` keeps the app out of the strict prod fail-closed mode and enables
+      # the non-prod x-org-id/x-role dev seam that roles.e2e.spec.ts relies on.
+      NODE_ENV: test
+      # Owner role (Prisma CLI: migrate/generate/seed) and restricted app role,
       # provisioned below by the same db/init/00-init.sql script the local
       # docker-compose db service runs automatically via
       # docker-entrypoint-initdb.d. The postgres:18 service container above
       # has no equivalent auto-init hook, so we run it explicitly as a step.
       DATABASE_URL: postgresql://cnap_owner:cnap_owner_dev_pw@localhost:5432/cnap
       APP_DATABASE_URL: postgresql://cnap_app:cnap_app_dev_pw@localhost:5432/cnap
+      # Cross-org read-only role — created by the rls_domain migration
+      # (CREATE ROLE cnap_supervisor ...), so it exists after `migrate deploy`.
+      SUPERVISOR_DATABASE_URL: postgresql://cnap_supervisor:cnap_supervisor_dev_pw@localhost:5432/cnap
+      # Test-only signing secret (env schema requires >= 32 chars).
+      JWT_SECRET: ci_test_jwt_secret_at_least_32_chars_long
     steps:
       - uses: actions/checkout@v4
       # No `version:` here — pnpm/action-setup@v4 reads it from package.json's
@@ -36,6 +44,9 @@ jobs:
           PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -f db/init/00-init.sql
       - run: pnpm prisma migrate deploy
       - run: pnpm prisma generate
+      # Seed roles + demo org/admins so the login-based e2e specs (auth, users,
+      # organizations, audit) have data to authenticate against.
+      - run: pnpm prisma:seed
       - run: pnpm lint
       - run: pnpm build
       - run: pnpm test
