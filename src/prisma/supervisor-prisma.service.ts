@@ -2,6 +2,7 @@ import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../generated/prisma';
 import { ConfigService } from '../config/config.service';
+import { pgSslOption } from './pg-ssl';
 
 // Cross-org READ-only client. Connects with the cnap_supervisor role
 // (NOBYPASSRLS, SELECT-only) via SUPERVISOR_DATABASE_URL. Used only by
@@ -10,7 +11,7 @@ import { ConfigService } from '../config/config.service';
 @Injectable()
 export class SupervisorPrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   constructor(config: ConfigService) {
-    super({ adapter: new PrismaPg({ connectionString: config.supervisorDatabaseUrl }) });
+    super({ adapter: new PrismaPg({ connectionString: config.supervisorDatabaseUrl, ssl: pgSslOption(config.dbSsl) }) });
   }
 
   async onModuleInit(): Promise<void> {

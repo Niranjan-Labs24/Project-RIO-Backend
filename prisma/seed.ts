@@ -3,13 +3,14 @@ import * as argon2 from 'argon2';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient, Sector, UserStatus } from '../src/generated/prisma';
 import { ROLE_MATRIX } from '../src/rbac/role-matrix';
+import { pgSslFromEnv } from '../src/prisma/pg-ssl';
 
 // Dev-only credential seeded on the two demo admins so login is testable.
 const DEV_PASSWORD = 'Passw0rd!';
 
 // Seed runs as cnap_owner (DATABASE_URL) — reference tables have no RLS; tenant
 // tables are FORCE-RLS even for the owner, so tenant inserts set org context.
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL, ssl: pgSslFromEnv() }) });
 
 async function setOrg(tx: { $executeRawUnsafe: (s: string) => Promise<number> }, orgId: string) {
   await tx.$executeRawUnsafe(`SELECT set_config('app.current_org_id', '${orgId}', true)`);
