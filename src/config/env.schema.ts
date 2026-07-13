@@ -21,6 +21,10 @@ export const EnvSchema = Type.Object({
   // app legitimately holds this at runtime for crossEntity roles' read path
   // (runAsSupervisor) — unlike DATABASE_URL (owner), which stays CLI-only.
   SUPERVISOR_DATABASE_URL: Type.String({ minLength: 1 }),
+  // JWT signing secret for stateless bearer auth (min 32 chars). Required at
+  // runtime — the app issues/verifies its own session tokens.
+  JWT_SECRET: Type.String({ minLength: 32 }),
+  JWT_EXPIRES_IN: Type.String({ default: '12h' }),
   LOG_LEVEL: Type.Union(
     [
       Type.Literal('fatal'),

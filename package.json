@@ -30,12 +30,14 @@
       "@prisma/engines",
       "prisma",
       "esbuild",
-      "@swc/core"
+      "@swc/core",
+      "argon2"
     ]
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
+    "@nestjs/jwt": "^11.0.2",
     "@nestjs/platform-express": "^11.0.0",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.0.0",
@@ -43,6 +45,7 @@
     "@sinclair/typebox": "^0.33.0",
     "ajv": "^8.17.0",
     "ajv-formats": "^3.0.1",
+    "argon2": "^0.44.0",
     "cookie-parser": "^1.4.7",
     "dotenv": "^16.4.7",
     "helmet": "^8.0.0",

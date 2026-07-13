@@ -19,6 +19,12 @@ export class ConfigService {
   get supervisorDatabaseUrl(): string {
     return this.config.SUPERVISOR_DATABASE_URL;
   }
+  get jwtSecret(): string {
+    return this.config.JWT_SECRET;
+  }
+  get jwtExpiresIn(): string {
+    return this.config.JWT_EXPIRES_IN;
+  }
   get port(): number {
     return this.config.PORT;
   }

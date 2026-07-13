@@ -5,6 +5,7 @@ const valid = {
   PORT: '3000',
   APP_DATABASE_URL: 'postgresql://cnap_app:pw@localhost:5432/cnap',
   SUPERVISOR_DATABASE_URL: 'postgresql://cnap_supervisor:pw@localhost:5432/cnap',
+  JWT_SECRET: 'test_jwt_secret_at_least_32_chars_long_xx',
   LOG_LEVEL: 'info',
 };
 
