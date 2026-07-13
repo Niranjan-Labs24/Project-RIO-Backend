@@ -49,4 +49,28 @@ export class ConfigService {
   get logLevel(): AppConfig['LOG_LEVEL'] {
     return this.config.LOG_LEVEL;
   }
+  get corsOrigin(): string {
+    return this.config.CORS_ORIGIN;
+  }
+  get smtpHost(): string | undefined {
+    return this.config.SMTP_HOST;
+  }
+  get smtpPort(): number {
+    return this.config.SMTP_PORT;
+  }
+  get smtpSecure(): boolean {
+    return this.config.SMTP_SECURE;
+  }
+  get smtpUser(): string | undefined {
+    return this.config.SMTP_USER;
+  }
+  get smtpPass(): string | undefined {
+    return this.config.SMTP_PASS;
+  }
+  get mailFrom(): string {
+    return this.config.MAIL_FROM;
+  }
+  get csrfEnforce(): boolean {
+    return this.config.CSRF_ENFORCE;
+  }
 }
