@@ -1,43 +1,57 @@
 import 'dotenv/config';
+import * as argon2 from 'argon2';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '../src/generated/prisma';
+import { PrismaClient, Sector, UserStatus } from '../src/generated/prisma';
+import { ROLE_MATRIX } from '../src/rbac/role-matrix';
+import { pgSslFromEnv } from '../src/prisma/pg-ssl';
 
-// Runs via `tsx prisma/seed.ts` (see package.json "prisma".seed), so env
-// vars aren't guaranteed to already be loaded — `dotenv/config` above pulls
-// in .env the same way test/setup-env.ts does for the test suite.
-//
-// Prisma 7 removed `datasourceUrl` from the client constructor; an explicit
-// driver adapter is required (mirrors src/prisma/prisma.service.ts). Seeding
-// uses the owner role (DATABASE_URL / cnap_owner) — the same role the CLI
-// uses for migrations — since it needs to create organisations rows, which
-// are unprivileged for cnap_app (SELECT-only).
-const prisma = new PrismaClient({
-  adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
-});
+// Dev-only credential seeded on the two demo admins so login is testable.
+const DEV_PASSWORD = 'Passw0rd!';
 
-async function main(): Promise<void> {
-  const orgA = await prisma.organisation.create({ data: { name: 'Org A' } });
-  const orgB = await prisma.organisation.create({ data: { name: 'Org B' } });
+// Seed runs as cnap_owner (DATABASE_URL) — reference tables have no RLS; tenant
+// tables are FORCE-RLS even for the owner, so tenant inserts set org context.
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL, ssl: pgSslFromEnv() }) });
 
-  // notes carries FORCE ROW LEVEL SECURITY, so even the owner role must set
-  // the org context (transaction-local) before it can insert a row.
-  await prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT set_config('app.current_org_id', ${orgA.id}, true)`;
-    await tx.$executeRaw`INSERT INTO notes (org_id, body) VALUES (${orgA.id}::uuid, 'A-note-1')`;
-  });
-  await prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT set_config('app.current_org_id', ${orgB.id}, true)`;
-    await tx.$executeRaw`INSERT INTO notes (org_id, body) VALUES (${orgB.id}::uuid, 'B-note-1')`;
-  });
-
-  console.log(`Seeded Org A=${orgA.id} Org B=${orgB.id}`);
+async function setOrg(tx: { $executeRawUnsafe: (s: string) => Promise<number> }, orgId: string) {
+  await tx.$executeRawUnsafe(`SELECT set_config('app.current_org_id', '${orgId}', true)`);
 }
 
-main()
-  .catch((e: unknown) => {
-    console.error(e);
-    process.exit(1);
-  })
-  .finally(() => {
-    void prisma.$disconnect();
+async function main(): Promise<void> {
+  for (const role of ROLE_MATRIX) {
+    await prisma.role.upsert({
+      where: { id: role.id },
+      update: { key: role.key, name: role.name, description: role.description, crossEntity: role.crossEntity },
+      create: { id: role.id, key: role.key, name: role.name, description: role.description, crossEntity: role.crossEntity },
+    });
+    for (const p of role.permissions) {
+      await prisma.rolePermission.upsert({
+        where: { roleId_module: { roleId: role.id, module: p.module } },
+        update: { read: p.read, write: p.write, create: p.create, approve: p.approve, export: p.export, share: p.share },
+        create: { roleId: role.id, module: p.module, read: p.read, write: p.write, create: p.create, approve: p.approve, export: p.export, share: p.share },
+      });
+    }
+  }
+
+  await prisma.consentPolicy.upsert({
+    where: { version: 'v1' },
+    update: { active: true },
+    create: { version: 'v1', active: true, text: 'Buyer-supplied data-use & consent policy — placeholder text seeded until the real copy is provided.' },
   });
+
+  const passwordHash = await argon2.hash(DEV_PASSWORD, { type: argon2.argon2id });
+
+  const rows = await prisma.$queryRaw<{ uuidv7: string }[]>`SELECT uuidv7() AS uuidv7`;
+  const orgId = rows[0]!.uuidv7;
+  await prisma.$transaction(async (tx) => {
+    await setOrg(tx as never, orgId);
+    await tx.organisation.create({
+      data: { id: orgId, name: 'Demo NGO', region: 'North', email: 'admin@demo-ngo.org', sector: Sector.wash, villages: ['Village A', 'Village B'], isActive: true },
+    });
+    await tx.user.create({ data: { orgId, roleId: 'role_ngo_admin', name: 'Demo Admin', email: 'admin@demo-ngo.org', status: UserStatus.active, passwordHash } });
+    await tx.user.create({ data: { orgId, roleId: 'role_system_admin', name: 'System Admin', email: 'sysadmin@platform.local', status: UserStatus.active, passwordHash } });
+  });
+  console.log(`Seeded ${ROLE_MATRIX.length} roles, consent v1, org Demo NGO: ${orgId} (+ NGO Admin, System Admin)`);
+  console.log(`Dev login: admin@demo-ngo.org / sysadmin@platform.local  password: ${DEV_PASSWORD}`);
+}
+
+main().then(() => prisma.$disconnect()).catch(async (e) => { console.error(e); await prisma.$disconnect(); process.exit(1); });

@@ -7,13 +7,22 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { ConfigService } from './config/config.service';
+import { buildHttpsOptions } from './config/https-options';
 import { setupOpenApi } from './contract/openapi';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  // Encryption in transit (RIO-NFR-001): serve HTTPS directly when a cert/key
+  // are configured; otherwise HTTP (TLS terminated by an ingress/proxy).
+  const httpsOptions = buildHttpsOptions(process.env.TLS_CERT_PATH, process.env.TLS_KEY_PATH);
+  const app = await NestFactory.create(AppModule, {
+    bufferLogs: true,
+    ...(httpsOptions ? { httpsOptions } : {}),
+  });
   app.useLogger(app.get(Logger));
-  app.use(helmet());
+  // HSTS instructs browsers to only use TLS for this origin.
+  app.use(helmet({ hsts: { maxAge: 15_552_000, includeSubDomains: true } }));
   app.use(cookieParser());
+  app.setGlobalPrefix('api');
   app.useGlobalFilters(new AllExceptionsFilter());
   app.enableShutdownHooks();
   setupOpenApi(app);

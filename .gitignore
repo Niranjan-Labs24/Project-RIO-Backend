@@ -7,3 +7,17 @@ dist/
 coverage/
 prisma/*.db
 src/generated/
+
+# Claude Code / AI assistant local files and dependency docs — never commit
+.claude/
+**/.claude/
+.claude*
+.superpowers/
+**/.superpowers/
+.mcp.json
+CLAUDE*.md
+**/CLAUDE*.md
+claude*.md
+**/claude*.md
+# TLS dev certs / private keys — never commit keys
+certs/

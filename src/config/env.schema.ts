@@ -17,6 +17,26 @@ export const EnvSchema = Type.Object({
   // app must never require or hold owner-role credentials. Extra env keys
   // (like DATABASE_URL) are ignored by ajv, so .env can still define it.
   APP_DATABASE_URL: Type.String({ minLength: 1 }),
+  // Cross-org read-only connection (cnap_supervisor, NOBYPASSRLS). The running
+  // app legitimately holds this at runtime for crossEntity roles' read path
+  // (runAsSupervisor) — unlike DATABASE_URL (owner), which stays CLI-only.
+  SUPERVISOR_DATABASE_URL: Type.String({ minLength: 1 }),
+  // JWT signing secret for stateless bearer auth (min 32 chars). Required at
+  // runtime — the app issues/verifies its own session tokens.
+  JWT_SECRET: Type.String({ minLength: 32 }),
+  JWT_EXPIRES_IN: Type.String({ default: '12h' }),
+  // TLS (encryption in transit, RIO-NFR-001). Optional: when both are set the
+  // app serves HTTPS directly; otherwise it serves HTTP and TLS is expected to
+  // be terminated at an ingress/reverse proxy in front of it.
+  TLS_CERT_PATH: Type.Optional(Type.String()),
+  TLS_KEY_PATH: Type.Optional(Type.String()),
+  // When true, the app connects to Postgres over TLS (self-signed accepted).
+  DB_SSL: Type.Boolean({ default: false }),
+  // Verify the Postgres server certificate. Defaults to false (dev self-signed);
+  // set true in production to authenticate the DB and defeat MITM.
+  DB_SSL_REJECT_UNAUTHORIZED: Type.Boolean({ default: false }),
+  // Optional CA/chain PEM path to trust when verifying a non-system-CA cert.
+  DB_SSL_CA: Type.Optional(Type.String()),
   LOG_LEVEL: Type.Union(
     [
       Type.Literal('fatal'),

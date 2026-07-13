@@ -29,8 +29,14 @@ describe('AllExceptionsFilter', () => {
     const spiedFilter = new AllExceptionsFilter(logger);
     spiedFilter.catch(new HttpException('nope', 403), m.host);
     expect(m.status()).toBe(403);
-    expect(m.body()).toEqual({ error: { code: 'HTTP_403', message: 'nope' } });
+    expect(m.body()).toEqual({ error: { code: 'HTTP_403', message: 'nope' }, message: 'nope', code: 'HTTP_403' });
     expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('includes a top-level message the FE client can read', () => {
+    const m = mockHost();
+    filter.catch(new HttpException('nope', 403), m.host);
+    expect(m.body()).toMatchObject({ message: 'nope', error: { code: 'HTTP_403', message: 'nope' } });
   });
 
   it('passes through an already-enveloped error payload', () => {
@@ -38,14 +44,18 @@ describe('AllExceptionsFilter', () => {
     const enveloped = { error: { code: 'VALIDATION_ERROR', message: 'bad', details: [1] } };
     filter.catch(new BadRequestException(enveloped), m.host);
     expect(m.status()).toBe(400);
-    expect(m.body()).toEqual(enveloped);
+    expect(m.body()).toEqual({ ...enveloped, message: 'bad', code: 'VALIDATION_ERROR' });
   });
 
   it('maps unknown errors to a 500 INTERNAL_ERROR envelope', () => {
     const m = mockHost();
     filter.catch(new Error('boom'), m.host);
     expect(m.status()).toBe(500);
-    expect(m.body()).toEqual({ error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } });
+    expect(m.body()).toEqual({
+      error: { code: 'INTERNAL_ERROR', message: 'Internal server error' },
+      message: 'Internal server error',
+      code: 'INTERNAL_ERROR',
+    });
   });
 
   it('logs server-side (500) exceptions without leaking to the client response', () => {

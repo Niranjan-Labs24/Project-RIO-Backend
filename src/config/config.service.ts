@@ -16,6 +16,30 @@ export class ConfigService {
   get appDatabaseUrl(): string {
     return this.config.APP_DATABASE_URL;
   }
+  get supervisorDatabaseUrl(): string {
+    return this.config.SUPERVISOR_DATABASE_URL;
+  }
+  get jwtSecret(): string {
+    return this.config.JWT_SECRET;
+  }
+  get jwtExpiresIn(): string {
+    return this.config.JWT_EXPIRES_IN;
+  }
+  get tlsCertPath(): string | undefined {
+    return this.config.TLS_CERT_PATH;
+  }
+  get tlsKeyPath(): string | undefined {
+    return this.config.TLS_KEY_PATH;
+  }
+  get dbSsl(): boolean {
+    return this.config.DB_SSL;
+  }
+  get dbSslRejectUnauthorized(): boolean {
+    return this.config.DB_SSL_REJECT_UNAUTHORIZED;
+  }
+  get dbSslCaPath(): string | undefined {
+    return this.config.DB_SSL_CA;
+  }
   get port(): number {
     return this.config.PORT;
   }

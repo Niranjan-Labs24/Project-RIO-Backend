@@ -1,79 +1,77 @@
 import { PrismaPg } from '@prisma/adapter-pg';
+import { v7 as uuidv7 } from 'uuid';
 import type { PrismaClient } from '../src/generated/prisma';
 import { PrismaClient as PrismaClientCtor } from '../src/generated/prisma';
 import { orgContext } from '../src/tenancy/org-context';
 import { TenantPrismaService } from '../src/tenancy/tenant-prisma.service';
-import { NotesRepository } from '../src/modules/notes/notes.repository';
+import { pgSslFromEnv } from '../src/prisma/pg-ssl';
 import { appClient, ownerClient } from './db.helper';
 
-// This is the security CI gate for AD-1 (fail-closed, org-scoped RLS on
-// notes). It runs against the real Docker DB using the same adapter-backed
-// client construction as the running app (see src/prisma/prisma.service.ts)
-// and the Prisma CLI (see prisma.config.ts) — no mocks.
+// Security CI gate for FR-010 (fail-closed, org-scoped RLS) on the DOMAIN
+// tenant tables — replaces the notes-based gate the domain migration removed.
+// Runs against the real Docker DB using the same adapter-backed clients as the
+// app (cnap_app, NOBYPASSRLS) and CLI (cnap_owner). No mocks.
 //
-// Cleanup note: `notes` carries FORCE ROW LEVEL SECURITY, so even the owner
-// role only sees/affects rows for the org currently set via
-// set_config('app.current_org_id', ...). A bare `DELETE FROM notes` with no
-// org context in scope matches zero rows. afterAll therefore deletes each
-// test org's notes from inside an org-scoped transaction before removing the
-// (non-RLS) organisations rows, so the suite is safe to re-run repeatedly.
-describe('Cross-tenant isolation (RLS)', () => {
+// `users`, `organisations` etc. all carry FORCE ROW LEVEL SECURITY, so even the
+// owner only sees/writes rows for the org set via
+// set_config('app.current_org_id', ...). Creating fixtures therefore sets the
+// org context first (mirrors prisma/seed.ts), and cleanup deletes each test
+// org's rows from inside its own org-scoped transaction so the suite re-runs.
+describe('Cross-tenant isolation (RLS) — users', () => {
   let owner: PrismaClient;
   let app: PrismaClient;
   let tenant: TenantPrismaService;
-  let orgA: string;
-  let orgB: string;
+  const orgA = uuidv7();
+  const orgB = uuidv7();
+  const run = Date.now();
+  const emailA = `iso-a-${run}@example.org`;
+  const emailB = `iso-b-${run}@example.org`;
+
+  async function seedOrgWithUser(orgId: string, orgName: string, email: string): Promise<void> {
+    await owner.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.current_org_id', ${orgId}, true)`;
+      await tx.$executeRaw`INSERT INTO organisations (id, name, updated_at) VALUES (${orgId}::uuid, ${orgName}, now())`;
+      await tx.$executeRaw`INSERT INTO users (org_id, role_id, name, email, status, updated_at)
+        VALUES (${orgId}::uuid, 'role_ngo_admin', ${orgName + ' Admin'}, ${email}, 'invited'::"UserStatus", now())`;
+    });
+  }
 
   beforeAll(async () => {
     owner = ownerClient();
     app = appClient();
-    tenant = new TenantPrismaService(app as never);
-
-    const a = await owner.organisation.create({ data: { name: 'ISO Org A' } });
-    const b = await owner.organisation.create({ data: { name: 'ISO Org B' } });
-    orgA = a.id;
-    orgB = b.id;
-
-    for (const [org, body] of [
-      [orgA, 'A-secret'],
-      [orgB, 'B-secret'],
-    ] as const) {
-      await owner.$transaction(async (tx) => {
-        await tx.$executeRaw`SELECT set_config('app.current_org_id', ${org}, true)`;
-        await tx.$executeRaw`INSERT INTO notes (org_id, body) VALUES (${org}::uuid, ${body})`;
-      });
-    }
+    tenant = new TenantPrismaService(app as never, app as never);
+    await seedOrgWithUser(orgA, 'ISO Org A', emailA);
+    await seedOrgWithUser(orgB, 'ISO Org B', emailB);
   });
 
   afterAll(async () => {
-    for (const org of [orgA, orgB]) {
+    for (const orgId of [orgA, orgB]) {
       await owner.$transaction(async (tx) => {
-        await tx.$executeRaw`SELECT set_config('app.current_org_id', ${org}, true)`;
-        await tx.$executeRaw`DELETE FROM notes WHERE org_id = ${org}::uuid`;
+        await tx.$executeRaw`SELECT set_config('app.current_org_id', ${orgId}, true)`;
+        await tx.$executeRaw`DELETE FROM users WHERE org_id = ${orgId}::uuid`;
+        await tx.$executeRaw`DELETE FROM organisations WHERE id = ${orgId}::uuid`;
       });
     }
-    await owner.organisation.deleteMany({ where: { id: { in: [orgA, orgB] } } });
     await owner.$disconnect();
     await app.$disconnect();
   });
 
-  it('a caller in Org A sees only Org A notes', async () => {
-    const rows = await orgContext.run({ requestId: 'iso-a', orgId: orgA }, () =>
-      tenant.runInOrgContext((tx) => tx.note.findMany()),
+  it('a caller in Org A sees only Org A users', async () => {
+    const emails = await orgContext.run({ requestId: 'iso-a', orgId: orgA }, () =>
+      tenant.runInOrgContext((tx) => tx.user.findMany({ select: { email: true } })),
     );
-    const bodies = (rows as { body: string }[]).map((r) => r.body);
-    expect(bodies).toContain('A-secret');
-    expect(bodies).not.toContain('B-secret');
+    const list = (emails as { email: string }[]).map((r) => r.email);
+    expect(list).toContain(emailA);
+    expect(list).not.toContain(emailB);
   });
 
-  it('fails closed: with no org context the query returns zero rows', async () => {
-    // Use a dedicated, never-before-used client/connection for this check.
-    // Postgres custom GUCs are session-scoped placeholders: on a genuinely
-    // virgin session current_setting(..., true) returns NULL when unset, so
-    // org_id = NULL is never true and RLS returns zero rows with no error.
+  it('fails closed: with no org context a virgin connection returns zero rows (not an error)', async () => {
+    // A never-scoped session: current_setting(..., true) is NULL when unset, so
+    // org_id = NULL is never true and RLS returns zero rows with no error —
+    // even though the DB is seeded with users in other orgs.
     const freshApp = appClient();
     try {
-      const rows = await freshApp.note.findMany(); // no set_config → RLS denies, not an error
+      const rows = await freshApp.user.findMany();
       expect(rows).toHaveLength(0);
     } finally {
       await freshApp.$disconnect();
@@ -81,57 +79,24 @@ describe('Cross-tenant isolation (RLS)', () => {
   });
 
   it('fails closed on a warm (reused) connection too: zero rows, not an error', async () => {
-    // Postgres custom GUCs are session-scoped placeholders: once a physical
-    // connection has run `set_config('app.current_org_id', ..., true)`
-    // (SET LOCAL semantics) at least once, current_setting(..., true)
-    // reverts to '' (not NULL) on that same connection after commit. Naively
-    // casting '' to uuid raises "invalid input syntax for type uuid", which
-    // would make the RLS boundary error instead of returning zero rows.
-    // The notes_org_isolation policy uses NULLIF(current_setting(...), '')
-    // so both the unset (NULL) and reverted-to-empty ('') states collapse to
-    // NULL, keeping fail-closed behaviour uniform (zero rows, never an
-    // error). This test pins a single physical connection (pg Pool max: 1)
-    // so the "warm" set_config → commit → unscoped query sequence reliably
-    // reuses the same backend connection and reproduces the '' GUC state.
-    const singleConnClient = new PrismaClientCtor({
-      adapter: new PrismaPg({ connectionString: process.env.APP_DATABASE_URL, max: 1 }),
+    // After a SET LOCAL org GUC commits, current_setting(..., true) reverts to
+    // '' (not NULL) on that physical connection. Casting ''::uuid would raise
+    // "invalid input syntax for type uuid" and make the RLS boundary ERROR
+    // instead of fail closed. The NULLIF(current_setting(...), '') policy maps
+    // both unset (NULL) and reverted ('') to NULL → uniform zero rows. Pinning
+    // the pool to one connection reproduces the warm '' GUC state.
+    const singleConn = new PrismaClientCtor({
+      adapter: new PrismaPg({ connectionString: process.env.APP_DATABASE_URL, ssl: pgSslFromEnv(), max: 1 }),
     });
-    const singleConnTenant = new TenantPrismaService(singleConnClient as never);
+    const singleTenant = new TenantPrismaService(singleConn as never, singleConn as never);
     try {
-      // 1. Warm the connection: run an org-scoped query so set_config(...)
-      // runs (and reverts to '' on commit) on this pinned connection.
-      await orgContext.run({ requestId: 'warm-conn', orgId: orgA }, () =>
-        singleConnTenant.runInOrgContext((tx) => tx.note.findMany()),
+      await orgContext.run({ requestId: 'warm', orgId: orgA }, () =>
+        singleTenant.runInOrgContext((tx) => tx.user.findMany()),
       );
-
-      // 2. Immediately reuse the same physical connection for an unscoped
-      // query. Pre-hardening this would throw "invalid input syntax for
-      // type uuid"; post-hardening it must return zero rows.
-      const rows = await singleConnClient.note.findMany();
+      const rows = await singleConn.user.findMany();
       expect(rows).toHaveLength(0);
     } finally {
-      await singleConnClient.$disconnect();
+      await singleConn.$disconnect();
     }
-  });
-
-  it('NotesRepository.create writes via the real raw-SQL insert path and is tenant-scoped', async () => {
-    const repo = new NotesRepository(new TenantPrismaService(app as never));
-
-    const created = await orgContext.run({ requestId: 'repo-create', orgId: orgA }, () =>
-      repo.create({ body: 'via-repo' }),
-    );
-
-    expect(created.body).toBe('via-repo');
-    expect(Number.isNaN(Date.parse(created.createdAt))).toBe(false);
-
-    const visibleInA = await orgContext.run({ requestId: 'repo-check-a', orgId: orgA }, () =>
-      tenant.runInOrgContext((tx) => tx.note.findMany({ where: { id: created.id } })),
-    );
-    expect(visibleInA).toHaveLength(1);
-
-    const visibleInB = await orgContext.run({ requestId: 'repo-check-b', orgId: orgB }, () =>
-      tenant.runInOrgContext((tx) => tx.note.findMany({ where: { id: created.id } })),
-    );
-    expect(visibleInB).toHaveLength(0);
   });
 });
