@@ -8,6 +8,7 @@ import { TenancyModule } from './tenancy/tenancy.module';
 import { OrgContextMiddleware } from './tenancy/org-context.middleware';
 import { HealthModule } from './health/health.module';
 import { NotesModule } from './modules/notes/notes.module';
+import { AuthModule } from './modules/auth/auth.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { NotesModule } from './modules/notes/notes.module';
     TenancyModule,
     HealthModule,
     NotesModule,
+    AuthModule,
   ],
   controllers: [],
   providers: [],

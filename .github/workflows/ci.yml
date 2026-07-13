@@ -22,6 +22,7 @@ jobs:
       # has no equivalent auto-init hook, so we run it explicitly as a step.
       DATABASE_URL: postgresql://cnap_owner:cnap_owner_dev_pw@localhost:5432/cnap
       APP_DATABASE_URL: postgresql://cnap_app:cnap_app_dev_pw@localhost:5432/cnap
+      JWT_SECRET: ci-only-secret-at-least-32-characters-long
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

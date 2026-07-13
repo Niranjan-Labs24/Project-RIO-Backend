@@ -17,6 +17,27 @@ export const EnvSchema = Type.Object({
   // app must never require or hold owner-role credentials. Extra env keys
   // (like DATABASE_URL) are ignored by ajv, so .env can still define it.
   APP_DATABASE_URL: Type.String({ minLength: 1 }),
+  // Signs/verifies the session JWT issued by POST /auth/login and
+  // /auth/signup (see auth.module.ts). No default — a weak or missing
+  // secret must fail startup, not silently run with an insecure one.
+  JWT_SECRET: Type.String({ minLength: 32 }),
+  // The one browser origin allowed to send credentialed (cookie-bearing)
+  // cross-origin requests — see main.ts's enableCors(). Backend keeps its
+  // own default port (3000); the frontend dev server runs on 3001 instead
+  // of contesting it — override this if your frontend runs elsewhere.
+  CORS_ORIGIN: Type.String({ default: 'http://localhost:3001' }),
+  // Resend API key for emailing the signup temporary password (see
+  // MailerService). Optional and unset by default: without it, signup
+  // falls back to its pre-mailer behavior (log + dev-only response field —
+  // see AuthService.signup()) rather than failing. Get one free at
+  // resend.com → API Keys. No minLength: docker-compose's `${VAR:-}`
+  // interpolation sends an empty string, not an absent key, when unset —
+  // MailerService already treats an empty string the same as undefined
+  // (falsy check), so this just needs to accept it, not reject it.
+  RESEND_API_KEY: Type.Optional(Type.String()),
+  // Resend's shared test domain works with zero setup/verification; swap
+  // to a verified domain once you have one — no code changes needed.
+  MAIL_FROM: Type.String({ default: 'Rio <onboarding@resend.dev>' }),
   LOG_LEVEL: Type.Union(
     [
       Type.Literal('fatal'),

@@ -4,6 +4,7 @@ const valid = {
   NODE_ENV: 'development',
   PORT: '3000',
   APP_DATABASE_URL: 'postgresql://cnap_app:pw@localhost:5432/cnap',
+  JWT_SECRET: 'test-only-secret-at-least-32-characters-long',
   LOG_LEVEL: 'info',
 };
 

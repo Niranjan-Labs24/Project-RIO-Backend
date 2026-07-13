@@ -45,6 +45,15 @@ services:
       # (see below) and the app schema no longer accepts/requires owner
       # credentials — only APP_DATABASE_URL (cnap_app, NOBYPASSRLS).
       APP_DATABASE_URL: postgresql://cnap_app:cnap_app_dev_pw@db:5432/cnap
+      JWT_SECRET: ${JWT_SECRET:-dev-only-secret-change-me-before-any-shared-environment}
+      # Backend keeps its own port (3000); point this at wherever your
+      # frontend dev server actually runs (e.g. 3001) if it's not the default.
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3001}
+      # Optional — emails the signup temporary password via Resend when
+      # set; falls back to logging it otherwise (see MailerService). Reads
+      # from your shell/`.env`, never hardcoded here.
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      MAIL_FROM: "${MAIL_FROM:-Rio <onboarding@resend.dev>}"
       LOG_LEVEL: info
     # Migrations are NOT run automatically here: `prisma` (the CLI) and
     # prisma.config.ts are dev-only tooling and this runtime image is built

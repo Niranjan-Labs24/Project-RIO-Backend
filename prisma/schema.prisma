@@ -13,20 +13,39 @@ datasource db {
 }
 
 model Organisation {
-  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  name      String
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  users     User[]
-  notes     Note[]
+  id     String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  name   String
+  // Captured at signup. Verification against a government registry (or
+  // OTP/Aadhaar) is future work — for now this is just stored and used as
+  // the uniqueness key that blocks a duplicate signup for the same NGO.
+  purpose            String
+  registrationNumber String @unique @map("registration_number")
+  status             String @default("active")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  users              User[]
+  notes              Note[]
 
   @@map("organisations")
 }
 
 model User {
-  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  orgId     String   @map("org_id") @db.Uuid
-  email     String   @unique
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  id           String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId        String @map("org_id") @db.Uuid
+  name         String
+  email        String @unique
+  passwordHash String @map("password_hash")
+  // One of: ngo_admin | ngo_research_officer | human_reviewer |
+  // center_supervisor — the 4 roles enabled for the current demo phase (see
+  // the frontend's roles.ts). A plain string column, not a Role table: a
+  // full backend roles/permissions model is separate, later work.
+  role      String
+  // True for every signup-issued account (a temp password, never
+  // user-chosen) until they set their own via POST /auth/change-password —
+  // the frontend redirects here-first instead of the dashboard while this
+  // is true. Seeded demo accounts start `false`: they already "know" their
+  // password (see prisma/seed.ts).
+  mustChangePassword Boolean  @default(true) @map("must_change_password")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   org       Organisation @relation(fields: [orgId], references: [id])
 
   @@index([orgId])

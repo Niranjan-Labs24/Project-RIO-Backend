@@ -29,8 +29,12 @@ describe('Cross-tenant isolation (RLS)', () => {
     app = appClient();
     tenant = new TenantPrismaService(app as never);
 
-    const a = await owner.organisation.create({ data: { name: 'ISO Org A' } });
-    const b = await owner.organisation.create({ data: { name: 'ISO Org B' } });
+    const a = await owner.organisation.create({
+      data: { name: 'ISO Org A', purpose: 'Test', registrationNumber: `ISO-A-${Date.now()}` },
+    });
+    const b = await owner.organisation.create({
+      data: { name: 'ISO Org B', purpose: 'Test', registrationNumber: `ISO-B-${Date.now()}` },
+    });
     orgA = a.id;
     orgB = b.id;
 

@@ -16,9 +16,17 @@ async function bootstrap(): Promise<void> {
   app.use(cookieParser());
   app.useGlobalFilters(new AllExceptionsFilter());
   app.enableShutdownHooks();
-  setupOpenApi(app);
 
   const config = app.get(ConfigService);
+  // The session cookie (see common/session.util.ts) is httpOnly, so the
+  // frontend's fetch calls need credentials: "include" — that only works
+  // cross-origin against one explicit, named origin, never a wildcard.
+  app.enableCors({ origin: config.corsOrigin, credentials: true });
+  // Matches the frontend's NEXT_PUBLIC_API_BASE_URL (.../api). /health stays
+  // unprefixed for infra tooling/load balancers that probe it directly.
+  app.setGlobalPrefix('api', { exclude: ['health', 'health/db'] });
+
+  setupOpenApi(app);
   await app.listen(config.port);
 }
 

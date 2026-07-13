@@ -16,6 +16,18 @@ export class ConfigService {
   get appDatabaseUrl(): string {
     return this.config.APP_DATABASE_URL;
   }
+  get jwtSecret(): string {
+    return this.config.JWT_SECRET;
+  }
+  get corsOrigin(): string {
+    return this.config.CORS_ORIGIN;
+  }
+  get resendApiKey(): string | undefined {
+    return this.config.RESEND_API_KEY;
+  }
+  get mailFrom(): string {
+    return this.config.MAIL_FROM;
+  }
   get port(): number {
     return this.config.PORT;
   }

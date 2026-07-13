@@ -8,6 +8,40 @@ export function buildOpenApiDocument(): Record<string, unknown> {
     openapi: '3.1.0',
     info: { title: 'cnap-api', version: '0.1.0' },
     paths: {
+      '/auth/signup': {
+        post: {
+          summary: 'Create an organization and its first NGO Admin',
+          requestBody: {
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/SignupBody' } },
+            },
+          },
+          responses: { '201': { description: 'Created' }, '409': { description: 'Conflict' } },
+        },
+      },
+      '/auth/login': {
+        post: {
+          summary: 'Sign in with email and password',
+          requestBody: {
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/LoginBody' } },
+            },
+          },
+          responses: { '200': { description: 'OK' }, '401': { description: 'Unauthorized' } },
+        },
+      },
+      '/auth/me': {
+        get: {
+          summary: 'Resolve the current session',
+          responses: { '200': { description: 'OK' }, '401': { description: 'Unauthorized' } },
+        },
+      },
+      '/auth/logout': {
+        post: {
+          summary: 'Clear the session cookie',
+          responses: { '200': { description: 'OK' } },
+        },
+      },
       '/notes': {
         get: {
           summary: 'List notes for the caller org',
