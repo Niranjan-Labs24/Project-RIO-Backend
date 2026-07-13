@@ -4,7 +4,7 @@ Links each requirement to its **source** (PRD/spec), **design/plan**, **implemen
 
 **How to maintain:** when a requirement's code or tests change, update its row. Every row's *Verified by* must point at a real spec that runs in `pnpm test`. Runtime, per-record traceability (who changed what, when) is provided separately by the audit trail — see `GET /api/audit?entityType=&entityId=&actorId=`.
 
-**Last updated:** 2026‑07‑13 · **Suite at update:** 73 tests / 21 files green · **Branch:** `feat/rio-domain-rbac`.
+**Last updated:** 2026‑07‑13 · **Suite at update:** 75 tests / 22 files green (run over TLS to the db) · **Branch:** `feat/rio-domain-rbac`.
 
 ## Legend
 - ✅ **Done** — implemented and verified by tests.
@@ -37,14 +37,14 @@ Links each requirement to its **source** (PRD/spec), **design/plan**, **implemen
 | **RIO‑NFR‑006** | Scalability: add entities/villages without rebuild | PRD · ARCH §8 | Bounded pagination (`users.service.ts` `page()`, `organizations.listAll`, `audit.list` limit/offset); stateless JWT; FK indexes (`init_domain`); row‑per‑entity multitenancy; `villages TEXT[]` | `test/users.e2e.spec.ts` & `test/audit.e2e.spec.ts` (limit bounds); `test/organizations.e2e.spec.ts` (createWithAdmin adds an entity) | 🟡 Partial³ |
 | **RIO‑NFR‑013** | Maintainability: documented, extensible, low‑impact change | PRD · ARCH | Per‑feature modules under `src/modules/*`; strict TS (`noUncheckedIndexedAccess`); `ARCHITECTURE.md`; single‑source RBAC | Full regression suite (73 tests) — proves components change without unintended impact | ✅ Done |
 | **RIO‑NFR‑015** | Traceability: link requirement/output to source; matrix maintained | PRD | **This document** (`docs/traceability-matrix.md`) + runtime audit filters (NFR‑004) | This matrix is reviewed against `pnpm test` at each update | ✅ Done |
-| **RIO‑NFR‑001** | Security (Encryption) in transit **and** at rest; authorized access only | PRD | Access: `permission.guard`+RLS+JWT ✅. Credentials: argon2id `src/auth/password.service.ts` ✅. **TLS + at‑rest encryption NOT configured** | `password.service.spec.ts`; access‑control specs above | 🟡 Partial⁴ |
+| **RIO‑NFR‑001** | Security (Encryption) in transit **and** at rest; authorized access only | PRD · ARCH §8 | **In transit:** app HTTPS `src/config/https-options.ts` + `main.ts` (+HSTS); app→DB TLS 1.3 `src/prisma/pg-ssl.ts` + `db/Dockerfile` (`ssl=on`). **At rest:** `pgcrypto` (`…_at_rest_pgcrypto` migration) + encrypted storage volume (deployment). Access: guard+RLS+JWT; argon2id creds | `src/config/https-options.spec.ts`; HTTPS proven via `curl` (200 over TLS); DB TLS proven via `pg_stat_ssl` (ssl=t, TLSv1.3) + full suite run with `DB_SSL=true` | ✅ Done⁴ |
 | **RIO‑NFR‑009** | Browser Compatibility across modern browsers | PRD | Frontend repo `Project-RIO-Frontend` — no backend surface | — | ⬜ N/A (frontend) |
 
 **Notes**
 1. **FR‑007** — `create`/`edit`/`login`/`logout` events are emitted today (org/user mutations, auth). `approve`/`share` are in the `AuditAction` type but have no source features yet (AI‑review approve, sharing = R7); they will emit once those features exist.
 2. **NFR‑004** — the traceability *mechanism* (source→actor→time→before/after, queryable per entity) is complete; there are no "published decisions" to trace until the AI‑decision/approval entities (R7) are built.
 3. **NFR‑006** — the architecture and pagination are in place (adding an entity/village needs no schema change); load/soak testing and caching are not yet done.
-4. **NFR‑001** — authorization and password hashing are done; **encryption in transit (TLS/HTTPS, DB `sslmode`) and at rest (disk/`pgcrypto`)** are unconfigured and are expected to be handled at the ingress/proxy and DB‑volume layer in deployment. This is the one open functional‑security gap.
+4. **NFR‑001** — **encryption in transit is implemented and verified** on both hops: the API serves HTTPS when a cert/key are configured (else HTTP behind a TLS‑terminating proxy) with HSTS, and the app connects to Postgres over **TLS 1.3** (`DB_SSL=true`, default on with the compose db). **At rest:** `pgcrypto` is enabled for column‑level encryption; bulk at‑rest protection is delegated to encrypted storage volumes at the deployment layer (documented in `ARCHITECTURE.md §8`), which is the standard boundary — no application code encrypts the data files.
 
 ## Supporting deliverables (endpoints the requirements ride on)
 | Deliverable | Endpoints | Implementation | Tests |
@@ -57,11 +57,11 @@ Links each requirement to its **source** (PRD/spec), **design/plan**, **implemen
 ## Coverage summary
 | Status | Count | Requirements |
 |--------|-------|--------------|
-| ✅ Done | 6 | RBAC‑001, FR‑010, FR‑007, FR‑Add‑03, NFR‑003, NFR‑013, NFR‑015 *(7)* |
-| 🟡 Partial | 3 | NFR‑004 (decisions R7), NFR‑006 (no load test), NFR‑001 (no encryption) |
+| ✅ Done | 8 | RBAC‑001, FR‑010, FR‑007, FR‑Add‑03, NFR‑003, NFR‑013, NFR‑015, **NFR‑001** |
+| 🟡 Partial | 2 | NFR‑004 (decisions = R7), NFR‑006 (no load test) |
 | ⬜ N/A backend | 1 | NFR‑009 (frontend) |
 
 ## Open items (to reach full coverage)
-- **NFR‑001:** wire TLS (ingress/proxy or in‑app) + DB `sslmode=require`; enable at‑rest encryption (DB volume / `pgcrypto`).
 - **NFR‑004 / FR‑007:** emit `approve`/`share` audit events when the R7 AI‑review & sharing features land; add the AI‑decision entity for "published decisions."
 - **NFR‑006:** add load/soak testing and a caching strategy as data volume grows.
+- **Deployment (NFR‑001 hardening, not a code gap):** supply CA‑signed certs (replace the self‑signed dev cert), terminate TLS at the ingress if not in‑app, and enable encrypted storage volumes for bulk at‑rest.

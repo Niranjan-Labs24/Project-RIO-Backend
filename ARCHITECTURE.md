@@ -88,11 +88,11 @@ Each feature module owns one responsibility and communicates through typed servi
 
 ## 8. Cross-cutting quality attributes
 
-- **Security (partial — RIO‑NFR‑001):** access control (RBAC + RLS + JWT) is enforced; **encryption in transit (TLS) and at rest is NOT yet configured** — expected to be handled at the ingress/proxy and DB-volume layer in deployment. Passwords are argon2id-hashed.
+- **Security (RIO‑NFR‑001):** access control (RBAC + RLS + JWT) is enforced and passwords are argon2id-hashed. **Encryption in transit:** the API serves HTTPS when `TLS_CERT_PATH`+`TLS_KEY_PATH` are set (else HTTP behind a TLS-terminating ingress/proxy), with HSTS; the app connects to Postgres over **TLS 1.3** (`DB_SSL=true`; the compose db ships `ssl=on` via `db/Dockerfile`). **Encryption at rest:** `pgcrypto` is enabled for column-level encryption; bulk at-rest is delegated to encrypted storage volumes at the deployment layer. Replace the self-signed dev cert with a CA-signed cert in real deployments.
 - **Traceability (RIO‑NFR‑004/015):** every mutation is audited with source→actor→time and is queryable by `entityType`/`entityId`/`actorId`. A requirement→output traceability matrix (NFR‑015) is a separate documentation deliverable, not yet produced.
 - **Scalability (RIO‑NFR‑006):** stateless auth (no session store), bounded list pagination, indexed FK/lookup columns, and row-per-entity multitenancy let new entities/villages be added without schema change. No load testing or caching yet.
 - **Maintainability (RIO‑NFR‑013):** small single-responsibility modules, strict typing, and a real-DB e2e suite give regression safety; this document is the architecture reference.
 
 ## 9. Not yet built
 
-OTP staff-login and forgot/reset-password (need a mail/SMS provider); the PRD assessment pipeline (studies → define-need (AI) → survey → collection → scoring → reports); `citizenChannel`/`dataImport` features (permissions seeded but inert). TLS/at-rest encryption (deployment concern).
+OTP staff-login and forgot/reset-password (need a mail/SMS provider); the PRD assessment pipeline (studies → define-need (AI) → survey → collection → scoring → reports); `citizenChannel`/`dataImport` features (permissions seeded but inert). Production hardening: CA-signed TLS certs and encrypted storage volumes (deployment concerns).
