@@ -9,7 +9,7 @@ import { ConfigService } from '../../config/config.service';
 import { MailerService } from '../../mailer/mailer.service';
 import { AuthRepository, conflictFor, generateTemporaryPassword } from './auth.repository';
 import type { SessionContext, SessionOrg, SessionUser, SignupResponseView } from './session.types';
-import type { SignupDto } from './auth.contract';
+import type { ChangePasswordDto, SignupDto } from './auth.contract';
 
 const MAX_FAILED = 5;
 const LOCK_MINUTES = 15;
@@ -196,6 +196,30 @@ export class AuthService {
       return { ...session, temporaryPasswordEmailed: false, temporaryPassword };
     }
     return { ...session, temporaryPasswordEmailed: false };
+  }
+
+  // Signed-in user replaces a signup-issued temporary password with one they
+  // choose, clearing mustChangePassword. Authenticated via requireActor()
+  // (no module permission needed — any logged-in user may change their own
+  // password); the current-password check gates the write via RLS.
+  async changePassword(dto: ChangePasswordDto): Promise<SessionContext> {
+    const actorId = requireActor();
+    const found = (await this.tenant.runInOrgContext((tx) =>
+      tx.user.findUnique({ where: { id: actorId }, include: { org: true } }),
+    )) as UserWithOrg | null;
+    if (!found || !found.passwordHash) {
+      throw new UnauthorizedException({ error: { code: 'UNAUTHENTICATED', message: 'Authentication required' } });
+    }
+    if (!(await this.passwords.verify(found.passwordHash, dto.currentPassword))) {
+      throw new UnauthorizedException({ error: { code: 'INVALID_CURRENT_PASSWORD', message: 'Current password is incorrect' } });
+    }
+    const passwordHash = await this.passwords.hash(dto.newPassword);
+    const updated = (await this.tenant.runInOrgContext((tx) =>
+      tx.user.update({ where: { id: actorId }, data: { passwordHash, mustChangePassword: false }, include: { org: true } }),
+    )) as UserWithOrg;
+    const role = this.roleOf(updated.roleId);
+    const token = this.tokens.sign({ sub: updated.id, orgId: updated.org.id, roleKey: role.key });
+    return this.buildSession(updated, role, token);
   }
 
   private roleOf(roleId: string): RoleDef {

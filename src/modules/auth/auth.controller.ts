@@ -3,7 +3,7 @@ import type { Response } from 'express';
 import { ConfigService } from '../../config/config.service';
 import { SESSION_COOKIE_NAME, sessionCookieOptions } from '../../auth/session-cookie';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
-import { SignupBody, type SignupDto } from './auth.contract';
+import { ChangePasswordBody, SignupBody, type ChangePasswordDto, type SignupDto } from './auth.contract';
 import { AuthService } from './auth.service';
 import type { SessionContext, SignupResponseView } from './session.types';
 
@@ -60,5 +60,15 @@ export class AuthController {
   @Post('consent')
   consent(): Promise<{ consentedAt: string; policyVersion: string | null }> {
     return this.auth.consent();
+  }
+
+  // Authenticated via requireActor() inside the service — no @RequirePermission,
+  // any signed-in user may replace their own (signup-issued temporary) password.
+  @Post('change-password')
+  @HttpCode(200)
+  changePassword(
+    @Body(new TypeBoxValidationPipe(ChangePasswordBody)) body: ChangePasswordDto,
+  ): Promise<SessionContext> {
+    return this.auth.changePassword(body);
   }
 }
