@@ -18,6 +18,8 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "tsx prisma/seed.ts",
+    "load:seed": "tsx load-test/load-seed.ts",
+    "test:load": "artillery run load-test/pilot.yml",
     "db:up": "docker compose up -d db",
     "db:down": "docker compose down"
   },
@@ -68,6 +70,7 @@
     "@types/pg": "^8.20.0",
     "@types/supertest": "^6.0.2",
     "@types/swagger-ui-express": "^4.1.7",
+    "artillery": "^2.0.33",
     "eslint": "^9.14.0",
     "prettier": "^3.3.3",
     "prisma": "^7.0.0",
