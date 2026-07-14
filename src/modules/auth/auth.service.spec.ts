@@ -146,6 +146,23 @@ describe('AuthService.signup', () => {
     expect(res.temporaryPasswordEmailed).toBe(false);
     expect(typeof res.temporaryPassword).toBe('string');
   });
+
+  it('signup: never leaks temporaryPassword in production, even when the mailer fails to send', async () => {
+    repo.findByRegistrationNumber.mockResolvedValue(null);
+    repo.findUserByEmail.mockResolvedValue(null);
+    repo.createOrganisationAndAdmin.mockResolvedValue({
+      org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: 'RN1', logoUrl: null, region: null, email: null, sector: null, villages: [], isActive: true, createdAt: new Date() },
+      user: { id: 'u1', name: 'Org Admin', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h', consentedAt: new Date(), failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: true },
+    });
+    mailer.sendTemporaryPassword.mockResolvedValue(false);
+    const prodConfig = { nodeEnv: 'production' } as unknown as ConfigService;
+    const prodService = new AuthService(tenant as never, passwords as never, tokens as never, audit as never, repo as never, mailer as never, prodConfig);
+
+    const res = await prodService.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test' });
+
+    expect(res.temporaryPasswordEmailed).toBe(false);
+    expect(res.temporaryPassword).toBeUndefined();
+  });
 });
 
 describe('AuthService.changePassword', () => {
@@ -178,6 +195,20 @@ describe('AuthService.changePassword', () => {
     // A failed verify must short-circuit before any write: only the initial
     // lookup call to runInOrgContext happened (no second call for the
     // update), and no new password was ever hashed.
+    expect(tenant.runInOrgContext).toHaveBeenCalledTimes(1);
+    expect(passwords.hash).not.toHaveBeenCalled();
+  });
+
+  it('changePassword: refuses a correct current password when the org is deactivated (403 ORG_INACTIVE) and does not write', async () => {
+    tenant.runInOrgContext.mockImplementationOnce((fn: (tx: unknown) => unknown) =>
+      fn({ user: { findUnique: () => ({ id: 'u1', passwordHash: 'h', roleId: 'role_ngo_admin', org: { id: 'o1', isActive: false } }) } }));
+    passwords.verify.mockResolvedValue(true);
+    await expect(
+      orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'u1' }, () =>
+        service.changePassword({ currentPassword: 'ok', newPassword: 'newpass123' })),
+    ).rejects.toMatchObject({ response: { error: { code: 'ORG_INACTIVE' } } });
+    // Gated before the write: only the initial lookup call happened (no
+    // second call for the update), and no new password was ever hashed.
     expect(tenant.runInOrgContext).toHaveBeenCalledTimes(1);
     expect(passwords.hash).not.toHaveBeenCalled();
   });

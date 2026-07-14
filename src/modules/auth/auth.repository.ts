@@ -13,8 +13,6 @@ export interface CreateOrgAdminInput {
   now: Date;
 }
 
-export interface CreatedOrg { id: string; name: string; purpose: string | null; registrationNumber: string | null; }
-
 export function generateTemporaryPassword(): string {
   return randomBytes(9).toString('base64url');
 }

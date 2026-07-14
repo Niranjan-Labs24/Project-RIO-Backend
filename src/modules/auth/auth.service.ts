@@ -213,6 +213,11 @@ export class AuthService {
     if (!(await this.passwords.verify(found.passwordHash, dto.currentPassword))) {
       throw new UnauthorizedException({ error: { code: 'INVALID_CURRENT_PASSWORD', message: 'Current password is incorrect' } });
     }
+    // Mirror login()/me(): a deactivated org must not get a re-issued session,
+    // even mid change-password (checked post-verification, same rationale).
+    if (!found.org.isActive) {
+      throw new ForbiddenException({ error: { code: 'ORG_INACTIVE', message: 'This organization is not active' } });
+    }
     const passwordHash = await this.passwords.hash(dto.newPassword);
     const updated = (await this.tenant.runInOrgContext((tx) =>
       tx.user.update({ where: { id: actorId }, data: { passwordHash, mustChangePassword: false }, include: { org: true } }),

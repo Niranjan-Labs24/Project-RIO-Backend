@@ -3,6 +3,7 @@ import { BadRequestException, Body, Controller, Get, HttpCode, Post, Res } from 
 import type { Response } from 'express';
 import { ConfigService } from '../../config/config.service';
 import { CSRF_COOKIE_NAME, csrfCookieOptions, SESSION_COOKIE_NAME, sessionCookieOptions } from '../../auth/session-cookie';
+import { CsrfExempt } from '../../common/guards/csrf.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import { ChangePasswordBody, SignupBody, type ChangePasswordDto, type SignupDto } from './auth.contract';
 import { AuthService } from './auth.service';
@@ -21,8 +22,11 @@ export class AuthController {
   ) {}
 
   // Open route (no @RequirePermission): this is how a caller obtains a token.
+  // CSRF-exempt: login issues the rio_csrf cookie, so no cookie exists yet for
+  // this request to double-submit — it establishes the session, not consumes it.
   @Post('login')
   @HttpCode(200)
+  @CsrfExempt()
   async login(@Body() body: LoginBody, @Res({ passthrough: true }) res: Response): Promise<SessionContext> {
     const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
     const password = typeof body?.password === 'string' ? body.password : '';
@@ -36,8 +40,10 @@ export class AuthController {
   }
 
   // Open route (no @RequirePermission): public NGO signup creates the org +
-  // first admin and issues a session, same as login.
+  // first admin and issues a session, same as login. CSRF-exempt for the same
+  // reason as login: it issues the rio_csrf cookie rather than consuming it.
   @Post('signup')
+  @CsrfExempt()
   async signup(
     @Body(new TypeBoxValidationPipe(SignupBody)) body: SignupDto,
     @Res({ passthrough: true }) res: Response,
