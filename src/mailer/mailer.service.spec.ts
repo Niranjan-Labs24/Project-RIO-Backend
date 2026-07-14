@@ -17,6 +17,7 @@ function config(over: Partial<Record<string, unknown>> = {}): ConfigService {
   return {
     smtpHost: 'smtp.example.test', smtpPort: 587, smtpSecure: false,
     smtpUser: undefined, smtpPass: undefined, mailFrom: 'RIO <no-reply@rio.local>',
+    corsOrigin: 'https://app.rio.example',
     ...over,
   } as unknown as ConfigService;
 }
@@ -29,6 +30,24 @@ describe('MailerService', () => {
     const svc = new MailerService(config());
     await expect(svc.sendTemporaryPassword('a@b.test', 'Org', 'pw')).resolves.toBe(true);
     expect(sendMail).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends a formatted welcome email with the workspace, email, temp password, and a sign-in link', async () => {
+    sendMail.mockResolvedValue({ messageId: '1' });
+    const svc = new MailerService(config());
+    await svc.sendTemporaryPassword('a@b.test', 'Acme NGO', 'temp-pw-123');
+
+    const [message] = sendMail.mock.calls[0];
+    expect(message.subject).toContain('Acme NGO');
+    for (const body of [message.text, message.html]) {
+      expect(body).toContain('Acme NGO');
+      expect(body).toContain('a@b.test');
+      expect(body).toContain('temp-pw-123');
+      expect(body).toContain('https://app.rio.example');
+    }
+    // HTML-escaped even though nothing here needs escaping — guards against
+    // an org name/email containing `<`/`&` breaking the markup later.
+    expect(message.html).toContain('<h1');
   });
 
   it('returns false (no throw) when SMTP is not configured', async () => {

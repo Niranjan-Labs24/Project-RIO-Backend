@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import { parseIntParam } from '../../common/http/query.util';
@@ -32,5 +32,12 @@ export class UsersController {
   @RequirePermission('entityTeam', 'write')
   update(@Param('id') id: string, @Body(new TypeBoxValidationPipe(UpdateUserBody)) body: UpdateUserPayload): Promise<OrgUser> {
     return this.users.update(id, body ?? {});
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  @RequirePermission('entityTeam', 'write')
+  remove(@Param('id') id: string): Promise<void> {
+    return this.users.remove(id);
   }
 }

@@ -63,7 +63,7 @@ describe('Organizations (e2e)', () => {
     const name = `New NGO ${uniq}`;
     const res = await request(app.getHttpServer())
       .post('/api/organizations').set('Authorization', `Bearer ${sysToken}`)
-      .send({ name, region: 'North', email: `org-${uniq}@example.org`, sector: 'education', villages: ['V1'], adminName: 'First Admin', adminEmail: `admin-${uniq}@example.org` })
+      .send({ name, purpose: 'Testing', registrationNumber: `REG-${uniq}`, region: 'North', email: `org-${uniq}@example.org`, sector: 'education', villages: ['V1'], adminName: 'First Admin', adminEmail: `admin-${uniq}@example.org` })
       .expect(201);
     expect(res.body.name).toBe(name);
     expect(typeof res.body.id).toBe('string');

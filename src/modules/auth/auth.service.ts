@@ -127,7 +127,13 @@ export class AuthService {
 
   async logout(): Promise<void> {
     const actorId = requireActor(); // 401 if not authenticated; stateless — client drops the token
-    await this.audit.record({ action: 'logout', entityType: 'user', entityId: actorId, entityLabel: actorId });
+    const found = (await this.tenant.runInOrgContext((tx) =>
+      tx.user.findUnique({ where: { id: actorId } }),
+    )) as { email: string } | null;
+    await this.audit.record({
+      action: 'logout', entityType: 'user', entityId: actorId,
+      entityLabel: found?.email ?? actorId,
+    });
   }
 
   async consent(): Promise<{ consentedAt: string; policyVersion: string | null }> {
@@ -222,6 +228,10 @@ export class AuthService {
     const updated = (await this.tenant.runInOrgContext((tx) =>
       tx.user.update({ where: { id: actorId }, data: { passwordHash, mustChangePassword: false }, include: { org: true } }),
     )) as UserWithOrg;
+    // Never log the actual password value — before/after stay null so the
+    // entry only confirms *that* it changed, via the eye icon's "Password"
+    // row, same field-label convention as Name/Email/Role elsewhere.
+    await this.audit.record({ action: 'edit', entityType: 'user', entityId: updated.id, entityLabel: updated.email, changes: [{ field: 'Password', before: null, after: null }] });
     const role = this.roleOf(updated.roleId);
     const token = this.tokens.sign({ sub: updated.id, orgId: updated.org.id, roleKey: role.key });
     return this.buildSession(updated, role, token);

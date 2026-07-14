@@ -51,7 +51,10 @@ export class AuthRepository {
     try {
       return await this.tenant.runAsOrg(orgId, async (tx) => {
         const org = await tx.organisation.create({
-          data: { id: orgId, name: input.organizationName, purpose: input.purpose, registrationNumber: input.registrationNumber },
+          data: {
+            id: orgId, name: input.organizationName, purpose: input.purpose,
+            registrationNumber: input.registrationNumber, email: input.email,
+          },
         });
         const user = await tx.user.create({
           data: {

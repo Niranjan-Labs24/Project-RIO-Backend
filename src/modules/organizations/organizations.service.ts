@@ -53,7 +53,8 @@ export class OrganizationsService {
     const org = (await this.tenant.runAsOrg(orgId, async (tx) => {
       const created = await tx.organisation.create({
         data: {
-          id: orgId, name: payload.name, region: payload.region ?? null, email: payload.email ?? null,
+          id: orgId, name: payload.name, purpose: payload.purpose, registrationNumber: payload.registrationNumber,
+          region: payload.region ?? null, email: payload.email ?? null,
           sector: payload.sector ? (payload.sector as Sector) : null, villages: payload.villages ?? [], isActive: true,
         },
       });
@@ -125,7 +126,8 @@ export class OrganizationsService {
 
   private toOrganization(row: OrgRow): Organization {
     return {
-      id: row.id, name: row.name, logoUrl: row.logoUrl, region: row.region, email: row.email,
+      id: row.id, name: row.name, purpose: row.purpose, registrationNumber: row.registrationNumber,
+      logoUrl: row.logoUrl, region: row.region, email: row.email,
       sector: row.sector, villages: row.villages, isActive: row.isActive, createdAt: row.createdAt.toISOString(),
     };
   }

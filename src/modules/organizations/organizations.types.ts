@@ -1,6 +1,10 @@
 export interface Organization {
   id: string;
   name: string;
+  // Captured at public signup (see AuthService.signup()) — immutable
+  // thereafter; not part of UpdateOrganizationPayload.
+  purpose: string;
+  registrationNumber: string;
   logoUrl: string | null;
   region: string | null;
   email: string | null;
@@ -26,6 +30,8 @@ export interface UpdateOrganizationPayload {
 
 export interface CreateOrganizationPayload {
   name: string;
+  purpose: string;
+  registrationNumber: string;
   region?: string | null;
   email?: string | null;
   sector?: string | null;
@@ -38,6 +44,8 @@ export interface CreateOrganizationPayload {
 export interface OrgRow {
   id: string;
   name: string;
+  purpose: string;
+  registrationNumber: string;
   logoUrl: string | null;
   region: string | null;
   email: string | null;
