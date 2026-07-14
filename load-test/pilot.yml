@@ -1,0 +1,78 @@
+# RIO-NFR-006 — pilot-volume load test.
+#
+# Proves the scalability claim (row-per-entity multitenancy + per-request RLS +
+# bounded pagination hold up at pilot volume) by driving realistic
+# login -> read traffic against a running API seeded with ~50 orgs / ~500 users.
+#
+# Run:  pnpm load:seed          # seed pilot volume + write users.csv
+#       PORT=4100 node dist/main.js   # start the API (built) on :4100
+#       pnpm test:load           # this file
+#
+# The read steps (me / organizations / users / audit) each run inside a
+# per-request RLS transaction — that is what "scales without rebuild" must hold
+# under concurrency. Login (argon2id verify) runs once per virtual user, then
+# the token is reused across the read loop so the fixed auth cost does not
+# dominate the measurement.
+config:
+  target: "http://127.0.0.1:4100"
+  http:
+    timeout: 30
+  payload:
+    path: "./users.csv"
+    fields:
+      - "email"
+      - "password"
+    order: random
+    skipHeader: true
+  phases:
+    - duration: 15
+      arrivalRate: 3
+      name: warmup
+    - duration: 120
+      arrivalRate: 8
+      name: sustained-pilot
+  ensure:
+    thresholds:
+      - http.response_time.p95: 500
+    maxErrorRate: 1
+
+scenarios:
+  - name: auth-then-reads
+    flow:
+      - post:
+          url: "/api/auth/login"
+          json:
+            email: "{{ email }}"
+            password: "{{ password }}"
+          capture:
+            - json: "$.token"
+              as: "token"
+          expect:
+            - statusCode: 200
+      - loop:
+          - get:
+              url: "/api/auth/me"
+              headers:
+                Authorization: "Bearer {{ token }}"
+              expect:
+                - statusCode: 200
+          - get:
+              url: "/api/organizations/current"
+              headers:
+                Authorization: "Bearer {{ token }}"
+              expect:
+                - statusCode: 200
+          - get:
+              url: "/api/users?limit=20"
+              headers:
+                Authorization: "Bearer {{ token }}"
+              expect:
+                - statusCode: 200
+          - get:
+              url: "/api/audit?limit=20"
+              headers:
+                Authorization: "Bearer {{ token }}"
+              expect:
+                - statusCode: 200
+          - think: 0.3
+        count: 2
