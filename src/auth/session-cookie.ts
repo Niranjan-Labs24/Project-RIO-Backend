@@ -14,3 +14,16 @@ export function sessionCookieOptions(isProd: boolean): CookieOptions {
     path: '/',
   };
 }
+
+/** Readable (non-httpOnly) double-submit CSRF token cookie. */
+export const CSRF_COOKIE_NAME = 'rio_csrf';
+
+export function csrfCookieOptions(isProd: boolean): CookieOptions {
+  return {
+    httpOnly: false, // the frontend must read it to echo as X-CSRF-Token
+    sameSite: 'lax',
+    secure: isProd,
+    maxAge: 60 * 60 * 24 * 7 * 1000,
+    path: '/',
+  };
+}

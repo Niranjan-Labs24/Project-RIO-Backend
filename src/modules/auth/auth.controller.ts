@@ -1,7 +1,8 @@
+import { randomBytes } from 'node:crypto';
 import { BadRequestException, Body, Controller, Get, HttpCode, Post, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ConfigService } from '../../config/config.service';
-import { SESSION_COOKIE_NAME, sessionCookieOptions } from '../../auth/session-cookie';
+import { CSRF_COOKIE_NAME, csrfCookieOptions, SESSION_COOKIE_NAME, sessionCookieOptions } from '../../auth/session-cookie';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import { ChangePasswordBody, SignupBody, type ChangePasswordDto, type SignupDto } from './auth.contract';
 import { AuthService } from './auth.service';
@@ -30,6 +31,7 @@ export class AuthController {
     }
     const session = await this.auth.login(email, password);
     res.cookie(SESSION_COOKIE_NAME, session.token, sessionCookieOptions(this.config.nodeEnv === 'production'));
+    res.cookie(CSRF_COOKIE_NAME, randomBytes(18).toString('base64url'), csrfCookieOptions(this.config.nodeEnv === 'production'));
     return session;
   }
 
@@ -42,6 +44,7 @@ export class AuthController {
   ): Promise<SignupResponseView> {
     const result = await this.auth.signup(body);
     res.cookie(SESSION_COOKIE_NAME, result.token, sessionCookieOptions(this.config.nodeEnv === 'production'));
+    res.cookie(CSRF_COOKIE_NAME, randomBytes(18).toString('base64url'), csrfCookieOptions(this.config.nodeEnv === 'production'));
     return result;
   }
 
@@ -55,6 +58,7 @@ export class AuthController {
   async logout(@Res({ passthrough: true }) res: Response): Promise<void> {
     await this.auth.logout();
     res.clearCookie(SESSION_COOKIE_NAME, { path: '/' });
+    res.clearCookie(CSRF_COOKIE_NAME, { path: '/' });
   }
 
   @Post('consent')

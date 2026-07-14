@@ -3,6 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { LoggerModule } from 'nestjs-pino';
 import { PermissionGuard } from './common/guards/permission.guard';
+import { CsrfGuard } from './common/guards/csrf.guard';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { TokenService } from './auth/token.service';
 import { ConfigModule } from './config/config.module';
@@ -50,8 +51,10 @@ import { UsersModule } from './modules/users/users.module';
   providers: [
     TokenService,
     // Order matters: JwtAuthGuard populates the OrgStore from the bearer token,
+    // then CsrfGuard checks the double-submit token (no-op unless CSRF_ENFORCE=true),
     // then PermissionGuard enforces (module, action) against that role.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: CsrfGuard },
     { provide: APP_GUARD, useClass: PermissionGuard },
   ],
 })
