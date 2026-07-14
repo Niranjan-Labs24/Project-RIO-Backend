@@ -27,12 +27,21 @@ export function conflictFor(field: 'registrationNumber' | 'email'): ConflictExce
 // constraints (e.g. OrganizationsService.createWithAdmin) can map a Prisma
 // P2002 to the same clean 409 envelope via conflictFor().
 export function uniqueField(err: unknown): 'registrationNumber' | 'email' | null {
-  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-    const t = err.meta?.['target'];
-    const target = Array.isArray(t) ? t.join(',') : String(t ?? '');
-    if (target.includes('registration_number')) return 'registrationNumber';
-    if (target.includes('email')) return 'email';
-  }
+  if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== 'P2002') return null;
+  // Prisma's binary engine reports the offending column(s) in `meta.target`,
+  // but the pg driver adapter (Prisma 7) leaves that undefined and instead
+  // nests the raw Postgres message — which carries the constraint name, e.g.
+  // `organisations_registration_number_key` / `users_email_key` — under
+  // `meta.driverAdapterError.cause.originalMessage`. Check both shapes.
+  const meta = (err.meta ?? {}) as {
+    target?: unknown;
+    driverAdapterError?: { cause?: { originalMessage?: unknown } };
+  };
+  const fromTarget = Array.isArray(meta.target) ? meta.target.join(',') : String(meta.target ?? '');
+  const fromAdapter = String(meta.driverAdapterError?.cause?.originalMessage ?? '');
+  const haystack = `${fromTarget} ${fromAdapter}`;
+  if (haystack.includes('registration_number')) return 'registrationNumber';
+  if (haystack.includes('email')) return 'email';
   return null;
 }
 
