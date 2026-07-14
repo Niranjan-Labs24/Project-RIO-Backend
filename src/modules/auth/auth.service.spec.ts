@@ -175,23 +175,32 @@ describe('AuthService.changePassword', () => {
       orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'u1' }, () =>
         service.changePassword({ currentPassword: 'wrong', newPassword: 'newpass123' })),
     ).rejects.toMatchObject({ response: { error: { code: 'INVALID_CURRENT_PASSWORD' } } });
+    // A failed verify must short-circuit before any write: only the initial
+    // lookup call to runInOrgContext happened (no second call for the
+    // update), and no new password was ever hashed.
+    expect(tenant.runInOrgContext).toHaveBeenCalledTimes(1);
+    expect(passwords.hash).not.toHaveBeenCalled();
   });
 
   it('changePassword: updates hash, clears mustChangePassword, returns a session', async () => {
+    const updateArgs: Record<string, unknown>[] = [];
     tenant.runInOrgContext
       .mockImplementationOnce((fn: (tx: unknown) => unknown) =>
         fn({ user: { findUnique: () => ({ id: 'u1', passwordHash: 'h', roleId: 'role_ngo_admin', org: { id: 'o1', isActive: true } }) } }))
       .mockImplementationOnce((fn: (tx: unknown) => unknown) =>
         fn({
           user: {
-            update: () => ({
-              id: 'u1', name: 'A', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h2',
-              consentedAt: null, failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: false,
-              org: {
-                id: 'o1', name: 'Org', logoUrl: null, region: null, email: null, sector: null, villages: [],
-                isActive: true, createdAt: new Date(), purpose: 'p', registrationNumber: 'RN1',
-              },
-            }),
+            update: (args: Record<string, unknown>) => {
+              updateArgs.push(args);
+              return {
+                id: 'u1', name: 'A', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h2',
+                consentedAt: null, failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: false,
+                org: {
+                  id: 'o1', name: 'Org', logoUrl: null, region: null, email: null, sector: null, villages: [],
+                  isActive: true, createdAt: new Date(), purpose: 'p', registrationNumber: 'RN1',
+                },
+              };
+            },
           },
         }));
     passwords.verify.mockResolvedValue(true);
@@ -200,5 +209,10 @@ describe('AuthService.changePassword', () => {
       service.changePassword({ currentPassword: 'ok', newPassword: 'newpass123' }));
     expect(res.mustChangePassword).toBe(false);
     expect(res.user.id).toBe('u1');
+    // Verify the actual write: the update call's `data` must clear
+    // mustChangePassword and persist the newly hashed password, not just
+    // that the (mocked) response happened to say so.
+    expect(updateArgs).toHaveLength(1);
+    expect(updateArgs[0]).toMatchObject({ data: { mustChangePassword: false, passwordHash: 'h2' } });
   });
 });
