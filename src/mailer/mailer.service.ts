@@ -23,15 +23,14 @@ export class MailerService {
 
   async sendTemporaryPassword(email: string, orgName: string, tempPassword: string): Promise<boolean> {
     if (!this.transport) return false;
+    const signInUrl = this.config.corsOrigin;
     try {
       await this.transport.sendMail({
         from: this.config.mailFrom,
         to: email,
         subject: `Welcome to RIO — ${orgName}`,
-        text:
-          `An account was created for ${orgName}.\n\n` +
-          `Your temporary password is: ${tempPassword}\n\n` +
-          `Please sign in and change it immediately.`,
+        text: temporaryPasswordText({ orgName, email, tempPassword, signInUrl }),
+        html: temporaryPasswordHtml({ orgName, email, tempPassword, signInUrl }),
       });
       return true;
     } catch (err) {
@@ -39,4 +38,93 @@ export class MailerService {
       return false;
     }
   }
+}
+
+interface TemporaryPasswordEmailInput {
+  orgName: string;
+  email: string;
+  tempPassword: string;
+  signInUrl: string;
+}
+
+function temporaryPasswordText({ orgName, email, tempPassword, signInUrl }: TemporaryPasswordEmailInput): string {
+  return (
+    `Welcome to RIO, ${orgName}!\n\n` +
+    `An account has been created for your organization. Use the credentials ` +
+    `below to sign in, then set your own password.\n\n` +
+    `Workspace: ${orgName}\n` +
+    `Email: ${email}\n` +
+    `Temporary password: ${tempPassword}\n\n` +
+    `Sign in: ${signInUrl}\n\n` +
+    `You'll be asked to change this password the first time you sign in.`
+  );
+}
+
+// Table-based layout + inline styles — the only markup/CSS subset that
+// renders consistently across email clients (Gmail/Outlook strip <style>
+// blocks and most CSS layout properties).
+function temporaryPasswordHtml({ orgName, email, tempPassword, signInUrl }: TemporaryPasswordEmailInput): string {
+  // Escapes text-content chars (&, <, >) and quote chars (", ') too, so a
+  // value is safe in attribute context as well — signInUrl is interpolated
+  // into href="...".
+  const esc = (value: string): string =>
+    value
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+  return `
+<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f5f7;padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
+            <tr>
+              <td style="background-color:#111827;padding:24px 32px;">
+                <span style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px;">
+                <h1 style="margin:0 0 12px;font-size:20px;color:#111827;">Welcome to RIO, ${esc(orgName)}!</h1>
+                <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#4b5563;">
+                  An account has been created for your organization. Use the
+                  credentials below to sign in, then you'll be asked to set
+                  your own password.
+                </p>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:24px;">
+                  <tr>
+                    <td style="padding:16px 20px;">
+                      <p style="margin:0 0 4px;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;">Workspace</p>
+                      <p style="margin:0 0 16px;font-size:14px;color:#111827;font-weight:600;">${esc(orgName)}</p>
+                      <p style="margin:0 0 4px;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;">Email</p>
+                      <p style="margin:0 0 16px;font-size:14px;color:#111827;font-weight:600;">${esc(email)}</p>
+                      <p style="margin:0 0 4px;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;">Temporary password</p>
+                      <p style="margin:0;font-size:14px;color:#111827;font-weight:600;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${esc(tempPassword)}</p>
+                    </td>
+                  </tr>
+                </table>
+                <table role="presentation" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="border-radius:8px;background-color:#111827;">
+                      <a href="${esc(signInUrl)}" style="display:inline-block;padding:12px 24px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">
+                        Sign in to RIO
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:24px 0 0;font-size:12px;line-height:1.6;color:#9ca3af;">
+                  You'll be asked to change this password the first time you
+                  sign in. If you weren't expecting this email, you can
+                  safely ignore it.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
 }

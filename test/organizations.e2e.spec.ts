@@ -63,7 +63,7 @@ describe('Organizations (e2e)', () => {
     const name = `New NGO ${uniq}`;
     const res = await request(app.getHttpServer())
       .post('/api/organizations').set('Authorization', `Bearer ${sysToken}`)
-      .send({ name, region: 'North', email: `org-${uniq}@example.org`, sector: 'education', villages: ['V1'], adminName: 'First Admin', adminEmail: `admin-${uniq}@example.org` })
+      .send({ name, purpose: 'Testing', registrationNumber: `REG-${uniq}`, region: 'North', email: `org-${uniq}@example.org`, sector: 'education', villages: ['V1'], adminName: 'First Admin', adminEmail: `admin-${uniq}@example.org` })
       .expect(201);
     expect(res.body.name).toBe(name);
     expect(typeof res.body.id).toBe('string');
@@ -72,5 +72,15 @@ describe('Organizations (e2e)', () => {
     const byId = await request(app.getHttpServer())
       .get(`/api/organizations/${res.body.id}`).set('Authorization', `Bearer ${sysToken}`).expect(200);
     expect(byId.body.memberCount).toBe(1);
+  });
+
+  it('rejects a duplicate registrationNumber with a clean 409 (not a raw 500)', async () => {
+    // Same registrationNumber as the org created above — the unique constraint
+    // must surface as ORGANIZATION_ALREADY_REGISTERED, mirroring public signup.
+    const res = await request(app.getHttpServer())
+      .post('/api/organizations').set('Authorization', `Bearer ${sysToken}`)
+      .send({ name: `Dup NGO ${uniq}`, purpose: 'Testing', registrationNumber: `REG-${uniq}`, adminName: 'Dup Admin', adminEmail: `dup-${uniq}@example.org` });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('ORGANIZATION_ALREADY_REGISTERED');
   });
 });

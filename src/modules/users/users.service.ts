@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, UserStatus } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
-import { getOrgStore, requireOrgId } from '../../tenancy/org-context';
+import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { ROLE_MATRIX, roleByKey, type RoleDef } from '../../rbac/role-matrix';
 import { AuditService } from '../audit/audit.service';
 import type { AuditChange } from '../audit/audit.types';
@@ -49,6 +49,32 @@ export class UsersService {
       await this.audit.record({ action: 'edit', entityType: 'user', entityId: updated.id, entityLabel: updated.email, changes });
     }
     return this.toOrgUser(updated);
+  }
+
+  async remove(id: string): Promise<void> {
+    const actorId = requireActor();
+    if (id === actorId) {
+      throw new BadRequestException({
+        error: { code: 'CANNOT_REMOVE_SELF', message: "You can't remove your own account." },
+      });
+    }
+    const removed = await this.tenant.runInOrgContext(async (tx) => {
+      const current = (await tx.user.findUnique({ where: { id } })) as UserRow | null;
+      if (!current) throw new NotFoundException({ error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
+      // Privilege guard (mirrors validateRole): only a crossEntity caller may
+      // remove a crossEntity account. Otherwise a tenant-scoped admin could
+      // delete a platform-wide user (e.g. a system_admin that shares their org
+      // via RLS), which the tenant admin has no authority over.
+      const targetRole = ROLE_MATRIX.find((r) => r.id === current.roleId);
+      if (targetRole?.crossEntity && roleByKey(getOrgStore()?.role ?? '')?.crossEntity !== true) {
+        throw new ForbiddenException({
+          error: { code: 'FORBIDDEN_USER_REMOVAL', message: 'You are not allowed to remove a cross-entity account' },
+        });
+      }
+      await tx.user.delete({ where: { id } });
+      return current;
+    });
+    await this.audit.record({ action: 'delete', entityType: 'user', entityId: id, entityLabel: removed.email });
   }
 
   // System-Admin cross-org list.

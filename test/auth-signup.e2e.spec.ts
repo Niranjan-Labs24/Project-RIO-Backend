@@ -24,6 +24,10 @@ describe('signup -> me -> change-password (cookie)', () => {
     await app.close();
   });
 
+  // A real SMTP send (see .env's SMTP_HOST) takes longer than the default
+  // 5s test timeout — this only matters when testing against a live mail
+  // provider; the mocked mailer.service.spec.ts covers the unconfigured/
+  // failure paths quickly.
   it('signs up, sets rio_session cookie, resolves me, then changes password', async () => {
     const server = app.getHttpServer();
     const rn = `RN-${Date.now()}`;
@@ -55,5 +59,5 @@ describe('signup -> me -> change-password (cookie)', () => {
       .send({ currentPassword: tempPassword, newPassword: 'BrandNewPass123' })
       .expect(200)
       .expect((r) => expect(r.body.mustChangePassword).toBe(false));
-  });
+  }, 20_000);
 });
