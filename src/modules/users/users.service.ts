@@ -61,6 +61,16 @@ export class UsersService {
     const removed = await this.tenant.runInOrgContext(async (tx) => {
       const current = (await tx.user.findUnique({ where: { id } })) as UserRow | null;
       if (!current) throw new NotFoundException({ error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
+      // Privilege guard (mirrors validateRole): only a crossEntity caller may
+      // remove a crossEntity account. Otherwise a tenant-scoped admin could
+      // delete a platform-wide user (e.g. a system_admin that shares their org
+      // via RLS), which the tenant admin has no authority over.
+      const targetRole = ROLE_MATRIX.find((r) => r.id === current.roleId);
+      if (targetRole?.crossEntity && roleByKey(getOrgStore()?.role ?? '')?.crossEntity !== true) {
+        throw new ForbiddenException({
+          error: { code: 'FORBIDDEN_USER_REMOVAL', message: 'You are not allowed to remove a cross-entity account' },
+        });
+      }
       await tx.user.delete({ where: { id } });
       return current;
     });

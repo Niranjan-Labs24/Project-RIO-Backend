@@ -64,8 +64,13 @@ function temporaryPasswordText({ orgName, email, tempPassword, signInUrl }: Temp
 // renders consistently across email clients (Gmail/Outlook strip <style>
 // blocks and most CSS layout properties).
 function temporaryPasswordHtml({ orgName, email, tempPassword, signInUrl }: TemporaryPasswordEmailInput): string {
+  // Escapes text-content chars (&, <, >) and quote chars (", ') too, so a
+  // value is safe in attribute context as well — signInUrl is interpolated
+  // into href="...".
   const esc = (value: string): string =>
-    value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    value
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
   return `
 <!doctype html>

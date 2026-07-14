@@ -6,6 +6,7 @@ import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore, requireOrgId } from '../../tenancy/org-context';
 import { roleByKey } from '../../rbac/role-matrix';
 import { PasswordService } from '../../auth/password.service';
+import { conflictFor, uniqueField } from '../auth/auth.repository';
 import { AuditService } from '../audit/audit.service';
 import type { AuditChange } from '../audit/audit.types';
 import type {
@@ -50,19 +51,29 @@ export class OrganizationsService {
     const tempPassword = randomBytes(9).toString('base64url');
     const passwordHash = await this.passwords.hash(tempPassword);
 
-    const org = (await this.tenant.runAsOrg(orgId, async (tx) => {
-      const created = await tx.organisation.create({
-        data: {
-          id: orgId, name: payload.name, purpose: payload.purpose, registrationNumber: payload.registrationNumber,
-          region: payload.region ?? null, email: payload.email ?? null,
-          sector: payload.sector ? (payload.sector as Sector) : null, villages: payload.villages ?? [], isActive: true,
-        },
-      });
-      await tx.user.create({
-        data: { orgId, roleId: 'role_ngo_admin', name: payload.adminName, email: payload.adminEmail, status: UserStatus.invited, passwordHash },
-      });
-      return created;
-    })) as OrgRow;
+    // A duplicate registrationNumber (org) or adminEmail (user) hits a DB
+    // unique constraint — map that P2002 to the same clean 409 the public
+    // signup path returns, instead of leaking a raw Prisma 500.
+    let org: OrgRow;
+    try {
+      org = (await this.tenant.runAsOrg(orgId, async (tx) => {
+        const created = await tx.organisation.create({
+          data: {
+            id: orgId, name: payload.name, purpose: payload.purpose, registrationNumber: payload.registrationNumber,
+            region: payload.region ?? null, email: payload.email ?? null,
+            sector: payload.sector ? (payload.sector as Sector) : null, villages: payload.villages ?? [], isActive: true,
+          },
+        });
+        await tx.user.create({
+          data: { orgId, roleId: 'role_ngo_admin', name: payload.adminName, email: payload.adminEmail, status: UserStatus.invited, passwordHash },
+        });
+        return created;
+      })) as OrgRow;
+    } catch (err) {
+      const field = uniqueField(err);
+      if (field) throw conflictFor(field);
+      throw err;
+    }
 
     // Dev only: surface the first-admin temp password (a real invite/reset flow supersedes this).
     if (process.env.NODE_ENV !== 'production') {

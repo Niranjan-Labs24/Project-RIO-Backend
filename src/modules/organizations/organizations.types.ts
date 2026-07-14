@@ -2,9 +2,11 @@ export interface Organization {
   id: string;
   name: string;
   // Captured at public signup (see AuthService.signup()) — immutable
-  // thereafter; not part of UpdateOrganizationPayload.
-  purpose: string;
-  registrationNumber: string;
+  // thereafter; not part of UpdateOrganizationPayload. Nullable because the
+  // underlying columns are (`String?`), so orgs created before these fields
+  // existed read back as null.
+  purpose: string | null;
+  registrationNumber: string | null;
   logoUrl: string | null;
   region: string | null;
   email: string | null;
@@ -44,8 +46,8 @@ export interface CreateOrganizationPayload {
 export interface OrgRow {
   id: string;
   name: string;
-  purpose: string;
-  registrationNumber: string;
+  purpose: string | null;
+  registrationNumber: string | null;
   logoUrl: string | null;
   region: string | null;
   email: string | null;

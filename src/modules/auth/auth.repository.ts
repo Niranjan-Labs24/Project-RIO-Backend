@@ -23,7 +23,10 @@ export function conflictFor(field: 'registrationNumber' | 'email'): ConflictExce
     : new ConflictException({ error: { code: 'EMAIL_ALREADY_REGISTERED', message: 'An account with this email already exists.' } });
 }
 
-function uniqueField(err: unknown): 'registrationNumber' | 'email' | null {
+// Exported so other create paths that hit the same org/user unique
+// constraints (e.g. OrganizationsService.createWithAdmin) can map a Prisma
+// P2002 to the same clean 409 envelope via conflictFor().
+export function uniqueField(err: unknown): 'registrationNumber' | 'email' | null {
   if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
     const t = err.meta?.['target'];
     const target = Array.isArray(t) ? t.join(',') : String(t ?? '');
