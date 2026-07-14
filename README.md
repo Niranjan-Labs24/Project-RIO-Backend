@@ -25,6 +25,21 @@ If your host already has PostgreSQL bound to port 5432 (e.g. a native Windows se
 `DB_HOST_PORT=<free port>` in `.env` and update the two `*_URL` values to match — docker compose
 auto-reads `.env` for the `${DB_HOST_PORT:-5432}` substitution in `docker-compose.yml`.
 
+### Env vars (see `.env.example` for full defaults/comments)
+- `CORS_ORIGIN` — single frontend origin allowed to send credentialed (cookie) requests. Defaults to
+  `http://localhost:3000`; credentials mode forbids a wildcard, so this must be an exact origin.
+- `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` / `SMTP_USER` / `SMTP_PASS` — nodemailer transport for the
+  signup temporary-password email. Leave `SMTP_HOST` unset to disable email entirely: signup then
+  falls back to returning/logging the temp password, but **only** outside production (`NODE_ENV`
+  defaults to `production` when unset, so this fallback fails closed by default).
+- `MAIL_FROM` — the `From:` address/display name used for that email (default `RIO <no-reply@rio.local>`).
+- `CSRF_ENFORCE` — opt-in double-submit CSRF check (`CsrfGuard`). **Default `false`** (off); the
+  frontend must first read the `rio_csrf` cookie and echo it as `X-CSRF-Token` on unsafe methods
+  before this is safe to flip on. `login`/`signup` are always exempt (they issue that cookie). Even
+  with this on, cross-site (different-site frontend/API) deployments additionally need
+  `sameSite: 'none'` on the session/CSRF cookies (`session-cookie.ts`) — that is a separate,
+  not-yet-automated deploy-config step, out of scope for the guard itself.
+
 ## Running the whole stack in Docker (db + api)
 ```bash
 docker compose up -d db          # start Postgres first
@@ -66,9 +81,33 @@ api process itself runs on the host or in a container.
 - Policies **fail closed**: no org context ⇒ zero rows.
 - `DATABASE_URL` (cnap_owner) is for the Prisma CLI only; `APP_DATABASE_URL` (cnap_app) runs the app.
 
-## ⚠️ Dev-only auth seam
-`OrgContextMiddleware` reads `x-org-id` to set the org for local testing. This is **not** production
-auth — real auth (Passport/Argon2/session, deriving org from the session/token) is a later phase.
+## Auth
+Auth is live: an httpOnly `rio_session` cookie carries a signed JWT (`JWT_SECRET`/`JWT_EXPIRES_IN`),
+set on `POST /api/auth/login` and `POST /api/auth/signup`. Requests may also send the same JWT as a
+`Authorization: Bearer <token>` header — both are read (cookie first, then Bearer as a fallback for
+non-browser clients), so either works.
+
+- `POST /api/auth/signup` — public NGO self-registration (org + first NGO Admin + consent record).
+  Issues a temporary password: emailed via SMTP when configured (see below), otherwise — outside
+  production only — returned in the response body (`temporaryPassword`) and logged, so nothing ever
+  leaks the temp password in a production response.
+- `POST /api/auth/change-password` — the signed-in user replaces their current password
+  (`mustChangePassword` is forced `true` after signup, so the frontend should route straight to this
+  screen until it's cleared).
+- `GET /api/auth/me`, `POST /api/auth/logout` — re-check org active state / drop the session cookie.
+
+`login` and `signup` are exempt from CSRF checks (see below) because they *issue* the CSRF cookie
+rather than consume an existing session — see `@CsrfExempt()` in `auth.controller.ts`.
+
+Auth is stateless (no server-side session/denylist): a token already issued stays valid until it
+expires even if the org is deactivated or the user's role changes afterwards. Keep `JWT_EXPIRES_IN`
+short in security-sensitive deployments.
+
+### ⚠️ Dev-only auth seam
+`OrgContextMiddleware` also reads `x-org-id` (and `x-role`) to set the org/role directly, bypassing
+the cookie/JWT above. This seam exists **only** for local testing against modules that don't yet
+enforce real auth — it is **not** a second production auth mechanism. It is unavailable in production
+by construction (`NODE_ENV` fails closed to `production` when unset — see `env.schema.ts`).
 Example: `curl -H "x-org-id: <org-uuid>" http://localhost:3000/notes`.
 
 ## Observability
@@ -96,5 +135,7 @@ runs lint, build, and the full test suite (including the cross-tenant isolation 
 gate.
 
 ## Deferred (later phases)
-pg-boss jobs · ports/adapters (LLM/storage/email) · full auth internals · scoring engine ·
-audit trail · AiDecision provenance · reference-data versioning · the 12 feature modules.
+pg-boss jobs · ports/adapters (LLM/storage/email) · auth hardening (token revocation/refresh,
+password reset) · scoring engine · AiDecision provenance · reference-data versioning · the 12
+feature modules. (Login/signup/change-password auth and a basic audit trail are already live —
+see "Auth" above.)
