@@ -50,4 +50,20 @@ describe('AuthRepository.createOrganisationAndAdmin', () => {
       organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', passwordHash: 'h', now: new Date(),
     })).rejects.toBeInstanceOf(ConflictException);
   });
+
+  it('maps a P2002 to 409 from the pg driver-adapter error shape (no meta.target)', async () => {
+    // The pg driver adapter leaves meta.target undefined and nests the raw
+    // Postgres message (with the constraint name) instead — the shape actually
+    // seen at runtime. uniqueField must still detect the offending column.
+    const { tx, tenant } = tenantMock();
+    const err = new Prisma.PrismaClientKnownRequestError('dup', {
+      code: 'P2002', clientVersion: 'x',
+      meta: { modelName: 'Organisation', driverAdapterError: { cause: { originalMessage: 'duplicate key value violates unique constraint "organisations_registration_number_key"' } } },
+    });
+    tx.organisation.create.mockRejectedValue(err);
+    const repo = new AuthRepository(tenant as never);
+    await expect(repo.createOrganisationAndAdmin({
+      organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', passwordHash: 'h', now: new Date(),
+    })).rejects.toBeInstanceOf(ConflictException);
+  });
 });
