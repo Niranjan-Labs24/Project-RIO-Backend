@@ -37,6 +37,20 @@ export const EnvSchema = Type.Object({
   DB_SSL_REJECT_UNAUTHORIZED: Type.Boolean({ default: false }),
   // Optional CA/chain PEM path to trust when verifying a non-system-CA cert.
   DB_SSL_CA: Type.Optional(Type.String()),
+  // Frontend origin allowed to send credentialed (cookie) requests. Single
+  // explicit origin — credentials mode forbids a wildcard.
+  CORS_ORIGIN: Type.String({ default: 'http://localhost:3000' }),
+  // SMTP (nodemailer). When SMTP_HOST is unset the mailer is "not configured"
+  // and signup falls back to the dev-only temp-password reveal.
+  SMTP_HOST: Type.Optional(Type.String()),
+  SMTP_PORT: Type.Number({ default: 587 }),
+  SMTP_SECURE: Type.Boolean({ default: false }),
+  SMTP_USER: Type.Optional(Type.String()),
+  SMTP_PASS: Type.Optional(Type.String()),
+  MAIL_FROM: Type.String({ default: 'RIO <no-reply@rio.local>' }),
+  // Opt-in double-submit CSRF enforcement (see CsrfGuard). Default off:
+  // requires the frontend to echo the rio_csrf cookie as X-CSRF-Token first.
+  CSRF_ENFORCE: Type.Boolean({ default: false }),
   LOG_LEVEL: Type.Union(
     [
       Type.Literal('fatal'),

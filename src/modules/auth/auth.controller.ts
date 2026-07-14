@@ -1,6 +1,13 @@
-import { BadRequestException, Body, Controller, Get, HttpCode, Post } from '@nestjs/common';
+import { randomBytes } from 'node:crypto';
+import { BadRequestException, Body, Controller, Get, HttpCode, Post, Res } from '@nestjs/common';
+import type { Response } from 'express';
+import { ConfigService } from '../../config/config.service';
+import { CSRF_COOKIE_NAME, csrfCookieOptions, SESSION_COOKIE_NAME, sessionCookieOptions } from '../../auth/session-cookie';
+import { CsrfExempt } from '../../common/guards/csrf.guard';
+import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
+import { ChangePasswordBody, SignupBody, type ChangePasswordDto, type SignupDto } from './auth.contract';
 import { AuthService } from './auth.service';
-import type { SessionContext } from './session.types';
+import type { SessionContext, SignupResponseView } from './session.types';
 
 interface LoginBody {
   email?: unknown;
@@ -9,18 +16,42 @@ interface LoginBody {
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly config: ConfigService,
+  ) {}
 
   // Open route (no @RequirePermission): this is how a caller obtains a token.
+  // CSRF-exempt: login issues the rio_csrf cookie, so no cookie exists yet for
+  // this request to double-submit — it establishes the session, not consumes it.
   @Post('login')
   @HttpCode(200)
-  login(@Body() body: LoginBody): Promise<SessionContext> {
+  @CsrfExempt()
+  async login(@Body() body: LoginBody, @Res({ passthrough: true }) res: Response): Promise<SessionContext> {
     const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
     const password = typeof body?.password === 'string' ? body.password : '';
     if (!email || !password) {
       throw new BadRequestException({ error: { code: 'VALIDATION_ERROR', message: 'email and password are required' } });
     }
-    return this.auth.login(email, password);
+    const session = await this.auth.login(email, password);
+    res.cookie(SESSION_COOKIE_NAME, session.token, sessionCookieOptions(this.config.nodeEnv === 'production'));
+    res.cookie(CSRF_COOKIE_NAME, randomBytes(18).toString('base64url'), csrfCookieOptions(this.config.nodeEnv === 'production'));
+    return session;
+  }
+
+  // Open route (no @RequirePermission): public NGO signup creates the org +
+  // first admin and issues a session, same as login. CSRF-exempt for the same
+  // reason as login: it issues the rio_csrf cookie rather than consuming it.
+  @Post('signup')
+  @CsrfExempt()
+  async signup(
+    @Body(new TypeBoxValidationPipe(SignupBody)) body: SignupDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<SignupResponseView> {
+    const result = await this.auth.signup(body);
+    res.cookie(SESSION_COOKIE_NAME, result.token, sessionCookieOptions(this.config.nodeEnv === 'production'));
+    res.cookie(CSRF_COOKIE_NAME, randomBytes(18).toString('base64url'), csrfCookieOptions(this.config.nodeEnv === 'production'));
+    return result;
   }
 
   @Get('me')
@@ -30,12 +61,24 @@ export class AuthController {
 
   @Post('logout')
   @HttpCode(204)
-  logout(): Promise<void> {
-    return this.auth.logout();
+  async logout(@Res({ passthrough: true }) res: Response): Promise<void> {
+    await this.auth.logout();
+    res.clearCookie(SESSION_COOKIE_NAME, { path: '/' });
+    res.clearCookie(CSRF_COOKIE_NAME, { path: '/' });
   }
 
   @Post('consent')
-  consent(): Promise<{ consentedAt: string }> {
+  consent(): Promise<{ consentedAt: string; policyVersion: string | null }> {
     return this.auth.consent();
+  }
+
+  // Authenticated via requireActor() inside the service — no @RequirePermission,
+  // any signed-in user may replace their own (signup-issued temporary) password.
+  @Post('change-password')
+  @HttpCode(200)
+  changePassword(
+    @Body(new TypeBoxValidationPipe(ChangePasswordBody)) body: ChangePasswordDto,
+  ): Promise<SessionContext> {
+    return this.auth.changePassword(body);
   }
 }

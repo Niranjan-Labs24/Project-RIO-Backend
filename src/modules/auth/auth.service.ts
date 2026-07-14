@@ -1,11 +1,15 @@
-import { ForbiddenException, HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, HttpException, HttpStatus, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { PasswordService } from '../../auth/password.service';
 import { TokenService } from '../../auth/token.service';
 import { ROLE_MATRIX, type RoleDef } from '../../rbac/role-matrix';
 import { AuditService } from '../audit/audit.service';
-import type { SessionContext, SessionOrg, SessionUser } from './session.types';
+import { ConfigService } from '../../config/config.service';
+import { MailerService } from '../../mailer/mailer.service';
+import { AuthRepository, conflictFor, generateTemporaryPassword } from './auth.repository';
+import type { SessionContext, SessionOrg, SessionUser, SignupResponseView } from './session.types';
+import type { ChangePasswordDto, SignupDto } from './auth.contract';
 
 const MAX_FAILED = 5;
 const LOCK_MINUTES = 15;
@@ -20,9 +24,11 @@ interface UserWithOrg {
   consentedAt: Date | null;
   failedLoginAttempts: number;
   lockedUntil: Date | null;
+  mustChangePassword: boolean;
   org: {
     id: string; name: string; logoUrl: string | null; region: string | null;
     email: string | null; sector: string | null; villages: string[]; isActive: boolean; createdAt: Date;
+    purpose: string | null; registrationNumber: string | null;
   };
 }
 
@@ -34,11 +40,16 @@ interface UserWithOrg {
 // is deferred; keep JWT_EXPIRES_IN short in security-sensitive deployments.
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly tenant: TenantPrismaService,
     private readonly passwords: PasswordService,
     private readonly tokens: TokenService,
     private readonly audit: AuditService,
+    private readonly repo: AuthRepository,
+    private readonly mailer: MailerService,
+    private readonly config: ConfigService,
   ) {}
 
   async login(email: string, password: string): Promise<SessionContext> {
@@ -137,6 +148,85 @@ export class AuthService {
     return { consentedAt: now.toISOString(), policyVersion };
   }
 
+  // Public NGO signup: creates the organisation + its first NGO Admin (RLS via
+  // runAsOrg inside the repository), records consent, and issues a session —
+  // same shape login() returns, plus how the temp password was delivered.
+  async signup(dto: SignupDto): Promise<SignupResponseView> {
+    // Friendly pre-checks (the DB unique constraint is still the source of
+    // truth, handled inside the repository for the concurrent-signup race —
+    // hence the duplicated error envelopes via the shared conflictFor()).
+    if (await this.repo.findByRegistrationNumber(dto.registrationNumber)) {
+      throw conflictFor('registrationNumber');
+    }
+    if (await this.repo.findUserByEmail(dto.email)) {
+      throw conflictFor('email');
+    }
+
+    const temporaryPassword = generateTemporaryPassword();
+    const passwordHash = await this.passwords.hash(temporaryPassword);
+    const now = new Date();
+
+    const { org, user } = await this.repo.createOrganisationAndAdmin({
+      organizationName: dto.organizationName,
+      purpose: dto.purpose,
+      registrationNumber: dto.registrationNumber,
+      email: dto.email,
+      passwordHash,
+      now,
+    });
+
+    const role = this.roleOf(user.roleId);
+    const store = getOrgStore();
+    if (store) {
+      store.orgId = org.id;
+      store.actorId = user.id;
+      store.role = role.key;
+    }
+    await this.audit.record({ action: 'create', entityType: 'organization', entityId: org.id, entityLabel: org.name, organizationId: org.id });
+
+    const token = this.tokens.sign({ sub: user.id, orgId: org.id, roleKey: role.key });
+    const session = this.buildSession({ ...user, org } as never, role, token);
+
+    const emailed = await this.mailer.sendTemporaryPassword(user.email, org.name, temporaryPassword);
+    if (emailed) {
+      return { ...session, temporaryPasswordEmailed: true };
+    }
+    if (this.config.nodeEnv !== 'production') {
+      this.logger.log(`[dev-only] Temporary password for ${user.email}: ${temporaryPassword}`);
+      return { ...session, temporaryPasswordEmailed: false, temporaryPassword };
+    }
+    return { ...session, temporaryPasswordEmailed: false };
+  }
+
+  // Signed-in user replaces a signup-issued temporary password with one they
+  // choose, clearing mustChangePassword. Authenticated via requireActor()
+  // (no module permission needed — any logged-in user may change their own
+  // password); the current-password check gates the write via RLS.
+  async changePassword(dto: ChangePasswordDto): Promise<SessionContext> {
+    const actorId = requireActor();
+    const found = (await this.tenant.runInOrgContext((tx) =>
+      tx.user.findUnique({ where: { id: actorId }, include: { org: true } }),
+    )) as UserWithOrg | null;
+    if (!found || !found.passwordHash) {
+      throw new UnauthorizedException({ error: { code: 'UNAUTHENTICATED', message: 'Authentication required' } });
+    }
+    if (!(await this.passwords.verify(found.passwordHash, dto.currentPassword))) {
+      throw new UnauthorizedException({ error: { code: 'INVALID_CURRENT_PASSWORD', message: 'Current password is incorrect' } });
+    }
+    // Mirror login()/me(): a deactivated org must not get a re-issued session,
+    // even mid change-password (checked post-verification, same rationale).
+    if (!found.org.isActive) {
+      throw new ForbiddenException({ error: { code: 'ORG_INACTIVE', message: 'This organization is not active' } });
+    }
+    const passwordHash = await this.passwords.hash(dto.newPassword);
+    const updated = (await this.tenant.runInOrgContext((tx) =>
+      tx.user.update({ where: { id: actorId }, data: { passwordHash, mustChangePassword: false }, include: { org: true } }),
+    )) as UserWithOrg;
+    const role = this.roleOf(updated.roleId);
+    const token = this.tokens.sign({ sub: updated.id, orgId: updated.org.id, roleKey: role.key });
+    return this.buildSession(updated, role, token);
+  }
+
   private roleOf(roleId: string): RoleDef {
     const role = ROLE_MATRIX.find((r) => r.id === roleId);
     if (!role) {
@@ -154,7 +244,8 @@ export class AuthService {
       id: u.org.id, name: u.org.name, logoUrl: u.org.logoUrl, region: u.org.region,
       email: u.org.email, sector: u.org.sector, villages: u.org.villages,
       isActive: u.org.isActive, createdAt: u.org.createdAt.toISOString(),
+      purpose: u.org.purpose, registrationNumber: u.org.registrationNumber,
     };
-    return { token, user, organization, role };
+    return { token, user, organization, role, mustChangePassword: u.mustChangePassword };
   }
 }

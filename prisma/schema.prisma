@@ -85,16 +85,18 @@ model ConsentPolicy {
 
 // ──────── Tenancy & identity ────────
 model Organisation {
-  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  name      String   @db.VarChar(200)
-  region    String?  @db.VarChar(200)
-  email     String?  @db.VarChar(320)
-  sector    Sector?
-  logoUrl   String?  @map("logo_url")
-  villages  String[] @default([])
-  isActive  Boolean  @default(true) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                 String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  name               String   @db.VarChar(200)
+  purpose            String?  @db.VarChar(500)
+  registrationNumber String?  @unique @map("registration_number") @db.VarChar(100)
+  region             String?  @db.VarChar(200)
+  email              String?  @db.VarChar(320)
+  sector             Sector?
+  logoUrl            String?  @map("logo_url")
+  villages           String[] @default([])
+  isActive           Boolean  @default(true) @map("is_active")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   users     User[]
   consents  ConsentAcceptance[]
@@ -111,6 +113,7 @@ model User {
   email               String     @unique @db.VarChar(320)
   status              UserStatus @default(invited)
   passwordHash        String?    @map("password_hash") @db.VarChar(255)
+  mustChangePassword  Boolean    @default(false) @map("must_change_password")
   consentedAt         DateTime?  @map("consented_at") @db.Timestamptz(6)
   failedLoginAttempts Int        @default(0) @map("failed_login_attempts")
   lockedUntil         DateTime?  @map("locked_until") @db.Timestamptz(6)

@@ -23,11 +23,16 @@ async function bootstrap(): Promise<void> {
   app.use(helmet({ hsts: { maxAge: 15_552_000, includeSubDomains: true } }));
   app.use(cookieParser());
   app.setGlobalPrefix('api');
+
+  const config = app.get(ConfigService);
+  // Cookie session is httpOnly, so the frontend uses credentials:"include" —
+  // that requires one explicit origin (never a wildcard) with credentials on.
+  app.enableCors({ origin: config.corsOrigin, credentials: true });
+
   app.useGlobalFilters(new AllExceptionsFilter());
   app.enableShutdownHooks();
   setupOpenApi(app);
 
-  const config = app.get(ConfigService);
   await app.listen(config.port);
 }
 

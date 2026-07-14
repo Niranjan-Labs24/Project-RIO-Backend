@@ -17,6 +17,8 @@ export interface SessionOrg {
   villages: string[];
   isActive: boolean;
   createdAt: string;
+  purpose: string | null;
+  registrationNumber: string | null;
 }
 
 // role matches the FE AuthRole ({id,key,name,crossEntity,permissions}); RoleDef
@@ -26,4 +28,11 @@ export interface SessionContext {
   user: SessionUser;
   organization: SessionOrg;
   role: RoleDef;
+  mustChangePassword: boolean;
+}
+
+/** signup's response — SessionContext plus how the temp password was delivered. */
+export interface SignupResponseView extends SessionContext {
+  temporaryPasswordEmailed: boolean;
+  temporaryPassword?: string;
 }
