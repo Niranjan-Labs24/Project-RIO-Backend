@@ -6,7 +6,10 @@ export interface EvidenceRow {
   fileType: string;
   fileSize: number;
   storageKey: string;
-  fileHash: string;
+  // Null only for rows written before the column existed — they can't be
+  // backfilled (the hash comes from the upload buffer, not from disk), so
+  // they're simply skipped by duplicate detection.
+  fileHash: string | null;
   uploadedBy: string;
   uploadedAt: Date;
 }

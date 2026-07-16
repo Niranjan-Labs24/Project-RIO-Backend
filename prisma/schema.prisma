@@ -254,7 +254,14 @@ model Evidence {
   storageKey String   @map("storage_key") @db.VarChar(500)
   // sha256 of the uploaded file's bytes, hex-encoded (64 chars) — computed
   // once from the in-memory upload buffer, never re-read from storageKey.
-  fileHash   String   @map("file_hash") @db.VarChar(64)
+  //
+  // Nullable *because* of that: rows written before this column existed have
+  // no buffer to hash and can't be backfilled from SQL, so they keep a null
+  // hash and simply never take part in duplicate detection. Every row created
+  // from now on has one. Don't tighten this to NOT NULL without first
+  // backfilling by re-reading each storageKey off disk — which is exactly
+  // what the line above says this hash never does.
+  fileHash   String?  @map("file_hash") @db.VarChar(64)
   uploadedBy String   @map("uploaded_by") @db.Uuid
   uploadedAt DateTime @default(now()) @map("uploaded_at") @db.Timestamptz(6)
 

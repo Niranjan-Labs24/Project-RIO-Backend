@@ -49,7 +49,14 @@ export class EvidenceService {
     const existingHashes = new Set(
       (
         await this.tenant.runInOrgContext((tx) => tx.evidence.findMany({ where: { studyId }, select: { fileHash: true } }))
-      ).map((r) => r.fileHash),
+      )
+        .map((r) => r.fileHash)
+        // Rows predating the fileHash column have no hash and can't get one
+        // (it comes from the upload buffer, not from storageKey), so they
+        // can't participate in the comparison. Filtered out rather than left
+        // in the set: a null would never match anyway, and dropping it keeps
+        // the set honestly typed as Set<string>.
+        .filter((hash): hash is string => hash !== null),
     );
 
     const created: EvidenceRow[] = [];
