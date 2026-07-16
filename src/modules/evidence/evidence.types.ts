@@ -6,6 +6,7 @@ export interface EvidenceRow {
   fileType: string;
   fileSize: number;
   storageKey: string;
+  fileHash: string;
   uploadedBy: string;
   uploadedAt: Date;
 }
@@ -23,6 +24,11 @@ export interface Evidence {
   uploadedBy: string;
   uploadedByName: string | null;
   uploadedAt: string;
+  // Set only on the upload response — true if a file with the same sha256
+  // already existed in this Study (including an earlier file in the same
+  // upload batch) when this row was created. Not blocking; not present on
+  // listByStudyId's response.
+  isDuplicate?: boolean;
 }
 
 export interface UploadedFilePayload {

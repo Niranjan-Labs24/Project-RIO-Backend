@@ -252,6 +252,9 @@ model Evidence {
   fileType   String   @map("file_type") @db.VarChar(100)
   fileSize   Int      @default(0) @map("file_size")
   storageKey String   @map("storage_key") @db.VarChar(500)
+  // sha256 of the uploaded file's bytes, hex-encoded (64 chars) — computed
+  // once from the in-memory upload buffer, never re-read from storageKey.
+  fileHash   String   @map("file_hash") @db.VarChar(64)
   uploadedBy String   @map("uploaded_by") @db.Uuid
   uploadedAt DateTime @default(now()) @map("uploaded_at") @db.Timestamptz(6)
 
@@ -260,6 +263,7 @@ model Evidence {
 
   @@index([studyId])
   @@index([orgId])
+  @@index([studyId, fileHash])
   @@map("evidence")
 }
 
