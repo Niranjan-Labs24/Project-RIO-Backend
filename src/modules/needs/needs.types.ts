@@ -2,6 +2,7 @@ export interface NeedRow {
   id: string;
   studyId: string;
   orgId: string;
+  title: string;
   statement: string;
   village: string[];
   source: string;
@@ -13,6 +14,7 @@ export interface NeedRow {
 export interface Need {
   id: string;
   studyId: string;
+  title: string;
   statement: string;
   village: string[];
   source: string;
@@ -22,13 +24,13 @@ export interface Need {
 }
 
 export interface CreateNeedPayload {
+  title: string;
   statement: string;
   village: string[];
-  source: string;
 }
 
 export interface UpdateNeedPayload {
+  title?: string;
   statement?: string;
   village?: string[];
-  source?: string;
 }

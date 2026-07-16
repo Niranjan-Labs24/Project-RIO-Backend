@@ -219,6 +219,7 @@ model Need {
   id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   studyId   String   @unique @map("study_id") @db.Uuid
   orgId     String   @map("org_id") @db.Uuid
+  title     String   @db.VarChar(300)
   statement String
   // A Need can name more than one village — same array-of-strings shape as
   // Organisation.villages (was `String` — a comma-separated "Village A,
@@ -227,6 +228,8 @@ model Need {
   // per the confirmed business decision. Do not promote these to
   // master-data tables without an explicit ticket.
   village   String[] @default([])
+  // System-set (e.g. "manual_entry"), never client-writable — set by the
+  // service based on the creation path, not accepted in CreateNeedBody.
   source    String   @db.VarChar(200)
   createdBy String   @map("created_by") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)

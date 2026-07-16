@@ -5,7 +5,12 @@ import { AuditService } from '../audit/audit.service';
 import type { AuditChange } from '../audit/audit.types';
 import type { CreateNeedPayload, Need, NeedRow, UpdateNeedPayload } from './needs.types';
 
-const DIFF_FIELDS = ['statement', 'village', 'source'] as const;
+const DIFF_FIELDS = ['title', 'statement', 'village'] as const;
+
+// System-set on every Need created through this endpoint — never
+// client-writable. A future creation path (e.g. AI-classification-derived)
+// would pass a different literal here, not accept one from the request body.
+const MANUAL_ENTRY_SOURCE = 'manual_entry';
 
 @Injectable()
 export class NeedsService {
@@ -28,12 +33,20 @@ export class NeedsService {
         throw new ConflictException({ error: { code: 'NEED_ALREADY_EXISTS', message: 'This study already has a need' } });
       }
       const need = (await tx.need.create({
-        data: { studyId, orgId, statement: payload.statement, village: payload.village, source: payload.source, createdBy },
+        data: {
+          studyId,
+          orgId,
+          title: payload.title,
+          statement: payload.statement,
+          village: payload.village,
+          source: MANUAL_ENTRY_SOURCE,
+          createdBy,
+        },
       })) as NeedRow;
       await tx.study.update({ where: { id: studyId }, data: { status: 'need_captured' } });
       return need;
     });
-    await this.audit.record({ action: 'create', entityType: 'need', entityId: created.id, entityLabel: created.statement.slice(0, 80) });
+    await this.audit.record({ action: 'create', entityType: 'need', entityId: created.id, entityLabel: created.title.slice(0, 80) });
     return this.toNeed(created);
   }
 
@@ -51,15 +64,15 @@ export class NeedsService {
       const updated = (await tx.need.update({
         where: { studyId },
         data: {
+          ...(patch.title !== undefined ? { title: patch.title } : {}),
           ...(patch.statement !== undefined ? { statement: patch.statement } : {}),
           ...(patch.village !== undefined ? { village: patch.village } : {}),
-          ...(patch.source !== undefined ? { source: patch.source } : {}),
         },
       })) as NeedRow;
       return { updated, changes };
     });
     if (changes.length > 0) {
-      await this.audit.record({ action: 'edit', entityType: 'need', entityId: updated.id, entityLabel: updated.statement.slice(0, 80), changes });
+      await this.audit.record({ action: 'edit', entityType: 'need', entityId: updated.id, entityLabel: updated.title.slice(0, 80), changes });
     }
     return this.toNeed(updated);
   }
@@ -83,6 +96,7 @@ export class NeedsService {
     return {
       id: row.id,
       studyId: row.studyId,
+      title: row.title,
       statement: row.statement,
       village: row.village,
       source: row.source,
