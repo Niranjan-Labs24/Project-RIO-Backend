@@ -44,11 +44,11 @@ enum PermissionModule {
 
 // ──────── Reference (global, seeded, read-only to cnap_app) ────────
 model Role {
-  id          String   @id @db.VarChar(64) // stable seeded id "role_<key>" (matches the FE)
-  key         String   @unique @db.VarChar(64)
-  name        String   @db.VarChar(120)
+  id          String  @id @db.VarChar(64) // stable seeded id "role_<key>" (matches the FE)
+  key         String  @unique @db.VarChar(64)
+  name        String  @db.VarChar(120)
   description String
-  crossEntity Boolean  @map("cross_entity")
+  crossEntity Boolean @map("cross_entity")
 
   permissions RolePermission[]
   users       User[]
@@ -204,9 +204,9 @@ model Study {
   createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org      Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  need     Need?
-  evidence Evidence[]
+  org         Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  need        Need?
+  evidence    Evidence[]
   aiDecisions AiDecision[]
 
   @@index([orgId])
@@ -224,9 +224,8 @@ model Need {
   // A Need can name more than one village — same array-of-strings shape as
   // Organisation.villages (was `String` — a comma-separated "Village A,
   // Village B" entry used to be stored as one literal string instead of
-  // being treated as multiple villages). Source stays free text for now,
-  // per the confirmed business decision. Do not promote these to
-  // master-data tables without an explicit ticket.
+  // being treated as multiple villages). Do not promote this to a
+  // master-data table without an explicit ticket.
   village   String[] @default([])
   // System-set (e.g. "manual_entry"), never client-writable — set by the
   // service based on the creation path, not accepted in CreateNeedBody.
