@@ -35,7 +35,7 @@ async function seedOrg(input: {
   registrationNumber: string;
   name: string;
   purpose: string;
-  region: string;
+  region: string[];
   email: string;
   sector: Sector;
   villages: string[];
@@ -113,7 +113,7 @@ async function main(): Promise<void> {
     registrationNumber: 'REG-DEMO-0001',
     name: 'Demo NGO',
     purpose: 'Water, sanitation, and hygiene access for underserved villages.',
-    region: 'North',
+    region: ['North'],
     email: 'admin@demo-ngo.org',
     sector: Sector.wash,
     villages: ['Village A', 'Village B'],
@@ -126,7 +126,7 @@ async function main(): Promise<void> {
     registrationNumber: 'REG-DEMO-0002',
     name: 'Riverside Community Trust',
     purpose: 'Livelihoods and economic development along the riverside communities.',
-    region: 'South',
+    region: ['South'],
     email: 'admin@riverside-ngo.org',
     sector: Sector.livelihoods,
     villages: ['Riverside Village'],
@@ -151,7 +151,7 @@ async function main(): Promise<void> {
           studyId: study.id,
           orgId: demoOrgId,
           statement: 'Households in Village A report unreliable access to safe drinking water during the dry season.',
-          village: 'Village A',
+          village: ['Village A'],
           source: 'Field interview, June 2026',
           createdBy: officer.id,
         },

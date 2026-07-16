@@ -207,7 +207,7 @@ erDiagram
 ## 3. What actually changed in this pass (one migration)
 
 Database changes are called "migrations" — small, ordered SQL scripts that update the table
-structure. Everything for Week 2 (Study/Need/Evidence/AI Classification) lives in a single
+structure. Everything for Week 2 (Study/Need/Evidence/AI Classification) lives 1in a single
 migration, **`20260714120000_week2_data_capture`**:
 
 - Creates the four new tables (`studies`, `needs`, `evidence`, `ai_decisions`) from scratch,

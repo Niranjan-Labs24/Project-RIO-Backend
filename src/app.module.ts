@@ -16,6 +16,7 @@ import { HealthModule } from './health/health.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { AuditModule } from './modules/audit/audit.module';
+import { ContactModule } from './modules/contact/contact.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { UsersModule } from './modules/users/users.module';
 import { ConsentModule } from './modules/consent/consent.module';
@@ -49,6 +50,7 @@ import { AiDecisionsModule } from './modules/ai-decisions/ai-decisions.module';
     RolesModule,
     AuthModule,
     AuditModule,
+    ContactModule,
     OrganizationsModule,
     UsersModule,
     ConsentModule,
