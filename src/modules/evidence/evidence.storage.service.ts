@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
 import { BadRequestException, Injectable } from '@nestjs/common';
@@ -49,6 +49,13 @@ export class EvidenceStorageService {
         },
       });
     }
+  }
+
+  // Hashes the in-memory upload buffer directly — never re-read from
+  // storageKey/disk, so this must be called with the same buffer passed
+  // to save(), before or after, not derived from the saved file.
+  hashBuffer(buffer: Buffer): string {
+    return createHash('sha256').update(buffer).digest('hex');
   }
 
   async save(originalName: string, buffer: Buffer): Promise<string> {
