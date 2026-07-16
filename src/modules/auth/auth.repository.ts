@@ -1,12 +1,13 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { v7 as uuidv7 } from 'uuid';
-import { Prisma, UserStatus } from '../../generated/prisma';
+import { Prisma, UserStatus, type Sector } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 
 export interface CreateOrgAdminInput {
   organizationName: string;
-  purpose: string;
+  sector?: string;
+  purpose?: string;
   registrationNumber: string;
   email: string;
   passwordHash: string;
@@ -65,6 +66,7 @@ export class AuthRepository {
         const org = await tx.organisation.create({
           data: {
             id: orgId, name: input.organizationName, purpose: input.purpose,
+            sector: input.sector ? (input.sector as Sector) : null,
             registrationNumber: input.registrationNumber, email: input.email,
           },
         });
@@ -80,12 +82,18 @@ export class AuthRepository {
             consentedAt: input.now,
           },
         });
+        // RIO-FR-Add-02: consent is mandatory, not best-effort — if there's no
+        // active policy to accept, signup must fail rather than silently
+        // create an account with no consent record at all.
         const policy = await tx.consentPolicy.findFirst({ where: { active: true }, orderBy: { createdAt: 'desc' } });
-        if (policy) {
-          await tx.consentAcceptance.create({
-            data: { orgId, userId: user.id, policyVersion: policy.version, policyText: policy.text, acceptedAt: input.now },
+        if (!policy) {
+          throw new ConflictException({
+            error: { code: 'NO_ACTIVE_CONSENT_POLICY', message: 'No active consent policy is configured; signup is blocked until one is published.' },
           });
         }
+        await tx.consentAcceptance.create({
+          data: { orgId, userId: user.id, policyVersion: policy.version, policyText: policy.text, acceptedAt: input.now },
+        });
         return { org, user };
       });
     } catch (err) {

@@ -26,7 +26,7 @@ interface UserWithOrg {
   lockedUntil: Date | null;
   mustChangePassword: boolean;
   org: {
-    id: string; name: string; logoUrl: string | null; region: string | null;
+    id: string; name: string; logoUrl: string | null; region: string[];
     email: string | null; sector: string | null; villages: string[]; isActive: boolean; createdAt: Date;
     purpose: string | null; registrationNumber: string | null;
   };
@@ -174,6 +174,7 @@ export class AuthService {
 
     const { org, user } = await this.repo.createOrganisationAndAdmin({
       organizationName: dto.organizationName,
+      sector: dto.sector,
       purpose: dto.purpose,
       registrationNumber: dto.registrationNumber,
       email: dto.email,

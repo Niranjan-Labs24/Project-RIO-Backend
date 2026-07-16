@@ -118,8 +118,8 @@ async function main(): Promise<void> {
     sector: Sector.wash,
     villages: ['Village A', 'Village B'],
     users: [
-      { roleId: 'role_ngo_admin', name: 'Demo Admin', email: 'admin@demo-ngo.org' },
-      { roleId: 'role_ngo_research_officer', name: 'Demo Research Officer', email: 'officer@demo-ngo.org' },
+      { roleId: 'role_ngo_admin', name: 'Sarah', email: 'admin@demo-ngo.org' },
+      { roleId: 'role_ngo_research_officer', name: 'Amira', email: 'officer@demo-ngo.org' },
     ],
   });
   const riversideOrgId = await seedOrg({
@@ -131,6 +131,32 @@ async function main(): Promise<void> {
     sector: Sector.livelihoods,
     villages: ['Riverside Village'],
     users: [{ roleId: 'role_ngo_admin', name: 'Riverside Admin', email: 'admin@riverside-ngo.org' }],
+  });
+
+  // RIO-FR-001 demo fixtures: one Study + its Need per demo org, so the
+  // frontend isn't blocked waiting on manual data entry. Idempotent by
+  // title (Study has no other natural key) — skip creation if it's
+  // already there from a prior seed run.
+  await prisma.$transaction(async (tx) => {
+    await setOrg(tx as never, demoOrgId);
+    const officer = await tx.user.findUnique({ where: { email: 'officer@demo-ngo.org' } });
+    const title = 'Village A water access assessment';
+    const existingStudy = await tx.study.findFirst({ where: { title } });
+    if (!existingStudy && officer) {
+      const study = await tx.study.create({
+        data: { orgId: demoOrgId, title, createdBy: officer.id, status: 'need_captured' },
+      });
+      await tx.need.create({
+        data: {
+          studyId: study.id,
+          orgId: demoOrgId,
+          statement: 'Households in Village A report unreliable access to safe drinking water during the dry season.',
+          village: 'Village A',
+          source: 'Field interview, June 2026',
+          createdBy: officer.id,
+        },
+      });
+    }
   });
 
   // Platform-wide System Admin — not scoped to either org above.

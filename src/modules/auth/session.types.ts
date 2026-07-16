@@ -11,7 +11,7 @@ export interface SessionOrg {
   id: string;
   name: string;
   logoUrl: string | null;
-  region: string | null;
+  region: string[];
   email: string | null;
   sector: string | null;
   villages: string[];

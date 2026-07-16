@@ -73,4 +73,7 @@ export class ConfigService {
   get csrfEnforce(): boolean {
     return this.config.CSRF_ENFORCE;
   }
+  get evidenceStoragePath(): string {
+    return this.config.EVIDENCE_STORAGE_PATH;
+  }
 }

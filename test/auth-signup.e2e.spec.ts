@@ -35,7 +35,7 @@ describe('signup -> me -> change-password (cookie)', () => {
 
     const signup = await request(server)
       .post('/api/auth/signup')
-      .send({ organizationName: 'E2E NGO', purpose: 'testing', registrationNumber: rn, email })
+      .send({ organizationName: 'E2E NGO', purpose: 'testing', registrationNumber: rn, email, consentAccepted: true })
       .expect(201);
 
     const cookie = signup.headers['set-cookie'];

@@ -19,7 +19,7 @@ const mailerStub = { sendTemporaryPassword: vi.fn() };
 const configStub = { nodeEnv: 'development' } as unknown as ConfigService;
 
 const orgFixture = {
-  id: 'o1', name: 'Demo NGO', logoUrl: null, region: 'North', email: 'admin@demo-ngo.org',
+  id: 'o1', name: 'Demo NGO', logoUrl: null, region: ['North'], email: 'admin@demo-ngo.org',
   sector: 'wash', villages: ['A'], isActive: true, createdAt: new Date('2026-01-01T00:00:00Z'),
   purpose: 'Water access', registrationNumber: 'RN-001',
 };
@@ -112,7 +112,7 @@ describe('AuthService.signup', () => {
     repo.findByRegistrationNumber.mockResolvedValue(null);
     repo.findUserByEmail.mockResolvedValue(null);
     repo.createOrganisationAndAdmin.mockResolvedValue({
-      org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: 'RN1', logoUrl: null, region: null, email: null, sector: null, villages: [], isActive: true, createdAt: new Date() },
+      org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: 'RN1', logoUrl: null, region: [], email: null, sector: null, villages: [], isActive: true, createdAt: new Date() },
       user: { id: 'u1', name: 'Org Admin', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h', consentedAt: new Date(), failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: true },
     });
     mailer.sendTemporaryPassword.mockResolvedValue(true);
@@ -137,7 +137,7 @@ describe('AuthService.signup', () => {
     repo.findByRegistrationNumber.mockResolvedValue(null);
     repo.findUserByEmail.mockResolvedValue(null);
     repo.createOrganisationAndAdmin.mockResolvedValue({
-      org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: 'RN1', logoUrl: null, region: null, email: null, sector: null, villages: [], isActive: true, createdAt: new Date() },
+      org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: 'RN1', logoUrl: null, region: [], email: null, sector: null, villages: [], isActive: true, createdAt: new Date() },
       user: { id: 'u1', name: 'Org Admin', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h', consentedAt: new Date(), failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: true },
     });
     mailer.sendTemporaryPassword.mockResolvedValue(false);
@@ -151,7 +151,7 @@ describe('AuthService.signup', () => {
     repo.findByRegistrationNumber.mockResolvedValue(null);
     repo.findUserByEmail.mockResolvedValue(null);
     repo.createOrganisationAndAdmin.mockResolvedValue({
-      org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: 'RN1', logoUrl: null, region: null, email: null, sector: null, villages: [], isActive: true, createdAt: new Date() },
+      org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: 'RN1', logoUrl: null, region: [], email: null, sector: null, villages: [], isActive: true, createdAt: new Date() },
       user: { id: 'u1', name: 'Org Admin', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h', consentedAt: new Date(), failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: true },
     });
     mailer.sendTemporaryPassword.mockResolvedValue(false);
@@ -227,7 +227,7 @@ describe('AuthService.changePassword', () => {
                 id: 'u1', name: 'A', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h2',
                 consentedAt: null, failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: false,
                 org: {
-                  id: 'o1', name: 'Org', logoUrl: null, region: null, email: null, sector: null, villages: [],
+                  id: 'o1', name: 'Org', logoUrl: null, region: [], email: null, sector: null, villages: [],
                   isActive: true, createdAt: new Date(), purpose: 'p', registrationNumber: 'RN1',
                 },
               };

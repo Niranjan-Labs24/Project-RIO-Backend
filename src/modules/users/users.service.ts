@@ -1,21 +1,30 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma, UserStatus } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { ROLE_MATRIX, roleByKey, type RoleDef } from '../../rbac/role-matrix';
+import { PasswordService } from '../../auth/password.service';
+import { ConfigService } from '../../config/config.service';
+import { MailerService } from '../../mailer/mailer.service';
+import { generateTemporaryPassword } from '../auth/auth.repository';
 import { AuditService } from '../audit/audit.service';
 import type { AuditChange } from '../audit/audit.types';
 import type {
-  CreateForOrgPayload, InviteUserPayload, OrgUser, UpdateUserPayload, UserRow,
+  CreateForOrgPayload, InviteUserPayload, InviteUserResponse, OrgUser, UpdateUserPayload, UserRow,
 } from './users.types';
 
 const DIFF_FIELDS = ['name', 'roleId', 'status'] as const;
 
 @Injectable()
 export class UsersService {
+  private readonly logger = new Logger(UsersService.name);
+
   constructor(
     private readonly tenant: TenantPrismaService,
     private readonly audit: AuditService,
+    private readonly passwords: PasswordService,
+    private readonly mailer: MailerService,
+    private readonly config: ConfigService,
   ) {}
 
   async list(opts: { limit?: number; offset?: number } = {}): Promise<OrgUser[]> {
@@ -24,16 +33,50 @@ export class UsersService {
     return rows.map((r) => this.toOrgUser(r));
   }
 
-  async invite(payload: InviteUserPayload): Promise<OrgUser> {
+  // Same pattern as AuthService.signup(): a user an NGO Admin creates never
+  // chooses their own password up front (per Ganesh) — a temporary one is
+  // generated here, hashed, stored, and mustChangePassword is set so the
+  // PasswordChangeGuard forces a reset on first login. Emailed if possible;
+  // otherwise (no SMTP configured, e.g. local dev) surfaced back to the
+  // caller so the admin can hand it to the new user directly.
+  async invite(payload: InviteUserPayload): Promise<InviteUserResponse> {
     const role = this.validateRole(payload.roleId);
     const orgId = requireOrgId();
-    const created = await this.createUser(() =>
-      this.tenant.runInOrgContext((tx) =>
-        tx.user.create({ data: { orgId, name: payload.name, email: payload.email, roleId: role.id, status: UserStatus.invited } }),
-      ),
+    const { created, orgName } = await this.createUser(() =>
+      this.tenant.runInOrgContext(async (tx) => {
+        const org = await tx.organisation.findUnique({ where: { id: orgId } });
+        const user = await tx.user.create({
+          data: { orgId, name: payload.name, email: payload.email, roleId: role.id, status: UserStatus.invited },
+        });
+        return { created: user, orgName: org?.name ?? '' };
+      }),
     );
     await this.audit.record({ action: 'create', entityType: 'user', entityId: created.id, entityLabel: created.email });
-    return this.toOrgUser(created);
+    const credentials = await this.provisionTemporaryPassword(created.id, created.email, orgName, orgId);
+    return { ...this.toOrgUser(created), ...credentials };
+  }
+
+  // Generates + hashes a temporary password, stores it with mustChangePassword
+  // set, emails it, and (dev-only, mailer unconfigured) returns it in the
+  // clear so the caller can hand it to the new user some other way.
+  private async provisionTemporaryPassword(
+    userId: string,
+    email: string,
+    orgName: string,
+    orgId: string,
+  ): Promise<{ temporaryPasswordEmailed: boolean; temporaryPassword?: string }> {
+    const temporaryPassword = generateTemporaryPassword();
+    const passwordHash = await this.passwords.hash(temporaryPassword);
+    await this.tenant.runAsOrg(orgId, (tx) =>
+      tx.user.update({ where: { id: userId }, data: { passwordHash, mustChangePassword: true } }),
+    );
+    const emailed = await this.mailer.sendTemporaryPassword(email, orgName, temporaryPassword);
+    if (emailed) return { temporaryPasswordEmailed: true };
+    if (this.config.nodeEnv !== 'production') {
+      this.logger.log(`[dev-only] Temporary password for ${email}: ${temporaryPassword}`);
+      return { temporaryPasswordEmailed: false, temporaryPassword };
+    }
+    return { temporaryPasswordEmailed: false };
   }
 
   async update(id: string, patch: UpdateUserPayload): Promise<OrgUser> {
@@ -88,17 +131,22 @@ export class UsersService {
   }
 
   // System-Admin cross-org invite.
-  async createForOrg(payload: CreateForOrgPayload): Promise<OrgUser> {
+  async createForOrg(payload: CreateForOrgPayload): Promise<InviteUserResponse> {
     this.assertCrossEntity();
     const role = this.validateRole(payload.roleId);
-    const created = await this.createUser(() =>
-      this.tenant.runAsOrg(payload.organizationId, (tx) =>
-        tx.user.create({ data: { orgId: payload.organizationId, name: payload.name, email: payload.email, roleId: role.id, status: UserStatus.invited } }),
-      ),
+    const { created, orgName } = await this.createUser(() =>
+      this.tenant.runAsOrg(payload.organizationId, async (tx) => {
+        const org = await tx.organisation.findUnique({ where: { id: payload.organizationId } });
+        const user = await tx.user.create({
+          data: { orgId: payload.organizationId, name: payload.name, email: payload.email, roleId: role.id, status: UserStatus.invited },
+        });
+        return { created: user, orgName: org?.name ?? '' };
+      }),
     );
     // Attribute the audit event to the affected org, not the acting admin's org.
     await this.audit.record({ action: 'create', entityType: 'user', entityId: created.id, entityLabel: created.email, organizationId: payload.organizationId });
-    return this.toOrgUser(created);
+    const credentials = await this.provisionTemporaryPassword(created.id, created.email, orgName, payload.organizationId);
+    return { ...this.toOrgUser(created), ...credentials };
   }
 
   // Bounded pagination (NFR-006): default 100, hard cap 200.
@@ -136,9 +184,9 @@ export class UsersService {
   // Runs a user-creating transaction, translating a duplicate-email unique
   // violation into a clean 409 (instead of a leaked 500) so a globally-unique
   // email collision is reported as a conflict, not an internal error.
-  private async createUser(create: () => Promise<unknown>): Promise<UserRow> {
+  private async createUser<T>(create: () => Promise<T>): Promise<T> {
     try {
-      return (await create()) as UserRow;
+      return await create();
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
         throw new ConflictException({ error: { code: 'EMAIL_TAKEN', message: 'A user with this email already exists' } });

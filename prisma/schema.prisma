@@ -89,7 +89,11 @@ model Organisation {
   name               String   @db.VarChar(200)
   purpose            String?  @db.VarChar(500)
   registrationNumber String?  @unique @map("registration_number") @db.VarChar(100)
-  region             String?  @db.VarChar(200)
+  // A org can span more than one region — same array-of-strings shape as
+  // `villages` below, not a single free-text field (was `String?` — a
+  // comma-separated "Region A, Region B" entry used to be stored as one
+  // literal string instead of being treated as multiple regions).
+  region             String[] @default([])
   email              String?  @db.VarChar(320)
   sector             Sector?
   logoUrl            String?  @map("logo_url")
@@ -98,9 +102,13 @@ model Organisation {
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  users     User[]
-  consents  ConsentAcceptance[]
-  auditLogs AuditLog[]
+  users       User[]
+  consents    ConsentAcceptance[]
+  auditLogs   AuditLog[]
+  studies     Study[]
+  needs       Need[]
+  evidence    Evidence[]
+  aiDecisions AiDecision[]
 
   @@map("organisations")
 }
@@ -163,4 +171,131 @@ model AuditLog {
   @@index([organisationId])
   @@index([entityType, entityId])
   @@map("audit_logs")
+}
+
+// ──────── Week 2: Data Capture (RIO-FR-001, RIO-FR-Add-01, RIO-FR-003) ────────
+
+// Matches the RIO-FR-001/Add-01/003 flow: draft -> need_captured ->
+// evidence_submitted -> ai_classified -> human_reviewed. Uploading evidence
+// no longer advances status by itself (per Ganesh) — a researcher must
+// explicitly submit (EvidenceService.submit) before AI Classification is
+// allowed to run; that submit action is what sets evidence_submitted.
+// Stops there deliberately — survey_ready/published/archived belong to
+// Survey Builder/Reports, out of scope for Week 2.
+enum StudyStatus {
+  draft
+  need_captured
+  evidence_submitted
+  ai_classified
+  human_reviewed
+}
+
+model Study {
+  id        String      @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId     String      @map("org_id") @db.Uuid
+  title     String      @db.VarChar(300)
+  // Selected from (or added alongside) the org's own configured villages
+  // list — same array-of-strings shape as Organisation.villages, not a
+  // master-data table, per the same "don't promote to master data" call
+  // made for Need.village.
+  villages  String[]    @default([])
+  status    StudyStatus @default(draft)
+  createdBy String      @map("created_by") @db.Uuid
+  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org      Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  need     Need?
+  evidence Evidence[]
+  aiDecisions AiDecision[]
+
+  @@index([orgId])
+  @@map("studies")
+}
+
+// RIO-FR-001: a Study contains exactly one Need — enforced here via the
+// unique studyId (1:1 at the DB level, not just app-level convention).
+model Need {
+  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  studyId   String   @unique @map("study_id") @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  statement String
+  // A Need can name more than one village — same array-of-strings shape as
+  // Organisation.villages (was `String` — a comma-separated "Village A,
+  // Village B" entry used to be stored as one literal string instead of
+  // being treated as multiple villages). Source stays free text for now,
+  // per the confirmed business decision. Do not promote these to
+  // master-data tables without an explicit ticket.
+  village   String[] @default([])
+  source    String   @db.VarChar(200)
+  createdBy String   @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  study Study        @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  org   Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@map("needs")
+}
+
+// RIO-FR-Add-01: multiple files per Study, uploaded after the Need exists.
+// storageKey is a local disk path for Phase 1 — kept as a plain string so
+// swapping to an object-storage key later needs no schema change.
+model Evidence {
+  id         String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  studyId    String   @map("study_id") @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  fileName   String   @map("file_name") @db.VarChar(255)
+  fileType   String   @map("file_type") @db.VarChar(100)
+  fileSize   Int      @default(0) @map("file_size")
+  storageKey String   @map("storage_key") @db.VarChar(500)
+  uploadedBy String   @map("uploaded_by") @db.Uuid
+  uploadedAt DateTime @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+
+  study Study        @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  org   Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([studyId])
+  @@index([orgId])
+  @@map("evidence")
+}
+
+// RIO-FR-003: only the two touchpoints Week 2 produces a placeholder for.
+// More values (evidence_summary, report_summary, etc.) get added later by
+// whichever team builds those stages.
+enum AiTouchpoint {
+  need_classification
+  priority_scoring
+}
+
+// One generic table for every AI touchpoint — AI suggestion and human
+// override are separate columns on the same row (auditable, explainable),
+// not a separate table per touchpoint.
+//
+// TODO(RIO-FR-003): `suggestion`'s shape and how `confidence` is computed
+// are both placeholders pending the buyer-provided methodology package —
+// see ai-decisions/classification.placeholder.ts.
+model AiDecision {
+  id            String       @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId         String       @map("org_id") @db.Uuid
+  studyId       String       @map("study_id") @db.Uuid
+  touchpoint    AiTouchpoint
+  subjectType   String       @map("subject_type") @db.VarChar(100)
+  subjectId     String       @map("subject_id") @db.Uuid
+  modelName     String       @map("model_name") @db.VarChar(150)
+  modelVersion  String       @map("model_version") @db.VarChar(100)
+  suggestion    Json
+  confidence    Decimal
+  humanDecision Json?        @map("human_decision")
+  decidedBy     String?      @map("decided_by") @db.Uuid
+  decidedAt     DateTime?    @map("decided_at") @db.Timestamptz(6)
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org   Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  study Study        @relation(fields: [studyId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([subjectType, subjectId])
+  @@map("ai_decisions")
 }

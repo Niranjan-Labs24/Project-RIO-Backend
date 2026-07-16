@@ -13,7 +13,7 @@ import type {
   CreateOrganizationPayload, Organization, OrganizationSummary, OrgRow, UpdateOrganizationPayload,
 } from './organizations.types';
 
-const DIFF_FIELDS = ['name', 'region', 'email', 'sector', 'logoUrl', 'villages', 'isActive'] as const;
+const DIFF_FIELDS = ['name', 'region', 'email', 'sector', 'purpose', 'logoUrl', 'villages', 'isActive'] as const;
 
 @Injectable()
 export class OrganizationsService {
@@ -60,7 +60,7 @@ export class OrganizationsService {
         const created = await tx.organisation.create({
           data: {
             id: orgId, name: payload.name, purpose: payload.purpose, registrationNumber: payload.registrationNumber,
-            region: payload.region ?? null, email: payload.email ?? null,
+            region: payload.region ?? [], email: payload.email ?? null,
             sector: payload.sector ? (payload.sector as Sector) : null, villages: payload.villages ?? [], isActive: true,
           },
         });
@@ -117,6 +117,7 @@ export class OrganizationsService {
     if (patch.region !== undefined) data.region = patch.region;
     if (patch.email !== undefined) data.email = patch.email;
     if (patch.sector !== undefined) data.sector = patch.sector ? (patch.sector as Sector) : null;
+    if (patch.purpose !== undefined) data.purpose = patch.purpose;
     if (patch.logoUrl !== undefined) data.logoUrl = patch.logoUrl;
     if (patch.villages !== undefined) data.villages = patch.villages;
     if (patch.isActive !== undefined) data.isActive = patch.isActive;
@@ -129,6 +130,13 @@ export class OrganizationsService {
     const changes: AuditChange[] = [];
     for (const f of DIFF_FIELDS) {
       if (after[f] !== undefined && JSON.stringify(before[f]) !== JSON.stringify(after[f])) {
+        // logoUrl is a data: URI (the raw image, base64-encoded) — never put
+        // that in the audit trail, just record that it changed, same
+        // reasoning as never logging a real password value.
+        if (f === 'logoUrl') {
+          changes.push({ field: f, before: before[f] ? '(logo)' : null, after: after[f] ? '(logo)' : null });
+          continue;
+        }
         changes.push({ field: f, before: before[f], after: after[f] });
       }
     }

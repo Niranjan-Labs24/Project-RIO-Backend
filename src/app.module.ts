@@ -18,6 +18,11 @@ import { AuthModule } from './modules/auth/auth.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { UsersModule } from './modules/users/users.module';
+import { ConsentModule } from './modules/consent/consent.module';
+import { StudiesModule } from './modules/studies/studies.module';
+import { NeedsModule } from './modules/needs/needs.module';
+import { EvidenceModule } from './modules/evidence/evidence.module';
+import { AiDecisionsModule } from './modules/ai-decisions/ai-decisions.module';
 
 @Module({
   imports: [
@@ -46,6 +51,11 @@ import { UsersModule } from './modules/users/users.module';
     AuditModule,
     OrganizationsModule,
     UsersModule,
+    ConsentModule,
+    StudiesModule,
+    NeedsModule,
+    EvidenceModule,
+    AiDecisionsModule,
   ],
   controllers: [],
   providers: [

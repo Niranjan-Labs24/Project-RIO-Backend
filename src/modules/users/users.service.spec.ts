@@ -4,54 +4,79 @@ import { UsersService } from './users.service';
 import type { UserRow } from './users.types';
 
 function fakeTenant(opts: { rows?: UserRow[]; current?: UserRow | null; onDelete?: (where: unknown) => void }) {
+  const tx = {
+    organisation: {
+      findUnique: async () => ({ name: 'Test Org' }),
+    },
+    user: {
+      findMany: async () => opts.rows ?? [],
+      create: async ({ data }: { data: Record<string, unknown> }) => ({ id: 'new', createdAt: new Date('2026-01-01T00:00:00Z'), ...data }),
+      findUnique: async () => opts.current ?? null,
+      update: async ({ data }: { data: Record<string, unknown> }) => ({ ...(opts.current as object), ...data }),
+      delete: async ({ where }: { where: unknown }) => { opts.onDelete?.(where); return opts.current; },
+    },
+  };
   return {
-    runInOrgContext: async (fn: (tx: unknown) => unknown) =>
-      fn({
-        user: {
-          findMany: async () => opts.rows ?? [],
-          create: async ({ data }: { data: Record<string, unknown> }) => ({ id: 'new', createdAt: new Date('2026-01-01T00:00:00Z'), ...data }),
-          findUnique: async () => opts.current ?? null,
-          update: async ({ data }: { data: Record<string, unknown> }) => ({ ...(opts.current as object), ...data }),
-          delete: async ({ where }: { where: unknown }) => { opts.onDelete?.(where); return opts.current; },
-        },
-      }),
+    runInOrgContext: async (fn: (tx: unknown) => unknown) => fn(tx),
+    runAsOrg: async (_orgId: string, fn: (tx: unknown) => unknown) => fn(tx),
   };
 }
 
 const auditStub = { record: async () => {} };
+// A temporary-password stub trio, shared by every test below: hashing is a
+// no-op, the mailer reports "not configured" (matching local dev with no
+// SMTP set up) so provisionTemporaryPassword takes its dev-only fallback
+// branch, and nodeEnv is non-production so that branch doesn't throw.
+const passwordsStub = { hash: async () => 'hashed-password' };
+const mailerStub = { sendTemporaryPassword: async () => false };
+const configStub = { nodeEnv: 'test' };
+
+function makeService(tenant: ReturnType<typeof fakeTenant>, audit: unknown = auditStub) {
+  return new UsersService(
+    tenant as never,
+    audit as never,
+    passwordsStub as never,
+    mailerStub as never,
+    configStub as never,
+  );
+}
 
 describe('UsersService', () => {
   it('list maps rows to OrgUser with role summary and status', async () => {
     const rows: UserRow[] = [
       { id: 'u1', name: 'A', email: 'a@x.org', roleId: 'role_ngo_admin', status: 'active', createdAt: new Date('2026-01-01T00:00:00Z') },
     ];
-    const svc = new UsersService(fakeTenant({ rows }) as never, auditStub as never);
+    const svc = makeService(fakeTenant({ rows }));
     const users = await orgContext.run({ requestId: 'r', orgId: 'o1' }, () => svc.list());
     expect(users[0].role.key).toBe('ngo_admin');
     expect(users[0].status).toBe('active');
   });
 
   it('invite rejects an invalid roleId', async () => {
-    const svc = new UsersService(fakeTenant({}) as never, auditStub as never);
+    const svc = makeService(fakeTenant({}));
     await expect(
       orgContext.run({ requestId: 'r', orgId: 'o1' }, () => svc.invite({ name: 'X', email: 'x@x.org', roleId: 'role_bogus' })),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('invite creates an invited user and records an audit event', async () => {
+  it('invite creates an invited user, provisions a temporary password, and records an audit event', async () => {
     const recorded: unknown[] = [];
     const audit = { record: async (i: unknown) => { recorded.push(i); } };
-    const svc = new UsersService(fakeTenant({}) as never, audit as never);
+    const svc = makeService(fakeTenant({}), audit);
     const u = await orgContext.run({ requestId: 'r', orgId: 'o1' }, () =>
       svc.invite({ name: 'New', email: 'n@x.org', roleId: 'role_field_researcher' }),
     );
     expect(u.status).toBe('invited');
     expect(u.role.key).toBe('field_researcher');
     expect(recorded).toHaveLength(1);
+    // Mailer stub reports unconfigured — dev-only fallback surfaces the
+    // generated password back to the caller instead of silently dropping it.
+    expect(u.temporaryPasswordEmailed).toBe(false);
+    expect(typeof u.temporaryPassword).toBe('string');
   });
 
   it('forbids a tenant admin (non-crossEntity) from assigning a crossEntity role (privilege escalation)', async () => {
-    const svc = new UsersService(fakeTenant({}) as never, auditStub as never);
+    const svc = makeService(fakeTenant({}));
     // ngo_admin trying to mint a system_admin (crossEntity) must be blocked.
     await expect(
       orgContext.run({ requestId: 'r', orgId: 'o1', role: 'ngo_admin' }, () =>
@@ -61,12 +86,12 @@ describe('UsersService', () => {
     const current: UserRow = { id: 'u1', name: 'Me', email: 'me@x.org', roleId: 'role_ngo_admin', status: 'active', createdAt: new Date('2026-01-01T00:00:00Z') };
     await expect(
       orgContext.run({ requestId: 'r', orgId: 'o1', role: 'ngo_admin' }, () =>
-        new UsersService(fakeTenant({ current }) as never, auditStub as never).update('u1', { roleId: 'role_center_supervisor' })),
+        makeService(fakeTenant({ current })).update('u1', { roleId: 'role_center_supervisor' })),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('allows a crossEntity admin (system_admin) to assign a crossEntity role', async () => {
-    const svc = new UsersService(fakeTenant({}) as never, auditStub as never);
+    const svc = makeService(fakeTenant({}));
     const u = await orgContext.run({ requestId: 'r', orgId: 'o1', role: 'system_admin' }, () =>
       svc.invite({ name: 'Sup', email: 'sup@x.org', roleId: 'role_center_supervisor' }));
     expect(u.role.key).toBe('center_supervisor');
@@ -76,14 +101,14 @@ describe('UsersService', () => {
     const current: UserRow = { id: 'u1', name: 'Old', email: 'o@x.org', roleId: 'role_field_researcher', status: 'invited', createdAt: new Date('2026-01-01T00:00:00Z') };
     const recorded: { changes?: { field: string; before: unknown; after: unknown }[] }[] = [];
     const audit = { record: async (i: unknown) => { recorded.push(i as never); } };
-    const svc = new UsersService(fakeTenant({ current }) as never, audit as never);
+    const svc = makeService(fakeTenant({ current }), audit);
     const u = await orgContext.run({ requestId: 'r', orgId: 'o1' }, () => svc.update('u1', { status: 'active' }));
     expect(u.status).toBe('active');
     expect(recorded[0].changes?.[0]).toMatchObject({ field: 'status', before: 'invited', after: 'active' });
   });
 
   it('remove rejects deleting your own account', async () => {
-    const svc = new UsersService(fakeTenant({}) as never, auditStub as never);
+    const svc = makeService(fakeTenant({}));
     await expect(
       orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'me', role: 'ngo_admin' }, () => svc.remove('me')),
     ).rejects.toBeInstanceOf(BadRequestException);
@@ -92,7 +117,7 @@ describe('UsersService', () => {
   it('remove 404s when the target is absent (also the cross-org RLS case)', async () => {
     // In org context, a user in another org is invisible to findUnique, so
     // both "does not exist" and "exists in another org" surface as NOT_FOUND.
-    const svc = new UsersService(fakeTenant({ current: null }) as never, auditStub as never);
+    const svc = makeService(fakeTenant({ current: null }));
     await expect(
       orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'me', role: 'ngo_admin' }, () => svc.remove('someone-else')),
     ).rejects.toBeInstanceOf(NotFoundException);
@@ -101,7 +126,7 @@ describe('UsersService', () => {
   it('forbids a non-crossEntity admin from removing a crossEntity (system) account', async () => {
     const current: UserRow = { id: 'sys', name: 'System Admin', email: 'sys@x.org', roleId: 'role_system_admin', status: 'active', createdAt: new Date('2026-01-01T00:00:00Z') };
     let deleted = false;
-    const svc = new UsersService(fakeTenant({ current, onDelete: () => { deleted = true; } }) as never, auditStub as never);
+    const svc = makeService(fakeTenant({ current, onDelete: () => { deleted = true; } }));
     await expect(
       orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'me', role: 'ngo_admin' }, () => svc.remove('sys')),
     ).rejects.toBeInstanceOf(ForbiddenException);
@@ -113,7 +138,7 @@ describe('UsersService', () => {
     const recorded: { action?: string; entityId?: string; entityLabel?: string }[] = [];
     const audit = { record: async (i: unknown) => { recorded.push(i as never); } };
     let deletedWhere: unknown;
-    const svc = new UsersService(fakeTenant({ current, onDelete: (w) => { deletedWhere = w; } }) as never, audit as never);
+    const svc = makeService(fakeTenant({ current, onDelete: (w) => { deletedWhere = w; } }), audit);
     await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'me', role: 'ngo_admin' }, () => svc.remove('u9'));
     expect(deletedWhere).toEqual({ id: 'u9' });
     expect(recorded[0]).toMatchObject({ action: 'delete', entityId: 'u9', entityLabel: 'field@x.org' });
@@ -122,7 +147,7 @@ describe('UsersService', () => {
   it('lets a crossEntity admin (system_admin) remove a crossEntity account', async () => {
     const current: UserRow = { id: 'sys2', name: 'Other System', email: 'sys2@x.org', roleId: 'role_system_admin', status: 'active', createdAt: new Date('2026-01-01T00:00:00Z') };
     let deleted = false;
-    const svc = new UsersService(fakeTenant({ current, onDelete: () => { deleted = true; } }) as never, auditStub as never);
+    const svc = makeService(fakeTenant({ current, onDelete: () => { deleted = true; } }));
     await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'me', role: 'system_admin' }, () => svc.remove('sys2'));
     expect(deleted).toBe(true);
   });

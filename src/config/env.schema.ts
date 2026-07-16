@@ -51,6 +51,10 @@ export const EnvSchema = Type.Object({
   // Opt-in double-submit CSRF enforcement (see CsrfGuard). Default off:
   // requires the frontend to echo the rio_csrf cookie as X-CSRF-Token first.
   CSRF_ENFORCE: Type.Boolean({ default: false }),
+  // RIO-FR-Add-01: local disk path evidence files are written to (Phase 1 —
+  // swap to object storage later without touching the Evidence table, which
+  // only stores a storageKey string).
+  EVIDENCE_STORAGE_PATH: Type.String({ default: './storage/evidence' }),
   LOG_LEVEL: Type.Union(
     [
       Type.Literal('fatal'),
