@@ -39,15 +39,19 @@ export class ReviewerSlaService {
         orderBy: { createdAt: "asc" },
       });
       const studyIds = Array.from(new Set(pendingRows.map((d) => d.studyId)));
+      const needIds = Array.from(new Set(pendingRows.map((d) => d.needId)));
       const [studyRows, needRows] = await Promise.all([
         tx.study.findMany({ where: { id: { in: studyIds } } }),
-        tx.need.findMany({ where: { studyId: { in: studyIds } } }),
+        tx.need.findMany({ where: { id: { in: needIds } } }),
       ]);
       return { pending: pendingRows, studies: studyRows, needs: needRows };
     });
 
     const studyById = new Map(studies.map((s) => [s.id, s]));
-    const needByStudy = new Map(needs.map((n) => [n.studyId, n]));
+    // Keyed by the AiDecision's own needId — a Study can have many Needs
+    // now, each with its own pending classification, so this must resolve
+    // per-decision, not collapse to "the" Need for the Study.
+    const needById = new Map(needs.map((n) => [n.id, n]));
 
     return pending.map((decision) => {
       const dueAt = new Date(decision.createdAt.getTime() + slaMs);
@@ -55,9 +59,10 @@ export class ReviewerSlaService {
       const status = remainingMs < 0 ? "breached" : remainingMs < slaMs * 0.25 ? "at_risk" : "pending";
       return {
         aiDecisionId: decision.id,
+        needId: decision.needId,
         studyId: decision.studyId,
         studyTitle: studyById.get(decision.studyId)?.title ?? decision.studyId,
-        needStatement: needByStudy.get(decision.studyId)?.statement ?? null,
+        needStatement: needById.get(decision.needId)?.statement ?? null,
         touchpoint: decision.touchpoint,
         createdAt: decision.createdAt.toISOString(),
         dueAt: dueAt.toISOString(),

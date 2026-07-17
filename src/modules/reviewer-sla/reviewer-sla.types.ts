@@ -2,6 +2,7 @@ export type SlaAlertStatus = "pending" | "at_risk" | "breached";
 
 export interface SlaAlert {
   aiDecisionId: string;
+  needId: string;
   studyId: string;
   studyTitle: string;
   needStatement: string | null;

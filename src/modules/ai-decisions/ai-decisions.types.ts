@@ -3,6 +3,7 @@ export type AiTouchpoint = 'need_classification' | 'priority_scoring';
 export interface AiDecisionRow {
   id: string;
   orgId: string;
+  needId: string;
   studyId: string;
   touchpoint: AiTouchpoint;
   subjectType: string;
@@ -19,6 +20,7 @@ export interface AiDecisionRow {
 
 export interface AiDecision {
   id: string;
+  needId: string;
   studyId: string;
   touchpoint: AiTouchpoint;
   subjectType: string;

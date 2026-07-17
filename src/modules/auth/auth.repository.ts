@@ -1,7 +1,7 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { v7 as uuidv7 } from 'uuid';
-import { Prisma, UserStatus, type Sector } from '../../generated/prisma';
+import { Prisma, UserStatus } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 
 export interface CreateOrgAdminInput {
@@ -65,7 +65,7 @@ export class AuthRepository {
         const org = await tx.organisation.create({
           data: {
             id: orgId, name: input.organizationName, purpose: input.purpose,
-            sector: input.sector ? (input.sector as Sector) : null,
+            sector: input.sector ?? null,
             registrationNumber: input.registrationNumber, email: input.email,
           },
         });

@@ -35,12 +35,18 @@ export interface CreateSharingRequestPayload {
   note?: string;
 }
 
+export interface SharedNeedSnapshot {
+  id: string;
+  statement: string;
+  village: string[];
+  status: string;
+}
+
 export interface SharedStudySnapshot {
   studyId: string;
   title: string;
-  status: string;
-  needStatement: string | null;
-  needVillages: string[];
+  // A Study can hold many Needs — sharing the whole Study shares all of them.
+  needs: SharedNeedSnapshot[];
   evidenceCount: number;
 }
 

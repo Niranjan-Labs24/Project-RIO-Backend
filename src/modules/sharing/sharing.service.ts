@@ -103,14 +103,14 @@ export class SharingService {
     return this.tenant.runAsSupervisor(async (tx) => {
       const study = await tx.study.findUnique({ where: { id: row.studyId } });
       if (!study) throw new NotFoundException({ error: { code: "STUDY_NOT_FOUND", message: "Study not found" } });
-      const need = await tx.need.findUnique({ where: { studyId: row.studyId } });
+      // A Study can hold many Needs now — sharing the whole Study means
+      // sharing all of them, not "the" one.
+      const needs = await tx.need.findMany({ where: { studyId: row.studyId }, orderBy: { createdAt: "asc" } });
       const evidenceCount = await tx.evidence.count({ where: { studyId: row.studyId } });
       return {
         studyId: study.id,
         title: study.title,
-        status: study.status,
-        needStatement: need?.statement ?? null,
-        needVillages: need?.village ?? [],
+        needs: needs.map((n) => ({ id: n.id, statement: n.statement, village: n.village, status: n.status })),
         evidenceCount,
       };
     });
@@ -138,14 +138,17 @@ export class SharingService {
     return rows.map((r) => ({ id: r.id, name: r.name }));
   }
 
-  // Completed (human_reviewed) studies for a given org — the only ones
-  // eligible to be requested for sharing. Study is RLS-scoped per org, so a
-  // cross-org read has to go through the same SELECT-only supervisor path
-  // used elsewhere for cross-org lookups.
+  // Studies with at least one reviewer-approved (or further along) Need are
+  // the only ones eligible to be requested for sharing. Study/Need are
+  // RLS-scoped per org, so a cross-org read has to go through the same
+  // SELECT-only supervisor path used elsewhere for cross-org lookups.
   async lookupStudiesForOrg(ownerOrgId: string): Promise<StudyLookupResult[]> {
     const rows = await this.tenant.runAsSupervisor((tx) =>
       tx.study.findMany({
-        where: { orgId: ownerOrgId, status: "human_reviewed" },
+        where: {
+          orgId: ownerOrgId,
+          needs: { some: { status: { in: ["reviewer_approved", "survey_created", "survey_published"] } } },
+        },
         orderBy: { updatedAt: "desc" },
       }),
     );

@@ -1,6 +1,7 @@
 export interface PriorityScoreRow {
   id: string;
   orgId: string;
+  needId: string;
   studyId: string;
   // Null = computed across every Survey Link ("Consolidated"); set = scoped
   // to just that one link. See the schema.prisma model comment.
@@ -11,27 +12,38 @@ export interface PriorityScoreRow {
   factors: unknown;
   cycleNote: string | null;
   scoredAt: Date;
+  approvedBy: string | null;
+  approvedAt: Date | null;
 }
 
 export interface PriorityScore {
   id: string;
+  needId: string;
   studyId: string;
   surveyLinkId: string | null;
+  // The normalized 0-100 severity score (Σ(response value × indicator
+  // weight), normalized against the max possible weighted score).
   overallScore: number;
   level: "critical" | "high" | "medium" | "low";
   gapType: string;
-  factors: Array<{ key: string; label: string; value: number; weight: number }>;
+  // Explainable breakdown — one entry per indicator that fed this score,
+  // so the frontend can show indicator/weight/response value/contribution
+  // without recomputing anything.
+  factors: Array<{ indicator: string; weight: number; responseValue: number; weightedContribution: number }>;
   cycleNote: string | null;
   scoredAt: string;
-  isPlaceholder: true;
+  // Priority Scoring stays subject to reviewer approval — never publicly
+  // visible (dashboard/reports) until approved. See PriorityService.approve.
+  isApproved: boolean;
+  approvedAt: string | null;
 }
 
 // Org-wide dashboard row — every study, whether or not it's been scored yet
 // (a study with no PriorityScore row must still show up, just unscored —
-// see the fixed listForOrg()).
+// see the fixed listForOrg()). Only approved scores are ever surfaced here.
 export interface PriorityDashboardEntry {
   studyId: string;
   studyTitle: string;
-  studyStatus: string;
+  needId: string;
   score: PriorityScore | null;
 }

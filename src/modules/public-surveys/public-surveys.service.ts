@@ -17,11 +17,11 @@ export class PublicSurveysService {
     private readonly audit: AuditService,
   ) {}
 
-  async listLinks(studyId: string): Promise<PublicSurveyLink[]> {
-    await this.findStudyOrThrow(studyId);
+  async listLinks(needId: string): Promise<PublicSurveyLink[]> {
+    await this.findNeedOrThrow(needId);
     const rows = await this.tenant.runInOrgContext((tx) =>
       tx.publicSurveyLink.findMany({
-        where: { studyId },
+        where: { needId },
         orderBy: { createdAt: 'desc' },
         include: { _count: { select: { responses: true } } },
       }),
@@ -29,8 +29,8 @@ export class PublicSurveysService {
     return rows.map((r) => this.toPublicLink(r as unknown as LinkWithResponseCount));
   }
 
-  async createLink(studyId: string, payload: CreateSurveyLinkPayload): Promise<PublicSurveyLink> {
-    await this.findStudyOrThrow(studyId);
+  async createLink(needId: string, payload: CreateSurveyLinkPayload): Promise<PublicSurveyLink> {
+    const need = await this.findNeedOrThrow(needId);
     const orgId = requireOrgId();
     const actorId = requireActor();
     const token = randomBytes(24).toString('base64url');
@@ -46,14 +46,14 @@ export class PublicSurveysService {
     try {
       row = (await this.tenant.runInOrgContext((tx) =>
         tx.publicSurveyLink.create({
-          data: { orgId, studyId, label, token, createdBy: actorId, expiresAt },
+          data: { orgId, needId, studyId: need.studyId, label, token, createdBy: actorId, expiresAt },
           include: { _count: { select: { responses: true } } },
         }),
       )) as unknown as LinkWithResponseCount;
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         throw new ConflictException({
-          error: { code: 'SURVEY_LINK_LABEL_ALREADY_EXISTS', message: 'A survey link with this label already exists for this study.' },
+          error: { code: 'SURVEY_LINK_LABEL_ALREADY_EXISTS', message: 'A survey link with this label already exists for this need.' },
         });
       }
       throw err;
@@ -62,11 +62,11 @@ export class PublicSurveysService {
     return this.toPublicLink(row);
   }
 
-  async deactivateLink(studyId: string, linkId: string): Promise<PublicSurveyLink> {
-    await this.findStudyOrThrow(studyId);
+  async deactivateLink(needId: string, linkId: string): Promise<PublicSurveyLink> {
+    await this.findNeedOrThrow(needId);
     const row = await this.tenant.runInOrgContext(async (tx) => {
       const existing = await tx.publicSurveyLink.findUnique({ where: { id: linkId } });
-      if (!existing || existing.studyId !== studyId) {
+      if (!existing || existing.needId !== needId) {
         throw new NotFoundException({ error: { code: 'SURVEY_LINK_NOT_FOUND', message: 'Survey link not found' } });
       }
       return tx.publicSurveyLink.update({
@@ -79,14 +79,16 @@ export class PublicSurveysService {
     return this.toPublicLink(row as unknown as LinkWithResponseCount);
   }
 
-  private async findStudyOrThrow(studyId: string): Promise<void> {
-    const study = await this.tenant.runInOrgContext((tx) => tx.study.findUnique({ where: { id: studyId } }));
-    if (!study) throw new NotFoundException({ error: { code: 'STUDY_NOT_FOUND', message: 'Study not found' } });
+  private async findNeedOrThrow(needId: string) {
+    const need = await this.tenant.runInOrgContext((tx) => tx.need.findUnique({ where: { id: needId } }));
+    if (!need) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+    return need;
   }
 
   private toPublicLink(row: LinkWithResponseCount): PublicSurveyLink {
     return {
       id: row.id,
+      needId: row.needId,
       studyId: row.studyId,
       label: row.label,
       token: row.token,

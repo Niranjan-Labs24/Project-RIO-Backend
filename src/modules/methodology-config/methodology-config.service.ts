@@ -84,7 +84,7 @@ export class MethodologyConfigService {
 
   // Critical > High > Medium is the methodology's own ordering (scope.md
   // §8's Priority Level Classification) — an inverted set of thresholds
-  // would make levelFor() in priority.placeholder.ts produce nonsensical
+  // would make mapPriorityLevel() in priority/scoring.ts produce nonsensical
   // rankings, so this is rejected before it's ever saved.
   private validateThresholds(thresholds: PriorityThresholds): void {
     const { criticalSeverity, highSeverity, mediumSeverity, equityHighSeverity } = thresholds;

@@ -128,18 +128,32 @@ export class ReportsService {
         .runInOrgContext(async (tx) => {
           const study = await tx.study.findUnique({ where: { id: studyId } });
           if (!study) throw new NotFoundException({ error: { code: "STUDY_NOT_FOUND", message: "Study not found" } });
-          const need = await tx.need.findUnique({ where: { studyId } });
-          const evidenceCount = await tx.evidence.count({ where: { studyId } });
-          const priority = await tx.priorityScore.findFirst({ where: { studyId }, orderBy: { scoredAt: "desc" } });
-          const summary = await tx.aiSummary.findFirst({ where: { studyId }, orderBy: { generatedAt: "desc" } });
+          // A Study can hold many Needs now — the report covers all of them,
+          // each with its own evidence count/priority score/AI summary.
+          const needs = await tx.need.findMany({ where: { studyId }, orderBy: { createdAt: "asc" } });
+          const needSections = await Promise.all(
+            needs.map(async (need) => {
+              const [evidenceCount, priority, summary] = await Promise.all([
+                tx.evidence.count({ where: { needId: need.id } }),
+                tx.priorityScore.findFirst({ where: { needId: need.id, approvedAt: { not: null } }, orderBy: { scoredAt: "desc" } }),
+                tx.aiSummary.findFirst({ where: { needId: need.id }, orderBy: { generatedAt: "desc" } }),
+              ]);
+              return {
+                needId: need.id,
+                statement: need.statement,
+                villages: need.village,
+                status: need.status,
+                evidenceCount,
+                priorityScore: priority ? { level: priority.level, overallScore: priority.overallScore } : null,
+                aiSummary: summary?.summaryText ?? null,
+              };
+            }),
+          );
           return {
             title: `Individual Study Report — ${study.title}`,
             content: {
-              study: { id: study.id, title: study.title, status: study.status },
-              need: need ? { statement: need.statement, villages: need.village } : null,
-              evidenceCount,
-              priorityScore: priority ? { level: priority.level, overallScore: priority.overallScore } : null,
-              aiSummary: summary?.summaryText ?? null,
+              study: { id: study.id, title: study.title },
+              needs: needSections,
             },
           };
         })

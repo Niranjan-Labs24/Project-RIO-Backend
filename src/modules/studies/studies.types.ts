@@ -1,28 +1,21 @@
-export type StudyStatus = 'draft' | 'need_captured' | 'evidence_submitted' | 'ai_classified' | 'human_reviewed';
-
 export interface StudyRow {
   id: string;
   orgId: string;
   title: string;
-  domain: string | null;
-  subDomain: string | null;
   villages: string[];
-  status: StudyStatus;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
 }
 
+// A Study is a pure container — no status/domain/subDomain of its own.
+// Each Need under it runs its own independent lifecycle (see
+// needs/needs.types.ts's NeedStatus) — a Study stays open for new Needs
+// regardless of how far along its existing ones are.
 export interface Study {
   id: string;
   title: string;
-  // Set only once a human approves an AI Classification decision on this
-  // Study's Need (see AiDecisionsService.review) — never directly editable
-  // through Update Study.
-  domain: string | null;
-  subDomain: string | null;
   villages: string[];
-  status: StudyStatus;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -38,20 +31,9 @@ export interface UpdateStudyPayload {
   villages?: string[];
 }
 
-// RIO business rule: a researcher can delete a study up until
-// it's been through AI Classification/Human Review — once classified or
-// reviewed, it underpins a workflow other people rely on and can't be
-// deleted out from under them.
-export const DELETABLE_STUDY_STATUSES: readonly StudyStatus[] = [
-  'draft',
-  'need_captured',
-  'evidence_submitted',
-];
-
 export interface ListStudiesQuery {
   limit?: number;
   offset?: number;
-  status?: StudyStatus;
   village?: string;
   search?: string;
 }
@@ -65,4 +47,5 @@ export interface StudyListResult {
 
 export interface StudyDetail extends Study {
   evidenceCount: number;
+  needCount: number;
 }

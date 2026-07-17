@@ -8,22 +8,22 @@ import { SurveysService } from './surveys.service';
 export class SurveysController {
   constructor(private readonly service: SurveysService) {}
 
-  @Get('studies/:studyId/survey')
+  @Get('needs/:needId/survey')
   @RequirePermission('surveyBuilder', 'read')
-  getSurveyByStudyId(@Param('studyId') studyId: string) {
-    return this.service.getSurveyByStudyId(studyId);
+  getSurveyByNeedId(@Param('needId') needId: string) {
+    return this.service.getSurveyByNeedId(needId);
   }
 
-  @Post('studies/:studyId/survey')
+  @Post('needs/:needId/survey')
   @RequirePermission('surveyBuilder', 'write')
-  createEmptySurvey(@Param('studyId') studyId: string) {
-    return this.service.createEmptySurvey(studyId);
+  createEmptySurvey(@Param('needId') needId: string) {
+    return this.service.createEmptySurvey(needId);
   }
 
-  @Post('studies/:studyId/recommend-questions')
+  @Post('needs/:needId/recommend-questions')
   @RequirePermission('surveyBuilder', 'write')
-  recommendQuestions(@Param('studyId') studyId: string) {
-    return this.service.recommendQuestions(studyId);
+  recommendQuestions(@Param('needId') needId: string) {
+    return this.service.recommendQuestions(needId);
   }
 
   @Patch('surveys/:id/questions')

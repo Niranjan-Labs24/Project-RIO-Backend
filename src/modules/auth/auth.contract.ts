@@ -1,15 +1,10 @@
 import { registerSchema, T, type Static } from '../../contract/typebox';
 
-// Mirrors organizations.contract.ts's own SectorEnum (and prisma `Sector`).
-const SectorEnum = T.Union([
-  T.Literal('education'),
-  T.Literal('healthcare'),
-  T.Literal('agriculture'),
-  T.Literal('wash'),
-  T.Literal('livelihoods'),
-  T.Literal('disaster_relief'),
-  T.Literal('other'),
-]);
+// Not a fixed enum: `sector` is validated against the live, active Domain
+// list from Methodology Configuration (see AuthService.signup —
+// DomainsService.listDomains()), or the literal "other". Mirrors
+// organizations.contract.ts's own SectorValue.
+const SectorValue = T.String({ minLength: 1, maxLength: 200 });
 
 /**
  * Public signup — no password/adminName fields: the email IS the NGO Admin
@@ -30,7 +25,7 @@ export const SignupBody = registerSchema(
   T.Object(
     {
       organizationName: T.String({ minLength: 1, maxLength: 200 }),
-      sector: T.Optional(SectorEnum),
+      sector: T.Optional(SectorValue),
       purpose: T.Optional(T.String({ maxLength: 500 })),
       registrationNumber: T.String({ minLength: 1, maxLength: 100 }),
       email: T.String({ format: 'email' }),

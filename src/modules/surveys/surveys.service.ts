@@ -3,6 +3,7 @@ import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { requireActor, requireOrgId } from '../../tenancy/org-context';
 import { AuditService } from '../audit/audit.service';
 import { AiService } from '../ai/ai.service';
+import { MethodologyConfigService } from '../methodology-config/methodology-config.service';
 
 @Injectable()
 export class SurveysService {
@@ -10,6 +11,7 @@ export class SurveysService {
     private readonly tenant: TenantPrismaService,
     private readonly audit: AuditService,
     private readonly ai: AiService,
+    private readonly methodologyConfig: MethodologyConfigService,
   ) {}
 
   // Shared shape for both kinds of SurveyQuestion row — Question Bank
@@ -77,10 +79,10 @@ export class SurveysService {
   // PUBLISHED survey fresh, so if a survey is edited and republished later,
   // the next citizen to open the link gets the latest version automatically
   // — nothing about a link points at a frozen snapshot.
-  async getPublishedSurveyByStudyId(studyId: string) {
+  async getPublishedSurveyByNeedId(needId: string) {
     return this.tenant.runAsSupervisor(async (tx) => {
       const survey = await tx.survey.findFirst({
-        where: { studyId, status: 'PUBLISHED' },
+        where: { needId, status: 'PUBLISHED' },
         include: {
           surveyQuestions: {
             orderBy: { order: 'asc' },
@@ -91,18 +93,20 @@ export class SurveysService {
       if (!survey) return null;
       return {
         id: survey.id,
+        needId: survey.needId,
         studyId: survey.studyId,
         title: survey.title,
         status: survey.status,
+        methodologyVersion: survey.methodologyVersion,
         questions: survey.surveyQuestions.map((sq) => this.toQuestionDto(sq)),
       };
     });
   }
 
-  async getSurveyByStudyId(studyId: string) {
+  async getSurveyByNeedId(needId: string) {
     const row = await this.tenant.runInOrgContext(async (tx) => {
       const survey = await tx.survey.findFirst({
-        where: { studyId },
+        where: { needId },
         include: {
           surveyQuestions: {
             orderBy: { order: 'asc' },
@@ -117,9 +121,11 @@ export class SurveysService {
 
     return {
       id: row.id,
+      needId: row.needId,
       studyId: row.studyId,
       title: row.title,
       status: row.status,
+      methodologyVersion: row.methodologyVersion,
       questions: row.surveyQuestions.map((sq) => this.toQuestionDto(sq)),
     };
   }
@@ -130,30 +136,31 @@ export class SurveysService {
   // combobox. Idempotent: if a survey already exists for this study (e.g.
   // AI suggestions were generated first, or this was already called), just
   // return it rather than wiping its questions.
-  async createEmptySurvey(studyId: string): Promise<any> {
+  async createEmptySurvey(needId: string): Promise<any> {
     const orgId = requireOrgId();
     const actorId = requireActor();
 
     const { survey, created } = await this.tenant.runInOrgContext(async (tx) => {
-      const study = await tx.study.findUnique({ where: { id: studyId } });
-      if (!study) {
-        throw new NotFoundException({ error: { code: 'STUDY_NOT_FOUND', message: 'Study not found' } });
+      const need = await tx.need.findUnique({ where: { id: needId } });
+      if (!need) {
+        throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
       }
-      if (!study.domain || !study.subDomain) {
+      if (!need.domain || !need.subDomain) {
         throw new BadRequestException({
           error: {
             code: 'NO_APPROVED_DOMAIN',
-            message: 'This study needs an approved AI Classification (domain/sub-domain) before generating a survey.',
+            message: 'This need requires an approved AI Classification (domain/sub-domain) before generating a survey.',
           },
         });
       }
 
-      const existing = await tx.survey.findFirst({ where: { studyId } });
+      const existing = await tx.survey.findFirst({ where: { needId } });
       if (existing) return { survey: existing, created: false };
 
       const row = await tx.survey.create({
-        data: { orgId, studyId, title: `Survey: ${study.title}`, status: 'DRAFT', createdBy: actorId },
+        data: { orgId, needId, studyId: need.studyId, title: `Survey: ${need.title}`, status: 'DRAFT', createdBy: actorId },
       });
+      await tx.need.update({ where: { id: needId }, data: { status: 'survey_created' } });
       return { survey: row, created: true };
     });
 
@@ -162,45 +169,40 @@ export class SurveysService {
         action: 'create',
         entityType: 'survey',
         entityId: survey.id,
-        entityLabel: `Manually created survey for study ${studyId}`,
+        entityLabel: `Manually created survey for need ${needId}`,
       });
     }
 
-    return this.getSurveyByStudyId(studyId);
+    return this.getSurveyByNeedId(needId);
   }
 
-  async recommendQuestions(studyId: string): Promise<any> {
+  async recommendQuestions(needId: string): Promise<any> {
     const orgId = requireOrgId();
     const actorId = requireActor();
 
     const data = await this.tenant.runInOrgContext(async (tx) => {
-      const study = await tx.study.findUnique({ where: { id: studyId } });
-      if (!study) {
-        throw new NotFoundException({ error: { code: 'STUDY_NOT_FOUND', message: 'Study not found' } });
+      const need = await tx.need.findUnique({ where: { id: needId } });
+      if (!need) {
+        throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
       }
 
-      if (!study.domain || !study.subDomain) {
+      if (!need.domain || !need.subDomain) {
         throw new BadRequestException({
           error: {
             code: 'NO_APPROVED_DOMAIN',
-            message: 'This study needs an approved AI Classification (domain/sub-domain) before generating a survey.',
+            message: 'This need requires an approved AI Classification (domain/sub-domain) before generating a survey.',
           },
         });
       }
 
-      // Problem description comes from the Need Statement (the existing
-      // Need workflow), never a Study-level field — see the Need/Evidence/
-      // AI Classification/Human Review BPM this reuses.
-      const need = await tx.need.findUnique({ where: { studyId } });
-
       const eligibleQuestions = await tx.question.findMany({
-        where: { domain: study.domain, subDomain: study.subDomain, usedInMvp: true },
+        where: { domain: need.domain, subDomain: need.subDomain, usedInMvp: true },
       });
 
-      return { study, need, eligibleQuestions };
+      return { need, eligibleQuestions };
     });
 
-    const { study, need, eligibleQuestions } = data;
+    const { need, eligibleQuestions } = data;
     if (eligibleQuestions.length === 0) {
       throw new ConflictException({
         error: { code: 'NO_ELIGIBLE_QUESTIONS', message: 'No questions found in this domain/subdomain' },
@@ -209,9 +211,9 @@ export class SurveysService {
 
     const systemInstruction = `You are a survey question recommendation assistant. You must recommend only question IDs from the provided eligible questions list. Do not create new question text. Do not edit question text. Return valid JSON only.`;
 
-    const prompt = `Need Statement: "${need?.statement ?? ''}"
-Approved Domain: "${study.domain}"
-Approved SubDomain: "${study.subDomain}"
+    const prompt = `Need Statement: "${need.statement}"
+Approved Domain: "${need.domain}"
+Approved SubDomain: "${need.subDomain}"
 Eligible Questions: ${JSON.stringify(
       eligibleQuestions.map((q) => ({
         questionId: q.questionId,
@@ -266,7 +268,8 @@ Eligible Questions: ${JSON.stringify(
       tx.aiSuggestion.create({
         data: {
           orgId,
-          studyId,
+          needId,
+          studyId: need.studyId,
           type: 'QUESTION_RECOMMENDATION',
           suggestedQuestionIds: finalQuestions.map((q) => q.questionId),
           confidence,
@@ -281,21 +284,23 @@ Eligible Questions: ${JSON.stringify(
 
     // Create or update survey draft
     const survey = await this.tenant.runInOrgContext(async (tx) => {
-      let existingSurvey = await tx.survey.findFirst({ where: { studyId } });
+      let existingSurvey = await tx.survey.findFirst({ where: { needId } });
       if (!existingSurvey) {
         existingSurvey = await tx.survey.create({
           data: {
             orgId,
-            studyId,
-            title: `Survey: ${study.title}`,
+            needId,
+            studyId: need.studyId,
+            title: `Survey: ${need.title}`,
             status: 'DRAFT',
             createdBy: actorId,
           },
         });
+        await tx.need.update({ where: { id: needId }, data: { status: 'survey_created' } });
       } else {
         existingSurvey = await tx.survey.update({
           where: { id: existingSurvey.id },
-          data: { title: `Survey: ${study.title}` },
+          data: { title: `Survey: ${need.title}` },
         });
       }
 
@@ -320,10 +325,10 @@ Eligible Questions: ${JSON.stringify(
       action: 'create',
       entityType: 'survey',
       entityId: survey.id,
-      entityLabel: `AI recommended survey questions for study ${studyId}`,
+      entityLabel: `AI recommended survey questions for need ${needId}`,
     });
 
-    return this.getSurveyByStudyId(studyId);
+    return this.getSurveyByNeedId(needId);
   }
 
   async updateQuestions(
@@ -355,7 +360,7 @@ Eligible Questions: ${JSON.stringify(
       }
     }
 
-    const studyId = await this.tenant.runInOrgContext(async (tx) => {
+    const needId = await this.tenant.runInOrgContext(async (tx) => {
       const survey = await tx.survey.findUnique({ where: { id: surveyId } });
       if (!survey) {
         throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
@@ -377,7 +382,7 @@ Eligible Questions: ${JSON.stringify(
         })),
       });
 
-      return survey.studyId;
+      return survey.needId;
     });
 
     await this.audit.record({
@@ -387,19 +392,38 @@ Eligible Questions: ${JSON.stringify(
       entityLabel: `Survey questions updated manually`,
     });
 
-    return this.getSurveyByStudyId(studyId);
+    return this.getSurveyByNeedId(needId);
   }
 
   async saveDraft(surveyId: string, status: string = 'DRAFT') {
+    // Fetched outside the transaction — MethodologyConfig is global
+    // reference data (no RLS, no org context needed), same as
+    // DomainsService's own reads elsewhere.
+    const methodologyVersion = status === 'PUBLISHED' ? (await this.methodologyConfig.get()).version : undefined;
+
     const updated = await this.tenant.runInOrgContext(async (tx) => {
       const survey = await tx.survey.findUnique({ where: { id: surveyId } });
       if (!survey) {
         throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
       }
-      return tx.survey.update({
+      const row = await tx.survey.update({
         where: { id: surveyId },
-        data: { status },
+        data: {
+          status,
+          // Snapshot the currently active Methodology Version at the
+          // moment of publishing — never a live reference, so a later
+          // Methodology/Question Bank change can't retroactively change
+          // what this Survey claims it was built against. Only touched on
+          // a PUBLISHED transition; saving as DRAFT leaves it untouched.
+          ...(methodologyVersion !== undefined ? { methodologyVersion } : {}),
+        },
       });
+      // Publishing is the Need's terminal state — once published, that
+      // Need's workflow is complete (see NeedStatus).
+      if (status === 'PUBLISHED') {
+        await tx.need.update({ where: { id: survey.needId }, data: { status: 'survey_published' } });
+      }
+      return row;
     });
 
     await this.audit.record({

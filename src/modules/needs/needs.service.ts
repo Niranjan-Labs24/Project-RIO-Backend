@@ -3,14 +3,14 @@ import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { requireActor, requireOrgId } from '../../tenancy/org-context';
 import { AuditService } from '../audit/audit.service';
 import type { AuditChange } from '../audit/audit.types';
-import type { CreateNeedPayload, Need, NeedRow, UpdateNeedPayload } from './needs.types';
+import { NEED_EDITABLE_STATUSES, type CreateNeedPayload, type Need, type NeedRow, type UpdateNeedPayload } from './needs.types';
 
-const DIFF_FIELDS = ['title', 'statement', 'village'] as const;
+const DIFF_FIELDS = ['title', 'statement', 'village', 'source', 'referenceId'] as const;
 
-// System-set on every Need created through this endpoint — never
-// client-writable. A future creation path (e.g. AI-classification-derived)
-// would pass a different literal here, not accept one from the request body.
-const MANUAL_ENTRY_SOURCE = 'manual_entry';
+// Default when the submitter doesn't say where a manually-entered Need came
+// from — imports always pass their own explicit source (see
+// NeedsImportService), so this only ever applies to the manual-entry form.
+const DEFAULT_SOURCE = 'Manual Entry';
 
 @Injectable()
 export class NeedsService {
@@ -19,54 +19,60 @@ export class NeedsService {
     private readonly audit: AuditService,
   ) {}
 
-  // RIO-FR-001: a Study contains exactly one Need. The DB's unique(study_id)
-  // is the real guarantee; this pre-check exists only to return a clean 409
-  // instead of a raw constraint-violation 500.
+  // A Study can hold many Needs — each one runs its own independent
+  // workflow (see NeedStatus). No "does one already exist" guard anymore.
   async create(studyId: string, payload: CreateNeedPayload): Promise<Need> {
     const orgId = requireOrgId();
     const createdBy = requireActor();
     const created = await this.tenant.runInOrgContext(async (tx) => {
       const study = await tx.study.findUnique({ where: { id: studyId } });
       if (!study) throw new NotFoundException({ error: { code: 'STUDY_NOT_FOUND', message: 'Study not found' } });
-      const existing = await tx.need.findUnique({ where: { studyId } });
-      if (existing) {
-        throw new ConflictException({ error: { code: 'NEED_ALREADY_EXISTS', message: 'This study already has a need' } });
-      }
-      const need = (await tx.need.create({
+      return (await tx.need.create({
         data: {
           studyId,
           orgId,
           title: payload.title,
           statement: payload.statement,
           village: payload.village,
-          source: MANUAL_ENTRY_SOURCE,
+          source: payload.source ?? DEFAULT_SOURCE,
+          referenceId: payload.referenceId ?? null,
           createdBy,
         },
       })) as NeedRow;
-      await tx.study.update({ where: { id: studyId }, data: { status: 'need_captured' } });
-      return need;
     });
     await this.audit.record({ action: 'create', entityType: 'need', entityId: created.id, entityLabel: created.title.slice(0, 80) });
     return this.toNeed(created);
   }
 
-  async getByStudyId(studyId: string): Promise<Need> {
-    const row = (await this.tenant.runInOrgContext((tx) => tx.need.findUnique({ where: { studyId } }))) as NeedRow | null;
+  async listByStudyId(studyId: string): Promise<Need[]> {
+    const rows = (await this.tenant.runInOrgContext((tx) =>
+      tx.need.findMany({ where: { studyId }, orderBy: { createdAt: 'asc' } }),
+    )) as NeedRow[];
+    return rows.map((row) => this.toNeed(row));
+  }
+
+  async getById(needId: string): Promise<Need> {
+    const row = (await this.tenant.runInOrgContext((tx) => tx.need.findUnique({ where: { id: needId } }))) as NeedRow | null;
     if (!row) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
     return this.toNeed(row);
   }
 
-  async update(studyId: string, patch: UpdateNeedPayload): Promise<Need> {
+  async update(needId: string, patch: UpdateNeedPayload): Promise<Need> {
     const { updated, changes } = await this.tenant.runInOrgContext(async (tx) => {
-      const current = (await tx.need.findUnique({ where: { studyId } })) as NeedRow | null;
+      const current = (await tx.need.findUnique({ where: { id: needId } })) as NeedRow | null;
       if (!current) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+      if (!NEED_EDITABLE_STATUSES.includes(current.status)) {
+        throw new ConflictException({ error: { code: 'NEED_NOT_EDITABLE', message: 'This need has already moved past draft and can no longer be edited' } });
+      }
       const changes = this.diff(current, patch);
       const updated = (await tx.need.update({
-        where: { studyId },
+        where: { id: needId },
         data: {
           ...(patch.title !== undefined ? { title: patch.title } : {}),
           ...(patch.statement !== undefined ? { statement: patch.statement } : {}),
           ...(patch.village !== undefined ? { village: patch.village } : {}),
+          ...(patch.source !== undefined ? { source: patch.source } : {}),
+          ...(patch.referenceId !== undefined ? { referenceId: patch.referenceId } : {}),
         },
       })) as NeedRow;
       return { updated, changes };
@@ -75,6 +81,24 @@ export class NeedsService {
       await this.audit.record({ action: 'edit', entityType: 'need', entityId: updated.id, entityLabel: updated.title.slice(0, 80), changes });
     }
     return this.toNeed(updated);
+  }
+
+  // Same editability rule as update() — a Need can only be removed while
+  // still `draft`. Every later stage has downstream artifacts (evidence, an
+  // AI classification, a survey...) that other people may already rely on;
+  // Prisma's onDelete: Cascade would silently take all of that with it, so
+  // this is deliberately not offered once a Need has moved past draft.
+  async remove(needId: string): Promise<void> {
+    const removed = await this.tenant.runInOrgContext(async (tx) => {
+      const existing = (await tx.need.findUnique({ where: { id: needId } })) as NeedRow | null;
+      if (!existing) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+      if (!NEED_EDITABLE_STATUSES.includes(existing.status)) {
+        throw new ConflictException({ error: { code: 'NEED_NOT_DELETABLE', message: 'This need has already moved past draft and can no longer be deleted' } });
+      }
+      await tx.need.delete({ where: { id: needId } });
+      return existing;
+    });
+    await this.audit.record({ action: 'delete', entityType: 'need', entityId: removed.id, entityLabel: removed.title.slice(0, 80) });
   }
 
   private diff(current: NeedRow, patch: UpdateNeedPayload): AuditChange[] {
@@ -100,6 +124,10 @@ export class NeedsService {
       statement: row.statement,
       village: row.village,
       source: row.source,
+      referenceId: row.referenceId,
+      status: row.status,
+      domain: row.domain,
+      subDomain: row.subDomain,
       createdBy: row.createdBy,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),

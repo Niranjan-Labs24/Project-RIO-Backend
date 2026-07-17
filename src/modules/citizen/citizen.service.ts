@@ -43,7 +43,7 @@ export class CitizenService {
         study: await tx.study.findUnique({ where: { id: link.studyId } }),
         org: await tx.organisation.findUnique({ where: { id: link.orgId } }),
       })),
-      this.surveys.getPublishedSurveyByStudyId(link.studyId),
+      this.surveys.getPublishedSurveyByNeedId(link.needId),
     ]);
 
     if (!survey) {
@@ -52,7 +52,7 @@ export class CitizenService {
       });
     }
 
-    const questions = survey.questions.map((q) => {
+    const questions = survey.questions.map((q: { answerType: string; answerOptions: string[] | null; id: string; questionText: string; isRequired: boolean }) => {
       const { type, options } = this.mapAnswerTypeForCitizen(q.answerType, q.answerOptions);
       return {
         // The SurveyQuestion row's own id — the one identity that exists
@@ -112,8 +112,11 @@ export class CitizenService {
   // creates or mutates any record.
   async checkDuplicate(token: string, payload: CheckDuplicatePayload): Promise<CheckDuplicateResult> {
     const link = await this.findActiveLinkOrThrow(token);
+    // Scoped to the Need, not the Study — each Need runs its own
+    // independent survey, so the same person may legitimately respond once
+    // per Need under the same Study.
     const existing = await this.tenant.runAsSupervisor((tx) =>
-      tx.surveyResponse.findFirst({ where: { studyId: link.studyId, contact: payload.contact } }),
+      tx.surveyResponse.findFirst({ where: { needId: link.needId, contact: payload.contact } }),
     );
     return { isDuplicate: existing !== null };
   }
@@ -182,20 +185,22 @@ export class CitizenService {
 
     const row = await this.tenant.runAsOrg(link.orgId, async (tx) => {
       // Belt-and-suspenders: also block a second submission from the same
-      // contact for this study even via a *fresh* OTP request/verification,
-      // not just a reused challenge.
+      // contact for this Need even via a *fresh* OTP request/verification,
+      // not just a reused challenge. Scoped to the Need, not the Study — see
+      // checkDuplicate's comment.
       const existing = await tx.surveyResponse.findFirst({
-        where: { studyId: link.studyId, contact: challenge.contact },
+        where: { needId: link.needId, contact: challenge.contact },
       });
       if (existing) {
         throw new BadRequestException({
-          error: { code: 'DUPLICATE_SUBMISSION', message: 'A response for this study has already been submitted with this contact.' },
+          error: { code: 'DUPLICATE_SUBMISSION', message: 'A response for this need has already been submitted with this contact.' },
         });
       }
 
       const created = await tx.surveyResponse.create({
         data: {
           orgId: link.orgId,
+          needId: link.needId,
           studyId: link.studyId,
           surveyLinkId: link.id,
           contact: challenge.contact,

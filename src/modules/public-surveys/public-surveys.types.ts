@@ -1,6 +1,7 @@
 export interface PublicSurveyLinkRow {
   id: string;
   orgId: string;
+  needId: string;
   studyId: string;
   label: string;
   token: string;
@@ -13,6 +14,7 @@ export interface PublicSurveyLinkRow {
 
 export interface PublicSurveyLink {
   id: string;
+  needId: string;
   studyId: string;
   // User-facing name — the only identifier the UI ever shows for a link;
   // never the token/id (see the plan's "no technical identifiers" note).

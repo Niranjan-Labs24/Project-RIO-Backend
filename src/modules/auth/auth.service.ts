@@ -1,5 +1,6 @@
-import { ForbiddenException, HttpException, HttpStatus, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { UserStatus } from '../../generated/prisma';
+import { DomainsService } from '../domains/domains.service';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { PasswordService } from '../../auth/password.service';
@@ -52,6 +53,7 @@ export class AuthService {
     private readonly repo: AuthRepository,
     private readonly mailer: MailerService,
     private readonly config: ConfigService,
+    private readonly domains: DomainsService,
   ) {}
 
   async login(email: string, password: string): Promise<SessionContext> {
@@ -179,6 +181,7 @@ export class AuthService {
     if (await this.repo.findUserByEmail(dto.email)) {
       throw conflictFor('email');
     }
+    await this.assertValidSector(dto.sector);
 
     const temporaryPassword = generateTemporaryPassword();
     const passwordHash = await this.passwords.hash(temporaryPassword);
@@ -246,6 +249,22 @@ export class AuthService {
     const role = this.roleOf(updated.roleId);
     const token = this.tokens.sign({ sub: updated.id, orgId: updated.org.id, roleKey: role.key });
     return this.buildSession(updated, role, token);
+  }
+
+  // `sector` must match an active Methodology Configuration Domain name
+  // (e.g. "Health", "Water & Sanitation") or the literal "other" (paired
+  // with `purpose` for free text) — never an arbitrary string, since the
+  // whole point is this stays in lockstep with whatever domains are
+  // actually configured there.
+  private async assertValidSector(sector: string | undefined): Promise<void> {
+    if (!sector || sector === 'other') return;
+    const domains = await this.domains.listDomains();
+    const valid = domains.some((d) => d.isActive && d.name === sector);
+    if (!valid) {
+      throw new BadRequestException({
+        error: { code: 'INVALID_SECTOR', message: 'Sector must match an active domain or "other"' },
+      });
+    }
   }
 
   private roleOf(roleId: string): RoleDef {

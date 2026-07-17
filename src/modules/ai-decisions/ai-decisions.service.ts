@@ -36,18 +36,14 @@ export class AiDecisionsService {
   // reference list the review UI's override dropdowns already use — falls
   // back to the deterministic placeholder if Gemini isn't configured or the
   // call fails, so classification itself never hard-fails on an AI outage.
-  async classify(studyId: string): Promise<AiDecision> {
+  async classify(needId: string): Promise<AiDecision> {
     const orgId = requireOrgId();
     const need = await this.tenant.runInOrgContext(async (tx) => {
-      const study = await tx.study.findUnique({ where: { id: studyId } });
-      if (!study) {
-        throw new NotFoundException({ error: { code: 'STUDY_NOT_FOUND', message: 'Study not found' } });
-      }
-      const need = await tx.need.findUnique({ where: { studyId } });
+      const need = await tx.need.findUnique({ where: { id: needId } });
       if (!need) {
-        throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Capture the need before classifying' } });
+        throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
       }
-      if (study.status === 'draft' || study.status === 'need_captured') {
+      if (need.status === 'draft') {
         throw new ConflictException({ error: { code: 'EVIDENCE_NOT_SUBMITTED', message: 'Submit evidence before running AI Classification' } });
       }
       return need;
@@ -59,7 +55,8 @@ export class AiDecisionsService {
       const row = (await tx.aiDecision.create({
         data: {
           orgId,
-          studyId,
+          needId,
+          studyId: need.studyId,
           touchpoint: 'need_classification',
           subjectType: 'need',
           subjectId: need.id,
@@ -69,10 +66,10 @@ export class AiDecisionsService {
           confidence: result.confidence,
         },
       })) as unknown as AiDecisionRow;
-      await tx.study.update({ where: { id: studyId }, data: { status: 'ai_classified' } });
+      await tx.need.update({ where: { id: needId }, data: { status: 'ai_classified' } });
       return row;
     });
-    await this.audit.record({ action: 'create', entityType: 'ai_decision', entityId: created.id, entityLabel: `classification for study ${studyId}` });
+    await this.audit.record({ action: 'create', entityType: 'ai_decision', entityId: created.id, entityLabel: `classification for need ${needId}` });
     return this.toAiDecision(created);
   }
 
@@ -96,9 +93,9 @@ export class AiDecisionsService {
     }
   }
 
-  async listByStudyId(studyId: string): Promise<AiDecision[]> {
+  async listByNeedId(needId: string): Promise<AiDecision[]> {
     const rows = (await this.tenant.runInOrgContext((tx) =>
-      tx.aiDecision.findMany({ where: { studyId }, orderBy: { createdAt: 'desc' } }),
+      tx.aiDecision.findMany({ where: { needId }, orderBy: { createdAt: 'desc' } }),
     )) as unknown as AiDecisionRow[];
     return rows.map((r) => this.toAiDecision(r));
   }
@@ -120,12 +117,12 @@ export class AiDecisionsService {
           decidedAt: new Date(),
         },
       })) as unknown as AiDecisionRow;
-      await tx.study.update({ where: { id: row.studyId }, data: { status: 'human_reviewed' } });
+      await tx.need.update({ where: { id: row.needId }, data: { status: 'reviewer_approved' } });
 
       // Approved (as-is) or modified (overridden) both produce a final
-      // domain/sub-domain — write it onto the Study so Survey Builder's
+      // domain/sub-domain — write it onto the Need so Survey Builder's
       // recommend-questions has something to key off. Rejected has no final
-      // classification, so Study.domain/subDomain stay whatever they were.
+      // classification, so Need.domain/subDomain stay whatever they were.
       if (payload.decision === 'approved' || payload.decision === 'modified') {
         const source =
           payload.decision === 'modified' && payload.overrideValue
@@ -134,7 +131,7 @@ export class AiDecisionsService {
         const domain = source?.domains?.[0];
         const subDomain = source?.subDomains?.[0];
         if (domain && subDomain) {
-          await tx.study.update({ where: { id: row.studyId }, data: { domain, subDomain } });
+          await tx.need.update({ where: { id: row.needId }, data: { domain, subDomain } });
         }
       }
       return row;
@@ -146,7 +143,7 @@ export class AiDecisionsService {
       action: payload.decision === 'approved' ? 'approve' : 'edit',
       entityType: 'ai_decision',
       entityId: updated.id,
-      entityLabel: `review for study ${updated.studyId}`,
+      entityLabel: `review for need ${updated.needId}`,
     });
     return this.toAiDecision(updated);
   }
@@ -160,6 +157,7 @@ export class AiDecisionsService {
   private toAiDecision(row: AiDecisionRow): AiDecision {
     return {
       id: row.id,
+      needId: row.needId,
       studyId: row.studyId,
       touchpoint: row.touchpoint,
       subjectType: row.subjectType,

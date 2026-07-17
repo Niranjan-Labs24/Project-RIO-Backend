@@ -1,6 +1,7 @@
 export interface PublicSurveyLinkRow {
   id: string;
   orgId: string;
+  needId: string;
   studyId: string;
   token: string;
   createdBy: string;

@@ -12,16 +12,6 @@ datasource db {
   provider = "postgresql"
 }
 
-enum Sector {
-  education
-  healthcare
-  agriculture
-  wash
-  livelihoods
-  disaster_relief
-  other
-}
-
 enum UserStatus {
   active
   invited
@@ -100,7 +90,12 @@ model Organisation {
   // literal string instead of being treated as multiple regions).
   region             String[] @default([])
   email              String?  @db.VarChar(320)
-  sector             Sector?
+  // A Domain's `name` from the Methodology Configuration screen (e.g.
+  // "Health", "Water & Sanitation") — never a fixed enum, since the whole
+  // point is this stays in lockstep with whatever domains are actually
+  // configured there. `"other"` is a deliberate escape hatch (paired with
+  // `purpose` for the free-text detail), not a methodology domain.
+  sector             String?  @db.VarChar(200)
   logoUrl            String?  @map("logo_url")
   villages           String[] @default([])
   isActive           Boolean  @default(true) @map("is_active")
@@ -202,16 +197,10 @@ model AuditLog {
 // no longer advances status by itself — a researcher must
 // explicitly submit (EvidenceService.submit) before AI Classification is
 // allowed to run; that submit action is what sets evidence_submitted.
-// Stops there deliberately — survey_ready/published/archived belong to
-// Survey Builder/Reports, out of scope for Week 2.
-enum StudyStatus {
-  draft
-  need_captured
-  evidence_submitted
-  ai_classified
-  human_reviewed
-}
-
+// A Study is a pure container — no pipeline state of its own. Each Need
+// under it runs its own independent lifecycle (see NeedStatus below); a
+// Study stays open for new Needs regardless of how far along its existing
+// ones are.
 model Study {
   id        String      @id @default(dbgenerated("uuidv7()")) @db.Uuid
   orgId     String      @map("org_id") @db.Uuid
@@ -221,19 +210,15 @@ model Study {
   // master-data table, per the same "don't promote to master data" call
   // made for Need.village.
   villages  String[]    @default([])
-  status    StudyStatus @default(draft)
-  // AI Classification's suggested/confirmed Domain + Sub-Domain for this
-  // Study (see the Domain/SubDomain reference tables) — set once a human
-  // approves an AI Classification decision on this Study's Need (see
-  // AiDecisionsService.review). Nullable until then.
-  domain           String? @db.VarChar(120)
-  subDomain        String? @map("sub_domain") @db.VarChar(120)
   createdBy String      @map("created_by") @db.Uuid
   createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org      Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  need     Need?
+  needs    Need[]
+  // Denormalized studyId FK kept on these (see each model's own comment) —
+  // Study still needs the Prisma back-relation array even though `needId` is
+  // now the real scoping key.
   evidence Evidence[]
   aiDecisions AiDecision[]
   surveyLinks PublicSurveyLink[]
@@ -251,31 +236,66 @@ model Study {
   @@map("studies")
 }
 
-// RIO-FR-001: a Study contains exactly one Need — enforced here via the
-// unique studyId (1:1 at the DB level, not just app-level convention).
+// Each Need under a Study runs its own independent workflow, gated by its
+// own `status` — Evidence/AiDecision/Survey/PublicSurveyLink/SurveyResponse
+// etc. all key off `needId` now (a Study just groups its Needs; nothing
+// about a sibling Need's progress affects another).
+enum NeedStatus {
+  draft
+  evidence_submitted
+  ai_classified
+  reviewer_approved
+  survey_created
+  survey_published
+}
+
 model Need {
-  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  studyId   String   @unique @map("study_id") @db.Uuid
-  orgId     String   @map("org_id") @db.Uuid
-  title     String   @db.VarChar(300)
+  id        String     @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  studyId   String     @map("study_id") @db.Uuid
+  orgId     String     @map("org_id") @db.Uuid
+  title     String     @db.VarChar(300)
   statement String
   // A Need can name more than one village — same array-of-strings shape as
   // Organisation.villages (was `String` — a comma-separated "Village A,
   // Village B" entry used to be stored as one literal string instead of
   // being treated as multiple villages). Do not promote this to a
   // master-data table without an explicit ticket.
-  village   String[] @default([])
-  // System-set (e.g. "manual_entry"), never client-writable — set by the
-  // service based on the creation path, not accepted in CreateNeedBody.
-  source    String   @db.VarChar(200)
-  createdBy String   @map("created_by") @db.Uuid
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  village   String[]   @default([])
+  // Where this Need came from — user-entered on manual creation (e.g.
+  // "Field Survey", "Community Meeting"), or the literal "CSV Import"/
+  // "Excel Import" plus the file's own Source column value when bulk
+  // imported (see NeedsImportService).
+  source    String     @db.VarChar(200)
+  // The submitter's own external tracking id for this Need (e.g. a field
+  // form number or a partner org's case id) — free text, never validated
+  // against anything, purely a cross-reference back to their own records.
+  referenceId String?  @map("reference_id") @db.VarChar(200)
+  status    NeedStatus @default(draft)
+  // AI Classification's suggested/confirmed Domain + Sub-Domain for this
+  // Need (see the Domain/SubDomain reference tables) — set once a human
+  // approves an AI Classification decision (see AiDecisionsService.review).
+  // Nullable until then. Was Study-level; moved here since each Need now
+  // runs its own classification.
+  domain    String?    @db.VarChar(120)
+  subDomain String?    @map("sub_domain") @db.VarChar(120)
+  createdBy String     @map("created_by") @db.Uuid
+  createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   study Study        @relation(fields: [studyId], references: [id], onDelete: Cascade)
   org   Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  evidence Evidence[]
+  aiDecisions AiDecision[]
+  surveys Survey[]
+  surveyLinks PublicSurveyLink[]
+  surveyResponses SurveyResponse[]
+  responseQualityResults ResponseQualityResult[]
+  aiSummaries AiSummary[]
+  priorityScores PriorityScore[]
+  aiSuggestions AiSuggestion[]
 
   @@index([orgId])
+  @@index([studyId])
   @@map("needs")
 }
 
@@ -284,6 +304,10 @@ model Need {
 // swapping to an object-storage key later needs no schema change.
 model Evidence {
   id         String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  needId     String   @map("need_id") @db.Uuid
+  // Denormalized from Need.studyId — cheap joins/filters at the Study level
+  // (e.g. Study detail page's evidence count) without an extra hop through
+  // Need. `needId` is the real scoping/dedup key, not this.
   studyId    String   @map("study_id") @db.Uuid
   orgId      String   @map("org_id") @db.Uuid
   fileName   String   @map("file_name") @db.VarChar(255)
@@ -303,12 +327,14 @@ model Evidence {
   uploadedBy String   @map("uploaded_by") @db.Uuid
   uploadedAt DateTime @default(now()) @map("uploaded_at") @db.Timestamptz(6)
 
+  need  Need         @relation(fields: [needId], references: [id], onDelete: Cascade)
   study Study        @relation(fields: [studyId], references: [id], onDelete: Cascade)
   org   Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
+  @@index([needId])
   @@index([studyId])
   @@index([orgId])
-  @@index([studyId, fileHash])
+  @@index([needId, fileHash])
   @@map("evidence")
 }
 
@@ -330,6 +356,8 @@ enum AiTouchpoint {
 model AiDecision {
   id            String       @id @default(dbgenerated("uuidv7()")) @db.Uuid
   orgId         String       @map("org_id") @db.Uuid
+  needId        String       @map("need_id") @db.Uuid
+  // Denormalized from Need.studyId — see Evidence.studyId's comment.
   studyId       String       @map("study_id") @db.Uuid
   touchpoint    AiTouchpoint
   subjectType   String       @map("subject_type") @db.VarChar(100)
@@ -344,9 +372,11 @@ model AiDecision {
   createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
 
   org   Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  need  Need         @relation(fields: [needId], references: [id], onDelete: Cascade)
   study Study        @relation(fields: [studyId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
+  @@index([needId])
   @@index([subjectType, subjectId])
   @@map("ai_decisions")
 }
@@ -402,10 +432,13 @@ model SubDomain {
 model PublicSurveyLink {
   id        String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
   orgId     String    @map("org_id") @db.Uuid
+  needId    String    @map("need_id") @db.Uuid
+  // Denormalized from Need.studyId — see Evidence.studyId's comment.
   studyId   String    @map("study_id") @db.Uuid
   // User-facing name ("Baseline Survey", "Village A Outreach") — the only
-  // identifier shown anywhere in the UI; unique per Study (not globally) so
-  // two different Studies can each have their own "Baseline Survey" link.
+  // identifier shown anywhere in the UI; unique per Need (not globally, and
+  // not per-Study either — two Needs under the same Study each run an
+  // independent survey and may each have their own "Baseline Survey" link).
   // Required, trimmed, max 150 chars — enforced at the service layer since
   // Postgres has no built-in trim-then-check-blank constraint.
   label     String    @db.VarChar(150)
@@ -418,6 +451,7 @@ model PublicSurveyLink {
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   org                    Organisation            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  need                   Need                    @relation(fields: [needId], references: [id], onDelete: Cascade)
   study                  Study                   @relation(fields: [studyId], references: [id], onDelete: Cascade)
   otpChallenges          CitizenOtpChallenge[]
   responses              SurveyResponse[]
@@ -425,8 +459,9 @@ model PublicSurveyLink {
   aiSummaries            AiSummary[]
   priorityScores         PriorityScore[]
 
-  @@unique([studyId, label])
+  @@unique([needId, label])
   @@index([orgId])
+  @@index([needId])
   @@index([studyId])
   @@map("public_survey_links")
 }
@@ -463,6 +498,8 @@ model CitizenOtpChallenge {
 model SurveyResponse {
   id           String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   orgId        String   @map("org_id") @db.Uuid
+  needId       String   @map("need_id") @db.Uuid
+  // Denormalized from Need.studyId — see Evidence.studyId's comment.
   studyId      String   @map("study_id") @db.Uuid
   surveyLinkId String   @map("survey_link_id") @db.Uuid
   contactName  String?  @map("contact_name") @db.VarChar(200)
@@ -471,11 +508,13 @@ model SurveyResponse {
   submittedAt  DateTime @default(now()) @map("submitted_at") @db.Timestamptz(6)
 
   org        Organisation     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  need       Need             @relation(fields: [needId], references: [id], onDelete: Cascade)
   study      Study            @relation(fields: [studyId], references: [id], onDelete: Cascade)
   surveyLink PublicSurveyLink @relation(fields: [surveyLinkId], references: [id], onDelete: Cascade)
   qualityResults ResponseQualityResult[]
 
   @@index([orgId])
+  @@index([needId])
   @@index([studyId])
   @@index([surveyLinkId])
   @@map("survey_responses")
@@ -494,10 +533,13 @@ enum ConfidenceFlag {
 model ResponseQualityResult {
   id                String         @id @default(dbgenerated("uuidv7()")) @db.Uuid
   orgId             String         @map("org_id") @db.Uuid
+  needId            String         @map("need_id") @db.Uuid
+  // Denormalized from Need.studyId — see Evidence.studyId's comment.
   studyId           String         @map("study_id") @db.Uuid
-  // Null = computed from every Survey Link's responses ("Consolidated"
-  // scope); set = computed from just that one link's responses. Lets the
-  // Study Insights "Survey Scope" selector read back exactly the scope it
+  // Null = computed from every Survey Link's responses *for this Need*
+  // ("Consolidated" scope, scoped within the Need — a sibling Need's links
+  // never mix in); set = computed from just that one link's responses. Lets
+  // the Insights "Survey Scope" selector read back exactly the scope it
   // wrote, instead of always mixing every link's results together.
   surveyLinkId      String?        @map("survey_link_id") @db.Uuid
   surveyResponseId  String         @map("survey_response_id") @db.Uuid
@@ -509,11 +551,13 @@ model ResponseQualityResult {
   assessedAt        DateTime       @default(now()) @map("assessed_at") @db.Timestamptz(6)
 
   org            Organisation      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  need           Need              @relation(fields: [needId], references: [id], onDelete: Cascade)
   study          Study             @relation(fields: [studyId], references: [id], onDelete: Cascade)
   surveyLink     PublicSurveyLink? @relation(fields: [surveyLinkId], references: [id], onDelete: Cascade)
   surveyResponse SurveyResponse    @relation(fields: [surveyResponseId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
+  @@index([needId])
   @@index([studyId])
   @@index([surveyLinkId])
   @@map("response_quality_results")
@@ -523,19 +567,23 @@ model ResponseQualityResult {
 model AiSummary {
   id            String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   orgId         String   @map("org_id") @db.Uuid
+  needId        String   @map("need_id") @db.Uuid
+  // Denormalized from Need.studyId — see Evidence.studyId's comment.
   studyId       String   @map("study_id") @db.Uuid
-  // Same null = Consolidated / set = single-link convention as
-  // ResponseQualityResult.surveyLinkId above.
+  // Same null = Consolidated (within this Need) / set = single-link
+  // convention as ResponseQualityResult.surveyLinkId above.
   surveyLinkId  String?  @map("survey_link_id") @db.Uuid
   summaryText   String   @map("summary_text")
   responseCount Int      @map("response_count")
   generatedAt   DateTime @default(now()) @map("generated_at") @db.Timestamptz(6)
 
   org        Organisation      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  need       Need              @relation(fields: [needId], references: [id], onDelete: Cascade)
   study      Study             @relation(fields: [studyId], references: [id], onDelete: Cascade)
   surveyLink PublicSurveyLink? @relation(fields: [surveyLinkId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
+  @@index([needId])
   @@index([studyId])
   @@index([surveyLinkId])
   @@map("ai_summaries")
@@ -555,25 +603,34 @@ enum PriorityLevel {
 model PriorityScore {
   id           String        @id @default(dbgenerated("uuidv7()")) @db.Uuid
   orgId        String        @map("org_id") @db.Uuid
+  needId       String        @map("need_id") @db.Uuid
+  // Denormalized from Need.studyId — see Evidence.studyId's comment.
   studyId      String        @map("study_id") @db.Uuid
-  // Same null = Consolidated / set = single-link convention as
-  // ResponseQualityResult.surveyLinkId above.
+  // Same null = Consolidated (within this Need) / set = single-link
+  // convention as ResponseQualityResult.surveyLinkId above.
   surveyLinkId String?       @map("survey_link_id") @db.Uuid
   overallScore Int           @map("overall_score")
   level        PriorityLevel
   gapType      String        @map("gap_type") @db.VarChar(50)
-  // 9-factor breakdown from scope.md §8 (severity, affected population,
-  // service availability gap, urgency, data confidence, frequency,
-  // geographic coverage, vulnerable groups/equity, strategic alignment).
+  // Explainable breakdown: one entry per Question Bank indicator that fed
+  // this score — { indicator, weight, responseValue, weightedContribution }
+  // — plus the equity-flag/normalization inputs. See priority/scoring.ts.
   factors      Json
   cycleNote    String?       @map("cycle_note") @db.VarChar(200)
   scoredAt     DateTime      @default(now()) @map("scored_at") @db.Timestamptz(6)
+  // Priority Scoring stays subject to reviewer approval, same as AI
+  // Classification — never publicly visible (e.g. Priority Dashboard) until
+  // approved. Nullable/false until a reviewer acts (see PriorityService.approve).
+  approvedBy   String?       @map("approved_by") @db.Uuid
+  approvedAt   DateTime?     @map("approved_at") @db.Timestamptz(6)
 
   org        Organisation      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  need       Need              @relation(fields: [needId], references: [id], onDelete: Cascade)
   study      Study             @relation(fields: [studyId], references: [id], onDelete: Cascade)
   surveyLink PublicSurveyLink? @relation(fields: [surveyLinkId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
+  @@index([needId])
   @@index([studyId])
   @@index([surveyLinkId])
   @@map("priority_scores")
@@ -742,6 +799,8 @@ model Question {
 model AiSuggestion {
   id                   String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   orgId                String   @map("org_id") @db.Uuid
+  needId               String   @map("need_id") @db.Uuid
+  // Denormalized from Need.studyId — see Evidence.studyId's comment.
   studyId              String   @map("study_id") @db.Uuid
   type                 String   @db.VarChar(64)
   inputHash            String?  @map("input_hash") @db.VarChar(64)
@@ -757,10 +816,12 @@ model AiSuggestion {
   createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   org           Organisation    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  need          Need            @relation(fields: [needId], references: [id], onDelete: Cascade)
   study         Study           @relation(fields: [studyId], references: [id], onDelete: Cascade)
   humanDecisions HumanDecision[]
 
   @@index([orgId])
+  @@index([needId])
   @@index([studyId])
   @@map("ai_suggestions")
 }
@@ -798,19 +859,31 @@ model HumanDecision {
 model Survey {
   id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   orgId     String   @map("org_id") @db.Uuid
+  needId    String   @map("need_id") @db.Uuid
+  // Denormalized from Need.studyId — see Evidence.studyId's comment.
   studyId   String   @map("study_id") @db.Uuid
   title     String   @db.VarChar(300)
   status    String   @db.VarChar(64)
+  // Snapshot of MethodologyConfig.version at the moment this Survey was
+  // (most recently) published — never a live reference, so a later
+  // Methodology/Question Bank change can't silently change what an
+  // already-published Survey claims it was built against. Set on every
+  // PUBLISHED transition (see SurveysService.saveDraft); null for a Survey
+  // that has never been published, or one published before this column
+  // existed.
+  methodologyVersion String? @map("methodology_version") @db.VarChar(100)
   createdBy String   @map("created_by") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org             Organisation           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  need            Need                   @relation(fields: [needId], references: [id], onDelete: Cascade)
   study           Study                  @relation(fields: [studyId], references: [id], onDelete: Cascade)
   surveyQuestions SurveyQuestion[]
   builderResponses SurveyBuilderResponse[]
 
   @@index([orgId])
+  @@index([needId])
   @@index([studyId])
   @@map("surveys")
 }

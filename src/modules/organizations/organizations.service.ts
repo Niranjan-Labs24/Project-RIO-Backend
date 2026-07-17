@@ -1,7 +1,7 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { v7 as uuidv7 } from 'uuid';
-import { Sector, UserStatus } from '../../generated/prisma';
+import { UserStatus } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore, requireOrgId } from '../../tenancy/org-context';
 import { roleByKey } from '../../rbac/role-matrix';
@@ -9,6 +9,7 @@ import { PasswordService } from '../../auth/password.service';
 import { conflictFor, uniqueField } from '../auth/auth.repository';
 import { AuditService } from '../audit/audit.service';
 import type { AuditChange } from '../audit/audit.types';
+import { DomainsService } from '../domains/domains.service';
 import type {
   CreateOrganizationPayload, Organization, OrganizationSummary, OrgRow, UpdateOrganizationPayload,
 } from './organizations.types';
@@ -21,6 +22,7 @@ export class OrganizationsService {
     private readonly tenant: TenantPrismaService,
     private readonly audit: AuditService,
     private readonly passwords: PasswordService,
+    private readonly domains: DomainsService,
   ) {}
 
   async getCurrent(): Promise<Organization> {
@@ -31,6 +33,7 @@ export class OrganizationsService {
 
   async updateCurrent(patch: UpdateOrganizationPayload): Promise<Organization> {
     const orgId = requireOrgId();
+    if (patch.sector !== undefined) await this.assertValidSector(patch.sector);
     const { updated, changes } = await this.tenant.runInOrgContext(async (tx) => {
       const current = (await tx.organisation.findFirst()) as OrgRow | null;
       if (!current) throw new NotFoundException({ error: { code: 'ORG_NOT_FOUND', message: 'Organization not found' } });
@@ -47,6 +50,7 @@ export class OrganizationsService {
   // System-Admin creates an org + its first NGO Admin (invited) in one action.
   async createWithAdmin(payload: CreateOrganizationPayload): Promise<Organization> {
     this.assertCrossEntity();
+    await this.assertValidSector(payload.sector);
     const orgId = uuidv7();
     const tempPassword = randomBytes(9).toString('base64url');
     const passwordHash = await this.passwords.hash(tempPassword);
@@ -61,7 +65,7 @@ export class OrganizationsService {
           data: {
             id: orgId, name: payload.name, purpose: payload.purpose, registrationNumber: payload.registrationNumber,
             region: payload.region ?? [], email: payload.email ?? null,
-            sector: payload.sector ? (payload.sector as Sector) : null, villages: payload.villages ?? [], isActive: true,
+            sector: payload.sector ?? null, villages: payload.villages ?? [], isActive: true,
           },
         });
         await tx.user.create({
@@ -104,6 +108,20 @@ export class OrganizationsService {
     return { ...this.toOrganization(row), memberCount: row._count.users };
   }
 
+  // Mirrors AuthService's identical check (see auth.service.ts) — `sector`
+  // must match an active Methodology Configuration Domain name or the
+  // literal "other" (paired with `purpose` for free text).
+  private async assertValidSector(sector: string | null | undefined): Promise<void> {
+    if (!sector || sector === 'other') return;
+    const domains = await this.domains.listDomains();
+    const valid = domains.some((d) => d.isActive && d.name === sector);
+    if (!valid) {
+      throw new BadRequestException({
+        error: { code: 'INVALID_SECTOR', message: 'Sector must match an active domain or "other"' },
+      });
+    }
+  }
+
   private assertCrossEntity(): void {
     const roleKey = getOrgStore()?.role;
     if (!roleKey || roleByKey(roleKey)?.crossEntity !== true) {
@@ -116,7 +134,7 @@ export class OrganizationsService {
     if (patch.name !== undefined) data.name = patch.name;
     if (patch.region !== undefined) data.region = patch.region;
     if (patch.email !== undefined) data.email = patch.email;
-    if (patch.sector !== undefined) data.sector = patch.sector ? (patch.sector as Sector) : null;
+    if (patch.sector !== undefined) data.sector = patch.sector ?? null;
     if (patch.purpose !== undefined) data.purpose = patch.purpose;
     if (patch.logoUrl !== undefined) data.logoUrl = patch.logoUrl;
     if (patch.villages !== undefined) data.villages = patch.villages;

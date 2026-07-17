@@ -1,9 +1,14 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "../../generated/prisma";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
-import { requireOrgId } from "../../tenancy/org-context";
+import { requireActor, requireOrgId } from "../../tenancy/org-context";
 import { MethodologyConfigService } from "../methodology-config/methodology-config.service";
-import { scorePriority } from "./priority.placeholder";
+import {
+  DEFAULT_THRESHOLDS,
+  scoreNeed,
+  type AnsweredIndicatorQuestion,
+  type ScoringThresholds,
+} from "./scoring";
 import type { PriorityDashboardEntry, PriorityScore, PriorityScoreRow } from "./priority.types";
 
 @Injectable()
@@ -13,102 +18,148 @@ export class PriorityService {
     private readonly methodologyConfig: MethodologyConfigService,
   ) {}
 
-  async score(studyId: string, surveyLinkId?: string): Promise<PriorityScore> {
-    await this.findStudyOrThrow(studyId);
-    if (surveyLinkId) await this.findLinkOrThrow(studyId, surveyLinkId);
+  async score(needId: string, surveyLinkId?: string): Promise<PriorityScore> {
+    const need = await this.findNeedOrThrow(needId);
+    if (surveyLinkId) await this.findLinkOrThrow(needId, surveyLinkId);
     const orgId = requireOrgId();
-    const { priorityThresholds, priorityFactorWeights } = await this.methodologyConfig.getRaw();
+    const thresholds = await this.loadThresholds();
 
     const row = await this.tenant.runInOrgContext(async (tx) => {
-      const responseCount = await tx.surveyResponse.count({
-        where: { studyId, ...(surveyLinkId ? { surveyLinkId } : {}) },
+      // Only Question Bank questions carry an `indicator` — open-ended/
+      // additional questions have none and don't participate in the score,
+      // same as the prior methodology's "open text feeds AI Summary only".
+      const survey = await tx.survey.findFirst({
+        where: { needId },
+        include: { surveyQuestions: { include: { question: true } } },
+      });
+      const responses = await tx.surveyResponse.findMany({
+        where: { needId, ...(surveyLinkId ? { surveyLinkId } : {}) },
       });
       const qualityRows = await tx.responseQualityResult.findMany({
-        where: { studyId, surveyLinkId: surveyLinkId ?? null },
+        where: { needId, surveyLinkId: surveyLinkId ?? null },
       });
-      const averageCompleteness =
-        qualityRows.length === 0
-          ? 100
-          : Math.round(qualityRows.reduce((sum, r) => sum + r.completenessScore, 0) / qualityRows.length);
 
-      // Not response-scoped — an AI Decision belongs to the Study as a
-      // whole, not to any one Survey Link, so it stays consolidated
-      // regardless of the selected scope.
-      const latestDecision = await tx.aiDecision.findFirst({
-        where: { studyId, touchpoint: "need_classification" },
-        orderBy: { createdAt: "desc" },
-      });
-      const suggestion = latestDecision?.suggestion as { domains?: string[] } | undefined;
-      const domainCode = suggestion?.domains?.[0] ?? null;
+      const indicatorQuestions: AnsweredIndicatorQuestion[] = (survey?.surveyQuestions ?? [])
+        .filter((sq) => sq.question?.indicator)
+        .map((sq) => ({
+          indicator: sq.question!.indicator!,
+          answerType: sq.question!.answerType,
+          rawAnswers: responses
+            .map((r) => (r.answers as Record<string, unknown>)[sq.id])
+            .filter((a) => a !== undefined && a !== null && a !== ''),
+        }));
 
-      const result = scorePriority({
-        responseCount, averageCompleteness, domainCode,
-        thresholds: priorityThresholds, factorWeights: priorityFactorWeights,
-      });
+      const hasEquityFlag = this.determineEquityFlag(qualityRows);
+      const result = scoreNeed(indicatorQuestions, hasEquityFlag, thresholds);
 
       return tx.priorityScore.create({
         data: {
           orgId,
-          studyId,
+          needId,
+          studyId: need.studyId,
           surveyLinkId: surveyLinkId ?? null,
-          overallScore: result.overallScore,
+          overallScore: result.severity,
           level: result.level,
           gapType: result.gapType,
-          factors: result.factors as unknown as Prisma.InputJsonValue,
-          cycleNote: result.cycleNote,
+          factors: result.contributions as unknown as Prisma.InputJsonValue,
+          cycleNote: result.level === "critical" || result.level === "high" ? "Acute — Cycle 1, awaiting trend" : null,
         },
       });
     });
     return this.toScore(row as unknown as PriorityScoreRow);
   }
 
-  async getLatest(studyId: string, surveyLinkId?: string): Promise<PriorityScore | null> {
-    await this.findStudyOrThrow(studyId);
-    if (surveyLinkId) await this.findLinkOrThrow(studyId, surveyLinkId);
+  // Reviewer approval gate — a Priority Score is never publicly visible
+  // (dashboard/reports) until a reviewer explicitly approves it here.
+  async approve(id: string): Promise<PriorityScore> {
+    const approvedBy = requireActor();
     const row = await this.tenant.runInOrgContext((tx) =>
-      tx.priorityScore.findFirst({ where: { studyId, surveyLinkId: surveyLinkId ?? null }, orderBy: { scoredAt: "desc" } }),
+      tx.priorityScore.update({ where: { id }, data: { approvedBy, approvedAt: new Date() } }),
+    );
+    return this.toScore(row as unknown as PriorityScoreRow);
+  }
+
+  // Internal/review use: shows the latest score regardless of approval
+  // (with `isApproved` telling the caller which it is) — a reviewer needs
+  // to see an unapproved score to be able to approve it.
+  async getLatest(needId: string, surveyLinkId?: string): Promise<PriorityScore | null> {
+    await this.findNeedOrThrow(needId);
+    if (surveyLinkId) await this.findLinkOrThrow(needId, surveyLinkId);
+    const row = await this.tenant.runInOrgContext((tx) =>
+      tx.priorityScore.findFirst({ where: { needId, surveyLinkId: surveyLinkId ?? null }, orderBy: { scoredAt: "desc" } }),
     );
     return row ? this.toScore(row as unknown as PriorityScoreRow) : null;
   }
 
   async listForOrg(): Promise<PriorityDashboardEntry[]> {
-    // Every study in the org, left-joined to its latest score (null if it
-    // hasn't been run yet) — a study that was never scored must still show
-    // up here, just as "not scored yet", rather than silently vanishing
-    // (the previous version only ever listed rows that already had a
-    // PriorityScore, which hid every unscored study).
-    const { studies, scores } = await this.tenant.runInOrgContext(async (tx) => ({
-      studies: await tx.study.findMany({ orderBy: { updatedAt: "desc" } }),
-      // Consolidated only — a Study-level dashboard row must reflect all of
-      // its responses, not whichever single Survey Link happened to be
-      // scored most recently.
-      scores: await tx.priorityScore.findMany({ where: { surveyLinkId: null }, orderBy: { scoredAt: "desc" } }),
+    // Every Need in the org, left-joined to its latest *approved* score
+    // (null if unscored or still pending reviewer approval) — an unscored
+    // or not-yet-approved Need must still show up here, just without a
+    // score, rather than either vanishing or leaking an unapproved number.
+    const { studies, needs, scores } = await this.tenant.runInOrgContext(async (tx) => ({
+      studies: await tx.study.findMany(),
+      needs: await tx.need.findMany({ orderBy: { updatedAt: "desc" } }),
+      // Consolidated only — a dashboard row must reflect all of the Need's
+      // responses, not whichever single Survey Link happened to be scored
+      // most recently. Approved only — see the method comment above.
+      scores: await tx.priorityScore.findMany({
+        where: { surveyLinkId: null, approvedAt: { not: null } },
+        orderBy: { scoredAt: "desc" },
+      }),
     }));
 
-    const latestByStudy = new Map<string, PriorityScoreRow>();
+    const studyTitleById = new Map(studies.map((s) => [s.id, s.title]));
+    const latestByNeed = new Map<string, PriorityScoreRow>();
     for (const row of scores as unknown as PriorityScoreRow[]) {
-      if (!latestByStudy.has(row.studyId)) latestByStudy.set(row.studyId, row);
+      if (!latestByNeed.has(row.needId)) latestByNeed.set(row.needId, row);
     }
 
-    return studies.map((study) => {
-      const scoreRow = latestByStudy.get(study.id);
+    return needs.map((need) => {
+      const scoreRow = latestByNeed.get(need.id);
       return {
-        studyId: study.id,
-        studyTitle: study.title,
-        studyStatus: study.status,
+        studyId: need.studyId,
+        studyTitle: studyTitleById.get(need.studyId) ?? need.studyId,
+        needId: need.id,
         score: scoreRow ? this.toScore(scoreRow) : null,
       };
     });
   }
 
-  private async findStudyOrThrow(studyId: string): Promise<void> {
-    const study = await this.tenant.runInOrgContext((tx) => tx.study.findUnique({ where: { id: studyId } }));
-    if (!study) throw new NotFoundException({ error: { code: "STUDY_NOT_FOUND", message: "Study not found" } });
+  private async loadThresholds(): Promise<ScoringThresholds> {
+    try {
+      const { priorityThresholds } = await this.methodologyConfig.getRaw();
+      const t = priorityThresholds as Partial<Record<keyof ScoringThresholds, number>>;
+      return {
+        criticalSeverity: t.criticalSeverity ?? DEFAULT_THRESHOLDS.criticalSeverity,
+        highSeverity: t.highSeverity ?? DEFAULT_THRESHOLDS.highSeverity,
+        equityHighSeverity: t.equityHighSeverity ?? DEFAULT_THRESHOLDS.equityHighSeverity,
+        mediumSeverity: t.mediumSeverity ?? DEFAULT_THRESHOLDS.mediumSeverity,
+      };
+    } catch {
+      return DEFAULT_THRESHOLDS;
+    }
   }
 
-  private async findLinkOrThrow(studyId: string, surveyLinkId: string): Promise<void> {
+  // TODO(RIO-Priority): the real equity-flag determination (e.g. does this
+  // gap disproportionately affect a vulnerable group?) isn't defined by the
+  // methodology package yet. Placeholder: a high proportion of low-
+  // confidence responses (see Response Quality) is treated as a proxy
+  // signal worth flagging, not a real equity determination.
+  private determineEquityFlag(qualityRows: { confidenceFlag: string }[]): boolean {
+    if (qualityRows.length === 0) return false;
+    const lowCount = qualityRows.filter((r) => r.confidenceFlag === "low").length;
+    return lowCount / qualityRows.length >= 0.3;
+  }
+
+  private async findNeedOrThrow(needId: string) {
+    const need = await this.tenant.runInOrgContext((tx) => tx.need.findUnique({ where: { id: needId } }));
+    if (!need) throw new NotFoundException({ error: { code: "NEED_NOT_FOUND", message: "Need not found" } });
+    return need;
+  }
+
+  private async findLinkOrThrow(needId: string, surveyLinkId: string): Promise<void> {
     const link = await this.tenant.runInOrgContext((tx) => tx.publicSurveyLink.findUnique({ where: { id: surveyLinkId } }));
-    if (!link || link.studyId !== studyId) {
+    if (!link || link.needId !== needId) {
       throw new NotFoundException({ error: { code: "SURVEY_LINK_NOT_FOUND", message: "Survey link not found" } });
     }
   }
@@ -116,6 +167,7 @@ export class PriorityService {
   private toScore(row: PriorityScoreRow): PriorityScore {
     return {
       id: row.id,
+      needId: row.needId,
       studyId: row.studyId,
       surveyLinkId: row.surveyLinkId,
       overallScore: row.overallScore,
@@ -124,7 +176,8 @@ export class PriorityService {
       factors: row.factors as PriorityScore["factors"],
       cycleNote: row.cycleNote,
       scoredAt: row.scoredAt.toISOString(),
-      isPlaceholder: true,
+      isApproved: row.approvedAt !== null,
+      approvedAt: row.approvedAt ? row.approvedAt.toISOString() : null,
     };
   }
 }

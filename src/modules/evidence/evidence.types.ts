@@ -1,5 +1,6 @@
 export interface EvidenceRow {
   id: string;
+  needId: string;
   studyId: string;
   orgId: string;
   fileName: string;
@@ -16,6 +17,7 @@ export interface EvidenceRow {
 
 export interface Evidence {
   id: string;
+  needId: string;
   studyId: string;
   fileName: string;
   fileType: string;

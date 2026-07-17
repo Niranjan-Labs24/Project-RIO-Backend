@@ -5,20 +5,20 @@ import { ReviewDecisionBody } from './ai-decisions.contract';
 import { AiDecisionsService } from './ai-decisions.service';
 import type { AiDecision, ReviewDecisionPayload, ScoringStubResponse } from './ai-decisions.types';
 
-@Controller('studies/:studyId/ai-decisions')
+@Controller('needs/:needId/ai-decisions')
 export class AiDecisionsController {
   constructor(private readonly aiDecisions: AiDecisionsService) {}
 
   @Post('classify')
   @RequirePermission('aiReview', 'write')
-  classify(@Param('studyId') studyId: string): Promise<AiDecision> {
-    return this.aiDecisions.classify(studyId);
+  classify(@Param('needId') needId: string): Promise<AiDecision> {
+    return this.aiDecisions.classify(needId);
   }
 
   @Get()
   @RequirePermission('aiReview', 'read')
-  list(@Param('studyId') studyId: string): Promise<AiDecision[]> {
-    return this.aiDecisions.listByStudyId(studyId);
+  list(@Param('needId') needId: string): Promise<AiDecision[]> {
+    return this.aiDecisions.listByNeedId(needId);
   }
 
   @Post('score')

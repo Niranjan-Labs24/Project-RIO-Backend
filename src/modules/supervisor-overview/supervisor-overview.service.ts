@@ -22,15 +22,22 @@ export class SupervisorOverviewService {
   async getOverview(): Promise<SupervisorOverview> {
     this.assertCrossEntity();
 
-    const [organisations, studies, reports, sharingRequests] = await Promise.all([
+    const [organisations, studies, needs, reports, sharingRequests] = await Promise.all([
       this.tenant.runAsSupervisor((tx) => tx.organisation.findMany({ orderBy: { name: "asc" } })),
       this.tenant.runAsSupervisor((tx) => tx.study.findMany({ orderBy: { updatedAt: "desc" } })),
+      this.tenant.runAsSupervisor((tx) => tx.need.findMany()),
       this.tenant.runAsSupervisor((tx) => tx.report.findMany({ where: { status: "approved" }, orderBy: { generatedAt: "desc" } })),
       this.prisma.sharingRequest.findMany({ orderBy: { requestedAt: "desc" } }),
     ]);
 
+    // "In progress" means at least one Need under the Study hasn't reached
+    // its terminal state (survey_published) yet — a Study is never itself
+    // "done", only its Needs are.
+    const studyHasOpenNeed = (studyId: string): boolean =>
+      needs.some((n) => n.studyId === studyId && n.status !== "survey_published");
+
     const rows: SupervisorOverviewRow[] = organisations.map((org) => {
-      const activeStudy = studies.find((s) => s.orgId === org.id && s.status !== "human_reviewed");
+      const activeStudy = studies.find((s) => s.orgId === org.id && studyHasOpenNeed(s.id));
       const latestReport = reports.find((r) => r.orgId === org.id);
       const sharingRequest = sharingRequests.find((r) => r.ownerOrgId === org.id || r.requestingOrgId === org.id);
       const lastStudyActivity = studies.find((s) => s.orgId === org.id)?.updatedAt ?? org.updatedAt;
@@ -47,7 +54,7 @@ export class SupervisorOverviewService {
 
     return {
       totalOrganizations: organisations.length,
-      studiesInProgress: studies.filter((s) => s.status !== "human_reviewed").length,
+      studiesInProgress: studies.filter((s) => studyHasOpenNeed(s.id)).length,
       reportsShared: sharingRequests.filter((r) => r.status === "approved").length,
       pendingSharingRequests: sharingRequests.filter((r) => r.status === "pending").length,
       rows,
