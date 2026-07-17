@@ -55,6 +55,7 @@ export const EnvSchema = Type.Object({
   // swap to object storage later without touching the Evidence table, which
   // only stores a storageKey string).
   EVIDENCE_STORAGE_PATH: Type.String({ default: './storage/evidence' }),
+  GEMINI_API_KEY: Type.Optional(Type.String()),
   LOG_LEVEL: Type.Union(
     [
       Type.Literal('fatal'),

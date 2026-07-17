@@ -76,4 +76,7 @@ export class ConfigService {
   get evidenceStoragePath(): string {
     return this.config.EVIDENCE_STORAGE_PATH;
   }
+  get geminiApiKey(): string | undefined {
+    return this.config.GEMINI_API_KEY;
+  }
 }
