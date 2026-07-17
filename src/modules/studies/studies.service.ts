@@ -1,13 +1,10 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '../../generated/prisma';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { requireActor, requireOrgId } from '../../tenancy/org-context';
-import { roleByKey } from '../../rbac/role-matrix';
 import { AuditService } from '../audit/audit.service';
 import type { AuditChange } from '../audit/audit.types';
 import {
   DELETABLE_STUDY_STATUSES,
-  type AssignableReviewer,
   type CreateStudyPayload,
   type ListStudiesQuery,
   type Study,
@@ -16,12 +13,6 @@ import {
   type StudyRow,
   type UpdateStudyPayload,
 } from './studies.types';
-
-// Source of truth is role-matrix.ts, not a hardcoded literal — resolved
-// once at module load since ROLE_MATRIX is static. "Reviewer/Approver" in
-// product terms maps to the `human_reviewer` role, which is the one that
-// actually approves/modifies AI Classification before publishing.
-const REVIEWER_APPROVER_ROLE_ID = roleByKey('human_reviewer')!.id;
 
 @Injectable()
 export class StudiesService {
@@ -33,61 +24,13 @@ export class StudiesService {
   async create(payload: CreateStudyPayload): Promise<Study> {
     const orgId = requireOrgId();
     const createdBy = requireActor();
-    const created = await this.tenant.runInOrgContext(async (tx) => {
-      const assignedReviewerId = await this.resolveAssignedReviewer(tx, payload.assignedReviewerId);
-      return tx.study.create({
-        data: { orgId, title: payload.title, villages: payload.villages ?? [], createdBy, assignedReviewerId },
-      });
-    }) as StudyRow;
+    const created = await this.tenant.runInOrgContext((tx) =>
+      tx.study.create({
+        data: { orgId, title: payload.title, villages: payload.villages ?? [], createdBy },
+      }),
+    ) as StudyRow;
     await this.audit.record({ action: 'create', entityType: 'study', entityId: created.id, entityLabel: created.title });
     return this.toStudy(created);
-  }
-
-  // Study-create's reviewer picker: every active Reviewer/Approver
-  // (human_reviewer) in the caller's own org. Exposed via studies
-  // (studySurvey:create), not users (entityTeam:read) — a caller who can
-  // create a Study doesn't necessarily have entityTeam access, but still
-  // needs this list.
-  async listAssignableReviewers(): Promise<AssignableReviewer[]> {
-    const rows = await this.tenant.runInOrgContext((tx) =>
-      tx.user.findMany({
-        where: { roleId: REVIEWER_APPROVER_ROLE_ID, status: 'active' },
-        orderBy: { name: 'asc' },
-      }),
-    );
-    return rows.map((r) => ({ id: r.id, name: r.name, email: r.email }));
-  }
-
-  // Required unless the org has zero active Reviewer/Approver users
-  // (nothing to assign); when a value is given, it must actually be one —
-  // org membership is implicit (every query here runs inside
-  // runInOrgContext's RLS-scoped session), role and active-status are
-  // checked explicitly.
-  private async resolveAssignedReviewer(
-    tx: Prisma.TransactionClient,
-    assignedReviewerId: string | undefined,
-  ): Promise<string | null> {
-    if (!assignedReviewerId) {
-      const reviewerCount = await tx.user.count({ where: { roleId: REVIEWER_APPROVER_ROLE_ID, status: 'active' } });
-      if (reviewerCount > 0) {
-        throw new BadRequestException({
-          error: { code: 'ASSIGNED_REVIEWER_REQUIRED', message: 'Select an assigned reviewer.' },
-        });
-      }
-      return null;
-    }
-    const reviewer = await tx.user.findFirst({
-      where: { id: assignedReviewerId, roleId: REVIEWER_APPROVER_ROLE_ID, status: 'active' },
-    });
-    if (!reviewer) {
-      throw new BadRequestException({
-        error: {
-          code: 'INVALID_ASSIGNED_REVIEWER',
-          message: 'The selected reviewer must be an active Reviewer/Approver in this organisation.',
-        },
-      });
-    }
-    return reviewer.id;
   }
 
   // Bounded pagination (NFR-006): default 100, hard cap 200. `status`/
@@ -180,9 +123,10 @@ export class StudiesService {
     return {
       id: row.id,
       title: row.title,
+      domain: row.domain,
+      subDomain: row.subDomain,
       villages: row.villages,
       status: row.status,
-      assignedReviewerId: row.assignedReviewerId,
       createdBy: row.createdBy,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),

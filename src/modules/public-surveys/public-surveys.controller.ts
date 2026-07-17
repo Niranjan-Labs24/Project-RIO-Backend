@@ -4,7 +4,6 @@ import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import { CreateSurveyLinkBody } from './public-surveys.contract';
 import { PublicSurveysService } from './public-surveys.service';
 import type { CreateSurveyLinkPayload, PublicSurveyLink } from './public-surveys.types';
-import type { SurveyDefinition } from '../survey-definition/survey-definition.placeholder';
 
 // Mounted under studies/:studyId/... as a separate controller (same
 // precedent as AiDecisionsController) — Studies stays a Dev2-owned module
@@ -13,12 +12,6 @@ import type { SurveyDefinition } from '../survey-definition/survey-definition.pl
 @Controller('studies/:studyId')
 export class PublicSurveysController {
   constructor(private readonly surveys: PublicSurveysService) {}
-
-  @Get('survey-definition')
-  @RequirePermission('studySurvey', 'read')
-  getDefinition(@Param('studyId') studyId: string): SurveyDefinition {
-    return this.surveys.getDefinition(studyId);
-  }
 
   @Get('survey-links')
   @RequirePermission('studySurvey', 'read')

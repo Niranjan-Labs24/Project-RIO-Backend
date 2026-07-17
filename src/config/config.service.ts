@@ -87,4 +87,7 @@ export class ConfigService {
   get reviewerSlaPollIntervalMs(): number {
     return this.config.REVIEWER_SLA_POLL_INTERVAL_MS;
   }
+  get geminiApiKey(): string | undefined {
+    return this.config.GEMINI_API_KEY;
+  }
 }

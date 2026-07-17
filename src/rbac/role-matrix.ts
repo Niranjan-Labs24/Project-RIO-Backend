@@ -2,6 +2,11 @@ export const PERMISSION_MODULES = [
   'entityTeam', 'rolesPermissions', 'onboardingConsent', 'methodologyQuestionBank',
   'studySurvey', 'dataCollection', 'dataImport', 'citizenChannel',
   'aiReview', 'priorityScoring', 'reportsDashboards', 'archiveSharingAudit',
+  // Survey Builder (Question Bank + AI-assisted questionnaire design) is its
+  // own independent methodology feature, not a Study feature — deliberately
+  // its own module rather than reusing studySurvey. Publish Survey/QR and
+  // the Citizen public flow are unrelated and keep their existing modules.
+  'surveyBuilder',
 ] as const;
 export type PermissionModule = (typeof PERMISSION_MODULES)[number];
 export type PermissionAction = 'read' | 'write' | 'create' | 'approve' | 'export' | 'share';
@@ -37,15 +42,18 @@ export const ROLE_MATRIX: RoleDef[] = [
     // Read-only Archive + able to request cross-org Sharing access (the
     // owning org's admin still has to approve — see SharingService.decide).
     perm('archiveSharingAudit', { read: true, create: true }),
+    // Survey Builder: the role responsible for creating and managing
+    // questionnaires (per the product decision) — real access, not RO.
+    perm('surveyBuilder', { read: true, write: true, create: true }),
   ] },
   { id: 'role_field_researcher', key: 'field_researcher', name: 'Field Researcher', description: 'Enters needs and documents the source and field notes.', crossEntity: false, permissions: [
     perm('entityTeam'), perm('rolesPermissions'), perm('onboardingConsent'),
     perm('methodologyQuestionBank', RO), perm('studySurvey', RO),
     perm('dataCollection', { read: true, write: true, create: true }),
     perm('dataImport'), perm('citizenChannel'), perm('aiReview'), perm('priorityScoring'),
-    perm('reportsDashboards'), perm('archiveSharingAudit'),
+    perm('reportsDashboards'), perm('archiveSharingAudit'), perm('surveyBuilder'),
   ] },
-  { id: 'role_human_reviewer', key: 'human_reviewer', name: 'Human Reviewer', description: 'Approves or modifies AI classification, priority, and duplicates before publishing.', crossEntity: false, permissions: [
+  { id: 'role_human_reviewer', key: 'human_reviewer', name: 'Reviewer/Approver', description: 'Approves or modifies AI classification, priority, and duplicates before publishing.', crossEntity: false, permissions: [
     perm('entityTeam'), perm('rolesPermissions'), perm('onboardingConsent'),
     perm('methodologyQuestionBank', RO), perm('studySurvey', RO), perm('dataCollection', RO),
     perm('dataImport', RO), perm('citizenChannel', RO),
@@ -54,7 +62,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     // Reviewer's work starts at Studies/Reviewer-SLA, not an executive
     // dashboard, but they still need read access to Reports/Archive/Sharing
     // once a study's classification/review work is done.
-    perm('reportsDashboards', RO), perm('archiveSharingAudit', RO),
+    perm('reportsDashboards', RO), perm('archiveSharingAudit', RO), perm('surveyBuilder'),
   ] },
   { id: 'role_data_analyst', key: 'data_analyst', name: 'Data Analyst', description: 'Processes data, reviews quality, and prepares reports and dashboards.', crossEntity: false, permissions: [
     perm('entityTeam'), perm('rolesPermissions'), perm('onboardingConsent'),
@@ -63,25 +71,26 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('aiReview', RO),
     perm('priorityScoring', { read: true, write: true, create: true, approve: true, export: true }),
     perm('reportsDashboards', { read: true, write: true, create: true, export: true }),
-    perm('archiveSharingAudit', RO),
+    perm('archiveSharingAudit', RO), perm('surveyBuilder'),
   ] },
   { id: 'role_system_admin', key: 'system_admin', name: 'System Admin', description: 'Manages accounts, roles, permissions, audit log, and configuration settings.', crossEntity: true, permissions: [
     perm('entityTeam', { read: true, write: true, create: true, export: true }),
     perm('rolesPermissions', RO), perm('onboardingConsent', RO), perm('methodologyQuestionBank', RO),
     perm('studySurvey', RO), perm('dataCollection', RO), perm('dataImport', RO), perm('citizenChannel', RO),
     perm('aiReview', RO), perm('priorityScoring', RO), perm('reportsDashboards', RO), perm('archiveSharingAudit', RO),
+    perm('surveyBuilder'),
   ] },
   { id: 'role_read_only_viewer', key: 'read_only_viewer', name: 'Read-only Viewer', description: 'Views authorized outputs without editing.', crossEntity: false, permissions: [
     perm('entityTeam'), perm('rolesPermissions'), perm('onboardingConsent'),
     perm('methodologyQuestionBank', RO), perm('studySurvey', RO), perm('dataCollection', RO),
     perm('dataImport', RO), perm('citizenChannel'), perm('aiReview', RO), perm('priorityScoring', RO),
-    perm('reportsDashboards', { read: true, export: true }), perm('archiveSharingAudit', RO),
+    perm('reportsDashboards', { read: true, export: true }), perm('archiveSharingAudit', RO), perm('surveyBuilder'),
   ] },
   { id: 'role_center_supervisor', key: 'center_supervisor', name: 'Center Supervisor', description: 'Cross-entity supervisory authority to follow studies, data, and reports for quality.', crossEntity: true, permissions: [
     perm('entityTeam', RO), perm('rolesPermissions'), perm('onboardingConsent'),
     perm('methodologyQuestionBank', RO), perm('studySurvey', RO), perm('dataCollection', RO),
     perm('dataImport', RO), perm('citizenChannel'), perm('aiReview', RO), perm('priorityScoring', RO),
-    perm('reportsDashboards', { read: true, export: true }), perm('archiveSharingAudit', RO),
+    perm('reportsDashboards', { read: true, export: true }), perm('archiveSharingAudit', RO), perm('surveyBuilder'),
   ] },
   { id: 'role_citizen_guest', key: 'citizen_guest', name: 'Citizen / Beneficiary Guest', description: 'Submits a need as a data source via OTP; not added before human review.', crossEntity: false,
     permissions: PERMISSION_MODULES.map((m) => (m === 'citizenChannel' ? perm(m, { create: true }) : perm(m))) },

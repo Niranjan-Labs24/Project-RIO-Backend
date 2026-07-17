@@ -13,8 +13,8 @@ export class EvidenceService {
     private readonly storage: EvidenceStorageService,
   ) {}
 
-  // RIO-FR-Add-01: evidence is uploaded after the Need is captured. Per
-  // Ganesh, uploading no longer advances Study.status by itself — the
+  // RIO-FR-Add-01: evidence is uploaded after the Need is captured. By
+  // design, uploading no longer advances Study.status by itself — the
   // researcher must explicitly submit() before AI Classification is allowed
   // to run, so status stays untouched here.
   async upload(studyId: string, files: UploadedFilePayload[]): Promise<Evidence[]> {
@@ -91,8 +91,8 @@ export class EvidenceService {
     return created.map((r) => this.toEvidence(r, uploaderName, isDuplicateByRowId.get(r.id) ?? false));
   }
 
-  // RIO-FR-Add-01 / per Ganesh: an explicit step, separate from uploading —
-  // AI Classification is gated on this having happened (see
+  // RIO-FR-Add-01: an explicit step, separate from uploading — AI
+  // Classification is gated on this having happened (see
   // AiDecisionsService.classify), not merely on evidence existing.
   async submit(studyId: string): Promise<void> {
     await this.tenant.runInOrgContext(async (tx) => {

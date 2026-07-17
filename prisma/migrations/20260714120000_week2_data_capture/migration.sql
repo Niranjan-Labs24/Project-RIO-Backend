@@ -23,7 +23,7 @@ GRANT USAGE ON SCHEMA public TO cnap_app;
 -- CreateEnum
 -- Matches the RIO-FR-001/Add-01/003 flow: draft -> need_captured ->
 -- evidence_submitted -> ai_classified -> human_reviewed. Uploading evidence
--- no longer advances status by itself (per Ganesh) — a researcher must
+-- no longer advances status by itself — a researcher must
 -- explicitly submit (EvidenceService.submit) before AI Classification is
 -- allowed to run; that submit action is what sets evidence_submitted.
 CREATE TYPE "StudyStatus" AS ENUM ('draft', 'need_captured', 'evidence_submitted', 'ai_classified', 'human_reviewed');

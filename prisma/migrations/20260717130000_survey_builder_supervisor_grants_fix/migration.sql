@@ -1,0 +1,26 @@
+-- questions/ai_suggestions/human_decisions/surveys/survey_questions (added
+-- in 20260716211500_ai_survey_flow) each got a cnap_supervisor RLS *policy*
+-- (questions_supervisor_read etc.) but never the matching plain
+-- GRANT SELECT — an RLS policy alone doesn't grant table access; Postgres
+-- checks both. Same class of gap already fixed twice before for other
+-- tables in this project (see 20260716093001_cnap_supervisor_grants_fix and
+-- the survey_supervisor_grants note in BACKEND-GUIDE.md). This was latent
+-- until QuestionsService.getDomainOptions/getQuestions (both
+-- runAsSupervisor) actually exercised it and surfaced "permission denied
+-- for table questions".
+-- survey_builder_responses (renamed from the original "survey_responses"
+-- — see the schema.prisma model comment) is missing grants for BOTH roles,
+-- not just cnap_supervisor: its origin migration (20260717042422) never
+-- granted cnap_app anything either, so SurveysService.submitSurvey's insert
+-- (via runAsOrg) would also fail "permission denied" right now. This table
+-- has no org_id column and no RLS of its own (unlike its sibling
+-- survey_questions, which scopes indirectly via an EXISTS-against-surveys
+-- policy) — access is mediated entirely through the parent `surveys` row's
+-- own org check in the service layer (submitSurvey/getSurveyResponses both
+-- resolve+validate the Survey first). Grants only, not new RLS, to match
+-- that existing design rather than inventing isolation architecture here.
+-- No RLS on this table at all (relrowsecurity is false) — a CREATE POLICY
+-- here would just never be evaluated, so this is a plain GRANT only,
+-- matching the table's actual (unrestricted-by-Postgres) design.
+GRANT SELECT, INSERT ON "survey_builder_responses" TO cnap_app;
+GRANT SELECT ON "questions", "ai_suggestions", "human_decisions", "surveys", "survey_questions", "survey_builder_responses" TO cnap_supervisor;

@@ -4,9 +4,10 @@ export interface StudyRow {
   id: string;
   orgId: string;
   title: string;
+  domain: string | null;
+  subDomain: string | null;
   villages: string[];
   status: StudyStatus;
-  assignedReviewerId: string | null;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
@@ -15,9 +16,13 @@ export interface StudyRow {
 export interface Study {
   id: string;
   title: string;
+  // Set only once a human approves an AI Classification decision on this
+  // Study's Need (see AiDecisionsService.review) — never directly editable
+  // through Update Study.
+  domain: string | null;
+  subDomain: string | null;
   villages: string[];
   status: StudyStatus;
-  assignedReviewerId: string | null;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -26,10 +31,6 @@ export interface Study {
 export interface CreateStudyPayload {
   title: string;
   villages?: string[];
-  // Required unless the org has no active NGO Research Officer at all —
-  // enforced in StudiesService.resolveAssignedReviewer, not the TypeBox
-  // contract, since "is one required" depends on live org data.
-  assignedReviewerId?: string;
 }
 
 export interface UpdateStudyPayload {
@@ -37,18 +38,7 @@ export interface UpdateStudyPayload {
   villages?: string[];
 }
 
-// Study-create's reviewer picker — deliberately just id/name/email, not the
-// full OrgUser shape (no role/status/createdAt): a Research Officer who can
-// create a Study but lacks entityTeam:read must still be able to see this
-// list, so it's exposed via studies (studySurvey:create), not users
-// (entityTeam:read).
-export interface AssignableReviewer {
-  id: string;
-  name: string;
-  email: string;
-}
-
-// RIO business rule (per Ganesh): a researcher can delete a study up until
+// RIO business rule: a researcher can delete a study up until
 // it's been through AI Classification/Human Review — once classified or
 // reviewed, it underpins a workflow other people rely on and can't be
 // deleted out from under them.

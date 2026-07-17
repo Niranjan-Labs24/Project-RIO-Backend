@@ -35,7 +35,7 @@ export class EvidenceController {
     return this.evidence.listByStudyId(studyId);
   }
 
-  // Per Ganesh: a distinct step from uploading — AI Classification only
+  // A distinct step from uploading — AI Classification only
   // becomes eligible once evidence has been explicitly submitted.
   @Post('submit')
   @HttpCode(200)
