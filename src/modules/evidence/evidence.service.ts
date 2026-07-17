@@ -41,8 +41,30 @@ export class EvidenceService {
       });
     }
 
+    // Duplicate detection is scoped to studyId — a Study has exactly one
+    // Need (Need.studyId is unique), so "same Need" and "same Study" are
+    // already the same scope; no separate needId filter is needed. Seeded
+    // from what's already stored, then grown as this batch is processed so
+    // two copies of the same file in one request also flag the second one.
+    const existingHashes = new Set(
+      (
+        await this.tenant.runInOrgContext((tx) => tx.evidence.findMany({ where: { studyId }, select: { fileHash: true } }))
+      )
+        .map((r) => r.fileHash)
+        // Rows predating the fileHash column have no hash and can't get one
+        // (it comes from the upload buffer, not from storageKey), so they
+        // can't participate in the comparison. Filtered out rather than left
+        // in the set: a null would never match anyway, and dropping it keeps
+        // the set honestly typed as Set<string>.
+        .filter((hash): hash is string => hash !== null),
+    );
+
     const created: EvidenceRow[] = [];
+    const isDuplicateByRowId = new Map<string, boolean>();
     for (const file of files) {
+      const fileHash = this.storage.hashBuffer(file.buffer);
+      const isDuplicate = existingHashes.has(fileHash);
+      existingHashes.add(fileHash);
       const storageKey = await this.storage.save(file.originalName, file.buffer);
       const row = (await this.tenant.runInOrgContext((tx) =>
         tx.evidence.create({
@@ -53,18 +75,20 @@ export class EvidenceService {
             fileType: file.mimeType,
             fileSize: file.sizeBytes,
             storageKey,
+            fileHash,
             uploadedBy,
           },
         }),
       )) as EvidenceRow;
       created.push(row);
+      isDuplicateByRowId.set(row.id, isDuplicate);
     }
 
     for (const row of created) {
       await this.audit.record({ action: 'create', entityType: 'evidence', entityId: row.id, entityLabel: row.fileName });
     }
     const uploaderName = await this.resolveUserName(uploadedBy);
-    return created.map((r) => this.toEvidence(r, uploaderName));
+    return created.map((r) => this.toEvidence(r, uploaderName, isDuplicateByRowId.get(r.id) ?? false));
   }
 
   // RIO-FR-Add-01 / per Ganesh: an explicit step, separate from uploading —
@@ -114,10 +138,23 @@ export class EvidenceService {
     return new Map(users.map((u) => [u.id, u.name]));
   }
 
+  // Confirmed gap: this used to delete unconditionally. Mirrors
+  // StudiesService.remove's shape — once evidence has been submitted
+  // (Study.status past draft/need_captured), it underpins AI
+  // Classification/Human Review and can no longer be removed.
   async remove(id: string): Promise<void> {
     const row = await this.tenant.runInOrgContext(async (tx) => {
       const existing = (await tx.evidence.findUnique({ where: { id } })) as EvidenceRow | null;
       if (!existing) throw new NotFoundException({ error: { code: 'EVIDENCE_NOT_FOUND', message: 'Evidence not found' } });
+      const study = await tx.study.findUnique({ where: { id: existing.studyId } });
+      if (study && study.status !== 'draft' && study.status !== 'need_captured') {
+        throw new ConflictException({
+          error: {
+            code: 'EVIDENCE_NOT_DELETABLE',
+            message: 'Evidence cannot be deleted once it has been submitted.',
+          },
+        });
+      }
       await tx.evidence.delete({ where: { id } });
       return existing;
     });
@@ -125,7 +162,11 @@ export class EvidenceService {
     await this.audit.record({ action: 'delete', entityType: 'evidence', entityId: row.id, entityLabel: row.fileName });
   }
 
-  private toEvidence(row: EvidenceRow, uploadedByName: string | null): Evidence {
+  // isDuplicate is only meaningful right after an upload (it answers "did
+  // this exact file already exist in this study when it was uploaded?") —
+  // listByStudyId doesn't pass one, so it's omitted from that response
+  // rather than recomputed against a different, order-dependent definition.
+  private toEvidence(row: EvidenceRow, uploadedByName: string | null, isDuplicate?: boolean): Evidence {
     return {
       id: row.id,
       studyId: row.studyId,
@@ -135,6 +176,7 @@ export class EvidenceService {
       uploadedBy: row.uploadedBy,
       uploadedByName,
       uploadedAt: row.uploadedAt.toISOString(),
+      ...(isDuplicate !== undefined ? { isDuplicate } : {}),
     };
   }
 }

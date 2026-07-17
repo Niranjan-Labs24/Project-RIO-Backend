@@ -234,9 +234,10 @@ async function main(): Promise<void> {
         data: {
           studyId: study.id,
           orgId: demoOrgId,
+          title: 'Unreliable dry-season water access in Village A',
           statement: 'Households in Village A report unreliable access to safe drinking water during the dry season.',
           village: ['Village A'],
-          source: 'Field interview, June 2026',
+          source: 'manual_entry',
           createdBy: officer.id,
         },
       });

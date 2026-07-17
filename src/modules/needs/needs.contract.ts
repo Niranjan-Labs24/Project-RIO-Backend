@@ -8,9 +8,9 @@ export const CreateNeedBody = registerSchema(
   'CreateNeedBody',
   T.Object(
     {
+      title: T.String({ minLength: 1, maxLength: 300 }),
       statement: T.String({ minLength: 1, maxLength: 5000 }),
       village: Villages,
-      source: T.String({ minLength: 1, maxLength: 200 }),
     },
     { additionalProperties: false },
   ),
@@ -21,9 +21,9 @@ export const UpdateNeedBody = registerSchema(
   'UpdateNeedBody',
   T.Object(
     {
+      title: T.Optional(T.String({ minLength: 1, maxLength: 300 })),
       statement: T.Optional(T.String({ minLength: 1, maxLength: 5000 })),
       village: T.Optional(Villages),
-      source: T.Optional(T.String({ minLength: 1, maxLength: 200 })),
     },
     { additionalProperties: false },
   ),
