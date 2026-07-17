@@ -10,6 +10,12 @@ export const CreateStudyBody = registerSchema(
     {
       title: T.String({ minLength: 1, maxLength: 300 }),
       villages: T.Optional(Villages),
+      // Format-only here — whether it's actually *required* depends on
+      // whether the org has any active NGO Research Officer, which isn't
+      // knowable from the request body alone. See
+      // StudiesService.resolveAssignedReviewer for that check plus the
+      // org-membership/role/active validation of the given id.
+      assignedReviewerId: T.Optional(T.String({ format: 'uuid' })),
     },
     { additionalProperties: false },
   ),

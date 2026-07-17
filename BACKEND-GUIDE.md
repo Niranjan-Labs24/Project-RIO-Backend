@@ -40,6 +40,16 @@ evidence before it's uploaded.
 | **`needs`** | The single "statement of need" for a Study — what problem is being documented, which village(s), and the source of that information. `village` is a list of strings (a Need can name more than one village), not a single comma-separated string. | Week 2 |
 | **`evidence`** | One row per uploaded supporting file (PDF/CSV/XLS/XLSX/DOC/DOCX/JPG/JPEG/PNG) attached to a Study. | Week 2 |
 | **`ai_decisions`** | One row per AI Classification run, holding both the AI's suggestion and (once reviewed) the human reviewer's decision — on the *same* row, so the audit trail never loses the AI's original suggestion even after a human overrides it. | Week 2 |
+| **`domains`** / **`sub_domains`** | The fixed hierarchy of "problem categories" (e.g. WASH → Water Access) that a Need gets classified into. Global reference data — same NGO-wide, no `org_id`. | Week 2/3 (§9) |
+| **`methodology_configs`** | One single row holding the org-wide priority-scoring rulebook: severity thresholds, the 9 factor weights, confidence-flag settings, and version/publish tracking. | Week 2/3 (§9) |
+| **`public_survey_links`** | One row per QR-code link generated for a Study — a token, expiry, active/inactive. | Week 2/3 (§10) |
+| **`citizen_otp_challenges`** | One row per "send me a code" request from a citizen filling out a public survey — the code (hashed), attempts, expiry, and whether it's been verified/consumed. | Week 2/3 (§10) |
+| **`survey_responses`** | One row per citizen's completed survey submission. | Week 2/3 (§10) |
+| **`response_quality_results`** | One row per survey response, holding a completeness score, a confidence flag, and whether it looks like a duplicate. | Week 2/3 (§11) |
+| **`ai_summaries`** | One row per "summarize this Study's responses" run. | Week 2/3 (§11) |
+| **`priority_scores`** | One row per "how urgent is this Study" scoring run — overall score, level (critical/high/medium/low), and the per-factor breakdown. | Week 2/3 (§12) |
+| **`sharing_requests`** | One row per "can I see your Study" request between two NGOs — pending/approved/rejected, plus who decided it and when. | Week 2/3 (§13) |
+| **`reports`** | One row per generated report (any of the 13 report types) — its content (as JSON), status (draft/approved/rejected), and who reviewed it. | Week 2/3 (§14) |
 
 ### Schema diagram
 
@@ -228,6 +238,12 @@ widened in an earlier, separate migration in the same Week 2 effort — see §7.
 
 No tables were dropped. No existing data was destroyed by this migration.
 
+*(A second, much larger batch of new tables — Domains, Methodology Configuration, Publish
+Survey/Citizen flow, Response Quality, Priority, Sharing, Reports — was added in the
+Week 2/3 Dev1 pass described starting at §9. That batch's own migration squash is covered
+in §15, following the same "combine same-pass features into one migration" convention as
+this section.)*
+
 ---
 
 ## 4. Creating a Study, step by step — what the backend actually does
@@ -369,3 +385,248 @@ to not need a schema change for that swap.
 | The (fake, for now) AI logic itself | `src/modules/ai-decisions/classification.placeholder.ts`, `scoring.placeholder.ts` |
 | How org-isolation actually works | `src/tenancy/org-context.ts`, `src/tenancy/tenant-prisma.service.ts` |
 | Signup / login | `src/modules/auth/auth.service.ts` |
+| Domain/Sub-Domain Master, Methodology Configuration | `src/modules/domains/`, `src/modules/methodology-config/` |
+| Publish Survey + Citizen public flow | `src/modules/public-surveys/`, `src/modules/citizen/`, `src/modules/survey-definition/` |
+| Response Quality, AI Summary | `src/modules/response-quality/` |
+| Priority Dashboard/Scoring | `src/modules/priority/` |
+| Sharing (cross-org requests) | `src/modules/sharing/` |
+| Reports (RPT-01..13), real PDF/Excel export | `src/modules/reports/` |
+| Reviewer SLA, Archive, Program Supervisor Dashboard | `src/modules/reviewer-sla/`, `src/modules/archive/`, `src/modules/supervisor-overview/` |
+
+---
+
+## 9. Consent — moved from signup-time to post-first-login
+
+Signup used to stamp a user's consent immediately, as part of creating the account — which
+meant nobody ever actually *saw* the consent screen, they were just marked as having agreed.
+That's now fixed: signup no longer touches `consented_at` or writes a `consent_acceptances`
+row at all (see `AuthRepository.createOrganisationAndAdmin`). Instead:
+
+1. A brand-new user (after a signup-issued temporary password is replaced, if applicable)
+   hits a real consent screen on their first login.
+2. `POST /auth/consent` looks up the currently-`active` `consent_policies` row, stamps
+   `users.consented_at` + a new column **`users.consented_policy_version`**, and writes an
+   immutable `consent_acceptances` snapshot row (policy version + policy text + timestamp) —
+   all three in one transaction.
+3. Every login/`/auth/me` call returns `consentedPolicyVersion` alongside the live active
+   policy's version, so the frontend can show the consent screen again *only* when those two
+   values differ — i.e. only when an admin publishes a brand-new policy version. A normal
+   day-to-day login never re-shows it.
+
+This is why `consented_policy_version` exists as its own column instead of the frontend just
+checking "is `consented_at` set" — a plain truthiness check could never detect "the policy
+changed since you last agreed," only "have you ever agreed to anything, ever."
+
+---
+
+## 10. Domain/Sub-Domain Master + Methodology Configuration
+
+Two related global reference modules — global meaning NGO-wide, not per-organisation, same
+family as `roles`/`consent_policies` (no `org_id`, no RLS).
+
+**Domains/Sub-Domains** (`domains`, `sub_domains`) are the fixed problem-category hierarchy
+(e.g. "WASH" → "Water Access") that a Need eventually gets classified into. Deactivating a
+Domain (there's no delete — see the pattern in §2) **cascades to deactivate its Sub-Domains
+too**, one-way: reactivating the Domain does *not* bring its Sub-Domains back automatically,
+a reviewer has to explicitly reactivate each one. This stops "an active Sub-Domain under an
+invisible Domain" from ever existing.
+
+**Methodology Configuration** (`methodology_configs`) is a single-row table holding the whole
+priority-scoring rulebook in one place, instead of scattered hardcoded constants in code:
+
+- `priority_thresholds` — the score cutoffs for Critical/High/Medium/equity-flagged-High.
+  Seeded at `{criticalSeverity: 80, highSeverity: 70, mediumSeverity: 40, equityHighSeverity: 50}`.
+  The server rejects a save that doesn't satisfy `critical > high > medium` and
+  `equityHighSeverity <= highSeverity` — this is enforced in `MethodologyConfigService`, not
+  just the UI, so it holds regardless of what calls the API.
+- `priority_factor_weights` — the 9 factors from the methodology workbook (Severity 20%,
+  Affected Population 15%, Service Availability Gap 12%, Urgency 12%, Data Confidence 10%,
+  Frequency 10%, Geographic Coverage 8%, Vulnerable Groups 8%, Strategic Alignment 5%),
+  previously hardcoded inside `priority.placeholder.ts` and now editable here instead.
+- `confidence_flag_settings` — the "Don't know" ratio threshold and minimum-respondent count
+  that decide whether a Study's data quality reads as `standard` or `low` confidence.
+- `version`/`status`(`draft`/`published`)/`published_by`/`published_at` — lets an admin edit
+  freely as a draft and then explicitly publish, with a record of who published which version
+  and when.
+
+---
+
+## 11. Publish Survey + Citizen Public Flow (QR code → OTP → submit)
+
+This is the only part of the backend where the caller isn't logged in at all — a citizen
+scans a QR code, types their phone/email, verifies a one-time code, and submits answers,
+with no account and no session cookie anywhere.
+
+**How an anonymous caller still gets safe, tenant-scoped writes:** every route resolves the
+owning organisation from the link's token first (via the same read-only `cnap_supervisor`
+cross-org connection used elsewhere), then every actual write goes through
+`TenantPrismaService.runAsOrg(resolvedOrgId, ...)` — same Row-Level-Security safety net as a
+logged-in NGO user, just with the org picked out from the token instead of a session.
+
+Flow, table by table:
+
+1. **`GET /public/surveys/:token`** — resolves the link (`public_survey_links`), checks it's
+   still `is_active` and not expired, and returns the Study's questions. The question set
+   itself still comes from a placeholder (`survey-definition.placeholder.ts`) — **every Study
+   currently gets the exact same fixed 4-question survey** — pending the real Survey Builder.
+   This same call also now returns the real Study title and organisation name (previously
+   only the placeholder survey's generic title), so the citizen flow can show real context
+   before the first question.
+2. **`POST /public/surveys/:token/otp/request`** — creates a `citizen_otp_challenges` row
+   (code hashed, 10-minute expiry) and emails it via the real `MailerService`. In
+   non-production, the code is also printed to the server console so local testing isn't
+   blocked on an inbox.
+3. **`POST /public/surveys/:token/otp/verify`** — checks the code against the hash, max 5
+   attempts before the challenge is dead and a new one has to be requested.
+4. **`POST /public/surveys/:token/responses`** — writes a `survey_responses` row. Blocked two
+   ways as of today (previously **not** blocked at all):
+   - **`OTP_ALREADY_USED`** — a challenge that's already produced one response can't produce
+     a second one, even with the same still-known `challengeId`.
+   - **`DUPLICATE_SUBMISSION`** — even a *brand-new* OTP request/verification for the same
+     contact is blocked if that contact already has a response for the Study. Both checks
+     plus the write happen inside one transaction (`consumed_at` is stamped on the challenge
+     at the same time the response is created).
+
+---
+
+## 12. Response Quality + AI Summary
+
+Both read from `survey_responses` for a given Study and are triggered manually (a reviewer
+clicks a button), not automatically:
+
+- **Response Quality** (`response_quality_results`) — a completeness score (how many answers
+  were actually filled in), a `standard`/`low` confidence flag (driven by the Methodology
+  Configuration settings from §10), and duplicate detection. The duplicate check here is an
+  **exact match** on `(contact, serialized answers)` within the same assessment batch — a
+  real fuzzy/near-duplicate detector is a documented future replacement for just this one
+  function, not a rewrite of the whole feature.
+- **AI Summary** (`ai_summaries`) — a canned narrative template ("Placeholder AI summary: N
+  response(s) received...") pending real LLM integration. Same "swap one function later, no
+  schema change" pattern as AI Classification in §6.
+
+---
+
+## 13. Priority Dashboard / Scoring
+
+`priority_scores` holds one row per "how urgent is this Study" scoring run — an overall
+score, a level (`critical`/`high`/`medium`/`low`), a gap type, and a per-factor breakdown
+using the weights from Methodology Configuration (§10). The scoring formula itself
+(`priority.placeholder.ts`) is still a placeholder pending the real methodology workbook —
+every score the API returns is explicitly marked `isPlaceholder: true` so nothing downstream
+can mistake it for the final methodology.
+
+The org-wide dashboard list (`GET /priority-scores`) returns **every Study in the
+organisation**, whether or not it's ever been scored — a Study with no score just comes back
+with `score: null`. This used to only return Studies that already had a score row, which
+silently hid any Study nobody had gotten around to scoring yet.
+
+---
+
+## 14. Sharing (cross-org "can I see your Study" requests)
+
+`sharing_requests` deliberately has **no Row-Level Security** — unlike almost every other
+tenant table, a sharing request is inherently visible to *two* different organisations (the
+owner and the requester) plus the cross-entity Center Supervisor, so authorization is
+enforced in the service layer instead of the database.
+
+Flow: a requesting org picks another org and one of that org's **completed
+(`human_reviewed`) Studies only** (via two lookup endpoints,
+`GET /sharing-requests/lookup/organizations` and
+`.../lookup/organizations/:orgId/studies`, both added this pass so the frontend never has to
+ask someone to type in a raw organisation/Study ID) → the request sits `pending` → the owning
+org approves or rejects it. On approve, the requester gets a real read-only view of the Study
+via `GET /sharing-requests/:id/shared-study`; on reject, that view stays forbidden forever
+(re-requesting is possible, but a rejected request itself doesn't reopen).
+
+*A real RLS bug was caught and fixed here during this pass*: the two lookup endpoints first
+read `organisations` via the plain tenant-scoped Prisma client, which silently returned
+nothing for every organisation except the caller's own (organisations **does** have RLS,
+unlike the global reference tables in §10) — fixed by routing those reads through the
+cross-org `cnap_supervisor` connection instead, same pattern citizen/priority-dashboard
+lookups already use.
+
+---
+
+## 15. Reports (RPT-01 through RPT-13)
+
+One flexible `reports` table backs all 13 report types from the product spec — `report_type`
+is an enum (`RPT01`..`RPT13`), `content` is a JSON column shaped differently per type (an
+Individual Study Report's content looks nothing like a Village-wise Needs report's), and
+`filters` records exactly what filters were active when it was generated.
+
+Lifecycle: **Generate → Draft → Approve/Reject → Export** (export only allowed once
+approved). 11 of the 13 report types pull real data (Study/Need/Evidence/AiDecision/
+PriorityScore/SharingRequest, depending on type); two are explicit, documented gaps rather
+than fake numbers — Gender-wise Needs (`RPT07`) returns `{available: false}` because gender
+isn't collected anywhere yet, and KPI Results (`RPT08`) returns `{available: false}` pending
+Question Bank/Indicator integration.
+
+**Export used to be fake** — `buildExportStub()` returned plain UTF-8 text wearing a
+`.pdf`/`.xlsx` file extension, which no real PDF/Excel reader could open. Fixed this pass:
+- A small, dependency-free, hand-written PDF generator (`pdf-builder.ts`) that produces a
+  genuinely valid single-page PDF (title + the report's own content, wrapped and paginated).
+- A real `.xlsx` workbook (`excel-builder.ts`, using the `exceljs` package) with an actual
+  header row and real data rows — one sheet per array-shaped field in the report's content,
+  plus a summary sheet for everything else.
+- Both are fed by one shared generic flattener (`report-content-flatten.ts`) that turns each
+  report type's differently-shaped `content` into rows/tables, so no per-report-type export
+  code was needed.
+- A second bug surfaced while verifying the fix: the controller was returning the export
+  Buffer via `@Res({ passthrough: true })`, which made Nest JSON-serialize it
+  (`{"type":"Buffer","data":[...]}`) instead of streaming raw bytes. Fixed by switching to
+  `@Res()` and writing the response directly.
+
+---
+
+## 16. Reviewer SLA, Archive, Program Supervisor Dashboard (smaller read-oriented modules)
+
+- **Reviewer SLA** (`reviewer-sla`) — no new table. "Pending review" is just every
+  `ai_decisions` row still waiting on a human decision; due-by/at-risk/breached status is
+  *computed* on every request from a configurable SLA-hours setting, not stored anywhere.
+- **Archive** (`archive`) — no new table either. One filterable read view over `studies`
+  (completed) and `reports` (approved) — Entity/Region/Sector/Village/Study/Report are all
+  real server-side filters, not placeholders.
+- **Program Supervisor Dashboard** (`supervisor-overview`) — the one screen that legitimately
+  needs to see across every organisation at once (for the cross-entity Center Supervisor
+  role). Deliberately its own module rather than reusing Organizations/Studies/Reports
+  directly, since those stay single-org-scoped for every other role. Real cross-org joins via
+  the same `cnap_supervisor` connection as everything else that needs to read across orgs —
+  never a placeholder, by design, from day one.
+
+---
+
+## 17. A real permission-sourcing bug, fixed this pass (backend side already correct)
+
+Worth documenting since it's easy to assume the opposite: the backend's `/auth/login` and
+`/auth/me` responses have **always** included each role's full, real permission grants
+(`role.permissions`, straight from `rbac/role-matrix.ts`) — the backend was never the
+problem here. The frontend had a stale, unrelated local copy of the role matrix and was
+reading permissions from *that* instead of from this response, which meant a real backend
+permission change could silently not take effect in the UI until someone remembered to
+manually re-sync the two files. That's a frontend fix, not a backend one, but it's worth
+knowing the backend's response shape was correct the whole time — nothing here needed to
+change to fix it.
+
+---
+
+## 18. What changed in the database this pass — squashed into 2 migrations
+
+This whole pass (§9-§16) was originally written and applied as **9 separate migrations**
+over the course of the day. Since none of them had been merged/shared yet, they were combined
+into 2 files afterward — same "squash before merging" convention already used once for Week 2
+(see §3) — rather than keeping 9 never-shared intermediate steps around forever:
+
+- **`20260716093000_dev1_week2_week3_schema`** — every new table/column/enum from §9-§16 in
+  its final shape (e.g. `methodology_configs` created once with `status`/`published_by`/
+  `priority_factor_weights` already present, instead of created plain and then `ALTER`'d
+  twice; `citizen_otp_challenges.consumed_at` present from creation instead of added later),
+  plus each table's own RLS policies and grants.
+- **`20260716093001_cnap_supervisor_grants_fix`** — one standalone grants-only fix, kept
+  separate because it patches a gap in `studies`/`needs`/`evidence`/`ai_decisions` — tables
+  from the *earlier*, unrelated Week 2 migration, not from this pass — so folding it into the
+  schema migration above would have been a non-sequitur.
+
+No tables were dropped, no data was lost — the local database already had every table in its
+final shape from the original 9 migrations; only the migration *history bookkeeping* was
+replayed (via `prisma migrate resolve --applied`, Prisma's supported way to mark a migration
+as already-applied without re-running its SQL) to match the new, smaller file set.

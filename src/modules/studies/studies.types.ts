@@ -6,6 +6,7 @@ export interface StudyRow {
   title: string;
   villages: string[];
   status: StudyStatus;
+  assignedReviewerId: string | null;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
@@ -16,6 +17,7 @@ export interface Study {
   title: string;
   villages: string[];
   status: StudyStatus;
+  assignedReviewerId: string | null;
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -24,11 +26,26 @@ export interface Study {
 export interface CreateStudyPayload {
   title: string;
   villages?: string[];
+  // Required unless the org has no active NGO Research Officer at all —
+  // enforced in StudiesService.resolveAssignedReviewer, not the TypeBox
+  // contract, since "is one required" depends on live org data.
+  assignedReviewerId?: string;
 }
 
 export interface UpdateStudyPayload {
   title?: string;
   villages?: string[];
+}
+
+// Study-create's reviewer picker — deliberately just id/name/email, not the
+// full OrgUser shape (no role/status/createdAt): a Research Officer who can
+// create a Study but lacks entityTeam:read must still be able to see this
+// list, so it's exposed via studies (studySurvey:create), not users
+// (entityTeam:read).
+export interface AssignableReviewer {
+  id: string;
+  name: string;
+  email: string;
 }
 
 // RIO business rule (per Ganesh): a researcher can delete a study up until
