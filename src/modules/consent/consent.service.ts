@@ -27,24 +27,30 @@ export class ConsentService {
     return { version: policy.version, text: policy.text };
   }
 
-  // Read-only, for Organization Settings' Consent card. `consent_acceptances`
-  // is RLS-scoped by org_id, so this goes through the ambient org context
-  // (the caller's own org) — never another organisation's acceptance record.
+  // Read-only, for Organization Settings' Consent card — the org's own
+  // consent record, meaning the NGO Admin's (account owner's) acceptance
+  // specifically. NOT "whoever in this org accepted most recently": every
+  // invited user (Research Officer, Reviewer, etc.) also accepts this same
+  // policy as part of their own onboarding, and a naive "latest
+  // ConsentAcceptance in the org" query would surface whichever of them
+  // happened to onboard last, overwriting the admin's own acceptance in
+  // this display even though nothing about the org's actual policy
+  // acceptance changed.
   async getOrganizationStatus(): Promise<OrganizationConsentStatus> {
-    const latest = await this.tenant.runInOrgContext((tx) =>
-      tx.consentAcceptance.findFirst({
-        orderBy: { acceptedAt: 'desc' },
-        include: { user: { select: { name: true, email: true } } },
+    const admin = await this.tenant.runInOrgContext((tx) =>
+      tx.user.findFirst({
+        where: { roleId: 'role_ngo_admin' },
+        select: { name: true, email: true, consentedAt: true, consentedPolicyVersion: true },
       }),
     );
-    if (!latest) {
+    if (!admin?.consentedAt) {
       return { version: null, acceptedAt: null, acceptedByName: null, acceptedByEmail: null };
     }
     return {
-      version: latest.policyVersion,
-      acceptedAt: latest.acceptedAt.toISOString(),
-      acceptedByName: latest.user.name,
-      acceptedByEmail: latest.user.email,
+      version: admin.consentedPolicyVersion,
+      acceptedAt: admin.consentedAt.toISOString(),
+      acceptedByName: admin.name,
+      acceptedByEmail: admin.email,
     };
   }
 }

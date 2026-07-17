@@ -37,7 +37,11 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('studySurvey', { read: true, write: true, create: true, export: true }),
     perm('dataCollection', { read: true, write: true, create: true }),
     perm('dataImport', { read: true, write: true, create: true }),
-    perm('citizenChannel'), perm('aiReview', RO), perm('priorityScoring', RO),
+    perm('citizenChannel'),
+    // Runs AI Classification themselves after submitting evidence (write),
+    // but doesn't decide it — approve/override stays Reviewer/Approver-only.
+    perm('aiReview', { read: true, write: true }),
+    perm('priorityScoring', RO),
     perm('reportsDashboards', { read: true, export: true }),
     // Read-only Archive + able to request cross-org Sharing access (the
     // owning org's admin still has to approve — see SharingService.decide).

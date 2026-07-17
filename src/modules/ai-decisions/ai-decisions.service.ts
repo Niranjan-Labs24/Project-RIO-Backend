@@ -78,16 +78,16 @@ export class AiDecisionsService {
 
   private async runClassification(subject: { statement: string; village: string[] }): Promise<ClassificationResult> {
     try {
-      const domains = (await this.domains.listDomains()).filter((d) => d.isActive);
-      const candidates: ClassificationCandidate[] = await Promise.all(
-        domains.map(async (d) => ({
-          domainCode: d.code,
-          domainName: d.name,
-          subDomains: (await this.domains.listSubDomains(d.id))
-            .filter((sd) => sd.isActive)
-            .map((sd) => ({ code: sd.code, name: sd.name })),
-        })),
-      );
+      // One query (see DomainsService.listDomainsWithSubDomains), not one
+      // listSubDomains() call per domain.
+      const domains = (await this.domains.listDomainsWithSubDomains()).filter((d) => d.isActive);
+      const candidates: ClassificationCandidate[] = domains.map((d) => ({
+        domainCode: d.code,
+        domainName: d.name,
+        subDomains: d.subDomains
+          .filter((sd) => sd.isActive)
+          .map((sd) => ({ code: sd.code, name: sd.name })),
+      }));
       if (candidates.length === 0) throw new Error('No active domains configured');
       return await classifyNeedWithAi(this.ai, subject, redactPii(subject.statement), candidates);
     } catch (err) {
