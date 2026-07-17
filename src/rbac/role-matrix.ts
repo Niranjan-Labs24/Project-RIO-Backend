@@ -33,7 +33,10 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('dataCollection', { read: true, write: true, create: true }),
     perm('dataImport', { read: true, write: true, create: true }),
     perm('citizenChannel'), perm('aiReview', RO), perm('priorityScoring', RO),
-    perm('reportsDashboards', { read: true, export: true }), perm('archiveSharingAudit'),
+    perm('reportsDashboards', { read: true, export: true }),
+    // Read-only Archive + able to request cross-org Sharing access (the
+    // owning org's admin still has to approve — see SharingService.decide).
+    perm('archiveSharingAudit', { read: true, create: true }),
   ] },
   { id: 'role_field_researcher', key: 'field_researcher', name: 'Field Researcher', description: 'Enters needs and documents the source and field notes.', crossEntity: false, permissions: [
     perm('entityTeam'), perm('rolesPermissions'), perm('onboardingConsent'),
@@ -47,7 +50,11 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('methodologyQuestionBank', RO), perm('studySurvey', RO), perm('dataCollection', RO),
     perm('dataImport', RO), perm('citizenChannel', RO),
     perm('aiReview', { read: true, write: true, approve: true }),
-    perm('priorityScoring', RO), perm('reportsDashboards'), perm('archiveSharingAudit'),
+    perm('priorityScoring', RO),
+    // Reviewer's work starts at Studies/Reviewer-SLA, not an executive
+    // dashboard, but they still need read access to Reports/Archive/Sharing
+    // once a study's classification/review work is done.
+    perm('reportsDashboards', RO), perm('archiveSharingAudit', RO),
   ] },
   { id: 'role_data_analyst', key: 'data_analyst', name: 'Data Analyst', description: 'Processes data, reviews quality, and prepares reports and dashboards.', crossEntity: false, permissions: [
     perm('entityTeam'), perm('rolesPermissions'), perm('onboardingConsent'),

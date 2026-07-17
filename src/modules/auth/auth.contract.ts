@@ -15,11 +15,10 @@ const SectorEnum = T.Union([
  * Public signup — no password/adminName fields: the email IS the NGO Admin
  * account and the server issues a temporary password (see AuthService.signup).
  *
- * RIO-FR-Add-02: `consentAccepted` must be the literal `true` — TypeBox
- * rejects any other value (false, missing, non-boolean) as a 400 before this
- * ever reaches the service, so consent is structurally mandatory, not just a
- * value the service happens to record. See AuthRepository.createOrganisationAndAdmin
- * for where the acceptance row (policy version + timestamp) is written.
+ * Consent is NOT collected here — it happens after first login, once the
+ * temp password has been replaced (see AuthService.consent() /
+ * ConsentGuard on the frontend). Signup only creates the org + its first
+ * NGO Admin.
  *
  * `sector` replaces the old free-text "area of work" field on this form —
  * `purpose` is now only used to carry the reviewer's own text when
@@ -35,7 +34,6 @@ export const SignupBody = registerSchema(
       purpose: T.Optional(T.String({ maxLength: 500 })),
       registrationNumber: T.String({ minLength: 1, maxLength: 100 }),
       email: T.String({ format: 'email' }),
-      consentAccepted: T.Literal(true),
     },
     { additionalProperties: false },
   ),

@@ -73,9 +73,44 @@ export class AuditService {
   async list(opts: {
     limit?: number; offset?: number; organizationId?: string;
     entityType?: string; entityId?: string; actorId?: string;
+    action?: string; dateFrom?: string; dateTo?: string;
   }): Promise<AuditEvent[]> {
     const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
     const offset = Math.max(opts.offset ?? 0, 0);
+    const { logs, actors } = await this.query(opts, limit, offset);
+    return this.mapRows(logs, actors);
+  }
+
+  /**
+   * Same filters as list(), no pagination cap beyond a hard export ceiling
+   * (5000 rows) — CSV today; PDF/Excel return the same placeholder-stub
+   * contract Reports export uses (see reports.placeholder.ts) so a future
+   * real renderer swap doesn't change the response shape.
+   */
+  async exportCsv(opts: {
+    organizationId?: string; entityType?: string; entityId?: string;
+    actorId?: string; action?: string; dateFrom?: string; dateTo?: string;
+  }): Promise<string> {
+    const { logs, actors } = await this.query(opts, 5000, 0);
+    const events = this.mapRows(logs, actors);
+    const header = ['Timestamp', 'Actor', 'Action', 'Entity Type', 'Entity', 'IP Address'];
+    const escape = (value: string): string => `"${value.replace(/"/g, '""')}"`;
+    const rows = events.map((e) =>
+      [e.createdAt, e.actor?.email ?? '', e.action, e.entityType, e.entityLabel, e.ipAddress ?? '']
+        .map((v) => escape(String(v)))
+        .join(','),
+    );
+    return [header.map(escape).join(','), ...rows].join('\n');
+  }
+
+  private async query(
+    opts: {
+      organizationId?: string; entityType?: string; entityId?: string; actorId?: string;
+      action?: string; dateFrom?: string; dateTo?: string;
+    },
+    limit: number,
+    offset: number,
+  ): Promise<{ logs: AuditRow[]; actors: ActorRow[] }> {
     const roleKey = getOrgStore()?.role;
     const crossEntity = roleKey ? roleByKey(roleKey)?.crossEntity === true : false;
 
@@ -83,8 +118,15 @@ export class AuditService {
     if (opts.entityType) filters.entityType = opts.entityType;
     if (opts.entityId) filters.entityId = opts.entityId;
     if (opts.actorId) filters.actorUserId = opts.actorId;
+    if (opts.action) filters.action = opts.action;
+    if (opts.dateFrom || opts.dateTo) {
+      filters.createdAt = {
+        ...(opts.dateFrom ? { gte: new Date(opts.dateFrom) } : {}),
+        ...(opts.dateTo ? { lte: new Date(opts.dateTo) } : {}),
+      };
+    }
 
-    const query = async (tx: Prisma.TransactionClient, where: Record<string, unknown>) => {
+    const runQuery = async (tx: Prisma.TransactionClient, where: Record<string, unknown>) => {
       const logs = (await tx.auditLog.findMany({ where, orderBy: { createdAt: 'desc' }, take: limit, skip: offset })) as AuditRow[];
       const actors = await this.loadActors(tx, logs);
       return { logs, actors };
@@ -92,12 +134,10 @@ export class AuditService {
 
     if (crossEntity) {
       const where = { ...filters, ...(opts.organizationId ? { organisationId: opts.organizationId } : {}) };
-      const { logs, actors } = await this.tenant.runAsSupervisor((tx) => query(tx, where));
-      return this.mapRows(logs, actors);
+      return this.tenant.runAsSupervisor((tx) => runQuery(tx, where));
     }
 
-    const { logs, actors } = await this.tenant.runInOrgContext((tx) => query(tx, filters));
-    return this.mapRows(logs, actors);
+    return this.tenant.runInOrgContext((tx) => runQuery(tx, filters));
   }
 
   private async loadActors(tx: Prisma.TransactionClient, logs: AuditRow[]): Promise<ActorRow[]> {

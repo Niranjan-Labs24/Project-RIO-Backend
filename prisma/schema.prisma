@@ -109,6 +109,15 @@ model Organisation {
   needs       Need[]
   evidence    Evidence[]
   aiDecisions AiDecision[]
+  surveyLinks PublicSurveyLink[]
+  otpChallenges CitizenOtpChallenge[]
+  surveyResponses SurveyResponse[]
+  responseQualityResults ResponseQualityResult[]
+  aiSummaries AiSummary[]
+  priorityScores PriorityScore[]
+  sharingRequestsOwned SharingRequest[] @relation("SharingRequestsOwned")
+  sharingRequestsMade  SharingRequest[] @relation("SharingRequestsMade")
+  reports Report[]
 
   @@map("organisations")
 }
@@ -123,6 +132,11 @@ model User {
   passwordHash        String?    @map("password_hash") @db.VarChar(255)
   mustChangePassword  Boolean    @default(false) @map("must_change_password")
   consentedAt         DateTime?  @map("consented_at") @db.Timestamptz(6)
+  // The policy version accepted at `consentedAt` — kept alongside the
+  // timestamp (denormalized from ConsentAcceptance) so a version bump can be
+  // detected on every login/me() without an extra join. The full acceptance
+  // history still lives in ConsentAcceptance; this is just "what's current."
+  consentedPolicyVersion String? @map("consented_policy_version") @db.VarChar(64)
   failedLoginAttempts Int        @default(0) @map("failed_login_attempts")
   lockedUntil         DateTime?  @map("locked_until") @db.Timestamptz(6)
   lastLoginAt         DateTime?  @map("last_login_at") @db.Timestamptz(6)
@@ -132,6 +146,8 @@ model User {
   org      Organisation        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   role     Role                @relation(fields: [roleId], references: [id])
   consents ConsentAcceptance[]
+  // Studies this user is the assigned reviewer for (see Study.assignedReviewerId).
+  reviewingStudies Study[] @relation("StudyAssignedReviewer")
 
   @@index([orgId])
   @@index([roleId])
@@ -200,16 +216,34 @@ model Study {
   // made for Need.village.
   villages  String[]    @default([])
   status    StudyStatus @default(draft)
+  // The NGO Research Officer who owns this Study's AI Classification human
+  // review — set at Study creation so Reviewer Alerts never shows
+  // "Unassigned" for a newly created Study. Nullable only for pre-existing
+  // Studies created before this field existed (see the migration's backfill
+  // comment) and for orgs with no NGO Research Officer yet. SetNull on
+  // delete: if the assigned user's account is later removed, the Study
+  // itself must not be blocked/cascaded — it just reverts to unassigned.
+  // Ownership only — this does not affect RBAC/permissions.
+  assignedReviewerId String? @map("assigned_reviewer_id") @db.Uuid
   createdBy String      @map("created_by") @db.Uuid
   createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org      Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  assignedReviewer User? @relation("StudyAssignedReviewer", fields: [assignedReviewerId], references: [id], onDelete: SetNull)
   need     Need?
   evidence Evidence[]
   aiDecisions AiDecision[]
+  surveyLinks PublicSurveyLink[]
+  surveyResponses SurveyResponse[]
+  responseQualityResults ResponseQualityResult[]
+  aiSummaries AiSummary[]
+  priorityScores PriorityScore[]
+  sharingRequests SharingRequest[]
+  reports Report[]
 
   @@index([orgId])
+  @@index([assignedReviewerId])
   @@map("studies")
 }
 
@@ -298,4 +332,363 @@ model AiDecision {
   @@index([orgId])
   @@index([subjectType, subjectId])
   @@map("ai_decisions")
+}
+
+// ──────── Domain / Sub-Domain Master Module ────────
+// Global reference/master data (no orgId, no RLS — same pattern as Role/
+// ConsentPolicy) seeded from question-bank-v1.json's Domain/Sub-Domain
+// hierarchy ONLY (not its Indicators/KPIs/Questions, which belong to the
+// separately-owned Question Bank module). Consumed by the AI Override
+// screen's domain/sub-domain dropdowns; never used during Need creation.
+// Deactivate rather than delete — a retired domain/sub-domain must not
+// vanish from historical AiDecision rows that already reference it by name.
+model Domain {
+  id           String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  code         String   @unique @db.VarChar(64)
+  name         String   @db.VarChar(200)
+  displayOrder Int      @default(0) @map("display_order")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  subDomains SubDomain[]
+
+  @@map("domains")
+}
+
+model SubDomain {
+  id           String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  domainId     String   @map("domain_id") @db.Uuid
+  code         String   @unique @db.VarChar(64)
+  name         String   @db.VarChar(200)
+  displayOrder Int      @default(0) @map("display_order")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  domain Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  @@index([domainId])
+  @@map("sub_domains")
+}
+
+// ──────── Publish Survey + Generate QR / Citizen public flow ────────
+// Tenant-scoped (org_id + RLS, same isolation pattern as Study/Need/
+// Evidence) even though the citizen-facing routes that read/write
+// CitizenOtpChallenge/SurveyResponse rows are unauthenticated — those
+// routes resolve the owning org from the PublicSurveyLink token first
+// (cross-org SELECT via the cnap_supervisor connection, same technique
+// TenantPrismaService.runAsSupervisor already uses), then write through
+// TenantPrismaService.runAsOrg(resolvedOrgId, ...), which is exactly how
+// the org-creation bootstrap path (no signed-in actor yet either) already
+// writes under RLS.
+model PublicSurveyLink {
+  id        String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId     String    @map("org_id") @db.Uuid
+  studyId   String    @map("study_id") @db.Uuid
+  // User-facing name ("Baseline Survey", "Village A Outreach") — the only
+  // identifier shown anywhere in the UI; unique per Study (not globally) so
+  // two different Studies can each have their own "Baseline Survey" link.
+  // Required, trimmed, max 150 chars — enforced at the service layer since
+  // Postgres has no built-in trim-then-check-blank constraint.
+  label     String    @db.VarChar(150)
+  // Opaque public-URL token (/public/survey/:token) — never the raw study
+  // id, so a citizen link can be revoked/rotated independently of the Study.
+  token     String    @unique @db.VarChar(64)
+  createdBy String    @map("created_by") @db.Uuid
+  expiresAt DateTime? @map("expires_at") @db.Timestamptz(6)
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org                    Organisation            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  study                  Study                   @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  otpChallenges          CitizenOtpChallenge[]
+  responses              SurveyResponse[]
+  responseQualityResults ResponseQualityResult[]
+  aiSummaries            AiSummary[]
+  priorityScores         PriorityScore[]
+
+  @@unique([studyId, label])
+  @@index([orgId])
+  @@index([studyId])
+  @@map("public_survey_links")
+}
+
+// Provider-agnostic OTP delivery (current implementation may send via
+// email; swapping to SMS later must not require a contract change) — see
+// RIO-FR-Add-02. `codeHash` only, never the plaintext code at rest.
+model CitizenOtpChallenge {
+  id           String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId        String    @map("org_id") @db.Uuid
+  surveyLinkId String    @map("survey_link_id") @db.Uuid
+  contact      String    @db.VarChar(320)
+  codeHash     String    @map("code_hash") @db.VarChar(255)
+  attempts     Int       @default(0)
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz(6)
+  verifiedAt   DateTime? @map("verified_at") @db.Timestamptz(6)
+  // Set once this challenge has been used to successfully submit a
+  // SurveyResponse — a verified-but-already-consumed challenge can no
+  // longer submit again, closing off resubmission via a still-known
+  // challengeId (see CitizenService.submitResponse()).
+  consumedAt   DateTime? @map("consumed_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org        Organisation     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  surveyLink PublicSurveyLink @relation(fields: [surveyLinkId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([surveyLinkId])
+  @@map("citizen_otp_challenges")
+}
+
+// Generic response row — Response Quality, AI Summary, and Priority
+// Dashboard all read from this same table, seeded or real alike.
+model SurveyResponse {
+  id           String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId        String   @map("org_id") @db.Uuid
+  studyId      String   @map("study_id") @db.Uuid
+  surveyLinkId String   @map("survey_link_id") @db.Uuid
+  contactName  String?  @map("contact_name") @db.VarChar(200)
+  contact      String   @db.VarChar(320)
+  answers      Json
+  submittedAt  DateTime @default(now()) @map("submitted_at") @db.Timestamptz(6)
+
+  org        Organisation     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  study      Study            @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  surveyLink PublicSurveyLink @relation(fields: [surveyLinkId], references: [id], onDelete: Cascade)
+  qualityResults ResponseQualityResult[]
+
+  @@index([orgId])
+  @@index([studyId])
+  @@index([surveyLinkId])
+  @@map("survey_responses")
+}
+
+// ──────── Response Quality + AI Summary ────────
+// Same placeholder pattern as ai-decisions: a pure function computes canned
+// output, a real service reads real SurveyResponse rows and writes a real
+// result row here. "Response Quality" measures the responses themselves
+// (completeness, confidence, duplicates) — not survey design.
+enum ConfidenceFlag {
+  standard
+  low
+}
+
+model ResponseQualityResult {
+  id                String         @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId             String         @map("org_id") @db.Uuid
+  studyId           String         @map("study_id") @db.Uuid
+  // Null = computed from every Survey Link's responses ("Consolidated"
+  // scope); set = computed from just that one link's responses. Lets the
+  // Study Insights "Survey Scope" selector read back exactly the scope it
+  // wrote, instead of always mixing every link's results together.
+  surveyLinkId      String?        @map("survey_link_id") @db.Uuid
+  surveyResponseId  String         @map("survey_response_id") @db.Uuid
+  completenessScore Int            @map("completeness_score")
+  missingFields     String[]       @map("missing_fields")
+  confidenceFlag    ConfidenceFlag @map("confidence_flag")
+  isDuplicate       Boolean        @default(false) @map("is_duplicate")
+  duplicateOfId     String?        @map("duplicate_of_id") @db.Uuid
+  assessedAt        DateTime       @default(now()) @map("assessed_at") @db.Timestamptz(6)
+
+  org            Organisation      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  study          Study             @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  surveyLink     PublicSurveyLink? @relation(fields: [surveyLinkId], references: [id], onDelete: Cascade)
+  surveyResponse SurveyResponse    @relation(fields: [surveyResponseId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([studyId])
+  @@index([surveyLinkId])
+  @@map("response_quality_results")
+}
+
+// One row per generation (history retained); GET reads the latest per scope.
+model AiSummary {
+  id            String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  studyId       String   @map("study_id") @db.Uuid
+  // Same null = Consolidated / set = single-link convention as
+  // ResponseQualityResult.surveyLinkId above.
+  surveyLinkId  String?  @map("survey_link_id") @db.Uuid
+  summaryText   String   @map("summary_text")
+  responseCount Int      @map("response_count")
+  generatedAt   DateTime @default(now()) @map("generated_at") @db.Timestamptz(6)
+
+  org        Organisation      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  study      Study             @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  surveyLink PublicSurveyLink? @relation(fields: [surveyLinkId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([studyId])
+  @@index([surveyLinkId])
+  @@map("ai_summaries")
+}
+
+// ──────── Priority Dashboard + Explainable Score ────────
+// TODO(RIO-Priority): placeholder scoring only — see
+// priority/priority.placeholder.ts. Real methodology scoring workbook
+// replaces just that function later; this table/API shape doesn't change.
+enum PriorityLevel {
+  critical
+  high
+  medium
+  low
+}
+
+model PriorityScore {
+  id           String        @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId        String        @map("org_id") @db.Uuid
+  studyId      String        @map("study_id") @db.Uuid
+  // Same null = Consolidated / set = single-link convention as
+  // ResponseQualityResult.surveyLinkId above.
+  surveyLinkId String?       @map("survey_link_id") @db.Uuid
+  overallScore Int           @map("overall_score")
+  level        PriorityLevel
+  gapType      String        @map("gap_type") @db.VarChar(50)
+  // 9-factor breakdown from scope.md §8 (severity, affected population,
+  // service availability gap, urgency, data confidence, frequency,
+  // geographic coverage, vulnerable groups/equity, strategic alignment).
+  factors      Json
+  cycleNote    String?       @map("cycle_note") @db.VarChar(200)
+  scoredAt     DateTime      @default(now()) @map("scored_at") @db.Timestamptz(6)
+
+  org        Organisation      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  study      Study             @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  surveyLink PublicSurveyLink? @relation(fields: [surveyLinkId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([studyId])
+  @@index([surveyLinkId])
+  @@map("priority_scores")
+}
+
+// ──────── Sharing Requests, Approval, Shared Reports ────────
+// Deliberately NOT org-scoped RLS like every other tenant table: a sharing
+// request is inherently visible to TWO orgs (the owner being asked, and the
+// requester asking) plus the cross-entity Center Supervisor — a single
+// `org_id = current_org_id` policy can't express "visible to either side."
+// Authorization here is enforced at the service layer instead (ownerOrgId
+// must equal caller's org to approve/reject; requestingOrgId must equal
+// caller's org to create), same spirit as Domain/SubDomain's no-RLS
+// reference-table pattern, just app-enforced instead of RLS-enforced.
+enum SharingStatus {
+  pending
+  approved
+  rejected
+  expired
+}
+
+model SharingRequest {
+  id               String        @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  ownerOrgId       String        @map("owner_org_id") @db.Uuid
+  requestingOrgId  String        @map("requesting_org_id") @db.Uuid
+  studyId          String        @map("study_id") @db.Uuid
+  status           SharingStatus @default(pending)
+  requestedBy      String        @map("requested_by") @db.Uuid
+  requestedAt      DateTime      @default(now()) @map("requested_at") @db.Timestamptz(6)
+  decidedBy        String?       @map("decided_by") @db.Uuid
+  decidedAt        DateTime?     @map("decided_at") @db.Timestamptz(6)
+  note             String?       @db.VarChar(1000)
+
+  ownerOrg      Organisation @relation("SharingRequestsOwned", fields: [ownerOrgId], references: [id], onDelete: Cascade)
+  requestingOrg Organisation @relation("SharingRequestsMade", fields: [requestingOrgId], references: [id], onDelete: Cascade)
+  study         Study        @relation(fields: [studyId], references: [id], onDelete: Cascade)
+
+  @@index([ownerOrgId])
+  @@index([requestingOrgId])
+  @@index([studyId])
+  @@map("sharing_requests")
+}
+
+// ──────── Reports Module (RPT-01..RPT-13) ────────
+// One flexible report engine, not 13 bespoke tables — `reportType` is a
+// discriminator, `filters`/`content` carry the type-specific shape.
+// RPT-12 (Report Sharing Status) is a read view over SharingRequest, not
+// separate data — its `content` is populated from that table at generation
+// time, not stored redundantly elsewhere.
+enum ReportType {
+  RPT01
+  RPT02
+  RPT03
+  RPT04
+  RPT05
+  RPT06
+  RPT07
+  RPT08
+  RPT09
+  RPT10
+  RPT11
+  RPT12
+  RPT13
+}
+
+enum ReportStatus {
+  draft
+  approved
+  rejected
+}
+
+model Report {
+  id           String       @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId        String       @map("org_id") @db.Uuid
+  reportType   ReportType   @map("report_type")
+  status       ReportStatus @default(draft)
+  title        String       @db.VarChar(300)
+  // Only set for study-scoped types (e.g. RPT-01 Individual Study Report);
+  // null for org-wide aggregate types (e.g. RPT-02 Collective Dashboard).
+  studyId      String?      @map("study_id") @db.Uuid
+  filters      Json
+  content      Json
+  generatedBy  String       @map("generated_by") @db.Uuid
+  generatedAt  DateTime     @default(now()) @map("generated_at") @db.Timestamptz(6)
+  reviewedBy   String?      @map("reviewed_by") @db.Uuid
+  reviewedAt   DateTime?    @map("reviewed_at") @db.Timestamptz(6)
+
+  org   Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  study Study?       @relation(fields: [studyId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([reportType])
+  @@map("reports")
+}
+
+// ──────── Methodology Configuration ────────
+// Global reference/master data (no orgId, no RLS — same pattern as
+// Role/ConsentPolicy/Domain), single-row: the platform-wide methodology
+// baseline (priority thresholds, confidence-flag rule, version label) that
+// Priority Dashboard and Response Quality read at scoring/assessment time
+// instead of hardcoding these numbers in the placeholder functions. Domains/
+// Subdomains (see Domain/SubDomain models above) are the other half of this
+// same "Methodology Configuration" screen.
+enum MethodologyStatus {
+  draft
+  published
+}
+
+model MethodologyConfig {
+  id                     String            @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  // Free-text version label the reviewer sets (e.g. "v1.0 - Approved
+  // implementation baseline") — mirrors question-bank-v1.json's own
+  // _meta.versionLabel convention, not a semver the app enforces.
+  version                String            @db.VarChar(100)
+  status                 MethodologyStatus @default(draft)
+  publishedBy            String?           @map("published_by") @db.Uuid
+  publishedAt            DateTime?         @map("published_at") @db.Timestamptz(6)
+  // Priority Dashboard's placeholder scoring thresholds — see
+  // priority.placeholder.ts. Shape: { criticalSeverity, highSeverity,
+  // mediumSeverity, equityHighSeverity }.
+  priorityThresholds     Json              @map("priority_thresholds")
+  // The 9 configurable Priority Scoring factors from scope.md §8 — each
+  // { key, label, weight }. `key`/`label` are the methodology's fixed
+  // vocabulary (scorePriority keys off `key`); only `weight` is meant to be
+  // edited from the Methodology Configuration screen.
+  priorityFactorWeights  Json              @map("priority_factor_weights")
+  // Response Quality's confidence-flag rule — see
+  // response-quality.placeholder.ts. Shape: { dontKnowRatioThreshold,
+  // minRespondentsForStandardConfidence }.
+  confidenceFlagSettings Json              @map("confidence_flag_settings")
+  updatedAt              DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy              String?           @map("updated_by") @db.Uuid
+
+  @@map("methodology_configs")
 }

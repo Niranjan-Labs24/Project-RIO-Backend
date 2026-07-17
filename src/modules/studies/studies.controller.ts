@@ -5,6 +5,7 @@ import { parseIntParam } from '../../common/http/query.util';
 import { CreateStudyBody, UpdateStudyBody } from './studies.contract';
 import { StudiesService } from './studies.service';
 import type {
+  AssignableReviewer,
   CreateStudyPayload,
   Study,
   StudyDetail,
@@ -47,6 +48,15 @@ export class StudiesController {
       village: village || undefined,
       search: search || undefined,
     });
+  }
+
+  // Must precede @Get(':id') — a static segment route has to be declared
+  // before the dynamic :id one, or Nest matches "assignable-reviewers" as
+  // an :id value instead.
+  @Get('assignable-reviewers')
+  @RequirePermission('studySurvey', 'create')
+  listAssignableReviewers(): Promise<AssignableReviewer[]> {
+    return this.studies.listAssignableReviewers();
   }
 
   @Get(':id')

@@ -11,7 +11,6 @@ export interface CreateOrgAdminInput {
   registrationNumber: string;
   email: string;
   passwordHash: string;
-  now: Date;
 }
 
 export function generateTemporaryPassword(): string {
@@ -70,6 +69,9 @@ export class AuthRepository {
             registrationNumber: input.registrationNumber, email: input.email,
           },
         });
+        // Consent is captured after first login (post password-reset), not
+        // here — see AuthService.consent() / the frontend's ConsentGuard.
+        // `consentedAt` stays null, same as an invited user starts out.
         const user = await tx.user.create({
           data: {
             orgId,
@@ -79,20 +81,7 @@ export class AuthRepository {
             status: UserStatus.active,
             passwordHash: input.passwordHash,
             mustChangePassword: true,
-            consentedAt: input.now,
           },
-        });
-        // RIO-FR-Add-02: consent is mandatory, not best-effort — if there's no
-        // active policy to accept, signup must fail rather than silently
-        // create an account with no consent record at all.
-        const policy = await tx.consentPolicy.findFirst({ where: { active: true }, orderBy: { createdAt: 'desc' } });
-        if (!policy) {
-          throw new ConflictException({
-            error: { code: 'NO_ACTIVE_CONSENT_POLICY', message: 'No active consent policy is configured; signup is blocked until one is published.' },
-          });
-        }
-        await tx.consentAcceptance.create({
-          data: { orgId, userId: user.id, policyVersion: policy.version, policyText: policy.text, acceptedAt: input.now },
         });
         return { org, user };
       });

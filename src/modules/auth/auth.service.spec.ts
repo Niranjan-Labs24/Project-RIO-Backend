@@ -39,7 +39,7 @@ describe('AuthService.login', () => {
     const passwordHash = await passwords.hash('Passw0rd!');
     user = {
       id: 'u1', name: 'Demo Admin', email: 'admin@demo-ngo.org', roleId: 'role_ngo_admin',
-      passwordHash, consentedAt: null, failedLoginAttempts: 0, lockedUntil: null,
+      passwordHash, consentedAt: null, consentedPolicyVersion: null, failedLoginAttempts: 0, lockedUntil: null,
       mustChangePassword: false, org: orgFixture,
     };
   });
@@ -76,13 +76,14 @@ describe('AuthService.login', () => {
 });
 
 describe('AuthService.consent', () => {
-  it('sets consentedAt and writes a versioned consent_acceptances snapshot', async () => {
+  it('sets consentedAt + consentedPolicyVersion and writes a versioned consent_acceptances snapshot', async () => {
     const created: Record<string, unknown>[] = [];
+    const userUpdates: Record<string, unknown>[] = [];
     const tenant = {
       runInOrgContext: async (fn: (tx: unknown) => unknown) =>
         fn({
           consentPolicy: { findFirst: async () => ({ version: 'v1', text: 'policy text' }) },
-          user: { update: async () => ({}) },
+          user: { update: async ({ data }: { data: Record<string, unknown> }) => { userUpdates.push(data); return {}; } },
           consentAcceptance: { create: async ({ data }: { data: Record<string, unknown> }) => { created.push(data); return data; } },
         }),
     };
@@ -91,6 +92,7 @@ describe('AuthService.consent', () => {
     expect(res.policyVersion).toBe('v1');
     expect(created).toHaveLength(1);
     expect(created[0]).toMatchObject({ orgId: 'o1', userId: 'u1', policyVersion: 'v1', policyText: 'policy text' });
+    expect(userUpdates[0]).toMatchObject({ consentedPolicyVersion: 'v1' });
   });
 });
 
@@ -113,7 +115,7 @@ describe('AuthService.signup', () => {
     repo.findUserByEmail.mockResolvedValue(null);
     repo.createOrganisationAndAdmin.mockResolvedValue({
       org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: 'RN1', logoUrl: null, region: [], email: null, sector: null, villages: [], isActive: true, createdAt: new Date() },
-      user: { id: 'u1', name: 'Org Admin', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h', consentedAt: new Date(), failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: true },
+      user: { id: 'u1', name: 'Org Admin', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h', consentedAt: null, consentedPolicyVersion: null, failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: true },
     });
     mailer.sendTemporaryPassword.mockResolvedValue(true);
 
@@ -138,7 +140,7 @@ describe('AuthService.signup', () => {
     repo.findUserByEmail.mockResolvedValue(null);
     repo.createOrganisationAndAdmin.mockResolvedValue({
       org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: 'RN1', logoUrl: null, region: [], email: null, sector: null, villages: [], isActive: true, createdAt: new Date() },
-      user: { id: 'u1', name: 'Org Admin', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h', consentedAt: new Date(), failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: true },
+      user: { id: 'u1', name: 'Org Admin', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h', consentedAt: null, consentedPolicyVersion: null, failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: true },
     });
     mailer.sendTemporaryPassword.mockResolvedValue(false);
     // config mock nodeEnv = 'development'
@@ -152,7 +154,7 @@ describe('AuthService.signup', () => {
     repo.findUserByEmail.mockResolvedValue(null);
     repo.createOrganisationAndAdmin.mockResolvedValue({
       org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: 'RN1', logoUrl: null, region: [], email: null, sector: null, villages: [], isActive: true, createdAt: new Date() },
-      user: { id: 'u1', name: 'Org Admin', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h', consentedAt: new Date(), failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: true },
+      user: { id: 'u1', name: 'Org Admin', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h', consentedAt: null, consentedPolicyVersion: null, failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: true },
     });
     mailer.sendTemporaryPassword.mockResolvedValue(false);
     const prodConfig = { nodeEnv: 'production' } as unknown as ConfigService;
@@ -225,7 +227,7 @@ describe('AuthService.changePassword', () => {
               updateArgs.push(args);
               return {
                 id: 'u1', name: 'A', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h2',
-                consentedAt: null, failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: false,
+                consentedAt: null, consentedPolicyVersion: null, failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: false,
                 org: {
                   id: 'o1', name: 'Org', logoUrl: null, region: [], email: null, sector: null, villages: [],
                   isActive: true, createdAt: new Date(), purpose: 'p', registrationNumber: 'RN1',
