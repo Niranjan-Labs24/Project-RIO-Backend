@@ -1,14 +1,13 @@
 export interface Organization {
   id: string;
   name: string;
-  // Captured at public signup (see AuthService.signup()) — immutable
-  // thereafter; not part of UpdateOrganizationPayload. Nullable because the
-  // underlying columns are (`String?`), so orgs created before these fields
-  // existed read back as null.
+  // Only meaningful when `sector` is `'other'` — the org's own free-text
+  // description of what that is. Otherwise unused; nullable because the
+  // underlying column is (`String?`).
   purpose: string | null;
   registrationNumber: string | null;
   logoUrl: string | null;
-  region: string | null;
+  region: string[];
   email: string | null;
   sector: string | null;
   villages: string[];
@@ -22,9 +21,10 @@ export interface OrganizationSummary extends Organization {
 
 export interface UpdateOrganizationPayload {
   name?: string;
-  region?: string | null;
+  region?: string[];
   email?: string | null;
   sector?: string | null;
+  purpose?: string | null;
   logoUrl?: string | null;
   villages?: string[];
   isActive?: boolean;
@@ -34,7 +34,7 @@ export interface CreateOrganizationPayload {
   name: string;
   purpose: string;
   registrationNumber: string;
-  region?: string | null;
+  region?: string[];
   email?: string | null;
   sector?: string | null;
   villages?: string[];
@@ -49,7 +49,7 @@ export interface OrgRow {
   purpose: string | null;
   registrationNumber: string | null;
   logoUrl: string | null;
-  region: string | null;
+  region: string[];
   email: string | null;
   sector: string | null;
   villages: string[];

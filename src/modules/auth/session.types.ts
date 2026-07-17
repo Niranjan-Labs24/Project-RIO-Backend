@@ -5,13 +5,17 @@ export interface SessionUser {
   name: string;
   email: string;
   consentedAt: string | null;
+  // The policy version `consentedAt` corresponds to — compared against the
+  // currently-active policy's version (GET /consent-policy/active) to decide
+  // whether ConsentGuard should re-prompt (e.g. after a policy version bump).
+  consentedPolicyVersion: string | null;
 }
 
 export interface SessionOrg {
   id: string;
   name: string;
   logoUrl: string | null;
-  region: string | null;
+  region: string[];
   email: string | null;
   sector: string | null;
   villages: string[];

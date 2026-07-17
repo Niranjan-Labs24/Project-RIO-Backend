@@ -1,16 +1,16 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { v7 as uuidv7 } from 'uuid';
-import { Prisma, UserStatus } from '../../generated/prisma';
+import { Prisma, UserStatus, type Sector } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 
 export interface CreateOrgAdminInput {
   organizationName: string;
-  purpose: string;
+  sector?: string;
+  purpose?: string;
   registrationNumber: string;
   email: string;
   passwordHash: string;
-  now: Date;
 }
 
 export function generateTemporaryPassword(): string {
@@ -65,9 +65,13 @@ export class AuthRepository {
         const org = await tx.organisation.create({
           data: {
             id: orgId, name: input.organizationName, purpose: input.purpose,
+            sector: input.sector ? (input.sector as Sector) : null,
             registrationNumber: input.registrationNumber, email: input.email,
           },
         });
+        // Consent is captured after first login (post password-reset), not
+        // here — see AuthService.consent() / the frontend's ConsentGuard.
+        // `consentedAt` stays null, same as an invited user starts out.
         const user = await tx.user.create({
           data: {
             orgId,
@@ -77,15 +81,8 @@ export class AuthRepository {
             status: UserStatus.active,
             passwordHash: input.passwordHash,
             mustChangePassword: true,
-            consentedAt: input.now,
           },
         });
-        const policy = await tx.consentPolicy.findFirst({ where: { active: true }, orderBy: { createdAt: 'desc' } });
-        if (policy) {
-          await tx.consentAcceptance.create({
-            data: { orgId, userId: user.id, policyVersion: policy.version, policyText: policy.text, acceptedAt: input.now },
-          });
-        }
         return { org, user };
       });
     } catch (err) {

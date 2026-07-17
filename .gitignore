@@ -8,6 +8,10 @@ coverage/
 prisma/*.db
 src/generated/
 
+# Uploaded evidence files — local-disk storage for this phase (see
+# evidence.storage.service.ts); never belongs in the repo.
+storage/
+
 # Claude Code / AI assistant local files and dependency docs — never commit
 .claude/
 **/.claude/

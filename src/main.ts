@@ -35,7 +35,10 @@ async function bootstrap(): Promise<void> {
   const config = app.get(ConfigService);
   // Cookie session is httpOnly, so the frontend uses credentials:"include" —
   // that requires one explicit origin (never a wildcard) with credentials on.
-  app.enableCors({ origin: config.corsOrigin, credentials: true });
+  // exposedHeaders: Content-Disposition isn't readable via fetch() cross-origin
+  // by default — the Reports export download (ReportsService.download) needs
+  // it to recover the real filename instead of falling back to a generic one.
+  app.enableCors({ origin: config.corsOrigin, credentials: true, exposedHeaders: ['Content-Disposition'] });
 
   app.useGlobalFilters(new AllExceptionsFilter());
   app.enableShutdownHooks();

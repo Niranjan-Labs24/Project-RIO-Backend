@@ -1,0 +1,4436 @@
+{
+  "_meta": {
+    "title": "CNAP methodology reference data - PRD scope (FR-4 question bank)",
+    "versionLabel": "v1.0 - Approved implementation baseline",
+    "extractedFrom": "Project Rio 1.xlsx -> 'Question Bank' sheet (rows 5-108)",
+    "extractedOn": "2026-07-15",
+    "scope": "PRD FR-1..FR-11 only. Rio-superset columns and sheets excluded - see README.md.",
+    "counts": {
+      "structuredQuestions": 102,
+      "openEndedQuestions": 2,
+      "totalQuestions": 104,
+      "domains": 9,
+      "subDomains": 39,
+      "indicators": 101
+    },
+    "questionTypeMapping": {
+      "Single select": "SINGLE_CHOICE",
+      "Multi select": "MULTI_CHOICE",
+      "Likert-5": "SCALE",
+      "Numeric": "NUMERIC",
+      "Open text": "OPEN_ENDED",
+      "Diagnostic": "SINGLE_CHOICE"
+    },
+    "NOT_SUPPLIED": [
+      "questions[].weight - the 'Question Bank' sheet has no weight column; 'Priority Scoring' lists all 9 factors as the literal word 'Configurable'. PRD s7 input #1.",
+      "questions[].scoringLookup - the 0-100 severity value per answer option is not in this workbook. PRD s7 input #1 / FR-7.",
+      "questions[].reportTypes - the sheet's 'Report Mapping' column holds only 'Individual + Collective' (102) / 'Qualitative clustering' (2); it does NOT map to the PRD's three report types (Top 5 Needs / Gender-Wise / Rural Community). PRD s7 input #1 / FR-9."
+    ]
+  },
+  "hierarchy": [
+    {
+      "code": "H",
+      "name": "Health",
+      "subDomains": [
+        {
+          "code": "H-access-to-basic-healthcare",
+          "name": "Access to Basic Healthcare",
+          "indicators": [
+            {
+              "code": "H-health-facility-availability",
+              "name": "Health Facility Availability",
+              "kpis": [
+                {
+                  "code": "H-kpi-of-villages-with-a-basic-health-facility",
+                  "name": "% of villages with a basic health facility within 5 km",
+                  "questionCodes": [
+                    "H01"
+                  ]
+                },
+                {
+                  "code": "H-kpi-average-distance-to-nearest-functioning-",
+                  "name": "Average distance to nearest functioning health facility (km)",
+                  "questionCodes": [
+                    "H02"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "H-service-continuity",
+              "name": "Service Continuity",
+              "kpis": [
+                {
+                  "code": "H-kpi-of-the-year-the-nearest-facility-is-func",
+                  "name": "% of the year the nearest facility is functioning (not closed/under-staffed)",
+                  "questionCodes": [
+                    "H03"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "H-transport-barrier",
+              "name": "Transport Barrier",
+              "kpis": [
+                {
+                  "code": "H-kpi-of-households-reporting-transport-as-a-b",
+                  "name": "% of households reporting transport as a barrier to healthcare access",
+                  "questionCodes": [
+                    "H04"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "H-maternal-child-health",
+          "name": "Maternal & Child Health",
+          "indicators": [
+            {
+              "code": "H-antenatal-care-coverage",
+              "name": "Antenatal Care Coverage",
+              "kpis": [
+                {
+                  "code": "H-kpi-of-pregnant-women-who-received-4-antenat",
+                  "name": "% of pregnant women who received 4+ antenatal visits",
+                  "questionCodes": [
+                    "H05"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "H-skilled-birth-attendance",
+              "name": "Skilled Birth Attendance",
+              "kpis": [
+                {
+                  "code": "H-kpi-of-births-attended-by-a-skilled-health-w",
+                  "name": "% of births attended by a skilled health worker",
+                  "questionCodes": [
+                    "H06"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "H-child-immunization",
+              "name": "Child Immunization",
+              "kpis": [
+                {
+                  "code": "H-kpi-of-children-under-5-who-completed-the-im",
+                  "name": "% of children under 5 who completed the immunization schedule",
+                  "questionCodes": [
+                    "H07"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "H-child-growth-monitoring",
+              "name": "Child Growth Monitoring",
+              "kpis": [
+                {
+                  "code": "H-kpi-of-children-under-5-under-regular-growth",
+                  "name": "% of children under 5 under regular growth/nutrition monitoring",
+                  "questionCodes": [
+                    "H08"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "H-disease-burden",
+          "name": "Disease Burden",
+          "indicators": [
+            {
+              "code": "H-chronic-disease-prevalence",
+              "name": "Chronic Disease Prevalence",
+              "kpis": [
+                {
+                  "code": "H-kpi-of-households-with-at-least-one-member-w",
+                  "name": "% of households with at least one member with a diagnosed chronic condition",
+                  "questionCodes": [
+                    "H09"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "H-chronic-care-continuity",
+              "name": "Chronic Care Continuity",
+              "kpis": [
+                {
+                  "code": "H-kpi-of-individuals-with-chronic-illness-able",
+                  "name": "% of individuals with chronic illness able to access regular follow-up care",
+                  "questionCodes": [
+                    "H10"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "H-mental-health",
+          "name": "Mental Health",
+          "indicators": [
+            {
+              "code": "H-service-awareness",
+              "name": "Service Awareness",
+              "kpis": [
+                {
+                  "code": "H-kpi-of-households-that-know-available-psycho",
+                  "name": "% of households that know available psychosocial support channels",
+                  "questionCodes": [
+                    "H11"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "H-perceived-stigma",
+              "name": "Perceived Stigma",
+              "kpis": [
+                {
+                  "code": "H-kpi-perceived-community-stigma-toward-seekin",
+                  "name": "Perceived community stigma toward seeking psychological support",
+                  "questionCodes": [
+                    "H12"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "H-service-quality",
+          "name": "Service Quality",
+          "indicators": [
+            {
+              "code": "H-perceived-service-quality",
+              "name": "Perceived Service Quality",
+              "kpis": [
+                {
+                  "code": "H-kpi-of-households-rating-health-service-qual",
+                  "name": "% of households rating health service quality as adequate or higher",
+                  "questionCodes": [
+                    "H13"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "H-medicine-availability",
+              "name": "Medicine Availability",
+              "kpis": [
+                {
+                  "code": "H-kpi-of-households-reporting-consistent-avail",
+                  "name": "% of households reporting consistent availability of essential medicines",
+                  "questionCodes": [
+                    "H14"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "H-affordability",
+              "name": "Affordability",
+              "kpis": [
+                {
+                  "code": "H-kpi-of-households-reporting-healthcare-cost-",
+                  "name": "% of households reporting healthcare cost as a barrier",
+                  "questionCodes": [
+                    "H15"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "H-emergency-preparedness",
+          "name": "Emergency Preparedness",
+          "indicators": [
+            {
+              "code": "H-emergency-response-time",
+              "name": "Emergency Response Time",
+              "kpis": [
+                {
+                  "code": "H-kpi-perceived-adequacy-of-emergency-medical-",
+                  "name": "Perceived adequacy of emergency medical response time",
+                  "questionCodes": [
+                    "H16"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "E",
+      "name": "Education",
+      "subDomains": [
+        {
+          "code": "E-access-to-basic-education",
+          "name": "Access to Basic Education",
+          "indicators": [
+            {
+              "code": "E-school-enrolment",
+              "name": "School Enrolment",
+              "kpis": [
+                {
+                  "code": "E-kpi-of-school-age-children-6-15-currently-en",
+                  "name": "% of school-age children (6-15) currently enrolled",
+                  "questionCodes": [
+                    "E01"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "E-school-proximity",
+              "name": "School Proximity",
+              "kpis": [
+                {
+                  "code": "E-kpi-average-distance-to-nearest-primary-scho",
+                  "name": "Average distance to nearest primary school (km)",
+                  "questionCodes": [
+                    "E02"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "E-transport-safety",
+              "name": "Transport Safety",
+              "kpis": [
+                {
+                  "code": "E-kpi-of-households-reporting-safe-reliable-tr",
+                  "name": "% of households reporting safe, reliable transport to school",
+                  "questionCodes": [
+                    "E03"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "E-dropout-risk",
+              "name": "Dropout Risk",
+              "kpis": [
+                {
+                  "code": "E-kpi-of-households-reporting-a-child-dropping",
+                  "name": "% of households reporting a child dropping out in the past two years",
+                  "questionCodes": [
+                    "E04"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "E-dropout-reasons",
+              "name": "Dropout Reasons",
+              "kpis": [
+                {
+                  "code": "E-kpi-most-frequently-cited-reasons-for-school",
+                  "name": "Most frequently cited reasons for school dropout",
+                  "questionCodes": [
+                    "E05"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "E-education-equity",
+          "name": "Education Equity",
+          "indicators": [
+            {
+              "code": "E-gender-parity-in-enrolment",
+              "name": "Gender Parity in Enrolment",
+              "kpis": [
+                {
+                  "code": "E-kpi-girls-to-boys-enrolment-ratio-school-age",
+                  "name": "Girls-to-boys enrolment ratio (school age)",
+                  "questionCodes": [
+                    "E06"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "E-perceived-barriers-for-girls",
+              "name": "Perceived Barriers for Girls",
+              "kpis": [
+                {
+                  "code": "E-kpi-of-households-perceiving-specific-barrie",
+                  "name": "% of households perceiving specific barriers to girls' education",
+                  "questionCodes": [
+                    "E07"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "E-education-quality",
+          "name": "Education Quality",
+          "indicators": [
+            {
+              "code": "E-perceived-teaching-quality",
+              "name": "Perceived Teaching Quality",
+              "kpis": [
+                {
+                  "code": "E-kpi-of-parents-satisfied-with-teaching-quali",
+                  "name": "% of parents satisfied with teaching quality at the local school",
+                  "questionCodes": [
+                    "E08"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "E-teacher-availability",
+              "name": "Teacher Availability",
+              "kpis": [
+                {
+                  "code": "E-kpi-of-schools-perceived-to-have-adequate-te",
+                  "name": "% of schools perceived to have adequate teaching staff",
+                  "questionCodes": [
+                    "E09"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "E-learning-materials",
+              "name": "Learning Materials",
+              "kpis": [
+                {
+                  "code": "E-kpi-of-households-reporting-children-receive",
+                  "name": "% of households reporting children receive adequate books and materials",
+                  "questionCodes": [
+                    "E10"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "E-school-infrastructure",
+          "name": "School Infrastructure",
+          "indicators": [
+            {
+              "code": "E-facility-adequacy",
+              "name": "Facility Adequacy",
+              "kpis": [
+                {
+                  "code": "E-kpi-of-schools-with-adequate-classrooms-wate",
+                  "name": "% of schools with adequate classrooms, water, and sanitation",
+                  "questionCodes": [
+                    "E11"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "E-digital-access",
+              "name": "Digital Access",
+              "kpis": [
+                {
+                  "code": "E-kpi-of-schools-with-functioning-computers-in",
+                  "name": "% of schools with functioning computers/internet for students",
+                  "questionCodes": [
+                    "E12"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "E-vocational-adult-education",
+          "name": "Vocational & Adult Education",
+          "indicators": [
+            {
+              "code": "E-access-to-vocational-programs",
+              "name": "Access to Vocational Programs",
+              "kpis": [
+                {
+                  "code": "E-kpi-of-youth-aware-of-and-able-to-access-voc",
+                  "name": "% of youth aware of and able to access vocational/technical training",
+                  "questionCodes": [
+                    "E13"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "E-adult-literacy",
+              "name": "Adult Literacy",
+              "kpis": [
+                {
+                  "code": "E-kpi-of-adult-individuals-unable-to-read-writ",
+                  "name": "% of adult individuals unable to read/write functionally",
+                  "questionCodes": [
+                    "E14"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "W",
+      "name": "Water & Sanitation",
+      "subDomains": [
+        {
+          "code": "W-drinking-water-access",
+          "name": "Drinking Water Access",
+          "indicators": [
+            {
+              "code": "W-access-to-a-safe-water-source",
+              "name": "Access to a Safe Water Source",
+              "kpis": [
+                {
+                  "code": "W-kpi-of-households-reached-by-an-improved-dri",
+                  "name": "% of households reached by an improved drinking water source",
+                  "questionCodes": [
+                    "W01"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "W-water-collection-time",
+              "name": "Water Collection Time",
+              "kpis": [
+                {
+                  "code": "W-kpi-average-round-trip-water-collection-time",
+                  "name": "Average round-trip water collection time (minutes)",
+                  "questionCodes": [
+                    "W02"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "W-water-supply-continuity",
+              "name": "Water Supply Continuity",
+              "kpis": [
+                {
+                  "code": "W-kpi-of-households-reporting-year-round-water",
+                  "name": "% of households reporting year-round water availability",
+                  "questionCodes": [
+                    "W03"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "W-water-quality",
+          "name": "Water Quality",
+          "indicators": [
+            {
+              "code": "W-perceived-water-safety",
+              "name": "Perceived Water Safety",
+              "kpis": [
+                {
+                  "code": "W-kpi-of-households-perceiving-their-drinking-",
+                  "name": "% of households perceiving their drinking water as safe",
+                  "questionCodes": [
+                    "W04"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "W-water-treatment-practice",
+              "name": "Water Treatment Practice",
+              "kpis": [
+                {
+                  "code": "W-kpi-of-households-practicing-water-treatment",
+                  "name": "% of households practicing water treatment before drinking",
+                  "questionCodes": [
+                    "W05"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "W-waterborne-illness-incidence",
+              "name": "Waterborne Illness Incidence",
+              "kpis": [
+                {
+                  "code": "W-kpi-of-households-reporting-waterborne-illne",
+                  "name": "% of households reporting waterborne illness in the past 6 months",
+                  "questionCodes": [
+                    "W06"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "W-sanitation-access",
+          "name": "Sanitation Access",
+          "indicators": [
+            {
+              "code": "W-improved-sanitation-facility",
+              "name": "Improved Sanitation Facility",
+              "kpis": [
+                {
+                  "code": "W-kpi-of-households-reached-by-improved-sanita",
+                  "name": "% of households reached by improved sanitation facilities",
+                  "questionCodes": [
+                    "W07"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "W-facility-privacy-safety",
+              "name": "Facility Privacy & Safety",
+              "kpis": [
+                {
+                  "code": "W-kpi-of-households-reporting-the-toilet-facil",
+                  "name": "% of households reporting the toilet facility is private and safe, especially at night",
+                  "questionCodes": [
+                    "W08"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "W-hygiene-waste-management",
+          "name": "Hygiene & Waste Management",
+          "indicators": [
+            {
+              "code": "W-handwashing-facility",
+              "name": "Handwashing Facility",
+              "kpis": [
+                {
+                  "code": "W-kpi-of-households-with-a-handwashing-facilit",
+                  "name": "% of households with a handwashing facility with water and soap",
+                  "questionCodes": [
+                    "W09"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "W-solid-waste-collection",
+              "name": "Solid Waste Collection",
+              "kpis": [
+                {
+                  "code": "W-kpi-of-villages-with-a-regular-solid-waste-c",
+                  "name": "% of villages with a regular solid waste collection service",
+                  "questionCodes": [
+                    "W10"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "W-informal-waste-disposal",
+              "name": "Informal Waste Disposal",
+              "kpis": [
+                {
+                  "code": "W-kpi-primary-waste-disposal-method-in-the-abs",
+                  "name": "Primary waste disposal method in the absence of formal collection",
+                  "questionCodes": [
+                    "W11"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "EN",
+      "name": "Energy & Environment",
+      "subDomains": [
+        {
+          "code": "EN-electricity-access",
+          "name": "Electricity Access",
+          "indicators": [
+            {
+              "code": "EN-grid-connection",
+              "name": "Grid Connection",
+              "kpis": [
+                {
+                  "code": "EN-kpi-of-households-connected-to-the-national-",
+                  "name": "% of households connected to the national electricity grid",
+                  "questionCodes": [
+                    "EN01"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "EN-service-reliability",
+              "name": "Service Reliability",
+              "kpis": [
+                {
+                  "code": "EN-kpi-average-daily-hours-of-electricity-outag",
+                  "name": "Average daily hours of electricity outage",
+                  "questionCodes": [
+                    "EN02"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "EN-alternative-energy-use",
+              "name": "Alternative Energy Use",
+              "kpis": [
+                {
+                  "code": "EN-kpi-of-households-relying-on-alternative-off",
+                  "name": "% of households relying on alternative/off-grid energy sources",
+                  "questionCodes": [
+                    "EN03"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "EN-clean-cooking",
+          "name": "Clean Cooking",
+          "indicators": [
+            {
+              "code": "EN-cooking-fuel-type",
+              "name": "Cooking Fuel Type",
+              "kpis": [
+                {
+                  "code": "EN-kpi-of-households-using-clean-cooking-fuel-t",
+                  "name": "% of households using clean cooking fuel/technology",
+                  "questionCodes": [
+                    "EN04"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "EN-indoor-air-quality-concern",
+              "name": "Indoor Air Quality Concern",
+              "kpis": [
+                {
+                  "code": "EN-kpi-of-households-reporting-health-concerns-",
+                  "name": "% of households reporting health concerns from cooking smoke",
+                  "questionCodes": [
+                    "EN05"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "EN-environmental-quality",
+          "name": "Environmental Quality",
+          "indicators": [
+            {
+              "code": "EN-water-scarcity-perception",
+              "name": "Water Scarcity Perception",
+              "kpis": [
+                {
+                  "code": "EN-kpi-of-households-reporting-seasonal-water-s",
+                  "name": "% of households reporting seasonal water scarcity affecting farming/livestock",
+                  "questionCodes": [
+                    "EN06"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "EN-land-degradation-perception",
+              "name": "Land Degradation Perception",
+              "kpis": [
+                {
+                  "code": "EN-kpi-perceived-change-in-land-soil-quality-ov",
+                  "name": "Perceived change in land/soil quality over 5 years",
+                  "questionCodes": [
+                    "EN07"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "EN-natural-disaster-exposure",
+              "name": "Natural Disaster Exposure",
+              "kpis": [
+                {
+                  "code": "EN-kpi-of-households-affected-by-a-natural-disa",
+                  "name": "% of households affected by a natural disaster in 3 years",
+                  "questionCodes": [
+                    "EN08"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "EN-environmental-awareness",
+          "name": "Environmental Awareness",
+          "indicators": [
+            {
+              "code": "EN-awareness-of-protection-programs",
+              "name": "Awareness of Protection Programs",
+              "kpis": [
+                {
+                  "code": "EN-kpi-of-households-aware-of-locally-available",
+                  "name": "% of households aware of locally available environmental or clean-energy programs",
+                  "questionCodes": [
+                    "EN09"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "EN-conservation-practice",
+              "name": "Conservation Practice",
+              "kpis": [
+                {
+                  "code": "EN-kpi-of-households-practicing-any-form-of-wat",
+                  "name": "% of households practicing any form of water/resource conservation",
+                  "questionCodes": [
+                    "EN10"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "L",
+      "name": "Livelihood",
+      "subDomains": [
+        {
+          "code": "L-employment-income",
+          "name": "Employment & Income",
+          "indicators": [
+            {
+              "code": "L-employment-status",
+              "name": "Employment Status",
+              "kpis": [
+                {
+                  "code": "L-kpi-of-working-age-individuals-15-64-current",
+                  "name": "% of working-age individuals (15-64) currently employed or self-employed",
+                  "questionCodes": [
+                    "L01"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "L-income-adequacy",
+              "name": "Income Adequacy",
+              "kpis": [
+                {
+                  "code": "L-kpi-of-households-reporting-income-covers-ba",
+                  "name": "% of households reporting income covers basic needs",
+                  "questionCodes": [
+                    "L02"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "L-income-stability",
+              "name": "Income Stability",
+              "kpis": [
+                {
+                  "code": "L-kpi-stability-seasonality-of-the-household-s",
+                  "name": "Stability/seasonality of the household's main income source year-round",
+                  "questionCodes": [
+                    "L03"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "L-income-diversification",
+              "name": "Income Diversification",
+              "kpis": [
+                {
+                  "code": "L-kpi-number-of-distinct-income-sources-the-ho",
+                  "name": "Number of distinct income sources the household relies on",
+                  "questionCodes": [
+                    "L04"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "L-agriculture-primary-production",
+          "name": "Agriculture & Primary Production",
+          "indicators": [
+            {
+              "code": "L-agricultural-dependence",
+              "name": "Agricultural Dependence",
+              "kpis": [
+                {
+                  "code": "L-kpi-of-households-relying-on-farming-livesto",
+                  "name": "% of households relying on farming/livestock as a primary livelihood",
+                  "questionCodes": [
+                    "L05"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "L-input-market-access",
+              "name": "Input & Market Access",
+              "kpis": [
+                {
+                  "code": "L-kpi-of-farming-households-reporting-adequate",
+                  "name": "% of farming households reporting adequate access to inputs (seeds, feed, fertilizer) and markets",
+                  "questionCodes": [
+                    "L06"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "L-productivity-barrier",
+              "name": "Productivity Barrier",
+              "kpis": [
+                {
+                  "code": "L-kpi-most-frequently-cited-barrier-limiting-a",
+                  "name": "Most frequently cited barrier limiting agricultural productivity",
+                  "questionCodes": [
+                    "L07"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "L-entrepreneurship",
+          "name": "Entrepreneurship",
+          "indicators": [
+            {
+              "code": "L-business-ownership",
+              "name": "Business Ownership",
+              "kpis": [
+                {
+                  "code": "L-kpi-of-households-owning-or-operating-a-smal",
+                  "name": "% of households owning or operating a small or micro enterprise",
+                  "questionCodes": [
+                    "L08"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "L-entrepreneurial-intent",
+              "name": "Entrepreneurial Intent",
+              "kpis": [
+                {
+                  "code": "L-kpi-of-non-owning-households-expressing-inte",
+                  "name": "% of non-owning households expressing intent to start a business",
+                  "questionCodes": [
+                    "L09"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "L-entrepreneurship-barriers",
+              "name": "Entrepreneurship Barriers",
+              "kpis": [
+                {
+                  "code": "L-kpi-most-frequently-cited-barrier-to-startin",
+                  "name": "Most frequently cited barrier to starting/growing a business",
+                  "questionCodes": [
+                    "L10"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "L-access-to-finance",
+              "name": "Access to Finance",
+              "kpis": [
+                {
+                  "code": "L-kpi-of-households-reached-by-formal-finance-",
+                  "name": "% of households reached by formal finance or micro-finance services",
+                  "questionCodes": [
+                    "L11"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "L-vocational-skills-capacity",
+          "name": "Vocational Skills & Capacity",
+          "indicators": [
+            {
+              "code": "L-vocational-skill-possession",
+              "name": "Vocational Skill Possession",
+              "kpis": [
+                {
+                  "code": "L-kpi-of-working-age-individuals-holding-a-mar",
+                  "name": "% of working-age individuals holding a marketable vocational/technical skill",
+                  "questionCodes": [
+                    "L12"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "L-training-program-participation",
+              "name": "Training Program Participation",
+              "kpis": [
+                {
+                  "code": "L-kpi-of-working-age-individuals-who-took-part",
+                  "name": "% of working-age individuals who took part in a skills/training program in 2 years",
+                  "questionCodes": [
+                    "L13"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "L-women-s-economic-empowerment",
+          "name": "Women's Economic Empowerment",
+          "indicators": [
+            {
+              "code": "L-women-s-labour-participation",
+              "name": "Women's Labour Participation",
+              "kpis": [
+                {
+                  "code": "L-kpi-of-women-in-the-household-employed-self-",
+                  "name": "% of women in the household employed, self-employed, or actively seeking work",
+                  "questionCodes": [
+                    "L14"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "L-barriers-to-women-s-work",
+              "name": "Barriers to Women's Work",
+              "kpis": [
+                {
+                  "code": "L-kpi-primary-barrier-to-women-s-economic-part",
+                  "name": "Primary barrier to women's economic participation, where applicable",
+                  "questionCodes": [
+                    "L15"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "L-control-over-income",
+              "name": "Control Over Income",
+              "kpis": [
+                {
+                  "code": "L-kpi-extent-of-women-s-control-over-the-incom",
+                  "name": "Extent of women's control over the income they earn",
+                  "questionCodes": [
+                    "L16"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "I",
+      "name": "Infrastructure",
+      "subDomains": [
+        {
+          "code": "I-roads-transport",
+          "name": "Roads & Transport",
+          "indicators": [
+            {
+              "code": "I-road-connectivity-quality",
+              "name": "Road Connectivity Quality",
+              "kpis": [
+                {
+                  "code": "I-kpi-of-villages-connected-by-a-paved-or-all-",
+                  "name": "% of villages connected by a paved or all-season road",
+                  "questionCodes": [
+                    "I01"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "I-public-transport-availability",
+              "name": "Public Transport Availability",
+              "kpis": [
+                {
+                  "code": "I-kpi-of-households-with-access-to-regular-pub",
+                  "name": "% of households with access to regular public/shared transport",
+                  "questionCodes": [
+                    "I02"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "I-seasonal-accessibility",
+              "name": "Seasonal Accessibility",
+              "kpis": [
+                {
+                  "code": "I-kpi-of-the-year-the-village-is-fully-accessi",
+                  "name": "% of the year the village is fully accessible by road",
+                  "questionCodes": [
+                    "I03"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "I-communications-digital-connectivity",
+          "name": "Communications & Digital Connectivity",
+          "indicators": [
+            {
+              "code": "I-mobile-network-coverage",
+              "name": "Mobile Network Coverage",
+              "kpis": [
+                {
+                  "code": "I-kpi-of-households-with-reliable-mobile-netwo",
+                  "name": "% of households with reliable mobile network coverage",
+                  "questionCodes": [
+                    "I04"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "I-internet-access",
+              "name": "Internet Access",
+              "kpis": [
+                {
+                  "code": "I-kpi-of-households-with-functional-internet-a",
+                  "name": "% of households with functional internet access (mobile data or fixed line)",
+                  "questionCodes": [
+                    "I05"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "I-digital-literacy",
+              "name": "Digital Literacy",
+              "kpis": [
+                {
+                  "code": "I-kpi-of-household-members-able-to-use-a-smart",
+                  "name": "% of household members able to use a smartphone/internet for basic tasks",
+                  "questionCodes": [
+                    "I06"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "I-housing-built-environment",
+          "name": "Housing & Built Environment",
+          "indicators": [
+            {
+              "code": "I-housing-adequacy",
+              "name": "Housing Adequacy",
+              "kpis": [
+                {
+                  "code": "I-kpi-of-households-living-in-structurally-ade",
+                  "name": "% of households living in structurally adequate housing",
+                  "questionCodes": [
+                    "I07"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "I-overcrowding",
+              "name": "Overcrowding",
+              "kpis": [
+                {
+                  "code": "I-kpi-average-number-of-persons-per-room-in-th",
+                  "name": "Average number of persons per room in the household",
+                  "questionCodes": [
+                    "I08"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "I-public-community-facilities",
+          "name": "Public & Community Facilities",
+          "indicators": [
+            {
+              "code": "I-market-access",
+              "name": "Market Access",
+              "kpis": [
+                {
+                  "code": "I-kpi-of-households-within-a-reasonable-distan",
+                  "name": "% of households within a reasonable distance of a functioning market",
+                  "questionCodes": [
+                    "I09"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "I-community-gathering-space",
+              "name": "Community Gathering Space",
+              "kpis": [
+                {
+                  "code": "I-kpi-availability-of-a-functioning-community-",
+                  "name": "Availability of a functioning community center or public gathering space",
+                  "questionCodes": [
+                    "I10"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "S",
+      "name": "Social Development",
+      "subDomains": [
+        {
+          "code": "S-social-safety",
+          "name": "Social Safety",
+          "indicators": [
+            {
+              "code": "S-perceived-personal-safety",
+              "name": "Perceived Personal Safety",
+              "kpis": [
+                {
+                  "code": "S-kpi-of-households-feeling-safe-in-their-vill",
+                  "name": "% of households feeling safe in their village, day and night",
+                  "questionCodes": [
+                    "S01"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "S-social-safety-net-access",
+              "name": "Social Safety Net Access",
+              "kpis": [
+                {
+                  "code": "S-kpi-of-vulnerable-households-reached-by-soci",
+                  "name": "% of vulnerable households reached by social protection programs",
+                  "questionCodes": [
+                    "S02"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "S-vulnerable-groups",
+          "name": "Vulnerable Groups",
+          "indicators": [
+            {
+              "code": "S-elderly-care-access",
+              "name": "Elderly Care Access",
+              "kpis": [
+                {
+                  "code": "S-kpi-of-elderly-household-members-with-access",
+                  "name": "% of elderly household members with access to adequate care/support",
+                  "questionCodes": [
+                    "S03"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "S-disability-inclusion",
+              "name": "Disability Inclusion",
+              "kpis": [
+                {
+                  "code": "S-kpi-of-village-public-facilities-accessible-",
+                  "name": "% of village public facilities accessible to persons with disabilities",
+                  "questionCodes": [
+                    "S04"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "S-disability-in-the-household",
+              "name": "Disability in the Household",
+              "kpis": [
+                {
+                  "code": "S-kpi-of-households-with-a-member-whose-disabi",
+                  "name": "% of households with a member whose disability affects daily activities",
+                  "questionCodes": [
+                    "S05"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "S-child-youth-protection",
+          "name": "Child & Youth Protection",
+          "indicators": [
+            {
+              "code": "S-child-protection-awareness",
+              "name": "Child Protection Awareness",
+              "kpis": [
+                {
+                  "code": "S-kpi-of-households-that-know-how-to-report-ch",
+                  "name": "% of households that know how to report child abuse or neglect",
+                  "questionCodes": [
+                    "S06"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "S-youth-civic-engagement",
+              "name": "Youth Civic Engagement",
+              "kpis": [
+                {
+                  "code": "S-kpi-of-youth-15-24-participating-in-communit",
+                  "name": "% of youth (15-24) participating in community or voluntary activities",
+                  "questionCodes": [
+                    "S07"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "S-early-marriage-prevalence",
+              "name": "Early Marriage Prevalence",
+              "kpis": [
+                {
+                  "code": "S-kpi-of-households-where-a-member-married-bef",
+                  "name": "% of households where a member married before age 18",
+                  "questionCodes": [
+                    "S08"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "S-social-cohesion",
+          "name": "Social Cohesion",
+          "indicators": [
+            {
+              "code": "S-sense-of-community-belonging",
+              "name": "Sense of Community Belonging",
+              "kpis": [
+                {
+                  "code": "S-kpi-of-households-reporting-a-strong-sense-o",
+                  "name": "% of households reporting a strong sense of belonging/trust within the village",
+                  "questionCodes": [
+                    "S09"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "S-conflict-incidence",
+              "name": "Conflict Incidence",
+              "kpis": [
+                {
+                  "code": "S-kpi-of-households-reporting-an-unresolved-co",
+                  "name": "% of households reporting an unresolved community or land/resource dispute in the past year",
+                  "questionCodes": [
+                    "S10"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "S-collective-action-capacity",
+              "name": "Collective Action Capacity",
+              "kpis": [
+                {
+                  "code": "S-kpi-of-villages-with-an-active-community-gro",
+                  "name": "% of villages with an active community group/committee addressing local issues",
+                  "questionCodes": [
+                    "S11"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "CU",
+      "name": "Culture",
+      "subDomains": [
+        {
+          "code": "CU-cultural-heritage",
+          "name": "Cultural Heritage",
+          "indicators": [
+            {
+              "code": "CU-heritage-asset-presence",
+              "name": "Heritage Asset Presence",
+              "kpis": [
+                {
+                  "code": "CU-kpi-of-villages-with-identifiable-tangible-o",
+                  "name": "% of villages with identifiable tangible or intangible heritage assets",
+                  "questionCodes": [
+                    "CU01"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "CU-heritage-risk-status",
+              "name": "Heritage Risk Status",
+              "kpis": [
+                {
+                  "code": "CU-kpi-perceived-risk-of-loss-decline-of-local-",
+                  "name": "Perceived risk of loss/decline of local cultural practices or sites",
+                  "questionCodes": [
+                    "CU02"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "CU-cultural-programs-participation",
+          "name": "Cultural Programs & Participation",
+          "indicators": [
+            {
+              "code": "CU-program-availability",
+              "name": "Program Availability",
+              "kpis": [
+                {
+                  "code": "CU-kpi-of-households-aware-of-locally-available",
+                  "name": "% of households aware of locally available cultural, arts, or heritage programs",
+                  "questionCodes": [
+                    "CU03"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "CU-participation-rate",
+              "name": "Participation Rate",
+              "kpis": [
+                {
+                  "code": "CU-kpi-of-households-that-took-part-in-a-local-",
+                  "name": "% of households that took part in a local cultural or heritage activity in the past year",
+                  "questionCodes": [
+                    "CU04"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "CU-community-identity",
+          "name": "Community Identity",
+          "indicators": [
+            {
+              "code": "CU-sense-of-cultural-pride",
+              "name": "Sense of Cultural Pride",
+              "kpis": [
+                {
+                  "code": "CU-kpi-of-households-expressing-pride-in-local-",
+                  "name": "% of households expressing pride in local cultural identity/heritage",
+                  "questionCodes": [
+                    "CU05"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "CU-intergenerational-knowledge-transfer",
+              "name": "Intergenerational Knowledge Transfer",
+              "kpis": [
+                {
+                  "code": "CU-kpi-of-households-actively-passing-tradition",
+                  "name": "% of households actively passing traditional skills/knowledge to younger generations",
+                  "questionCodes": [
+                    "CU06"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "G",
+      "name": "Governance & Services",
+      "subDomains": [
+        {
+          "code": "G-access-to-government-services",
+          "name": "Access to Government Services",
+          "indicators": [
+            {
+              "code": "G-service-center-accessibility",
+              "name": "Service Center Accessibility",
+              "kpis": [
+                {
+                  "code": "G-kpi-of-households-reporting-easy-access-to-g",
+                  "name": "% of households reporting easy access to government service centers",
+                  "questionCodes": [
+                    "G01"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "G-civil-documentation-coverage",
+              "name": "Civil Documentation Coverage",
+              "kpis": [
+                {
+                  "code": "G-kpi-of-household-members-holding-complete-ci",
+                  "name": "% of household members holding complete civil documents (ID, birth registration)",
+                  "questionCodes": [
+                    "G02"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "G-digital-government",
+          "name": "Digital Government",
+          "indicators": [
+            {
+              "code": "G-e-service-usage",
+              "name": "E-Service Usage",
+              "kpis": [
+                {
+                  "code": "G-kpi-of-households-that-used-at-least-one-e-g",
+                  "name": "% of households that used at least one e-government service in 6 months",
+                  "questionCodes": [
+                    "G03"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "G-digital-service-satisfaction",
+              "name": "Digital Service Satisfaction",
+              "kpis": [
+                {
+                  "code": "G-kpi-of-households-satisfied-with-the-e-gover",
+                  "name": "% of households satisfied with the e-government services they used",
+                  "questionCodes": [
+                    "G04"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "G-community-participation",
+          "name": "Community Participation",
+          "indicators": [
+            {
+              "code": "G-participation-in-local-governance",
+              "name": "Participation in Local Governance",
+              "kpis": [
+                {
+                  "code": "G-kpi-of-adults-participating-in-any-local-com",
+                  "name": "% of adults participating in any local committee, council, or association",
+                  "questionCodes": [
+                    "G05"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "G-voice-in-local-decision-making",
+              "name": "Voice in Local Decision-Making",
+              "kpis": [
+                {
+                  "code": "G-kpi-residents-perceived-ability-to-influence",
+                  "name": "Residents' perceived ability to influence village-related decisions",
+                  "questionCodes": [
+                    "G06"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "code": "G-accountability-institutional-trust",
+          "name": "Accountability & Institutional Trust",
+          "indicators": [
+            {
+              "code": "G-trust-in-local-institutions",
+              "name": "Trust in Local Institutions",
+              "kpis": [
+                {
+                  "code": "G-kpi-level-of-trust-in-local-administrative-g",
+                  "name": "Level of trust in local administrative/governing bodies",
+                  "questionCodes": [
+                    "G07"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "G-grievance-mechanism-awareness",
+              "name": "Grievance Mechanism Awareness",
+              "kpis": [
+                {
+                  "code": "G-kpi-of-households-aware-of-a-channel-to-file",
+                  "name": "% of households aware of a channel to file complaints/grievances about public services",
+                  "questionCodes": [
+                    "G08"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "code": "OPEN",
+      "name": "General",
+      "subDomains": [
+        {
+          "code": "OPEN-open-ended",
+          "name": "Open-ended",
+          "indicators": [
+            {
+              "code": "OPEN-community-need",
+              "name": "Community Need",
+              "kpis": [
+                {
+                  "code": "OPEN-kpi-keyword-list-clustering",
+                  "name": "Keyword list (clustering)",
+                  "questionCodes": [
+                    "OPEN-01"
+                  ]
+                }
+              ]
+            },
+            {
+              "code": "OPEN-additional-notes",
+              "name": "Additional Notes",
+              "kpis": [
+                {
+                  "code": "OPEN-kpi-keyword-list-clustering",
+                  "name": "Keyword list (clustering)",
+                  "questionCodes": [
+                    "OPEN-02"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "code": "H01",
+      "domain": "Health",
+      "subDomain": "Access to Basic Healthcare",
+      "indicator": "Health Facility Availability",
+      "kpi": "% of villages with a basic health facility within 5 km",
+      "text": "Is there a functioning health facility (clinic/health center) within 5 km of this village?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "No",
+        "Don't know"
+      ],
+      "optionsRaw": "Yes / No / Don't know",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "H02",
+      "domain": "Health",
+      "subDomain": "Access to Basic Healthcare",
+      "indicator": "Health Facility Availability",
+      "kpi": "Average distance to nearest functioning health facility (km)",
+      "text": "Approximately how far (in km) is it from the village center to the nearest functioning health facility?",
+      "type": "NUMERIC",
+      "sourceAnswerType": "Numeric",
+      "options": null,
+      "optionsRaw": "Open numeric value (km)",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "H03",
+      "domain": "Health",
+      "subDomain": "Access to Basic Healthcare",
+      "indicator": "Service Continuity",
+      "kpi": "% of the year the nearest facility is functioning (not closed/under-staffed)",
+      "text": "In the last 12 months, was the nearest health facility ever closed or without adequate staff for more than two consecutive weeks?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "No",
+        "Don't know"
+      ],
+      "optionsRaw": "Yes / No / Don't know",
+      "analyticalDimension": "Availability",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "H04",
+      "domain": "Health",
+      "subDomain": "Access to Basic Healthcare",
+      "indicator": "Transport Barrier",
+      "kpi": "% of households reporting transport as a barrier to healthcare access",
+      "text": "Does the lack of transport prevent household members from reaching health services when needed?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Always",
+        "Often",
+        "Sometimes",
+        "Never"
+      ],
+      "optionsRaw": "Always / Often / Sometimes / Never",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "H05",
+      "domain": "Health",
+      "subDomain": "Maternal & Child Health",
+      "indicator": "Antenatal Care Coverage",
+      "kpi": "% of pregnant women who received 4+ antenatal visits",
+      "text": "Among women in this household who were pregnant in the last two years, did they receive at least 4 antenatal check-ups?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, all of them",
+        "Some of them",
+        "None of them",
+        "Not applicable"
+      ],
+      "optionsRaw": "Yes, all of them / Some of them / None of them / Not applicable",
+      "analyticalDimension": "Utilization",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "H06",
+      "domain": "Health",
+      "subDomain": "Maternal & Child Health",
+      "indicator": "Skilled Birth Attendance",
+      "kpi": "% of births attended by a skilled health worker",
+      "text": "Was the most recent birth in this household attended by a doctor, nurse, or trained midwife?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "No",
+        "Not applicable"
+      ],
+      "optionsRaw": "Yes / No / Not applicable",
+      "analyticalDimension": "Utilization",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "H07",
+      "domain": "Health",
+      "subDomain": "Maternal & Child Health",
+      "indicator": "Child Immunization",
+      "kpi": "% of children under 5 who completed the immunization schedule",
+      "text": "Have all children under 5 in this household received all scheduled vaccinations?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, all",
+        "Partially",
+        "None",
+        "No children under 5"
+      ],
+      "optionsRaw": "Yes, all / Partially / None / No children under 5",
+      "analyticalDimension": "Utilization",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "H08",
+      "domain": "Health",
+      "subDomain": "Maternal & Child Health",
+      "indicator": "Child Growth Monitoring",
+      "kpi": "% of children under 5 under regular growth/nutrition monitoring",
+      "text": "Are children under 5 in this household weighed and growth-monitored regularly at a health facility?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, regularly",
+        "Sometimes",
+        "Never",
+        "No children under 5"
+      ],
+      "optionsRaw": "Yes, regularly / Sometimes / Never / No children under 5",
+      "analyticalDimension": "Utilization",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "H09",
+      "domain": "Health",
+      "subDomain": "Disease Burden",
+      "indicator": "Chronic Disease Prevalence",
+      "kpi": "% of households with at least one member with a diagnosed chronic condition",
+      "text": "Does any member of this household have a diagnosed chronic condition (diabetes, hypertension, etc.)?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "No",
+        "Don't know"
+      ],
+      "optionsRaw": "Yes / No / Don't know",
+      "analyticalDimension": "Risk",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "H10",
+      "domain": "Health",
+      "subDomain": "Disease Burden",
+      "indicator": "Chronic Care Continuity",
+      "kpi": "% of individuals with chronic illness able to access regular follow-up care",
+      "text": "If yes, can this individual access regular follow-up care/medication for the condition locally?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, easily",
+        "Yes, with difficulty",
+        "No",
+        "Not applicable"
+      ],
+      "optionsRaw": "Yes, easily / Yes, with difficulty / No / Not applicable",
+      "analyticalDimension": "Availability",
+      "targetGroup": "Household/Village",
+      "required": false,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "H11",
+      "domain": "Health",
+      "subDomain": "Mental Health",
+      "indicator": "Service Awareness",
+      "kpi": "% of households that know available psychosocial support channels",
+      "text": "Do you know where to seek help if a household member needs psychological or social support?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "No"
+      ],
+      "optionsRaw": "Yes / No",
+      "analyticalDimension": "Awareness",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "H12",
+      "domain": "Health",
+      "subDomain": "Mental Health",
+      "indicator": "Perceived Stigma",
+      "kpi": "Perceived community stigma toward seeking psychological support",
+      "text": "How comfortable are members of this community in seeking psychological support openly?",
+      "type": "SCALE",
+      "sourceAnswerType": "Likert-5",
+      "options": [
+        "Very uncomfortable",
+        "Uncomfortable",
+        "Neutral",
+        "Comfortable",
+        "Very comfortable"
+      ],
+      "optionsRaw": "Very uncomfortable / Uncomfortable / Neutral / Comfortable / Very comfortable",
+      "analyticalDimension": "Contextual",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "H13",
+      "domain": "Health",
+      "subDomain": "Service Quality",
+      "indicator": "Perceived Service Quality",
+      "kpi": "% of households rating health service quality as adequate or higher",
+      "text": "How do you rate the overall quality of health services available to this village?",
+      "type": "SCALE",
+      "sourceAnswerType": "Likert-5",
+      "options": [
+        "Very poor",
+        "Poor",
+        "Fair",
+        "Good",
+        "Very good"
+      ],
+      "optionsRaw": "Very poor / Poor / Fair / Good / Very good",
+      "analyticalDimension": "Quality",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "H14",
+      "domain": "Health",
+      "subDomain": "Service Quality",
+      "indicator": "Medicine Availability",
+      "kpi": "% of households reporting consistent availability of essential medicines",
+      "text": "When visiting the local health facility, are essential/prescribed medicines usually available?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Always",
+        "Usually",
+        "Rarely",
+        "Never"
+      ],
+      "optionsRaw": "Always / Usually / Rarely / Never",
+      "analyticalDimension": "Availability",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "H15",
+      "domain": "Health",
+      "subDomain": "Service Quality",
+      "indicator": "Affordability",
+      "kpi": "% of households reporting healthcare cost as a barrier",
+      "text": "Did the cost of healthcare (consultation, medicine, transport) prevent this household from seeking needed care in the past year?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, often",
+        "Yes, sometimes",
+        "No"
+      ],
+      "optionsRaw": "Yes, often / Yes, sometimes / No",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "H16",
+      "domain": "Health",
+      "subDomain": "Emergency Preparedness",
+      "indicator": "Emergency Response Time",
+      "kpi": "Perceived adequacy of emergency medical response time",
+      "text": "In a medical emergency, approximately how long does it take for help to arrive (ambulance/transfer to facility)?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Under 30 min",
+        "30-60 min",
+        "1-2 hours",
+        "Over 2 hours",
+        "No emergency service"
+      ],
+      "optionsRaw": "Under 30 min / 30-60 min / 1-2 hours / Over 2 hours / No emergency service",
+      "analyticalDimension": "Risk",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "E01",
+      "domain": "Education",
+      "subDomain": "Access to Basic Education",
+      "indicator": "School Enrolment",
+      "kpi": "% of school-age children (6-15) currently enrolled",
+      "text": "Are all school-age children (6-15) in this household currently enrolled in school?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, all",
+        "Some",
+        "None",
+        "No school-age children"
+      ],
+      "optionsRaw": "Yes, all / Some / None / No school-age children",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "E02",
+      "domain": "Education",
+      "subDomain": "Access to Basic Education",
+      "indicator": "School Proximity",
+      "kpi": "Average distance to nearest primary school (km)",
+      "text": "Approximately how far is it from this household to the nearest primary school?",
+      "type": "NUMERIC",
+      "sourceAnswerType": "Numeric",
+      "options": null,
+      "optionsRaw": "Open numeric value (km)",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "E03",
+      "domain": "Education",
+      "subDomain": "Access to Basic Education",
+      "indicator": "Transport Safety",
+      "kpi": "% of households reporting safe, reliable transport to school",
+      "text": "Do children in this household have safe, reliable transport to and from school?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "Partially",
+        "No",
+        "Not applicable"
+      ],
+      "optionsRaw": "Yes / Partially / No / Not applicable",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "E04",
+      "domain": "Education",
+      "subDomain": "Access to Basic Education",
+      "indicator": "Dropout Risk",
+      "kpi": "% of households reporting a child dropping out in the past two years",
+      "text": "Has any school-age child in this household stopped attending in the past two years?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "No"
+      ],
+      "optionsRaw": "Yes / No",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "E05",
+      "domain": "Education",
+      "subDomain": "Access to Basic Education",
+      "indicator": "Dropout Reasons",
+      "kpi": "Most frequently cited reasons for school dropout",
+      "text": "If yes, what was the main reason for leaving school? (financial / distance / safety / early marriage / work / disability / other)",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Financial",
+        "Distance",
+        "Safety",
+        "Early marriage",
+        "Work",
+        "Disability",
+        "Learning difficulty",
+        "Other"
+      ],
+      "optionsRaw": "Financial / Distance / Safety / Early marriage / Work / Disability / Learning difficulty / Other",
+      "analyticalDimension": "Diagnostic",
+      "targetGroup": "Household/Village",
+      "required": false,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "E06",
+      "domain": "Education",
+      "subDomain": "Education Equity",
+      "indicator": "Gender Parity in Enrolment",
+      "kpi": "Girls-to-boys enrolment ratio (school age)",
+      "text": "Are there school-age girls in this household not enrolled while boys of the same age are enrolled?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "No",
+        "Not applicable"
+      ],
+      "optionsRaw": "Yes / No / Not applicable",
+      "analyticalDimension": "Equity",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "E07",
+      "domain": "Education",
+      "subDomain": "Education Equity",
+      "indicator": "Perceived Barriers for Girls",
+      "kpi": "% of households perceiving specific barriers to girls' education",
+      "text": "What barriers, if any, do girls in this village face in continuing their education that boys do not?",
+      "type": "MULTI_CHOICE",
+      "sourceAnswerType": "Multi select",
+      "options": [
+        "Distance/safety",
+        "Lack of female teachers",
+        "Early marriage",
+        "Domestic duties",
+        "Social customs",
+        "None"
+      ],
+      "optionsRaw": "Distance/safety / Lack of female teachers / Early marriage / Domestic duties / Social customs / None",
+      "analyticalDimension": "Equity",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "E08",
+      "domain": "Education",
+      "subDomain": "Education Quality",
+      "indicator": "Perceived Teaching Quality",
+      "kpi": "% of parents satisfied with teaching quality at the local school",
+      "text": "How satisfied are you with the quality of teaching at the school your children attend?",
+      "type": "SCALE",
+      "sourceAnswerType": "Likert-5",
+      "options": [
+        "Very dissatisfied",
+        "Dissatisfied",
+        "Neutral",
+        "Satisfied",
+        "Very satisfied"
+      ],
+      "optionsRaw": "Very dissatisfied / Dissatisfied / Neutral / Satisfied / Very satisfied",
+      "analyticalDimension": "Quality",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "E09",
+      "domain": "Education",
+      "subDomain": "Education Quality",
+      "indicator": "Teacher Availability",
+      "kpi": "% of schools perceived to have adequate teaching staff",
+      "text": "Does the local school have enough teachers to cover all subjects/grades?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "Partially",
+        "No",
+        "Don't know"
+      ],
+      "optionsRaw": "Yes / Partially / No / Don't know",
+      "analyticalDimension": "Availability",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "E10",
+      "domain": "Education",
+      "subDomain": "Education Quality",
+      "indicator": "Learning Materials",
+      "kpi": "% of households reporting children receive adequate books and materials",
+      "text": "Do your children receive the books and learning materials they need for their grade level?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, fully",
+        "Partially",
+        "No"
+      ],
+      "optionsRaw": "Yes, fully / Partially / No",
+      "analyticalDimension": "Availability",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "E11",
+      "domain": "Education",
+      "subDomain": "School Infrastructure",
+      "indicator": "Facility Adequacy",
+      "kpi": "% of schools with adequate classrooms, water, and sanitation",
+      "text": "Does the school your children attend have enough classrooms, clean water, and functioning toilets?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, all adequate",
+        "Some inadequate",
+        "Mostly inadequate",
+        "Don't know"
+      ],
+      "optionsRaw": "Yes, all adequate / Some inadequate / Mostly inadequate / Don't know",
+      "analyticalDimension": "Quality",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "E12",
+      "domain": "Education",
+      "subDomain": "School Infrastructure",
+      "indicator": "Digital Access",
+      "kpi": "% of schools with functioning computers/internet for students",
+      "text": "Does the school have functioning computers or internet available for student use?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "No",
+        "Don't know"
+      ],
+      "optionsRaw": "Yes / No / Don't know",
+      "analyticalDimension": "Availability",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "E13",
+      "domain": "Education",
+      "subDomain": "Vocational & Adult Education",
+      "indicator": "Access to Vocational Programs",
+      "kpi": "% of youth aware of and able to access vocational/technical training",
+      "text": "Are vocational or technical training programs available and accessible to youth in this village?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, accessible",
+        "Exist but not accessible",
+        "None",
+        "Don't know"
+      ],
+      "optionsRaw": "Yes, accessible / Exist but not accessible / None / Don't know",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "E14",
+      "domain": "Education",
+      "subDomain": "Vocational & Adult Education",
+      "indicator": "Adult Literacy",
+      "kpi": "% of adult individuals unable to read/write functionally",
+      "text": "Are there adults in this household who are unable to read or write?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "No"
+      ],
+      "optionsRaw": "Yes / No",
+      "analyticalDimension": "Equity",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "W01",
+      "domain": "Water & Sanitation",
+      "subDomain": "Drinking Water Access",
+      "indicator": "Access to a Safe Water Source",
+      "kpi": "% of households reached by an improved drinking water source",
+      "text": "What is the main source of drinking water for this household?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Piped to dwelling",
+        "Public tap",
+        "Protected well",
+        "Unprotected well",
+        "Surface water (river/pond)",
+        "Tanker/vendor",
+        "Other"
+      ],
+      "optionsRaw": "Piped to dwelling / Public tap / Protected well / Unprotected well / Surface water (river/pond) / Tanker/vendor / Other",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "W02",
+      "domain": "Water & Sanitation",
+      "subDomain": "Drinking Water Access",
+      "indicator": "Water Collection Time",
+      "kpi": "Average round-trip water collection time (minutes)",
+      "text": "How long does a round trip take to collect water from the main source, if not piped to the home?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Water on premises",
+        "Under 30 min",
+        "30 min-1 hour",
+        "Over 1 hour"
+      ],
+      "optionsRaw": "Water on premises / Under 30 min / 30 min-1 hour / Over 1 hour",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "W03",
+      "domain": "Water & Sanitation",
+      "subDomain": "Drinking Water Access",
+      "indicator": "Water Supply Continuity",
+      "kpi": "% of households reporting year-round water availability",
+      "text": "Is the main water source available continuously year-round, including the dry season?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, continuously",
+        "Seasonal shortage",
+        "Frequent shortage",
+        "Rarely available"
+      ],
+      "optionsRaw": "Yes, continuously / Seasonal shortage / Frequent shortage / Rarely available",
+      "analyticalDimension": "Availability",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "W04",
+      "domain": "Water & Sanitation",
+      "subDomain": "Water Quality",
+      "indicator": "Perceived Water Safety",
+      "kpi": "% of households perceiving their drinking water as safe",
+      "text": "Does this household consider its drinking water safe to drink without treatment?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "No, needs treatment",
+        "Don't know"
+      ],
+      "optionsRaw": "Yes / No, needs treatment / Don't know",
+      "analyticalDimension": "Quality",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "W05",
+      "domain": "Water & Sanitation",
+      "subDomain": "Water Quality",
+      "indicator": "Water Treatment Practice",
+      "kpi": "% of households practicing water treatment before drinking",
+      "text": "Does this household treat water (boiling, filtering, chlorination) before drinking?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Always",
+        "Sometimes",
+        "Never"
+      ],
+      "optionsRaw": "Always / Sometimes / Never",
+      "analyticalDimension": "Utilization",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "W06",
+      "domain": "Water & Sanitation",
+      "subDomain": "Water Quality",
+      "indicator": "Waterborne Illness Incidence",
+      "kpi": "% of households reporting waterborne illness in the past 6 months",
+      "text": "Has any household member had an illness suspected to be linked to water quality in the past 6 months (e.g., diarrhea)?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "No",
+        "Don't know"
+      ],
+      "optionsRaw": "Yes / No / Don't know",
+      "analyticalDimension": "Risk",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "W07",
+      "domain": "Water & Sanitation",
+      "subDomain": "Sanitation Access",
+      "indicator": "Improved Sanitation Facility",
+      "kpi": "% of households reached by improved sanitation facilities",
+      "text": "What type of toilet facility does this household primarily use?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Flush/piped or septic",
+        "Pit with slab",
+        "Shared/public facility",
+        "Pit without slab",
+        "Open defecation"
+      ],
+      "optionsRaw": "Flush/piped or septic / Pit with slab / Shared/public facility / Pit without slab / Open defecation",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "W08",
+      "domain": "Water & Sanitation",
+      "subDomain": "Sanitation Access",
+      "indicator": "Facility Privacy & Safety",
+      "kpi": "% of households reporting the toilet facility is private and safe, especially at night",
+      "text": "Is this household's toilet facility private and safe to use, even at night?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "Somewhat",
+        "No"
+      ],
+      "optionsRaw": "Yes / Somewhat / No",
+      "analyticalDimension": "Quality",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "W09",
+      "domain": "Water & Sanitation",
+      "subDomain": "Hygiene & Waste Management",
+      "indicator": "Handwashing Facility",
+      "kpi": "% of households with a handwashing facility with water and soap",
+      "text": "Does this household have a handwashing facility with both water and soap?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "Water only, no soap",
+        "No facility"
+      ],
+      "optionsRaw": "Yes / Water only, no soap / No facility",
+      "analyticalDimension": "Availability",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "W10",
+      "domain": "Water & Sanitation",
+      "subDomain": "Hygiene & Waste Management",
+      "indicator": "Solid Waste Collection",
+      "kpi": "% of villages with a regular solid waste collection service",
+      "text": "Is there a regular waste collection service operating in this village?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, weekly or more",
+        "Yes, irregularly",
+        "No service"
+      ],
+      "optionsRaw": "Yes, weekly or more / Yes, irregularly / No service",
+      "analyticalDimension": "Availability",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "W11",
+      "domain": "Water & Sanitation",
+      "subDomain": "Hygiene & Waste Management",
+      "indicator": "Informal Waste Disposal",
+      "kpi": "Primary waste disposal method in the absence of formal collection",
+      "text": "In the absence of formal collection, how does this household primarily dispose of its waste?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Diagnostic",
+      "options": [
+        "Burning",
+        "Burying",
+        "Open dumping",
+        "Private collection",
+        "Other"
+      ],
+      "optionsRaw": "Burning / Burying / Open dumping / Private collection / Other",
+      "analyticalDimension": "Diagnostic",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "EN01",
+      "domain": "Energy & Environment",
+      "subDomain": "Electricity Access",
+      "indicator": "Grid Connection",
+      "kpi": "% of households connected to the national electricity grid",
+      "text": "Is this household connected to the national electricity grid?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "No, uses an alternative source",
+        "No electricity access"
+      ],
+      "optionsRaw": "Yes / No, uses an alternative source / No electricity access",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "EN02",
+      "domain": "Energy & Environment",
+      "subDomain": "Electricity Access",
+      "indicator": "Service Reliability",
+      "kpi": "Average daily hours of electricity outage",
+      "text": "On a typical day, how many hours is the electricity supply cut off?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "No outage",
+        "Under 2 hours",
+        "2-6 hours",
+        "Over 6 hours",
+        "No grid connection"
+      ],
+      "optionsRaw": "No outage / Under 2 hours / 2-6 hours / Over 6 hours / No grid connection",
+      "analyticalDimension": "Availability",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "EN03",
+      "domain": "Energy & Environment",
+      "subDomain": "Electricity Access",
+      "indicator": "Alternative Energy Use",
+      "kpi": "% of households relying on alternative/off-grid energy sources",
+      "text": "If not grid-connected, what is the household's main energy source?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Solar",
+        "Generator",
+        "Gas",
+        "Wood/biomass",
+        "Other",
+        "Not applicable"
+      ],
+      "optionsRaw": "Solar / Generator / Gas / Wood/biomass / Other / Not applicable",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": false,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "EN04",
+      "domain": "Energy & Environment",
+      "subDomain": "Clean Cooking",
+      "indicator": "Cooking Fuel Type",
+      "kpi": "% of households using clean cooking fuel/technology",
+      "text": "What is the primary fuel or technology this household uses for cooking?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Electricity/LPG/natural gas",
+        "Improved stove",
+        "Wood/charcoal/open fire",
+        "Other"
+      ],
+      "optionsRaw": "Electricity/LPG/natural gas / Improved stove / Wood/charcoal/open fire / Other",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "EN05",
+      "domain": "Energy & Environment",
+      "subDomain": "Clean Cooking",
+      "indicator": "Indoor Air Quality Concern",
+      "kpi": "% of households reporting health concerns from cooking smoke",
+      "text": "Do household members experience respiratory or eye irritation symptoms believed to be linked to cooking smoke?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, frequently",
+        "Sometimes",
+        "Never",
+        "Not applicable"
+      ],
+      "optionsRaw": "Yes, frequently / Sometimes / Never / Not applicable",
+      "analyticalDimension": "Risk",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "EN06",
+      "domain": "Energy & Environment",
+      "subDomain": "Environmental Quality",
+      "indicator": "Water Scarcity Perception",
+      "kpi": "% of households reporting seasonal water scarcity affecting farming/livestock",
+      "text": "Does this household experience water scarcity affecting farming or livestock for part of the year?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, severe",
+        "Yes, moderate",
+        "No"
+      ],
+      "optionsRaw": "Yes, severe / Yes, moderate / No",
+      "analyticalDimension": "Risk",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "EN07",
+      "domain": "Energy & Environment",
+      "subDomain": "Environmental Quality",
+      "indicator": "Land Degradation Perception",
+      "kpi": "Perceived change in land/soil quality over 5 years",
+      "text": "Compared to 5 years ago, how would you describe the agricultural land/soil quality in this area?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Improved",
+        "Same",
+        "Degraded",
+        "Don't know"
+      ],
+      "optionsRaw": "Improved / Same / Degraded / Don't know",
+      "analyticalDimension": "Risk",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "EN08",
+      "domain": "Energy & Environment",
+      "subDomain": "Environmental Quality",
+      "indicator": "Natural Disaster Exposure",
+      "kpi": "% of households affected by a natural disaster in 3 years",
+      "text": "Has this household been affected by a flood, drought, or other natural disaster in the past 3 years?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "No"
+      ],
+      "optionsRaw": "Yes / No",
+      "analyticalDimension": "Risk",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "EN09",
+      "domain": "Energy & Environment",
+      "subDomain": "Environmental Awareness",
+      "indicator": "Awareness of Protection Programs",
+      "kpi": "% of households aware of locally available environmental or clean-energy programs",
+      "text": "Are you aware of any environmental protection or clean-energy programs operating in or near this village?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "No"
+      ],
+      "optionsRaw": "Yes / No",
+      "analyticalDimension": "Awareness",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "EN10",
+      "domain": "Energy & Environment",
+      "subDomain": "Environmental Awareness",
+      "indicator": "Conservation Practice",
+      "kpi": "% of households practicing any form of water/resource conservation",
+      "text": "Does this household practice any form of water or resource conservation?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, regularly",
+        "Sometimes",
+        "No"
+      ],
+      "optionsRaw": "Yes, regularly / Sometimes / No",
+      "analyticalDimension": "Utilization",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "L01",
+      "domain": "Livelihood",
+      "subDomain": "Employment & Income",
+      "indicator": "Employment Status",
+      "kpi": "% of working-age individuals (15-64) currently employed or self-employed",
+      "text": "What is the current employment status of the main working-age household members?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Employed full-time",
+        "Self-employed",
+        "Employed part-time",
+        "Seeking work",
+        "Not seeking work",
+        "Unable to work"
+      ],
+      "optionsRaw": "Employed full-time / Self-employed / Employed part-time / Seeking work / Not seeking work / Unable to work",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "L02",
+      "domain": "Livelihood",
+      "subDomain": "Employment & Income",
+      "indicator": "Income Adequacy",
+      "kpi": "% of households reporting income covers basic needs",
+      "text": "Does this household's income cover its basic needs (food, housing, health, education)?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Covers comfortably",
+        "Barely covers",
+        "Does not cover"
+      ],
+      "optionsRaw": "Covers comfortably / Barely covers / Does not cover",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "L03",
+      "domain": "Livelihood",
+      "subDomain": "Employment & Income",
+      "indicator": "Income Stability",
+      "kpi": "Stability/seasonality of the household's main income source year-round",
+      "text": "How stable is the household's main income source throughout the year?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Stable year-round",
+        "Seasonal and predictable",
+        "Irregular/unpredictable"
+      ],
+      "optionsRaw": "Stable year-round / Seasonal and predictable / Irregular/unpredictable",
+      "analyticalDimension": "Risk",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "L04",
+      "domain": "Livelihood",
+      "subDomain": "Employment & Income",
+      "indicator": "Income Diversification",
+      "kpi": "Number of distinct income sources the household relies on",
+      "text": "How many distinct income sources does this household currently rely on?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Three or more",
+        "Two",
+        "One",
+        "None"
+      ],
+      "optionsRaw": "Three or more / Two / One / None",
+      "analyticalDimension": "Risk",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "L05",
+      "domain": "Livelihood",
+      "subDomain": "Agriculture & Primary Production",
+      "indicator": "Agricultural Dependence",
+      "kpi": "% of households relying on farming/livestock as a primary livelihood",
+      "text": "Is farming, livestock, or fishing the primary livelihood for this household?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, primary",
+        "Yes, secondary",
+        "No"
+      ],
+      "optionsRaw": "Yes, primary / Yes, secondary / No",
+      "analyticalDimension": "Diagnostic",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "L06",
+      "domain": "Livelihood",
+      "subDomain": "Agriculture & Primary Production",
+      "indicator": "Input & Market Access",
+      "kpi": "% of farming households reporting adequate access to inputs (seeds, feed, fertilizer) and markets",
+      "text": "Does this household have adequate access to agricultural inputs and a market to sell its produce/livestock?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, both",
+        "Inputs only",
+        "Market only",
+        "Neither",
+        "Not applicable"
+      ],
+      "optionsRaw": "Yes, both / Inputs only / Market only / Neither / Not applicable",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "L07",
+      "domain": "Livelihood",
+      "subDomain": "Agriculture & Primary Production",
+      "indicator": "Productivity Barrier",
+      "kpi": "Most frequently cited barrier limiting agricultural productivity",
+      "text": "What single biggest barrier limits this household's farming/livestock productivity?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Diagnostic",
+      "options": [
+        "Water/irrigation",
+        "Land size",
+        "Input cost",
+        "Market access",
+        "Climate/weather",
+        "Lack of equipment",
+        "Lack of skills",
+        "Other"
+      ],
+      "optionsRaw": "Water/irrigation / Land size / Input cost / Market access / Climate/weather / Lack of equipment / Lack of skills / Other",
+      "analyticalDimension": "Diagnostic",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "L08",
+      "domain": "Livelihood",
+      "subDomain": "Entrepreneurship",
+      "indicator": "Business Ownership",
+      "kpi": "% of households owning or operating a small or micro enterprise",
+      "text": "Does this household currently own or operate a small business or micro enterprise?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "No"
+      ],
+      "optionsRaw": "Yes / No",
+      "analyticalDimension": "Diagnostic",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "L09",
+      "domain": "Livelihood",
+      "subDomain": "Entrepreneurship",
+      "indicator": "Entrepreneurial Intent",
+      "kpi": "% of non-owning households expressing intent to start a business",
+      "text": "If not currently operating a business, do members of this household wish to start one?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, with a clear idea",
+        "Yes, but no clear idea",
+        "No interest",
+        "Not applicable"
+      ],
+      "optionsRaw": "Yes, with a clear idea / Yes, but no clear idea / No interest / Not applicable",
+      "analyticalDimension": "Diagnostic",
+      "targetGroup": "Household/Village",
+      "required": false,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "L10",
+      "domain": "Livelihood",
+      "subDomain": "Entrepreneurship",
+      "indicator": "Entrepreneurship Barriers",
+      "kpi": "Most frequently cited barrier to starting/growing a business",
+      "text": "What is the main barrier preventing this household from starting or growing a business?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Lack of capital",
+        "Lack of skills/training",
+        "Lack of market",
+        "Regulatory/licensing issues",
+        "Lack of guidance",
+        "Other"
+      ],
+      "optionsRaw": "Lack of capital / Lack of skills/training / Lack of market / Regulatory/licensing issues / Lack of guidance / Other",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "L11",
+      "domain": "Livelihood",
+      "subDomain": "Entrepreneurship",
+      "indicator": "Access to Finance",
+      "kpi": "% of households reached by formal finance or micro-finance services",
+      "text": "Does this household have access to a bank account, micro-finance, or a formal loan when needed?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, easily",
+        "Yes, with difficulty",
+        "No access"
+      ],
+      "optionsRaw": "Yes, easily / Yes, with difficulty / No access",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "L12",
+      "domain": "Livelihood",
+      "subDomain": "Vocational Skills & Capacity",
+      "indicator": "Vocational Skill Possession",
+      "kpi": "% of working-age individuals holding a marketable vocational/technical skill",
+      "text": "Do working-age household members hold a marketable vocational or technical skill (e.g., carpentry, sewing, maintenance)?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "No",
+        "Don't know"
+      ],
+      "optionsRaw": "Yes / No / Don't know",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "L13",
+      "domain": "Livelihood",
+      "subDomain": "Vocational Skills & Capacity",
+      "indicator": "Training Program Participation",
+      "kpi": "% of working-age individuals who took part in a skills/training program in 2 years",
+      "text": "Has any working-age household member participated in a vocational or skills training program in the past two years?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "No"
+      ],
+      "optionsRaw": "Yes / No",
+      "analyticalDimension": "Utilization",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "L14",
+      "domain": "Livelihood",
+      "subDomain": "Women's Economic Empowerment",
+      "indicator": "Women's Labour Participation",
+      "kpi": "% of women in the household employed, self-employed, or actively seeking work",
+      "text": "Are the women in this household employed, self-employed, or actively seeking paid work?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "No, by choice",
+        "No, due to barriers",
+        "Not applicable"
+      ],
+      "optionsRaw": "Yes / No, by choice / No, due to barriers / Not applicable",
+      "analyticalDimension": "Equity",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "L15",
+      "domain": "Livelihood",
+      "subDomain": "Women's Economic Empowerment",
+      "indicator": "Barriers to Women's Work",
+      "kpi": "Primary barrier to women's economic participation, where applicable",
+      "text": "If women in this household face barriers to working, what is the primary barrier?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Childcare/domestic duties",
+        "Social/cultural customs",
+        "Lack of nearby opportunities",
+        "Transport",
+        "Lack of skills",
+        "Not applicable"
+      ],
+      "optionsRaw": "Childcare/domestic duties / Social/cultural customs / Lack of nearby opportunities / Transport / Lack of skills / Not applicable",
+      "analyticalDimension": "Equity",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "L16",
+      "domain": "Livelihood",
+      "subDomain": "Women's Economic Empowerment",
+      "indicator": "Control Over Income",
+      "kpi": "Extent of women's control over the income they earn",
+      "text": "If women in this household earn income, do they have control over how it is spent or saved?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Full control",
+        "Joint decision",
+        "Limited control",
+        "Not applicable"
+      ],
+      "optionsRaw": "Full control / Joint decision / Limited control / Not applicable",
+      "analyticalDimension": "Equity",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "I01",
+      "domain": "Infrastructure",
+      "subDomain": "Roads & Transport",
+      "indicator": "Road Connectivity Quality",
+      "kpi": "% of villages connected by a paved or all-season road",
+      "text": "Is this village connected to the main road network by a paved or all-season road?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, paved",
+        "Yes, graded/unpaved but usable",
+        "No, often impassable"
+      ],
+      "optionsRaw": "Yes, paved / Yes, graded/unpaved but usable / No, often impassable",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "I02",
+      "domain": "Infrastructure",
+      "subDomain": "Roads & Transport",
+      "indicator": "Public Transport Availability",
+      "kpi": "% of households with access to regular public/shared transport",
+      "text": "Is regular public or shared transport available connecting this village to nearby towns/cities?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, daily",
+        "Yes, limited schedule",
+        "No regular service"
+      ],
+      "optionsRaw": "Yes, daily / Yes, limited schedule / No regular service",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "I03",
+      "domain": "Infrastructure",
+      "subDomain": "Roads & Transport",
+      "indicator": "Seasonal Accessibility",
+      "kpi": "% of the year the village is fully accessible by road",
+      "text": "Are there times of year (e.g., rainy season) when this village becomes difficult or impossible to reach by road?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Always accessible",
+        "Sometimes difficult",
+        "Frequently inaccessible"
+      ],
+      "optionsRaw": "Always accessible / Sometimes difficult / Frequently inaccessible",
+      "analyticalDimension": "Risk",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "I04",
+      "domain": "Infrastructure",
+      "subDomain": "Communications & Digital Connectivity",
+      "indicator": "Mobile Network Coverage",
+      "kpi": "% of households with reliable mobile network coverage",
+      "text": "Is mobile network coverage reliable at this household's location?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, strong signal",
+        "Weak/intermittent signal",
+        "No coverage"
+      ],
+      "optionsRaw": "Yes, strong signal / Weak/intermittent signal / No coverage",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "I05",
+      "domain": "Infrastructure",
+      "subDomain": "Communications & Digital Connectivity",
+      "indicator": "Internet Access",
+      "kpi": "% of households with functional internet access (mobile data or fixed line)",
+      "text": "Does this household have functional internet access, via mobile data or a fixed connection?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, reliable",
+        "Yes, but unreliable/slow",
+        "No access"
+      ],
+      "optionsRaw": "Yes, reliable / Yes, but unreliable/slow / No access",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "I06",
+      "domain": "Infrastructure",
+      "subDomain": "Communications & Digital Connectivity",
+      "indicator": "Digital Literacy",
+      "kpi": "% of household members able to use a smartphone/internet for basic tasks",
+      "text": "Can members of this household use a smartphone or internet for basic tasks (messaging, browsing, mobile banking)?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, most members",
+        "Some members",
+        "None"
+      ],
+      "optionsRaw": "Yes, most members / Some members / None",
+      "analyticalDimension": "Utilization",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "I07",
+      "domain": "Infrastructure",
+      "subDomain": "Housing & Built Environment",
+      "indicator": "Housing Adequacy",
+      "kpi": "% of households living in structurally adequate housing",
+      "text": "Is the household's dwelling structurally adequate (solid roof, walls, weather protection)?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, fully adequate",
+        "Partially adequate",
+        "Inadequate"
+      ],
+      "optionsRaw": "Yes, fully adequate / Partially adequate / Inadequate",
+      "analyticalDimension": "Quality",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "I08",
+      "domain": "Infrastructure",
+      "subDomain": "Housing & Built Environment",
+      "indicator": "Overcrowding",
+      "kpi": "Average number of persons per room in the household",
+      "text": "On average, how many persons share each room used for sleeping in this household?",
+      "type": "NUMERIC",
+      "sourceAnswerType": "Numeric",
+      "options": null,
+      "optionsRaw": "Open numeric value (persons/room)",
+      "analyticalDimension": "Quality",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "I09",
+      "domain": "Infrastructure",
+      "subDomain": "Public & Community Facilities",
+      "indicator": "Market Access",
+      "kpi": "% of households within a reasonable distance of a functioning market",
+      "text": "Is there a functioning market (to buy and sell) within a reasonable distance of this village?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, within the village",
+        "Yes, nearby (under 10 km)",
+        "No, distant (over 10 km)"
+      ],
+      "optionsRaw": "Yes, within the village / Yes, nearby (under 10 km) / No, distant (over 10 km)",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "I10",
+      "domain": "Infrastructure",
+      "subDomain": "Public & Community Facilities",
+      "indicator": "Community Gathering Space",
+      "kpi": "Availability of a functioning community center or public gathering space",
+      "text": "Does this village have a functioning community center, public square, or gathering space?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, in good condition",
+        "Yes, in poor condition",
+        "No"
+      ],
+      "optionsRaw": "Yes, in good condition / Yes, in poor condition / No",
+      "analyticalDimension": "Availability",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "S01",
+      "domain": "Social Development",
+      "subDomain": "Social Safety",
+      "indicator": "Perceived Personal Safety",
+      "kpi": "% of households feeling safe in their village, day and night",
+      "text": "How safe do members of this household feel walking in this village, day and night?",
+      "type": "SCALE",
+      "sourceAnswerType": "Likert-5",
+      "options": [
+        "Very unsafe",
+        "Unsafe",
+        "Neutral",
+        "Safe",
+        "Very safe"
+      ],
+      "optionsRaw": "Very unsafe / Unsafe / Neutral / Safe / Very safe",
+      "analyticalDimension": "Risk",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "S02",
+      "domain": "Social Development",
+      "subDomain": "Social Safety",
+      "indicator": "Social Safety Net Access",
+      "kpi": "% of vulnerable households reached by social protection programs",
+      "text": "Does this household currently receive support from any social protection or social welfare program?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "No, but eligible",
+        "No, not eligible",
+        "Don't know eligibility"
+      ],
+      "optionsRaw": "Yes / No, but eligible / No, not eligible / Don't know eligibility",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "S03",
+      "domain": "Social Development",
+      "subDomain": "Vulnerable Groups",
+      "indicator": "Elderly Care Access",
+      "kpi": "% of elderly household members with access to adequate care/support",
+      "text": "Do elderly members of this household have access to adequate care, support, or social services?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "Partially",
+        "No",
+        "Not applicable"
+      ],
+      "optionsRaw": "Yes / Partially / No / Not applicable",
+      "analyticalDimension": "Equity",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "S04",
+      "domain": "Social Development",
+      "subDomain": "Vulnerable Groups",
+      "indicator": "Disability Inclusion",
+      "kpi": "% of village public facilities accessible to persons with disabilities",
+      "text": "Are public facilities in this village (schools, health centers, public buildings) accessible to persons with disabilities?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, most",
+        "Partially",
+        "Not accessible",
+        "No persons with disabilities in household"
+      ],
+      "optionsRaw": "Yes, most / Partially / Not accessible / No persons with disabilities in household",
+      "analyticalDimension": "Equity",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "S05",
+      "domain": "Social Development",
+      "subDomain": "Vulnerable Groups",
+      "indicator": "Disability in the Household",
+      "kpi": "% of households with a member whose disability affects daily activities",
+      "text": "Does any member of this household have a disability that affects their daily activities?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "No"
+      ],
+      "optionsRaw": "Yes / No",
+      "analyticalDimension": "Diagnostic",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "S06",
+      "domain": "Social Development",
+      "subDomain": "Child & Youth Protection",
+      "indicator": "Child Protection Awareness",
+      "kpi": "% of households that know how to report child abuse or neglect",
+      "text": "Do you know how or where to report a case of child abuse or neglect in this area?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "No"
+      ],
+      "optionsRaw": "Yes / No",
+      "analyticalDimension": "Awareness",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "S07",
+      "domain": "Social Development",
+      "subDomain": "Child & Youth Protection",
+      "indicator": "Youth Civic Engagement",
+      "kpi": "% of youth (15-24) participating in community or voluntary activities",
+      "text": "Are youth (15-24) in this household engaged in any community, voluntary, or civic activities?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, actively",
+        "Sometimes",
+        "Not engaged"
+      ],
+      "optionsRaw": "Yes, actively / Sometimes / Not engaged",
+      "analyticalDimension": "Utilization",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "S08",
+      "domain": "Social Development",
+      "subDomain": "Child & Youth Protection",
+      "indicator": "Early Marriage Prevalence",
+      "kpi": "% of households where a member married before age 18",
+      "text": "Has any member of this household married before age 18?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "No",
+        "Prefer not to answer"
+      ],
+      "optionsRaw": "Yes / No / Prefer not to answer",
+      "analyticalDimension": "Equity",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "S09",
+      "domain": "Social Development",
+      "subDomain": "Social Cohesion",
+      "indicator": "Sense of Community Belonging",
+      "kpi": "% of households reporting a strong sense of belonging/trust within the village",
+      "text": "How strong is your household's sense of belonging and trust within this village community?",
+      "type": "SCALE",
+      "sourceAnswerType": "Likert-5",
+      "options": [
+        "Very weak",
+        "Weak",
+        "Moderate",
+        "Strong",
+        "Very strong"
+      ],
+      "optionsRaw": "Very weak / Weak / Moderate / Strong / Very strong",
+      "analyticalDimension": "Contextual",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "S10",
+      "domain": "Social Development",
+      "subDomain": "Social Cohesion",
+      "indicator": "Conflict Incidence",
+      "kpi": "% of households reporting an unresolved community or land/resource dispute in the past year",
+      "text": "Has this household been involved in or affected by an unresolved community or land/resource dispute in the past year?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "No"
+      ],
+      "optionsRaw": "Yes / No",
+      "analyticalDimension": "Risk",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "S11",
+      "domain": "Social Development",
+      "subDomain": "Social Cohesion",
+      "indicator": "Collective Action Capacity",
+      "kpi": "% of villages with an active community group/committee addressing local issues",
+      "text": "Is there an active community group, council, or committee in this village addressing local needs?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, active",
+        "Exists but inactive",
+        "None"
+      ],
+      "optionsRaw": "Yes, active / Exists but inactive / None",
+      "analyticalDimension": "Contextual",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "CU01",
+      "domain": "Culture",
+      "subDomain": "Cultural Heritage",
+      "indicator": "Heritage Asset Presence",
+      "kpi": "% of villages with identifiable tangible or intangible heritage assets",
+      "text": "Does this village have cultural heritage sites, crafts, or traditions being actively recognized or preserved?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, actively preserved",
+        "Exist but undocumented/at risk",
+        "None identified"
+      ],
+      "optionsRaw": "Yes, actively preserved / Exist but undocumented/at risk / None identified",
+      "analyticalDimension": "Availability",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "CU02",
+      "domain": "Culture",
+      "subDomain": "Cultural Heritage",
+      "indicator": "Heritage Risk Status",
+      "kpi": "Perceived risk of loss/decline of local cultural practices or sites",
+      "text": "Do you feel that local traditions, crafts, or heritage sites are at risk of disappearing in the next generation?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "High risk",
+        "Some risk",
+        "Low risk",
+        "Don't know"
+      ],
+      "optionsRaw": "High risk / Some risk / Low risk / Don't know",
+      "analyticalDimension": "Risk",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "CU03",
+      "domain": "Culture",
+      "subDomain": "Cultural Programs & Participation",
+      "indicator": "Program Availability",
+      "kpi": "% of households aware of locally available cultural, arts, or heritage programs",
+      "text": "Are any cultural, arts, or heritage programs/events available in or near this village?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "No",
+        "Don't know"
+      ],
+      "optionsRaw": "Yes / No / Don't know",
+      "analyticalDimension": "Availability",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "CU04",
+      "domain": "Culture",
+      "subDomain": "Cultural Programs & Participation",
+      "indicator": "Participation Rate",
+      "kpi": "% of households that took part in a local cultural or heritage activity in the past year",
+      "text": "Has any member of this household participated in a local cultural, heritage, or arts activity in the past 12 months?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "No"
+      ],
+      "optionsRaw": "Yes / No",
+      "analyticalDimension": "Utilization",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "CU05",
+      "domain": "Culture",
+      "subDomain": "Community Identity",
+      "indicator": "Sense of Cultural Pride",
+      "kpi": "% of households expressing pride in local cultural identity/heritage",
+      "text": "How proud are members of this household of the cultural identity and heritage of this village?",
+      "type": "SCALE",
+      "sourceAnswerType": "Likert-5",
+      "options": [
+        "Not proud at all",
+        "Slightly proud",
+        "Moderately proud",
+        "Proud",
+        "Very proud"
+      ],
+      "optionsRaw": "Not proud at all / Slightly proud / Moderately proud / Proud / Very proud",
+      "analyticalDimension": "Contextual",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "CU06",
+      "domain": "Culture",
+      "subDomain": "Community Identity",
+      "indicator": "Intergenerational Knowledge Transfer",
+      "kpi": "% of households actively passing traditional skills/knowledge to younger generations",
+      "text": "Are traditional skills, crafts, or knowledge being actively taught to younger generations in this household/community?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, actively",
+        "Somewhat",
+        "Not happening"
+      ],
+      "optionsRaw": "Yes, actively / Somewhat / Not happening",
+      "analyticalDimension": "Risk",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "G01",
+      "domain": "Governance & Services",
+      "subDomain": "Access to Government Services",
+      "indicator": "Service Center Accessibility",
+      "kpi": "% of households reporting easy access to government service centers",
+      "text": "How easy is it for this household to reach government service centers (civil registry, licensing, etc.) when needed?",
+      "type": "SCALE",
+      "sourceAnswerType": "Likert-5",
+      "options": [
+        "Very difficult",
+        "Difficult",
+        "Fair",
+        "Easy",
+        "Very easy"
+      ],
+      "optionsRaw": "Very difficult / Difficult / Fair / Easy / Very easy",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "G02",
+      "domain": "Governance & Services",
+      "subDomain": "Access to Government Services",
+      "indicator": "Civil Documentation Coverage",
+      "kpi": "% of household members holding complete civil documents (ID, birth registration)",
+      "text": "Do all members of this household hold complete civil documents (national ID, birth certificate, etc.)?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, all",
+        "Some missing",
+        "Don't know"
+      ],
+      "optionsRaw": "Yes, all / Some missing / Don't know",
+      "analyticalDimension": "Access",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "G03",
+      "domain": "Governance & Services",
+      "subDomain": "Digital Government",
+      "indicator": "E-Service Usage",
+      "kpi": "% of households that used at least one e-government service in 6 months",
+      "text": "Has this household used any digital/e-government service (e.g., online applications, digital identity platforms) in the past 6 months?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "No, but aware",
+        "No, unaware of options"
+      ],
+      "optionsRaw": "Yes / No, but aware / No, unaware of options",
+      "analyticalDimension": "Utilization",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "G04",
+      "domain": "Governance & Services",
+      "subDomain": "Digital Government",
+      "indicator": "Digital Service Satisfaction",
+      "kpi": "% of households satisfied with the e-government services they used",
+      "text": "If used, how satisfied are you with the e-government service experience?",
+      "type": "SCALE",
+      "sourceAnswerType": "Likert-5",
+      "options": [
+        "Very dissatisfied",
+        "Dissatisfied",
+        "Neutral",
+        "Satisfied",
+        "Very satisfied",
+        "Not applicable"
+      ],
+      "optionsRaw": "Very dissatisfied / Dissatisfied / Neutral / Satisfied / Very satisfied / Not applicable",
+      "analyticalDimension": "Quality",
+      "targetGroup": "Household/Village",
+      "required": false,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "G05",
+      "domain": "Governance & Services",
+      "subDomain": "Community Participation",
+      "indicator": "Participation in Local Governance",
+      "kpi": "% of adults participating in any local committee, council, or association",
+      "text": "Do adults in this household participate in any local committee, council, or association?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes, actively",
+        "Sometimes",
+        "No"
+      ],
+      "optionsRaw": "Yes, actively / Sometimes / No",
+      "analyticalDimension": "Utilization",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "G06",
+      "domain": "Governance & Services",
+      "subDomain": "Community Participation",
+      "indicator": "Voice in Local Decision-Making",
+      "kpi": "Residents' perceived ability to influence village-related decisions",
+      "text": "Do residents of this village feel they have a genuine opportunity to influence decisions affecting the village?",
+      "type": "SCALE",
+      "sourceAnswerType": "Likert-5",
+      "options": [
+        "No influence at all",
+        "Limited influence",
+        "Moderate influence",
+        "Strong influence",
+        "Very strong influence"
+      ],
+      "optionsRaw": "No influence at all / Limited influence / Moderate influence / Strong influence / Very strong influence",
+      "analyticalDimension": "Contextual",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "G07",
+      "domain": "Governance & Services",
+      "subDomain": "Accountability & Institutional Trust",
+      "indicator": "Trust in Local Institutions",
+      "kpi": "Level of trust in local administrative/governing bodies",
+      "text": "How much do you trust the local administrative or governing bodies that serve this village?",
+      "type": "SCALE",
+      "sourceAnswerType": "Likert-5",
+      "options": [
+        "No trust",
+        "Low trust",
+        "Moderate trust",
+        "High trust",
+        "Very high trust"
+      ],
+      "optionsRaw": "No trust / Low trust / Moderate trust / High trust / Very high trust",
+      "analyticalDimension": "Contextual",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "G08",
+      "domain": "Governance & Services",
+      "subDomain": "Accountability & Institutional Trust",
+      "indicator": "Grievance Mechanism Awareness",
+      "kpi": "% of households aware of a channel to file complaints/grievances about public services",
+      "text": "Do you know of a formal channel to file a complaint or grievance about public services in this area?",
+      "type": "SINGLE_CHOICE",
+      "sourceAnswerType": "Single select",
+      "options": [
+        "Yes",
+        "No"
+      ],
+      "optionsRaw": "Yes / No",
+      "analyticalDimension": "Awareness",
+      "targetGroup": "Household/Village",
+      "required": true,
+      "usedInMvp": true,
+      "sourceReportMapping": "Individual + Collective",
+      "isGeneralOpenEnded": false,
+      "notes": null,
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "OPEN-01",
+      "domain": "General",
+      "subDomain": "Open-ended",
+      "indicator": "Community Need",
+      "kpi": "Keyword list (clustering)",
+      "text": "State the most urgent community needs in your community.",
+      "type": "OPEN_ENDED",
+      "sourceAnswerType": "Open text",
+      "options": null,
+      "optionsRaw": "Short answer",
+      "analyticalDimension": "Contextual",
+      "targetGroup": "Beneficiary",
+      "required": false,
+      "usedInMvp": true,
+      "sourceReportMapping": "Qualitative clustering",
+      "isGeneralOpenEnded": true,
+      "notes": "Open-ended question added at the end of the survey (Framework).",
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    },
+    {
+      "code": "OPEN-02",
+      "domain": "General",
+      "subDomain": "Open-ended",
+      "indicator": "Additional Notes",
+      "kpi": "Keyword list (clustering)",
+      "text": "What do you feel is missing and not covered by the survey?",
+      "type": "OPEN_ENDED",
+      "sourceAnswerType": "Open text",
+      "options": null,
+      "optionsRaw": "Short answer",
+      "analyticalDimension": "Contextual",
+      "targetGroup": "Beneficiary",
+      "required": false,
+      "usedInMvp": true,
+      "sourceReportMapping": "Qualitative clustering",
+      "isGeneralOpenEnded": true,
+      "notes": "Closing open-ended question (Framework).",
+      "weight": null,
+      "scoringLookup": null,
+      "reportTypes": null
+    }
+  ]
+}

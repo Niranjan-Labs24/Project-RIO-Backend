@@ -38,6 +38,139 @@ export class MailerService {
       return false;
     }
   }
+
+  /**
+   * Citizen public flow OTP delivery. Deliberately provider-agnostic at the
+   * call site (RIO-FR-Add-02) — `contact` may be an email today; a later
+   * SMS provider swap only changes this method's body, not its signature
+   * or callers.
+   */
+  async sendOtpCode(contact: string, code: string): Promise<boolean> {
+    if (!this.transport) return false;
+    try {
+      await this.transport.sendMail({
+        from: this.config.mailFrom,
+        to: contact,
+        subject: 'Your RIO survey verification code',
+        text: `Your verification code is ${code}. It expires in 10 minutes.`,
+        html: `<p>Your verification code is <strong>${code}</strong>. It expires in 10 minutes.</p>`,
+      });
+      return true;
+    } catch (err) {
+      this.logger.error(`Failed to email OTP code to ${contact}`, err as Error);
+      return false;
+    }
+  }
+
+  /**
+   * Routes a public enquiry to an org's research officers (or admins). Returns
+   * false rather than throwing, exactly like sendTemporaryPassword — callers
+   * decide what an undelivered message means. ContactService treats false as a
+   * 503 so the sender is never told an enquiry was delivered when it wasn't.
+   *
+   * Recipients go in `bcc`: they are staff addresses of one org, and the
+   * enquirer is an outside party who must not receive the roster of everyone it
+   * reached. `replyTo` is the enquirer, so a reply reaches the person asking
+   * rather than the noreply mailbox.
+   */
+  async sendContactRequest(recipients: string[], enquiry: ContactEnquiryInput): Promise<boolean> {
+    if (!this.transport) return false;
+    if (recipients.length === 0) return false;
+    try {
+      await this.transport.sendMail({
+        from: this.config.mailFrom,
+        to: this.config.mailFrom,
+        bcc: recipients,
+        replyTo: enquiry.email,
+        subject: `RIO enquiry — ${enquiry.name} (${enquiry.region})`,
+        text: contactRequestText(enquiry),
+        html: contactRequestHtml(enquiry),
+      });
+      return true;
+    } catch (err) {
+      this.logger.error(`Failed to email contact enquiry for ${enquiry.orgName}`, err as Error);
+      return false;
+    }
+  }
+}
+
+interface ContactEnquiryInput {
+  orgName: string;
+  name: string;
+  email: string;
+  region: string;
+  purpose: string;
+}
+
+function contactRequestText({ orgName, name, email, region, purpose }: ContactEnquiryInput): string {
+  return (
+    `New contact enquiry for ${orgName}\n\n` +
+    `Name: ${name}\n` +
+    `Email: ${email}\n` +
+    `Region: ${region}\n\n` +
+    `Purpose:\n${purpose}\n\n` +
+    `Reply directly to this email to reach ${name}.`
+  );
+}
+
+function contactRequestHtml({ orgName, name, email, region, purpose }: ContactEnquiryInput): string {
+  // Every value here is attacker-supplied (public form) — escape before it
+  // reaches markup. Same subset as temporaryPasswordHtml: safe in attribute
+  // context too, since email is interpolated into href="mailto:...".
+  const esc = (value: string): string =>
+    value
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+  const row = (label: string, value: string): string => `
+                      <p style="margin:0 0 4px;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;">${esc(label)}</p>
+                      <p style="margin:0 0 16px;font-size:14px;color:#111827;font-weight:600;">${esc(value)}</p>`;
+
+  return `
+<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f5f7;padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
+            <tr>
+              <td style="background-color:#111827;padding:24px 32px;">
+                <span style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px;">
+                <h1 style="margin:0 0 12px;font-size:20px;color:#111827;">New contact enquiry</h1>
+                <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#4b5563;">
+                  Someone has reached out to ${esc(orgName)} through the RIO
+                  sign-in page.
+                </p>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:24px;">
+                  <tr>
+                    <td style="padding:16px 20px;">${row('Name', name)}${row('Email', email)}${row('Region', region)}
+                      <p style="margin:0 0 4px;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;">Purpose</p>
+                      <p style="margin:0;font-size:14px;line-height:1.6;color:#111827;white-space:pre-wrap;">${esc(purpose)}</p>
+                    </td>
+                  </tr>
+                </table>
+                <table role="presentation" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="border-radius:8px;background-color:#111827;">
+                      <a href="mailto:${esc(email)}" style="display:inline-block;padding:12px 24px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">
+                        Reply to ${esc(name)}
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
 }
 
 interface TemporaryPasswordEmailInput {

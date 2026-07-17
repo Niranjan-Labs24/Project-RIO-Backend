@@ -4,7 +4,7 @@ import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import { parseIntParam } from '../../common/http/query.util';
 import { InviteUserBody, UpdateUserBody } from './users.contract';
 import { UsersService } from './users.service';
-import type { InviteUserPayload, OrgUser, UpdateUserPayload } from './users.types';
+import type { InviteUserPayload, InviteUserResponse, OrgUser, UpdateUserPayload } from './users.types';
 
 @Controller('users')
 export class UsersController {
@@ -24,7 +24,7 @@ export class UsersController {
 
   @Post()
   @RequirePermission('entityTeam', 'create')
-  invite(@Body(new TypeBoxValidationPipe(InviteUserBody)) body: InviteUserPayload): Promise<OrgUser> {
+  invite(@Body(new TypeBoxValidationPipe(InviteUserBody)) body: InviteUserPayload): Promise<InviteUserResponse> {
     return this.users.invite(body);
   }
 

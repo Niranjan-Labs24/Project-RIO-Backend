@@ -52,6 +52,11 @@ export class ConfigService {
   get corsOrigin(): string {
     return this.config.CORS_ORIGIN;
   }
+  // See the PUBLIC_APP_URL comment in env.schema.ts — the citizen-facing
+  // base URL, distinct from (but defaulting to) CORS_ORIGIN.
+  get publicAppUrl(): string {
+    return this.config.PUBLIC_APP_URL ?? this.config.CORS_ORIGIN;
+  }
   get smtpHost(): string | undefined {
     return this.config.SMTP_HOST;
   }
@@ -72,5 +77,14 @@ export class ConfigService {
   }
   get csrfEnforce(): boolean {
     return this.config.CSRF_ENFORCE;
+  }
+  get evidenceStoragePath(): string {
+    return this.config.EVIDENCE_STORAGE_PATH;
+  }
+  get reviewerSlaHours(): number {
+    return this.config.REVIEWER_SLA_HOURS;
+  }
+  get reviewerSlaPollIntervalMs(): number {
+    return this.config.REVIEWER_SLA_POLL_INTERVAL_MS;
   }
 }
