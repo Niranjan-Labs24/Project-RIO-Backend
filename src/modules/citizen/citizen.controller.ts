@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
+import { Public } from '../../auth/public.decorator';
 import { CheckDuplicateBody, RequestOtpBody, SubmitResponseBody, VerifyOtpBody } from './citizen.contract';
 import { CitizenService } from './citizen.service';
 import type {
@@ -12,6 +13,7 @@ import type {
 // Matches citizen_guest's existing RBAC scaffolding: create-only on
 // citizenChannel, no login path at all.
 @Controller('public/surveys')
+@Public()
 export class CitizenController {
   constructor(private readonly citizen: CitizenService) {}
 

@@ -1,4 +1,4 @@
-import { BadRequestException, GoneException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, GoneException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { randomInt } from 'node:crypto';
 import { Prisma } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
@@ -59,24 +59,34 @@ export class CitizenService {
   // creates or mutates any record.
   async checkDuplicate(token: string, payload: CheckDuplicatePayload): Promise<CheckDuplicateResult> {
     const link = await this.findActiveLinkOrThrow(token);
+    const contact = this.normalizeContact(payload.contact);
     const existing = await this.tenant.runAsSupervisor((tx) =>
-      tx.surveyResponse.findFirst({ where: { studyId: link.studyId, contact: payload.contact } }),
+      tx.surveyResponse.findFirst({ where: { studyId: link.studyId, contact } }),
     );
     return { isDuplicate: existing !== null };
   }
 
   async requestOtp(token: string, payload: RequestOtpPayload): Promise<RequestOtpResult> {
     const link = await this.findActiveLinkOrThrow(token);
+    const contact = this.normalizeContact(payload.contact);
     const code = randomInt(100_000, 999_999).toString();
     const codeHash = await this.passwords.hash(code);
     const expiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
 
     const challenge = await this.tenant.runAsOrg(link.orgId, (tx) =>
       tx.citizenOtpChallenge.create({
-        data: { orgId: link.orgId, surveyLinkId: link.id, contact: payload.contact, codeHash, expiresAt },
+        data: { orgId: link.orgId, surveyLinkId: link.id, contact, codeHash, expiresAt },
       }),
     );
-    await this.mailer.sendOtpCode(payload.contact, code);
+    const delivered = await this.mailer.sendOtpCode(payload.contact, code);
+    if (!delivered) {
+      await this.tenant.runAsOrg(link.orgId, (tx) =>
+        tx.citizenOtpChallenge.update({ where: { id: challenge.id }, data: { expiresAt: new Date() } }),
+      );
+      throw new ServiceUnavailableException({
+        error: { code: 'OTP_DELIVERY_FAILED', message: 'We could not send a verification code. Please try again.' },
+      });
+    }
     // Dev only: surface the code so local/test runs aren't blocked on a
     // real inbox — same convention as OrganizationsService.createWithAdmin's
     // temp-password console.log.
@@ -99,12 +109,23 @@ export class CitizenService {
     }
 
     const matches = await this.passwords.verify(challenge.codeHash, payload.code);
-    await this.tenant.runAsOrg(link.orgId, (tx) =>
-      tx.citizenOtpChallenge.update({
-        where: { id: challenge.id },
+    const changed = await this.tenant.runAsOrg(link.orgId, (tx) =>
+      tx.citizenOtpChallenge.updateMany({
+        where: {
+          id: challenge.id,
+          verifiedAt: null,
+          consumedAt: null,
+          expiresAt: { gt: new Date() },
+          attempts: { lt: OTP_MAX_ATTEMPTS },
+        },
         data: matches ? { verifiedAt: new Date() } : { attempts: { increment: 1 } },
       }),
     );
+    if (changed.count !== 1) {
+      throw new BadRequestException({
+        error: { code: 'OTP_TOO_MANY_ATTEMPTS', message: 'This verification session can no longer be used.' },
+      });
+    }
     if (!matches) {
       throw new BadRequestException({ error: { code: 'OTP_INCORRECT', message: 'Incorrect verification code.' } });
     }
@@ -128,6 +149,15 @@ export class CitizenService {
     }
 
     const row = await this.tenant.runAsOrg(link.orgId, async (tx) => {
+      const claimed = await tx.citizenOtpChallenge.updateMany({
+        where: { id: challenge.id, verifiedAt: { not: null }, consumedAt: null },
+        data: { consumedAt: new Date() },
+      });
+      if (claimed.count !== 1) {
+        throw new BadRequestException({
+          error: { code: 'OTP_ALREADY_USED', message: 'This verification code has already been used to submit a response.' },
+        });
+      }
       // Belt-and-suspenders: also block a second submission from the same
       // contact for this study even via a *fresh* OTP request/verification,
       // not just a reused challenge.
@@ -150,7 +180,6 @@ export class CitizenService {
           answers: payload.answers as unknown as Prisma.InputJsonValue,
         },
       });
-      await tx.citizenOtpChallenge.update({ where: { id: challenge.id }, data: { consumedAt: new Date() } });
       return created;
     });
     return { id: row.id, submittedAt: row.submittedAt.toISOString() };
@@ -173,5 +202,9 @@ export class CitizenService {
       throw new NotFoundException({ error: { code: 'OTP_CHALLENGE_NOT_FOUND', message: 'Verification session not found.' } });
     }
     return challenge;
+  }
+
+  private normalizeContact(contact: string): string {
+    return contact.trim().toLowerCase();
   }
 }

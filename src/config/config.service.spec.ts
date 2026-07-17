@@ -74,6 +74,6 @@ describe('ConfigService', () => {
     expect(config.smtpPort).toBe(587);
     expect(config.smtpSecure).toBe(false);
     expect(config.mailFrom).toBe('RIO <no-reply@rio.local>');
-    expect(config.csrfEnforce).toBe(false);
+    expect(config.csrfEnforce).toBe(true);
   });
 });

@@ -1,5 +1,6 @@
 import { Body, Controller, Get, HttpCode, Post } from '@nestjs/common';
 import { CsrfExempt } from '../../common/guards/csrf.guard';
+import { Public } from '../../auth/public.decorator';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import { ContactBody, type ContactDto } from './contact.contract';
 import { ContactService } from './contact.service';
@@ -16,6 +17,7 @@ import type { ContactSubmissionResult, PublicOrganizationOption } from './contac
  * a public route cannot write tenant data.
  */
 @Controller('contact')
+@Public()
 export class ContactController {
   constructor(private readonly contact: ContactService) {}
 
