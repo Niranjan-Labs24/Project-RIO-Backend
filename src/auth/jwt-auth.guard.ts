@@ -48,11 +48,12 @@ export class JwtAuthGuard implements CanActivate {
     const current = await this.tenant.runAsSupervisor((tx) =>
       tx.user.findUnique({
         where: { id: claims.sub },
-        select: { orgId: true, roleId: true, org: { select: { isActive: true } } },
+        select: { orgId: true, roleId: true, sessionVersion: true, org: { select: { isActive: true } } },
       }),
     );
     const currentRole = current ? ROLE_MATRIX.find((role) => role.id === current.roleId) : undefined;
-    if (!current || !current.org.isActive || current.orgId !== claims.orgId || !currentRole) {
+    if (!current || !current.org.isActive || current.orgId !== claims.orgId ||
+        current.sessionVersion !== claims.sessionVersion || !currentRole) {
       throw this.unauthenticated();
     }
 

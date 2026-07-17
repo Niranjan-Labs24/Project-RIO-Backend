@@ -16,7 +16,7 @@ function makeContext(req: { headers?: Record<string, string>; cookies?: Record<s
 }
 
 function makeGuard(isPublic = false, user: object | null = {
-  orgId: 'o1', roleId: 'role_ngo_admin', org: { isActive: true },
+  orgId: 'o1', roleId: 'role_ngo_admin', sessionVersion: 0, org: { isActive: true },
 }) {
   const reflector = { getAllAndOverride: () => isPublic } as never;
   const tenant = {

@@ -27,6 +27,7 @@ interface UserWithOrg {
   failedLoginAttempts: number;
   lockedUntil: Date | null;
   mustChangePassword: boolean;
+  sessionVersion: number;
   org: {
     id: string; name: string; logoUrl: string | null; region: string[];
     email: string | null; sector: string | null; villages: string[]; isActive: boolean; createdAt: Date;
@@ -104,7 +105,7 @@ export class AuthService {
     }
     await this.audit.record({ action: 'login', entityType: 'user', entityId: found.id, entityLabel: found.email });
 
-    const token = this.tokens.sign({ sub: found.id, orgId: found.org.id, roleKey: role.key });
+    const token = this.tokens.sign({ sub: found.id, orgId: found.org.id, roleKey: role.key, sessionVersion: found.sessionVersion });
     return this.buildSession(found, role, token);
   }
 
@@ -123,7 +124,7 @@ export class AuthService {
       throw new ForbiddenException({ error: { code: 'ORG_INACTIVE', message: 'This organization is not active' } });
     }
     const role = this.roleOf(found.roleId);
-    const token = this.tokens.sign({ sub: found.id, orgId: found.org.id, roleKey: role.key });
+    const token = this.tokens.sign({ sub: found.id, orgId: found.org.id, roleKey: role.key, sessionVersion: found.sessionVersion });
     return this.buildSession(found, role, token);
   }
 
@@ -136,6 +137,9 @@ export class AuthService {
       action: 'logout', entityType: 'user', entityId: actorId,
       entityLabel: found?.email ?? actorId,
     });
+    await this.tenant.runInOrgContext((tx) =>
+      tx.user.update({ where: { id: actorId }, data: { sessionVersion: { increment: 1 } } }),
+    );
   }
 
   async consent(): Promise<{ consentedAt: string; policyVersion: string | null }> {
@@ -201,7 +205,7 @@ export class AuthService {
     }
     await this.audit.record({ action: 'create', entityType: 'organization', entityId: org.id, entityLabel: org.name, organizationId: org.id });
 
-    const token = this.tokens.sign({ sub: user.id, orgId: org.id, roleKey: role.key });
+    const token = this.tokens.sign({ sub: user.id, orgId: org.id, roleKey: role.key, sessionVersion: user.sessionVersion });
     const session = this.buildSession({ ...user, org } as never, role, token);
 
     const emailed = await this.mailer.sendTemporaryPassword(user.email, org.name, temporaryPassword);
@@ -237,14 +241,18 @@ export class AuthService {
     }
     const passwordHash = await this.passwords.hash(dto.newPassword);
     const updated = (await this.tenant.runInOrgContext((tx) =>
-      tx.user.update({ where: { id: actorId }, data: { passwordHash, mustChangePassword: false }, include: { org: true } }),
+      tx.user.update({
+        where: { id: actorId },
+        data: { passwordHash, mustChangePassword: false, sessionVersion: { increment: 1 } },
+        include: { org: true },
+      }),
     )) as UserWithOrg;
     // Never log the actual password value — before/after stay null so the
     // entry only confirms *that* it changed, via the eye icon's "Password"
     // row, same field-label convention as Name/Email/Role elsewhere.
     await this.audit.record({ action: 'edit', entityType: 'user', entityId: updated.id, entityLabel: updated.email, changes: [{ field: 'Password', before: null, after: null }] });
     const role = this.roleOf(updated.roleId);
-    const token = this.tokens.sign({ sub: updated.id, orgId: updated.org.id, roleKey: role.key });
+    const token = this.tokens.sign({ sub: updated.id, orgId: updated.org.id, roleKey: role.key, sessionVersion: updated.sessionVersion });
     return this.buildSession(updated, role, token);
   }
 

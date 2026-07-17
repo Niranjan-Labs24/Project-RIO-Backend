@@ -200,6 +200,7 @@ export class UsersService {
     if (patch.name !== undefined) data.name = patch.name;
     if (patch.roleId !== undefined) data.roleId = patch.roleId;
     if (patch.status !== undefined) data.status = patch.status as UserStatus;
+    if (patch.roleId !== undefined || patch.status !== undefined) data.sessionVersion = { increment: 1 };
     return data;
   }
 

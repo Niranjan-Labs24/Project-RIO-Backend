@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { RequirePermission } from "../../common/guards/permission.guard";
+import { parseIntParam } from "../../common/http/query.util";
 import { TypeBoxValidationPipe } from "../../contract/validation.pipe";
 import { CreateSharingRequestBody } from "./sharing.contract";
 import { SharingService } from "./sharing.service";
@@ -24,8 +25,8 @@ export class SharingController {
 
   @Get()
   @RequirePermission("archiveSharingAudit", "read")
-  list(): Promise<SharingRequest[]> {
-    return this.sharing.list();
+  list(@Query("limit") limit?: string, @Query("offset") offset?: string): Promise<SharingRequest[]> {
+    return this.sharing.list({ limit: parseIntParam(limit), offset: parseIntParam(offset) });
   }
 
   // Declared ahead of the `:id` routes below so Nest matches these literal

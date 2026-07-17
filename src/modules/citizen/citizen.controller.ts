@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import { Public } from '../../auth/public.decorator';
+import { RateLimit } from '../../common/guards/rate-limit.guard';
 import { CheckDuplicateBody, RequestOtpBody, SubmitResponseBody, VerifyOtpBody } from './citizen.contract';
 import { CitizenService } from './citizen.service';
 import type {
@@ -23,6 +24,7 @@ export class CitizenController {
   }
 
   @Post(':token/check-duplicate')
+  @RateLimit(20, 60)
   checkDuplicate(
     @Param('token') token: string,
     @Body(new TypeBoxValidationPipe(CheckDuplicateBody)) body: CheckDuplicatePayload,
@@ -31,6 +33,7 @@ export class CitizenController {
   }
 
   @Post(':token/otp/request')
+  @RateLimit(3, 600)
   requestOtp(
     @Param('token') token: string,
     @Body(new TypeBoxValidationPipe(RequestOtpBody)) body: RequestOtpPayload,
@@ -39,6 +42,7 @@ export class CitizenController {
   }
 
   @Post(':token/otp/verify')
+  @RateLimit(10, 600)
   verifyOtp(
     @Param('token') token: string,
     @Body(new TypeBoxValidationPipe(VerifyOtpBody)) body: VerifyOtpPayload,
@@ -47,6 +51,7 @@ export class CitizenController {
   }
 
   @Post(':token/responses')
+  @RateLimit(5, 600)
   submitResponse(
     @Param('token') token: string,
     @Body(new TypeBoxValidationPipe(SubmitResponseBody)) body: SubmitResponsePayload,

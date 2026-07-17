@@ -51,6 +51,24 @@ export class EvidenceStorageService {
     }
   }
 
+  assertFileSignature(originalName: string, buffer: Buffer): void {
+    const ext = this.assertAllowedExtension(originalName);
+    const hex = buffer.subarray(0, 8).toString('hex');
+    const ascii = buffer.subarray(0, 5).toString('ascii');
+    const matches =
+      (ext === '.pdf' && ascii === '%PDF-') ||
+      ((ext === '.jpg' || ext === '.jpeg') && hex.startsWith('ffd8ff')) ||
+      (ext === '.png' && hex === '89504e470d0a1a0a') ||
+      ((ext === '.docx' || ext === '.xlsx') && hex.startsWith('504b0304')) ||
+      ((ext === '.doc' || ext === '.xls') && hex.startsWith('d0cf11e0a1b11ae1')) ||
+      (ext === '.csv' && !buffer.subarray(0, 4096).includes(0));
+    if (!matches) {
+      throw new BadRequestException({
+        error: { code: 'FILE_CONTENT_MISMATCH', message: `"${originalName}" does not match its declared file type.` },
+      });
+    }
+  }
+
   // Hashes the in-memory upload buffer directly — never re-read from
   // storageKey/disk, so this must be called with the same buffer passed
   // to save(), before or after, not derived from the saved file.

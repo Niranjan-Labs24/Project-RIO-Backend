@@ -1,5 +1,4 @@
 import { ForbiddenException, Injectable } from "@nestjs/common";
-import { PrismaService } from "../../prisma/prisma.service";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { getOrgStore } from "../../tenancy/org-context";
 import { roleByKey } from "../../rbac/role-matrix";
@@ -16,7 +15,6 @@ import type { SupervisorOverview, SupervisorOverviewRow } from "./supervisor-ove
 export class SupervisorOverviewService {
   constructor(
     private readonly tenant: TenantPrismaService,
-    private readonly prisma: PrismaService,
   ) {}
 
   async getOverview(): Promise<SupervisorOverview> {
@@ -26,14 +24,28 @@ export class SupervisorOverviewService {
       this.tenant.runAsSupervisor((tx) => tx.organisation.findMany({ orderBy: { name: "asc" } })),
       this.tenant.runAsSupervisor((tx) => tx.study.findMany({ orderBy: { updatedAt: "desc" } })),
       this.tenant.runAsSupervisor((tx) => tx.report.findMany({ where: { status: "approved" }, orderBy: { generatedAt: "desc" } })),
-      this.prisma.sharingRequest.findMany({ orderBy: { requestedAt: "desc" } }),
+      this.tenant.runAsSupervisor((tx) => tx.sharingRequest.findMany({ orderBy: { requestedAt: "desc" } })),
     ]);
 
+    const activeStudyByOrg = new Map<string, (typeof studies)[number]>();
+    const latestStudyByOrg = new Map<string, (typeof studies)[number]>();
+    for (const study of studies) {
+      if (!latestStudyByOrg.has(study.orgId)) latestStudyByOrg.set(study.orgId, study);
+      if (study.status !== "human_reviewed" && !activeStudyByOrg.has(study.orgId)) activeStudyByOrg.set(study.orgId, study);
+    }
+    const latestReportByOrg = new Map<string, (typeof reports)[number]>();
+    for (const report of reports) if (!latestReportByOrg.has(report.orgId)) latestReportByOrg.set(report.orgId, report);
+    const sharingByOrg = new Map<string, (typeof sharingRequests)[number]>();
+    for (const request of sharingRequests) {
+      if (!sharingByOrg.has(request.ownerOrgId)) sharingByOrg.set(request.ownerOrgId, request);
+      if (!sharingByOrg.has(request.requestingOrgId)) sharingByOrg.set(request.requestingOrgId, request);
+    }
+
     const rows: SupervisorOverviewRow[] = organisations.map((org) => {
-      const activeStudy = studies.find((s) => s.orgId === org.id && s.status !== "human_reviewed");
-      const latestReport = reports.find((r) => r.orgId === org.id);
-      const sharingRequest = sharingRequests.find((r) => r.ownerOrgId === org.id || r.requestingOrgId === org.id);
-      const lastStudyActivity = studies.find((s) => s.orgId === org.id)?.updatedAt ?? org.updatedAt;
+      const activeStudy = activeStudyByOrg.get(org.id);
+      const latestReport = latestReportByOrg.get(org.id);
+      const sharingRequest = sharingByOrg.get(org.id);
+      const lastStudyActivity = latestStudyByOrg.get(org.id)?.updatedAt ?? org.updatedAt;
 
       return {
         organizationId: org.id,

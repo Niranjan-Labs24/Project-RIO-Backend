@@ -67,4 +67,6 @@ export interface ListReportsParams {
   reportType?: ReportTypeCode;
   status?: ReportStatus;
   studyId?: string;
+  limit?: number;
+  offset?: number;
 }

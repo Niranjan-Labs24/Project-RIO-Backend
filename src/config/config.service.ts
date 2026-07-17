@@ -19,6 +19,12 @@ export class ConfigService {
   get supervisorDatabaseUrl(): string {
     return this.config.SUPERVISOR_DATABASE_URL;
   }
+  get redisUrl(): string | undefined {
+    return this.config.REDIS_URL;
+  }
+  get trustProxy(): string {
+    return this.config.TRUST_PROXY;
+  }
   get jwtSecret(): string {
     return this.config.JWT_SECRET;
   }

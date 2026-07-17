@@ -21,6 +21,8 @@ export const EnvSchema = Type.Object({
   // app legitimately holds this at runtime for crossEntity roles' read path
   // (runAsSupervisor) — unlike DATABASE_URL (owner), which stays CLI-only.
   SUPERVISOR_DATABASE_URL: Type.String({ minLength: 1 }),
+  REDIS_URL: Type.Optional(Type.String({ minLength: 1 })),
+  TRUST_PROXY: Type.String({ default: 'loopback' }),
   // JWT signing secret for stateless bearer auth (min 32 chars). Required at
   // runtime — the app issues/verifies its own session tokens.
   JWT_SECRET: Type.String({ minLength: 32 }),
@@ -96,6 +98,9 @@ export function validateEnv(raw: Record<string, unknown>): AppConfig {
       .map((e) => `${e.instancePath || e.params?.['missingProperty'] || ''} ${e.message}`.trim())
       .join('; ');
     throw new Error(`Invalid environment configuration: ${details}`);
+  }
+  if (candidate.NODE_ENV === 'production' && !candidate.REDIS_URL) {
+    throw new Error('Invalid environment configuration: REDIS_URL is required in production');
   }
   return candidate as AppConfig;
 }

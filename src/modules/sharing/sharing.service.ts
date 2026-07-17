@@ -1,5 +1,4 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { PrismaService } from "../../prisma/prisma.service";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { getOrgStore, requireActor, requireOrgId } from "../../tenancy/org-context";
 import { roleByKey } from "../../rbac/role-matrix";
@@ -16,7 +15,6 @@ import type {
 @Injectable()
 export class SharingService {
   constructor(
-    private readonly prisma: PrismaService,
     private readonly tenant: TenantPrismaService,
     private readonly audit: AuditService,
   ) {}
@@ -43,7 +41,7 @@ export class SharingService {
       throw new NotFoundException({ error: { code: "STUDY_NOT_FOUND", message: "Study not found" } });
     }
 
-    const row = await this.prisma.sharingRequest.create({
+    const row = await this.tenant.runInOrgContext((tx) => tx.sharingRequest.create({
       data: {
         ownerOrgId: payload.ownerOrgId,
         requestingOrgId,
@@ -51,7 +49,7 @@ export class SharingService {
         requestedBy,
         note: payload.note ?? null,
       },
-    });
+    }));
     await this.audit.record({
       action: "create",
       entityType: "sharing_request",
@@ -62,14 +60,16 @@ export class SharingService {
     return this.enrichOne(row as unknown as SharingRequestRow);
   }
 
-  async list(): Promise<SharingRequest[]> {
+  async list(opts: { limit?: number; offset?: number } = {}): Promise<SharingRequest[]> {
     const orgId = requireOrgId();
+    const take = Math.min(Math.max(opts.limit ?? 100, 1), 200);
+    const skip = Math.max(opts.offset ?? 0, 0);
     const rows = this.isCrossEntity()
-      ? await this.prisma.sharingRequest.findMany({ orderBy: { requestedAt: "desc" } })
-      : await this.prisma.sharingRequest.findMany({
+      ? await this.tenant.runAsSupervisor((tx) => tx.sharingRequest.findMany({ orderBy: { requestedAt: "desc" }, take, skip }))
+      : await this.tenant.runInOrgContext((tx) => tx.sharingRequest.findMany({
           where: { OR: [{ ownerOrgId: orgId }, { requestingOrgId: orgId }] },
-          orderBy: { requestedAt: "desc" },
-        });
+          orderBy: { requestedAt: "desc" }, take, skip,
+        }));
     return this.enrichMany(rows as unknown as SharingRequestRow[]);
   }
 
@@ -155,7 +155,7 @@ export class SharingService {
   private async decide(id: string, status: "approved" | "rejected"): Promise<SharingRequest> {
     const orgId = requireOrgId();
     const decidedBy = requireActor();
-    const existing = await this.prisma.sharingRequest.findUnique({ where: { id } });
+    const existing = await this.tenant.runInOrgContext((tx) => tx.sharingRequest.findUnique({ where: { id } }));
     if (!existing) {
       throw new NotFoundException({ error: { code: "SHARING_REQUEST_NOT_FOUND", message: "Sharing request not found" } });
     }
@@ -170,10 +170,10 @@ export class SharingService {
       });
     }
 
-    const row = await this.prisma.sharingRequest.update({
+    const row = await this.tenant.runInOrgContext((tx) => tx.sharingRequest.update({
       where: { id },
       data: { status, decidedBy, decidedAt: new Date() },
-    });
+    }));
     await this.audit.record({
       action: status === "approved" ? "approve" : "edit",
       entityType: "sharing_request",
@@ -186,7 +186,9 @@ export class SharingService {
 
   private async findVisibleOrThrow(id: string): Promise<SharingRequestRow> {
     const orgId = requireOrgId();
-    const row = await this.prisma.sharingRequest.findUnique({ where: { id } });
+    const row = this.isCrossEntity()
+      ? await this.tenant.runAsSupervisor((tx) => tx.sharingRequest.findUnique({ where: { id } }))
+      : await this.tenant.runInOrgContext((tx) => tx.sharingRequest.findUnique({ where: { id } }));
     if (!row) {
       throw new NotFoundException({ error: { code: "SHARING_REQUEST_NOT_FOUND", message: "Sharing request not found" } });
     }

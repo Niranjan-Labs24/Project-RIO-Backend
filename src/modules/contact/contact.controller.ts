@@ -1,6 +1,7 @@
 import { Body, Controller, Get, HttpCode, Post } from '@nestjs/common';
 import { CsrfExempt } from '../../common/guards/csrf.guard';
 import { Public } from '../../auth/public.decorator';
+import { RateLimit } from '../../common/guards/rate-limit.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import { ContactBody, type ContactDto } from './contact.contract';
 import { ContactService } from './contact.service';
@@ -28,6 +29,7 @@ export class ContactController {
   }
 
   @Post()
+  @RateLimit(5, 3600)
   @HttpCode(200)
   @CsrfExempt()
   submit(@Body(new TypeBoxValidationPipe(ContactBody)) body: ContactDto): Promise<ContactSubmissionResult> {

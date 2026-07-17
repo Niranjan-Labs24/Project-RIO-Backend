@@ -28,9 +28,7 @@ export class OrgContextMiddleware implements NestMiddleware {
     }
     // Captured for audit rows (not a security seam) — trust the proxy's first
     // x-forwarded-for hop if present, else express's req.ip.
-    const xff = req.headers['x-forwarded-for'];
-    const firstXff = typeof xff === 'string' ? xff.split(',')[0]?.trim() : undefined;
-    const ip = firstXff || req.ip || undefined;
+    const ip = req.ip || undefined;
     const ua = req.headers['user-agent'];
     const userAgent = typeof ua === 'string' ? ua : undefined;
     const store: OrgStore = { requestId, orgId, role, ip, userAgent };

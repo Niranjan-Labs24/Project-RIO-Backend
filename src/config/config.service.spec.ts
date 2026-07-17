@@ -7,6 +7,7 @@ const valid = {
   APP_DATABASE_URL: 'postgresql://cnap_app:pw@localhost:5432/cnap',
   SUPERVISOR_DATABASE_URL: 'postgresql://cnap_supervisor:pw@localhost:5432/cnap',
   JWT_SECRET: 'test_jwt_secret_at_least_32_chars_long_xx',
+  REDIS_URL: 'redis://localhost:6379',
   LOG_LEVEL: 'info',
 };
 
@@ -45,6 +46,11 @@ describe('validateEnv', () => {
     const { NODE_ENV: _omit, ...rest } = valid;
     const cfg = validateEnv(rest);
     expect(cfg.NODE_ENV).toBe('production');
+  });
+
+  it('requires distributed rate-limit storage in production', () => {
+    const { REDIS_URL: _omit, ...rest } = valid;
+    expect(() => validateEnv({ ...rest, NODE_ENV: 'production' })).toThrow(/REDIS_URL/);
   });
 });
 
