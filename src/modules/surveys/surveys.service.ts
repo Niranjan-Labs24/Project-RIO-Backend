@@ -134,7 +134,7 @@ export class SurveysService {
     const orgId = requireOrgId();
     const actorId = requireActor();
 
-    const { survey, created } = await this.tenant.runInOrgContext(async (tx) => {
+    const { survey, created, studyTitle } = await this.tenant.runInOrgContext(async (tx) => {
       const study = await tx.study.findUnique({ where: { id: studyId } });
       if (!study) {
         throw new NotFoundException({ error: { code: 'STUDY_NOT_FOUND', message: 'Study not found' } });
@@ -149,12 +149,12 @@ export class SurveysService {
       }
 
       const existing = await tx.survey.findFirst({ where: { studyId } });
-      if (existing) return { survey: existing, created: false };
+      if (existing) return { survey: existing, created: false, studyTitle: study.title };
 
       const row = await tx.survey.create({
         data: { orgId, studyId, title: `Survey: ${study.title}`, status: 'DRAFT', createdBy: actorId },
       });
-      return { survey: row, created: true };
+      return { survey: row, created: true, studyTitle: study.title };
     });
 
     if (created) {
@@ -162,7 +162,7 @@ export class SurveysService {
         action: 'create',
         entityType: 'survey',
         entityId: survey.id,
-        entityLabel: `Manually created survey for study ${studyId}`,
+        entityLabel: `Manually created survey for study "${studyTitle}"`,
       });
     }
 
@@ -320,7 +320,7 @@ Eligible Questions: ${JSON.stringify(
       action: 'create',
       entityType: 'survey',
       entityId: survey.id,
-      entityLabel: `AI recommended survey questions for study ${studyId}`,
+      entityLabel: `AI recommended survey questions for study "${study.title}"`,
     });
 
     return this.getSurveyByStudyId(studyId);

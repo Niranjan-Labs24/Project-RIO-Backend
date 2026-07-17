@@ -38,7 +38,7 @@ export class AiDecisionsService {
   // call fails, so classification itself never hard-fails on an AI outage.
   async classify(studyId: string): Promise<AiDecision> {
     const orgId = requireOrgId();
-    const need = await this.tenant.runInOrgContext(async (tx) => {
+    const { need, studyTitle } = await this.tenant.runInOrgContext(async (tx) => {
       const study = await tx.study.findUnique({ where: { id: studyId } });
       if (!study) {
         throw new NotFoundException({ error: { code: 'STUDY_NOT_FOUND', message: 'Study not found' } });
@@ -50,7 +50,7 @@ export class AiDecisionsService {
       if (study.status === 'draft' || study.status === 'need_captured') {
         throw new ConflictException({ error: { code: 'EVIDENCE_NOT_SUBMITTED', message: 'Submit evidence before running AI Classification' } });
       }
-      return need;
+      return { need, studyTitle: study.title };
     });
 
     const result = await this.runClassification({ statement: need.statement, village: need.village });
@@ -72,7 +72,7 @@ export class AiDecisionsService {
       await tx.study.update({ where: { id: studyId }, data: { status: 'ai_classified' } });
       return row;
     });
-    await this.audit.record({ action: 'create', entityType: 'ai_decision', entityId: created.id, entityLabel: `classification for study ${studyId}` });
+    await this.audit.record({ action: 'create', entityType: 'ai_decision', entityId: created.id, entityLabel: `classification for study "${studyTitle}"` });
     return this.toAiDecision(created);
   }
 
@@ -105,7 +105,7 @@ export class AiDecisionsService {
 
   async review(id: string, payload: ReviewDecisionPayload): Promise<AiDecision> {
     const decidedBy = requireActor();
-    const updated = await this.tenant.runInOrgContext(async (tx) => {
+    const { updated, studyTitle } = await this.tenant.runInOrgContext(async (tx) => {
       const existing = (await tx.aiDecision.findUnique({ where: { id } })) as unknown as AiDecisionRow | null;
       if (!existing) throw new NotFoundException({ error: { code: 'AI_DECISION_NOT_FOUND', message: 'AI decision not found' } });
       const row = (await tx.aiDecision.update({
@@ -120,7 +120,7 @@ export class AiDecisionsService {
           decidedAt: new Date(),
         },
       })) as unknown as AiDecisionRow;
-      await tx.study.update({ where: { id: row.studyId }, data: { status: 'human_reviewed' } });
+      const study = await tx.study.update({ where: { id: row.studyId }, data: { status: 'human_reviewed' } });
 
       // Approved (as-is) or modified (overridden) both produce a final
       // domain/sub-domain — write it onto the Study so Survey Builder's
@@ -137,7 +137,7 @@ export class AiDecisionsService {
           await tx.study.update({ where: { id: row.studyId }, data: { domain, subDomain } });
         }
       }
-      return row;
+      return { updated: row, studyTitle: study.title };
     });
     // 'approved' surfaces as the 'approve' audit action (so an Audit Log
     // filter on Approved actually finds it) — 'modified'/'rejected' are
@@ -146,7 +146,7 @@ export class AiDecisionsService {
       action: payload.decision === 'approved' ? 'approve' : 'edit',
       entityType: 'ai_decision',
       entityId: updated.id,
-      entityLabel: `review for study ${updated.studyId}`,
+      entityLabel: `review for study "${studyTitle}"`,
     });
     return this.toAiDecision(updated);
   }
