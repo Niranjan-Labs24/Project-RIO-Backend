@@ -5,5 +5,6 @@ import { DomainsService } from './domains.service';
 @Module({
   controllers: [DomainsController],
   providers: [DomainsService],
+  exports: [DomainsService],
 })
 export class DomainsModule {}

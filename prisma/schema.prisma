@@ -40,6 +40,11 @@ enum PermissionModule {
   priorityScoring
   reportsDashboards
   archiveSharingAudit
+  // Survey Builder (Question Bank + AI-assisted questionnaire design) is its
+  // own independent methodology feature, not a Study feature — deliberately
+  // not folded into studySurvey. Publish Survey/QR and the Citizen public
+  // flow are unrelated and keep using their own existing modules.
+  surveyBuilder
 }
 
 // ──────── Reference (global, seeded, read-only to cnap_app) ────────
@@ -118,6 +123,9 @@ model Organisation {
   sharingRequestsOwned SharingRequest[] @relation("SharingRequestsOwned")
   sharingRequestsMade  SharingRequest[] @relation("SharingRequestsMade")
   reports Report[]
+  aiSuggestions AiSuggestion[]
+  humanDecisions HumanDecision[]
+  surveys Survey[]
 
   @@map("organisations")
 }
@@ -146,8 +154,6 @@ model User {
   org      Organisation        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   role     Role                @relation(fields: [roleId], references: [id])
   consents ConsentAcceptance[]
-  // Studies this user is the assigned reviewer for (see Study.assignedReviewerId).
-  reviewingStudies Study[] @relation("StudyAssignedReviewer")
 
   @@index([orgId])
   @@index([roleId])
@@ -193,7 +199,7 @@ model AuditLog {
 
 // Matches the RIO-FR-001/Add-01/003 flow: draft -> need_captured ->
 // evidence_submitted -> ai_classified -> human_reviewed. Uploading evidence
-// no longer advances status by itself (per Ganesh) — a researcher must
+// no longer advances status by itself — a researcher must
 // explicitly submit (EvidenceService.submit) before AI Classification is
 // allowed to run; that submit action is what sets evidence_submitted.
 // Stops there deliberately — survey_ready/published/archived belong to
@@ -216,24 +222,17 @@ model Study {
   // made for Need.village.
   villages  String[]    @default([])
   status    StudyStatus @default(draft)
-  // The NGO Research Officer who owns this Study's AI Classification human
-  // review — set at Study creation so Reviewer Alerts never shows
-  // "Unassigned" for a newly created Study. Nullable only for pre-existing
-  // Studies created before this field existed (see the migration's backfill
-  // comment) and for orgs with no NGO Research Officer yet. SetNull on
-  // delete: if the assigned user's account is later removed, the Study
-  // itself must not be blocked/cascaded — it just reverts to unassigned.
-  // Ownership only — this does not affect RBAC/permissions.
-  assignedReviewerId String? @map("assigned_reviewer_id") @db.Uuid
+  // AI Classification's suggested/confirmed Domain + Sub-Domain for this
+  // Study (see the Domain/SubDomain reference tables) — set once a human
+  // approves an AI Classification decision on this Study's Need (see
+  // AiDecisionsService.review). Nullable until then.
+  domain           String? @db.VarChar(120)
+  subDomain        String? @map("sub_domain") @db.VarChar(120)
   createdBy String      @map("created_by") @db.Uuid
   createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org         Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  need        Need?
-  evidence    Evidence[]
   org      Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  assignedReviewer User? @relation("StudyAssignedReviewer", fields: [assignedReviewerId], references: [id], onDelete: SetNull)
   need     Need?
   evidence Evidence[]
   aiDecisions AiDecision[]
@@ -244,9 +243,11 @@ model Study {
   priorityScores PriorityScore[]
   sharingRequests SharingRequest[]
   reports Report[]
+  aiSuggestions AiSuggestion[]
+  humanDecisions HumanDecision[]
+  surveys Survey[]
 
   @@index([orgId])
-  @@index([assignedReviewerId])
   @@map("studies")
 }
 
@@ -707,4 +708,164 @@ model MethodologyConfig {
   updatedBy              String?           @map("updated_by") @db.Uuid
 
   @@map("methodology_configs")
+}
+
+// ──────── Question Bank / AI Survey Builder ────────
+
+// Global reference/master data (no org_id, no RLS — same pattern as
+// Domain/SubDomain) — imported from the question bank dataset via
+// prisma/import-questions.ts, read-only to cnap_app at runtime.
+model Question {
+  id               String  @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  questionId       String  @unique @map("question_id") @db.VarChar(64)
+  domain           String  @db.VarChar(120)
+  subDomain        String  @map("sub_domain") @db.VarChar(120)
+  indicator        String? @db.VarChar(200)
+  kpi              String? @db.VarChar(200)
+  questionText     String  @map("question_text")
+  answerType       String  @map("answer_type") @db.VarChar(64)
+  answerOptions    Json?   @map("answer_options")
+  requiredOptional String  @map("required_optional") @db.VarChar(64)
+  usedInMvp        Boolean @default(true) @map("used_in_mvp")
+  reportMapping    String? @map("report_mapping")
+
+  surveyQuestions SurveyQuestion[]
+
+  @@index([domain, subDomain])
+  @@map("questions")
+}
+
+// One row per AI Classification run against a Study's problem statement —
+// same "suggestion, kept forever even after a human overrides it" shape as
+// the older AiDecision model, but scoped to this feature's own
+// domain/sub-domain/question-suggestion shape rather than AiDecision's.
+model AiSuggestion {
+  id                   String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId                String   @map("org_id") @db.Uuid
+  studyId              String   @map("study_id") @db.Uuid
+  type                 String   @db.VarChar(64)
+  inputHash            String?  @map("input_hash") @db.VarChar(64)
+  suggestedDomain      String?  @map("suggested_domain") @db.VarChar(120)
+  suggestedSubDomain   String?  @map("suggested_sub_domain") @db.VarChar(120)
+  suggestedQuestionIds Json?    @map("suggested_question_ids")
+  confidence           Decimal  @db.Decimal(5, 2)
+  reason               String
+  modelName            String   @map("model_name") @db.VarChar(150)
+  promptVersion        String   @map("prompt_version") @db.VarChar(64)
+  rawResponse          Json?    @map("raw_response")
+  createdBy            String   @map("created_by") @db.Uuid
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org           Organisation    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  study         Study           @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  humanDecisions HumanDecision[]
+
+  @@index([orgId])
+  @@index([studyId])
+  @@map("ai_suggestions")
+}
+
+// A human reviewer's decision on an AiSuggestion — approve as-is or
+// override with a final domain/sub-domain/question set. aiSuggestionId is
+// nullable/SetNull so removing a suggestion (shouldn't normally happen)
+// can't take the decision record down with it.
+model HumanDecision {
+  id               String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId            String   @map("org_id") @db.Uuid
+  studyId          String   @map("study_id") @db.Uuid
+  aiSuggestionId   String?  @map("ai_suggestion_id") @db.Uuid
+  decision         String   @db.VarChar(64)
+  finalDomain      String?  @map("final_domain") @db.VarChar(120)
+  finalSubDomain   String?  @map("final_sub_domain") @db.VarChar(120)
+  finalQuestionIds Json?    @map("final_question_ids")
+  reason           String?
+  decidedBy        String   @map("decided_by") @db.Uuid
+  decidedAt        DateTime @default(now()) @map("decided_at") @db.Timestamptz(6)
+
+  org          Organisation  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  study        Study         @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  aiSuggestion AiSuggestion? @relation(fields: [aiSuggestionId], references: [id], onDelete: SetNull)
+
+  @@index([orgId])
+  @@index([studyId])
+  @@map("human_decisions")
+}
+
+// The Survey Builder's own per-Study survey — a curated ordered subset of
+// Questions, distinct from the Publish Survey/Citizen flow's PublicSurveyLink
+// (that flow is the placeholder fixed-question-set QR flow; this is the
+// eventual real per-Study question set once a human finalizes it).
+model Survey {
+  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  studyId   String   @map("study_id") @db.Uuid
+  title     String   @db.VarChar(300)
+  status    String   @db.VarChar(64)
+  createdBy String   @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org             Organisation           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  study           Study                  @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  surveyQuestions SurveyQuestion[]
+  builderResponses SurveyBuilderResponse[]
+
+  @@index([orgId])
+  @@index([studyId])
+  @@map("surveys")
+}
+
+// Two kinds of rows, discriminated by whether `questionId` is set:
+//   - Question Bank question: questionId set, customText/customAnswerType
+//     null. Text/type/options/indicator/KPI/domain all come from the
+//     Question row — never editable here, only order/isRequired are.
+//   - Additional (open-ended) question: questionId null, customText set.
+//     A Research Officer's study-specific question, never written into the
+//     `questions` (Question Bank) table — it belongs only to this Survey.
+//     No KPI/indicator/report-mapping/domain — those are Question Bank
+//     concepts this kind of question deliberately has none of.
+// Both kinds share one `order` sequence so the two Survey Builder UI
+// sections (AI Recommended, Additional) still save as a single ordered list.
+model SurveyQuestion {
+  id               String  @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  surveyId         String  @map("survey_id") @db.Uuid
+  questionId       String? @map("question_id") @db.Uuid
+  customText       String? @map("custom_text")
+  customAnswerType String? @map("custom_answer_type") @db.VarChar(64)
+  // Options list for an additional question of type multiple_choice/
+  // checkbox — null for every other additional-question type, and always
+  // null for Question Bank questions (those use `questions.answer_options`).
+  customOptions    Json?   @map("custom_options")
+  order            Int
+  isRequired       Boolean @default(true) @map("is_required")
+
+  survey   Survey    @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  question Question? @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([surveyId])
+  @@index([questionId])
+  @@map("survey_questions")
+}
+
+// NOTE: this is deliberately NOT named/mapped "survey_responses" — that
+// table name is already taken by the Publish Survey/Citizen flow's
+// SurveyResponse model (org/study/survey-link/contact-scoped, backs the
+// live citizen OTP submission flow, Response Quality, Priority, Reports).
+// The original migration for this feature also called its table
+// "survey_responses", which would collide outright (CREATE TABLE would
+// fail) since that table already exists. Renamed here — and in this
+// feature's own migration.sql — to survey_builder_responses instead, since
+// this is Survey Builder's own response shape (survey_id + answers only,
+// no org/contact scoping), a genuinely different concept from the citizen
+// flow's SurveyResponse.
+model SurveyBuilderResponse {
+  id          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  surveyId    String   @map("survey_id") @db.Uuid
+  answers     Json
+  submittedAt DateTime @default(now()) @map("submitted_at") @db.Timestamptz(6)
+
+  survey Survey @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+
+  @@index([surveyId])
+  @@map("survey_builder_responses")
 }

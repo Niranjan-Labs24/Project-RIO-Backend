@@ -19,7 +19,7 @@ const ALLOWED_EXTENSIONS = new Set([
   '.png',
 ]);
 
-// Per Ganesh: 10MB per file, 10 files per study (so 100MB per study max).
+// Business rule: 10MB per file, 10 files per study (so 100MB per study max).
 export const MAX_EVIDENCE_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 export const MAX_EVIDENCE_FILES_PER_STUDY = 10;
 

@@ -34,7 +34,7 @@ export class UsersService {
   }
 
   // Same pattern as AuthService.signup(): a user an NGO Admin creates never
-  // chooses their own password up front (per Ganesh) — a temporary one is
+  // chooses their own password up front — a temporary one is
   // generated here, hashed, stored, and mustChangePassword is set so the
   // PasswordChangeGuard forces a reset on first login. Emailed if possible;
   // otherwise (no SMTP configured, e.g. local dev) surfaced back to the

@@ -2,7 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { Prisma } from '../../generated/prisma';
 import { PrismaService } from '../../prisma/prisma.service';
 import type {
-  CreateDomainPayload, CreateSubDomainPayload, Domain, DomainRow, SubDomain, SubDomainRow,
+  CreateDomainPayload, CreateSubDomainPayload, Domain, DomainRow, DomainWithSubDomains, SubDomain, SubDomainRow,
   UpdateDomainPayload, UpdateSubDomainPayload,
 } from './domains.types';
 
@@ -56,6 +56,23 @@ export class DomainsService {
       return updated;
     });
     return this.toDomain(row);
+  }
+
+  // One query (a single JOIN via Prisma's `include`), not one query per
+  // domain — the AI Classification override modal and Survey Builder both
+  // need every active domain's active sub-domains up front, and used to get
+  // that by calling listDomains() then listSubDomains() once per domain
+  // (an N+1 pattern: ~10 HTTP round trips for 9 active domains). Callers
+  // should use this instead of that loop.
+  async listDomainsWithSubDomains(): Promise<DomainWithSubDomains[]> {
+    const rows = await this.prisma.domain.findMany({
+      orderBy: { displayOrder: 'asc' },
+      include: { subDomains: { orderBy: { displayOrder: 'asc' } } },
+    });
+    return rows.map((r) => ({
+      ...this.toDomain(r),
+      subDomains: r.subDomains.map((sd) => this.toSubDomain(sd)),
+    }));
   }
 
   async listSubDomains(domainId: string): Promise<SubDomain[]> {
