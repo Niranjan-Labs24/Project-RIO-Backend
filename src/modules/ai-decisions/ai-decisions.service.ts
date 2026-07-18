@@ -46,7 +46,7 @@ export class AiDecisionsService {
       if (need.status === 'draft') {
         throw new ConflictException({ error: { code: 'EVIDENCE_NOT_SUBMITTED', message: 'Submit evidence before running AI Classification' } });
       }
-      return need;
+      return { need, studyTitle: study.title };
     });
 
     const result = await this.runClassification({ statement: need.statement, village: need.village });
@@ -102,7 +102,7 @@ export class AiDecisionsService {
 
   async review(id: string, payload: ReviewDecisionPayload): Promise<AiDecision> {
     const decidedBy = requireActor();
-    const updated = await this.tenant.runInOrgContext(async (tx) => {
+    const { updated, studyTitle } = await this.tenant.runInOrgContext(async (tx) => {
       const existing = (await tx.aiDecision.findUnique({ where: { id } })) as unknown as AiDecisionRow | null;
       if (!existing) throw new NotFoundException({ error: { code: 'AI_DECISION_NOT_FOUND', message: 'AI decision not found' } });
       const row = (await tx.aiDecision.update({
@@ -134,7 +134,7 @@ export class AiDecisionsService {
           await tx.need.update({ where: { id: row.needId }, data: { domain, subDomain } });
         }
       }
-      return row;
+      return { updated: row, studyTitle: study.title };
     });
     // 'approved' surfaces as the 'approve' audit action (so an Audit Log
     // filter on Approved actually finds it) — 'modified'/'rejected' are
