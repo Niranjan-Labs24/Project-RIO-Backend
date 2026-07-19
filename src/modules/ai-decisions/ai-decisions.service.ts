@@ -46,7 +46,18 @@ export class AiDecisionsService {
       if (need.status === 'draft') {
         throw new ConflictException({ error: { code: 'EVIDENCE_NOT_SUBMITTED', message: 'Submit evidence before running AI Classification' } });
       }
-      return { need, studyTitle: study.title };
+      // Strict allow-list: classification only runs from evidence_submitted.
+      // Without this, re-calling classify on a Need that's already
+      // ai_classified/reviewer_approved/survey_created/survey_published
+      // would silently regress its status backward while any Survey already
+      // built from the earlier classification stays exactly as it was —
+      // the two go out of sync with nothing surfacing it.
+      if (need.status !== 'evidence_submitted') {
+        throw new ConflictException({
+          error: { code: 'NEED_ALREADY_CLASSIFIED', message: 'This need has already been classified and moved further in its workflow.' },
+        });
+      }
+      return need;
     });
 
     const result = await this.runClassification({ statement: need.statement, village: need.village });
@@ -102,9 +113,28 @@ export class AiDecisionsService {
 
   async review(id: string, payload: ReviewDecisionPayload): Promise<AiDecision> {
     const decidedBy = requireActor();
-    const { updated, studyTitle } = await this.tenant.runInOrgContext(async (tx) => {
+    const updated = await this.tenant.runInOrgContext(async (tx) => {
       const existing = (await tx.aiDecision.findUnique({ where: { id } })) as unknown as AiDecisionRow | null;
       if (!existing) throw new NotFoundException({ error: { code: 'AI_DECISION_NOT_FOUND', message: 'AI decision not found' } });
+      // A decision can only be reviewed once — without this, a second
+      // PATCH .../review call silently overwrites a prior approve/reject
+      // with no record that anything downstream (e.g. an already-created
+      // Survey) was built against the original decision.
+      if (existing.humanDecision !== null) {
+        throw new ConflictException({
+          error: { code: 'AI_DECISION_ALREADY_REVIEWED', message: 'This classification has already been reviewed.' },
+        });
+      }
+      const need = await tx.need.findUnique({ where: { id: existing.needId } });
+      if (!need) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+      // Guards against reviewing a decision that's stale relative to the
+      // Need's current progress (e.g. a superseded AiDecision from before a
+      // rejection sent the Need back for re-classification).
+      if (need.status !== 'ai_classified') {
+        throw new ConflictException({
+          error: { code: 'NEED_NOT_PENDING_REVIEW', message: 'This need is not currently awaiting classification review.' },
+        });
+      }
       const row = (await tx.aiDecision.update({
         where: { id },
         data: {
@@ -117,13 +147,12 @@ export class AiDecisionsService {
           decidedAt: new Date(),
         },
       })) as unknown as AiDecisionRow;
-      await tx.need.update({ where: { id: row.needId }, data: { status: 'reviewer_approved' } });
 
-      // Approved (as-is) or modified (overridden) both produce a final
-      // domain/sub-domain — write it onto the Need so Survey Builder's
-      // recommend-questions has something to key off. Rejected has no final
-      // classification, so Need.domain/subDomain stay whatever they were.
       if (payload.decision === 'approved' || payload.decision === 'modified') {
+        // Approved (as-is) or modified (overridden) both produce a final
+        // domain/sub-domain — write it onto the Need so Survey Builder's
+        // recommend-questions has something to key off.
+        await tx.need.update({ where: { id: row.needId }, data: { status: 'reviewer_approved' } });
         const source =
           payload.decision === 'modified' && payload.overrideValue
             ? (payload.overrideValue as { domains?: string[]; subDomains?: string[] })
@@ -133,8 +162,13 @@ export class AiDecisionsService {
         if (domain && subDomain) {
           await tx.need.update({ where: { id: row.needId }, data: { domain, subDomain } });
         }
+      } else {
+        // Rejected: send the Need back to evidence_submitted so a fresh
+        // classify() can run — it must NOT advance to reviewer_approved,
+        // which would misrepresent a rejection as an approval.
+        await tx.need.update({ where: { id: row.needId }, data: { status: 'evidence_submitted' } });
       }
-      return { updated: row, studyTitle: study.title };
+      return row;
     });
     // 'approved' surfaces as the 'approve' audit action (so an Audit Log
     // filter on Approved actually finds it) — 'modified'/'rejected' are

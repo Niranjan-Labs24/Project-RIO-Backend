@@ -194,6 +194,17 @@ export class SurveysService {
           },
         });
       }
+      // Once published, a survey may already have live citizen responses —
+      // re-running AI recommendation would otherwise silently delete and
+      // replace its Question Bank items out from under them (see the
+      // deleteMany/createMany below). Checked before the Gemini call so a
+      // doomed request fails fast rather than burning an AI call first.
+      const existingSurvey = await tx.survey.findFirst({ where: { needId } });
+      if (existingSurvey?.status === 'PUBLISHED') {
+        throw new ConflictException({
+          error: { code: 'SURVEY_ALREADY_PUBLISHED', message: 'This survey is already published and its questions can no longer be regenerated.' },
+        });
+      }
 
       const eligibleQuestions = await tx.question.findMany({
         where: { domain: need.domain, subDomain: need.subDomain, usedInMvp: true },
@@ -264,7 +275,7 @@ Eligible Questions: ${JSON.stringify(
     const finalQuestions = validatedQuestions.length > 0 ? validatedQuestions : eligibleQuestions;
 
     // Log AI Suggestion
-    const suggestion = await this.tenant.runInOrgContext(async (tx) =>
+    await this.tenant.runInOrgContext(async (tx) =>
       tx.aiSuggestion.create({
         data: {
           orgId,
@@ -395,31 +406,39 @@ Eligible Questions: ${JSON.stringify(
     return this.getSurveyByNeedId(needId);
   }
 
-  async saveDraft(surveyId: string, status: string = 'DRAFT') {
-    // Fetched outside the transaction — MethodologyConfig is global
-    // reference data (no RLS, no org context needed), same as
-    // DomainsService's own reads elsewhere.
+  async saveDraft(surveyId: string, status: 'DRAFT' | 'PUBLISHED' = 'DRAFT') {
+    // Read first, outside the write transaction — Publishing is the Need's
+    // terminal state (see NeedStatus), so an already-PUBLISHED survey can
+    // never be re-published or un-published through this endpoint. Without
+    // this guard, a double-submit (or a client re-calling publish later)
+    // would silently re-stamp methodologyVersion from whatever the *active*
+    // Methodology config is *at that later moment* — discarding the version
+    // this survey was actually built against, which is the exact guarantee
+    // Methodology Versioning exists to provide.
+    const survey = await this.tenant.runInOrgContext((tx) => tx.survey.findUnique({ where: { id: surveyId } }));
+    if (!survey) {
+      throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
+    }
+    if (survey.status === 'PUBLISHED') {
+      throw new ConflictException({
+        error: { code: 'SURVEY_ALREADY_PUBLISHED', message: 'This survey is already published and can no longer be modified.' },
+      });
+    }
+
+    // MethodologyConfig is global reference data (no RLS, no org context
+    // needed) — fetched outside the write transaction, same as
+    // DomainsService's own reads elsewhere. Only reached on a genuine
+    // DRAFT -> PUBLISHED transition, thanks to the guard above.
     const methodologyVersion = status === 'PUBLISHED' ? (await this.methodologyConfig.get()).version : undefined;
 
     const updated = await this.tenant.runInOrgContext(async (tx) => {
-      const survey = await tx.survey.findUnique({ where: { id: surveyId } });
-      if (!survey) {
-        throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
-      }
       const row = await tx.survey.update({
         where: { id: surveyId },
         data: {
           status,
-          // Snapshot the currently active Methodology Version at the
-          // moment of publishing — never a live reference, so a later
-          // Methodology/Question Bank change can't retroactively change
-          // what this Survey claims it was built against. Only touched on
-          // a PUBLISHED transition; saving as DRAFT leaves it untouched.
           ...(methodologyVersion !== undefined ? { methodologyVersion } : {}),
         },
       });
-      // Publishing is the Need's terminal state — once published, that
-      // Need's workflow is complete (see NeedStatus).
       if (status === 'PUBLISHED') {
         await tx.need.update({ where: { id: survey.needId }, data: { status: 'survey_published' } });
       }
@@ -430,7 +449,7 @@ Eligible Questions: ${JSON.stringify(
       action: 'edit',
       entityType: 'survey',
       entityId: surveyId,
-      entityLabel: `Survey saved as draft`,
+      entityLabel: status === 'PUBLISHED' ? 'Survey published' : 'Survey saved as draft',
     });
 
     return updated;

@@ -33,3 +33,31 @@ export interface CreateSurveyLinkPayload {
   label: string;
   expiresInDays?: number;
 }
+
+/** One row in the Survey Responses list — Name/Email/Submitted Date, the
+ * fields the list view actually shows; full answers only load on demand
+ * (see SurveyResponseDetail) since a list of 100+ responses shouldn't ship
+ * every answer body up front. */
+export interface SurveyResponseSummary {
+  id: string;
+  needId: string;
+  surveyLinkId: string;
+  contactName: string | null;
+  contact: string;
+  submittedAt: string;
+}
+
+/** One answered question, enriched with the question's own text/type so the
+ * "View Response" UI never has to cross-reference the survey separately —
+ * `answers` on the raw SurveyResponse row is keyed by SurveyQuestion id,
+ * meaningless without this join. */
+export interface SurveyResponseAnswer {
+  questionId: string;
+  questionText: string;
+  answerType: string;
+  answer: string | null;
+}
+
+export interface SurveyResponseDetail extends SurveyResponseSummary {
+  answers: SurveyResponseAnswer[];
+}

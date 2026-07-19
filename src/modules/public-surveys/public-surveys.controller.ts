@@ -1,9 +1,15 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import { CreateSurveyLinkBody } from './public-surveys.contract';
 import { PublicSurveysService } from './public-surveys.service';
-import type { CreateSurveyLinkPayload, PublicSurveyLink } from './public-surveys.types';
+import type {
+  CreateSurveyLinkPayload,
+  PublicSurveyLink,
+  SurveyResponseDetail,
+  SurveyResponseSummary,
+} from './public-surveys.types';
 
 // Mounted under needs/:needId/... — each Need runs its own independent
 // survey/link set now (see the Need-lifecycle migration); studySurvey
@@ -32,5 +38,57 @@ export class PublicSurveysController {
   @RequirePermission('studySurvey', 'write')
   deactivateLink(@Param('needId') needId: string, @Param('linkId') linkId: string): Promise<PublicSurveyLink> {
     return this.surveys.deactivateLink(needId, linkId);
+  }
+
+  @Get('survey-responses')
+  @RequirePermission('studySurvey', 'read')
+  listResponses(
+    @Param('needId') needId: string,
+    @Query('surveyLinkId') surveyLinkId?: string,
+  ): Promise<SurveyResponseSummary[]> {
+    return this.surveys.listResponses(needId, surveyLinkId || undefined);
+  }
+
+  // `@Res()` without `passthrough` — bypasses Nest's default response
+  // pipeline entirely (which would otherwise JSON-serialize a returned
+  // Buffer into `{"type":"Buffer","data":[...]}` instead of sending it
+  // as-is), same pattern as ReportsController#export.
+  @Get('survey-responses/export')
+  @RequirePermission('studySurvey', 'export')
+  async exportResponses(
+    @Res() res: Response,
+    @Param('needId') needId: string,
+    @Query('format') format: 'csv' | 'excel' = 'csv',
+    @Query('surveyLinkId') surveyLinkId?: string,
+  ): Promise<void> {
+    const date = new Date().toISOString().slice(0, 10);
+    if (format === 'excel') {
+      const body = await this.surveys.exportResponsesExcel(needId, surveyLinkId || undefined);
+      res.set({
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': `attachment; filename="survey-responses-${date}.xlsx"`,
+        'Content-Length': String(body.length),
+      });
+      res.end(body);
+      return;
+    }
+    const csv = await this.surveys.exportResponsesCsv(needId, surveyLinkId || undefined);
+    res.set({
+      'Content-Type': 'text/csv',
+      'Content-Disposition': `attachment; filename="survey-responses-${date}.csv"`,
+    });
+    res.end(csv);
+  }
+
+  // More specific than :linkId/deactivate above but less specific than
+  // `export` — must stay below `export` so Nest doesn't match "export" as a
+  // :responseId param first.
+  @Get('survey-responses/:responseId')
+  @RequirePermission('studySurvey', 'read')
+  getResponse(
+    @Param('needId') needId: string,
+    @Param('responseId') responseId: string,
+  ): Promise<SurveyResponseDetail> {
+    return this.surveys.getResponse(needId, responseId);
   }
 }

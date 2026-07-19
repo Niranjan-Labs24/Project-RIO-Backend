@@ -24,7 +24,7 @@ export type UpdateSurveyQuestionsDto = Static<typeof UpdateSurveyQuestionsBody>;
 export const SaveSurveyDraftBody = registerSchema(
   'SaveSurveyDraftBody',
   T.Object({
-    status: T.Optional(T.String()),
+    status: T.Optional(T.Union([T.Literal('DRAFT'), T.Literal('PUBLISHED')])),
   }),
 );
 export type SaveSurveyDraftDto = Static<typeof SaveSurveyDraftBody>;
