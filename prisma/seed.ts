@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { Prisma, PrismaClient, Sector, UserStatus } from '../src/generated/prisma';
+import { Prisma, PrismaClient, UserStatus } from '../src/generated/prisma';
 import { ROLE_MATRIX } from '../src/rbac/role-matrix';
 import { pgSslFromEnv } from '../src/prisma/pg-ssl';
 import { buildPlaceholderReport, PLACEHOLDER_REPORT_TYPES, type PlaceholderReportType } from '../src/modules/reports/reports.placeholder';
@@ -75,7 +75,7 @@ async function seedOrg(input: {
   purpose: string;
   region: string[];
   email: string;
-  sector: Sector;
+  sector: string;
   villages: string[];
   users: Array<{ roleId: string; name: string; email: string }>;
 }): Promise<string> {
@@ -184,7 +184,7 @@ async function main(): Promise<void> {
     purpose: 'Water, sanitation, and hygiene access for underserved villages.',
     region: ['North'],
     email: 'admin@demo-ngo.org',
-    sector: Sector.wash,
+    sector: 'Water & Sanitation',
     villages: ['Village A', 'Village B'],
     users: [
       { roleId: 'role_ngo_admin', name: 'Sarah', email: 'admin@demo-ngo.org' },
@@ -198,7 +198,7 @@ async function main(): Promise<void> {
     purpose: 'Livelihoods and economic development along the riverside communities.',
     region: ['South'],
     email: 'admin@riverside-ngo.org',
-    sector: Sector.livelihoods,
+    sector: 'Livelihood',
     villages: ['Riverside Village'],
     users: [{ roleId: 'role_ngo_admin', name: 'Riverside Admin', email: 'admin@riverside-ngo.org' }],
   });
@@ -208,29 +208,25 @@ async function main(): Promise<void> {
   // title (Study has no other natural key) — skip creation if it's
   // already there from a prior seed run.
   let demoStudyId: string | undefined;
+  let demoNeedId: string | undefined;
   await prisma.$transaction(async (tx) => {
     await setOrg(tx as never, demoOrgId);
     const officer = await tx.user.findUnique({ where: { email: 'officer@demo-ngo.org' } });
-    const reviewer = await tx.user.findUnique({ where: { email: 'reviewer@demo-ngo.org' } });
     const title = 'Village A water access assessment';
     const existingStudy = await tx.study.findFirst({ where: { title } });
     if (existingStudy) {
       demoStudyId = existingStudy.id;
+      const existingNeed = await tx.need.findFirst({ where: { studyId: existingStudy.id } });
+      demoNeedId = existingNeed?.id;
     } else if (officer) {
       const study = await tx.study.create({
-        // Assigned to the demo Reviewer/Approver (human_reviewer) — makes
-        // Reviewer Alerts show a real name instead of "Unassigned" out of
-        // the box, and matches the role Study.assignedReviewerId is
-        // validated against.
         data: {
           orgId: demoOrgId,
           title,
           createdBy: officer.id,
-          status: 'need_captured',
-          assignedReviewerId: reviewer?.id ?? null,
         },
       });
-      await tx.need.create({
+      const need = await tx.need.create({
         data: {
           studyId: study.id,
           orgId: demoOrgId,
@@ -242,6 +238,7 @@ async function main(): Promise<void> {
         },
       });
       demoStudyId = study.id;
+      demoNeedId = need.id;
     }
   });
 
@@ -251,15 +248,16 @@ async function main(): Promise<void> {
   // the same uniqueness the DB itself enforces.
   await prisma.$transaction(async (tx) => {
     await setOrg(tx as never, demoOrgId);
-    if (!demoStudyId) return;
+    if (!demoStudyId || !demoNeedId) return;
     const officer = await tx.user.findUnique({ where: { email: 'officer@demo-ngo.org' } });
     if (!officer) return;
     for (const label of ['Baseline Survey', 'Village A Outreach']) {
-      const existing = await tx.publicSurveyLink.findFirst({ where: { studyId: demoStudyId, label } });
+      const existing = await tx.publicSurveyLink.findFirst({ where: { needId: demoNeedId, label } });
       if (existing) continue;
       await tx.publicSurveyLink.create({
         data: {
           orgId: demoOrgId,
+          needId: demoNeedId,
           studyId: demoStudyId,
           label,
           token: randomBytes(24).toString('base64url'),

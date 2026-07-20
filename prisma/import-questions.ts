@@ -95,8 +95,13 @@ async function main() {
 
     let answerOptions: string[] | null = null;
     if (rawAnswerOptions && rawAnswerOptions.trim() && rawAnswerOptions.toLowerCase() !== "open numeric value") {
+      // Options are delimited by " / " (slash with a space on each side) —
+      // a bare slash with no surrounding spaces is part of an option's own
+      // text (e.g. "Surface water (river/pond)", "Tanker/vendor"), not a
+      // separator. Splitting on a bare '/' broke those into two options
+      // each, visibly wrong in the UI (an unbalanced "(river" chip).
       answerOptions = rawAnswerOptions
-        .split('/')
+        .split(' / ')
         .map(opt => opt.trim())
         .filter(opt => opt.length > 0);
     }
