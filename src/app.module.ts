@@ -36,6 +36,9 @@ import { SharingModule } from './modules/sharing/sharing.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { ArchiveModule } from './modules/archive/archive.module';
 import { ReviewerSlaModule } from './modules/reviewer-sla/reviewer-sla.module';
+import { AiModule } from './modules/ai/ai.module';
+import { QuestionsModule } from './modules/questions/questions.module';
+import { SurveysModule } from './modules/surveys/surveys.module';
 
 @Module({
   imports: [
@@ -81,6 +84,9 @@ import { ReviewerSlaModule } from './modules/reviewer-sla/reviewer-sla.module';
     ReportsModule,
     ArchiveModule,
     ReviewerSlaModule,
+    AiModule,
+    QuestionsModule,
+    SurveysModule,
   ],
   controllers: [],
   providers: [

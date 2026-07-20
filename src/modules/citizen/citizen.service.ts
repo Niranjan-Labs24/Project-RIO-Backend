@@ -4,7 +4,7 @@ import { Prisma } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { PasswordService } from '../../auth/password.service';
 import { MailerService } from '../../mailer/mailer.service';
-import { getSurveyDefinition } from '../survey-definition/survey-definition.placeholder';
+import { SurveysService } from '../surveys/surveys.service';
 import type {
   CheckDuplicatePayload, CheckDuplicateResult, CitizenOtpChallengeRow, PublicSurveyLinkRow, RequestOtpPayload,
   RequestOtpResult, ResolvedSurvey, SubmitResponsePayload, SubmitResponseResult, VerifyOtpPayload, VerifyOtpResult,
@@ -29,25 +29,78 @@ export class CitizenService {
     private readonly tenant: TenantPrismaService,
     private readonly passwords: PasswordService,
     private readonly mailer: MailerService,
+    private readonly surveys: SurveysService,
   ) {}
 
+  // The published Survey Builder survey is the only source of questions for
+  // the citizen flow — no placeholder, no fixed seed set. Re-reads fresh on
+  // every call (no caching), so if a survey is edited and republished, the
+  // very next citizen to open the link sees the latest version.
   async resolveSurvey(token: string): Promise<ResolvedSurvey> {
     const link = await this.findActiveLinkOrThrow(token);
-    const definition = getSurveyDefinition(link.studyId);
-    const { study, org } = await this.tenant.runAsSupervisor(async (tx) => ({
-      study: await tx.study.findUnique({ where: { id: link.studyId } }),
-      org: await tx.organisation.findUnique({ where: { id: link.orgId } }),
-    }));
+    const [{ study, org }, survey] = await Promise.all([
+      this.tenant.runAsSupervisor(async (tx) => ({
+        study: await tx.study.findUnique({ where: { id: link.studyId } }),
+        org: await tx.organisation.findUnique({ where: { id: link.orgId } }),
+      })),
+      this.surveys.getPublishedSurveyByStudyId(link.studyId),
+    ]);
+
+    if (!survey) {
+      throw new NotFoundException({
+        error: { code: 'SURVEY_NOT_PUBLISHED', message: 'This study does not have a published survey yet.' },
+      });
+    }
+
+    const questions = survey.questions.map((q) => {
+      const { type, options } = this.mapAnswerTypeForCitizen(q.answerType, q.answerOptions);
+      return {
+        // The SurveyQuestion row's own id — the one identity that exists
+        // for both a Question Bank question and an additional one, which
+        // has no Question row to key off.
+        code: q.id,
+        text: q.questionText,
+        type,
+        options,
+        required: q.isRequired,
+      };
+    });
+
     return {
       studyId: link.studyId,
-      title: definition.title,
-      version: definition.version,
-      studyTitle: study?.title ?? definition.title,
+      title: survey.title,
+      version: survey.id,
+      studyTitle: study?.title ?? survey.title,
       organizationName: org?.name ?? "",
-      questions: definition.questions,
-      questionCount: definition.questions.length,
-      estimatedMinutes: Math.max(1, Math.ceil((definition.questions.length * SECONDS_PER_QUESTION) / 60)),
+      questions,
+      questionCount: questions.length,
+      estimatedMinutes: Math.max(1, Math.ceil((questions.length * SECONDS_PER_QUESTION) / 60)),
     };
+  }
+
+  // Maps Survey Builder's internal answerType vocabulary (Question Bank:
+  // select/numeric/boolean/text; additional questions: long_text/
+  // short_text/multiple_choice/checkbox/yes_no/rating) onto the citizen
+  // flow's rendering type — single_choice (pick one), multi_choice (pick
+  // several), scale (1-5), or free text.
+  private mapAnswerTypeForCitizen(
+    answerType: string,
+    answerOptions: string[] | null,
+  ): { type: string; options?: string[] } {
+    switch (answerType) {
+      case 'select':
+      case 'multiple_choice':
+        return { type: 'single_choice', options: answerOptions ?? [] };
+      case 'checkbox':
+        return { type: 'multi_choice', options: answerOptions ?? [] };
+      case 'boolean':
+      case 'yes_no':
+        return { type: 'single_choice', options: answerOptions ?? ['Yes', 'No'] };
+      case 'rating':
+        return { type: 'scale', options: answerOptions ?? ['1', '2', '3', '4', '5'] };
+      default:
+        return { type: 'text' };
+    }
   }
 
   // Pre-flight check, called right after the participant enters their

@@ -269,7 +269,7 @@ Accepts one or more files. Before saving anything, the server checks:
   files, you can only add 2 more).
 
 Uploading **does not** change the Study's status by itself (this was a deliberate business
-decision — see the note in the code, attributed to "Ganesh"). Files are saved to local disk
+decision — see the note in the code). Files are saved to local disk
 for now (`storageKey` is just a filename); swapping to cloud storage later needs no schema
 change.
 

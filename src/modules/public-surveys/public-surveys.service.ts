@@ -5,7 +5,6 @@ import { ConfigService } from '../../config/config.service';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { requireOrgId, requireActor } from '../../tenancy/org-context';
 import { AuditService } from '../audit/audit.service';
-import { getSurveyDefinition, type SurveyDefinition } from '../survey-definition/survey-definition.placeholder';
 import type { CreateSurveyLinkPayload, PublicSurveyLink, PublicSurveyLinkRow } from './public-surveys.types';
 
 type LinkWithResponseCount = Omit<PublicSurveyLinkRow, 'responseCount'> & { _count: { responses: number } };
@@ -78,10 +77,6 @@ export class PublicSurveysService {
     });
     await this.audit.record({ action: 'edit', entityType: 'survey', entityId: row.id, entityLabel: row.label, changes: [{ field: 'isActive', before: true, after: false }] });
     return this.toPublicLink(row as unknown as LinkWithResponseCount);
-  }
-
-  getDefinition(studyId: string): SurveyDefinition {
-    return getSurveyDefinition(studyId);
   }
 
   private async findStudyOrThrow(studyId: string): Promise<void> {

@@ -71,6 +71,7 @@ export const EnvSchema = Type.Object({
   // alerts — both configurable per RIO-NFR-014, not hardcoded constants.
   REVIEWER_SLA_HOURS: Type.Number({ default: 48 }),
   REVIEWER_SLA_POLL_INTERVAL_MS: Type.Number({ default: 60_000 }),
+  GEMINI_API_KEY: Type.Optional(Type.String()),
   LOG_LEVEL: Type.Union(
     [
       Type.Literal('fatal'),

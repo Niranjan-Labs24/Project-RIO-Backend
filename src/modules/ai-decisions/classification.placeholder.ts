@@ -9,8 +9,17 @@ export interface ClassificationSubject {
   village: string[];
 }
 
+// The candidate domain/sub-domain list classification picks from — sourced
+// from the Domain/SubDomain reference tables (see DomainsService), the same
+// vocabulary the AI Classification review UI's override dropdowns already use.
+export interface ClassificationCandidate {
+  domainCode: string;
+  domainName: string;
+  subDomains: Array<{ code: string; name: string }>;
+}
+
 // A single Need can classify into more than one domain/sub-domain at once
-// (per Ganesh) — this is NOT multiple Needs, just multiple AI suggestions
+// by design — this is NOT multiple Needs, just multiple AI suggestions
 // against the one Need. `domains`/`subDomains` are therefore always arrays,
 // even though the placeholder below only ever populates one entry each.
 export interface ClassificationSuggestion {
@@ -28,7 +37,7 @@ export interface ClassificationResult {
   confidence: number;
 }
 
-function redactPii(text: string): string {
+export function redactPii(text: string): string {
   return text.replace(EMAIL_RE, '[redacted-email]').replace(PHONE_RE, '[redacted-phone]');
 }
 

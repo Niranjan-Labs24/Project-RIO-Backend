@@ -6,7 +6,7 @@ import {
 } from './domains.contract';
 import { DomainsService } from './domains.service';
 import type {
-  CreateDomainPayload, CreateSubDomainPayload, Domain, SubDomain, UpdateDomainPayload, UpdateSubDomainPayload,
+  CreateDomainPayload, CreateSubDomainPayload, Domain, DomainWithSubDomains, SubDomain, UpdateDomainPayload, UpdateSubDomainPayload,
 } from './domains.types';
 
 // Reads open to nearly every role (methodologyQuestionBank RO is granted
@@ -21,6 +21,15 @@ export class DomainsController {
   @RequirePermission('methodologyQuestionBank', 'read')
   listDomains(): Promise<Domain[]> {
     return this.domains.listDomains();
+  }
+
+  // One round trip for every active domain's active sub-domains — used by
+  // AI Classification's override modal and Survey Builder instead of the
+  // old listDomains() + one listSubDomains() call per domain.
+  @Get('tree')
+  @RequirePermission('methodologyQuestionBank', 'read')
+  listDomainsWithSubDomains(): Promise<DomainWithSubDomains[]> {
+    return this.domains.listDomainsWithSubDomains();
   }
 
   @Post()

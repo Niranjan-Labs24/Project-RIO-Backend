@@ -54,7 +54,7 @@ export class SharingService {
       action: "create",
       entityType: "sharing_request",
       entityId: row.id,
-      entityLabel: `Sharing request for study ${payload.studyId}`,
+      entityLabel: `Sharing request for study "${study.title}"`,
       organizationId: requestingOrgId,
     });
     return this.enrichOne(row as unknown as SharingRequestRow);
@@ -173,12 +173,15 @@ export class SharingService {
     const row = await this.tenant.runInOrgContext((tx) => tx.sharingRequest.update({
       where: { id },
       data: { status, decidedBy, decidedAt: new Date() },
-    }));
+    });
+    const study = await this.tenant.runAsSupervisor((tx) =>
+      tx.study.findUnique({ where: { id: row.studyId } }),
+    );
     await this.audit.record({
       action: status === "approved" ? "approve" : "edit",
       entityType: "sharing_request",
       entityId: row.id,
-      entityLabel: `Sharing request for study ${row.studyId}`,
+      entityLabel: `Sharing request for study "${study?.title ?? row.studyId}"`,
       organizationId: orgId,
     });
     return this.enrichOne(row as unknown as SharingRequestRow);

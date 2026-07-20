@@ -36,6 +36,13 @@ export interface SubDomain {
   isActive: boolean;
 }
 
+/** A domain with its sub-domains nested — one round trip instead of the
+ * N+1 pattern of listing domains then fetching each one's sub-domains
+ * separately (see DomainsService.listDomainsWithSubDomains). */
+export interface DomainWithSubDomains extends Domain {
+  subDomains: SubDomain[];
+}
+
 export interface CreateDomainPayload {
   code: string;
   name: string;
