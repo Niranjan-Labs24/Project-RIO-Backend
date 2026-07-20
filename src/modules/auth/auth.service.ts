@@ -1,4 +1,5 @@
 import { ForbiddenException, HttpException, HttpStatus, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { UserStatus } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { PasswordService } from '../../auth/password.service';
@@ -22,6 +23,7 @@ interface UserWithOrg {
   roleId: string;
   passwordHash: string | null;
   consentedAt: Date | null;
+  consentedPolicyVersion: string | null;
   failedLoginAttempts: number;
   lockedUntil: Date | null;
   mustChangePassword: boolean;
@@ -142,7 +144,16 @@ export class AuthService {
     const now = new Date();
     const policyVersion = await this.tenant.runInOrgContext(async (tx) => {
       const policy = await tx.consentPolicy.findFirst({ where: { active: true }, orderBy: { createdAt: 'desc' } });
-      await tx.user.update({ where: { id: actorId }, data: { consentedAt: now } });
+      // Accepting consent is the signal that an invited user has completed
+      // onboarding (temp password already replaced by this point — consent
+      // is only reachable post-login) — activate them here rather than
+      // requiring an admin to flip status by hand afterward. A signed-in
+      // NGO Admin from signup is already `active`, so this is a no-op for
+      // them.
+      await tx.user.update({
+        where: { id: actorId },
+        data: { consentedAt: now, consentedPolicyVersion: policy?.version ?? null, status: UserStatus.active },
+      });
       // Snapshot the versioned policy the user accepted (immutable acceptance record).
       if (policy) {
         await tx.consentAcceptance.create({
@@ -155,8 +166,9 @@ export class AuthService {
   }
 
   // Public NGO signup: creates the organisation + its first NGO Admin (RLS via
-  // runAsOrg inside the repository), records consent, and issues a session —
-  // same shape login() returns, plus how the temp password was delivered.
+  // runAsOrg inside the repository) and issues a session — same shape login()
+  // returns, plus how the temp password was delivered. Consent is NOT
+  // recorded here — see AuthService.consent(), triggered post-login.
   async signup(dto: SignupDto): Promise<SignupResponseView> {
     // Friendly pre-checks (the DB unique constraint is still the source of
     // truth, handled inside the repository for the concurrent-signup race —
@@ -170,7 +182,6 @@ export class AuthService {
 
     const temporaryPassword = generateTemporaryPassword();
     const passwordHash = await this.passwords.hash(temporaryPassword);
-    const now = new Date();
 
     const { org, user } = await this.repo.createOrganisationAndAdmin({
       organizationName: dto.organizationName,
@@ -179,7 +190,6 @@ export class AuthService {
       registrationNumber: dto.registrationNumber,
       email: dto.email,
       passwordHash,
-      now,
     });
 
     const role = this.roleOf(user.roleId);
@@ -250,6 +260,7 @@ export class AuthService {
     const user: SessionUser = {
       id: u.id, name: u.name, email: u.email,
       consentedAt: u.consentedAt ? u.consentedAt.toISOString() : null,
+      consentedPolicyVersion: u.consentedPolicyVersion,
     };
     const organization: SessionOrg = {
       id: u.org.id, name: u.org.name, logoUrl: u.org.logoUrl, region: u.org.region,

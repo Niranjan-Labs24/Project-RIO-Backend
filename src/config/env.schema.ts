@@ -40,6 +40,15 @@ export const EnvSchema = Type.Object({
   // Frontend origin allowed to send credentialed (cookie) requests. Single
   // explicit origin — credentials mode forbids a wildcard.
   CORS_ORIGIN: Type.String({ default: 'http://localhost:3000' }),
+  // Public-facing base URL citizens actually load in their browser (what a
+  // scanned QR code should point at). Deliberately separate from
+  // CORS_ORIGIN: CORS_ORIGIN is "which origin may call this API", not
+  // "where the public app is served from" — they happen to coincide in
+  // most single-frontend deployments, but conflating them would break the
+  // day the public survey is served from its own subdomain/CDN. Defaults to
+  // CORS_ORIGIN so existing dev/staging setups keep working without a new
+  // env var, but should be set explicitly in any real environment.
+  PUBLIC_APP_URL: Type.Optional(Type.String()),
   // SMTP (nodemailer). When SMTP_HOST is unset the mailer is "not configured"
   // and signup falls back to the dev-only temp-password reveal.
   SMTP_HOST: Type.Optional(Type.String()),
@@ -55,6 +64,11 @@ export const EnvSchema = Type.Object({
   // swap to object storage later without touching the Evidence table, which
   // only stores a storageKey string).
   EVIDENCE_STORAGE_PATH: Type.String({ default: './storage/evidence' }),
+  // Reviewer SLA alerts: how long a pending human-review item has before
+  // it's "at risk"/"breached", and how often the frontend should poll for
+  // alerts — both configurable per RIO-NFR-014, not hardcoded constants.
+  REVIEWER_SLA_HOURS: Type.Number({ default: 48 }),
+  REVIEWER_SLA_POLL_INTERVAL_MS: Type.Number({ default: 60_000 }),
   LOG_LEVEL: Type.Union(
     [
       Type.Literal('fatal'),

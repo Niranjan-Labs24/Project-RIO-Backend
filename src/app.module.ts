@@ -24,6 +24,17 @@ import { StudiesModule } from './modules/studies/studies.module';
 import { NeedsModule } from './modules/needs/needs.module';
 import { EvidenceModule } from './modules/evidence/evidence.module';
 import { AiDecisionsModule } from './modules/ai-decisions/ai-decisions.module';
+import { DomainsModule } from './modules/domains/domains.module';
+import { MethodologyConfigModule } from './modules/methodology-config/methodology-config.module';
+import { SupervisorOverviewModule } from './modules/supervisor-overview/supervisor-overview.module';
+import { PublicSurveysModule } from './modules/public-surveys/public-surveys.module';
+import { CitizenModule } from './modules/citizen/citizen.module';
+import { ResponseQualityModule } from './modules/response-quality/response-quality.module';
+import { PriorityModule } from './modules/priority/priority.module';
+import { SharingModule } from './modules/sharing/sharing.module';
+import { ReportsModule } from './modules/reports/reports.module';
+import { ArchiveModule } from './modules/archive/archive.module';
+import { ReviewerSlaModule } from './modules/reviewer-sla/reviewer-sla.module';
 
 @Module({
   imports: [
@@ -58,6 +69,17 @@ import { AiDecisionsModule } from './modules/ai-decisions/ai-decisions.module';
     NeedsModule,
     EvidenceModule,
     AiDecisionsModule,
+    DomainsModule,
+    MethodologyConfigModule,
+    SupervisorOverviewModule,
+    PublicSurveysModule,
+    CitizenModule,
+    ResponseQualityModule,
+    PriorityModule,
+    SharingModule,
+    ReportsModule,
+    ArchiveModule,
+    ReviewerSlaModule,
   ],
   controllers: [],
   providers: [

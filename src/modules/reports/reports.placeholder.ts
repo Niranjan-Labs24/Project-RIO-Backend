@@ -1,0 +1,281 @@
+import { buildPlaceholderExcel } from "./excel-builder";
+import { buildPlaceholderPdf } from "./pdf-builder";
+import { flattenReportContent } from "./report-content-flatten";
+import type { ReportTypeCode } from "./reports.types";
+
+export type PlaceholderReportType = Exclude<ReportTypeCode, "RPT01">;
+export const PLACEHOLDER_REPORT_TYPES: PlaceholderReportType[] = [
+  "RPT02", "RPT03", "RPT04", "RPT05", "RPT06", "RPT07", "RPT08", "RPT09", "RPT10", "RPT11", "RPT12", "RPT13",
+];
+
+// Real, openable PDF/Excel files generated from the report's own `content`
+// (see reports.service.ts#generateContent) — RIO-NFR-007/008 (Arabic RTL,
+// export layout fidelity) is still a documented follow-up for a proper
+// renderer; this covers "the file actually opens and has real data" for now.
+export async function buildExportStub(
+  format: "pdf" | "excel",
+  report: { id: string; title: string; reportType: string; content: Record<string, unknown> },
+): Promise<{ filename: string; contentType: string; body: Buffer }> {
+  const flattened = flattenReportContent(report.content);
+  const ext = format === "pdf" ? "pdf" : "xlsx";
+  const filename = `${report.reportType}-${report.id}.${ext}`;
+
+  if (format === "pdf") {
+    const bodyLines = flattened.summaryRows.map((row) => `${row.field}: ${row.value}`);
+    for (const table of flattened.tables) {
+      bodyLines.push("", `${table.name}:`);
+      for (const row of table.rows) {
+        bodyLines.push(
+          Object.entries(row)
+            .map(([k, v]) => `${k}=${v === null || v === undefined ? "—" : String(v)}`)
+            .join("  "),
+        );
+      }
+    }
+    const body = buildPlaceholderPdf(report.title, bodyLines);
+    return { filename, contentType: "application/pdf", body };
+  }
+
+  const body = await buildPlaceholderExcel(report.title, report.reportType, flattened);
+  return {
+    filename,
+    contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    body,
+  };
+}
+
+// TODO(RIO-Reports-RPT13): canned executive-summary narrative pending real
+// LLM/aggregation integration — same placeholder spirit as
+// response-quality's generateAiSummary.
+export function buildExecutiveSummaryNarrative(input: {
+  studyTitle: string;
+  priorityLevel: string | null;
+  responseCount: number;
+}): string {
+  return (
+    `Executive summary (placeholder) for "${input.studyTitle}". ` +
+    `${input.responseCount} response(s) collected. ` +
+    (input.priorityLevel
+      ? `Current placeholder priority level: ${input.priorityLevel}.`
+      : "Priority scoring has not yet been run for this study.")
+  );
+}
+
+// RPT-02..13 content contract: a fixed shape (summary / sections / metrics)
+// that today holds canned placeholder copy and later swaps to real LLM
+// output with no schema or consumer change — same "body changes, contract
+// doesn't" pattern as getSurveyDefinition. RPT-01 is out of scope (kept on
+// its real-data path in reports.service.ts) until it gets its own table.
+const PLACEHOLDER_REPORT_META: Record<
+  PlaceholderReportType,
+  {
+    title: string;
+    summary: string;
+    findings: string[];
+    recommendations: string[];
+  }
+> = {
+  RPT02: {
+    title: "Collective Community Needs Report",
+    summary:
+      "A consolidated analysis of community needs across all completed studies for the selected reporting period.",
+    findings: [
+      "Water accessibility emerged as the most frequently reported need.",
+      "Education and healthcare consistently ranked among the top three priorities.",
+      "Three villages reported recurring infrastructure-related concerns.",
+    ],
+    recommendations: [
+      "Prioritize interventions addressing water accessibility.",
+      "Coordinate with local authorities on infrastructure improvements.",
+    ],
+  },
+
+  RPT03: {
+    title: "Top Needs Report",
+    summary:
+      "This report highlights the highest-priority needs identified from the available survey responses.",
+    findings: [
+      "Safe drinking water received the highest priority score.",
+      "Healthcare access ranked second across surveyed communities.",
+      "Employment support showed increased demand among younger respondents.",
+    ],
+    recommendations: [
+      "Address the top five needs through phased implementation.",
+      "Review priority rankings after the next assessment cycle.",
+    ],
+  },
+
+  RPT04: {
+    title: "Domain-wise Needs Report",
+    summary:
+      "Analysis of identified needs grouped by methodology domains.",
+    findings: [
+      "Health recorded the highest number of identified needs.",
+      "Education showed moderate intervention requirements.",
+      "Livelihood-related concerns were concentrated in rural areas.",
+    ],
+    recommendations: [
+      "Allocate resources proportionally across high-impact domains.",
+      "Review domain trends every assessment cycle.",
+    ],
+  },
+
+  RPT05: {
+    title: "Village-wise Needs Report",
+    summary:
+      "Distribution of identified needs across surveyed villages.",
+    findings: [
+      "Village A recorded the highest concentration of critical needs.",
+      "Village C demonstrated improved service availability.",
+      "Village D reported recurring sanitation concerns.",
+    ],
+    recommendations: [
+      "Prioritize interventions for Village A.",
+      "Monitor sanitation improvements in Village D.",
+    ],
+  },
+
+  RPT06: {
+    title: "Regional Needs Dashboard",
+    summary:
+      "Regional comparison of identified community needs and intervention priorities.",
+    findings: [
+      "Northern Region showed the highest cumulative priority score.",
+      "Urban areas reported fewer critical needs than rural regions.",
+      "Infrastructure needs were common across multiple regions.",
+    ],
+    recommendations: [
+      "Review regional resource allocation.",
+      "Monitor changes in quarterly assessments.",
+    ],
+  },
+
+  RPT07: {
+    title: "Gender-based Needs Analysis",
+    summary:
+      "Comparison of identified needs across available gender-specific responses.",
+    findings: [
+      "Healthcare-related concerns were more frequently reported by women.",
+      "Employment support appeared consistently across both groups.",
+      "Education priorities remained similar across respondents.",
+    ],
+    recommendations: [
+      "Consider gender-specific intervention planning.",
+      "Review demographic coverage in future surveys.",
+    ],
+  },
+
+  RPT08: {
+    title: "KPI Results Report",
+    summary:
+      "Summary of current KPI measurements for the selected reporting scope.",
+    findings: [
+      "68% of monitored indicators met the expected threshold.",
+      "Access to basic services showed gradual improvement.",
+      "Three indicators remain below the target level.",
+    ],
+    recommendations: [
+      "Review underperforming indicators.",
+      "Track KPI trends across future assessment cycles.",
+    ],
+  },
+
+  RPT09: {
+    title: "Priority Ranking Report",
+    summary:
+      "Ranking of identified needs using the configured priority scoring methodology.",
+    findings: [
+      "Water accessibility achieved the highest overall score.",
+      "Healthcare access ranked second.",
+      "Housing support entered the top five priorities.",
+    ],
+    recommendations: [
+      "Validate rankings during reviewer approval.",
+      "Recalculate scores after new survey submissions.",
+    ],
+  },
+
+  RPT10: {
+    title: "Data Quality Report",
+    summary:
+      "Assessment of survey completeness and confidence across collected responses.",
+    findings: [
+      "95% response completeness achieved.",
+      "Most confidence flags remain within acceptable thresholds.",
+      "Low-confidence responses were limited to two locations.",
+    ],
+    recommendations: [
+      "Review incomplete submissions before publication.",
+      "Increase sample size in low-confidence regions.",
+    ],
+  },
+
+  RPT11: {
+    title: "Previous Studies Summary",
+    summary:
+      "Overview of completed studies available for historical comparison.",
+    findings: [
+      "Five previous studies matched the selected criteria.",
+      "Recurring needs were observed across multiple assessment cycles.",
+      "Infrastructure concerns remained consistent over time.",
+    ],
+    recommendations: [
+      "Compare historical trends before planning interventions.",
+      "Review changes between assessment cycles.",
+    ],
+  },
+
+  RPT12: {
+    title: "Report Sharing Status",
+    summary:
+      "Current status of report-sharing requests across participating organizations.",
+    findings: [
+      "8 requests approved.",
+      "2 requests awaiting review.",
+      "No rejected requests during the selected period.",
+    ],
+    recommendations: [
+      "Review pending requests regularly.",
+      "Maintain audit records for all sharing decisions.",
+    ],
+  },
+
+  RPT13: {
+    title: "Executive Summary",
+    summary:
+      "High-level overview of the most significant findings from the selected reporting scope.",
+    findings: [
+      "Water accessibility remains the highest strategic priority.",
+      "Healthcare and education continue to require focused intervention.",
+      "Overall data quality supports decision-making.",
+    ],
+    recommendations: [
+      "Proceed with prioritized intervention planning.",
+      "Review progress during the next assessment cycle.",
+    ],
+  },
+};
+
+export function buildPlaceholderReport(reportType: PlaceholderReportType): { title: string; content: Record<string, unknown> } {
+  const meta = PLACEHOLDER_REPORT_META[reportType];
+  return {
+    title: meta.title,
+    content: {
+      summary: meta.summary,
+      sections: [
+        { title: "Overview", content: meta.summary },
+        { title: "Key Findings", content: meta.findings },
+        { title: "Recommendations", content: meta.recommendations },
+      ],
+      metrics: [
+        { label: "Needs Identified", value: 24 },
+        { label: "Priority Level", value: "High" },
+        { label: "Data Confidence", value: "92%" },
+        { label: "Assessment Coverage", value: "8 Villages" },
+      ],
+      generatedBy: "RIO AI",
+      generatedAt: new Date().toISOString(),
+      isPlaceholder: true,
+    },
+  };
+}

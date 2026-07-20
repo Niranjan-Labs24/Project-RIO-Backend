@@ -40,6 +40,29 @@ export class MailerService {
   }
 
   /**
+   * Citizen public flow OTP delivery. Deliberately provider-agnostic at the
+   * call site (RIO-FR-Add-02) — `contact` may be an email today; a later
+   * SMS provider swap only changes this method's body, not its signature
+   * or callers.
+   */
+  async sendOtpCode(contact: string, code: string): Promise<boolean> {
+    if (!this.transport) return false;
+    try {
+      await this.transport.sendMail({
+        from: this.config.mailFrom,
+        to: contact,
+        subject: 'Your RIO survey verification code',
+        text: `Your verification code is ${code}. It expires in 10 minutes.`,
+        html: `<p>Your verification code is <strong>${code}</strong>. It expires in 10 minutes.</p>`,
+      });
+      return true;
+    } catch (err) {
+      this.logger.error(`Failed to email OTP code to ${contact}`, err as Error);
+      return false;
+    }
+  }
+
+  /**
    * Routes a public enquiry to an org's research officers (or admins). Returns
    * false rather than throwing, exactly like sendTemporaryPassword — callers
    * decide what an undelivered message means. ContactService treats false as a
