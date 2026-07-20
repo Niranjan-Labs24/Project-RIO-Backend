@@ -7,6 +7,18 @@ import { NEED_EDITABLE_STATUSES, type CreateNeedPayload, type Need, type NeedRow
 
 const DIFF_FIELDS = ['title', 'statement', 'village', 'source', 'referenceId'] as const;
 
+// The audit dialog renders `change.field` verbatim, so these are display
+// labels, not column names. `village` is stored under its original name but
+// surfaces as "Governorate", matching what the UI calls it. Existing audit
+// rows keep whatever label they were written with — the log is immutable.
+const DIFF_FIELD_LABELS: Record<(typeof DIFF_FIELDS)[number], string> = {
+  title: 'Title',
+  statement: 'Statement',
+  village: 'Governorate',
+  source: 'Source',
+  referenceId: 'Reference ID',
+};
+
 // Default when the submitter doesn't say where a manually-entered Need came
 // from — imports always pass their own explicit source (see
 // NeedsImportService), so this only ever applies to the manual-entry form.
@@ -110,7 +122,7 @@ export class NeedsService {
       // compared by value — reference inequality would report a "change"
       // on every save even when the array's contents are identical.
       if (after[f] !== undefined && JSON.stringify(before[f]) !== JSON.stringify(after[f])) {
-        changes.push({ field: f, before: before[f], after: after[f] });
+        changes.push({ field: DIFF_FIELD_LABELS[f], before: before[f], after: after[f] });
       }
     }
     return changes;

@@ -82,7 +82,7 @@ const PLACEHOLDER_REPORT_META: Record<
     findings: [
       "Water accessibility emerged as the most frequently reported need.",
       "Education and healthcare consistently ranked among the top three priorities.",
-      "Three villages reported recurring infrastructure-related concerns.",
+      "Three governorates reported recurring infrastructure-related concerns.",
     ],
     recommendations: [
       "Prioritize interventions addressing water accessibility.",
@@ -121,17 +121,17 @@ const PLACEHOLDER_REPORT_META: Record<
   },
 
   RPT05: {
-    title: "Village-wise Needs Report",
+    title: "Governorate-wise Needs Report",
     summary:
-      "Distribution of identified needs across surveyed villages.",
+      "Distribution of identified needs across surveyed governorates.",
     findings: [
-      "Village A recorded the highest concentration of critical needs.",
-      "Village C demonstrated improved service availability.",
-      "Village D reported recurring sanitation concerns.",
+      "Governorate A recorded the highest concentration of critical needs.",
+      "Governorate C demonstrated improved service availability.",
+      "Governorate D reported recurring sanitation concerns.",
     ],
     recommendations: [
-      "Prioritize interventions for Village A.",
-      "Monitor sanitation improvements in Village D.",
+      "Prioritize interventions for Governorate A.",
+      "Monitor sanitation improvements in Governorate D.",
     ],
   },
 
@@ -271,7 +271,7 @@ export function buildPlaceholderReport(reportType: PlaceholderReportType): { tit
         { label: "Needs Identified", value: 24 },
         { label: "Priority Level", value: "High" },
         { label: "Data Confidence", value: "92%" },
-        { label: "Assessment Coverage", value: "8 Villages" },
+        { label: "Assessment Coverage", value: "8 Governorates" },
       ],
       generatedBy: "RIO AI",
       generatedAt: new Date().toISOString(),

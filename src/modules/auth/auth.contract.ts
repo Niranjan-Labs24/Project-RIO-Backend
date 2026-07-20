@@ -35,12 +35,27 @@ export const SignupBody = registerSchema(
 );
 export type SignupDto = Static<typeof SignupBody>;
 
+/**
+ * Complexity policy for a password the user *sets*: at least 8 characters,
+ * with one capital letter, one digit and one special character (anything
+ * that isn't a letter, digit or whitespace). Mirrored on the frontend in
+ * `src/lib/password-policy.ts` — keep the two in step.
+ *
+ * `currentPassword` is deliberately exempt: it must still accept the
+ * server-issued temporary password, which predates this policy.
+ */
+const NewPassword = T.String({
+  minLength: 8,
+  maxLength: 200,
+  pattern: '^(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9\\s]).{8,}$',
+});
+
 export const ChangePasswordBody = registerSchema(
   'ChangePasswordBody',
   T.Object(
     {
       currentPassword: T.String({ minLength: 1, maxLength: 200 }),
-      newPassword: T.String({ minLength: 8, maxLength: 200 }),
+      newPassword: NewPassword,
     },
     { additionalProperties: false },
   ),

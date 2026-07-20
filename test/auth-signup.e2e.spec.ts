@@ -56,7 +56,7 @@ describe('signup -> me -> change-password (cookie)', () => {
     await request(server)
       .post('/api/auth/change-password')
       .set('Cookie', cookie)
-      .send({ currentPassword: tempPassword, newPassword: 'BrandNewPass123' })
+      .send({ currentPassword: tempPassword, newPassword: 'BrandNewPass123!' })
       .expect(200)
       .expect((r) => expect(r.body.mustChangePassword).toBe(false));
   }, 20_000);

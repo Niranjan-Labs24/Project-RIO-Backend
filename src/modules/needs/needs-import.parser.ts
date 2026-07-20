@@ -18,7 +18,9 @@ export interface ParsedNeedRow {
 const HEADER_ALIASES: Record<keyof Omit<ParsedNeedRow, 'row'>, string[]> = {
   title: ['title', 'need title'],
   statement: ['statement', 'need statement'],
-  village: ['village', 'villages'],
+  // "Governorate" is what the UI now calls this field; the older "village"
+  // labels stay accepted so previously-distributed templates keep importing.
+  village: ['governorate', 'governorates', 'village', 'villages'],
   source: ['source', 'data source'],
   referenceId: ['reference id', 'referenceid', 'reference', 'ref id'],
 };
