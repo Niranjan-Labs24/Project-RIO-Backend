@@ -85,7 +85,7 @@ export class NeedsImportService {
     for (const row of rows) {
       const validationError = this.validateRow(row);
       if (validationError) {
-        errors.push({ row: row.row, message: validationError });
+        errors.push({ row: row.row, message: validationError, type: 'validation' });
         continue;
       }
 
@@ -95,7 +95,8 @@ export class NeedsImportService {
           row: row.row,
           message: row.referenceId
             ? `Duplicate Reference ID "${row.referenceId}" — a Need with this Reference ID already exists in this Study.`
-            : 'Duplicate Need — a Need with this Title and Village already exists in this Study.',
+            : 'Duplicate Need — a Need with this Title and Governorate already exists in this Study.',
+          type: 'duplicate',
         });
         continue;
       }
@@ -121,7 +122,11 @@ export class NeedsImportService {
         seenKeys.add(key);
         imported += 1;
       } catch {
-        errors.push({ row: row.row, message: 'Could not save this row — please check its values and try again.' });
+        errors.push({
+          row: row.row,
+          message: 'Could not save this row — please check its values and try again.',
+          type: 'validation',
+        });
       }
     }
 
@@ -141,7 +146,7 @@ export class NeedsImportService {
     if (!row.title) return 'Title is required.';
     if (row.title.length > 300) return 'Title must be 300 characters or fewer.';
     if (!row.statement) return 'Statement is required.';
-    if (!row.village || splitVillages(row.village).length === 0) return 'Village is required.';
+    if (!row.village || splitVillages(row.village).length === 0) return 'Governorate is required.';
     return null;
   }
 }

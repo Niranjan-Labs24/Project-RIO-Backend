@@ -3,7 +3,7 @@ import type { Response } from 'express';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { parseIntParam } from '../../common/http/query.util';
 import { AuditService } from './audit.service';
-import type { AuditEvent } from './audit.types';
+import type { AuditListResult } from './audit.types';
 
 @Controller('audit')
 export class AuditController {
@@ -21,7 +21,8 @@ export class AuditController {
     @Query('action') action?: string,
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
-  ): Promise<AuditEvent[]> {
+    @Query('search') search?: string,
+  ): Promise<AuditListResult> {
     return this.audit.list({
       limit: parseIntParam(limit),
       offset: parseIntParam(offset),
@@ -32,6 +33,7 @@ export class AuditController {
       action: action || undefined,
       dateFrom: dateFrom || undefined,
       dateTo: dateTo || undefined,
+      search: search || undefined,
     });
   }
 
@@ -49,6 +51,7 @@ export class AuditController {
     @Query('action') action?: string,
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
+    @Query('search') search?: string,
   ): Promise<string> {
     const csv = await this.audit.exportCsv({
       organizationId: organizationId || undefined,
@@ -58,6 +61,7 @@ export class AuditController {
       action: action || undefined,
       dateFrom: dateFrom || undefined,
       dateTo: dateTo || undefined,
+      search: search || undefined,
     });
     res.set({
       'Content-Type': 'text/csv',

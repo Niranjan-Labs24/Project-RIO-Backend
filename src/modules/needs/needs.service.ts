@@ -7,6 +7,17 @@ import { NEED_EDITABLE_STATUSES, type CreateNeedPayload, type Need, type NeedRow
 
 const DIFF_FIELDS = ['title', 'statement', 'village', 'referenceId'] as const;
 
+// The audit dialog renders `change.field` verbatim, so these are display
+// labels, not column names. `village` is stored under its original name but
+// surfaces as "Governorate", matching what the UI calls it. Existing audit
+// rows keep whatever label they were written with — the log is immutable.
+const DIFF_FIELD_LABELS: Record<(typeof DIFF_FIELDS)[number], string> = {
+  title: 'Title',
+  statement: 'Statement',
+  village: 'Governorate',
+  referenceId: 'Reference ID',
+};
+
 @Injectable()
 export class NeedsService {
   constructor(
@@ -107,7 +118,7 @@ export class NeedsService {
       // compared by value — reference inequality would report a "change"
       // on every save even when the array's contents are identical.
       if (after[f] !== undefined && JSON.stringify(before[f]) !== JSON.stringify(after[f])) {
-        changes.push({ field: f, before: before[f], after: after[f] });
+        changes.push({ field: DIFF_FIELD_LABELS[f], before: before[f], after: after[f] });
       }
     }
     return changes;

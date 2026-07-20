@@ -103,6 +103,23 @@ export class PublicSurveysService {
     return rows.map((r) => this.toResponseSummary(r));
   }
 
+  // Same rows as listResponses, but with each one's full answers already
+  // joined in — one round trip for a Survey Responses summary screen to
+  // build its own question-wise tallies/min-max-average from, instead of
+  // fetching every response's detail one at a time.
+  async listResponsesWithAnswers(needId: string, surveyLinkId?: string): Promise<SurveyResponseDetail[]> {
+    await this.findNeedOrThrow(needId);
+    const { rows, questionMap } = await this.tenant.runInOrgContext(async (tx) => {
+      const rows = await tx.surveyResponse.findMany({
+        where: { needId, ...(surveyLinkId ? { surveyLinkId } : {}) },
+        orderBy: { submittedAt: 'desc' },
+      });
+      const questionMap = await this.buildQuestionMap(tx, needId);
+      return { rows, questionMap };
+    });
+    return rows.map((r) => this.toResponseDetail(r, questionMap));
+  }
+
   async getResponse(needId: string, responseId: string): Promise<SurveyResponseDetail> {
     await this.findNeedOrThrow(needId);
     const { row, questionMap } = await this.tenant.runInOrgContext(async (tx) => {

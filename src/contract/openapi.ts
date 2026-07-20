@@ -188,8 +188,8 @@ const ROUTES: RouteDoc[] = [
   {
     method: 'get', path: '/audit', tag: 'Audit', summary: 'Immutable audit log — own organisation, or (cross-entity) any organisation via ?organizationId',
     auth: { module: 'archiveSharingAudit', action: 'read' },
-    query: ['organizationId', 'entityType', 'entityId', 'actorId', 'limit', 'offset'],
-    response: 'AuditEvent[]',
+    query: ['organizationId', 'entityType', 'entityId', 'actorId', 'action', 'dateFrom', 'dateTo', 'search', 'limit', 'offset'],
+    response: '{ items: AuditEvent[], total, limit, offset }',
   },
   {
     method: 'get', path: '/health', tag: 'Health', summary: 'Liveness probe',

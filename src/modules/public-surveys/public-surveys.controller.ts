@@ -49,6 +49,17 @@ export class PublicSurveysController {
     return this.surveys.listResponses(needId, surveyLinkId || undefined);
   }
 
+  // Same rows as GET survey-responses, with each one's answers already
+  // joined in — see PublicSurveysService#listResponsesWithAnswers.
+  @Get('survey-responses-full')
+  @RequirePermission('studySurvey', 'read')
+  listResponsesWithAnswers(
+    @Param('needId') needId: string,
+    @Query('surveyLinkId') surveyLinkId?: string,
+  ): Promise<SurveyResponseDetail[]> {
+    return this.surveys.listResponsesWithAnswers(needId, surveyLinkId || undefined);
+  }
+
   // `@Res()` without `passthrough` — bypasses Nest's default response
   // pipeline entirely (which would otherwise JSON-serialize a returned
   // Buffer into `{"type":"Buffer","data":[...]}` instead of sending it
