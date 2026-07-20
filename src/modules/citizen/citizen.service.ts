@@ -4,6 +4,7 @@ import { Prisma } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { PasswordService } from '../../auth/password.service';
 import { MailerService } from '../../mailer/mailer.service';
+import { AuditService } from '../audit/audit.service';
 import { SurveysService } from '../surveys/surveys.service';
 import type {
   CheckDuplicatePayload, CheckDuplicateResult, CitizenOtpChallengeRow, PublicSurveyLinkRow, RequestOtpPayload,
@@ -30,6 +31,7 @@ export class CitizenService {
     private readonly passwords: PasswordService,
     private readonly mailer: MailerService,
     private readonly surveys: SurveysService,
+    private readonly audit: AuditService,
   ) {}
 
   // The published Survey Builder survey is the only source of questions for
@@ -210,6 +212,19 @@ export class CitizenService {
       });
       await tx.citizenOtpChallenge.update({ where: { id: challenge.id }, data: { consumedAt: new Date() } });
       return created;
+    });
+    // RIO-NFR-002 privacy audit: no signed-in actor exists for this request
+    // (citizen submissions are unauthenticated), so this is filed under the
+    // owning org explicitly with a null actor — the same "explicit org,
+    // no ambient context" path AuditService already supports for
+    // cross-org admin actions. Contact/answers are never logged in the
+    // metadata; only that a submission happened, when, and for which Need.
+    await this.audit.record({
+      action: 'create',
+      entityType: 'survey_response',
+      entityId: row.id,
+      entityLabel: `Survey response submitted for need ${link.needId}`,
+      organizationId: link.orgId,
     });
     return { id: row.id, submittedAt: row.submittedAt.toISOString() };
   }

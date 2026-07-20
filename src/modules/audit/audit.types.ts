@@ -1,4 +1,4 @@
-export type AuditAction = 'create' | 'edit' | 'approve' | 'share' | 'delete' | 'login' | 'logout';
+export type AuditAction = 'create' | 'edit' | 'approve' | 'share' | 'delete' | 'login' | 'logout' | 'consent';
 export type AuditEntityType =
   | 'organization'
   | 'user'
@@ -8,7 +8,8 @@ export type AuditEntityType =
   | 'evidence'
   | 'ai_decision'
   | 'report'
-  | 'sharing_request';
+  | 'sharing_request'
+  | 'survey_response';
 
 export interface AuditChange {
   field: string;

@@ -5,12 +5,7 @@ import { AuditService } from '../audit/audit.service';
 import type { AuditChange } from '../audit/audit.types';
 import { NEED_EDITABLE_STATUSES, type CreateNeedPayload, type Need, type NeedRow, type UpdateNeedPayload } from './needs.types';
 
-const DIFF_FIELDS = ['title', 'statement', 'village', 'source', 'referenceId'] as const;
-
-// Default when the submitter doesn't say where a manually-entered Need came
-// from — imports always pass their own explicit source (see
-// NeedsImportService), so this only ever applies to the manual-entry form.
-const DEFAULT_SOURCE = 'Manual Entry';
+const DIFF_FIELDS = ['title', 'statement', 'village', 'referenceId'] as const;
 
 @Injectable()
 export class NeedsService {
@@ -34,27 +29,30 @@ export class NeedsService {
           title: payload.title,
           statement: payload.statement,
           village: payload.village,
-          source: payload.source ?? DEFAULT_SOURCE,
+          // RIO-FR-001: this is the manual-create endpoint, so the Need
+          // always came in this way — never accepted from the client.
+          source: 'manual_entry',
           referenceId: payload.referenceId ?? null,
           createdBy,
         },
       })) as NeedRow;
     });
     await this.audit.record({ action: 'create', entityType: 'need', entityId: created.id, entityLabel: created.title.slice(0, 80) });
-    return this.toNeed(created);
+    return this.toNeed(created, await this.resolveUserName(created.createdBy));
   }
 
   async listByStudyId(studyId: string): Promise<Need[]> {
     const rows = (await this.tenant.runInOrgContext((tx) =>
       tx.need.findMany({ where: { studyId }, orderBy: { createdAt: 'asc' } }),
     )) as NeedRow[];
-    return rows.map((row) => this.toNeed(row));
+    const names = await this.resolveUserNames(rows.map((r) => r.createdBy));
+    return rows.map((row) => this.toNeed(row, names.get(row.createdBy) ?? null));
   }
 
   async getById(needId: string): Promise<Need> {
     const row = (await this.tenant.runInOrgContext((tx) => tx.need.findUnique({ where: { id: needId } }))) as NeedRow | null;
     if (!row) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
-    return this.toNeed(row);
+    return this.toNeed(row, await this.resolveUserName(row.createdBy));
   }
 
   async update(needId: string, patch: UpdateNeedPayload): Promise<Need> {
@@ -71,7 +69,6 @@ export class NeedsService {
           ...(patch.title !== undefined ? { title: patch.title } : {}),
           ...(patch.statement !== undefined ? { statement: patch.statement } : {}),
           ...(patch.village !== undefined ? { village: patch.village } : {}),
-          ...(patch.source !== undefined ? { source: patch.source } : {}),
           ...(patch.referenceId !== undefined ? { referenceId: patch.referenceId } : {}),
         },
       })) as NeedRow;
@@ -80,7 +77,7 @@ export class NeedsService {
     if (changes.length > 0) {
       await this.audit.record({ action: 'edit', entityType: 'need', entityId: updated.id, entityLabel: updated.title.slice(0, 80), changes });
     }
-    return this.toNeed(updated);
+    return this.toNeed(updated, await this.resolveUserName(updated.createdBy));
   }
 
   // Same editability rule as update() — a Need can only be removed while
@@ -116,7 +113,23 @@ export class NeedsService {
     return changes;
   }
 
-  private toNeed(row: NeedRow): Need {
+  // Same pattern as EvidenceService's own actor-name resolution — the
+  // creator is always in the same org as the Need (RLS-scoped lookup).
+  private async resolveUserName(userId: string): Promise<string | null> {
+    const names = await this.resolveUserNames([userId]);
+    return names.get(userId) ?? null;
+  }
+
+  private async resolveUserNames(userIds: string[]): Promise<Map<string, string>> {
+    const distinctIds = [...new Set(userIds)];
+    if (distinctIds.length === 0) return new Map();
+    const users = await this.tenant.runInOrgContext((tx) =>
+      tx.user.findMany({ where: { id: { in: distinctIds } }, select: { id: true, name: true } }),
+    );
+    return new Map(users.map((u) => [u.id, u.name]));
+  }
+
+  private toNeed(row: NeedRow, createdByName: string | null): Need {
     return {
       id: row.id,
       studyId: row.studyId,
@@ -129,6 +142,7 @@ export class NeedsService {
       domain: row.domain,
       subDomain: row.subDomain,
       createdBy: row.createdBy,
+      createdByName,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     };

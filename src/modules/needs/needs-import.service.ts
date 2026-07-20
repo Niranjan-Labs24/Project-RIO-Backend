@@ -7,7 +7,6 @@ import { parseCsvNeeds, parseExcelNeeds, type ParsedNeedRow } from './needs-impo
 import type { ImportNeedsResult } from './needs-import.types';
 
 const MAX_IMPORT_ROWS = 2000;
-const DEFAULT_IMPORT_SOURCE = 'Bulk Import';
 
 function splitVillages(value: string): string[] {
   return value
@@ -110,7 +109,10 @@ export class NeedsImportService {
               title: row.title,
               statement: row.statement,
               village: splitVillages(row.village),
-              source: row.source || DEFAULT_IMPORT_SOURCE,
+              // RIO-FR-001: Source is system-assigned, not read from the
+              // file — every Need created through this importer came in via
+              // a file upload, full stop.
+              source: 'file_upload',
               referenceId: row.referenceId || null,
               createdBy,
             },

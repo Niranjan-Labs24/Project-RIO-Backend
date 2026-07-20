@@ -249,6 +249,15 @@ enum NeedStatus {
   survey_published
 }
 
+// RIO-FR-001: how a Need entered the system — system-assigned only, never a
+// free-text field a submitter fills in.
+enum NeedSource {
+  manual_entry
+  file_upload
+  citizen_input
+  field_survey
+}
+
 model Need {
   id        String     @id @default(dbgenerated("uuidv7()")) @db.Uuid
   studyId   String     @map("study_id") @db.Uuid
@@ -261,11 +270,12 @@ model Need {
   // being treated as multiple villages). Do not promote this to a
   // master-data table without an explicit ticket.
   village   String[]   @default([])
-  // Where this Need came from — user-entered on manual creation (e.g.
-  // "Field Survey", "Community Meeting"), or the literal "CSV Import"/
-  // "Excel Import" plus the file's own Source column value when bulk
-  // imported (see NeedsImportService).
-  source    String     @db.VarChar(200)
+  // Where this Need came from — assigned by the system based on the actual
+  // creation path (see NeedsService.create / NeedsImportService), never
+  // client-writable (RIO-FR-001). `citizen_input` and `field_survey` are
+  // valid values with no producing code path yet — no feature creates a
+  // Need through either route today.
+  source    NeedSource
   // The submitter's own external tracking id for this Need (e.g. a field
   // form number or a partner org's case id) — free text, never validated
   // against anything, purely a cross-reference back to their own records.

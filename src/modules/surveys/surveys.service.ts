@@ -424,6 +424,19 @@ Eligible Questions: ${JSON.stringify(
         error: { code: 'SURVEY_ALREADY_PUBLISHED', message: 'This survey is already published and can no longer be modified.' },
       });
     }
+    // A published survey with zero questions has nothing for a citizen to
+    // answer — the citizen flow renders question 1 of N unconditionally, so
+    // an empty survey isn't just useless, it crashes that page outright.
+    if (status === 'PUBLISHED') {
+      const questionCount = await this.tenant.runInOrgContext((tx) =>
+        tx.surveyQuestion.count({ where: { surveyId } }),
+      );
+      if (questionCount === 0) {
+        throw new BadRequestException({
+          error: { code: 'SURVEY_HAS_NO_QUESTIONS', message: 'Add at least one question before publishing this survey.' },
+        });
+      }
+    }
 
     // MethodologyConfig is global reference data (no RLS, no org context
     // needed) — fetched outside the write transaction, same as

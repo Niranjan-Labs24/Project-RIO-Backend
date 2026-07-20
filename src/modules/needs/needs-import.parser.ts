@@ -8,18 +8,18 @@ export interface ParsedNeedRow {
   title: string;
   statement: string;
   village: string;
-  source: string;
   referenceId: string;
 }
 
 // Recognized header names, case/whitespace-insensitive — a submitter's own
-// column labels ("Need Title" vs "Title", "Data Source" vs "Source") don't
-// have to match one exact string.
+// column labels ("Need Title" vs "Title") don't have to match one exact
+// string. No "source" column — RIO-FR-001 makes Source system-assigned
+// (always `file_upload` for anything that comes through this importer), not
+// something a spreadsheet can set.
 const HEADER_ALIASES: Record<keyof Omit<ParsedNeedRow, 'row'>, string[]> = {
   title: ['title', 'need title'],
   statement: ['statement', 'need statement'],
   village: ['village', 'villages'],
-  source: ['source', 'data source'],
   referenceId: ['reference id', 'referenceid', 'reference', 'ref id'],
 };
 
@@ -50,7 +50,6 @@ function cellsToRow(cells: string[], index: Partial<Record<keyof ParsedNeedRow, 
     title: get('title'),
     statement: get('statement'),
     village: get('village'),
-    source: get('source'),
     referenceId: get('referenceId'),
   };
 }

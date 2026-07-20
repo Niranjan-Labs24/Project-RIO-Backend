@@ -164,6 +164,15 @@ export class AuthService {
       }
       return policy?.version ?? null;
     });
+    // RIO-FR-Add-02 governance: the org's data-sharing consent acceptance
+    // is itself an auditable event, not just a stored timestamp — same
+    // append-only trail as login/signup/password changes.
+    await this.audit.record({
+      action: 'consent',
+      entityType: 'user',
+      entityId: actorId,
+      entityLabel: policyVersion ? `Accepted consent policy ${policyVersion}` : 'Accepted consent',
+    });
     return { consentedAt: now.toISOString(), policyVersion };
   }
 

@@ -6,6 +6,11 @@ export type NeedStatus =
   | 'survey_created'
   | 'survey_published';
 
+// RIO-FR-001: system-assigned only — see NeedsService.create /
+// NeedsImportService, never accepted from the client (not in
+// CreateNeedPayload/UpdateNeedPayload below).
+export type NeedSource = 'manual_entry' | 'file_upload' | 'citizen_input' | 'field_survey';
+
 export interface NeedRow {
   id: string;
   studyId: string;
@@ -13,7 +18,7 @@ export interface NeedRow {
   title: string;
   statement: string;
   village: string[];
-  source: string;
+  source: NeedSource;
   referenceId: string | null;
   status: NeedStatus;
   domain: string | null;
@@ -29,12 +34,15 @@ export interface Need {
   title: string;
   statement: string;
   village: string[];
-  source: string;
+  source: NeedSource;
   referenceId: string | null;
   status: NeedStatus;
   domain: string | null;
   subDomain: string | null;
   createdBy: string;
+  // Resolved display name for Entered By — null if the creating user has
+  // since been removed (e.g. no self-org lookup for a deleted account).
+  createdByName: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -43,7 +51,6 @@ export interface CreateNeedPayload {
   title: string;
   statement: string;
   village: string[];
-  source?: string;
   referenceId?: string;
 }
 
@@ -51,7 +58,6 @@ export interface UpdateNeedPayload {
   title?: string;
   statement?: string;
   village?: string[];
-  source?: string;
   referenceId?: string | null;
 }
 
