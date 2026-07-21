@@ -34,7 +34,9 @@ describe('AuthRepository.createOrganisationAndAdmin', () => {
       data: expect.objectContaining({ roleId: 'role_ngo_admin', mustChangePassword: true }),
     }));
     // consentedAt must NOT be stamped at signup time anymore.
-    const createArgs = tx.user.create.mock.calls[0][0];
+    const firstCall = tx.user.create.mock.calls[0];
+    expect(firstCall).toBeDefined();
+    const createArgs = firstCall![0];
     expect(createArgs.data.consentedAt).toBeUndefined();
   });
 

@@ -121,6 +121,10 @@ model Organisation {
   aiSuggestions AiSuggestion[]
   humanDecisions HumanDecision[]
   surveys Survey[]
+  responseAnswers            ResponseAnswer[]
+  responseSeverityScores     ResponseSeverityScore[]
+  scoreRollups               ScoreRollup[]
+  villagePriorityAssessments VillagePriorityAssessment[]
 
   @@map("organisations")
 }
@@ -231,6 +235,10 @@ model Study {
   aiSuggestions AiSuggestion[]
   humanDecisions HumanDecision[]
   surveys Survey[]
+  responseAnswers            ResponseAnswer[]
+  responseSeverityScores     ResponseSeverityScore[]
+  scoreRollups               ScoreRollup[]
+  villagePriorityAssessments VillagePriorityAssessment[]
 
   @@index([orgId])
   @@map("studies")
@@ -535,6 +543,8 @@ model SurveyResponse {
   study      Study            @relation(fields: [studyId], references: [id], onDelete: Cascade)
   surveyLink PublicSurveyLink @relation(fields: [surveyLinkId], references: [id], onDelete: Cascade)
   qualityResults ResponseQualityResult[]
+  responseAnswers        ResponseAnswer[]
+  responseSeverityScores ResponseSeverityScore[]
 
   @@index([orgId])
   @@index([needId])
@@ -833,7 +843,17 @@ model Question {
   usedInMvp        Boolean @default(true) @map("used_in_mvp")
   reportMapping    String? @map("report_mapping")
 
-  surveyQuestions SurveyQuestion[]
+  analyticalCategory   String?  @map("analytical_category") @db.VarChar(100)
+  measurementMode      String   @default("SINGLE_SELECT") @map("measurement_mode") @db.VarChar(64)
+  isScoreable          Boolean  @default(true) @map("is_scoreable")
+  severityDirection    String?  @map("severity_direction") @db.VarChar(64)
+  conditionalRule      Json?    @map("conditional_rule")
+  methodologyVersionId String?  @map("methodology_version_id") @db.Uuid
+  scoringLookupKey     String?  @map("scoring_lookup_key") @db.VarChar(150)
+  priorityWeight       Decimal? @map("priority_weight") @db.Decimal(5, 2)
+
+  surveyQuestions    SurveyQuestion[]
+  methodologyVersion MethodologyVersion? @relation(fields: [methodologyVersionId], references: [id], onDelete: SetNull)
 
   @@index([domain, subDomain])
   @@map("questions")
@@ -948,8 +968,12 @@ model Survey {
   org             Organisation           @relation(fields: [orgId], references: [id], onDelete: Cascade)
   need            Need                   @relation(fields: [needId], references: [id], onDelete: Cascade)
   study           Study                  @relation(fields: [studyId], references: [id], onDelete: Cascade)
-  surveyQuestions SurveyQuestion[]
-  builderResponses SurveyBuilderResponse[]
+  surveyQuestions            SurveyQuestion[]
+  builderResponses           SurveyBuilderResponse[]
+  responseAnswers            ResponseAnswer[]
+  responseSeverityScores     ResponseSeverityScore[]
+  scoreRollups               ScoreRollup[]
+  villagePriorityAssessments VillagePriorityAssessment[]
 
   @@index([orgId])
   @@index([needId])
@@ -1010,4 +1034,209 @@ model SurveyBuilderResponse {
 
   @@index([surveyId])
   @@map("survey_builder_responses")
+}
+
+model MethodologyVersion {
+  id          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  name        String   @db.VarChar(200)
+  version     String   @unique @db.VarChar(100)
+  status      String   @default("DRAFT") @db.VarChar(64) // DRAFT | PUBLISHED | RETIRED
+  description String?
+  createdBy   String   @map("created_by") @db.Uuid
+  approvedBy  String?  @map("approved_by") @db.Uuid
+  approvedAt  DateTime? @map("approved_at") @db.Timestamptz(6)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  scoringLookups             ScoringLookup[]
+  questions                  Question[]
+  surveySeverityScores       ResponseSeverityScore[]
+  scoreRollups               ScoreRollup[]
+  domainPriorityConfigs      DomainPriorityConfig[]
+  villagePriorityAssessments VillagePriorityAssessment[]
+
+  @@map("methodology_versions")
+}
+
+model ScoringLookup {
+  id                   String             @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  methodologyVersionId String             @map("methodology_version_id") @db.Uuid
+  questionId           String             @map("question_id") @db.VarChar(64)
+  lookupType           String             @map("lookup_type") @db.VarChar(64) // OPTION | LIKERT | NUMERIC | MULTI_SELECT
+  optionId             String?            @map("option_id") @db.VarChar(100)
+  optionOrder          Int?               @map("option_order")
+  severityScore        Decimal?           @map("severity_score") @db.Decimal(5, 2)
+  numericFloor         Decimal?           @map("numeric_floor") @db.Decimal(10, 2)
+  numericCeiling       Decimal?           @map("numeric_ceiling") @db.Decimal(10, 2)
+  severityDirection    String?            @map("severity_direction") @db.VarChar(64)
+  isExcluded           Boolean            @default(false) @map("is_excluded")
+  exclusionReason      String?            @map("exclusion_reason") @db.VarChar(64)
+  isActive             Boolean            @default(true) @map("is_active")
+  createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  methodologyVersion   MethodologyVersion @relation(fields: [methodologyVersionId], references: [id], onDelete: Cascade)
+  responseSeverityScores ResponseSeverityScore[]
+
+  @@index([methodologyVersionId])
+  @@index([questionId])
+  @@map("scoring_lookups")
+}
+
+model ResponseAnswer {
+  id                 String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId              String   @map("org_id") @db.Uuid
+  surveyResponseId   String   @map("survey_response_id") @db.Uuid
+  surveyId           String   @map("survey_id") @db.Uuid
+  studyId            String   @map("study_id") @db.Uuid
+  villageId          String?  @map("village_id") @db.VarChar(150)
+  respondentId       String?  @map("respondent_id") @db.VarChar(255)
+  questionId         String   @map("question_id") @db.VarChar(64)
+  answerOptionId     String?  @map("answer_option_id") @db.VarChar(100)
+  answerNumericValue Decimal? @map("answer_numeric_value") @db.Decimal(15, 4)
+  answerText         String?  @map("answer_text")
+  answerOptionIds    Json?    @map("answer_option_ids") // For multi-select answers
+  isApplicable       Boolean  @default(true) @map("is_applicable")
+  submittedAt        DateTime @map("submitted_at") @db.Timestamptz(6)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org            Organisation    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  surveyResponse SurveyResponse  @relation(fields: [surveyResponseId], references: [id], onDelete: Cascade)
+  survey         Survey          @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  study          Study           @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  severityScores ResponseSeverityScore[]
+
+  @@index([orgId])
+  @@index([surveyResponseId])
+  @@index([surveyId])
+  @@index([studyId])
+  @@map("response_answers")
+}
+
+model ResponseSeverityScore {
+  id                   String             @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId                String             @map("org_id") @db.Uuid
+  responseAnswerId     String             @map("response_answer_id") @db.Uuid
+  surveyResponseId     String             @map("survey_response_id") @db.Uuid
+  surveyId             String             @map("survey_id") @db.Uuid
+  studyId              String             @map("study_id") @db.Uuid
+  villageId            String?            @map("village_id") @db.VarChar(150)
+  questionId           String             @map("question_id") @db.VarChar(64)
+  methodologyVersionId String             @map("methodology_version_id") @db.Uuid
+  scoringLookupId      String?            @map("scoring_lookup_id") @db.Uuid
+  rawAnswerSnapshot    Json               @map("raw_answer_snapshot")
+  severityScore        Decimal?           @map("severity_score") @db.Decimal(5, 2)
+  scoreStatus          String             @map("score_status") @db.VarChar(64) // SCORED | EXCLUDED | NOT_APPLICABLE | NOT_SCOREABLE | ERROR
+  exclusionReason      String?            @map("exclusion_reason") @db.VarChar(64)
+  calculatedAt         DateTime           @default(now()) @map("calculated_at") @db.Timestamptz(6)
+  calculationVersion   String             @map("calculation_version") @db.VarChar(64)
+
+  org                Organisation       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  responseAnswer     ResponseAnswer     @relation(fields: [responseAnswerId], references: [id], onDelete: Cascade)
+  surveyResponse     SurveyResponse     @relation(fields: [surveyResponseId], references: [id], onDelete: Cascade)
+  survey             Survey             @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  study              Study              @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  methodologyVersion MethodologyVersion @relation(fields: [methodologyVersionId], references: [id], onDelete: Cascade)
+  scoringLookup      ScoringLookup?     @relation(fields: [scoringLookupId], references: [id], onDelete: SetNull)
+
+  @@index([orgId])
+  @@index([responseAnswerId])
+  @@index([surveyResponseId])
+  @@index([surveyId])
+  @@index([studyId])
+  @@map("response_severity_scores")
+}
+
+model ScoreRollup {
+  id                    String             @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId                 String             @map("org_id") @db.Uuid
+  studyId               String             @map("study_id") @db.Uuid
+  surveyId              String             @map("survey_id") @db.Uuid
+  villageId             String?            @map("village_id") @db.VarChar(150)
+  methodologyVersionId  String             @map("methodology_version_id") @db.Uuid
+  rollupLevel           String             @map("rollup_level") @db.VarChar(64) // QUESTION | KPI | INDICATOR | SUB_DOMAIN | DOMAIN | OVERALL
+  entityId              String             @map("entity_id") @db.VarChar(150) // questionId, kpiId, etc.
+  entityNameSnapshot    String             @map("entity_name_snapshot") @db.VarChar(300)
+  severityScore         Decimal?           @map("severity_score") @db.Decimal(5, 2)
+  validResponseCount    Int                @map("valid_response_count")
+  excludedResponseCount Int                @map("excluded_response_count")
+  dontKnowCount         Int                @map("dont_know_count")
+  dontKnowRate          Decimal            @map("dont_know_rate") @db.Decimal(5, 4)
+  notApplicableCount    Int                @map("not_applicable_count")
+  confidenceLevel       String             @map("confidence_level") @db.VarChar(64) // LOW | STANDARD
+  calculatedAt          DateTime           @default(now()) @map("calculated_at") @db.Timestamptz(6)
+  calculationVersion    String             @map("calculation_version") @db.VarChar(64)
+
+  org                Organisation       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  study              Study              @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  survey             Survey             @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  methodologyVersion MethodologyVersion @relation(fields: [methodologyVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([studyId, surveyId, villageId, methodologyVersionId, rollupLevel, entityId])
+  @@index([orgId])
+  @@map("score_rollups")
+}
+
+// ──────── Priority Scoring v2 — Domain-weighted Performance ────────
+//
+// DomainPriorityConfig: developer-seeded configuration imported via
+// prisma/import-domain-priority-config.ts. No orgId / RLS — global
+// reference-data (same pattern as Domain/SubDomain/Question).
+// Weights must sum to 1.00 and all be > 0; enforced by import script.
+// A version is immutable once any Survey references it as PUBLISHED.
+model DomainPriorityConfig {
+  id                           String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  methodologyVersionId         String   @map("methodology_version_id") @db.Uuid
+  // Normalized upper-snake key, e.g. "HEALTH", "WATER_SANITATION".
+  domainKey                    String   @map("domain_key") @db.VarChar(100)
+  domainNameSnapshot           String   @map("domain_name_snapshot") @db.VarChar(200)
+  // 0–1 share of the total priority score; five decimal places.
+  weight                       Decimal  @db.Decimal(6, 5)
+  isCriticalDomain             Boolean  @default(false) @map("is_critical_domain")
+  // Critical domain performance strictly below this → HIGH override.
+  criticalPerformanceThreshold Int      @default(30) @map("critical_performance_threshold")
+  createdAt                    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  methodologyVersion   MethodologyVersion @relation(fields: [methodologyVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([methodologyVersionId, domainKey])
+  @@index([methodologyVersionId])
+  @@map("domain_priority_configs")
+}
+
+// VillagePriorityAssessment: upserted each time recalculate() runs.
+// One row per (study × survey × village × methodology version).
+// villageId = '' means consolidated (all villages).
+model VillagePriorityAssessment {
+  id                   String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId                String   @map("org_id") @db.Uuid
+  studyId              String   @map("study_id") @db.Uuid
+  surveyId             String   @map("survey_id") @db.Uuid
+  villageId            String   @map("village_id") @db.VarChar(150)
+  methodologyVersionId String   @map("methodology_version_id") @db.Uuid
+  // Weighted sum of DomainPerformanceScores (0–100). Low = high priority.
+  priorityScore        Decimal  @map("priority_score") @db.Decimal(8, 4)
+  // HIGH | MEDIUM | LOW
+  priorityStatus       String   @map("priority_status") @db.VarChar(20)
+  overrideApplied      Boolean  @default(false) @map("override_applied")
+  overrideReason       String?  @map("override_reason") @db.VarChar(500)
+  // Per-domain snapshot JSON array. Each element:
+  // { domainKey, domainNameSnapshot, domainSeverityScore,
+  //   domainPerformanceScore, domainWeight, weightedContribution,
+  //   isCriticalDomain, criticalThreshold, triggeredOverride }
+  domainComponents     Json     @map("domain_components")
+  calculatedAt         DateTime @default(now()) @map("calculated_at") @db.Timestamptz(6)
+  calculationVersion   String   @map("calculation_version") @db.VarChar(64)
+
+  org                Organisation       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  study              Study              @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  survey             Survey             @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  methodologyVersion MethodologyVersion @relation(fields: [methodologyVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([studyId, surveyId, villageId, methodologyVersionId])
+  @@index([orgId])
+  @@index([studyId])
+  @@index([surveyId])
+  @@map("village_priority_assessments")
 }

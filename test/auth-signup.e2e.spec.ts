@@ -39,8 +39,9 @@ describe('signup -> me -> change-password (cookie)', () => {
       .expect(201);
 
     const cookie = signup.headers['set-cookie'];
-    expect(cookie).toBeTruthy();
-    expect(cookie.join(';')).toContain('rio_session=');
+    expect(cookie).toBeDefined();
+    expect(Array.isArray(cookie)).toBe(true);
+    expect((cookie as unknown as string[]).join(';')).toContain('rio_session=');
     expect(signup.body.mustChangePassword).toBe(true);
     expect(signup.body.organization.registrationNumber).toBe(rn);
     // Non-prod (NODE_ENV=test) with no SMTP configured -> temp password revealed.
@@ -49,13 +50,13 @@ describe('signup -> me -> change-password (cookie)', () => {
 
     await request(server)
       .get('/api/auth/me')
-      .set('Cookie', cookie)
+      .set('Cookie', cookie as unknown as string[])
       .expect(200)
       .expect((r) => expect(r.body.user.email).toBe(email));
 
     await request(server)
       .post('/api/auth/change-password')
-      .set('Cookie', cookie)
+      .set('Cookie', cookie as unknown as string[])
       .send({ currentPassword: tempPassword, newPassword: 'BrandNewPass123!' })
       .expect(200)
       .expect((r) => expect(r.body.mustChangePassword).toBe(false));

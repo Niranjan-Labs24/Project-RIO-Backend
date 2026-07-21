@@ -33,6 +33,6 @@ describe('AuditService.record', () => {
     expect(row.entityType).toBe('organization');
     expect(row.ipAddress).toBe('1.2.3.4');
     expect(row.userAgent).toBe('jest');
-    expect((row.metadata as { changes: { after: string }[] }).changes[0].after).toBe('B');
+    expect((row.metadata as { changes: { after: string }[] }).changes[0]?.after).toBe('B');
   });
 });

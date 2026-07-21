@@ -48,8 +48,10 @@ describe('UsersService', () => {
     ];
     const svc = makeService(fakeTenant({ rows }));
     const users = await orgContext.run({ requestId: 'r', orgId: 'o1' }, () => svc.list());
-    expect(users[0].role.key).toBe('ngo_admin');
-    expect(users[0].status).toBe('active');
+    const firstUser = users[0];
+    expect(firstUser).toBeDefined();
+    expect(firstUser?.role.key).toBe('ngo_admin');
+    expect(firstUser?.status).toBe('active');
   });
 
   it('invite rejects an invalid roleId', async () => {
@@ -104,7 +106,9 @@ describe('UsersService', () => {
     const svc = makeService(fakeTenant({ current }), audit);
     const u = await orgContext.run({ requestId: 'r', orgId: 'o1' }, () => svc.update('u1', { status: 'active' }));
     expect(u.status).toBe('active');
-    expect(recorded[0].changes?.[0]).toMatchObject({ field: 'status', before: 'invited', after: 'active' });
+    const firstRecorded = recorded[0];
+    expect(firstRecorded).toBeDefined();
+    expect(firstRecorded?.changes?.[0]).toMatchObject({ field: 'status', before: 'invited', after: 'active' });
   });
 
   it('remove rejects deleting your own account', async () => {

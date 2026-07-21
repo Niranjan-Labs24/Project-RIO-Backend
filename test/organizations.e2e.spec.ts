@@ -38,11 +38,11 @@ describe('Organizations (e2e)', () => {
   });
 
   it('ngo_admin updates its current organization', async () => {
-    const region = `Region-${uniq}`;
+    const regions = [`Region-${uniq}`];
     const res = await request(app.getHttpServer())
       .patch('/api/organizations/current').set('Authorization', `Bearer ${adminToken}`)
-      .send({ region }).expect(200);
-    expect(res.body.region).toBe(region);
+      .send({ region: regions }).expect(200);
+    expect(res.body.region).toEqual(regions);
   });
 
   it('system_admin lists all organizations with memberCount', async () => {
@@ -63,7 +63,7 @@ describe('Organizations (e2e)', () => {
     const name = `New NGO ${uniq}`;
     const res = await request(app.getHttpServer())
       .post('/api/organizations').set('Authorization', `Bearer ${sysToken}`)
-      .send({ name, purpose: 'Testing', registrationNumber: `REG-${uniq}`, region: 'North', email: `org-${uniq}@example.org`, sector: 'education', villages: ['V1'], adminName: 'First Admin', adminEmail: `admin-${uniq}@example.org` })
+      .send({ name, purpose: 'Testing', registrationNumber: `REG-${uniq}`, region: ['North'], email: `org-${uniq}@example.org`, sector: 'Education', villages: ['V1'], adminName: 'First Admin', adminEmail: `admin-${uniq}@example.org` })
       .expect(201);
     expect(res.body.name).toBe(name);
     expect(typeof res.body.id).toBe('string');

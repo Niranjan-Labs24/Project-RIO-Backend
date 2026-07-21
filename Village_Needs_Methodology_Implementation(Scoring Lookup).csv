@@ -1,0 +1,380 @@
+Scoring Lookup — Option-to-Severity Map (Methodology Section 3),,,,,,
+Q Code,Question (abridged),Response Option,Severity Score (0-100),Score Type,Lookup Key (helper),Score (helper)
+H01,Is there a functioning health facility (clinic/health center) withi...,Yes,0,Standard,H01|Yes,0
+H01,Is there a functioning health facility (clinic/health center) withi...,No,100,Standard,H01|No,100
+H01,Is there a functioning health facility (clinic/health center) withi...,Don't know,DK/NA — excluded,Excluded from denominator,H01|Don't know,DK/NA
+H02,What is the approximate distance (in km) from the village center to...,Floor=0,0,Numeric-Floor,H02|Floor,0
+H02,What is the approximate distance (in km) from the village center to...,Ceiling=10,100,Numeric-Ceiling,H02|Ceiling,100
+H03,"During the past 12 months, was the nearest health facility closed o...",Yes,100,Standard,H03|Yes,100
+H03,"During the past 12 months, was the nearest health facility closed o...",No,0,Standard,H03|No,0
+H03,"During the past 12 months, was the nearest health facility closed o...",Don't know,DK/NA — excluded,Excluded from denominator,H03|Don't know,DK/NA
+H04,Does lack of transportation prevent household members from reaching...,Always,100,Standard,H04|Always,100
+H04,Does lack of transportation prevent household members from reaching...,Often,70,Standard,H04|Often,70
+H04,Does lack of transportation prevent household members from reaching...,Sometimes,35,Standard,H04|Sometimes,35
+H04,Does lack of transportation prevent household members from reaching...,Never,0,Standard,H04|Never,0
+H05,Among women in this household who were pregnant in the past 2 years...,"Yes, all",0,Standard,"H05|Yes, all",0
+H05,Among women in this household who were pregnant in the past 2 years...,Some did,50,Standard,H05|Some did,50
+H05,Among women in this household who were pregnant in the past 2 years...,None did,100,Standard,H05|None did,100
+H05,Among women in this household who were pregnant in the past 2 years...,Not applicable,DK/NA — excluded,Excluded from denominator,H05|Not applicable,DK/NA
+H06,"Was the most recent birth in this household attended by a doctor, n...",Yes,0,Standard,H06|Yes,0
+H06,"Was the most recent birth in this household attended by a doctor, n...",No,100,Standard,H06|No,100
+H06,"Was the most recent birth in this household attended by a doctor, n...",Not applicable,DK/NA — excluded,Excluded from denominator,H06|Not applicable,DK/NA
+H07,Have all children under 5 in this household received their complete...,"Yes, all",0,Standard,"H07|Yes, all",0
+H07,Have all children under 5 in this household received their complete...,Partially,50,Standard,H07|Partially,50
+H07,Have all children under 5 in this household received their complete...,None,100,Standard,H07|None,100
+H07,Have all children under 5 in this household received their complete...,No children under 5,DK/NA — excluded,Excluded from denominator,H07|No children under 5,DK/NA
+H08,Are children under 5 in this household regularly weighed and monito...,"Yes, regularly",0,Standard,"H08|Yes, regularly",0
+H08,Are children under 5 in this household regularly weighed and monito...,Occasionally,50,Standard,H08|Occasionally,50
+H08,Are children under 5 in this household regularly weighed and monito...,Never,100,Standard,H08|Never,100
+H08,Are children under 5 in this household regularly weighed and monito...,No children under 5,DK/NA — excluded,Excluded from denominator,H08|No children under 5,DK/NA
+H09,Does any member of this household have a diagnosed chronic conditio...,Yes,100,Standard,H09|Yes,100
+H09,Does any member of this household have a diagnosed chronic conditio...,No,0,Standard,H09|No,0
+H09,Does any member of this household have a diagnosed chronic conditio...,Don't know,DK/NA — excluded,Excluded from denominator,H09|Don't know,DK/NA
+H10,"If yes, can this household member access regular follow-up care/med...","Yes, easily",0,Standard,"H10|Yes, easily",0
+H10,"If yes, can this household member access regular follow-up care/med...","Yes, with difficulty",50,Standard,"H10|Yes, with difficulty",50
+H10,"If yes, can this household member access regular follow-up care/med...",No,100,Standard,H10|No,100
+H10,"If yes, can this household member access regular follow-up care/med...",Not applicable,DK/NA — excluded,Excluded from denominator,H10|Not applicable,DK/NA
+H11,Do you know where to seek help if someone in your household needed ...,Yes,0,Standard,H11|Yes,0
+H11,Do you know where to seek help if someone in your household needed ...,No,100,Standard,H11|No,100
+H12,How comfortable would people in this community be seeking mental he...,Very uncomfortable,100,Standard,H12|Very uncomfortable,100
+H12,How comfortable would people in this community be seeking mental he...,Uncomfortable,75,Standard,H12|Uncomfortable,75
+H12,How comfortable would people in this community be seeking mental he...,Neutral,50,Standard,H12|Neutral,50
+H12,How comfortable would people in this community be seeking mental he...,Comfortable,25,Standard,H12|Comfortable,25
+H12,How comfortable would people in this community be seeking mental he...,Very comfortable,0,Standard,H12|Very comfortable,0
+H13,How would you rate the overall quality of health services available...,Very poor,100,Standard,H13|Very poor,100
+H13,How would you rate the overall quality of health services available...,Poor,75,Standard,H13|Poor,75
+H13,How would you rate the overall quality of health services available...,Fair,50,Standard,H13|Fair,50
+H13,How would you rate the overall quality of health services available...,Good,25,Standard,H13|Good,25
+H13,How would you rate the overall quality of health services available...,Very good,0,Standard,H13|Very good,0
+H14,"When you visit the local health facility, are essential/prescribed ...",Always,0,Standard,H14|Always,0
+H14,"When you visit the local health facility, are essential/prescribed ...",Usually,30,Standard,H14|Usually,30
+H14,"When you visit the local health facility, are essential/prescribed ...",Rarely,70,Standard,H14|Rarely,70
+H14,"When you visit the local health facility, are essential/prescribed ...",Never,100,Standard,H14|Never,100
+H15,"Has the cost of healthcare (consultation, medicine, transport) prev...","Yes, often",100,Standard,"H15|Yes, often",100
+H15,"Has the cost of healthcare (consultation, medicine, transport) prev...","Yes, sometimes",50,Standard,"H15|Yes, sometimes",50
+H15,"Has the cost of healthcare (consultation, medicine, transport) prev...",No,0,Standard,H15|No,0
+H16,"If a medical emergency occurred, how long would it typically take f...",Under 30 min,0,Standard,H16|Under 30 min,0
+H16,"If a medical emergency occurred, how long would it typically take f...",30–60 min,35,Standard,H16|30–60 min,35
+H16,"If a medical emergency occurred, how long would it typically take f...",1–2 hours,70,Standard,H16|1–2 hours,70
+H16,"If a medical emergency occurred, how long would it typically take f...",Over 2 hours,100,Standard,H16|Over 2 hours,100
+H16,"If a medical emergency occurred, how long would it typically take f...",No emergency service available,100,Standard,H16|No emergency service available,100
+ED01,Are all school-age children (6–15 years) in this household currentl...,"Yes, all",0,Standard,"ED01|Yes, all",0
+ED01,Are all school-age children (6–15 years) in this household currentl...,Some,60,Standard,ED01|Some,60
+ED01,Are all school-age children (6–15 years) in this household currentl...,None,100,Standard,ED01|None,100
+ED01,Are all school-age children (6–15 years) in this household currentl...,No school-age children,DK/NA — excluded,Excluded from denominator,ED01|No school-age children,DK/NA
+ED02,What is the approximate distance from this household to the nearest...,Floor=0,0,Numeric-Floor,ED02|Floor,0
+ED02,What is the approximate distance from this household to the nearest...,Ceiling=5,100,Numeric-Ceiling,ED02|Ceiling,100
+ED03,Do children in this household have safe and reliable transportation...,Yes,0,Standard,ED03|Yes,0
+ED03,Do children in this household have safe and reliable transportation...,Partially,50,Standard,ED03|Partially,50
+ED03,Do children in this household have safe and reliable transportation...,No,100,Standard,ED03|No,100
+ED03,Do children in this household have safe and reliable transportation...,Not applicable,DK/NA — excluded,Excluded from denominator,ED03|Not applicable,DK/NA
+ED04,Has any school-age child in this household stopped attending school...,Yes,100,Standard,ED04|Yes,100
+ED04,Has any school-age child in this household stopped attending school...,No,0,Standard,ED04|No,0
+ED05,"If yes, what was the main reason for stopping school? (financial / ...",Financial,N/A — Diagnostic,Diagnostic (not scored),ED05|Financial,DK/NA
+ED05,"If yes, what was the main reason for stopping school? (financial / ...",Distance,N/A — Diagnostic,Diagnostic (not scored),ED05|Distance,DK/NA
+ED05,"If yes, what was the main reason for stopping school? (financial / ...",Safety,N/A — Diagnostic,Diagnostic (not scored),ED05|Safety,DK/NA
+ED05,"If yes, what was the main reason for stopping school? (financial / ...",Early marriage,N/A — Diagnostic,Diagnostic (not scored),ED05|Early marriage,DK/NA
+ED05,"If yes, what was the main reason for stopping school? (financial / ...",Work,N/A — Diagnostic,Diagnostic (not scored),ED05|Work,DK/NA
+ED05,"If yes, what was the main reason for stopping school? (financial / ...",Disability,N/A — Diagnostic,Diagnostic (not scored),ED05|Disability,DK/NA
+ED05,"If yes, what was the main reason for stopping school? (financial / ...",Academic difficulty,N/A — Diagnostic,Diagnostic (not scored),ED05|Academic difficulty,DK/NA
+ED05,"If yes, what was the main reason for stopping school? (financial / ...",Other,N/A — Diagnostic,Diagnostic (not scored),ED05|Other,DK/NA
+ED06,Are there any school-age girls in this household NOT enrolled in sc...,Yes,100,Standard,ED06|Yes,100
+ED06,Are there any school-age girls in this household NOT enrolled in sc...,No,0,Standard,ED06|No,0
+ED06,Are there any school-age girls in this household NOT enrolled in sc...,Not applicable,DK/NA — excluded,Excluded from denominator,ED06|Not applicable,DK/NA
+ED07,"What, if any, barriers do girls in this village face in continuing ...",Distance/safety,25,Multi-select weight,ED07|Distance/safety,25
+ED07,"What, if any, barriers do girls in this village face in continuing ...",Lack of female teachers,25,Multi-select weight,ED07|Lack of female teachers,25
+ED07,"What, if any, barriers do girls in this village face in continuing ...",Early marriage,35,Multi-select weight,ED07|Early marriage,35
+ED07,"What, if any, barriers do girls in this village face in continuing ...",Household duties,20,Multi-select weight,ED07|Household duties,20
+ED07,"What, if any, barriers do girls in this village face in continuing ...",Cultural norms,35,Multi-select weight,ED07|Cultural norms,35
+ED07,"What, if any, barriers do girls in this village face in continuing ...",None,0,Multi-select weight,ED07|None,0
+ED08,How satisfied are you with the quality of teaching at the school yo...,Very dissatisfied,100,Standard,ED08|Very dissatisfied,100
+ED08,How satisfied are you with the quality of teaching at the school yo...,Dissatisfied,75,Standard,ED08|Dissatisfied,75
+ED08,How satisfied are you with the quality of teaching at the school yo...,Neutral,50,Standard,ED08|Neutral,50
+ED08,How satisfied are you with the quality of teaching at the school yo...,Satisfied,25,Standard,ED08|Satisfied,25
+ED08,How satisfied are you with the quality of teaching at the school yo...,Very satisfied,0,Standard,ED08|Very satisfied,0
+ED09,Does the local school have enough teachers to cover all subjects/gr...,Yes,0,Standard,ED09|Yes,0
+ED09,Does the local school have enough teachers to cover all subjects/gr...,Partially,50,Standard,ED09|Partially,50
+ED09,Does the local school have enough teachers to cover all subjects/gr...,No,100,Standard,ED09|No,100
+ED09,Does the local school have enough teachers to cover all subjects/gr...,Don't know,DK/NA — excluded,Excluded from denominator,ED09|Don't know,DK/NA
+ED10,Do your children have access to the textbooks and learning material...,"Yes, fully",0,Standard,"ED10|Yes, fully",0
+ED10,Do your children have access to the textbooks and learning material...,Partially,50,Standard,ED10|Partially,50
+ED10,Do your children have access to the textbooks and learning material...,No,100,Standard,ED10|No,100
+ED11,"Does the school your children attend have adequate classrooms, clea...","Yes, all adequate",0,Standard,"ED11|Yes, all adequate",0
+ED11,"Does the school your children attend have adequate classrooms, clea...",Some inadequate,50,Standard,ED11|Some inadequate,50
+ED11,"Does the school your children attend have adequate classrooms, clea...",Most inadequate,100,Standard,ED11|Most inadequate,100
+ED11,"Does the school your children attend have adequate classrooms, clea...",Don't know,DK/NA — excluded,Excluded from denominator,ED11|Don't know,DK/NA
+ED12,Does the school have functioning computers or internet access avail...,Yes,0,Standard,ED12|Yes,0
+ED12,Does the school have functioning computers or internet access avail...,No,100,Standard,ED12|No,100
+ED12,Does the school have functioning computers or internet access avail...,Don't know,DK/NA — excluded,Excluded from denominator,ED12|Don't know,DK/NA
+ED13,Are vocational or technical training programs available and accessi...,"Yes, accessible",0,Standard,"ED13|Yes, accessible",0
+ED13,Are vocational or technical training programs available and accessi...,Exist but inaccessible,60,Standard,ED13|Exist but inaccessible,60
+ED13,Are vocational or technical training programs available and accessi...,None available,100,Standard,ED13|None available,100
+ED13,Are vocational or technical training programs available and accessi...,Don't know,DK/NA — excluded,Excluded from denominator,ED13|Don't know,DK/NA
+ED14,Are there adult members of this household who cannot read or write?,Yes,100,Standard,ED14|Yes,100
+ED14,Are there adult members of this household who cannot read or write?,No,0,Standard,ED14|No,0
+WS01,What is the main source of drinking water for this household?,Piped into dwelling,0,Standard,WS01|Piped into dwelling,0
+WS01,What is the main source of drinking water for this household?,Public tap,15,Standard,WS01|Public tap,15
+WS01,What is the main source of drinking water for this household?,Protected well,30,Standard,WS01|Protected well,30
+WS01,What is the main source of drinking water for this household?,Tanker/vendor,55,Standard,WS01|Tanker/vendor,55
+WS01,What is the main source of drinking water for this household?,Unprotected well,75,Standard,WS01|Unprotected well,75
+WS01,What is the main source of drinking water for this household?,Surface water (river/pond),100,Standard,WS01|Surface water (river/pond),100
+WS01,What is the main source of drinking water for this household?,Other,DK/NA — excluded,Excluded from denominator,WS01|Other,DK/NA
+WS02,How long does it take (round trip) to collect water from the main s...,Water on premises,0,Standard,WS02|Water on premises,0
+WS02,How long does it take (round trip) to collect water from the main s...,Under 30 min,30,Standard,WS02|Under 30 min,30
+WS02,How long does it take (round trip) to collect water from the main s...,30 min–1 hr,65,Standard,WS02|30 min–1 hr,65
+WS02,How long does it take (round trip) to collect water from the main s...,Over 1 hr,100,Standard,WS02|Over 1 hr,100
+WS03,Is your main water source available consistently throughout the yea...,"Yes, consistently",0,Standard,"WS03|Yes, consistently",0
+WS03,Is your main water source available consistently throughout the yea...,Seasonal shortages,60,Standard,WS03|Seasonal shortages,60
+WS03,Is your main water source available consistently throughout the yea...,Frequent shortages,85,Standard,WS03|Frequent shortages,85
+WS03,Is your main water source available consistently throughout the yea...,Rarely available,100,Standard,WS03|Rarely available,100
+WS04,Do you consider your household's drinking water safe to drink witho...,Yes,0,Standard,WS04|Yes,0
+WS04,Do you consider your household's drinking water safe to drink witho...,"No, needs treatment",70,Standard,"WS04|No, needs treatment",70
+WS04,Do you consider your household's drinking water safe to drink witho...,Don't know,DK/NA — excluded,Excluded from denominator,WS04|Don't know,DK/NA
+WS05,"Does this household treat water (boiling, filtering, chlorination) ...",Always,0,Standard,WS05|Always,0
+WS05,"Does this household treat water (boiling, filtering, chlorination) ...",Sometimes,50,Standard,WS05|Sometimes,50
+WS05,"Does this household treat water (boiling, filtering, chlorination) ...",Never,100,Standard,WS05|Never,100
+WS06,Has any household member experienced illness suspected to be relate...,Yes,100,Standard,WS06|Yes,100
+WS06,Has any household member experienced illness suspected to be relate...,No,0,Standard,WS06|No,0
+WS06,Has any household member experienced illness suspected to be relate...,Don't know,DK/NA — excluded,Excluded from denominator,WS06|Don't know,DK/NA
+WS07,What type of toilet facility does this household primarily use?,Flush/pour-flush to sewer or septic,0,Standard,WS07|Flush/pour-flush to sewer or septic,0
+WS07,What type of toilet facility does this household primarily use?,Pit latrine with slab,25,Standard,WS07|Pit latrine with slab,25
+WS07,What type of toilet facility does this household primarily use?,Shared/public facility,55,Standard,WS07|Shared/public facility,55
+WS07,What type of toilet facility does this household primarily use?,Pit latrine without slab,80,Standard,WS07|Pit latrine without slab,80
+WS07,What type of toilet facility does this household primarily use?,Open defecation,100,Standard,WS07|Open defecation,100
+WS08,"Is your household's toilet facility private and safe to use, includ...",Yes,0,Standard,WS08|Yes,0
+WS08,"Is your household's toilet facility private and safe to use, includ...",Somewhat,50,Standard,WS08|Somewhat,50
+WS08,"Is your household's toilet facility private and safe to use, includ...",No,100,Standard,WS08|No,100
+WS09,Does this household have a handwashing facility with both water and...,Yes,0,Standard,WS09|Yes,0
+WS09,Does this household have a handwashing facility with both water and...,"Water only, no soap",50,Standard,"WS09|Water only, no soap",50
+WS09,Does this household have a handwashing facility with both water and...,No facility,100,Standard,WS09|No facility,100
+WS10,Is there a regular waste collection service operating in this village?,"Yes, weekly or more",0,Standard,"WS10|Yes, weekly or more",0
+WS10,Is there a regular waste collection service operating in this village?,"Yes, irregular",50,Standard,"WS10|Yes, irregular",50
+WS10,Is there a regular waste collection service operating in this village?,No service,100,Standard,WS10|No service,100
+WS11,"In the absence of formal collection, how does this household primar...",Burning,N/A — Diagnostic,Diagnostic (not scored),WS11|Burning,DK/NA
+WS11,"In the absence of formal collection, how does this household primar...",Burying,N/A — Diagnostic,Diagnostic (not scored),WS11|Burying,DK/NA
+WS11,"In the absence of formal collection, how does this household primar...",Open dumping,N/A — Diagnostic,Diagnostic (not scored),WS11|Open dumping,DK/NA
+WS11,"In the absence of formal collection, how does this household primar...",Private collection,N/A — Diagnostic,Diagnostic (not scored),WS11|Private collection,DK/NA
+WS11,"In the absence of formal collection, how does this household primar...",Other,N/A — Diagnostic,Diagnostic (not scored),WS11|Other,DK/NA
+EE01,Is this household connected to the national electricity grid?,Yes,0,Standard,EE01|Yes,0
+EE01,Is this household connected to the national electricity grid?,"No, uses alternative source",60,Standard,"EE01|No, uses alternative source",60
+EE01,Is this household connected to the national electricity grid?,No electricity access,100,Standard,EE01|No electricity access,100
+EE02,"On a typical day, how many hours does the electricity supply get in...",No outages,0,Standard,EE02|No outages,0
+EE02,"On a typical day, how many hours does the electricity supply get in...",Under 2 hrs,33,Standard,EE02|Under 2 hrs,33
+EE02,"On a typical day, how many hours does the electricity supply get in...",2–6 hrs,67,Standard,EE02|2–6 hrs,67
+EE02,"On a typical day, how many hours does the electricity supply get in...",Over 6 hrs,100,Standard,EE02|Over 6 hrs,100
+EE02,"On a typical day, how many hours does the electricity supply get in...",No grid connection,DK/NA — excluded,Excluded from denominator,EE02|No grid connection,DK/NA
+EE03,"If not connected to the grid, what is the household's main energy s...",Solar,N/A — Diagnostic,Diagnostic (not scored),EE03|Solar,DK/NA
+EE03,"If not connected to the grid, what is the household's main energy s...",Generator,N/A — Diagnostic,Diagnostic (not scored),EE03|Generator,DK/NA
+EE03,"If not connected to the grid, what is the household's main energy s...",Gas,N/A — Diagnostic,Diagnostic (not scored),EE03|Gas,DK/NA
+EE03,"If not connected to the grid, what is the household's main energy s...",Firewood,N/A — Diagnostic,Diagnostic (not scored),EE03|Firewood,DK/NA
+EE03,"If not connected to the grid, what is the household's main energy s...",biomass,N/A — Diagnostic,Diagnostic (not scored),EE03|biomass,DK/NA
+EE03,"If not connected to the grid, what is the household's main energy s...",Other,N/A — Diagnostic,Diagnostic (not scored),EE03|Other,DK/NA
+EE03,"If not connected to the grid, what is the household's main energy s...",Not applicable,N/A — Diagnostic,Diagnostic (not scored),EE03|Not applicable,DK/NA
+EE04,What is the primary fuel or technology this household uses for cook...,Electricity/LPG/natural gas,0,Standard,EE04|Electricity/LPG/natural gas,0
+EE04,What is the primary fuel or technology this household uses for cook...,Improved cookstove,35,Standard,EE04|Improved cookstove,35
+EE04,What is the primary fuel or technology this household uses for cook...,Firewood/charcoal/open fire,100,Standard,EE04|Firewood/charcoal/open fire,100
+EE04,What is the primary fuel or technology this household uses for cook...,Other,DK/NA — excluded,Excluded from denominator,EE04|Other,DK/NA
+EE05,Do household members experience respiratory or eye irritation sympt...,"Yes, frequently",100,Standard,"EE05|Yes, frequently",100
+EE05,Do household members experience respiratory or eye irritation sympt...,Occasionally,50,Standard,EE05|Occasionally,50
+EE05,Do household members experience respiratory or eye irritation sympt...,Never,0,Standard,EE05|Never,0
+EE05,Do household members experience respiratory or eye irritation sympt...,Not applicable,DK/NA — excluded,Excluded from denominator,EE05|Not applicable,DK/NA
+EE06,Does this household experience water scarcity that affects farming ...,"Yes, severe",100,Standard,"EE06|Yes, severe",100
+EE06,Does this household experience water scarcity that affects farming ...,"Yes, moderate",55,Standard,"EE06|Yes, moderate",55
+EE06,Does this household experience water scarcity that affects farming ...,No,0,Standard,EE06|No,0
+EE07,"Compared to 5 years ago, how would you describe the quality of agri...",Improved,0,Standard,EE07|Improved,0
+EE07,"Compared to 5 years ago, how would you describe the quality of agri...",Same,30,Standard,EE07|Same,30
+EE07,"Compared to 5 years ago, how would you describe the quality of agri...",Degraded,100,Standard,EE07|Degraded,100
+EE07,"Compared to 5 years ago, how would you describe the quality of agri...",Don't know,DK/NA — excluded,Excluded from denominator,EE07|Don't know,DK/NA
+EE08,"Has this household been affected by a flood, drought, or other natu...",Yes,100,Standard,EE08|Yes,100
+EE08,"Has this household been affected by a flood, drought, or other natu...",No,0,Standard,EE08|No,0
+EE09,Are you aware of any environmental conservation or clean energy pro...,Yes,0,Standard,EE09|Yes,0
+EE09,Are you aware of any environmental conservation or clean energy pro...,No,100,Standard,EE09|No,100
+EE10,Does this household practice any form of water conservation or reso...,"Yes, regularly",0,Standard,"EE10|Yes, regularly",0
+EE10,Does this household practice any form of water conservation or reso...,Occasionally,50,Standard,EE10|Occasionally,50
+EE10,Does this household practice any form of water conservation or reso...,No,100,Standard,EE10|No,100
+LV01,What is the current employment status of the primary working-age me...,Employed full-time,0,Standard,LV01|Employed full-time,0
+LV01,What is the current employment status of the primary working-age me...,Self-employed,10,Standard,LV01|Self-employed,10
+LV01,What is the current employment status of the primary working-age me...,Employed part-time,30,Standard,LV01|Employed part-time,30
+LV01,What is the current employment status of the primary working-age me...,Seeking work,80,Standard,LV01|Seeking work,80
+LV01,What is the current employment status of the primary working-age me...,Not seeking work,60,Standard,LV01|Not seeking work,60
+LV01,What is the current employment status of the primary working-age me...,Unable to work,90,Standard,LV01|Unable to work,90
+LV02,"Does this household's income cover its basic needs (food, housing, ...",Comfortably covers,0,Standard,LV02|Comfortably covers,0
+LV02,"Does this household's income cover its basic needs (food, housing, ...",Barely covers,55,Standard,LV02|Barely covers,55
+LV02,"Does this household's income cover its basic needs (food, housing, ...",Does not cover,100,Standard,LV02|Does not cover,100
+LV03,How stable is the household's main source of income throughout the ...,Stable year-round,0,Standard,LV03|Stable year-round,0
+LV03,How stable is the household's main source of income throughout the ...,"Seasonal, predictable",45,Standard,"LV03|Seasonal, predictable",45
+LV03,How stable is the household's main source of income throughout the ...,Irregular/unpredictable,100,Standard,LV03|Irregular/unpredictable,100
+LV04,How many different sources of income does this household currently ...,Three or more,0,Standard,LV04|Three or more,0
+LV04,How many different sources of income does this household currently ...,Two,35,Standard,LV04|Two,35
+LV04,How many different sources of income does this household currently ...,One,70,Standard,LV04|One,70
+LV04,How many different sources of income does this household currently ...,None,100,Standard,LV04|None,100
+LV05,"Is agriculture, livestock, or fishing the primary source of livelih...","Yes, primary",N/A — Diagnostic,Diagnostic (not scored),"LV05|Yes, primary",DK/NA
+LV05,"Is agriculture, livestock, or fishing the primary source of livelih...","Yes, secondary",N/A — Diagnostic,Diagnostic (not scored),"LV05|Yes, secondary",DK/NA
+LV05,"Is agriculture, livestock, or fishing the primary source of livelih...",No,N/A — Diagnostic,Diagnostic (not scored),LV05|No,DK/NA
+LV06,Does this household have adequate access to agricultural inputs and...,"Yes, both",0,Standard,"LV06|Yes, both",0
+LV06,Does this household have adequate access to agricultural inputs and...,Inputs only,50,Standard,LV06|Inputs only,50
+LV06,Does this household have adequate access to agricultural inputs and...,Market only,50,Standard,LV06|Market only,50
+LV06,Does this household have adequate access to agricultural inputs and...,Neither,100,Standard,LV06|Neither,100
+LV06,Does this household have adequate access to agricultural inputs and...,Not applicable,DK/NA — excluded,Excluded from denominator,LV06|Not applicable,DK/NA
+LV07,What is the single biggest constraint limiting agricultural/livesto...,Water,N/A — Diagnostic,Diagnostic (not scored),LV07|Water,DK/NA
+LV07,What is the single biggest constraint limiting agricultural/livesto...,irrigation,N/A — Diagnostic,Diagnostic (not scored),LV07|irrigation,DK/NA
+LV07,What is the single biggest constraint limiting agricultural/livesto...,Land size,N/A — Diagnostic,Diagnostic (not scored),LV07|Land size,DK/NA
+LV07,What is the single biggest constraint limiting agricultural/livesto...,Inputs cost,N/A — Diagnostic,Diagnostic (not scored),LV07|Inputs cost,DK/NA
+LV07,What is the single biggest constraint limiting agricultural/livesto...,Market access,N/A — Diagnostic,Diagnostic (not scored),LV07|Market access,DK/NA
+LV07,What is the single biggest constraint limiting agricultural/livesto...,Climate,N/A — Diagnostic,Diagnostic (not scored),LV07|Climate,DK/NA
+LV07,What is the single biggest constraint limiting agricultural/livesto...,weather,N/A — Diagnostic,Diagnostic (not scored),LV07|weather,DK/NA
+LV07,What is the single biggest constraint limiting agricultural/livesto...,Lack of equipment,N/A — Diagnostic,Diagnostic (not scored),LV07|Lack of equipment,DK/NA
+LV07,What is the single biggest constraint limiting agricultural/livesto...,Lack of skills,N/A — Diagnostic,Diagnostic (not scored),LV07|Lack of skills,DK/NA
+LV07,What is the single biggest constraint limiting agricultural/livesto...,Other,N/A — Diagnostic,Diagnostic (not scored),LV07|Other,DK/NA
+LV08,Does this household currently own or operate a small business or mi...,Yes,N/A — Diagnostic,Diagnostic (not scored),LV08|Yes,DK/NA
+LV08,Does this household currently own or operate a small business or mi...,No,N/A — Diagnostic,Diagnostic (not scored),LV08|No,DK/NA
+LV09,"If not currently operating a business, would members of this househ...","Yes, with a clear idea",N/A — Diagnostic,Diagnostic (not scored),"LV09|Yes, with a clear idea",DK/NA
+LV09,"If not currently operating a business, would members of this househ...","Yes, but no clear idea",N/A — Diagnostic,Diagnostic (not scored),"LV09|Yes, but no clear idea",DK/NA
+LV09,"If not currently operating a business, would members of this househ...",No interest,N/A — Diagnostic,Diagnostic (not scored),LV09|No interest,DK/NA
+LV09,"If not currently operating a business, would members of this househ...",Not applicable,N/A — Diagnostic,Diagnostic (not scored),LV09|Not applicable,DK/NA
+LV10,What is the main barrier preventing this household from starting or...,Lack of capital,90,Standard,LV10|Lack of capital,90
+LV10,What is the main barrier preventing this household from starting or...,Lack of skills/training,60,Standard,LV10|Lack of skills/training,60
+LV10,What is the main barrier preventing this household from starting or...,Lack of market,70,Standard,LV10|Lack of market,70
+LV10,What is the main barrier preventing this household from starting or...,Regulatory/permit issues,50,Standard,LV10|Regulatory/permit issues,50
+LV10,What is the main barrier preventing this household from starting or...,Lack of mentorship,40,Standard,LV10|Lack of mentorship,40
+LV10,What is the main barrier preventing this household from starting or...,Other,DK/NA — excluded,Excluded from denominator,LV10|Other,DK/NA
+LV11,"Does this household have access to a bank account, microfinance, or...","Yes, easily",0,Standard,"LV11|Yes, easily",0
+LV11,"Does this household have access to a bank account, microfinance, or...","Yes, with difficulty",50,Standard,"LV11|Yes, with difficulty",50
+LV11,"Does this household have access to a bank account, microfinance, or...",No access,100,Standard,LV11|No access,100
+LV12,Do working-age members of this household hold any vocational or tec...,Yes,0,Standard,LV12|Yes,0
+LV12,Do working-age members of this household hold any vocational or tec...,No,100,Standard,LV12|No,100
+LV12,Do working-age members of this household hold any vocational or tec...,Don't know,DK/NA — excluded,Excluded from denominator,LV12|Don't know,DK/NA
+LV13,Have any working-age members of this household participated in a jo...,Yes,0,Standard,LV13|Yes,0
+LV13,Have any working-age members of this household participated in a jo...,No,100,Standard,LV13|No,100
+LV14,"Are the women in this household employed, self-employed, or activel...",Yes,0,Standard,LV14|Yes,0
+LV14,"Are the women in this household employed, self-employed, or activel...","No, by choice",20,Standard,"LV14|No, by choice",20
+LV14,"Are the women in this household employed, self-employed, or activel...","No, due to barriers",100,Standard,"LV14|No, due to barriers",100
+LV14,"Are the women in this household employed, self-employed, or activel...",Not applicable,DK/NA — excluded,Excluded from denominator,LV14|Not applicable,DK/NA
+LV15,"If women in this household face barriers to working, what is the pr...",Childcare/household duties,60,Standard,LV15|Childcare/household duties,60
+LV15,"If women in this household face barriers to working, what is the pr...",Cultural/social norms,80,Standard,LV15|Cultural/social norms,80
+LV15,"If women in this household face barriers to working, what is the pr...",Lack of nearby opportunities,70,Standard,LV15|Lack of nearby opportunities,70
+LV15,"If women in this household face barriers to working, what is the pr...",Transportation,55,Standard,LV15|Transportation,55
+LV15,"If women in this household face barriers to working, what is the pr...",Lack of skills,50,Standard,LV15|Lack of skills,50
+LV15,"If women in this household face barriers to working, what is the pr...",Not applicable,DK/NA — excluded,Excluded from denominator,LV15|Not applicable,DK/NA
+LV16,"If women in this household earn income, do they have control over h...",Full control,0,Standard,LV16|Full control,0
+LV16,"If women in this household earn income, do they have control over h...",Shared decision,30,Standard,LV16|Shared decision,30
+LV16,"If women in this household earn income, do they have control over h...",Limited control,100,Standard,LV16|Limited control,100
+LV16,"If women in this household earn income, do they have control over h...",Not applicable,DK/NA — excluded,Excluded from denominator,LV16|Not applicable,DK/NA
+IN01,Is this village connected to the main road network by a paved or al...,"Yes, paved",0,Standard,"IN01|Yes, paved",0
+IN01,Is this village connected to the main road network by a paved or al...,"Yes, graded/unpaved but usable",45,Standard,"IN01|Yes, graded/unpaved but usable",45
+IN01,Is this village connected to the main road network by a paved or al...,"No, often impassable",100,Standard,"IN01|No, often impassable",100
+IN02,Is regular public or shared transportation available connecting thi...,"Yes, daily",0,Standard,"IN02|Yes, daily",0
+IN02,Is regular public or shared transportation available connecting thi...,"Yes, limited schedule",50,Standard,"IN02|Yes, limited schedule",50
+IN02,Is regular public or shared transportation available connecting thi...,No regular service,100,Standard,IN02|No regular service,100
+IN03,"Are there times of the year (e.g., rainy season) when this village ...",Always accessible,0,Standard,IN03|Always accessible,0
+IN03,"Are there times of the year (e.g., rainy season) when this village ...",Occasionally difficult,50,Standard,IN03|Occasionally difficult,50
+IN03,"Are there times of the year (e.g., rainy season) when this village ...",Frequently inaccessible,100,Standard,IN03|Frequently inaccessible,100
+IN04,Is mobile phone network coverage reliable at this household's locat...,"Yes, strong signal",0,Standard,"IN04|Yes, strong signal",0
+IN04,Is mobile phone network coverage reliable at this household's locat...,Weak/intermittent signal,55,Standard,IN04|Weak/intermittent signal,55
+IN04,Is mobile phone network coverage reliable at this household's locat...,No coverage,100,Standard,IN04|No coverage,100
+IN05,"Does this household have access to functioning internet, through mo...","Yes, reliable",0,Standard,"IN05|Yes, reliable",0
+IN05,"Does this household have access to functioning internet, through mo...","Yes, but unreliable/slow",50,Standard,"IN05|Yes, but unreliable/slow",50
+IN05,"Does this household have access to functioning internet, through mo...",No access,100,Standard,IN05|No access,100
+IN06,Can members of this household use a smartphone or internet for basi...,"Yes, most members",0,Standard,"IN06|Yes, most members",0
+IN06,Can members of this household use a smartphone or internet for basi...,Some members,50,Standard,IN06|Some members,50
+IN06,Can members of this household use a smartphone or internet for basi...,No members,100,Standard,IN06|No members,100
+IN07,"Is the household's dwelling structurally adequate (sound roof, wall...","Yes, fully adequate",0,Standard,"IN07|Yes, fully adequate",0
+IN07,"Is the household's dwelling structurally adequate (sound roof, wall...",Partially adequate,50,Standard,IN07|Partially adequate,50
+IN07,"Is the household's dwelling structurally adequate (sound roof, wall...",Inadequate,100,Standard,IN07|Inadequate,100
+IN08,"On average, how many people share each room used for sleeping in th...",Floor=2,0,Numeric-Floor,IN08|Floor,0
+IN08,"On average, how many people share each room used for sleeping in th...",Ceiling=4,100,Numeric-Ceiling,IN08|Ceiling,100
+IN09,Is there a functioning market (for buying/selling goods) within rea...,"Yes, within village",0,Standard,"IN09|Yes, within village",0
+IN09,Is there a functioning market (for buying/selling goods) within rea...,"Yes, nearby (under 10km)",40,Standard,"IN09|Yes, nearby (under 10km)",40
+IN09,Is there a functioning market (for buying/selling goods) within rea...,"No, far (over 10km)",100,Standard,"IN09|No, far (over 10km)",100
+IN10,"Does this village have a functioning community center, public squar...","Yes, well-maintained",0,Standard,"IN10|Yes, well-maintained",0
+IN10,"Does this village have a functioning community center, public squar...","Yes, poorly maintained",50,Standard,"IN10|Yes, poorly maintained",50
+IN10,"Does this village have a functioning community center, public squar...",No,100,Standard,IN10|No,100
+SD01,"How safe do members of this household feel walking in this village,...",Very unsafe,100,Standard,SD01|Very unsafe,100
+SD01,"How safe do members of this household feel walking in this village,...",Unsafe,75,Standard,SD01|Unsafe,75
+SD01,"How safe do members of this household feel walking in this village,...",Neutral,50,Standard,SD01|Neutral,50
+SD01,"How safe do members of this household feel walking in this village,...",Safe,25,Standard,SD01|Safe,25
+SD01,"How safe do members of this household feel walking in this village,...",Very safe,0,Standard,SD01|Very safe,0
+SD02,Does this household currently receive support from any social prote...,Yes,0,Standard,SD02|Yes,0
+SD02,Does this household currently receive support from any social prote...,"No, but eligible",100,Standard,"SD02|No, but eligible",100
+SD02,Does this household currently receive support from any social prote...,"No, not eligible",0,Standard,"SD02|No, not eligible",0
+SD02,Does this household currently receive support from any social prote...,Don't know eligibility,DK/NA — excluded,Excluded from denominator,SD02|Don't know eligibility,DK/NA
+SD03,"Do elderly members of this household have access to adequate care, ...",Yes,0,Standard,SD03|Yes,0
+SD03,"Do elderly members of this household have access to adequate care, ...",Partially,50,Standard,SD03|Partially,50
+SD03,"Do elderly members of this household have access to adequate care, ...",No,100,Standard,SD03|No,100
+SD03,"Do elderly members of this household have access to adequate care, ...",Not applicable,DK/NA — excluded,Excluded from denominator,SD03|Not applicable,DK/NA
+SD04,"Are public facilities in this village (schools, health centers, pub...","Yes, mostly",0,Standard,"SD04|Yes, mostly",0
+SD04,"Are public facilities in this village (schools, health centers, pub...",Partially,50,Standard,SD04|Partially,50
+SD04,"Are public facilities in this village (schools, health centers, pub...",Not accessible,100,Standard,SD04|Not accessible,100
+SD04,"Are public facilities in this village (schools, health centers, pub...",No persons with disabilities in household,DK/NA — excluded,Excluded from denominator,SD04|No persons with disabilities in household,DK/NA
+SD05,Does any member of this household have a disability that affects th...,Yes,N/A — Diagnostic,Diagnostic (not scored),SD05|Yes,DK/NA
+SD05,Does any member of this household have a disability that affects th...,No,N/A — Diagnostic,Diagnostic (not scored),SD05|No,DK/NA
+SD06,Do you know how or where to report a case of child abuse or neglect...,Yes,0,Standard,SD06|Yes,0
+SD06,Do you know how or where to report a case of child abuse or neglect...,No,100,Standard,SD06|No,100
+SD07,"Are youth (ages 15-24) in this household engaged in any community, ...","Yes, actively",0,Standard,"SD07|Yes, actively",0
+SD07,"Are youth (ages 15-24) in this household engaged in any community, ...",Occasionally,50,Standard,SD07|Occasionally,50
+SD07,"Are youth (ages 15-24) in this household engaged in any community, ...",Not engaged,100,Standard,SD07|Not engaged,100
+SD08,Has any member of this household been married before the age of 18?,Yes,100,Standard,SD08|Yes,100
+SD08,Has any member of this household been married before the age of 18?,No,0,Standard,SD08|No,0
+SD08,Has any member of this household been married before the age of 18?,Prefer not to answer,DK/NA — excluded,Excluded from denominator,SD08|Prefer not to answer,DK/NA
+SD09,How strong is your household's sense of belonging and trust within ...,Very weak,100,Standard,SD09|Very weak,100
+SD09,How strong is your household's sense of belonging and trust within ...,Weak,75,Standard,SD09|Weak,75
+SD09,How strong is your household's sense of belonging and trust within ...,Moderate,50,Standard,SD09|Moderate,50
+SD09,How strong is your household's sense of belonging and trust within ...,Strong,25,Standard,SD09|Strong,25
+SD09,How strong is your household's sense of belonging and trust within ...,Very strong,0,Standard,SD09|Very strong,0
+SD10,Has this household been involved in or affected by an unresolved co...,Yes,100,Standard,SD10|Yes,100
+SD10,Has this household been involved in or affected by an unresolved co...,No,0,Standard,SD10|No,0
+SD11,"Is there an active community group, council, or committee in this v...","Yes, active",0,Standard,"SD11|Yes, active",0
+SD11,"Is there an active community group, council, or committee in this v...",Exists but inactive,60,Standard,SD11|Exists but inactive,60
+SD11,"Is there an active community group, council, or committee in this v...",None,100,Standard,SD11|None,100
+CU01,"Does this village have cultural heritage sites, crafts, or traditio...","Yes, actively preserved",0,Standard,"CU01|Yes, actively preserved",0
+CU01,"Does this village have cultural heritage sites, crafts, or traditio...",Exist but undocumented/at risk,60,Standard,CU01|Exist but undocumented/at risk,60
+CU01,"Does this village have cultural heritage sites, crafts, or traditio...",None identified,100,Standard,CU01|None identified,100
+CU02,"Do you feel that local traditions, crafts, or heritage sites are at...",High risk,100,Standard,CU02|High risk,100
+CU02,"Do you feel that local traditions, crafts, or heritage sites are at...",Some risk,50,Standard,CU02|Some risk,50
+CU02,"Do you feel that local traditions, crafts, or heritage sites are at...",Low risk,0,Standard,CU02|Low risk,0
+CU02,"Do you feel that local traditions, crafts, or heritage sites are at...",Don't know,DK/NA — excluded,Excluded from denominator,CU02|Don't know,DK/NA
+CU03,"Are there any cultural, arts, or heritage programs/events available...",Yes,0,Standard,CU03|Yes,0
+CU03,"Are there any cultural, arts, or heritage programs/events available...",No,100,Standard,CU03|No,100
+CU03,"Are there any cultural, arts, or heritage programs/events available...",Don't know,DK/NA — excluded,Excluded from denominator,CU03|Don't know,DK/NA
+CU04,"Has any member of this household participated in a local cultural, ...",Yes,0,Standard,CU04|Yes,0
+CU04,"Has any member of this household participated in a local cultural, ...",No,100,Standard,CU04|No,100
+CU05,How proud do members of this household feel about the village's cul...,Not at all proud,100,Standard,CU05|Not at all proud,100
+CU05,How proud do members of this household feel about the village's cul...,Slightly proud,75,Standard,CU05|Slightly proud,75
+CU05,How proud do members of this household feel about the village's cul...,Moderately proud,50,Standard,CU05|Moderately proud,50
+CU05,How proud do members of this household feel about the village's cul...,Proud,25,Standard,CU05|Proud,25
+CU05,How proud do members of this household feel about the village's cul...,Very proud,0,Standard,CU05|Very proud,0
+CU06,"Are traditional skills, crafts, or knowledge being actively taught ...","Yes, actively",0,Standard,"CU06|Yes, actively",0
+CU06,"Are traditional skills, crafts, or knowledge being actively taught ...",Somewhat,50,Standard,CU06|Somewhat,50
+CU06,"Are traditional skills, crafts, or knowledge being actively taught ...",Not happening,100,Standard,CU06|Not happening,100
+GV01,How easy is it for this household to access government service cent...,Very difficult,100,Standard,GV01|Very difficult,100
+GV01,How easy is it for this household to access government service cent...,Difficult,75,Standard,GV01|Difficult,75
+GV01,How easy is it for this household to access government service cent...,Moderate,50,Standard,GV01|Moderate,50
+GV01,How easy is it for this household to access government service cent...,Easy,25,Standard,GV01|Easy,25
+GV01,How easy is it for this household to access government service cent...,Very easy,0,Standard,GV01|Very easy,0
+GV02,Do all members of this household have complete civil documentation ...,"Yes, all",0,Standard,"GV02|Yes, all",0
+GV02,Do all members of this household have complete civil documentation ...,Some missing,70,Standard,GV02|Some missing,70
+GV02,Do all members of this household have complete civil documentation ...,Don't know,DK/NA — excluded,Excluded from denominator,GV02|Don't know,DK/NA
+GV03,"Has this household used any government digital/e-service (e.g., onl...",Yes,0,Standard,GV03|Yes,0
+GV03,"Has this household used any government digital/e-service (e.g., onl...","No, but aware",60,Standard,"GV03|No, but aware",60
+GV03,"Has this household used any government digital/e-service (e.g., onl...","No, unaware of options",100,Standard,"GV03|No, unaware of options",100
+GV04,"If used, how satisfied were you with the e-government service exper...",Very dissatisfied,100,Standard,GV04|Very dissatisfied,100
+GV04,"If used, how satisfied were you with the e-government service exper...",Dissatisfied,75,Standard,GV04|Dissatisfied,75
+GV04,"If used, how satisfied were you with the e-government service exper...",Neutral,50,Standard,GV04|Neutral,50
+GV04,"If used, how satisfied were you with the e-government service exper...",Satisfied,25,Standard,GV04|Satisfied,25
+GV04,"If used, how satisfied were you with the e-government service exper...",Very satisfied,0,Standard,GV04|Very satisfied,0
+GV04,"If used, how satisfied were you with the e-government service exper...",Not applicable,DK/NA — excluded,Excluded from denominator,GV04|Not applicable,DK/NA
+GV05,Do adult members of this household participate in any local committ...,"Yes, actively",0,Standard,"GV05|Yes, actively",0
+GV05,Do adult members of this household participate in any local committ...,Occasionally,50,Standard,GV05|Occasionally,50
+GV05,Do adult members of this household participate in any local committ...,No,100,Standard,GV05|No,100
+GV06,Do residents of this village feel they have a real opportunity to i...,No influence at all,100,Standard,GV06|No influence at all,100
+GV06,Do residents of this village feel they have a real opportunity to i...,Limited influence,75,Standard,GV06|Limited influence,75
+GV06,Do residents of this village feel they have a real opportunity to i...,Moderate influence,50,Standard,GV06|Moderate influence,50
+GV06,Do residents of this village feel they have a real opportunity to i...,Strong influence,25,Standard,GV06|Strong influence,25
+GV06,Do residents of this village feel they have a real opportunity to i...,Very strong influence,0,Standard,GV06|Very strong influence,0
+GV07,How much do you trust the local governing or administrative bodies ...,No trust,100,Standard,GV07|No trust,100
+GV07,How much do you trust the local governing or administrative bodies ...,Low trust,75,Standard,GV07|Low trust,75
+GV07,How much do you trust the local governing or administrative bodies ...,Moderate trust,50,Standard,GV07|Moderate trust,50
+GV07,How much do you trust the local governing or administrative bodies ...,High trust,25,Standard,GV07|High trust,25
+GV07,How much do you trust the local governing or administrative bodies ...,Very high trust,0,Standard,GV07|Very high trust,0
+GV08,Do you know of a formal channel to file a complaint or grievance ab...,Yes,0,Standard,GV08|Yes,0
+GV08,Do you know of a formal channel to file a complaint or grievance ab...,No,100,Standard,GV08|No,100
