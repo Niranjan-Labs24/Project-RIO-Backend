@@ -41,7 +41,11 @@ export const ROLE_MATRIX: RoleDef[] = [
     // Runs AI Classification themselves after submitting evidence (write),
     // but doesn't decide it — approve/override stays Reviewer/Approver-only.
     perm('aiReview', { read: true, write: true }),
-    perm('priorityScoring', RO),
+    // `create` (not full write/approve) — lets them trigger
+    // Recalculate/Run Priority Scoring on their own studies' Insights page,
+    // same as Admin; they still can't approve a priority score elsewhere in
+    // the app (no such action exists on this role's other screens anyway).
+    perm('priorityScoring', { read: true, create: true }),
     perm('reportsDashboards', { read: true, export: true }),
     // Read-only Archive + able to request cross-org Sharing access (the
     // owning org's admin still has to approve — see SharingService.decide).
