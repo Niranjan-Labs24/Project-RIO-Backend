@@ -185,7 +185,7 @@ export class CitizenService {
       });
     }
 
-    const row = await this.tenant.runAsOrg(link.orgId, async (tx) => {
+    const { row, needTitle } = await this.tenant.runAsOrg(link.orgId, async (tx) => {
       // Belt-and-suspenders: also block a second submission from the same
       // contact for this Need even via a *fresh* OTP request/verification,
       // not just a reused challenge. Scoped to the Need, not the Study — see
@@ -199,19 +199,22 @@ export class CitizenService {
         });
       }
 
-      const created = await tx.surveyResponse.create({
-        data: {
-          orgId: link.orgId,
-          needId: link.needId,
-          studyId: link.studyId,
-          surveyLinkId: link.id,
-          contact: challenge.contact,
-          contactName: payload.contactName ?? null,
-          answers: payload.answers as unknown as Prisma.InputJsonValue,
-        },
-      });
+      const [created, need] = await Promise.all([
+        tx.surveyResponse.create({
+          data: {
+            orgId: link.orgId,
+            needId: link.needId,
+            studyId: link.studyId,
+            surveyLinkId: link.id,
+            contact: challenge.contact,
+            contactName: payload.contactName ?? null,
+            answers: payload.answers as unknown as Prisma.InputJsonValue,
+          },
+        }),
+        tx.need.findUnique({ where: { id: link.needId } }),
+      ]);
       await tx.citizenOtpChallenge.update({ where: { id: challenge.id }, data: { consumedAt: new Date() } });
-      return created;
+      return { row: created, needTitle: need?.title ?? link.needId };
     });
     // RIO-NFR-002 privacy audit: no signed-in actor exists for this request
     // (citizen submissions are unauthenticated), so this is filed under the
@@ -219,11 +222,13 @@ export class CitizenService {
     // no ambient context" path AuditService already supports for
     // cross-org admin actions. Contact/answers are never logged in the
     // metadata; only that a submission happened, when, and for which Need.
+    // Label the Need by its own title, not its id — the Audit Log is a
+    // human-facing screen and a raw UUID tells a reader nothing.
     await this.audit.record({
       action: 'create',
       entityType: 'survey_response',
       entityId: row.id,
-      entityLabel: `Survey response submitted for need ${link.needId}`,
+      entityLabel: `Survey response submitted for need "${needTitle}"`,
       organizationId: link.orgId,
     });
     return { id: row.id, submittedAt: row.submittedAt.toISOString() };

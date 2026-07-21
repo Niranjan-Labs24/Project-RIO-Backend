@@ -1,7 +1,14 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
-import { SaveSurveyDraftBody, SaveSurveyDraftDto, UpdateSurveyQuestionsBody, UpdateSurveyQuestionsDto } from './surveys.contract';
+import {
+  RejectSurveyBody,
+  RejectSurveyDto,
+  SetMethodologyVersionBody,
+  SetMethodologyVersionDto,
+  UpdateSurveyQuestionsBody,
+  UpdateSurveyQuestionsDto,
+} from './surveys.contract';
 import { SurveysService } from './surveys.service';
 
 @Controller()
@@ -35,13 +42,41 @@ export class SurveysController {
     return this.service.updateQuestions(id, body.questions);
   }
 
-  @Post('surveys/:id/save-draft')
+  // Researcher-only, same editability window as updateQuestions — see
+  // SurveysService#assertEditable.
+  @Patch('surveys/:id/methodology-version')
   @RequirePermission('surveyBuilder', 'write')
-  saveDraft(
+  setMethodologyVersion(
     @Param('id') id: string,
-    @Body(new TypeBoxValidationPipe(SaveSurveyDraftBody)) body: SaveSurveyDraftDto,
+    @Body(new TypeBoxValidationPipe(SetMethodologyVersionBody)) body: SetMethodologyVersionDto,
   ) {
-    return this.service.saveDraft(id, body.status);
+    return this.service.setMethodologyVersion(id, body.version);
+  }
+
+  // Researcher: hand the current draft (or a fixed-up rejected one) to the
+  // Approver. Content itself is saved separately, via updateQuestions above
+  // — this route only ever moves status.
+  @Post('surveys/:id/submit')
+  @RequirePermission('surveyBuilder', 'write')
+  submitForApproval(@Param('id') id: string) {
+    return this.service.submitForApproval(id);
+  }
+
+  // Approver-only from here down — never a co-author, so no write/create
+  // grant lets a role reach these; only `approve` does (see role-matrix.ts).
+  @Post('surveys/:id/approve')
+  @RequirePermission('surveyBuilder', 'approve')
+  approveAndPublish(@Param('id') id: string) {
+    return this.service.approveAndPublish(id);
+  }
+
+  @Post('surveys/:id/reject')
+  @RequirePermission('surveyBuilder', 'approve')
+  rejectSurvey(
+    @Param('id') id: string,
+    @Body(new TypeBoxValidationPipe(RejectSurveyBody)) body: RejectSurveyDto,
+  ) {
+    return this.service.rejectSurvey(id, body.comments);
   }
 
   @Get('surveys/public/:id')

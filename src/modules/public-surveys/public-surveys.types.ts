@@ -47,6 +47,16 @@ export interface SurveyResponseSummary {
   submittedAt: string;
 }
 
+/** A survey can collect thousands of public responses — the list view is
+ * server-paginated, never "fetch everything and scroll" (see
+ * PublicSurveysService#listResponses). */
+export interface SurveyResponseListResult {
+  items: SurveyResponseSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 /** One answered question, enriched with the question's own text/type so the
  * "View Response" UI never has to cross-reference the survey separately —
  * `answers` on the raw SurveyResponse row is keyed by SurveyQuestion id,
@@ -60,4 +70,27 @@ export interface SurveyResponseAnswer {
 
 export interface SurveyResponseDetail extends SurveyResponseSummary {
   answers: SurveyResponseAnswer[];
+}
+
+/** One respondent's answer to one specific question — a row in the
+ * dedicated per-question responses page (see
+ * PublicSurveysService#listQuestionResponses). Replaces loading every
+ * response's full answer set client-side just to filter down to one
+ * question — a survey can collect thousands of responses. */
+export interface QuestionResponseRow {
+  responseId: string;
+  respondentName: string | null;
+  contact: string;
+  answer: string | null;
+  submittedAt: string;
+}
+
+export interface QuestionResponseListResult {
+  questionId: string;
+  questionText: string;
+  answerType: string;
+  items: QuestionResponseRow[];
+  total: number;
+  limit: number;
+  offset: number;
 }

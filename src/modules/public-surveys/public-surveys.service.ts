@@ -10,8 +10,10 @@ import type {
   CreateSurveyLinkPayload,
   PublicSurveyLink,
   PublicSurveyLinkRow,
+  QuestionResponseListResult,
   SurveyResponseAnswer,
   SurveyResponseDetail,
+  SurveyResponseListResult,
   SurveyResponseSummary,
 } from './public-surveys.types';
 
@@ -92,15 +94,41 @@ export class PublicSurveysService {
   // SurveyResponse rows (see CitizenService.submitResponse) — never the
   // separate Survey Builder preview response table (SurveyBuilderResponse).
   // `surveyLinkId` narrows to one link; omitted = every link for this Need.
-  async listResponses(needId: string, surveyLinkId?: string): Promise<SurveyResponseSummary[]> {
+  // Server-paginated (same take/skip clamp as StudiesService#list) — a
+  // popular public link can collect thousands of responses, so the list
+  // page never loads more than one page's worth at a time.
+  async listResponses(
+    needId: string,
+    opts: { surveyLinkId?: string; limit?: number; offset?: number; search?: string } = {},
+  ): Promise<SurveyResponseListResult> {
     await this.findNeedOrThrow(needId);
-    const rows = await this.tenant.runInOrgContext((tx) =>
-      tx.surveyResponse.findMany({
-        where: { needId, ...(surveyLinkId ? { surveyLinkId } : {}) },
-        orderBy: { submittedAt: 'desc' },
-      }),
+    const take = Math.min(Math.max(opts.limit ?? 10, 1), 200);
+    const skip = Math.max(opts.offset ?? 0, 0);
+    const search = opts.search?.trim();
+    const where = {
+      needId,
+      ...(opts.surveyLinkId ? { surveyLinkId: opts.surveyLinkId } : {}),
+      ...(search
+        ? {
+            OR: [
+              { contactName: { contains: search, mode: 'insensitive' as const } },
+              { contact: { contains: search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
+    const [rows, total] = await this.tenant.runInOrgContext((tx) =>
+      Promise.all([
+        tx.surveyResponse.findMany({ where, orderBy: { submittedAt: 'desc' }, take, skip }),
+        tx.surveyResponse.count({ where }),
+      ]),
     );
-    return rows.map((r) => this.toResponseSummary(r));
+    return {
+      items: rows.map((r) => this.toResponseSummary(r)),
+      total,
+      limit: take,
+      offset: skip,
+    };
   }
 
   // Same rows as listResponses, but with each one's full answers already
@@ -118,6 +146,57 @@ export class PublicSurveysService {
       return { rows, questionMap };
     });
     return rows.map((r) => this.toResponseDetail(r, questionMap));
+  }
+
+  // Backs the dedicated per-question responses page — never load every
+  // response's full answer set client-side just to filter down to one
+  // question (that's what the old dialog did); paginate and search at the
+  // DB level exactly like listResponses above.
+  async listQuestionResponses(
+    needId: string,
+    questionId: string,
+    opts: { limit?: number; offset?: number; search?: string } = {},
+  ): Promise<QuestionResponseListResult> {
+    await this.findNeedOrThrow(needId);
+    const take = Math.min(Math.max(opts.limit ?? 10, 1), 200);
+    const skip = Math.max(opts.offset ?? 0, 0);
+    const search = opts.search?.trim();
+    const where = {
+      needId,
+      ...(search
+        ? {
+            OR: [
+              { contactName: { contains: search, mode: 'insensitive' as const } },
+              { contact: { contains: search, mode: 'insensitive' as const } },
+            ],
+          }
+        : {}),
+    };
+    const { rows, total, questionMap } = await this.tenant.runInOrgContext(async (tx) => {
+      const [rows, total, questionMap] = await Promise.all([
+        tx.surveyResponse.findMany({ where, orderBy: { submittedAt: 'desc' }, take, skip }),
+        tx.surveyResponse.count({ where }),
+        this.buildQuestionMap(tx, needId),
+      ]);
+      return { rows, total, questionMap };
+    });
+
+    const question = questionMap.get(questionId);
+    return {
+      questionId,
+      questionText: question?.questionText ?? '',
+      answerType: question?.answerType ?? 'long_text',
+      total,
+      limit: take,
+      offset: skip,
+      items: rows.map((r) => ({
+        responseId: r.id,
+        respondentName: r.contactName,
+        contact: r.contact,
+        answer: ((r.answers ?? {}) as Record<string, string>)[questionId] ?? null,
+        submittedAt: r.submittedAt.toISOString(),
+      })),
+    };
   }
 
   async getResponse(needId: string, responseId: string): Promise<SurveyResponseDetail> {

@@ -23,6 +23,8 @@ export interface NeedRow {
   status: NeedStatus;
   domain: string | null;
   subDomain: string | null;
+  aiSuggestedDomain: string | null;
+  aiSuggestedSubDomain: string | null;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
@@ -37,8 +39,16 @@ export interface Need {
   source: NeedSource;
   referenceId: string | null;
   status: NeedStatus;
+  // Manual, authoritative Domain Category — set by the Researcher at
+  // creation (mandatory on the manual-entry form), editable while still
+  // `draft`. This is what reporting/scoring/downstream processing reads.
   domain: string | null;
   subDomain: string | null;
+  // AI Classification's own suggestion, stored for transparency/future
+  // reference only once a human reviews it — never the authoritative
+  // value, never read downstream. See AiDecisionsService.review.
+  aiSuggestedDomain: string | null;
+  aiSuggestedSubDomain: string | null;
   createdBy: string;
   // Resolved display name for Entered By — null if the creating user has
   // since been removed (e.g. no self-org lookup for a deleted account).
@@ -51,6 +61,8 @@ export interface CreateNeedPayload {
   title: string;
   statement: string;
   village: string[];
+  domain: string;
+  subDomain: string;
   referenceId?: string;
 }
 
@@ -58,6 +70,8 @@ export interface UpdateNeedPayload {
   title?: string;
   statement?: string;
   village?: string[];
+  domain?: string;
+  subDomain?: string;
   referenceId?: string | null;
 }
 

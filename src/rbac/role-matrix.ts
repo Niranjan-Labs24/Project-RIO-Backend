@@ -59,14 +59,27 @@ export const ROLE_MATRIX: RoleDef[] = [
   ] },
   { id: 'role_human_reviewer', key: 'human_reviewer', name: 'Reviewer/Approver', description: 'Approves or modifies AI classification, priority, and duplicates before publishing.', crossEntity: false, permissions: [
     perm('entityTeam'), perm('rolesPermissions'), perm('onboardingConsent'),
-    perm('methodologyQuestionBank', RO), perm('studySurvey', RO), perm('dataCollection', RO),
+    perm('methodologyQuestionBank', RO),
+    // `create` (not full `write`) — once a survey is published, the
+    // Approver can generate its public data-collection links themselves
+    // rather than waiting on the Researcher, but still can't deactivate an
+    // existing link or edit the underlying survey (that stays `write`,
+    // which they don't hold).
+    perm('studySurvey', { read: true, create: true }),
+    perm('dataCollection', RO),
     perm('dataImport', RO), perm('citizenChannel', RO),
     perm('aiReview', { read: true, write: true, approve: true }),
     perm('priorityScoring', RO),
     // Reviewer's work starts at Studies/Reviewer-SLA, not an executive
     // dashboard, but they still need read access to Reports/Archive/Sharing
     // once a study's classification/review work is done.
-    perm('reportsDashboards', RO), perm('archiveSharingAudit', RO), perm('surveyBuilder'),
+    perm('reportsDashboards', RO), perm('archiveSharingAudit', RO),
+    // Survey Approval workflow: the Approver reviews and decides
+    // (approve/reject/publish — see SurveysService), but is never a
+    // co-author — no write/create, so they can't edit/add/delete questions,
+    // only `approve` (which also covers reject/publish, both decisions on
+    // an already-submitted survey, not content edits).
+    perm('surveyBuilder', { read: true, approve: true }),
   ] },
   { id: 'role_data_analyst', key: 'data_analyst', name: 'Data Analyst', description: 'Processes data, reviews quality, and prepares reports and dashboards.', crossEntity: false, permissions: [
     perm('entityTeam'), perm('rolesPermissions'), perm('onboardingConsent'),

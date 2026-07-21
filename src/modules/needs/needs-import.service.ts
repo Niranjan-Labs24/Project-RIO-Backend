@@ -47,10 +47,14 @@ export class NeedsImportService {
     const orgId = requireOrgId();
     const createdBy = requireActor();
 
-    const existingNeeds = await this.tenant.runInOrgContext(async (tx) => {
+    const { existingNeeds, studyTitle } = await this.tenant.runInOrgContext(async (tx) => {
       const study = await tx.study.findUnique({ where: { id: studyId } });
       if (!study) throw new NotFoundException({ error: { code: 'STUDY_NOT_FOUND', message: 'Study not found' } });
-      return tx.need.findMany({ where: { studyId }, select: { title: true, village: true, referenceId: true } });
+      const existingNeeds = await tx.need.findMany({
+        where: { studyId },
+        select: { title: true, village: true, referenceId: true },
+      });
+      return { existingNeeds, studyTitle: study.title };
     });
 
     const ext = extname(file.originalname).toLowerCase();
@@ -135,7 +139,7 @@ export class NeedsImportService {
         action: 'create',
         entityType: 'need',
         entityId: studyId,
-        entityLabel: `Bulk-imported ${imported} need(s) into study ${studyId}`,
+        entityLabel: `Bulk-imported ${imported} need(s) into "${studyTitle}"`,
       });
     }
 

@@ -80,7 +80,7 @@ export class AiDecisionsService {
       await tx.need.update({ where: { id: needId }, data: { status: 'ai_classified' } });
       return row;
     });
-    await this.audit.record({ action: 'create', entityType: 'ai_decision', entityId: created.id, entityLabel: `classification for need ${needId}` });
+    await this.audit.record({ action: 'create', entityType: 'ai_decision', entityId: created.id, entityLabel: `AI classification for need "${need.title}"` });
     return this.toAiDecision(created);
   }
 
@@ -113,7 +113,7 @@ export class AiDecisionsService {
 
   async review(id: string, payload: ReviewDecisionPayload): Promise<AiDecision> {
     const decidedBy = requireActor();
-    const updated = await this.tenant.runInOrgContext(async (tx) => {
+    const { updated, needTitle } = await this.tenant.runInOrgContext(async (tx) => {
       const existing = (await tx.aiDecision.findUnique({ where: { id } })) as unknown as AiDecisionRow | null;
       if (!existing) throw new NotFoundException({ error: { code: 'AI_DECISION_NOT_FOUND', message: 'AI decision not found' } });
       // A decision can only be reviewed once — without this, a second
@@ -149,18 +149,22 @@ export class AiDecisionsService {
       })) as unknown as AiDecisionRow;
 
       if (payload.decision === 'approved' || payload.decision === 'modified') {
-        // Approved (as-is) or modified (overridden) both produce a final
-        // domain/sub-domain — write it onto the Need so Survey Builder's
-        // recommend-questions has something to key off.
+        // Approved (as-is) or modified (overridden) both produce a final AI
+        // suggestion — stored on aiSuggestedDomain/aiSuggestedSubDomain for
+        // transparency/future reference only. `domain`/`subDomain` are the
+        // Researcher's own manual, authoritative selection made at Need
+        // creation (see NeedsService.create) and are never overwritten
+        // here — this review no longer decides what Survey Builder's
+        // Question Bank matching or any downstream reporting/scoring uses.
         await tx.need.update({ where: { id: row.needId }, data: { status: 'reviewer_approved' } });
         const source =
           payload.decision === 'modified' && payload.overrideValue
             ? (payload.overrideValue as { domains?: string[]; subDomains?: string[] })
             : (existing.suggestion as { domains?: string[]; subDomains?: string[] } | null);
-        const domain = source?.domains?.[0];
-        const subDomain = source?.subDomains?.[0];
-        if (domain && subDomain) {
-          await tx.need.update({ where: { id: row.needId }, data: { domain, subDomain } });
+        const aiSuggestedDomain = source?.domains?.[0];
+        const aiSuggestedSubDomain = source?.subDomains?.[0];
+        if (aiSuggestedDomain && aiSuggestedSubDomain) {
+          await tx.need.update({ where: { id: row.needId }, data: { aiSuggestedDomain, aiSuggestedSubDomain } });
         }
       } else {
         // Rejected: send the Need back to evidence_submitted so a fresh
@@ -168,7 +172,7 @@ export class AiDecisionsService {
         // which would misrepresent a rejection as an approval.
         await tx.need.update({ where: { id: row.needId }, data: { status: 'evidence_submitted' } });
       }
-      return row;
+      return { updated: row, needTitle: need.title };
     });
     // 'approved' surfaces as the 'approve' audit action (so an Audit Log
     // filter on Approved actually finds it) — 'modified'/'rejected' are
@@ -177,7 +181,7 @@ export class AiDecisionsService {
       action: payload.decision === 'approved' ? 'approve' : 'edit',
       entityType: 'ai_decision',
       entityId: updated.id,
-      entityLabel: `review for need ${updated.needId}`,
+      entityLabel: `Classification review for need "${needTitle}"`,
     });
     return this.toAiDecision(updated);
   }

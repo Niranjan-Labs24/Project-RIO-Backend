@@ -2,13 +2,15 @@ import { Body, Controller, Get, Param, Patch, Post, Query, Res } from '@nestjs/c
 import type { Response } from 'express';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
+import { parseIntParam } from '../../common/http/query.util';
 import { CreateSurveyLinkBody } from './public-surveys.contract';
 import { PublicSurveysService } from './public-surveys.service';
 import type {
   CreateSurveyLinkPayload,
   PublicSurveyLink,
+  QuestionResponseListResult,
   SurveyResponseDetail,
-  SurveyResponseSummary,
+  SurveyResponseListResult,
 } from './public-surveys.types';
 
 // Mounted under needs/:needId/... — each Need runs its own independent
@@ -45,8 +47,16 @@ export class PublicSurveysController {
   listResponses(
     @Param('needId') needId: string,
     @Query('surveyLinkId') surveyLinkId?: string,
-  ): Promise<SurveyResponseSummary[]> {
-    return this.surveys.listResponses(needId, surveyLinkId || undefined);
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+    @Query('search') search?: string,
+  ): Promise<SurveyResponseListResult> {
+    return this.surveys.listResponses(needId, {
+      surveyLinkId: surveyLinkId || undefined,
+      limit: parseIntParam(limit),
+      offset: parseIntParam(offset),
+      search: search || undefined,
+    });
   }
 
   // Same rows as GET survey-responses, with each one's answers already
@@ -89,6 +99,26 @@ export class PublicSurveysController {
       'Content-Disposition': `attachment; filename="survey-responses-${date}.csv"`,
     });
     res.end(csv);
+  }
+
+  // One question's answers across every response — backs the dedicated
+  // per-question responses page. Distinct segment count from
+  // `survey-responses/:responseId` below, so route order doesn't matter,
+  // but kept above it anyway for readability.
+  @Get('survey-responses/questions/:questionId')
+  @RequirePermission('studySurvey', 'read')
+  listQuestionResponses(
+    @Param('needId') needId: string,
+    @Param('questionId') questionId: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+    @Query('search') search?: string,
+  ): Promise<QuestionResponseListResult> {
+    return this.surveys.listQuestionResponses(needId, questionId, {
+      limit: parseIntParam(limit),
+      offset: parseIntParam(offset),
+      search: search || undefined,
+    });
   }
 
   // More specific than :linkId/deactivate above but less specific than

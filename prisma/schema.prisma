@@ -281,13 +281,26 @@ model Need {
   // against anything, purely a cross-reference back to their own records.
   referenceId String?  @map("reference_id") @db.VarChar(200)
   status    NeedStatus @default(draft)
-  // AI Classification's suggested/confirmed Domain + Sub-Domain for this
-  // Need (see the Domain/SubDomain reference tables) — set once a human
-  // approves an AI Classification decision (see AiDecisionsService.review).
-  // Nullable until then. Was Study-level; moved here since each Need now
-  // runs its own classification.
+  // The AUTHORITATIVE Domain + Sub-Domain for this Need — selected manually
+  // by the Researcher at creation (mandatory; see CreateNeedBody), sourced
+  // from the same Question Bank domain/sub-domain pairs Survey Builder
+  // already matches questions against (QuestionsService.getDomainOptions).
+  // This is what reporting/scoring/downstream processing reads — it is
+  // never overwritten by AI Classification. Nullable at the column level
+  // only for backward compatibility with rows created before this field
+  // existed (e.g. via NeedsImportService's bulk CSV path, which doesn't
+  // collect a domain) — the manual-entry API contract itself requires both.
   domain    String?    @db.VarChar(120)
   subDomain String?    @map("sub_domain") @db.VarChar(120)
+  // AI Classification's own suggestion — stored for transparency/future
+  // reference only, never read by anything downstream (Survey Builder's
+  // Question Bank matching, reporting, scoring all use `domain`/`subDomain`
+  // above instead). Written once a human approves or overrides an AI
+  // Classification decision (see AiDecisionsService.review) — the human's
+  // own review of the AI's suggestion still happens exactly as before, it
+  // just no longer writes onto the authoritative field.
+  aiSuggestedDomain    String? @map("ai_suggested_domain") @db.VarChar(120)
+  aiSuggestedSubDomain String? @map("ai_suggested_sub_domain") @db.VarChar(120)
   createdBy String     @map("created_by") @db.Uuid
   createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -777,6 +790,30 @@ model MethodologyConfig {
   @@map("methodology_configs")
 }
 
+// TEMPORARY / PLACEHOLDER — the real source of truth for selectable
+// Methodology Versions has not yet been clarified by the business (as of
+// the 2026-07 Survey Approval workflow clarifications). `MethodologyConfig`
+// above is a single current-baseline row, not a list a Researcher can pick
+// from. This is a minimal seeded lookup table standing in for that until a
+// real versioning/history source is defined — deliberately just an id +
+// label + ordering, with no other model referencing it by foreign key (see
+// Survey.methodologyVersion, which stores the chosen label as a plain
+// string snapshot, not a relation to this table) — so swapping this out
+// later never requires touching Survey or anything else that reads
+// `Survey.methodologyVersion`.
+// TODO(business): replace with the real methodology-version source once
+// clarified, and drop this table.
+model MethodologyVersionOption {
+  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  version   String   @db.VarChar(100)
+  isActive  Boolean  @default(true) @map("is_active")
+  // Display order in the Researcher's selector — ascending.
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("methodology_version_options")
+}
+
 // ──────── Question Bank / AI Survey Builder ────────
 
 // Global reference/master data (no org_id, no RLS — same pattern as
@@ -885,6 +922,28 @@ model Survey {
   createdBy String   @map("created_by") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // ──────── Survey Approval workflow ────────
+  // status also takes SUBMITTED and REJECTED now, alongside the existing
+  // DRAFT/PUBLISHED — see SurveysService for the state machine. The
+  // Researcher (surveyBuilder/write) owns DRAFT<->SUBMITTED; only the
+  // Approver (surveyBuilder/approve) can move SUBMITTED->PUBLISHED or
+  // SUBMITTED->REJECTED. No relation to User here — same "plain UUID,
+  // resolved by app code" convention as `createdBy` above, not a Prisma
+  // relation.
+  submittedAt      DateTime? @map("submitted_at") @db.Timestamptz(6)
+  // The Approver's reason for the most recent rejection — shown prominently
+  // to the Researcher when they reopen a REJECTED survey. Cleared on the
+  // next Submit for Approval, so it never lingers as stale feedback once a
+  // new round of review has started (the audit log keeps the full history
+  // regardless, this is only "the current outstanding note").
+  approverComments String?   @map("approver_comments")
+  approvedAt       DateTime? @map("approved_at") @db.Timestamptz(6)
+  approvedBy       String?   @map("approved_by") @db.Uuid
+  rejectedAt       DateTime? @map("rejected_at") @db.Timestamptz(6)
+  rejectedBy       String?   @map("rejected_by") @db.Uuid
+  publishedAt      DateTime? @map("published_at") @db.Timestamptz(6)
+  publishedBy      String?   @map("published_by") @db.Uuid
 
   org             Organisation           @relation(fields: [orgId], references: [id], onDelete: Cascade)
   need            Need                   @relation(fields: [needId], references: [id], onDelete: Cascade)

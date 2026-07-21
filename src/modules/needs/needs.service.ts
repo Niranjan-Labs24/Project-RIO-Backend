@@ -5,7 +5,7 @@ import { AuditService } from '../audit/audit.service';
 import type { AuditChange } from '../audit/audit.types';
 import { NEED_EDITABLE_STATUSES, type CreateNeedPayload, type Need, type NeedRow, type UpdateNeedPayload } from './needs.types';
 
-const DIFF_FIELDS = ['title', 'statement', 'village', 'referenceId'] as const;
+const DIFF_FIELDS = ['title', 'statement', 'village', 'domain', 'subDomain', 'referenceId'] as const;
 
 // The audit dialog renders `change.field` verbatim, so these are display
 // labels, not column names. `village` is stored under its original name but
@@ -15,6 +15,8 @@ const DIFF_FIELD_LABELS: Record<(typeof DIFF_FIELDS)[number], string> = {
   title: 'Title',
   statement: 'Statement',
   village: 'Governorate',
+  domain: 'Domain',
+  subDomain: 'Sub-Domain',
   referenceId: 'Reference ID',
 };
 
@@ -40,6 +42,8 @@ export class NeedsService {
           title: payload.title,
           statement: payload.statement,
           village: payload.village,
+          domain: payload.domain,
+          subDomain: payload.subDomain,
           // RIO-FR-001: this is the manual-create endpoint, so the Need
           // always came in this way — never accepted from the client.
           source: 'manual_entry',
@@ -80,6 +84,8 @@ export class NeedsService {
           ...(patch.title !== undefined ? { title: patch.title } : {}),
           ...(patch.statement !== undefined ? { statement: patch.statement } : {}),
           ...(patch.village !== undefined ? { village: patch.village } : {}),
+          ...(patch.domain !== undefined ? { domain: patch.domain } : {}),
+          ...(patch.subDomain !== undefined ? { subDomain: patch.subDomain } : {}),
           ...(patch.referenceId !== undefined ? { referenceId: patch.referenceId } : {}),
         },
       })) as NeedRow;
@@ -152,6 +158,8 @@ export class NeedsService {
       status: row.status,
       domain: row.domain,
       subDomain: row.subDomain,
+      aiSuggestedDomain: row.aiSuggestedDomain,
+      aiSuggestedSubDomain: row.aiSuggestedSubDomain,
       createdBy: row.createdBy,
       createdByName,
       createdAt: row.createdAt.toISOString(),
