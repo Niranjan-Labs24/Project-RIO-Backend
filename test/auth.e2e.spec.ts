@@ -29,7 +29,7 @@ describe('Auth (e2e)', () => {
     expect(res.body.user.email).toBe('admin@demo-ngo.org');
     expect(res.body.organization.name).toBe('Demo NGO');
     expect(res.body.role.key).toBe('ngo_admin');
-    expect(res.body.role.permissions).toHaveLength(12);
+    expect(res.body.role.permissions).toHaveLength(13);
     token = res.body.token;
   });
 

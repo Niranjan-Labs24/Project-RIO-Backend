@@ -25,7 +25,7 @@ describe('GET /api/roles (e2e)', () => {
     expect(res.body).toHaveLength(9);
     const admin = res.body.find((r: { key: string }) => r.key === 'ngo_admin');
     expect(admin.id).toBe('role_ngo_admin');
-    expect(admin.permissions).toHaveLength(12);
+    expect(admin.permissions).toHaveLength(13);
   });
 
   it('forbids a role without rolesPermissions:read', async () => {

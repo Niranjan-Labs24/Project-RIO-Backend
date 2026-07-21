@@ -37,7 +37,9 @@ describe('MailerService', () => {
     const svc = new MailerService(config());
     await svc.sendTemporaryPassword('a@b.test', 'Acme NGO', 'temp-pw-123');
 
-    const [message] = sendMail.mock.calls[0];
+    const firstCall = sendMail.mock.calls[0];
+    expect(firstCall).toBeDefined();
+    const message = firstCall![0];
     expect(message.subject).toContain('Acme NGO');
     for (const body of [message.text, message.html]) {
       expect(body).toContain('Acme NGO');

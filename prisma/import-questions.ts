@@ -43,7 +43,7 @@ function parseCSVLine(line: string): string[] {
 }
 
 async function main() {
-  const csvPath = path.join(__dirname, '..', '..', 'Project-RIO-Frontend', 'src', 'Project Rio 1 1(Question Bank).csv');
+  const csvPath = path.join(__dirname, '..', 'Village_Needs_Methodology_Implementation(Question Bank (Extended)).csv');
   
   if (!fs.existsSync(csvPath)) {
     console.error(`Error: Question Bank CSV not found at: ${csvPath}`);
@@ -59,24 +59,25 @@ async function main() {
   let importedCount = 0;
   let skippedCount = 0;
 
-  for (let idx = 4; idx < lines.length; idx++) {
+  // Header has 2 lines, data starts at index 2 (line 3)
+  for (let idx = 2; idx < lines.length; idx++) {
     const rawLine = lines[idx];
     if (!rawLine || !rawLine.trim()) {
       continue;
     }
 
     const columns = parseCSVLine(rawLine);
-    const questionId = columns[0];
-    const domain = columns[1];
-    const subDomain = columns[2];
-    const indicator = columns[3];
-    const kpi = columns[4];
-    const questionText = columns[5];
-    const rawAnswerType = columns[6];
-    const rawAnswerOptions = columns[7];
-    const requiredOptionalStr = columns[10];
-    const usedInMvpStr = columns[11];
-    const reportMapping = columns[12];
+    const questionId = columns[0] || '';
+    const domain = columns[1] || '';
+    const subDomain = columns[2] || '';
+    const indicator = columns[3] || '';
+    const kpi = columns[4] || '';
+    const questionText = columns[5] || '';
+    const rawAnswerType = columns[6] || '';
+    const rawAnswerOptions = columns[7] || '';
+    const analyticalCategory = columns[8] || null;
+    const rawDependency = columns[11] || '';
+    const rawDirection = columns[12] || '';
 
     if (!questionId || !/^[A-Z\d-]+$/i.test(questionId)) {
       skippedCount++;
@@ -84,30 +85,74 @@ async function main() {
     }
 
     let answerType = "text";
-    const typeLower = rawAnswerType?.toLowerCase() || "";
-    if (typeLower.includes("select") || typeLower.includes("likert")) {
+    const typeLower = rawAnswerType.toLowerCase();
+    let measurementMode = "SINGLE_SELECT";
+    let isScoreable = true;
+
+    if (typeLower.includes("likert")) {
+      measurementMode = "LIKERT_5";
       answerType = "select";
-    } else if (typeLower.includes("boolean")) {
-      answerType = "boolean";
+    } else if (typeLower.includes("multi select") || typeLower.includes("multi-select")) {
+      measurementMode = "MULTI_SELECT";
+      answerType = "select";
     } else if (typeLower.includes("numeric")) {
+      measurementMode = "NUMERIC";
       answerType = "numeric";
+    } else if (typeLower.includes("diagnostic")) {
+      measurementMode = "DIAGNOSTIC";
+      isScoreable = false;
+      answerType = "select";
+    } else if (typeLower.includes("open text") || typeLower.includes("open-text") || typeLower === "text") {
+      measurementMode = "OPEN_TEXT";
+      isScoreable = false;
+      answerType = "text";
+    } else if (typeLower.includes("select")) {
+      measurementMode = "SINGLE_SELECT";
+      answerType = "select";
+    } else if (typeLower.includes("boolean") || typeLower.includes("yes / no")) {
+      measurementMode = "SINGLE_SELECT";
+      answerType = "boolean";
     }
 
+    let severityDirection = "WORSENING_HIGHER";
+    if (rawDirection && rawDirection.toLowerCase().includes("lower=worse")) {
+      severityDirection = "WORSENING_LOWER";
+    }
+
+    const scoringLookupKey = questionId;
+
     let answerOptions: string[] | null = null;
-    if (rawAnswerOptions && rawAnswerOptions.trim() && rawAnswerOptions.toLowerCase() !== "open numeric value") {
-      // Options are delimited by " / " (slash with a space on each side) —
-      // a bare slash with no surrounding spaces is part of an option's own
-      // text (e.g. "Surface water (river/pond)", "Tanker/vendor"), not a
-      // separator. Splitting on a bare '/' broke those into two options
-      // each, visibly wrong in the UI (an unbalanced "(river" chip).
+    if (rawAnswerOptions && rawAnswerOptions.trim() && !rawAnswerOptions.toLowerCase().includes("open numeric")) {
       answerOptions = rawAnswerOptions
         .split(' / ')
         .map(opt => opt.trim())
         .filter(opt => opt.length > 0);
     }
 
-    const requiredOptional = requiredOptionalStr?.toLowerCase() === "required" ? "required" : "optional";
-    const usedInMvp = usedInMvpStr?.toLowerCase() === "no" ? false : true;
+    let conditionalRule: any = undefined;
+    if (rawDependency && rawDependency.toLowerCase() !== "unconditional") {
+      if (questionId === "H10") {
+        conditionalRule = { dependsOn: "H09", value: "YES" };
+      } else if (questionId === "ED05") {
+        conditionalRule = { dependsOn: "ED04", value: "YES" };
+      } else if (questionId === "LV07") {
+        conditionalRule = { dependsOn: "LV05", value: "YES" };
+      } else if (questionId === "LV15") {
+        conditionalRule = { dependsOn: "LV14", value: "YES" };
+      } else if (questionId === "SD04") {
+        conditionalRule = { dependsOn: "SD05", value: "YES" };
+      } else if (questionId === "GV04") {
+        conditionalRule = { dependsOn: "GV03", value: "YES" };
+      } else {
+        const match = rawDependency.match(/([A-Z\d]+)/i);
+        if (match) {
+          conditionalRule = { dependsOn: match[1], value: "YES" };
+        }
+      }
+    }
+
+    const requiredOptional = "required";
+    const usedInMvp = true;
 
     await prisma.question.upsert({
       where: { questionId },
@@ -121,7 +166,12 @@ async function main() {
         answerOptions: answerOptions ? JSON.parse(JSON.stringify(answerOptions)) : null,
         requiredOptional,
         usedInMvp,
-        reportMapping: reportMapping || null,
+        analyticalCategory,
+        measurementMode,
+        isScoreable,
+        severityDirection,
+        scoringLookupKey,
+        conditionalRule: conditionalRule !== undefined ? JSON.parse(JSON.stringify(conditionalRule)) : undefined,
       },
       create: {
         questionId,
@@ -134,7 +184,12 @@ async function main() {
         answerOptions: answerOptions ? JSON.parse(JSON.stringify(answerOptions)) : null,
         requiredOptional,
         usedInMvp,
-        reportMapping: reportMapping || null,
+        analyticalCategory,
+        measurementMode,
+        isScoreable,
+        severityDirection,
+        scoringLookupKey,
+        conditionalRule: conditionalRule !== undefined ? JSON.parse(JSON.stringify(conditionalRule)) : undefined,
       },
     });
 

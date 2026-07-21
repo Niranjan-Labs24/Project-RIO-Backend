@@ -5,8 +5,7 @@ import { requireActor, requireOrgId } from "../../tenancy/org-context";
 import { MethodologyConfigService } from "../methodology-config/methodology-config.service";
 import {
   DEFAULT_THRESHOLDS,
-  scoreNeed,
-  type AnsweredIndicatorQuestion,
+  mapPriorityLevel,
   type ScoringThresholds,
 } from "./scoring";
 import type { PriorityDashboardEntry, PriorityScore, PriorityScoreRow } from "./priority.types";
@@ -25,32 +24,41 @@ export class PriorityService {
     const thresholds = await this.loadThresholds();
 
     const row = await this.tenant.runInOrgContext(async (tx) => {
-      // Only Question Bank questions carry an `indicator` — open-ended/
-      // additional questions have none and don't participate in the score,
-      // same as the prior methodology's "open text feeds AI Summary only".
+      // Resolve study → survey to find the OVERALL ScoreRollup written by
+      // DeterministicScoringService (the real scoring engine). The old
+      // scoreNeed() heuristic has been removed — severity now comes entirely
+      // from the ScoringLookup-based engine.
       const survey = await tx.survey.findFirst({
-        where: { needId },
-        include: { surveyQuestions: { include: { question: true } } },
+        where: { needId, status: 'PUBLISHED' },
       });
-      const responses = await tx.surveyResponse.findMany({
-        where: { needId, ...(surveyLinkId ? { surveyLinkId } : {}) },
+      if (!survey) throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'No published survey found for this need.' } });
+
+      // Determine methodology version
+      const mv = await tx.methodologyVersion.findFirst({
+        where: survey.methodologyVersion ? { version: survey.methodologyVersion } : { status: 'PUBLISHED' },
+        orderBy: { createdAt: 'desc' },
       });
+
+      // Read the consolidated OVERALL rollup (villageId='') as the top-level score
+      const overallRollup = mv ? await tx.scoreRollup.findFirst({
+        where: {
+          studyId: need.studyId,
+          surveyId: survey.id,
+          villageId: '',
+          methodologyVersionId: mv.id,
+          rollupLevel: 'OVERALL',
+        }
+      }) : null;
+
+      const severity = overallRollup?.severityScore !== null && overallRollup?.severityScore !== undefined
+        ? Number(overallRollup.severityScore)
+        : 0;
+
       const qualityRows = await tx.responseQualityResult.findMany({
         where: { needId, surveyLinkId: surveyLinkId ?? null },
       });
-
-      const indicatorQuestions: AnsweredIndicatorQuestion[] = (survey?.surveyQuestions ?? [])
-        .filter((sq) => sq.question?.indicator)
-        .map((sq) => ({
-          indicator: sq.question!.indicator!,
-          answerType: sq.question!.answerType,
-          rawAnswers: responses
-            .map((r) => (r.answers as Record<string, unknown>)[sq.id])
-            .filter((a) => a !== undefined && a !== null && a !== ''),
-        }));
-
       const hasEquityFlag = this.determineEquityFlag(qualityRows);
-      const result = scoreNeed(indicatorQuestions, hasEquityFlag, thresholds);
+      const level = mapPriorityLevel(severity, hasEquityFlag, thresholds);
 
       return tx.priorityScore.create({
         data: {
@@ -58,11 +66,15 @@ export class PriorityService {
           needId,
           studyId: need.studyId,
           surveyLinkId: surveyLinkId ?? null,
-          overallScore: result.severity,
-          level: result.level,
-          gapType: result.gapType,
-          factors: result.contributions as unknown as Prisma.InputJsonValue,
-          cycleNote: result.level === "critical" || result.level === "high" ? "Acute — Cycle 1, awaiting trend" : null,
+          overallScore: severity,
+          level,
+          gapType: 'acute',
+          factors: (overallRollup ? {
+            source: 'ScoreRollup/OVERALL',
+            validResponseCount: overallRollup.validResponseCount,
+            confidenceLevel: overallRollup.confidenceLevel,
+          } : { source: 'no_rollup' }) as unknown as Prisma.InputJsonValue,
+          cycleNote: level === 'critical' || level === 'high' ? 'Acute — Cycle 1, awaiting trend' : null,
         },
       });
     });
@@ -179,5 +191,355 @@ export class PriorityService {
       isApproved: row.approvedAt !== null,
       approvedAt: row.approvedAt ? row.approvedAt.toISOString() : null,
     };
+  }
+
+  // --- Severity Scoring v1 Endpoints ---
+
+  async listMethodologyVersions(): Promise<any[]> {
+    return this.tenant.runAsSupervisor((tx) =>
+      tx.methodologyVersion.findMany({
+        orderBy: { createdAt: "desc" },
+      })
+    );
+  }
+
+  async createMethodologyVersion(payload: { name: string; version: string; description?: string }): Promise<any> {
+    const actorId = requireActor();
+    return this.tenant.runAsSupervisor((tx) =>
+      tx.methodologyVersion.create({
+        data: {
+          name: payload.name,
+          version: payload.version,
+          description: payload.description || null,
+          createdBy: actorId,
+        }
+      })
+    );
+  }
+
+  async uploadLookups(versionId: string, csvContent: string): Promise<any> {
+    const lines = csvContent.split(/\r?\n/);
+    let imported = 0;
+    
+    // Validate methodology version exists
+    const mv = await this.tenant.runAsSupervisor((tx) =>
+      tx.methodologyVersion.findUnique({ where: { id: versionId } })
+    );
+    if (!mv) {
+      throw new NotFoundException({ error: { code: 'METHODOLOGY_NOT_FOUND', message: 'Methodology version not found' } });
+    }
+
+    await this.tenant.runAsSupervisor(async (tx) => {
+      // Skip header line
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i];
+        if (!line || !line.trim()) continue;
+
+        const cols = this.parseCsvRow(line);
+        // columns format: methodologyVersion,questionId,lookupType,optionId,optionOrder,severityScore,numericFloor,numericCeiling,severityDirection,isExcluded,exclusionReason
+        const qId = cols[1];
+        const lookupType = cols[2];
+        const optionId = cols[3] || null;
+        const optionOrderStr = cols[4];
+        const severityScoreStr = cols[5];
+        const numericFloorStr = cols[6];
+        const numericCeilingStr = cols[7];
+        const severityDirection = cols[8] || null;
+        const isExcludedStr = cols[9];
+        const exclusionReason = cols[10] || null;
+
+        if (!qId || !lookupType) continue;
+
+        const optionOrder = optionOrderStr ? parseInt(optionOrderStr, 10) : null;
+        const severityScore = severityScoreStr ? parseFloat(severityScoreStr) : null;
+        const numericFloor = numericFloorStr ? parseFloat(numericFloorStr) : null;
+        const numericCeiling = numericCeilingStr ? parseFloat(numericCeilingStr) : null;
+        const isExcluded = isExcludedStr?.toLowerCase() === 'true';
+
+        // Check and upsert
+        const existing = await tx.scoringLookup.findFirst({
+          where: {
+            methodologyVersionId: versionId,
+            questionId: qId,
+            lookupType,
+            optionId,
+          }
+        });
+
+        if (existing) {
+          await tx.scoringLookup.update({
+            where: { id: existing.id },
+            data: {
+              optionOrder,
+              severityScore,
+              numericFloor,
+              numericCeiling,
+              severityDirection,
+              isExcluded,
+              exclusionReason,
+            }
+          });
+        } else {
+          await tx.scoringLookup.create({
+            data: {
+              methodologyVersionId: versionId,
+              questionId: qId,
+              lookupType,
+              optionId,
+              optionOrder,
+              severityScore,
+              numericFloor,
+              numericCeiling,
+              severityDirection,
+              isExcluded,
+              exclusionReason,
+            }
+          });
+        }
+        imported++;
+      }
+    });
+
+    return { imported };
+  }
+
+  private parseCsvRow(line: string): string[] {
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        if (inQuotes && line[i + 1] === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === ',' && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    result.push(current.trim());
+    return result;
+  }
+
+  async getDashboard(studyId: string, surveyId: string, villageId: string | null): Promise<any> {
+    const vId = villageId || '';
+    return this.tenant.runInOrgContext(async (tx) => {
+      // Find overall index
+      const overall = await tx.scoreRollup.findFirst({
+        where: { studyId, surveyId, villageId: vId, rollupLevel: 'OVERALL' }
+      });
+
+      // Find all domain rollups
+      const domains = await tx.scoreRollup.findMany({
+        where: { studyId, surveyId, villageId: vId, rollupLevel: 'DOMAIN' }
+      });
+
+      const subDomains = await tx.scoreRollup.findMany({
+        where: { studyId, surveyId, villageId: vId, rollupLevel: 'SUB_DOMAIN' }
+      });
+
+      const indicators = await tx.scoreRollup.findMany({
+        where: { studyId, surveyId, villageId: vId, rollupLevel: 'INDICATOR' }
+      });
+
+      const kpis = await tx.scoreRollup.findMany({
+        where: { studyId, surveyId, villageId: vId, rollupLevel: 'KPI' }
+      });
+
+      // Get methodology version name
+      const survey = await tx.survey.findUnique({ where: { id: surveyId } });
+      const version = survey?.methodologyVersion || 'v1.0';
+
+      return {
+        overall: overall ? {
+          severityScore: overall.severityScore !== null ? Number(overall.severityScore) : null,
+          confidenceLevel: overall.confidenceLevel,
+          validResponseCount: overall.validResponseCount,
+          dontKnowRate: Number(overall.dontKnowRate),
+        } : null,
+        domains: domains.map(d => ({
+          id: d.entityId,
+          name: d.entityNameSnapshot,
+          severityScore: d.severityScore !== null ? Number(d.severityScore) : null,
+          confidenceLevel: d.confidenceLevel,
+          validResponseCount: d.validResponseCount,
+        })),
+        subDomains: subDomains.map(d => ({
+          id: d.entityId,
+          name: d.entityNameSnapshot,
+          severityScore: d.severityScore !== null ? Number(d.severityScore) : null,
+          confidenceLevel: d.confidenceLevel,
+        })),
+        indicators: indicators.map(d => ({
+          id: d.entityId,
+          name: d.entityNameSnapshot,
+          severityScore: d.severityScore !== null ? Number(d.severityScore) : null,
+          confidenceLevel: d.confidenceLevel,
+        })),
+        kpis: kpis.map(d => ({
+          id: d.entityId,
+          name: d.entityNameSnapshot,
+          severityScore: d.severityScore !== null ? Number(d.severityScore) : null,
+          confidenceLevel: d.confidenceLevel,
+        })),
+        methodologyVersion: version,
+      };
+    });
+  }
+
+  async getKpiRanking(studyId: string, surveyId: string, villageId: string | null): Promise<any[]> {
+    const vId = villageId || '';
+    return this.tenant.runInOrgContext(async (tx) => {
+      const rollups = await tx.scoreRollup.findMany({
+        where: { studyId, surveyId, villageId: vId, rollupLevel: 'KPI' },
+        orderBy: { severityScore: { sort: 'desc', nulls: 'last' } }
+      });
+
+      // Get mappings of KPI -> domain, sub-domain, indicator
+      const questions = await tx.question.findMany({ where: { usedInMvp: true } });
+      const qMap = new Map<string, any>();
+      for (const q of questions) {
+        if (q.kpi && !qMap.has(q.kpi)) {
+          qMap.set(q.kpi, q);
+        }
+      }
+
+      return rollups.map((r, idx) => {
+        const mapping = qMap.get(r.entityId);
+        return {
+          rank: idx + 1,
+          kpi: r.entityId,
+          indicator: mapping?.indicator || '',
+          subDomain: mapping?.subDomain || '',
+          domain: mapping?.domain || '',
+          severityScore: r.severityScore !== null ? Number(r.severityScore) : null,
+          validResponseCount: r.validResponseCount,
+          dontKnowRate: Number(r.dontKnowRate),
+          confidenceLevel: r.confidenceLevel,
+        };
+      });
+    });
+  }
+
+  async getQuestionDetail(studyId: string, surveyId: string, questionId: string, villageId: string | null): Promise<any> {
+    const vId = villageId || '';
+    return this.tenant.runInOrgContext(async (tx) => {
+      // Find question — supports both direct questionId (e.g. "H01") and
+      // KPI name strings (e.g. "Water Source Reliability") passed from the
+      // KPI ranking table which stores KPI names as entityIds.
+      let question = await tx.question.findUnique({ where: { questionId } });
+      if (!question) {
+        // Try resolving by KPI name: find the first scoreable question in this KPI
+        question = await tx.question.findFirst({
+          where: { kpi: questionId, usedInMvp: true },
+          orderBy: { questionId: 'asc' },
+        });
+      }
+      if (!question) {
+        throw new NotFoundException({ error: { code: 'QUESTION_NOT_FOUND', message: `No question found for id or kpi: ${questionId}` } });
+      }
+
+      // Find methodology version used by the survey
+      const surveyObj = await tx.survey.findUnique({ where: { id: surveyId } });
+      const version = surveyObj?.methodologyVersion || 'v1.0';
+      const mv = await tx.methodologyVersion.findUnique({ where: { version } });
+
+      // Find question rollup
+      const rollup = await tx.scoreRollup.findUnique({
+        where: {
+          studyId_surveyId_villageId_methodologyVersionId_rollupLevel_entityId: {
+            studyId,
+            surveyId,
+            villageId: vId,
+            methodologyVersionId: mv?.id || '',
+            rollupLevel: 'QUESTION',
+            entityId: questionId,
+          }
+        }
+      });
+
+      // Find all response answers for this question
+      const answers = await tx.responseAnswer.findMany({
+        where: {
+          studyId,
+          surveyId,
+          questionId,
+          ...(villageId !== null ? { villageId } : {})
+        }
+      });
+
+      // Group option counts
+      const countsMap = new Map<string, number>();
+      let missingAnswerCount = 0;
+      for (const a of answers) {
+        if (a.answerOptionId) {
+          countsMap.set(a.answerOptionId, (countsMap.get(a.answerOptionId) || 0) + 1);
+        } else if (a.answerOptionIds && Array.isArray(a.answerOptionIds)) {
+          const opts = a.answerOptionIds as unknown as string[];
+          for (const opt of opts) {
+            countsMap.set(opt, (countsMap.get(opt) || 0) + 1);
+          }
+        } else if (a.answerNumericValue !== null) {
+          const numStr = String(a.answerNumericValue);
+          countsMap.set(numStr, (countsMap.get(numStr) || 0) + 1);
+        } else if (a.answerText) {
+          countsMap.set(a.answerText, (countsMap.get(a.answerText) || 0) + 1);
+        } else {
+          missingAnswerCount++;
+        }
+      }
+
+      const optionsList = Array.isArray(question.answerOptions)
+        ? (question.answerOptions as string[]).map(opt => {
+            const cleanOptId = opt.toUpperCase().trim().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+            return {
+              optionId: cleanOptId,
+              label: opt,
+              count: countsMap.get(cleanOptId) || 0,
+            };
+          })
+        : Array.from(countsMap.entries()).map(([opt, count]) => ({
+            optionId: opt,
+            label: opt,
+            count,
+          }));
+
+      const matchLookups = mv ? await tx.scoringLookup.findMany({
+        where: { methodologyVersionId: mv.id, questionId }
+      }) : [];
+
+      const lookups = matchLookups.map(l => ({
+        optionId: l.optionId,
+        lookupType: l.lookupType,
+        severityScore: l.severityScore !== null ? Number(l.severityScore) : null,
+        isExcluded: l.isExcluded,
+        exclusionReason: l.exclusionReason,
+      }));
+
+      return {
+        questionId: question.questionId,
+        questionText: question.questionText,
+        isScoreable: question.isScoreable,
+        domain: question.domain,
+        subDomain: question.subDomain,
+        kpi: question.kpi,
+        indicator: question.indicator,
+        averageSeverity: rollup?.severityScore !== null ? Number(rollup?.severityScore) : null,
+        validCount: rollup?.validResponseCount || 0,
+        excludedCount: rollup?.excludedResponseCount || 0,
+        dontKnowCount: rollup?.dontKnowCount || 0,
+        notApplicableCount: rollup?.notApplicableCount || 0,
+        methodologyVersion: version,
+        optionsDistribution: optionsList,
+        lookups,
+        calculatedAt: rollup?.calculatedAt?.toISOString() || new Date().toISOString(),
+      };
+    });
   }
 }

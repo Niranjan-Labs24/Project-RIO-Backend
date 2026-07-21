@@ -6,6 +6,8 @@ import { PasswordService } from '../../auth/password.service';
 import { MailerService } from '../../mailer/mailer.service';
 import { AuditService } from '../audit/audit.service';
 import { SurveysService } from '../surveys/surveys.service';
+import { DeterministicScoringService } from '../priority/scoring.service';
+import { ScoreRollupService } from '../priority/rollup.service';
 import type {
   CheckDuplicatePayload, CheckDuplicateResult, CitizenOtpChallengeRow, PublicSurveyLinkRow, RequestOtpPayload,
   RequestOtpResult, ResolvedSurvey, SubmitResponsePayload, SubmitResponseResult, VerifyOtpPayload, VerifyOtpResult,
@@ -13,17 +15,8 @@ import type {
 
 const OTP_TTL_MINUTES = 10;
 const OTP_MAX_ATTEMPTS = 5;
-// Matches the constant the frontend flow previously hardcoded client-side —
-// now computed once here so the Welcome screen's estimate and the actual
-// per-question pacing can never drift apart.
 const SECONDS_PER_QUESTION = 20;
 
-// Every route on this service is unauthenticated (no signed-in actor, no
-// ambient org context) — the owning org is resolved from the link token via
-// the cross-org SELECT-only supervisor connection, then every subsequent
-// write goes through TenantPrismaService.runAsOrg(resolvedOrgId, ...), the
-// same RLS-safe technique the org-creation bootstrap path already uses.
-// See the PublicSurveyLink model comment in schema.prisma.
 @Injectable()
 export class CitizenService {
   constructor(
@@ -32,6 +25,8 @@ export class CitizenService {
     private readonly mailer: MailerService,
     private readonly surveys: SurveysService,
     private readonly audit: AuditService,
+    private readonly scoringEngine: DeterministicScoringService,
+    private readonly rollupService: ScoreRollupService,
   ) {}
 
   // The published Survey Builder survey is the only source of questions for
@@ -226,6 +221,31 @@ export class CitizenService {
       entityLabel: `Survey response submitted for need ${link.needId}`,
       organizationId: link.orgId,
     });
+
+    // Score and rollup asynchronously
+    const { needId, studyId, orgId } = row;
+    this.scoringEngine.scoreResponse(row.id).then(async () => {
+      const resp = await this.tenant.runAsSupervisor(async (tx) => tx.surveyResponse.findUnique({
+        where: { id: row.id },
+        include: { need: true }
+      }));
+      if (resp) {
+        const survey = await this.tenant.runAsSupervisor(async (tx) => tx.survey.findFirst({
+          where: { needId: resp.needId, status: 'PUBLISHED' }
+        }));
+        if (survey) {
+          const villageId = resp.need.village?.[0] || null;
+          // run under org context to satisfy tenant check
+          await this.tenant.runAsOrg(orgId, async () => {
+            await this.rollupService.calculateRollups(studyId, survey.id, villageId);
+            await this.rollupService.calculateRollups(studyId, survey.id, null);
+          });
+        }
+      }
+    }).catch(err => {
+      console.error(`Failed to calculate scores for response ${row.id}`, err);
+    });
+
     return { id: row.id, submittedAt: row.submittedAt.toISOString() };
   }
 
