@@ -107,16 +107,16 @@ model Organisation {
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  users       User[]
-  consents    ConsentAcceptance[]
-  auditLogs   AuditLog[]
-  studies     Study[]
-  needs       Need[]
-  evidence    Evidence[]
-  aiDecisions AiDecision[]
-  surveyLinks PublicSurveyLink[]
-  otpChallenges CitizenOtpChallenge[]
-  surveyResponses SurveyResponse[]
+  users                  User[]
+  consents               ConsentAcceptance[]
+  auditLogs              AuditLog[]
+  studies                Study[]
+  needs                  Need[]
+  evidence               Evidence[]
+  aiDecisions            AiDecision[]
+  surveyLinks            PublicSurveyLink[]
+  otpChallenges          CitizenOtpChallenge[]
+  surveyResponses        SurveyResponse[]
   responseQualityResults ResponseQualityResult[]
   aiSummaries AiSummary[]
   priorityScores PriorityScore[]
@@ -131,30 +131,32 @@ model Organisation {
 }
 
 model User {
-  id                  String     @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  orgId               String     @map("org_id") @db.Uuid
-  roleId              String     @map("role_id") @db.VarChar(64)
-  name                String     @db.VarChar(200)
-  email               String     @unique @db.VarChar(320)
-  status              UserStatus @default(invited)
-  passwordHash        String?    @map("password_hash") @db.VarChar(255)
-  mustChangePassword  Boolean    @default(false) @map("must_change_password")
-  consentedAt         DateTime?  @map("consented_at") @db.Timestamptz(6)
+  id                     String     @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId                  String     @map("org_id") @db.Uuid
+  roleId                 String     @map("role_id") @db.VarChar(64)
+  name                   String     @db.VarChar(200)
+  email                  String     @unique @db.VarChar(320)
+  status                 UserStatus @default(invited)
+  passwordHash           String?    @map("password_hash") @db.VarChar(255)
+  mustChangePassword     Boolean    @default(false) @map("must_change_password")
+  consentedAt            DateTime?  @map("consented_at") @db.Timestamptz(6)
   // The policy version accepted at `consentedAt` — kept alongside the
   // timestamp (denormalized from ConsentAcceptance) so a version bump can be
   // detected on every login/me() without an extra join. The full acceptance
   // history still lives in ConsentAcceptance; this is just "what's current."
-  consentedPolicyVersion String? @map("consented_policy_version") @db.VarChar(64)
-  failedLoginAttempts Int        @default(0) @map("failed_login_attempts")
-  lockedUntil         DateTime?  @map("locked_until") @db.Timestamptz(6)
-  lastLoginAt         DateTime?  @map("last_login_at") @db.Timestamptz(6)
-  createdAt           DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  consentedPolicyVersion String?    @map("consented_policy_version") @db.VarChar(64)
+  failedLoginAttempts    Int        @default(0) @map("failed_login_attempts")
+  sessionVersion         Int        @default(0) @map("session_version")
+  lockedUntil            DateTime?  @map("locked_until") @db.Timestamptz(6)
+  lastLoginAt            DateTime?  @map("last_login_at") @db.Timestamptz(6)
+  createdAt              DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org      Organisation        @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  role     Role                @relation(fields: [roleId], references: [id])
-  consents ConsentAcceptance[]
-
+  org              Organisation        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  role             Role                @relation(fields: [roleId], references: [id])
+  consents         ConsentAcceptance[]
+  // Studies this user is the assigned reviewer for (see Study.assignedReviewerId).
+  reviewingStudies Study[]             @relation("StudyAssignedReviewer")
   @@index([orgId])
   @@index([roleId])
   @@map("users")
@@ -213,9 +215,9 @@ enum StudyStatus {
 }
 
 model Study {
-  id        String      @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  orgId     String      @map("org_id") @db.Uuid
-  title     String      @db.VarChar(300)
+  id                 String      @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId              String      @map("org_id") @db.Uuid
+  title              String      @db.VarChar(300)
   // Selected from (or added alongside) the org's own configured villages
   // list — same array-of-strings shape as Organisation.villages, not a
   // master-data table, per the same "don't promote to master data" call
@@ -470,11 +472,12 @@ model SurveyResponse {
   answers      Json
   submittedAt  DateTime @default(now()) @map("submitted_at") @db.Timestamptz(6)
 
-  org        Organisation     @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  study      Study            @relation(fields: [studyId], references: [id], onDelete: Cascade)
-  surveyLink PublicSurveyLink @relation(fields: [surveyLinkId], references: [id], onDelete: Cascade)
+  org            Organisation            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  study          Study                   @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  surveyLink     PublicSurveyLink        @relation(fields: [surveyLinkId], references: [id], onDelete: Cascade)
   qualityResults ResponseQualityResult[]
 
+  @@unique([studyId, contact])
   @@index([orgId])
   @@index([studyId])
   @@index([surveyLinkId])
@@ -596,16 +599,16 @@ enum SharingStatus {
 }
 
 model SharingRequest {
-  id               String        @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  ownerOrgId       String        @map("owner_org_id") @db.Uuid
-  requestingOrgId  String        @map("requesting_org_id") @db.Uuid
-  studyId          String        @map("study_id") @db.Uuid
-  status           SharingStatus @default(pending)
-  requestedBy      String        @map("requested_by") @db.Uuid
-  requestedAt      DateTime      @default(now()) @map("requested_at") @db.Timestamptz(6)
-  decidedBy        String?       @map("decided_by") @db.Uuid
-  decidedAt        DateTime?     @map("decided_at") @db.Timestamptz(6)
-  note             String?       @db.VarChar(1000)
+  id              String        @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  ownerOrgId      String        @map("owner_org_id") @db.Uuid
+  requestingOrgId String        @map("requesting_org_id") @db.Uuid
+  studyId         String        @map("study_id") @db.Uuid
+  status          SharingStatus @default(pending)
+  requestedBy     String        @map("requested_by") @db.Uuid
+  requestedAt     DateTime      @default(now()) @map("requested_at") @db.Timestamptz(6)
+  decidedBy       String?       @map("decided_by") @db.Uuid
+  decidedAt       DateTime?     @map("decided_at") @db.Timestamptz(6)
+  note            String?       @db.VarChar(1000)
 
   ownerOrg      Organisation @relation("SharingRequestsOwned", fields: [ownerOrgId], references: [id], onDelete: Cascade)
   requestingOrg Organisation @relation("SharingRequestsMade", fields: [requestingOrgId], references: [id], onDelete: Cascade)
@@ -646,20 +649,20 @@ enum ReportStatus {
 }
 
 model Report {
-  id           String       @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  orgId        String       @map("org_id") @db.Uuid
-  reportType   ReportType   @map("report_type")
-  status       ReportStatus @default(draft)
-  title        String       @db.VarChar(300)
+  id          String       @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId       String       @map("org_id") @db.Uuid
+  reportType  ReportType   @map("report_type")
+  status      ReportStatus @default(draft)
+  title       String       @db.VarChar(300)
   // Only set for study-scoped types (e.g. RPT-01 Individual Study Report);
   // null for org-wide aggregate types (e.g. RPT-02 Collective Dashboard).
-  studyId      String?      @map("study_id") @db.Uuid
-  filters      Json
-  content      Json
-  generatedBy  String       @map("generated_by") @db.Uuid
-  generatedAt  DateTime     @default(now()) @map("generated_at") @db.Timestamptz(6)
-  reviewedBy   String?      @map("reviewed_by") @db.Uuid
-  reviewedAt   DateTime?    @map("reviewed_at") @db.Timestamptz(6)
+  studyId     String?      @map("study_id") @db.Uuid
+  filters     Json
+  content     Json
+  generatedBy String       @map("generated_by") @db.Uuid
+  generatedAt DateTime     @default(now()) @map("generated_at") @db.Timestamptz(6)
+  reviewedBy  String?      @map("reviewed_by") @db.Uuid
+  reviewedAt  DateTime?    @map("reviewed_at") @db.Timestamptz(6)
 
   org   Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
   study Study?       @relation(fields: [studyId], references: [id], onDelete: Cascade)

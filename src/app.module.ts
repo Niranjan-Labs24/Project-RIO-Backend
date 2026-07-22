@@ -4,6 +4,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { LoggerModule } from 'nestjs-pino';
 import { PermissionGuard } from './common/guards/permission.guard';
 import { CsrfGuard } from './common/guards/csrf.guard';
+import { RateLimitGuard } from './common/guards/rate-limit.guard';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { TokenService } from './auth/token.service';
 import { ConfigModule } from './config/config.module';
@@ -90,6 +91,7 @@ import { SurveysModule } from './modules/surveys/surveys.module';
   controllers: [],
   providers: [
     TokenService,
+    { provide: APP_GUARD, useClass: RateLimitGuard },
     // Order matters: JwtAuthGuard populates the OrgStore from the bearer token,
     // then CsrfGuard checks the double-submit token (no-op unless CSRF_ENFORCE=true),
     // then PermissionGuard enforces (module, action) against that role.

@@ -33,6 +33,7 @@ async function bootstrap(): Promise<void> {
   app.setGlobalPrefix('api');
 
   const config = app.get(ConfigService);
+  app.set('trust proxy', config.trustProxy);
   // Cookie session is httpOnly, so the frontend uses credentials:"include" —
   // that requires one explicit origin (never a wildcard) with credentials on.
   // exposedHeaders: Content-Disposition isn't readable via fetch() cross-origin

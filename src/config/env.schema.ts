@@ -21,6 +21,8 @@ export const EnvSchema = Type.Object({
   // app legitimately holds this at runtime for crossEntity roles' read path
   // (runAsSupervisor) — unlike DATABASE_URL (owner), which stays CLI-only.
   SUPERVISOR_DATABASE_URL: Type.String({ minLength: 1 }),
+  REDIS_URL: Type.Optional(Type.String({ minLength: 1 })),
+  TRUST_PROXY: Type.String({ default: 'loopback' }),
   // JWT signing secret for stateless bearer auth (min 32 chars). Required at
   // runtime — the app issues/verifies its own session tokens.
   JWT_SECRET: Type.String({ minLength: 32 }),
@@ -57,9 +59,9 @@ export const EnvSchema = Type.Object({
   SMTP_USER: Type.Optional(Type.String()),
   SMTP_PASS: Type.Optional(Type.String()),
   MAIL_FROM: Type.String({ default: 'RIO <no-reply@rio.local>' }),
-  // Opt-in double-submit CSRF enforcement (see CsrfGuard). Default off:
-  // requires the frontend to echo the rio_csrf cookie as X-CSRF-Token first.
-  CSRF_ENFORCE: Type.Boolean({ default: false }),
+  // Double-submit CSRF enforcement for cookie-authenticated mutations. Default
+  // on; bearer and anonymous requests do not carry ambient session authority.
+  CSRF_ENFORCE: Type.Boolean({ default: true }),
   // RIO-FR-Add-01: local disk path evidence files are written to (Phase 1 —
   // swap to object storage later without touching the Evidence table, which
   // only stores a storageKey string).
@@ -97,6 +99,9 @@ export function validateEnv(raw: Record<string, unknown>): AppConfig {
       .map((e) => `${e.instancePath || e.params?.['missingProperty'] || ''} ${e.message}`.trim())
       .join('; ');
     throw new Error(`Invalid environment configuration: ${details}`);
+  }
+  if (candidate.NODE_ENV === 'production' && !candidate.REDIS_URL) {
+    throw new Error('Invalid environment configuration: REDIS_URL is required in production');
   }
   return candidate as AppConfig;
 }

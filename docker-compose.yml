@@ -1,4 +1,15 @@
 services:
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - cnap-redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   db:
     # Built from db/Dockerfile (postgres:18 + a baked self-signed TLS cert) so
     # the database can serve connections over TLS (RIO-NFR-001). ssl is enabled
@@ -47,6 +58,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       NODE_ENV: production
       PORT: 4000
@@ -59,6 +72,10 @@ services:
       # (see below) and the app schema no longer accepts/requires owner
       # credentials — only APP_DATABASE_URL (cnap_app, NOBYPASSRLS).
       APP_DATABASE_URL: postgresql://cnap_app:cnap_app_dev_pw@db:5432/cnap
+      SUPERVISOR_DATABASE_URL: postgresql://cnap_supervisor:cnap_supervisor_dev_pw@db:5432/cnap
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      REDIS_URL: redis://redis:6379
+      TRUST_PROXY: loopback
       LOG_LEVEL: info
     # Migrations are NOT run automatically here: `prisma` (the CLI) and
     # prisma.config.ts are dev-only tooling and this runtime image is built
@@ -74,3 +91,4 @@ services:
 
 volumes:
   cnap-db-data:
+  cnap-redis-data:
