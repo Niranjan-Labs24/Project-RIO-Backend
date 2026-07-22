@@ -38,9 +38,11 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('dataCollection', { read: true, write: true, create: true }),
     perm('dataImport', { read: true, write: true, create: true }),
     perm('citizenChannel'),
-    // Runs AI Classification themselves after submitting evidence (write),
-    // but doesn't decide it — approve/override stays Reviewer/Approver-only.
-    perm('aiReview', { read: true, write: true }),
+    // Runs AI Classification after submitting evidence (write) AND decides
+    // it themselves (approve/override) — the Reviewer/Approver only ever
+    // sees the finished Survey once it's submitted, never the AI
+    // classification step. See role_human_reviewer below.
+    perm('aiReview', { read: true, write: true, approve: true }),
     // `create` (not full write/approve) — lets them trigger
     // Recalculate/Run Priority Scoring on their own studies' Insights page,
     // same as Admin; they still can't approve a priority score elsewhere in
@@ -61,7 +63,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('dataImport'), perm('citizenChannel'), perm('aiReview'), perm('priorityScoring'),
     perm('reportsDashboards'), perm('archiveSharingAudit'), perm('surveyBuilder'),
   ] },
-  { id: 'role_human_reviewer', key: 'human_reviewer', name: 'Reviewer/Approver', description: 'Approves or modifies AI classification, priority, and duplicates before publishing.', crossEntity: false, permissions: [
+  { id: 'role_human_reviewer', key: 'human_reviewer', name: 'Reviewer/Approver', description: 'Approves or rejects (with comments) a finalized Survey before it publishes.', crossEntity: false, permissions: [
     perm('entityTeam'), perm('rolesPermissions'), perm('onboardingConsent'),
     perm('methodologyQuestionBank', RO),
     // `create` (not full `write`) — once a survey is published, the
@@ -72,7 +74,11 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('studySurvey', { read: true, create: true }),
     perm('dataCollection', RO),
     perm('dataImport', RO), perm('citizenChannel', RO),
-    perm('aiReview', { read: true, write: true, approve: true }),
+    // Read-only — AI classification (run + approve/override) is entirely the
+    // Researcher's own step now (see role_ngo_research_officer above); the
+    // Approver never sees or acts on it, only the finished Survey once
+    // submitted (surveyBuilder.approve, below).
+    perm('aiReview', RO),
     perm('priorityScoring', RO),
     // Reviewer's work starts at Studies/Reviewer-SLA, not an executive
     // dashboard, but they still need read access to Reports/Archive/Sharing

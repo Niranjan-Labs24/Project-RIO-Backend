@@ -1,22 +1,23 @@
 import { Injectable } from "@nestjs/common";
-import { Prisma } from "../../generated/prisma";
 import { ConfigService } from "../../config/config.service";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import type { SlaAlert, SlaConfig } from "./reviewer-sla.types";
 
-// Real queues, not a placeholder table — two of them, both computed rather
-// than stored: an AiDecision row awaiting a human decision (humanDecision IS
-// NULL), and a Survey sitting in SUBMITTED awaiting the Approver's
-// Approve/Reject (see SurveysService's state machine). There is no concept
-// of assigning either to a specific reviewer — any user with the
-// Reviewer/Approver (human_reviewer) role sees the same org-wide pending
-// queue, and once any one of them acts on an item (AiDecisionsService.review
-// / SurveysService.approveAndPublish|rejectSurvey), it disappears from
+// A real queue, not a placeholder table — computed rather than stored: a
+// Survey sitting in SUBMITTED awaiting the Approver's Approve/Reject (see
+// SurveysService's state machine). AI classification is never queued here —
+// that step (run + approve/override) is entirely the Researcher's own work
+// (see role-matrix.ts's role_human_reviewer comment); the Approver's queue
+// only ever contains a Need once its Survey has actually been submitted.
+// There is no concept of assigning an item to a specific reviewer — any user
+// with the Reviewer/Approver (human_reviewer) role sees the same org-wide
+// pending queue, and once any one of them acts on an item
+// (SurveysService.approveAndPublish|rejectSurvey), it disappears from
 // everyone's queue since it's the same underlying row. due-by is computed
-// (createdAt/submittedAt + configurable SLA hours), not stored — no new
-// table needed. In-app alerts only for now; a real email alert channel can
-// stay a log-only placeholder later, same spirit as the temp-password email
-// fallback already built for signup.
+// (submittedAt + configurable SLA hours), not stored — no new table needed.
+// In-app alerts only for now; a real email alert channel can stay a log-only
+// placeholder later, same spirit as the temp-password email fallback
+// already built for signup.
 @Injectable()
 export class ReviewerSlaService {
   constructor(
@@ -35,59 +36,32 @@ export class ReviewerSlaService {
     const slaMs = this.config.reviewerSlaHours * 60 * 60 * 1000;
     const now = Date.now();
 
-    const { pendingDecisions, pendingSurveys, studies, needs } = await this.tenant.runInOrgContext(
+    const { pendingSurveys, studies, needs } = await this.tenant.runInOrgContext(
       async (tx) => {
-        const [pendingDecisions, pendingSurveys] = await Promise.all([
-          tx.aiDecision.findMany({
-            where: { humanDecision: { equals: Prisma.DbNull } },
-            orderBy: { createdAt: "asc" },
-          }),
-          tx.survey.findMany({
-            where: { status: "SUBMITTED" },
-            orderBy: { submittedAt: "asc" },
-          }),
-        ]);
-        const studyIds = Array.from(
-          new Set([...pendingDecisions.map((d) => d.studyId), ...pendingSurveys.map((s) => s.studyId)]),
-        );
-        const needIds = Array.from(
-          new Set([...pendingDecisions.map((d) => d.needId), ...pendingSurveys.map((s) => s.needId)]),
-        );
+        const pendingSurveys = await tx.survey.findMany({
+          where: { status: "SUBMITTED" },
+          orderBy: { submittedAt: "asc" },
+        });
+        const studyIds = Array.from(new Set(pendingSurveys.map((s) => s.studyId)));
+        const needIds = Array.from(new Set(pendingSurveys.map((s) => s.needId)));
         const [studyRows, needRows] = await Promise.all([
           tx.study.findMany({ where: { id: { in: studyIds } } }),
           tx.need.findMany({ where: { id: { in: needIds } } }),
         ]);
-        return { pendingDecisions, pendingSurveys, studies: studyRows, needs: needRows };
+        return { pendingSurveys, studies: studyRows, needs: needRows };
       },
     );
 
     const studyById = new Map(studies.map((s) => [s.id, s]));
     // Keyed by needId — a Study can have many Needs now, each with its own
-    // pending classification/survey, so this must resolve per-item, not
-    // collapse to "the" Need for the Study.
+    // pending survey, so this must resolve per-item, not collapse to "the"
+    // Need for the Study.
     const needById = new Map(needs.map((n) => [n.id, n]));
 
     const statusFor = (dueAt: Date): SlaAlert["status"] => {
       const remainingMs = dueAt.getTime() - now;
       return remainingMs < 0 ? "breached" : remainingMs < slaMs * 0.25 ? "at_risk" : "pending";
     };
-
-    const classificationAlerts: SlaAlert[] = pendingDecisions.map((decision) => {
-      const dueAt = new Date(decision.createdAt.getTime() + slaMs);
-      return {
-        id: decision.id,
-        type: "ai_classification",
-        needId: decision.needId,
-        studyId: decision.studyId,
-        surveyId: null,
-        studyTitle: studyById.get(decision.studyId)?.title ?? decision.studyId,
-        needStatement: needById.get(decision.needId)?.statement ?? null,
-        touchpoint: decision.touchpoint,
-        createdAt: decision.createdAt.toISOString(),
-        dueAt: dueAt.toISOString(),
-        status: statusFor(dueAt),
-      };
-    });
 
     const surveyApprovalAlerts: SlaAlert[] = pendingSurveys.map((survey) => {
       // submittedAt is always set once a survey reaches SUBMITTED (see
@@ -110,7 +84,7 @@ export class ReviewerSlaService {
       };
     });
 
-    return [...classificationAlerts, ...surveyApprovalAlerts].sort(
+    return surveyApprovalAlerts.sort(
       (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
     );
   }
