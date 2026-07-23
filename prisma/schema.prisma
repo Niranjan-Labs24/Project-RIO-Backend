@@ -783,6 +783,14 @@ enum Gender {
   prefer_not_to_say
 }
 
+// Self-reported rural/urban settlement — a fixed vocabulary (like Gender) so
+// rural/urban reporting can group on it directly. Nullable: not every response
+// captures it, and the demographic charts omit the series when it's absent.
+enum SettlementType {
+  rural
+  urban
+}
+
 // Generic response row — Response Quality, AI Summary, and Priority
 // Dashboard all read from this same table, seeded or real alike.
 model SurveyResponse {
@@ -795,6 +803,7 @@ model SurveyResponse {
   contactName  String?  @map("contact_name") @db.VarChar(200)
   contact      String   @db.VarChar(320)
   gender       Gender?
+  settlementType SettlementType? @map("settlement_type")
   // Geography snapshot — copied from the Need (its own multi-select
   // Governorates/Centers, village) and the Organization (regionId) at
   // submission time, not asked of the citizen directly. A pure denormalized

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '../../config/config.service';
 
 @Injectable()
@@ -48,6 +48,18 @@ export class AiService {
       if (!res.ok) {
         const errText = await res.text();
         this.logger.error(`Gemini API call failed with status ${res.status}: ${errText}`);
+        // Surface a clean, actionable error instead of a generic 500. 429 =
+        // quota/rate-limit; 5xx = upstream outage — both are "try again later".
+        if (res.status === 429) {
+          throw new ServiceUnavailableException({
+            error: { code: "AI_RATE_LIMITED", message: "AI service is rate-limited (Gemini quota exceeded). Please try again in a minute." },
+          });
+        }
+        if (res.status >= 500) {
+          throw new ServiceUnavailableException({
+            error: { code: "AI_UNAVAILABLE", message: "AI service is temporarily unavailable. Please try again shortly." },
+          });
+        }
         throw new Error(`Gemini API returned status ${res.status}`);
       }
 

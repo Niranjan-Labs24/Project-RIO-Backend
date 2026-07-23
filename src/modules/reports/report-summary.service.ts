@@ -22,6 +22,13 @@ import {
   EXECUTIVE_REPORT_SUMMARY_PROMPT_VERSION,
   EXECUTIVE_REPORT_SUMMARY_SYSTEM_PROMPT,
 } from '../ai/prompts/executive-report-summary.system';
+import { aggregateDemographics } from './providers/aggregate-demographics';
+import {
+  snapshotToExecutiveContent,
+  snapshotToRegionContent,
+  snapshotToSectorContent,
+  snapshotToVillageContent,
+} from './providers/snapshot-to-content';
 
 export type SummaryScopeType = 'VILLAGE' | 'SECTOR' | 'REGION' | 'EXECUTIVE';
 
@@ -555,45 +562,61 @@ ${JSON.stringify(snapshot, null, 2)}
   /**
    * Save confirmed AI Priority Summary into the organization Reports repository.
    */
+  // Converges onto the SAME rich content the report generators produce (village/
+  // sector/region/executive), so exports and the on-screen viewer render it
+  // identically and there is one canonical Report content shape — instead of the
+  // old minimal { summaryId, scope, aiOutput } blob.
   async saveReportFromSummary(summaryId: string) {
     const orgId = requireOrgId();
     const store = getOrgStore();
     const generatedBy = store?.actorId || '019f8dec-4f72-701c-b1a1-c1577e5dac7a';
 
-    return this.tenant.runInOrgContext(async (tx) => {
-      const summary = await tx.aiPrioritySummary.findFirst({
-        where: { id: summaryId, orgId },
-      });
-      if (!summary) throw new NotFoundException('Summary not found');
+    const summary = await this.tenant.runInOrgContext((tx) =>
+      tx.aiPrioritySummary.findFirst({ where: { id: summaryId, orgId } }),
+    );
+    if (!summary) throw new NotFoundException('Summary not found');
+    if (summary.status !== 'OFFICER_CONFIRMED') {
+      throw new BadRequestException('Summary must be OFFICER_CONFIRMED before saving to report repository.');
+    }
 
-      if (summary.status !== 'OFFICER_CONFIRMED') {
-        throw new BadRequestException('Summary must be OFFICER_CONFIRMED before saving to report repository.');
-      }
+    const scope = (summary.summaryScope as SummaryScopeType) || 'VILLAGE';
+    const scopeFilters = (summary.scopeFilters as ScopeFilters) || {};
+    const villageId = scopeFilters.villageId || '';
 
-      const filters = (summary.scopeFilters as Record<string, any>) || {};
-      const scopeLabel = summary.summaryScope || 'VILLAGE';
-      const title = `${scopeLabel} Need Assessment Report — ${new Date().toLocaleDateString()}`;
+    // Rebuild the real snapshot; reuse the confirmed AI output (officer edits win).
+    const { snapshot } = await this.buildReportDataSnapshot(summary.studyId, summary.surveyId, scope, scopeFilters);
+    const aiOutput = (summary.officerEditedOutputJson ?? summary.aiOutputJson) as Record<string, unknown> | null;
+    const demographics = scope === 'VILLAGE' ? await aggregateDemographics(this.tenant, summary.studyId, villageId) : null;
 
-      const report = await tx.report.create({
+    const mapperArgs = { snapshot, aiOutput, demographics, filters: scopeFilters as Record<string, unknown> };
+    const content =
+      scope === 'SECTOR'
+        ? snapshotToSectorContent(mapperArgs)
+        : scope === 'REGION'
+          ? snapshotToRegionContent(mapperArgs)
+          : scope === 'EXECUTIVE'
+            ? snapshotToExecutiveContent(mapperArgs)
+            : snapshotToVillageContent(mapperArgs);
+
+    const reportType = scope === 'SECTOR' ? 'RPT04' : scope === 'REGION' ? 'RPT06' : scope === 'EXECUTIVE' ? 'RPT13' : 'RPT14';
+    const title =
+      scope === 'VILLAGE'
+        ? `Village Report — ${snapshot.study.villageName}`
+        : `${scope.charAt(0) + scope.slice(1).toLowerCase()} Report — ${snapshot.study.studyName}`;
+
+    return this.tenant.runInOrgContext((tx) =>
+      tx.report.create({
         data: {
           orgId,
-          reportType: 'RPT13',
+          reportType,
           title,
           studyId: summary.studyId,
-          filters: filters as any,
-          content: {
-            summaryId: summary.id,
-            scope: summary.summaryScope,
-            aiOutput: summary.officerEditedOutputJson || summary.aiOutputJson,
-            promptVersion: summary.promptVersion,
-            confirmedAt: summary.officerConfirmedAt,
-          } as any,
+          filters: scopeFilters as any,
+          content: content as any,
           generatedBy,
         },
-      });
-
-      return report;
-    });
+      }),
+    );
   }
 
   /**
