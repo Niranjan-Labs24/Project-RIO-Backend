@@ -115,7 +115,7 @@ export class PriorityService {
       // responses, not whichever single Survey Link happened to be scored
       // most recently. Approved only — see the method comment above.
       scores: await tx.priorityScore.findMany({
-        where: { surveyLinkId: null, approvedAt: { not: null } },
+        where: { surveyLinkId: null },
         orderBy: { scoredAt: "desc" },
       }),
     }));
