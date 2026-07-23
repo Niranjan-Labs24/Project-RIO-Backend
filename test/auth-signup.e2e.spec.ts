@@ -88,12 +88,32 @@ describe('signup -> me -> change-password (cookie)', () => {
       .expect(200)
       .expect((r) => expect(r.body.user.email).toBe(email));
 
-    await request(server)
+    const changePassword = await request(server)
       .post('/api/auth/change-password')
       .set('Cookie', cookie)
       .set('x-csrf-token', csrf)
       .send({ currentPassword: tempPassword, newPassword: 'BrandNewPass123!' })
       .expect(200)
       .expect((r) => expect(r.body.mustChangePassword).toBe(false));
+
+    // change-password bumps sessionVersion server-side and must re-issue the
+    // rio_session cookie with a matching fresh token — otherwise the very
+    // next cookie-authenticated request (e.g. consent, right after the
+    // signup -> change-password flow) is wrongly rejected as UNAUTHENTICATED
+    // by JwtAuthGuard's sessionVersion check, even with a brand-new browser
+    // session and no stale cookies involved. change-password only reissues
+    // rio_session (rio_csrf is untouched), so a real browser would keep
+    // both — merge them the same way here rather than replacing wholesale.
+    const refreshedSessionCookie = (changePassword.headers['set-cookie'] as unknown as string[])?.find((c) =>
+      c.startsWith('rio_session='),
+    );
+    expect(refreshedSessionCookie).toBeDefined();
+    const refreshedCookies = [refreshedSessionCookie as string, csrfCookie as string];
+
+    await request(server)
+      .post('/api/auth/consent')
+      .set('Cookie', refreshedCookies)
+      .set('x-csrf-token', csrf)
+      .expect(201);
   }, 20_000);
 });

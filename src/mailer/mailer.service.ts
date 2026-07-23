@@ -24,19 +24,34 @@ export class MailerService {
   async sendTemporaryPassword(email: string, orgName: string, tempPassword: string): Promise<boolean> {
     if (!this.transport) return false;
     const signInUrl = this.config.corsOrigin;
-    try {
-      await this.transport.sendMail({
-        from: this.config.mailFrom,
-        to: email,
-        subject: `Welcome to RIO — ${orgName}`,
-        text: temporaryPasswordText({ orgName, email, tempPassword, signInUrl }),
-        html: temporaryPasswordHtml({ orgName, email, tempPassword, signInUrl }),
-      });
-      return true;
-    } catch (err) {
-      this.logger.error(`Failed to email temporary password to ${email}`, err as Error);
-      return false;
+    const mail = {
+      from: this.config.mailFrom,
+      to: email,
+      subject: `Welcome to RIO — ${orgName}`,
+      text: temporaryPasswordText({ orgName, email, tempPassword, signInUrl }),
+      html: temporaryPasswordHtml({ orgName, email, tempPassword, signInUrl }),
+    };
+    // One retry after a short delay before falling back to the "reveal in
+    // response" path — a single attempt against a real SMTP provider (e.g.
+    // Gmail) occasionally fails on transient network blips or brief
+    // rate-limiting, not a real config problem, and shouldn't immediately
+    // expose the temp password client-side when a second try would have
+    // gone through.
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        await this.transport.sendMail(mail);
+        return true;
+      } catch (err) {
+        const e = err as { code?: string; responseCode?: number; response?: string; message?: string };
+        this.logger.error(
+          `Failed to email temporary password to ${email} (attempt ${attempt}/2): ` +
+            `code=${e.code ?? "?"} responseCode=${e.responseCode ?? "?"} response=${e.response ?? e.message ?? "?"}`,
+        );
+        if (attempt === 2) return false;
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
     }
+    return false;
   }
 
   /**
