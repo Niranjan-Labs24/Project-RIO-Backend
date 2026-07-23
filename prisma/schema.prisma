@@ -115,16 +115,16 @@ model Organisation {
   orgGovernorates OrganisationGovernorate[]
   orgCenters      OrganisationCenter[]
 
-  users       User[]
-  consents    ConsentAcceptance[]
-  auditLogs   AuditLog[]
-  studies     Study[]
-  needs       Need[]
-  evidence    Evidence[]
-  aiDecisions AiDecision[]
-  surveyLinks PublicSurveyLink[]
-  otpChallenges CitizenOtpChallenge[]
-  surveyResponses SurveyResponse[]
+  users                  User[]
+  consents               ConsentAcceptance[]
+  auditLogs              AuditLog[]
+  studies                Study[]
+  needs                  Need[]
+  evidence               Evidence[]
+  aiDecisions            AiDecision[]
+  surveyLinks            PublicSurveyLink[]
+  otpChallenges          CitizenOtpChallenge[]
+  surveyResponses        SurveyResponse[]
   responseQualityResults ResponseQualityResult[]
   aiSummaries AiSummary[]
   priorityScores PriorityScore[]
@@ -147,30 +147,30 @@ model Organisation {
 }
 
 model User {
-  id                  String     @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  orgId               String     @map("org_id") @db.Uuid
-  roleId              String     @map("role_id") @db.VarChar(64)
-  name                String     @db.VarChar(200)
-  email               String     @unique @db.VarChar(320)
-  status              UserStatus @default(invited)
-  passwordHash        String?    @map("password_hash") @db.VarChar(255)
-  mustChangePassword  Boolean    @default(false) @map("must_change_password")
-  consentedAt         DateTime?  @map("consented_at") @db.Timestamptz(6)
+  id                     String     @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId                  String     @map("org_id") @db.Uuid
+  roleId                 String     @map("role_id") @db.VarChar(64)
+  name                   String     @db.VarChar(200)
+  email                  String     @unique @db.VarChar(320)
+  status                 UserStatus @default(invited)
+  passwordHash           String?    @map("password_hash") @db.VarChar(255)
+  mustChangePassword     Boolean    @default(false) @map("must_change_password")
+  consentedAt            DateTime?  @map("consented_at") @db.Timestamptz(6)
   // The policy version accepted at `consentedAt` — kept alongside the
   // timestamp (denormalized from ConsentAcceptance) so a version bump can be
   // detected on every login/me() without an extra join. The full acceptance
   // history still lives in ConsentAcceptance; this is just "what's current."
-  consentedPolicyVersion String? @map("consented_policy_version") @db.VarChar(64)
-  failedLoginAttempts Int        @default(0) @map("failed_login_attempts")
-  lockedUntil         DateTime?  @map("locked_until") @db.Timestamptz(6)
-  lastLoginAt         DateTime?  @map("last_login_at") @db.Timestamptz(6)
-  createdAt           DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  consentedPolicyVersion String?    @map("consented_policy_version") @db.VarChar(64)
+  failedLoginAttempts    Int        @default(0) @map("failed_login_attempts")
+  sessionVersion         Int        @default(0) @map("session_version")
+  lockedUntil            DateTime?  @map("locked_until") @db.Timestamptz(6)
+  lastLoginAt            DateTime?  @map("last_login_at") @db.Timestamptz(6)
+  createdAt              DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org      Organisation        @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  role     Role                @relation(fields: [roleId], references: [id])
-  consents ConsentAcceptance[]
-
+  org              Organisation        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  role             Role                @relation(fields: [roleId], references: [id])
+  consents         ConsentAcceptance[]
   @@index([orgId])
   @@index([roleId])
   @@map("users")
@@ -223,9 +223,9 @@ model AuditLog {
 // Study stays open for new Needs regardless of how far along its existing
 // ones are.
 model Study {
-  id        String      @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  orgId     String      @map("org_id") @db.Uuid
-  title     String      @db.VarChar(300)
+  id                 String      @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId              String      @map("org_id") @db.Uuid
+  title              String      @db.VarChar(300)
   // Selected from (or added alongside) the org's own configured villages
   // list — same array-of-strings shape as Organisation.villages, not a
   // master-data table, per the same "don't promote to master data" call
@@ -819,13 +819,17 @@ model SurveyResponse {
   submittedAt  DateTime @default(now()) @map("submitted_at") @db.Timestamptz(6)
 
   org        Organisation     @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  need       Need             @relation(fields: [needId], references: [id], onDelete: Cascade)
   study      Study            @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  need       Need             @relation(fields: [needId], references: [id], onDelete: Cascade)
   surveyLink PublicSurveyLink @relation(fields: [surveyLinkId], references: [id], onDelete: Cascade)
   qualityResults ResponseQualityResult[]
   responseAnswers        ResponseAnswer[]
   responseSeverityScores ResponseSeverityScore[]
 
+  // Scoped to needId, not studyId — each Need runs its own independent
+  // survey, so the same contact may legitimately respond once per Need
+  // under the same Study (see CitizenService.checkDuplicate/submitResponse).
+  @@unique([needId, contact])
   @@index([orgId])
   @@index([needId])
   @@index([studyId])
@@ -977,10 +981,7 @@ model SharingRequest {
   decidedAt        DateTime?     @map("decided_at") @db.Timestamptz(6)
   note             String?       @db.VarChar(1000)
   // Optional reason the owner org gives when rejecting (or, less commonly,
-  // approving with a caveat) — was previously missing entirely; reject was
-  // a single click with no explanation. Nullable/optional on both approve
-  // and reject, same spirit as Survey rejection already requiring a comment
-  // elsewhere in this app, just not mandatory here.
+  // approving with a caveat) — same field shape as ReportSharingRequest.
   decisionNote     String?       @map("decision_note") @db.VarChar(1000)
 
   ownerOrg      Organisation @relation("SharingRequestsOwned", fields: [ownerOrgId], references: [id], onDelete: Cascade)
@@ -1060,11 +1061,11 @@ enum ReportStatus {
 }
 
 model Report {
-  id           String       @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  orgId        String       @map("org_id") @db.Uuid
-  reportType   ReportType   @map("report_type")
-  status       ReportStatus @default(draft)
-  title        String       @db.VarChar(300)
+  id          String       @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId       String       @map("org_id") @db.Uuid
+  reportType  ReportType   @map("report_type")
+  status      ReportStatus @default(draft)
+  title       String       @db.VarChar(300)
   // Only set for study-scoped types (e.g. RPT-01 Individual Study Report);
   // null for org-wide aggregate types (e.g. RPT-02 Collective Dashboard).
   studyId      String?      @map("study_id") @db.Uuid
@@ -1072,8 +1073,10 @@ model Report {
   content      Json
   generatedBy  String       @map("generated_by") @db.Uuid
   generatedAt  DateTime     @default(now()) @map("generated_at") @db.Timestamptz(6)
-  // Two-step approval: Officer confirms first, then Reviewer approves (release).
-  officerConfirmedBy String?  @map("officer_confirmed_by") @db.Uuid
+  // Two-step approval: Officer confirms a draft first, then a Reviewer
+  // approves (see ReportsService.confirm/approve) — reviewedBy/At is the
+  // second (Reviewer) step, officerConfirmedBy/At is the first.
+  officerConfirmedBy String?   @map("officer_confirmed_by") @db.Uuid
   officerConfirmedAt DateTime? @map("officer_confirmed_at") @db.Timestamptz(6)
   reviewedBy   String?      @map("reviewed_by") @db.Uuid
   reviewedAt   DateTime?    @map("reviewed_at") @db.Timestamptz(6)

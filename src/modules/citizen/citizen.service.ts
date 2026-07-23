@@ -111,24 +111,35 @@ export class CitizenService {
     const link = await this.findActiveLinkOrThrow(token);
     // Scoped to the Need, not the Study — each Need runs its own
     // independent survey, so the same person may legitimately respond once
-    // per Need under the same Study.
+    // per Need under the same Study. Contact normalized (see
+    // normalizeContact) so a trivial casing/whitespace difference can't
+    // bypass this check.
+    const contact = this.normalizeContact(payload.contact);
     const existing = await this.tenant.runAsSupervisor((tx) =>
-      tx.surveyResponse.findFirst({ where: { needId: link.needId, contact: payload.contact } }),
+      tx.surveyResponse.findFirst({ where: { needId: link.needId, contact } }),
     );
     return { isDuplicate: existing !== null };
   }
 
   async requestOtp(token: string, payload: RequestOtpPayload): Promise<RequestOtpResult> {
     const link = await this.findActiveLinkOrThrow(token);
+    const contact = this.normalizeContact(payload.contact);
     const code = randomInt(100_000, 999_999).toString();
     const codeHash = await this.passwords.hash(code);
     const expiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
 
     const challenge = await this.tenant.runAsOrg(link.orgId, (tx) =>
       tx.citizenOtpChallenge.create({
-        data: { orgId: link.orgId, surveyLinkId: link.id, contact: payload.contact, codeHash, expiresAt },
+        data: { orgId: link.orgId, surveyLinkId: link.id, contact, codeHash, expiresAt },
       }),
     );
+    // Deliberately soft-fail, not hard-fail: an earlier version of this
+    // rejected the request outright when email delivery failed (expiring
+    // the challenge + throwing OTP_DELIVERY_FAILED), which stranded a
+    // citizen respondent with no way to ever get a code whenever SMTP
+    // wasn't configured/working. codeEmailed lets the frontend show the
+    // raw code instead in non-production, mirroring the same reveal
+    // convention used for temp-password delivery elsewhere in this app.
     const codeEmailed = await this.mailer.sendOtpCode(payload.contact, code);
     // Dev only: surface the code so local/test runs aren't blocked on a
     // real inbox — same convention as OrganizationsService.createWithAdmin's
@@ -159,12 +170,23 @@ export class CitizenService {
     }
 
     const matches = await this.passwords.verify(challenge.codeHash, payload.code);
-    await this.tenant.runAsOrg(link.orgId, (tx) =>
-      tx.citizenOtpChallenge.update({
-        where: { id: challenge.id },
+    const changed = await this.tenant.runAsOrg(link.orgId, (tx) =>
+      tx.citizenOtpChallenge.updateMany({
+        where: {
+          id: challenge.id,
+          verifiedAt: null,
+          consumedAt: null,
+          expiresAt: { gt: new Date() },
+          attempts: { lt: OTP_MAX_ATTEMPTS },
+        },
         data: matches ? { verifiedAt: new Date() } : { attempts: { increment: 1 } },
       }),
     );
+    if (changed.count !== 1) {
+      throw new BadRequestException({
+        error: { code: 'OTP_TOO_MANY_ATTEMPTS', message: 'This verification session can no longer be used.' },
+      });
+    }
     if (!matches) {
       throw new BadRequestException({ error: { code: 'OTP_INCORRECT', message: 'Incorrect verification code.' } });
     }
@@ -188,6 +210,21 @@ export class CitizenService {
     }
 
     const { row, needTitle } = await this.tenant.runAsOrg(link.orgId, async (tx) => {
+      // Atomic claim, before any other work — closes a race the plain
+      // `if (challenge.consumedAt)` check above can't: two concurrent
+      // submits could both pass that check before either write lands.
+      // updateMany's where-guard means only one request's write can ever
+      // match, so a second concurrent request is rejected here instead of
+      // both creating a SurveyResponse row.
+      const claimed = await tx.citizenOtpChallenge.updateMany({
+        where: { id: challenge.id, verifiedAt: { not: null }, consumedAt: null },
+        data: { consumedAt: new Date() },
+      });
+      if (claimed.count !== 1) {
+        throw new BadRequestException({
+          error: { code: 'OTP_ALREADY_USED', message: 'This verification code has already been used to submit a response.' },
+        });
+      }
       // Belt-and-suspenders: also block a second submission from the same
       // contact for this Need even via a *fresh* OTP request/verification,
       // not just a reused challenge. Scoped to the Need, not the Study — see
@@ -230,7 +267,8 @@ export class CitizenService {
           answers: payload.answers as unknown as Prisma.InputJsonValue,
         },
       });
-      await tx.citizenOtpChallenge.update({ where: { id: challenge.id }, data: { consumedAt: new Date() } });
+      // Challenge was already atomically claimed (consumedAt set) above —
+      // no second write needed here.
       return { row: created, needTitle: need?.title ?? link.needId };
     });
     // RIO-NFR-002 privacy audit: no signed-in actor exists for this request
@@ -292,5 +330,9 @@ export class CitizenService {
       throw new NotFoundException({ error: { code: 'OTP_CHALLENGE_NOT_FOUND', message: 'Verification session not found.' } });
     }
     return challenge;
+  }
+
+  private normalizeContact(contact: string): string {
+    return contact.trim().toLowerCase();
   }
 }

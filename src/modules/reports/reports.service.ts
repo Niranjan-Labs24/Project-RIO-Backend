@@ -81,10 +81,14 @@ export class ReportsService {
   }
 
   async list(params: ListReportsParams): Promise<Report[]> {
+    const take = Math.min(Math.max(params.limit ?? 100, 1), 200);
+    const skip = Math.max(params.offset ?? 0, 0);
     const rows = await this.tenant.runInOrgContext((tx) =>
       tx.report.findMany({
         where: { reportType: params.reportType, status: this.visibleStatusWhere(params.status), studyId: params.studyId },
         orderBy: { generatedAt: "desc" },
+        take,
+        skip,
       }),
     );
     return (rows as unknown as ReportRow[]).map((r) => this.toReport(r));

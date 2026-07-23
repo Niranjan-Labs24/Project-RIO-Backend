@@ -29,6 +29,7 @@ interface UserWithOrg {
   failedLoginAttempts: number;
   lockedUntil: Date | null;
   mustChangePassword: boolean;
+  sessionVersion: number;
   org: {
     id: string; name: string; logoUrl: string | null; region: string[];
     email: string | null; sector: string | null; villages: string[]; isActive: boolean; createdAt: Date;
@@ -111,7 +112,7 @@ export class AuthService {
     }
     await this.audit.record({ action: 'login', entityType: 'user', entityId: found.id, entityLabel: found.email });
 
-    const token = this.tokens.sign({ sub: found.id, orgId: found.org.id, roleKey: role.key });
+    const token = this.tokens.sign({ sub: found.id, orgId: found.org.id, roleKey: role.key, sessionVersion: found.sessionVersion });
     return this.buildSession(found, role, token);
   }
 
@@ -130,7 +131,7 @@ export class AuthService {
       throw new ForbiddenException({ error: { code: 'ORG_INACTIVE', message: 'This organization is not active' } });
     }
     const role = this.roleOf(found.roleId);
-    const token = this.tokens.sign({ sub: found.id, orgId: found.org.id, roleKey: role.key });
+    const token = this.tokens.sign({ sub: found.id, orgId: found.org.id, roleKey: role.key, sessionVersion: found.sessionVersion });
     return this.buildSession(found, role, token);
   }
 
@@ -143,6 +144,9 @@ export class AuthService {
       action: 'logout', entityType: 'user', entityId: actorId,
       entityLabel: found?.email ?? actorId,
     });
+    await this.tenant.runInOrgContext((tx) =>
+      tx.user.update({ where: { id: actorId }, data: { sessionVersion: { increment: 1 } } }),
+    );
   }
 
   async consent(): Promise<{ consentedAt: string; policyVersion: string | null }> {
@@ -229,7 +233,7 @@ export class AuthService {
     }
     await this.audit.record({ action: 'create', entityType: 'organization', entityId: org.id, entityLabel: org.name, organizationId: org.id });
 
-    const token = this.tokens.sign({ sub: user.id, orgId: org.id, roleKey: role.key });
+    const token = this.tokens.sign({ sub: user.id, orgId: org.id, roleKey: role.key, sessionVersion: user.sessionVersion });
     const session = this.buildSession({ ...user, org } as never, role, token);
 
     const emailed = await this.mailer.sendTemporaryPassword(user.email, org.name, temporaryPassword);
@@ -270,8 +274,15 @@ export class AuthService {
         // Replacing a temp password is unambiguous proof of a completed
         // first login — activate here too, not just on consent accept,
         // so status doesn't stay "invited" forever if a user closes the
-        // tab before reaching the consent gate.
-        data: { passwordHash, mustChangePassword: false, status: UserStatus.active },
+        // tab before reaching the consent gate. sessionVersion increments
+        // so any other session signed in with the old password is
+        // invalidated (see JwtAuthGuard's sessionVersion check).
+        data: {
+          passwordHash,
+          mustChangePassword: false,
+          status: UserStatus.active,
+          sessionVersion: { increment: 1 },
+        },
         include: { org: { include: { orgGovernorates: true, orgCenters: true } } },
       }),
     )) as UserWithOrg;
@@ -280,7 +291,7 @@ export class AuthService {
     // row, same field-label convention as Name/Email/Role elsewhere.
     await this.audit.record({ action: 'edit', entityType: 'user', entityId: updated.id, entityLabel: updated.email, changes: [{ field: 'Password', before: null, after: null }] });
     const role = this.roleOf(updated.roleId);
-    const token = this.tokens.sign({ sub: updated.id, orgId: updated.org.id, roleKey: role.key });
+    const token = this.tokens.sign({ sub: updated.id, orgId: updated.org.id, roleKey: role.key, sessionVersion: updated.sessionVersion });
     return this.buildSession(updated, role, token);
   }
 

@@ -2,6 +2,8 @@ import { randomBytes } from 'node:crypto';
 import { BadRequestException, Body, Controller, Get, HttpCode, Post, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ConfigService } from '../../config/config.service';
+import { Public } from '../../auth/public.decorator';
+import { RateLimit } from '../../common/guards/rate-limit.guard';
 import { CSRF_COOKIE_NAME, csrfCookieOptions, SESSION_COOKIE_NAME, sessionCookieOptions } from '../../auth/session-cookie';
 import { CsrfExempt } from '../../common/guards/csrf.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
@@ -25,6 +27,8 @@ export class AuthController {
   // CSRF-exempt: login issues the rio_csrf cookie, so no cookie exists yet for
   // this request to double-submit — it establishes the session, not consumes it.
   @Post('login')
+  @Public()
+  @RateLimit(5, 60)
   @HttpCode(200)
   @CsrfExempt()
   async login(@Body() body: LoginBody, @Res({ passthrough: true }) res: Response): Promise<SessionContext> {
@@ -43,6 +47,8 @@ export class AuthController {
   // first admin and issues a session, same as login. CSRF-exempt for the same
   // reason as login: it issues the rio_csrf cookie rather than consuming it.
   @Post('signup')
+  @Public()
+  @RateLimit(3, 3600)
   @CsrfExempt()
   async signup(
     @Body(new TypeBoxValidationPipe(SignupBody)) body: SignupDto,

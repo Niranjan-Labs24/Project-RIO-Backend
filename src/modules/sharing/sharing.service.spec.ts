@@ -10,29 +10,6 @@ interface FakeOrg {
   id: string;
   name: string;
 }
-
-function fakeTenant(studies: FakeStudy[], orgs: FakeOrg[]) {
-  const tx = {
-    study: {
-      findUnique: async ({ where }: { where: { id: string } }) =>
-        studies.find((s) => s.id === where.id) ?? null,
-      findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
-        studies.filter((s) => where.id.in.includes(s.id)),
-    },
-    organisation: {
-      findUnique: async ({ where }: { where: { id: string } }) =>
-        orgs.find((o) => o.id === where.id) ?? null,
-      findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
-        orgs.filter((o) => where.id.in.includes(o.id)),
-    },
-  };
-  return {
-    runAsSupervisor: async (fn: (tx: unknown) => unknown) => fn(tx),
-    runAsOrg: async (_orgId: string, fn: (tx: unknown) => unknown) => fn(tx),
-    runInOrgContext: async (fn: (tx: unknown) => unknown) => fn(tx),
-  };
-}
-
 interface FakeRow {
   id: string;
   ownerOrgId: string;
@@ -47,11 +24,25 @@ interface FakeRow {
   decisionNote: string | null;
 }
 
-function fakePrisma(initial: FakeRow[] = []) {
-  const rows = [...initial];
+// A single fake tenant now backs every call the service makes — create(),
+// decide(), findVisibleOrThrow(), and list() all go through
+// runInOrgContext/runAsSupervisor, not a separate PrismaService.
+function fakeTenant(studies: FakeStudy[], orgs: FakeOrg[], initialRows: FakeRow[] = []) {
+  const rows = [...initialRows];
   let seq = 0;
-  return {
-    rows,
+  const tx = {
+    study: {
+      findUnique: async ({ where }: { where: { id: string } }) =>
+        studies.find((s) => s.id === where.id) ?? null,
+      findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
+        studies.filter((s) => where.id.in.includes(s.id)),
+    },
+    organisation: {
+      findUnique: async ({ where }: { where: { id: string } }) =>
+        orgs.find((o) => o.id === where.id) ?? null,
+      findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
+        orgs.filter((o) => where.id.in.includes(o.id)),
+    },
     sharingRequest: {
       create: async ({ data }: { data: Partial<FakeRow> }) => {
         const row: FakeRow = {
@@ -80,6 +71,12 @@ function fakePrisma(initial: FakeRow[] = []) {
       findMany: async () => rows,
     },
   };
+  return {
+    rows,
+    runAsSupervisor: async (fn: (tx: unknown) => unknown) => fn(tx),
+    runAsOrg: async (_orgId: string, fn: (tx: unknown) => unknown) => fn(tx),
+    runInOrgContext: async (fn: (tx: unknown) => unknown) => fn(tx),
+  };
 }
 
 function fakeAudit() {
@@ -99,11 +96,7 @@ function runAsOrg<T>(orgId: string, actorId: string, fn: () => Promise<T>): Prom
 
 describe("SharingService.create", () => {
   it("rejects requesting your own org's study", async () => {
-    const svc = new SharingService(
-      fakePrisma() as never,
-      fakeTenant([STUDY], ORGS) as never,
-      fakeAudit() as never,
-    );
+    const svc = new SharingService(fakeTenant([STUDY], ORGS) as never, fakeAudit() as never);
     await expect(
       runAsOrg("org-owner", "user-1", () =>
         svc.create({ ownerOrgId: "org-owner", studyId: STUDY.id, note: "why" }),
@@ -114,11 +107,7 @@ describe("SharingService.create", () => {
   it("rejects when the study doesn't belong to the claimed owner org", async () => {
     // STUDY actually belongs to org-owner — claiming it belongs to a
     // different org must 404, not silently resolve to the real owner.
-    const svc = new SharingService(
-      fakePrisma() as never,
-      fakeTenant([STUDY], ORGS) as never,
-      fakeAudit() as never,
-    );
+    const svc = new SharingService(fakeTenant([STUDY], ORGS) as never, fakeAudit() as never);
     await expect(
       runAsOrg("org-requester", "user-1", () =>
         svc.create({ ownerOrgId: "org-third-party", studyId: STUDY.id, note: "why" }),
@@ -128,11 +117,7 @@ describe("SharingService.create", () => {
 
   it("creates a pending request and writes one audit entry per org (FR-014: logs maintained)", async () => {
     const audit = fakeAudit();
-    const svc = new SharingService(
-      fakePrisma() as never,
-      fakeTenant([STUDY], ORGS) as never,
-      audit as never,
-    );
+    const svc = new SharingService(fakeTenant([STUDY], ORGS) as never, audit as never);
     const result = await runAsOrg("org-requester", "user-1", () =>
       svc.create({ ownerOrgId: "org-owner", studyId: STUDY.id, note: "For a similar assessment" }),
     );
@@ -174,16 +159,14 @@ describe("SharingService.decide (approve/reject)", () => {
   }
 
   it("only the owning org can decide", async () => {
-    const prisma = fakePrisma([seedPending()]);
-    const svc = new SharingService(prisma as never, fakeTenant([STUDY], ORGS) as never, fakeAudit() as never);
+    const svc = new SharingService(fakeTenant([STUDY], ORGS, [seedPending()]) as never, fakeAudit() as never);
     await expect(
       runAsOrg("org-requester", "user-2", () => svc.approve("sr-1")),
     ).rejects.toMatchObject({ response: { error: { code: "FORBIDDEN" } } });
   });
 
   it("rejecting without a reason is refused (reject reason is mandatory)", async () => {
-    const prisma = fakePrisma([seedPending()]);
-    const svc = new SharingService(prisma as never, fakeTenant([STUDY], ORGS) as never, fakeAudit() as never);
+    const svc = new SharingService(fakeTenant([STUDY], ORGS, [seedPending()]) as never, fakeAudit() as never);
     await expect(
       runAsOrg("org-owner", "user-2", () => svc.reject("sr-1", {})),
     ).rejects.toMatchObject({ response: { error: { code: "REJECT_REASON_REQUIRED" } } });
@@ -191,8 +174,7 @@ describe("SharingService.decide (approve/reject)", () => {
 
   it("cannot decide an already-decided request", async () => {
     const row = { ...seedPending(), status: "approved" as const, decidedAt: new Date(), decidedBy: "user-2" };
-    const prisma = fakePrisma([row]);
-    const svc = new SharingService(prisma as never, fakeTenant([STUDY], ORGS) as never, fakeAudit() as never);
+    const svc = new SharingService(fakeTenant([STUDY], ORGS, [row]) as never, fakeAudit() as never);
     await expect(
       runAsOrg("org-owner", "user-2", () => svc.approve("sr-1")),
     ).rejects.toMatchObject({ response: { error: { code: "SHARING_REQUEST_ALREADY_DECIDED" } } });
@@ -200,8 +182,7 @@ describe("SharingService.decide (approve/reject)", () => {
 
   it("approve writes a dual-org audit entry with action 'approve'", async () => {
     const audit = fakeAudit();
-    const prisma = fakePrisma([seedPending()]);
-    const svc = new SharingService(prisma as never, fakeTenant([STUDY], ORGS) as never, audit as never);
+    const svc = new SharingService(fakeTenant([STUDY], ORGS, [seedPending()]) as never, audit as never);
     const result = await runAsOrg("org-owner", "user-2", () => svc.approve("sr-1"));
 
     expect(result.status).toBe("approved");
@@ -212,8 +193,7 @@ describe("SharingService.decide (approve/reject)", () => {
 
   it("reject with a reason writes a dual-org audit entry including the reason", async () => {
     const audit = fakeAudit();
-    const prisma = fakePrisma([seedPending()]);
-    const svc = new SharingService(prisma as never, fakeTenant([STUDY], ORGS) as never, audit as never);
+    const svc = new SharingService(fakeTenant([STUDY], ORGS, [seedPending()]) as never, audit as never);
     const result = await runAsOrg("org-owner", "user-2", () =>
       svc.reject("sr-1", { note: "Not relevant to your current work" }),
     );
@@ -233,8 +213,8 @@ describe("SharingService.decide (approve/reject)", () => {
 });
 
 describe("SharingService.getSharedSnapshot", () => {
-  function fakeTenantWithNeeds() {
-    const base = fakeTenant([STUDY], ORGS);
+  function fakeTenantWithNeeds(initialRows: FakeRow[] = []) {
+    const base = fakeTenant([STUDY], ORGS, initialRows);
     return {
       ...base,
       runAsSupervisor: async (fn: (tx: unknown) => unknown) =>
@@ -247,36 +227,36 @@ describe("SharingService.getSharedSnapshot", () => {
   }
 
   it("refuses to reveal an unapproved request's snapshot (never shared without approval)", async () => {
-    const row = {
+    const row: FakeRow = {
       id: "sr-1", ownerOrgId: "org-owner", requestingOrgId: "org-requester", studyId: STUDY.id,
-      status: "pending" as const, requestedBy: "user-1", requestedAt: new Date(),
+      status: "pending", requestedBy: "user-1", requestedAt: new Date(),
       decidedBy: null, decidedAt: null, note: null, decisionNote: null,
     };
-    const svc = new SharingService(fakePrisma([row]) as never, fakeTenantWithNeeds() as never, fakeAudit() as never);
+    const svc = new SharingService(fakeTenantWithNeeds([row]) as never, fakeAudit() as never);
     await expect(
       runAsOrg("org-requester", "user-1", () => svc.getSharedSnapshot("sr-1")),
     ).rejects.toMatchObject({ response: { error: { code: "SHARING_NOT_APPROVED" } } });
   });
 
   it("only the requesting org can view the approved snapshot", async () => {
-    const row = {
+    const row: FakeRow = {
       id: "sr-1", ownerOrgId: "org-owner", requestingOrgId: "org-requester", studyId: STUDY.id,
-      status: "approved" as const, requestedBy: "user-1", requestedAt: new Date(),
+      status: "approved", requestedBy: "user-1", requestedAt: new Date(),
       decidedBy: "user-2", decidedAt: new Date(), note: null, decisionNote: null,
     };
-    const svc = new SharingService(fakePrisma([row]) as never, fakeTenantWithNeeds() as never, fakeAudit() as never);
+    const svc = new SharingService(fakeTenantWithNeeds([row]) as never, fakeAudit() as never);
     await expect(
       runAsOrg("org-owner", "user-2", () => svc.getSharedSnapshot("sr-1")),
     ).rejects.toMatchObject({ response: { error: { code: "FORBIDDEN" } } });
   });
 
   it("returns the study's needs and evidence count once approved, for the requesting org", async () => {
-    const row = {
+    const row: FakeRow = {
       id: "sr-1", ownerOrgId: "org-owner", requestingOrgId: "org-requester", studyId: STUDY.id,
-      status: "approved" as const, requestedBy: "user-1", requestedAt: new Date(),
+      status: "approved", requestedBy: "user-1", requestedAt: new Date(),
       decidedBy: "user-2", decidedAt: new Date(), note: null, decisionNote: null,
     };
-    const svc = new SharingService(fakePrisma([row]) as never, fakeTenantWithNeeds() as never, fakeAudit() as never);
+    const svc = new SharingService(fakeTenantWithNeeds([row]) as never, fakeAudit() as never);
     const snapshot = await runAsOrg("org-requester", "user-1", () => svc.getSharedSnapshot("sr-1"));
     expect(snapshot.title).toBe(STUDY.title);
     expect(snapshot.needs).toHaveLength(1);

@@ -284,6 +284,76 @@ export class PriorityV2Service {
   }
 
   /**
+   * Org-wide dashboard rows — every Need, left-joined to its consolidated
+   * (villageId = '') VillagePriorityAssessment (null if never recalculated
+   * yet). Shaped to match the frontend's existing PriorityDashboardEntry —
+   * `overrideApplied` maps to the "critical" tier (v2 only has HIGH/MEDIUM/
+   * LOW natively; a triggered critical-domain override is the one case that
+   * warrants standing out as its own bucket on this landing page).
+   */
+  async listForOrg(): Promise<
+    Array<{
+      studyId: string;
+      studyTitle: string;
+      needId: string;
+      score: {
+        overallScore: number;
+        level: 'critical' | 'high' | 'medium' | 'low';
+        gapType: string | null;
+        scoredAt: string;
+      } | null;
+    }>
+  > {
+    return this.tenant.runInOrgContext(async (tx) => {
+      const [studies, needs, surveys, assessments] = await Promise.all([
+        tx.study.findMany(),
+        tx.need.findMany({ orderBy: { updatedAt: 'desc' } }),
+        tx.survey.findMany({ orderBy: { createdAt: 'desc' } }),
+        tx.villagePriorityAssessment.findMany({
+          where: { villageId: '' },
+          orderBy: { calculatedAt: 'desc' },
+        }),
+      ]);
+
+      const studyTitleById = new Map(studies.map((s) => [s.id, s.title]));
+      const surveyByNeedId = new Map<string, (typeof surveys)[number]>();
+      for (const survey of surveys) {
+        if (!surveyByNeedId.has(survey.needId)) surveyByNeedId.set(survey.needId, survey);
+      }
+      const latestAssessmentBySurveyId = new Map<string, (typeof assessments)[number]>();
+      for (const assessment of assessments) {
+        if (!latestAssessmentBySurveyId.has(assessment.surveyId)) {
+          latestAssessmentBySurveyId.set(assessment.surveyId, assessment);
+        }
+      }
+
+      return needs.map((need) => {
+        const survey = surveyByNeedId.get(need.id);
+        const assessment = survey ? latestAssessmentBySurveyId.get(survey.id) : undefined;
+        return {
+          studyId: need.studyId,
+          studyTitle: studyTitleById.get(need.studyId) ?? need.studyId,
+          needId: need.id,
+          score: assessment
+            ? {
+                overallScore: Math.round(Number(assessment.priorityScore) * 10) / 10,
+                level: (assessment.overrideApplied
+                  ? 'critical'
+                  : assessment.priorityStatus.toLowerCase()) as
+                  | 'critical'
+                  | 'high'
+                  | 'medium'
+                  | 'low',
+                gapType: assessment.overrideReason,
+                scoredAt: assessment.calculatedAt.toISOString(),
+              }
+            : null,
+        };
+      });
+    });
+  }
+
+  /**
    * Read the latest VillagePriorityAssessment for a given scope.
    * Returns null if not yet calculated.
    */

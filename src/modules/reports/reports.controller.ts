@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, Res } from "@nestjs/common";
 import type { Response } from "express";
 import { RequirePermission } from "../../common/guards/permission.guard";
+import { parseIntParam } from "../../common/http/query.util";
 import { TypeBoxValidationPipe } from "../../contract/validation.pipe";
 import { CreateReportBody } from "./reports.contract";
 import { ReportsService } from "./reports.service";
@@ -24,8 +25,10 @@ export class ReportsController {
     @Query("reportType") reportType?: ReportTypeCode,
     @Query("status") status?: ReportStatus,
     @Query("studyId") studyId?: string,
+    @Query("limit") limit?: string,
+    @Query("offset") offset?: string,
   ): Promise<Report[]> {
-    const params: ListReportsParams = { reportType, status, studyId };
+    const params: ListReportsParams = { reportType, status, studyId, limit: parseIntParam(limit), offset: parseIntParam(offset) };
     return this.reports.list(params);
   }
 

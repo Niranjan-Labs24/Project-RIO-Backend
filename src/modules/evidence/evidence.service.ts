@@ -25,6 +25,7 @@ export class EvidenceService {
     for (const file of files) {
       this.storage.assertAllowedExtension(file.originalName);
       this.storage.assertAllowedSize(file.originalName, file.sizeBytes);
+      this.storage.assertFileSignature(file.originalName, file.buffer);
     }
 
     const need = await this.tenant.runInOrgContext((tx) => tx.need.findUnique({ where: { id: needId } }));
@@ -71,37 +72,41 @@ export class EvidenceService {
         .filter((hash): hash is string => hash !== null),
     );
 
-    const created: EvidenceRow[] = [];
+    const prepared: Array<UploadedFilePayload & { fileHash: string; storageKey: string; isDuplicate: boolean }> = [];
     const isDuplicateByRowId = new Map<string, boolean>();
-    for (const file of files) {
-      const fileHash = this.storage.hashBuffer(file.buffer);
-      const isDuplicate = existingHashes.has(fileHash);
-      existingHashes.add(fileHash);
-      const storageKey = await this.storage.save(file.originalName, file.buffer);
-      const row = (await this.tenant.runInOrgContext((tx) =>
-        tx.evidence.create({
-          data: {
-            needId,
-            studyId,
-            orgId,
-            fileName: file.originalName,
-            fileType: file.mimeType,
-            fileSize: file.sizeBytes,
-            storageKey,
-            fileHash,
-            uploadedBy,
-          },
-        }),
-      )) as EvidenceRow;
-      created.push(row);
-      isDuplicateByRowId.set(row.id, isDuplicate);
+    let committed = false;
+    try {
+      for (const file of files) {
+        const fileHash = this.storage.hashBuffer(file.buffer);
+        const isDuplicate = existingHashes.has(fileHash);
+        existingHashes.add(fileHash);
+        const storageKey = await this.storage.save(file.originalName, file.buffer);
+        prepared.push({ ...file, fileHash, storageKey, isDuplicate });
+      }
+      const created = await this.tenant.runInOrgContext(async (tx) => {
+        const rows: EvidenceRow[] = [];
+        for (const file of prepared) {
+          const row = await tx.evidence.create({
+            data: {
+              needId, studyId, orgId, fileName: file.originalName, fileType: file.mimeType,
+              fileSize: file.sizeBytes, storageKey: file.storageKey, fileHash: file.fileHash, uploadedBy,
+            },
+          });
+          rows.push(row as EvidenceRow);
+          isDuplicateByRowId.set(row.id, file.isDuplicate);
+        }
+        return rows;
+      });
+      committed = true;
+      for (const row of created) {
+        await this.audit.record({ action: 'create', entityType: 'evidence', entityId: row.id, entityLabel: row.fileName });
+      }
+      const uploaderName = await this.resolveUserName(uploadedBy);
+      return created.map((r) => this.toEvidence(r, uploaderName, isDuplicateByRowId.get(r.id) ?? false));
+    } catch (error) {
+      if (!committed) await Promise.all(prepared.map((file) => this.storage.remove(file.storageKey)));
+      throw error;
     }
-
-    for (const row of created) {
-      await this.audit.record({ action: 'create', entityType: 'evidence', entityId: row.id, entityLabel: row.fileName });
-    }
-    const uploaderName = await this.resolveUserName(uploadedBy);
-    return created.map((r) => this.toEvidence(r, uploaderName, isDuplicateByRowId.get(r.id) ?? false));
   }
 
   // RIO-FR-Add-01: an explicit step, separate from uploading — AI

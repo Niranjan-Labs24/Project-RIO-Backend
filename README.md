@@ -33,9 +33,9 @@ auto-reads `.env` for the `${DB_HOST_PORT:-5432}` substitution in `docker-compos
   falls back to returning/logging the temp password, but **only** outside production (`NODE_ENV`
   defaults to `production` when unset, so this fallback fails closed by default).
 - `MAIL_FROM` — the `From:` address/display name used for that email (default `RIO <no-reply@rio.local>`).
-- `CSRF_ENFORCE` — opt-in double-submit CSRF check (`CsrfGuard`). **Default `false`** (off); the
+- `CSRF_ENFORCE` — double-submit CSRF check for cookie-authenticated mutations (`CsrfGuard`). **Default `true`**; the
   frontend must first read the `rio_csrf` cookie and echo it as `X-CSRF-Token` on unsafe methods
-  before this is safe to flip on. `login`/`signup` are always exempt (they issue that cookie). Even
+  whenever it uses the session cookie. `login`/`signup` are always exempt (they issue that cookie). Even
   with this on, cross-site (different-site frontend/API) deployments additionally need
   `sameSite: 'none'` on the session/CSRF cookies (`session-cookie.ts`) — that is a separate,
   not-yet-automated deploy-config step, out of scope for the guard itself.
