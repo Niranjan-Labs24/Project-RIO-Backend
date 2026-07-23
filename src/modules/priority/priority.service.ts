@@ -476,7 +476,6 @@ export class PriorityService {
 
       // Group option counts
       const countsMap = new Map<string, number>();
-      let missingAnswerCount = 0;
       for (const a of answers) {
         if (a.answerOptionId) {
           countsMap.set(a.answerOptionId, (countsMap.get(a.answerOptionId) || 0) + 1);
@@ -490,8 +489,6 @@ export class PriorityService {
           countsMap.set(numStr, (countsMap.get(numStr) || 0) + 1);
         } else if (a.answerText) {
           countsMap.set(a.answerText, (countsMap.get(a.answerText) || 0) + 1);
-        } else {
-          missingAnswerCount++;
         }
       }
 

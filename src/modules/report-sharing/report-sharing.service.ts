@@ -5,7 +5,7 @@ import { getOrgStore, requireActor, requireOrgId } from "../../tenancy/org-conte
 import { roleByKey } from "../../rbac/role-matrix";
 import { AuditService } from "../audit/audit.service";
 import { ReportsService } from "../reports/reports.service";
-import { EXPORTABLE_STATUSES, type ExportFormat } from "../reports/reports.types";
+import { EXPORTABLE_STATUSES } from "../reports/reports.types";
 import type {
   CreateReportSharingRequestPayload, DecideReportSharingRequestPayload, OrgLookupResult,
   ReportLookupResult, ReportSharingRequest, ReportSharingRequestRow, SharedReportSnapshot,

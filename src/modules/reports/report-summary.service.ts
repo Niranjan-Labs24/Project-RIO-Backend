@@ -157,7 +157,6 @@ export class ReportSummaryService {
     reportDataHash: string;
     evidenceHash: string;
   }> {
-    const orgId = requireOrgId();
     const villageId = scopeFilters.villageId || '';
 
     return this.tenant.runInOrgContext(async (tx) => {

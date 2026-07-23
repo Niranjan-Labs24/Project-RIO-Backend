@@ -107,7 +107,7 @@ describe("Reports lifecycle flow (RPT14 Village Report)", () => {
       expect(body.length).toBeGreaterThan(2000);
       const file = join(OUT, `RPT14-${id}.${ext}`);
       writeFileSync(file, body);
-      // eslint-disable-next-line no-console
+       
       console.log(`  ✓ ${format} export → ${file} (${body.length} bytes)`);
     }
 
@@ -118,7 +118,7 @@ describe("Reports lifecycle flow (RPT14 Village Report)", () => {
     // 8. Archived reports are still exportable.
     await auth(request(server).get(`/api/reports/${id}/export`).query({ format: "pdf" })).expect(200);
 
-    // eslint-disable-next-line no-console
+     
     console.log(`\n  Open the exported files in: ${OUT}\n`);
   }, 30_000);
 });

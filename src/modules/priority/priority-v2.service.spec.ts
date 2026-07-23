@@ -3,11 +3,7 @@ import { computeVillagePriority, normalizeDomainKey } from './priority-v2.servic
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
-function makeConfigs(overrides: Partial<{
-  weight: number;
-  isCritical: boolean;
-  threshold: number;
-}>[] = []) {
+function makeConfigs() {
   // Default: 5 domains matching the baseline CSV, weights sum to 1.
   const defaults = [
     { domainKey: 'HEALTH',            domainNameSnapshot: 'Health',              weight: 0.30, isCriticalDomain: true,  criticalPerformanceThreshold: 30 },
