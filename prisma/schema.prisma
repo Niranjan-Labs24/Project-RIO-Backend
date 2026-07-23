@@ -1043,12 +1043,14 @@ enum ReportType {
   RPT11
   RPT12
   RPT13
+  RPT14
 }
 
 enum ReportStatus {
   draft
-  approved
   rejected
+  released
+  archived
 }
 
 model Report {
@@ -1064,8 +1066,12 @@ model Report {
   content      Json
   generatedBy  String       @map("generated_by") @db.Uuid
   generatedAt  DateTime     @default(now()) @map("generated_at") @db.Timestamptz(6)
+  // Two-step approval: Officer confirms first, then Reviewer approves (release).
+  officerConfirmedBy String?  @map("officer_confirmed_by") @db.Uuid
+  officerConfirmedAt DateTime? @map("officer_confirmed_at") @db.Timestamptz(6)
   reviewedBy   String?      @map("reviewed_by") @db.Uuid
   reviewedAt   DateTime?    @map("reviewed_at") @db.Timestamptz(6)
+  archivedAt   DateTime?    @map("archived_at") @db.Timestamptz(6)
 
   org   Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
   study Study?       @relation(fields: [studyId], references: [id], onDelete: Cascade)

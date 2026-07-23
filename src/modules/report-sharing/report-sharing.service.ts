@@ -5,7 +5,7 @@ import { getOrgStore, requireActor, requireOrgId } from "../../tenancy/org-conte
 import { roleByKey } from "../../rbac/role-matrix";
 import { AuditService } from "../audit/audit.service";
 import { ReportsService } from "../reports/reports.service";
-import type { ExportFormat } from "../reports/reports.types";
+import { EXPORTABLE_STATUSES, type ExportFormat } from "../reports/reports.types";
 import type {
   CreateReportSharingRequestPayload, DecideReportSharingRequestPayload, OrgLookupResult,
   ReportLookupResult, ReportSharingRequest, ReportSharingRequestRow, SharedReportSnapshot,
@@ -54,9 +54,9 @@ export class ReportSharingService {
     if (!report || report.orgId !== payload.ownerOrgId) {
       throw new NotFoundException({ error: { code: "REPORT_NOT_FOUND", message: "Report not found" } });
     }
-    if (report.status !== "approved") {
+    if (!EXPORTABLE_STATUSES.includes(report.status)) {
       throw new BadRequestException({
-        error: { code: "REPORT_NOT_APPROVED", message: "Only an approved report can be requested for sharing." },
+        error: { code: "REPORT_NOT_RELEASED", message: "Only a released or archived report can be requested for sharing." },
       });
     }
 
@@ -170,7 +170,7 @@ export class ReportSharingService {
   async lookupReportsForOrg(ownerOrgId: string): Promise<ReportLookupResult[]> {
     const rows = await this.tenant.runAsSupervisor((tx) =>
       tx.report.findMany({
-        where: { orgId: ownerOrgId, status: "approved" },
+        where: { orgId: ownerOrgId, status: { in: EXPORTABLE_STATUSES } },
         orderBy: { generatedAt: "desc" },
       }),
     );

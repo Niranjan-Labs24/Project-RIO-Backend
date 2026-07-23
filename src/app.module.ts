@@ -37,6 +37,7 @@ import { ReportSharingModule } from './modules/report-sharing/report-sharing.mod
 import { ReportsModule } from './modules/reports/reports.module';
 import { ArchiveModule } from './modules/archive/archive.module';
 import { ReviewerSlaModule } from './modules/reviewer-sla/reviewer-sla.module';
+import { CollectiveDashboardModule } from './modules/collective-dashboard/collective-dashboard.module';
 import { AiModule } from './modules/ai/ai.module';
 import { QuestionsModule } from './modules/questions/questions.module';
 import { SurveysModule } from './modules/surveys/surveys.module';
@@ -87,6 +88,7 @@ import { SurveysModule } from './modules/surveys/surveys.module';
     ReportsModule,
     ArchiveModule,
     ReviewerSlaModule,
+    CollectiveDashboardModule,
     AiModule,
     QuestionsModule,
     SurveysModule,

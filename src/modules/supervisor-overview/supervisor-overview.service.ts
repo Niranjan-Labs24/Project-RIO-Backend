@@ -3,6 +3,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { getOrgStore } from "../../tenancy/org-context";
 import { roleByKey } from "../../rbac/role-matrix";
+import { EXPORTABLE_STATUSES } from "../reports/reports.types";
 import type { SupervisorOverview, SupervisorOverviewRow } from "./supervisor-overview.types";
 
 // Program Supervisor (center_supervisor) cross-organization, read-only
@@ -26,7 +27,7 @@ export class SupervisorOverviewService {
       this.tenant.runAsSupervisor((tx) => tx.organisation.findMany({ orderBy: { name: "asc" } })),
       this.tenant.runAsSupervisor((tx) => tx.study.findMany({ orderBy: { updatedAt: "desc" } })),
       this.tenant.runAsSupervisor((tx) => tx.need.findMany()),
-      this.tenant.runAsSupervisor((tx) => tx.report.findMany({ where: { status: "approved" }, orderBy: { generatedAt: "desc" } })),
+      this.tenant.runAsSupervisor((tx) => tx.report.findMany({ where: { status: { in: EXPORTABLE_STATUSES } }, orderBy: { generatedAt: "desc" } })),
       this.prisma.sharingRequest.findMany({ orderBy: { requestedAt: "desc" } }),
     ]);
 
