@@ -36,7 +36,8 @@ export interface ReportSharingRequest {
 export interface CreateReportSharingRequestPayload {
   ownerOrgId: string;
   reportId: string;
-  note?: string;
+  /** "Purpose" in the UI — required (see report-sharing.contract.ts). */
+  note: string;
 }
 
 export interface DecideReportSharingRequestPayload {
@@ -52,6 +53,8 @@ export interface SharedReportSnapshot {
   reportType: string;
   content: Record<string, unknown>;
   generatedAt: string;
+  ownerOrgName: string;
+  generatedByName: string | null;
 }
 
 // Lookup rows for the "search organization → pick its approved report"

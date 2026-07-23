@@ -1,5 +1,5 @@
 import { buildPlaceholderExcel } from "./excel-builder";
-import { buildPlaceholderPdf } from "./pdf-builder";
+import { buildReportPdf } from "./pdf-builder";
 import { flattenReportContent } from "./report-content-flatten";
 import type { ReportTypeCode } from "./reports.types";
 
@@ -33,10 +33,12 @@ function auditMetaLines(meta: ExportAuditMeta): Array<{ field: string; value: st
   return rows;
 }
 
-// Real, openable PDF/Excel files generated from the report's own `content`
-// (see reports.service.ts#generateContent) — RIO-NFR-007/008 (Arabic RTL,
-// export layout fidelity) is still a documented follow-up for a proper
-// renderer; this covers "the file actually opens and has real data" for now.
+// Real, openable, properly formatted PDF/Excel files generated from the
+// report's own `content` (see reports.service.ts#generateContent) —
+// RIO-NFR-007 (Arabic RTL) and the final bespoke per-report-type visual
+// design are still a documented follow-up (the latter pending Karthika's
+// Village Assessment Report viewer); this covers real pagination, section
+// headings, and bordered tables generically today (RIO-NFR-008).
 export async function buildExportStub(
   format: "pdf" | "excel",
   report: { id: string; title: string; reportType: string; content: Record<string, unknown> },
@@ -48,20 +50,7 @@ export async function buildExportStub(
   const metaRows = auditMetaLines(meta);
 
   if (format === "pdf") {
-    const bodyLines = metaRows.map((row) => `${row.field}: ${row.value}`);
-    bodyLines.push("");
-    bodyLines.push(...flattened.summaryRows.map((row) => `${row.field}: ${row.value}`));
-    for (const table of flattened.tables) {
-      bodyLines.push("", `${table.name}:`);
-      for (const row of table.rows) {
-        bodyLines.push(
-          Object.entries(row)
-            .map(([k, v]) => `${k}=${v === null || v === undefined ? "—" : String(v)}`)
-            .join("  "),
-        );
-      }
-    }
-    const body = buildPlaceholderPdf(report.title, bodyLines);
+    const body = await buildReportPdf(report.title, report.reportType, metaRows, flattened);
     return { filename, contentType: "application/pdf", body };
   }
 

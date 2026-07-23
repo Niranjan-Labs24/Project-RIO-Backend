@@ -1,119 +1,158 @@
-// A minimal, dependency-free, but genuinely valid multi-page PDF writer.
-// Real report rendering (RIO-NFR-007/008: Arabic RTL, export quality) is a
-// documented future step — this exists only so the placeholder export
-// actually opens in a PDF viewer instead of being plain text wearing a
-// ".pdf" extension. Text is Latin-1/WinAnsi (base Helvetica has no Arabic
-// glyphs) — non-Latin-1 characters are replaced with "?" rather than
-// corrupting the byte stream; that limitation goes away with the real
-// renderer, not before.
-function escapePdfText(raw: string): string {
-  const latin1Safe = Buffer.from(raw, "utf-8").toString("latin1").replace(/[^\x20-\x7e]/g, "?");
-  return latin1Safe.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+import PDFDocument from "pdfkit";
+import type { FlattenedContent } from "./report-content-flatten";
+
+// Real PDF rendering (RIO-NFR-008) via pdfkit — proper pagination, real
+// tables with borders/column widths, and section headings, instead of the
+// previous hand-rolled byte-level PDF writer that just dumped wrapped plain
+// text. Arabic/RTL text support (RIO-NFR-007) and the final bespoke
+// per-report-type visual design are deliberately out of scope here — the
+// latter is Karthika's Village Assessment Report viewer, which this will
+// switch to reusing (in a print/PDF mode) once that's merged; until then
+// this covers "a real, well-formatted export" generically across all
+// report types via the same flattened content model every export already
+// uses.
+const PAGE_MARGIN = 50;
+const TABLE_ROW_HEIGHT = 22;
+const MAX_ROWS_PER_PAGE_SLICE = 10_000; // guards against runaway content, not a real limit today
+
+function ensureSpace(doc: PDFKit.PDFDocument, neededHeight: number): void {
+  const bottom = doc.page.height - doc.page.margins.bottom;
+  if (doc.y + neededHeight > bottom) doc.addPage();
 }
 
-function wrapLine(line: string, maxChars: number): string[] {
-  if (line.length <= maxChars) return [line];
-  const words = line.split(" ");
-  const wrapped: string[] = [];
-  let current = "";
-  for (const word of words) {
-    if ((current + " " + word).trim().length > maxChars) {
-      if (current) wrapped.push(current.trim());
-      current = word;
-    } else {
-      current = `${current} ${word}`.trim();
-    }
-  }
-  if (current) wrapped.push(current);
-  return wrapped;
+function drawSectionHeading(doc: PDFKit.PDFDocument, text: string): void {
+  ensureSpace(doc, 30);
+  doc.moveDown(0.5);
+  doc.font("Helvetica-Bold").fontSize(13).fillColor("#111827").text(text);
+  doc
+    .moveTo(doc.page.margins.left, doc.y + 2)
+    .lineTo(doc.page.width - doc.page.margins.right, doc.y + 2)
+    .strokeColor("#d1d5db")
+    .stroke();
+  doc.moveDown(0.5);
 }
 
-const PAGE_WIDTH = 612;
-const PAGE_HEIGHT = 792;
-const MARGIN_LEFT = 50;
-const MAX_CHARS_PER_LINE = 90;
-// Conservative for every page, including the title page — the title itself
-// eats roughly 3 lines' worth of vertical space on page 1, so this constant
-// stays well under what a title-less page could actually fit. A byte-exact
-// per-page fit isn't worth the complexity for a placeholder renderer; this
-// just has to never silently overflow past the bottom margin, which the
-// previous single-page version did for any report longer than ~45 lines.
-const LINES_PER_PAGE = 40;
+function drawKeyValueRows(
+  doc: PDFKit.PDFDocument,
+  rows: Array<{ field: string; value: string }>,
+): void {
+  const usableWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  const labelWidth = usableWidth * 0.35;
+  const valueWidth = usableWidth * 0.65;
 
-function buildPageContentStream(title: string | null, lines: string[]): string {
-  const parts: string[] = ["BT"];
-  if (title) {
-    parts.push("/F1 16 Tf", `${MARGIN_LEFT} ${PAGE_HEIGHT - 60} Td`, `(${escapePdfText(title)}) Tj`, "/F2 10 Tf");
-    let first = true;
-    for (const line of lines) {
-      parts.push(`0 -${first ? 24 : 16} Td`, `(${escapePdfText(line)}) Tj`);
-      first = false;
-    }
-  } else {
-    parts.push("/F2 10 Tf", `${MARGIN_LEFT} ${PAGE_HEIGHT - 50} Td`);
-    let first = true;
-    for (const line of lines) {
-      parts.push(`0 -${first ? 0 : 16} Td`, `(${escapePdfText(line)}) Tj`);
-      first = false;
-    }
+  for (const row of rows.slice(0, MAX_ROWS_PER_PAGE_SLICE)) {
+    ensureSpace(doc, TABLE_ROW_HEIGHT);
+    const startY = doc.y;
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(9)
+      .fillColor("#374151")
+      .text(row.field, doc.page.margins.left, startY, { width: labelWidth });
+    doc
+      .font("Helvetica")
+      .fontSize(9)
+      .fillColor("#111827")
+      .text(row.value, doc.page.margins.left + labelWidth, startY, { width: valueWidth });
+    doc.y = Math.max(doc.y, startY + 14);
+    doc.moveDown(0.15);
   }
-  parts.push("ET");
-  return parts.join("\n");
 }
 
-export function buildPlaceholderPdf(title: string, bodyLines: string[]): Buffer {
-  const wrappedLines = bodyLines.flatMap((line) => wrapLine(line, MAX_CHARS_PER_LINE));
-
-  // Chunk into one page's worth at a time — page 1 carries the title,
-  // every subsequent page is body-only.
-  const pageChunks: string[][] = [];
-  for (let i = 0; i < wrappedLines.length; i += LINES_PER_PAGE) {
-    pageChunks.push(wrappedLines.slice(i, i + LINES_PER_PAGE));
+function drawDataTable(
+  doc: PDFKit.PDFDocument,
+  table: { name: string; rows: Array<Record<string, unknown>> },
+): void {
+  drawSectionHeading(doc, table.name);
+  if (table.rows.length === 0) {
+    doc.font("Helvetica").fontSize(9).fillColor("#6b7280").text("No data.");
+    return;
   }
-  if (pageChunks.length === 0) pageChunks.push([]);
 
-  const pageCount = pageChunks.length;
-  // Object numbering: 1=Catalog, 2=Pages, 3..3+pageCount-1=Page objects,
-  // then font objects, then one content-stream object per page.
-  const pageObjNums = pageChunks.map((_, i) => 3 + i);
-  const fontBoldObjNum = 3 + pageCount;
-  const fontRegularObjNum = fontBoldObjNum + 1;
-  const firstContentObjNum = fontRegularObjNum + 1;
+  const columns = Array.from(new Set(table.rows.flatMap((row) => Object.keys(row))));
+  const usableWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+  const colWidth = usableWidth / columns.length;
 
-  const objects: string[] = [];
-  objects.push(`<< /Type /Catalog /Pages 2 0 R >>`); // 1
-  objects.push(
-    `<< /Type /Pages /Kids [${pageObjNums.map((n) => `${n} 0 R`).join(" ")}] /Count ${pageCount} >>`,
-  ); // 2
+  function drawRow(values: string[], opts: { bold: boolean }) {
+    ensureSpace(doc, TABLE_ROW_HEIGHT);
+    const startY = doc.y;
+    doc.font(opts.bold ? "Helvetica-Bold" : "Helvetica").fontSize(8.5);
+    values.forEach((value, i) => {
+      doc
+        .fillColor(opts.bold ? "#111827" : "#374151")
+        .text(value, doc.page.margins.left + i * colWidth, startY, {
+          width: colWidth - 6,
+          ellipsis: true,
+        });
+    });
+    doc.y = startY + TABLE_ROW_HEIGHT;
+    doc
+      .moveTo(doc.page.margins.left, doc.y - 4)
+      .lineTo(doc.page.width - doc.page.margins.right, doc.y - 4)
+      .strokeColor("#e5e7eb")
+      .stroke();
+  }
 
-  pageChunks.forEach((_, i) => {
-    const contentObjNum = firstContentObjNum + i;
-    objects.push(
-      `<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 ${fontBoldObjNum} 0 R /F2 ${fontRegularObjNum} 0 R >> >> /MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}] /Contents ${contentObjNum} 0 R >>`,
+  drawRow(
+    columns.map((c) => c.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (ch) => ch.toUpperCase())),
+    { bold: true },
+  );
+  for (const row of table.rows) {
+    drawRow(
+      columns.map((c) => {
+        const v = row[c];
+        return v === null || v === undefined ? "—" : String(v);
+      }),
+      { bold: false },
     );
-  });
-
-  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>"); // fontBoldObjNum
-  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"); // fontRegularObjNum
-
-  pageChunks.forEach((chunk, i) => {
-    const contentStream = buildPageContentStream(i === 0 ? title : null, chunk);
-    objects.push(`<< /Length ${Buffer.byteLength(contentStream, "latin1")} >>\nstream\n${contentStream}\nendstream`);
-  });
-
-  let pdf = "%PDF-1.4\n";
-  const offsets: number[] = [];
-  objects.forEach((obj, index) => {
-    offsets.push(Buffer.byteLength(pdf, "latin1"));
-    pdf += `${index + 1} 0 obj\n${obj}\nendobj\n`;
-  });
-
-  const xrefOffset = Buffer.byteLength(pdf, "latin1");
-  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for (const offset of offsets) {
-    pdf += `${offset.toString().padStart(10, "0")} 00000 n \n`;
   }
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+}
 
-  return Buffer.from(pdf, "latin1");
+export function buildReportPdf(
+  title: string,
+  reportType: string,
+  metaRows: Array<{ field: string; value: string }>,
+  content: FlattenedContent,
+): Promise<Buffer> {
+  const doc = new PDFDocument({ size: "A4", margin: PAGE_MARGIN, bufferPages: true });
+  const chunks: Buffer[] = [];
+  doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+
+  doc.font("Helvetica-Bold").fontSize(20).fillColor("#111827").text(title);
+  doc.font("Helvetica").fontSize(10).fillColor("#6b7280").text(reportType);
+  doc.moveDown(1);
+
+  if (metaRows.length > 0) {
+    drawSectionHeading(doc, "Report Details");
+    drawKeyValueRows(doc, metaRows);
+  }
+
+  if (content.summaryRows.length > 0) {
+    drawSectionHeading(doc, "Summary");
+    drawKeyValueRows(doc, content.summaryRows);
+  }
+
+  for (const table of content.tables) {
+    drawDataTable(doc, table);
+  }
+
+  // Page numbers footer, added after all content since page count isn't
+  // known until everything's been laid out (bufferPages: true holds every
+  // page in memory until doc.end() so this range switch is safe).
+  const pageRange = doc.bufferedPageRange();
+  for (let i = 0; i < pageRange.count; i++) {
+    doc.switchToPage(pageRange.start + i);
+    doc
+      .font("Helvetica")
+      .fontSize(8)
+      .fillColor("#9ca3af")
+      .text(`Page ${i + 1} of ${pageRange.count}`, doc.page.margins.left, doc.page.height - 35, {
+        width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
+        align: "center",
+      });
+  }
+
+  return new Promise((resolve) => {
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.end();
+  });
 }

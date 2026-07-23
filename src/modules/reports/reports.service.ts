@@ -139,45 +139,12 @@ export class ReportsService {
     return row as unknown as ReportRow;
   }
 
-  // `reports` has RLS scoped to the caller's own org (see findOrThrow above)
-  // — a cross-org report id 404s under the normal `export()` path by design.
-  // This is the one exception: ReportSharingService calls this only after
-  // confirming an *approved* ReportSharingRequest actually grants the
-  // caller's org access to this specific report, so a supervisor-scoped
-  // (RLS-bypassing) read is safe here specifically, not a general escape
-  // hatch. Same status/format checks and export pipeline as `export()`.
-  async exportForApprovedSharingGrant(
-    id: string,
-    format: ExportFormat,
-  ): Promise<{ filename: string; contentType: string; body: Buffer }> {
-    const row = (await this.tenant.runAsSupervisor((tx) =>
-      tx.report.findUnique({ where: { id } }),
-    )) as unknown as ReportRow | null;
-    if (!row) throw new NotFoundException({ error: { code: "REPORT_NOT_FOUND", message: "Report not found" } });
-    const meta = REPORT_TYPE_META[row.reportType];
-    if (row.status !== "approved") {
-      throw new ForbiddenException({
-        error: { code: "REPORT_NOT_APPROVED", message: "Only an approved report may be exported." },
-      });
-    }
-    if (!meta.exportFormats.includes(format)) {
-      throw new BadRequestException({
-        error: { code: "EXPORT_FORMAT_NOT_SUPPORTED", message: `${row.reportType} doesn't support ${format} export.` },
-      });
-    }
-    await this.audit.record({ action: "share", entityType: "report", entityId: row.id, entityLabel: row.title, metadata: { format, crossOrg: true } });
-    const auditMeta = await this.tenant.runAsSupervisor((tx) => this.resolveExportAuditMeta(row, tx));
-    return buildExportStub(
-      format,
-      { id: row.id, title: row.title, reportType: row.reportType, content: row.content as Record<string, unknown> },
-      auditMeta,
-    );
-  }
-
   // Cross-org read for ReportSharingService's own lookup/snapshot needs
   // (confirming a report exists/belongs to the expected owner org, and
-  // returning its flattened content for the read-only shared view) — same
-  // supervisor-scoped exception as exportForApprovedSharingGrant above.
+  // returning its flattened content for the read-only shared view). A
+  // shared report is view-only -- there is deliberately no cross-org export
+  // counterpart to this read; the owning org's own export stays on the
+  // normal RLS-scoped `export()` below.
   async findAcrossOrgsOrThrow(id: string): Promise<Report> {
     const row = (await this.tenant.runAsSupervisor((tx) =>
       tx.report.findUnique({ where: { id } }),
@@ -205,24 +172,46 @@ export class ReportsService {
           // A Study can hold many Needs now — the report covers all of them,
           // each with its own evidence count/priority score/AI summary.
           const needs = await tx.need.findMany({ where: { studyId }, orderBy: { createdAt: "asc" } });
-          const needSections = await Promise.all(
-            needs.map(async (need) => {
-              const [evidenceCount, priority, summary] = await Promise.all([
-                tx.evidence.count({ where: { needId: need.id } }),
-                tx.priorityScore.findFirst({ where: { needId: need.id, approvedAt: { not: null } }, orderBy: { scoredAt: "desc" } }),
-                tx.aiSummary.findFirst({ where: { needId: need.id }, orderBy: { generatedAt: "desc" } }),
-              ]);
-              return {
-                needId: need.id,
-                statement: need.statement,
-                villages: need.village,
-                status: need.status,
-                evidenceCount,
-                priorityScore: priority ? { level: priority.level, overallScore: priority.overallScore } : null,
-                aiSummary: summary?.summaryText ?? null,
-              };
-            }),
-          );
+          const needIds = needs.map((n) => n.id);
+          // Batched (RIO-NFR-005) instead of 3 queries per Need — a Study
+          // with dozens of Needs would otherwise fire 3xN concurrent
+          // queries just to build this one report.
+          const [evidenceCounts, priorities, summaries] = await Promise.all([
+            needIds.length === 0
+              ? Promise.resolve([])
+              : tx.evidence.groupBy({ by: ["needId"], where: { needId: { in: needIds } }, _count: { _all: true } }),
+            needIds.length === 0
+              ? Promise.resolve([])
+              : tx.priorityScore.findMany({
+                  where: { needId: { in: needIds }, approvedAt: { not: null } },
+                  orderBy: { scoredAt: "desc" },
+                }),
+            needIds.length === 0
+              ? Promise.resolve([])
+              : tx.aiSummary.findMany({ where: { needId: { in: needIds } }, orderBy: { generatedAt: "desc" } }),
+          ]);
+          const evidenceCountByNeedId = new Map(evidenceCounts.map((e) => [e.needId, e._count._all]));
+          // findMany results are ordered desc, so the first entry seen per
+          // needId is the latest — same "first wins" semantics as the
+          // previous per-need findFirst calls.
+          const priorityByNeedId = new Map<string, (typeof priorities)[number]>();
+          for (const p of priorities) if (!priorityByNeedId.has(p.needId)) priorityByNeedId.set(p.needId, p);
+          const summaryByNeedId = new Map<string, (typeof summaries)[number]>();
+          for (const s of summaries) if (!summaryByNeedId.has(s.needId)) summaryByNeedId.set(s.needId, s);
+
+          const needSections = needs.map((need) => {
+            const priority = priorityByNeedId.get(need.id);
+            const summary = summaryByNeedId.get(need.id);
+            return {
+              needId: need.id,
+              statement: need.statement,
+              villages: need.village,
+              status: need.status,
+              evidenceCount: evidenceCountByNeedId.get(need.id) ?? 0,
+              priorityScore: priority ? { level: priority.level, overallScore: priority.overallScore } : null,
+              aiSummary: summary?.summaryText ?? null,
+            };
+          });
           return {
             title: `Individual Study Report — ${study.title}`,
             content: {

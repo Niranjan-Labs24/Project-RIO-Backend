@@ -21,9 +21,11 @@ import type { SlaAlert, SlaConfig } from "./reviewer-sla.types";
 // pending queue, and once any one of them acts on an item, it disappears
 // from everyone's queue since it's the same underlying row. due-by is
 // computed (createdAt/submittedAt + configurable SLA hours), not stored —
-// no new table needed. In-app alerts only for now; a real email alert
-// channel can stay a log-only placeholder later, same spirit as the
-// temp-password email fallback already built for signup.
+// no new table needed. In-app only, by product decision (RIO-FR-Add-04):
+// the client confirmed email delivery is not required — the topbar bell's
+// poll + severity-driven color (see useReviewerSlaBadge on the frontend)
+// is the full "fires ahead of breach" mechanism, not a placeholder for a
+// future email channel.
 @Injectable()
 export class ReviewerSlaService {
   constructor(

@@ -141,7 +141,7 @@ export class AuditService {
         tx.auditLog.findMany({ where: effectiveWhere, orderBy: { createdAt: 'desc' }, take: limit, skip: offset }) as Promise<AuditRow[]>,
         tx.auditLog.count({ where: effectiveWhere }),
       ]);
-      const actors = await this.loadActors(tx, logs);
+      const actors = await this.loadActors(logs);
       return { logs, actors, total };
     };
 
@@ -154,23 +154,39 @@ export class AuditService {
   }
 
   /** Ids of users whose name or email matches the free-text search term. */
-  private async findActorIdsMatching(tx: Prisma.TransactionClient, search: string): Promise<string[]> {
-    const users = await tx.user.findMany({
-      where: {
-        OR: [
-          { name: { contains: search, mode: 'insensitive' } },
-          { email: { contains: search, mode: 'insensitive' } },
-        ],
-      },
-      select: { id: true },
-    });
+  private async findActorIdsMatching(_tx: Prisma.TransactionClient, search: string): Promise<string[]> {
+    // Cross-org lookup (see loadActors below) — a search term must match an
+    // actor regardless of which org's users RLS would otherwise restrict
+    // this query to.
+    const users = await this.tenant.runAsSupervisor((supTx) =>
+      supTx.user.findMany({
+        where: {
+          OR: [
+            { name: { contains: search, mode: 'insensitive' } },
+            { email: { contains: search, mode: 'insensitive' } },
+          ],
+        },
+        select: { id: true },
+      }),
+    );
     return users.map((u) => u.id);
   }
 
-  private async loadActors(tx: Prisma.TransactionClient, logs: AuditRow[]): Promise<ActorRow[]> {
+  // Cross-org lookup, deliberately not scoped to the viewing org's own RLS
+  // context: an audit entry can legitimately be filed under one org (e.g.
+  // report-sharing's dual-org write — see ReportSharingService.create/
+  // decide) while its actor belongs to the *other* org. Resolving the
+  // actor under the viewer's own org-scoped `tx` would hide that user
+  // behind RLS and silently fall back to "System" even though a real
+  // person performed the action — this bypasses that, the same way
+  // `organisationId`/entity names on these cross-org events are already
+  // resolved via runAsSupervisor elsewhere (see ReportSharingService).
+  private async loadActors(logs: AuditRow[]): Promise<ActorRow[]> {
     const ids = [...new Set(logs.map((l) => l.actorUserId).filter((v): v is string => Boolean(v)))];
     if (ids.length === 0) return [];
-    return tx.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, email: true } });
+    return this.tenant.runAsSupervisor((tx) =>
+      tx.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, email: true } }),
+    );
   }
 
   private mapRows(logs: AuditRow[], actors: ActorRow[]): AuditEvent[] {

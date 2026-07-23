@@ -52,12 +52,40 @@ export class SharingService {
         note: payload.note ?? null,
       },
     });
+
+    const requestingOrg = await this.tenant.runAsSupervisor((tx) =>
+      tx.organisation.findUnique({ where: { id: requestingOrgId } }),
+    );
+    const ownerOrg = await this.tenant.runAsSupervisor((tx) =>
+      tx.organisation.findUnique({ where: { id: payload.ownerOrgId } }),
+    );
+    const requestingOrgName = requestingOrg?.name ?? requestingOrgId;
+    const ownerOrgName = ownerOrg?.name ?? payload.ownerOrgId;
+    // AuditLog is RLS-scoped per org -- a single record() call only ever
+    // lands in ONE org's own log. Written twice (once under each org, via
+    // record()'s existing `organizationId` override) so a cross-org event
+    // like this is legible from both sides. Org names go in `changes` so
+    // they render via the Audit Log's existing ChangeDetailsDialog.
+    const auditChanges = [
+      { field: "Requesting Organization", before: null, after: requestingOrgName },
+      { field: "Owning Organization", before: null, after: ownerOrgName },
+      { field: "Study", before: null, after: study.title },
+    ];
     await this.audit.record({
       action: "create",
       entityType: "sharing_request",
       entityId: row.id,
-      entityLabel: `Sharing request for study "${study.title}"`,
+      entityLabel: `Sharing request for study "${study.title}" (requested from ${ownerOrgName})`,
       organizationId: requestingOrgId,
+      changes: auditChanges,
+    });
+    await this.audit.record({
+      action: "create",
+      entityType: "sharing_request",
+      entityId: row.id,
+      entityLabel: `Sharing request for study "${study.title}" (requested by ${requestingOrgName})`,
+      organizationId: payload.ownerOrgId,
+      changes: auditChanges,
     });
     return this.enrichOne(row as unknown as SharingRequestRow);
   }
@@ -176,6 +204,14 @@ export class SharingService {
         error: { code: "SHARING_REQUEST_ALREADY_DECIDED", message: "This request has already been decided." },
       });
     }
+    // A reject must always explain why -- the requesting org otherwise has
+    // no idea what to change before asking again. Approve has no such
+    // requirement (the grant speaks for itself).
+    if (status === "rejected" && !decisionNote?.trim()) {
+      throw new BadRequestException({
+        error: { code: "REJECT_REASON_REQUIRED", message: "A reason is required when rejecting a request." },
+      });
+    }
 
     const row = await this.prisma.sharingRequest.update({
       where: { id },
@@ -184,13 +220,38 @@ export class SharingService {
     const study = await this.tenant.runAsSupervisor((tx) =>
       tx.study.findUnique({ where: { id: row.studyId } }),
     );
+    const [ownerOrg, requestingOrg] = await Promise.all([
+      this.tenant.runAsSupervisor((tx) => tx.organisation.findUnique({ where: { id: row.ownerOrgId } })),
+      this.tenant.runAsSupervisor((tx) => tx.organisation.findUnique({ where: { id: row.requestingOrgId } })),
+    ]);
+    const ownerOrgName = ownerOrg?.name ?? row.ownerOrgId;
+    const requestingOrgName = requestingOrg?.name ?? row.requestingOrgId;
+    const studyTitle = study?.title ?? row.studyId;
+    // Same dual-write as create() -- both the owner (who decided) and the
+    // requester (who needs to know the outcome) must see this in their own
+    // Audit Log.
+    const auditChanges = [
+      { field: "Requesting Organization", before: null, after: requestingOrgName },
+      { field: "Owning Organization", before: null, after: ownerOrgName },
+      { field: "Study", before: null, after: studyTitle },
+      ...(decisionNote ? [{ field: "Decision Note", before: null, after: decisionNote }] : []),
+    ];
+    const auditAction = status === "approved" ? "approve" : "edit";
     await this.audit.record({
-      action: status === "approved" ? "approve" : "edit",
+      action: auditAction,
       entityType: "sharing_request",
       entityId: row.id,
-      entityLabel: `Sharing request for study "${study?.title ?? row.studyId}"`,
-      organizationId: orgId,
-      ...(decisionNote ? { changes: [{ field: "Decision Note", before: null, after: decisionNote }] } : {}),
+      entityLabel: `Sharing request for study "${studyTitle}" ${status} (requested by ${requestingOrgName})`,
+      organizationId: row.ownerOrgId,
+      changes: auditChanges,
+    });
+    await this.audit.record({
+      action: auditAction,
+      entityType: "sharing_request",
+      entityId: row.id,
+      entityLabel: `Sharing request for study "${studyTitle}" ${status} (owned by ${ownerOrgName})`,
+      organizationId: row.requestingOrgId,
+      changes: auditChanges,
     });
     return this.enrichOne(row as unknown as SharingRequestRow);
   }

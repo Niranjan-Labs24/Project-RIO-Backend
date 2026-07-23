@@ -41,7 +41,8 @@ export interface DecideSharingRequestPayload {
 export interface CreateSharingRequestPayload {
   ownerOrgId: string;
   studyId: string;
-  note?: string;
+  /** "Purpose" in the UI — required (see sharing.contract.ts). */
+  note: string;
 }
 
 export interface SharedNeedSnapshot {

@@ -34,6 +34,7 @@ import { ResponseQualityModule } from './modules/response-quality/response-quali
 import { PriorityModule } from './modules/priority/priority.module';
 import { SharingModule } from './modules/sharing/sharing.module';
 import { ReportSharingModule } from './modules/report-sharing/report-sharing.module';
+import { SharingAlertsModule } from './modules/sharing-alerts/sharing-alerts.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { ArchiveModule } from './modules/archive/archive.module';
 import { ReviewerSlaModule } from './modules/reviewer-sla/reviewer-sla.module';
@@ -84,6 +85,7 @@ import { SurveysModule } from './modules/surveys/surveys.module';
     PriorityModule,
     SharingModule,
     ReportSharingModule,
+    SharingAlertsModule,
     ReportsModule,
     ArchiveModule,
     ReviewerSlaModule,

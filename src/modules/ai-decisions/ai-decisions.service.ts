@@ -9,6 +9,7 @@ import { SurveysService } from '../surveys/surveys.service';
 import { classifyNeedWithAi } from './classification.ai';
 import { redactPii, type ClassificationCandidate, type ClassificationResult } from './classification.placeholder';
 import { scoreStub } from './scoring.placeholder';
+import { findMostSimilar } from './text-similarity';
 import type {
   AiDecision,
   AiDecisionRow,
@@ -23,6 +24,13 @@ import type { AiReviewApproveDto, AiReviewOverrideDomainDto } from './ai-decisio
 // without AI suggestions": tier 3 is a plain domain-list lookup and can
 // only fail if literally zero domains are configured for this org.
 type ClassificationSource = 'ai' | 'prior_needs' | 'default';
+
+// Below this Jaccard similarity score (see text-similarity.ts), a prior
+// Need is considered "not actually about the same issue" and Tier 2 falls
+// through to Tier 3 (default domain) instead of reusing it. Deliberately a
+// named constant, not inlined -- the one number to tune if this tier reuses
+// too eagerly or too rarely in practice.
+const PRIOR_NEED_SIMILARITY_THRESHOLD = 0.25;
 
 @Injectable()
 export class AiDecisionsService {
@@ -180,10 +188,12 @@ export class AiDecisionsService {
       this.logger.warn(`Real AI classification unavailable, trying prior-Needs fallback: ${(err as Error).message}`);
     }
 
-    // Tier 2 — most common (domain, subDomain) pair among this Need's own
-    // Governorates/Centers' prior classified Needs in this org. Deterministic:
-    // group by pair, pick the highest count, break ties by most recent
-    // classifiedAt — never a vague "pick one".
+    // Tier 2 — the most textually similar prior classified Need among this
+    // Need's own Governorates/Centers, reused ONLY if it clears a similarity
+    // threshold. A frequency-based "most common domain around here" (the
+    // previous approach) reused stale classifications for Needs that just
+    // happened to share a village, regardless of what they were actually
+    // about — this compares the actual Statement text instead.
     try {
       const fallback = await this.classifyFromPriorNeeds(needId, subject);
       if (fallback) return { result: fallback, source: 'prior_needs' };
@@ -244,38 +254,30 @@ export class AiDecisionsService {
             ...(geo.centerIds.length > 0 ? [{ needCenters: { some: { centerId: { in: geo.centerIds } } } }] : []),
           ],
         },
-        select: { domain: true, subDomain: true, classifiedAt: true },
+        select: { statement: true, domain: true, subDomain: true, classifiedAt: true },
         orderBy: { classifiedAt: 'desc' },
         take: 200,
       }),
     );
     if (priorNeeds.length === 0) return null;
 
-    const counts = new Map<string, { domain: string; subDomain: string; count: number; latest: Date | null }>();
-    for (const n of priorNeeds) {
-      const key = `${n.domain} ${n.subDomain}`;
-      const existing = counts.get(key);
-      if (existing) {
-        existing.count += 1;
-        if (n.classifiedAt && (!existing.latest || n.classifiedAt > existing.latest)) existing.latest = n.classifiedAt;
-      } else {
-        counts.set(key, { domain: n.domain as string, subDomain: n.subDomain as string, count: 1, latest: n.classifiedAt });
-      }
-    }
-    const [best] = [...counts.values()].sort((a, b) => {
-      if (b.count !== a.count) return b.count - a.count;
-      return (b.latest?.getTime() ?? 0) - (a.latest?.getTime() ?? 0);
-    });
-    if (!best) return null;
+    // Only reuse a prior Need's classification if it is actually about a
+    // similar issue, not just "something in this org was classified
+    // before" -- a frequency-based majority vote (the previous approach)
+    // could confidently reuse a completely unrelated domain just because
+    // it happened to be the most common one in the area.
+    const match = findMostSimilar(subject.statement, priorNeeds);
+    if (!match || match.score < PRIOR_NEED_SIMILARITY_THRESHOLD) return null;
+    const { candidate: best, score } = match;
 
     return {
       modelName: 'prior-needs-fallback',
       modelVersion: '1.0.0',
       confidence: 0,
       suggestion: {
-        domains: [best.domain],
-        subDomains: [best.subDomain],
-        rationale: `AI classification was unavailable — defaulted to the most common Domain/Sub-Domain (${best.count} prior Need(s)) among previously classified Needs in the same geography.`,
+        domains: [best.domain as string],
+        subDomains: [best.subDomain as string],
+        rationale: `AI classification was unavailable -- a similar previously classified Need in the same geography (${Math.round(score * 100)}% text similarity) was reused instead.`,
         redactedStatement: redactPii(subject.statement),
         village: subject.village.join(', '),
       },

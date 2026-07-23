@@ -5,7 +5,6 @@ import { getOrgStore, requireActor, requireOrgId } from "../../tenancy/org-conte
 import { roleByKey } from "../../rbac/role-matrix";
 import { AuditService } from "../audit/audit.service";
 import { ReportsService } from "../reports/reports.service";
-import type { ExportFormat } from "../reports/reports.types";
 import type {
   CreateReportSharingRequestPayload, DecideReportSharingRequestPayload, OrgLookupResult,
   ReportLookupResult, ReportSharingRequest, ReportSharingRequestRow, SharedReportSnapshot,
@@ -69,12 +68,43 @@ export class ReportSharingService {
         note: payload.note ?? null,
       },
     });
+
+    const requestingOrg = await this.tenant.runAsSupervisor((tx) =>
+      tx.organisation.findUnique({ where: { id: requestingOrgId } }),
+    );
+    const ownerOrg = await this.tenant.runAsSupervisor((tx) =>
+      tx.organisation.findUnique({ where: { id: payload.ownerOrgId } }),
+    );
+    const requestingOrgName = requestingOrg?.name ?? requestingOrgId;
+    const ownerOrgName = ownerOrg?.name ?? payload.ownerOrgId;
+    // AuditLog is RLS-scoped per org — a single record() call only ever
+    // lands in ONE org's own log. A cross-org event like this needs to be
+    // legible from both sides, so it's written twice: once under each org,
+    // via record()'s existing `organizationId` override (see
+    // AuditService.record — already built for exactly this, not new
+    // capability). Requesting/Owning org names go in `changes` so they
+    // render via the Audit Log's existing ChangeDetailsDialog with no new
+    // UI needed.
+    const auditChanges = [
+      { field: "Requesting Organization", before: null, after: requestingOrgName },
+      { field: "Owning Organization", before: null, after: ownerOrgName },
+      { field: "Report", before: null, after: report.title },
+    ];
     await this.audit.record({
       action: "create",
       entityType: "report_sharing_request",
       entityId: row.id,
-      entityLabel: `Report sharing request for "${report.title}"`,
+      entityLabel: `Report sharing request for "${report.title}" (requested from ${ownerOrgName})`,
       organizationId: requestingOrgId,
+      changes: auditChanges,
+    });
+    await this.audit.record({
+      action: "create",
+      entityType: "report_sharing_request",
+      entityId: row.id,
+      entityLabel: `Report sharing request for "${report.title}" (requested by ${requestingOrgName})`,
+      organizationId: payload.ownerOrgId,
+      changes: auditChanges,
     });
     return this.enrichOne(row as unknown as ReportSharingRequestRow);
   }
@@ -117,35 +147,34 @@ export class ReportSharingService {
       });
     }
     const report = await this.reports.findAcrossOrgsOrThrow(row.reportId);
+    const [ownerOrg, generatedByUser] = await Promise.all([
+      this.tenant.runAsSupervisor((tx) => tx.organisation.findUnique({ where: { id: row.ownerOrgId } })),
+      this.tenant.runAsSupervisor((tx) => tx.user.findUnique({ where: { id: report.generatedBy } })),
+    ]);
     return {
       reportId: report.id,
       title: report.title,
       reportType: report.reportType,
       content: report.content,
       generatedAt: report.generatedAt,
+      // Cross-org reads via runAsSupervisor, same exception this service
+      // already relies on for lookupOrganizations/enrichMany above — a
+      // requesting org can't otherwise see the owner's own org name or
+      // staff, but the metadata for a report already explicitly shared with
+      // them is not sensitive the way the rest of the owner's data is.
+      ownerOrgName: ownerOrg?.name ?? row.ownerOrgId,
+      generatedByName: generatedByUser?.name ?? null,
     };
   }
 
-  // Post-approval access is exactly: (1) read-only in-app snapshot above,
-  // (2) PDF/Excel export below. No edit/delete/re-share/archive route exists
-  // for a requesting org on a report it doesn't own — those endpoints only
-  // ever check the OWNING org's own normal permissions, so a requesting org
-  // simply has no path to them, not something explicitly disabled here.
-  async exportSharedReport(id: string, format: ExportFormat): Promise<{ filename: string; contentType: string; body: Buffer }> {
-    const row = await this.findVisibleOrThrow(id);
-    const orgId = requireOrgId();
-    if (row.status !== "approved") {
-      throw new ForbiddenException({
-        error: { code: "SHARING_NOT_APPROVED", message: "This sharing request has not been approved." },
-      });
-    }
-    if (!this.isCrossEntity() && row.requestingOrgId !== orgId) {
-      throw new ForbiddenException({
-        error: { code: "FORBIDDEN", message: "Only the requesting organisation can export the shared report." },
-      });
-    }
-    return this.reports.exportForApprovedSharingGrant(row.reportId, format);
-  }
+  // Post-approval access for a requesting org is READ-ONLY: the in-app
+  // snapshot above, nothing else. There is deliberately no export/download
+  // method here -- a shared report may only be viewed inside the app, never
+  // downloaded as PDF/Excel by the org it was shared with. The owning org's
+  // own export of its own report is a completely separate, unaffected route
+  // (see ReportsController's own `:id/export`, gated on
+  // `reportsDashboards:export`) -- this used to also serve the requesting
+  // org's copy, so removing it costs the owner nothing.
 
   // Organizations searchable for a new sharing request — name-only, active
   // orgs, excluding the caller's own (you can't request your own report).
@@ -198,6 +227,14 @@ export class ReportSharingService {
         error: { code: "REPORT_SHARING_REQUEST_ALREADY_DECIDED", message: "This request has already been decided." },
       });
     }
+    // A reject must always explain why -- the requesting org otherwise has
+    // no idea what to change before asking again. Approve has no such
+    // requirement (the grant speaks for itself).
+    if (status === "rejected" && !decisionNote?.trim()) {
+      throw new BadRequestException({
+        error: { code: "REJECT_REASON_REQUIRED", message: "A reason is required when rejecting a request." },
+      });
+    }
 
     const row = await this.prisma.reportSharingRequest.update({
       where: { id },
@@ -206,13 +243,38 @@ export class ReportSharingService {
     const report = await this.tenant.runAsSupervisor((tx) =>
       tx.report.findUnique({ where: { id: row.reportId } }),
     );
+    const [ownerOrg, requestingOrg] = await Promise.all([
+      this.tenant.runAsSupervisor((tx) => tx.organisation.findUnique({ where: { id: row.ownerOrgId } })),
+      this.tenant.runAsSupervisor((tx) => tx.organisation.findUnique({ where: { id: row.requestingOrgId } })),
+    ]);
+    const ownerOrgName = ownerOrg?.name ?? row.ownerOrgId;
+    const requestingOrgName = requestingOrg?.name ?? row.requestingOrgId;
+    const reportTitle = report?.title ?? row.reportId;
+    // Same dual-write as create() -- both the owner (who decided) and the
+    // requester (who needs to know the outcome) must see this in their own
+    // Audit Log.
+    const auditChanges = [
+      { field: "Requesting Organization", before: null, after: requestingOrgName },
+      { field: "Owning Organization", before: null, after: ownerOrgName },
+      { field: "Report", before: null, after: reportTitle },
+      ...(decisionNote ? [{ field: "Decision Note", before: null, after: decisionNote }] : []),
+    ];
+    const auditAction = status === "approved" ? "approve" : "edit";
     await this.audit.record({
-      action: status === "approved" ? "approve" : "edit",
+      action: auditAction,
       entityType: "report_sharing_request",
       entityId: row.id,
-      entityLabel: `Report sharing request for "${report?.title ?? row.reportId}"`,
-      organizationId: orgId,
-      ...(decisionNote ? { changes: [{ field: "Decision Note", before: null, after: decisionNote }] } : {}),
+      entityLabel: `Report sharing request for "${reportTitle}" ${status} (requested by ${requestingOrgName})`,
+      organizationId: row.ownerOrgId,
+      changes: auditChanges,
+    });
+    await this.audit.record({
+      action: auditAction,
+      entityType: "report_sharing_request",
+      entityId: row.id,
+      entityLabel: `Report sharing request for "${reportTitle}" ${status} (owned by ${ownerOrgName})`,
+      organizationId: row.requestingOrgId,
+      changes: auditChanges,
     });
     return this.enrichOne(row as unknown as ReportSharingRequestRow);
   }

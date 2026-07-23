@@ -1,8 +1,6 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Res } from "@nestjs/common";
-import type { Response } from "express";
+import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { RequirePermission } from "../../common/guards/permission.guard";
 import { TypeBoxValidationPipe } from "../../contract/validation.pipe";
-import type { ExportFormat } from "../reports/reports.types";
 import { CreateReportSharingRequestBody, DecideReportSharingRequestBody } from "./report-sharing.contract";
 import { ReportSharingService } from "./report-sharing.service";
 import type {
@@ -74,15 +72,7 @@ export class ReportSharingController {
     return this.reportSharing.getSharedSnapshot(id);
   }
 
-  @Get(":id/export")
-  @RequirePermission("archiveSharingAudit", "read")
-  async export(@Param("id") id: string, @Query("format") format: ExportFormat, @Res() res: Response): Promise<void> {
-    const file = await this.reportSharing.exportSharedReport(id, format);
-    res.set({
-      "Content-Type": file.contentType,
-      "Content-Disposition": `attachment; filename="${file.filename}"`,
-      "Content-Length": String(file.body.length),
-    });
-    res.end(file.body);
-  }
+  // No export/download route for a shared report -- view-only by design
+  // (see ReportSharingService.exportSharedReport's removal). The owning
+  // org's own export stays fully intact at GET /reports/:id/export.
 }
