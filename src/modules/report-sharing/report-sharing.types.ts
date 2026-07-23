@@ -55,6 +55,14 @@ export interface SharedReportSnapshot {
   generatedAt: string;
   ownerOrgName: string;
   generatedByName: string | null;
+  // Approval-trail fields — included so the frontend can render this through
+  // the exact same <ReportContentView> the owner's own Report Preview page
+  // uses (see reports.types.ts's Report interface), instead of a separate,
+  // visually-inconsistent renderer for shared reports.
+  officerConfirmedBy: string | null;
+  officerConfirmedAt: string | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
 }
 
 // Lookup rows for the "search organization → pick its approved report"

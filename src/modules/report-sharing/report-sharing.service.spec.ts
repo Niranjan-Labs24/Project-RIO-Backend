@@ -5,7 +5,7 @@ interface FakeReport {
   id: string;
   orgId: string;
   title: string;
-  status: "draft" | "approved" | "rejected";
+  status: "draft" | "released" | "rejected" | "archived";
   reportType: string;
   content: Record<string, unknown>;
   generatedBy: string;
@@ -107,7 +107,7 @@ function fakeReportsService(reports: FakeReport[]) {
 }
 
 const APPROVED_REPORT: FakeReport = {
-  id: "report-1", orgId: "org-owner", title: "Village Needs Assessment", status: "approved",
+  id: "report-1", orgId: "org-owner", title: "Village Needs Assessment", status: "released",
   reportType: "RPT13", content: { summary: "..." }, generatedBy: "user-owner-1", generatedAt: new Date(),
 };
 const DRAFT_REPORT: FakeReport = { ...APPROVED_REPORT, id: "report-2", status: "draft" };
@@ -133,7 +133,7 @@ describe("ReportSharingService.create", () => {
     ).rejects.toMatchObject({ response: { error: { code: "CANNOT_REQUEST_OWN_REPORT" } } });
   });
 
-  it("rejects a report that isn't approved yet (sharing only starts from an approved report)", async () => {
+  it("rejects a report that isn't released yet (sharing only starts from a released report)", async () => {
     const svc = new ReportSharingService(
       fakePrisma() as never, fakeTenant([DRAFT_REPORT], ORGS) as never, fakeAudit() as never,
       fakeReportsService([DRAFT_REPORT]) as never,
@@ -142,7 +142,7 @@ describe("ReportSharingService.create", () => {
       runAsOrg("org-requester", "user-1", () =>
         svc.create({ ownerOrgId: "org-owner", reportId: DRAFT_REPORT.id, note: "why" }),
       ),
-    ).rejects.toMatchObject({ response: { error: { code: "REPORT_NOT_APPROVED" } } });
+    ).rejects.toMatchObject({ response: { error: { code: "REPORT_NOT_RELEASED" } } });
   });
 
   it("creates a pending request and writes one audit entry per org (FR-014: logs maintained)", async () => {

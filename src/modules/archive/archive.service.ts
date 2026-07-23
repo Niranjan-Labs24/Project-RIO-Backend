@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { getOrgStore, requireOrgId } from "../../tenancy/org-context";
 import { roleByKey } from "../../rbac/role-matrix";
+import { EXPORTABLE_STATUSES } from "../reports/reports.types";
 import type { ArchiveEntry, ListArchiveParams } from "./archive.types";
 
 // One filterable read view over Study + Report, not two parallel modules —
@@ -29,13 +30,13 @@ export class ArchiveService {
       ? this.tenant.runAsSupervisor(async (tx) => ({
           organisations: await tx.organisation.findMany(),
           studies: await tx.study.findMany(),
-          reports: await tx.report.findMany({ where: { status: "approved" } }),
+          reports: await tx.report.findMany({ where: { status: { in: EXPORTABLE_STATUSES } } }),
           needs: await tx.need.findMany(),
         }))
       : this.tenant.runInOrgContext(async (tx) => ({
           organisations: await tx.organisation.findMany(),
           studies: await tx.study.findMany(),
-          reports: await tx.report.findMany({ where: { status: "approved" } }),
+          reports: await tx.report.findMany({ where: { status: { in: EXPORTABLE_STATUSES } } }),
           needs: await tx.need.findMany(),
         })));
 

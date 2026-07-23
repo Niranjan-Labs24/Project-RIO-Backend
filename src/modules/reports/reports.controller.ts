@@ -35,6 +35,14 @@ export class ReportsController {
     return this.reports.getById(id);
   }
 
+  // Officer confirms (step 1 of two-step approval) — a `write`-level action,
+  // distinct from the Reviewer's `approve` that follows.
+  @Patch(":id/confirm")
+  @RequirePermission("reportsDashboards", "write")
+  confirm(@Param("id") id: string): Promise<Report> {
+    return this.reports.confirm(id);
+  }
+
   @Patch(":id/approve")
   @RequirePermission("reportsDashboards", "approve")
   approve(@Param("id") id: string): Promise<Report> {
@@ -45,6 +53,12 @@ export class ReportsController {
   @RequirePermission("reportsDashboards", "approve")
   reject(@Param("id") id: string): Promise<Report> {
     return this.reports.reject(id);
+  }
+
+  @Patch(":id/archive")
+  @RequirePermission("reportsDashboards", "approve")
+  archive(@Param("id") id: string): Promise<Report> {
+    return this.reports.archive(id);
   }
 
   @Get(":id/export")

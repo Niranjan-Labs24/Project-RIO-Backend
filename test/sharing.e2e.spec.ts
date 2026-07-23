@@ -60,7 +60,7 @@ describe('Sharing workflow (e2e) — FR-014', () => {
       });
       const report = await tx.report.create({
         data: {
-          orgId, reportType: 'RPT13', status: 'approved', title: `Sharing Test Report ${run}`,
+          orgId, reportType: 'RPT13', status: 'released', title: `Sharing Test Report ${run}`,
           studyId: study.id, filters: {}, content: {}, generatedBy: adminId,
         },
       });

@@ -140,6 +140,7 @@ model Organisation {
   responseSeverityScores     ResponseSeverityScore[]
   scoreRollups               ScoreRollup[]
   villagePriorityAssessments VillagePriorityAssessment[]
+  aiPrioritySummaries        AiPrioritySummary[]
 
   @@index([regionId])
   @@map("organisations")
@@ -275,6 +276,7 @@ model Study {
   responseSeverityScores     ResponseSeverityScore[]
   scoreRollups               ScoreRollup[]
   villagePriorityAssessments VillagePriorityAssessment[]
+  aiPrioritySummaries        AiPrioritySummary[]
 
   @@unique([orgId, cycleNumber])
   @@index([orgId])
@@ -475,29 +477,24 @@ model StudyCenter {
 // storageKey is a local disk path for Phase 1 — kept as a plain string so
 // swapping to an object-storage key later needs no schema change.
 model Evidence {
-  id         String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  needId     String   @map("need_id") @db.Uuid
-  // Denormalized from Need.studyId — cheap joins/filters at the Study level
-  // (e.g. Study detail page's evidence count) without an extra hop through
-  // Need. `needId` is the real scoping/dedup key, not this.
-  studyId    String   @map("study_id") @db.Uuid
-  orgId      String   @map("org_id") @db.Uuid
-  fileName   String   @map("file_name") @db.VarChar(255)
-  fileType   String   @map("file_type") @db.VarChar(100)
-  fileSize   Int      @default(0) @map("file_size")
-  storageKey String   @map("storage_key") @db.VarChar(500)
-  // sha256 of the uploaded file's bytes, hex-encoded (64 chars) — computed
-  // once from the in-memory upload buffer, never re-read from storageKey.
-  //
-  // Nullable *because* of that: rows written before this column existed have
-  // no buffer to hash and can't be backfilled from SQL, so they keep a null
-  // hash and simply never take part in duplicate detection. Every row created
-  // from now on has one. Don't tighten this to NOT NULL without first
-  // backfilling by re-reading each storageKey off disk — which is exactly
-  // what the line above says this hash never does.
-  fileHash   String?  @map("file_hash") @db.VarChar(64)
-  uploadedBy String   @map("uploaded_by") @db.Uuid
-  uploadedAt DateTime @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+  id                 String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  needId             String    @map("need_id") @db.Uuid
+  studyId            String    @map("study_id") @db.Uuid
+  orgId              String    @map("org_id") @db.Uuid
+  fileName           String    @map("file_name") @db.VarChar(255)
+  fileType           String    @map("file_type") @db.VarChar(100)
+  fileSize           Int       @default(0) @map("file_size")
+  storageKey         String    @map("storage_key") @db.VarChar(500)
+  fileHash           String?   @map("file_hash") @db.VarChar(64)
+  title              String?   @map("title") @db.VarChar(300)
+  sourceReferenceId  String?   @map("source_reference_id") @db.VarChar(200)
+  linkedDomainOrKpi  String?   @map("linked_domain_or_kpi") @db.VarChar(200)
+  description        String?   @map("description")
+  collectedAt        DateTime? @map("collected_at") @db.Timestamptz(6)
+  reviewStatus       String    @default("APPROVED") @map("review_status") @db.VarChar(50)
+  isIncludedInReport Boolean   @default(true) @map("is_included_in_report")
+  uploadedBy         String    @map("uploaded_by") @db.Uuid
+  uploadedAt         DateTime  @default(now()) @map("uploaded_at") @db.Timestamptz(6)
 
   need  Need         @relation(fields: [needId], references: [id], onDelete: Cascade)
   study Study        @relation(fields: [studyId], references: [id], onDelete: Cascade)
@@ -786,6 +783,14 @@ enum Gender {
   prefer_not_to_say
 }
 
+// Self-reported rural/urban settlement — a fixed vocabulary (like Gender) so
+// rural/urban reporting can group on it directly. Nullable: not every response
+// captures it, and the demographic charts omit the series when it's absent.
+enum SettlementType {
+  rural
+  urban
+}
+
 // Generic response row — Response Quality, AI Summary, and Priority
 // Dashboard all read from this same table, seeded or real alike.
 model SurveyResponse {
@@ -798,6 +803,7 @@ model SurveyResponse {
   contactName  String?  @map("contact_name") @db.VarChar(200)
   contact      String   @db.VarChar(320)
   gender       Gender?
+  settlementType SettlementType? @map("settlement_type")
   // Geography snapshot — copied from the Need (its own multi-select
   // Governorates/Centers, village) and the Organization (regionId) at
   // submission time, not asked of the citizen directly. A pure denormalized
@@ -1043,12 +1049,14 @@ enum ReportType {
   RPT11
   RPT12
   RPT13
+  RPT14
 }
 
 enum ReportStatus {
   draft
-  approved
   rejected
+  released
+  archived
 }
 
 model Report {
@@ -1064,8 +1072,12 @@ model Report {
   content      Json
   generatedBy  String       @map("generated_by") @db.Uuid
   generatedAt  DateTime     @default(now()) @map("generated_at") @db.Timestamptz(6)
+  // Two-step approval: Officer confirms first, then Reviewer approves (release).
+  officerConfirmedBy String?  @map("officer_confirmed_by") @db.Uuid
+  officerConfirmedAt DateTime? @map("officer_confirmed_at") @db.Timestamptz(6)
   reviewedBy   String?      @map("reviewed_by") @db.Uuid
   reviewedAt   DateTime?    @map("reviewed_at") @db.Timestamptz(6)
+  archivedAt   DateTime?    @map("archived_at") @db.Timestamptz(6)
 
   org   Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
   study Study?       @relation(fields: [studyId], references: [id], onDelete: Cascade)
@@ -1291,6 +1303,7 @@ model Survey {
   responseSeverityScores     ResponseSeverityScore[]
   scoreRollups               ScoreRollup[]
   villagePriorityAssessments VillagePriorityAssessment[]
+  aiPrioritySummaries        AiPrioritySummary[]
 
   @@index([orgId])
   @@index([needId])
@@ -1558,3 +1571,48 @@ model VillagePriorityAssessment {
   @@index([surveyId])
   @@map("village_priority_assessments")
 }
+
+enum AiPrioritySummaryStatus {
+  DRAFT
+  SAVED
+  OFFICER_CONFIRMED
+  STALE
+  SUPERSEDED
+}
+
+model AiPrioritySummary {
+  id                        String                  @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId                     String                  @map("org_id") @db.Uuid
+  studyId                   String                  @map("study_id") @db.Uuid
+  surveyId                  String                  @map("survey_id") @db.Uuid
+  villageId                 String                  @default("") @map("village_id") @db.VarChar(150)
+  reportDataSnapshotId      String                  @map("report_data_snapshot_id") @db.VarChar(100)
+  status                    AiPrioritySummaryStatus @default(DRAFT)
+  summaryScope              String                  @default("VILLAGE") @map("summary_scope") @db.VarChar(50)
+  scopeFilters              Json?                   @map("scope_filters")
+  promptVersion             String                  @default("priority-dashboard-summary-v1") @map("prompt_version") @db.VarChar(100)
+  promptHash                String                  @map("prompt_hash") @db.VarChar(64)
+  modelName                 String                  @default("gemini-2.5-flash") @map("model_name") @db.VarChar(100)
+  modelVersion              String                  @default("v1") @map("model_version") @db.VarChar(50)
+  inputReportDataHash       String                  @map("input_report_data_hash") @db.VarChar(64)
+  inputEvidenceSnapshotHash String                  @map("input_evidence_snapshot_hash") @db.VarChar(64)
+  aiOutputJson              Json                    @map("ai_output_json")
+  officerEditedOutputJson   Json?                   @map("officer_edited_output_json")
+  generatedBy               String                  @map("generated_by") @db.Uuid
+  generatedAt               DateTime                @default(now()) @map("generated_at") @db.Timestamptz(6)
+  officerConfirmedBy        String?                 @map("officer_confirmed_by") @db.Uuid
+  officerConfirmedAt        DateTime?               @map("officer_confirmed_at") @db.Timestamptz(6)
+  createdAt                 DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org   Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  study Study        @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  survey Survey       @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([studyId])
+  @@index([surveyId])
+  @@index([studyId, surveyId, villageId, status])
+  @@map("ai_priority_summaries")
+}
+
