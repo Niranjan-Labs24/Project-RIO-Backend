@@ -38,11 +38,11 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('dataCollection', { read: true, write: true, create: true }),
     perm('dataImport', { read: true, write: true, create: true }),
     perm('citizenChannel'),
-    // Runs AI Classification after submitting evidence (write) AND decides
-    // it themselves (approve/override) — the Reviewer/Approver only ever
-    // sees the finished Survey once it's submitted, never the AI
-    // classification step. See role_human_reviewer below.
-    perm('aiReview', { read: true, write: true, approve: true }),
+    // `write` (not `approve`) — can trigger/retry automatic AI
+    // Classification on their own Needs, but the actual decision
+    // (Approve/Override/Reject) is entirely the Reviewer/Approver's job —
+    // see role_human_reviewer below, which holds `approve` instead.
+    perm('aiReview', { read: true, write: true }),
     // `create` (not full write/approve) — lets them trigger
     // Recalculate/Run Priority Scoring on their own studies' Insights page,
     // same as Admin; they still can't approve a priority score elsewhere in
@@ -52,9 +52,10 @@ export const ROLE_MATRIX: RoleDef[] = [
     // Read-only Archive + able to request cross-org Sharing access (the
     // owning org's admin still has to approve — see SharingService.decide).
     perm('archiveSharingAudit', { read: true, create: true }),
-    // Survey Builder: the role responsible for creating and managing
-    // questionnaires (per the product decision) — real access, not RO.
-    perm('surveyBuilder', { read: true, write: true, create: true }),
+    // Read-only — curating suggested questions (add from Question Bank/add
+    // custom/remove) and publishing is entirely the Reviewer/Approver's job
+    // now (see role_human_reviewer below, which holds `write`+`approve`).
+    perm('surveyBuilder', RO),
   ] },
   { id: 'role_field_researcher', key: 'field_researcher', name: 'Field Researcher', description: 'Enters needs and documents the source and field notes.', crossEntity: false, permissions: [
     perm('entityTeam'), perm('rolesPermissions'), perm('onboardingConsent'),
@@ -74,22 +75,24 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('studySurvey', { read: true, create: true }),
     perm('dataCollection', RO),
     perm('dataImport', RO), perm('citizenChannel', RO),
-    // Read-only — AI classification (run + approve/override) is entirely the
-    // Researcher's own step now (see role_ngo_research_officer above); the
-    // Approver never sees or acts on it, only the finished Survey once
-    // submitted (surveyBuilder.approve, below).
-    perm('aiReview', RO),
+    // `approve` (not `write`) — this role's entire job is deciding on an
+    // AI classification once it's ready for review (Approve/Override/Reject
+    // — see AiDecisionsService.approveAiReview/rejectAiReview), now a single
+    // merged step with Survey approval on the Need workspace page. They
+    // never trigger classification/Retry themselves (no `write`) — that's
+    // the Researcher's own action (see role_ngo_research_officer above).
+    perm('aiReview', { read: true, approve: true }),
     perm('priorityScoring', RO),
     // Reviewer's work starts at Studies/Reviewer-SLA, not an executive
     // dashboard, but they still need read access to Reports/Archive/Sharing
     // once a study's classification/review work is done.
     perm('reportsDashboards', RO), perm('archiveSharingAudit', RO),
-    // Survey Approval workflow: the Approver reviews and decides
-    // (approve/reject/publish — see SurveysService), but is never a
-    // co-author — no write/create, so they can't edit/add/delete questions,
-    // only `approve` (which also covers reject/publish, both decisions on
-    // an already-submitted survey, not content edits).
-    perm('surveyBuilder', { read: true, approve: true }),
+    // `write` — curating the suggested question list (add from Question
+    // Bank/add custom/remove/reorder) is this role's own job now, alongside
+    // `approve` (which covers Approve/Override/Reject — see
+    // AiDecisionsService.approveAiReview/rejectAiReview — and legacy
+    // Survey approve/reject/publish via SurveysService).
+    perm('surveyBuilder', { read: true, write: true, approve: true }),
   ] },
   { id: 'role_data_analyst', key: 'data_analyst', name: 'Data Analyst', description: 'Processes data, reviews quality, and prepares reports and dashboards.', crossEntity: false, permissions: [
     perm('entityTeam'), perm('rolesPermissions'), perm('onboardingConsent'),

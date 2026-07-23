@@ -38,6 +38,15 @@ export const UpdateOrganizationBody = registerSchema(
     // URL again.
     logoUrl: T.Optional(T.Union([T.String({ maxLength: 2_800_000 }), T.Null()])),
     villages: T.Optional(Villages),
+    // Optional link into the KSA Geographic Reference master data — see
+    // GeographyService#validateHierarchy for the actual existence/hierarchy
+    // checks TypeBox can't express (every id must exist, and every selected
+    // Governorate/Center must belong to the selected Region/Governorates).
+    // `regionId` is single-select (an org has exactly one Region); `governorateIds`/
+    // `centerIds` replace the entire set when provided, not a merge.
+    regionId: T.Optional(T.Union([T.String({ format: 'uuid' }), T.Null()])),
+    governorateIds: T.Optional(T.Array(T.String({ format: 'uuid' }), { maxItems: 150 })),
+    centerIds: T.Optional(T.Array(T.String({ format: 'uuid' }), { maxItems: 1404 })),
     isActive: T.Optional(T.Boolean()),
   }),
 );

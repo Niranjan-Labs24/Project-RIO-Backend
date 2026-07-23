@@ -32,12 +32,22 @@ export const VerifyOtpBody = registerSchema(
 );
 export type VerifyOtpDto = Static<typeof VerifyOtpBody>;
 
+// Self-reported, fixed vocabulary — see the Gender enum in schema.prisma.
+// Optional: a respondent may decline to answer.
+const Gender = T.Union([
+  T.Literal('male'),
+  T.Literal('female'),
+  T.Literal('other'),
+  T.Literal('prefer_not_to_say'),
+]);
+
 export const SubmitResponseBody = registerSchema(
   'SubmitResponseBody',
   T.Object(
     {
       challengeId: T.String({ format: 'uuid' }),
       contactName: T.Optional(T.String({ maxLength: 200 })),
+      gender: T.Optional(Gender),
       answers: T.Record(T.String(), T.Unknown()),
     },
     { additionalProperties: false },

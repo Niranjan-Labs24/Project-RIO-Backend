@@ -129,14 +129,21 @@ export class CitizenService {
         data: { orgId: link.orgId, surveyLinkId: link.id, contact: payload.contact, codeHash, expiresAt },
       }),
     );
-    await this.mailer.sendOtpCode(payload.contact, code);
+    const codeEmailed = await this.mailer.sendOtpCode(payload.contact, code);
     // Dev only: surface the code so local/test runs aren't blocked on a
     // real inbox — same convention as OrganizationsService.createWithAdmin's
-    // temp-password console.log.
+    // temp-password reveal. Logged either way for local debugging; also
+    // returned to the frontend when not emailed so the respondent isn't
+    // stuck with no way to ever get the code.
     if (process.env.NODE_ENV !== 'production') {
       console.log(`OTP code for ${payload.contact} (challenge ${challenge.id}): ${code}`);
     }
-    return { challengeId: challenge.id, expiresAt: expiresAt.toISOString() };
+    return {
+      challengeId: challenge.id,
+      expiresAt: expiresAt.toISOString(),
+      codeEmailed,
+      code: !codeEmailed && process.env.NODE_ENV !== 'production' ? code : undefined,
+    };
   }
 
   async verifyOtp(token: string, payload: VerifyOtpPayload): Promise<VerifyOtpResult> {
@@ -194,20 +201,35 @@ export class CitizenService {
         });
       }
 
-      const [created, need] = await Promise.all([
-        tx.surveyResponse.create({
-          data: {
-            orgId: link.orgId,
-            needId: link.needId,
-            studyId: link.studyId,
-            surveyLinkId: link.id,
-            contact: challenge.contact,
-            contactName: payload.contactName ?? null,
-            answers: payload.answers as unknown as Prisma.InputJsonValue,
-          },
+      // Geography is snapshotted from the Need/Organization at submission
+      // time (never asked of the citizen directly) — see the Gender/
+      // geography columns' doc comment in schema.prisma. Fetched here, in
+      // the same transaction as the create, so the numbers a future
+      // governorate/village-wise report reads always match what this Need
+      // and org actually had at the moment this response came in.
+      const [need, org] = await Promise.all([
+        tx.need.findUnique({
+          where: { id: link.needId },
+          include: { needGovernorates: true, needCenters: true },
         }),
-        tx.need.findUnique({ where: { id: link.needId } }),
+        tx.organisation.findUnique({ where: { id: link.orgId }, select: { regionId: true } }),
       ]);
+      const created = await tx.surveyResponse.create({
+        data: {
+          orgId: link.orgId,
+          needId: link.needId,
+          studyId: link.studyId,
+          surveyLinkId: link.id,
+          contact: challenge.contact,
+          contactName: payload.contactName ?? null,
+          gender: payload.gender ?? null,
+          regionId: org?.regionId ?? null,
+          governorateIds: need?.needGovernorates.map((g) => g.governorateId) ?? [],
+          centerIds: need?.needCenters.map((c) => c.centerId) ?? [],
+          village: need?.village ?? [],
+          answers: payload.answers as unknown as Prisma.InputJsonValue,
+        },
+      });
       await tx.citizenOtpChallenge.update({ where: { id: challenge.id }, data: { consumedAt: new Date() } });
       return { row: created, needTitle: need?.title ?? link.needId };
     });

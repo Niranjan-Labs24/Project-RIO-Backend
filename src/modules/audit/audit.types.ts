@@ -9,6 +9,7 @@ export type AuditEntityType =
   | 'ai_decision'
   | 'report'
   | 'sharing_request'
+  | 'report_sharing_request'
   | 'survey_response';
 
 export interface AuditChange {

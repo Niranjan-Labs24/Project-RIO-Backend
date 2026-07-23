@@ -25,7 +25,7 @@ describe('AuthRepository.createOrganisationAndAdmin', () => {
 
     const repo = new AuthRepository(tenant as never);
     const { org, user } = await repo.createOrganisationAndAdmin({
-      organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', passwordHash: 'h',
+      organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', passwordHash: 'h', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'],
     });
 
     expect(org.id).toBe('o1');
@@ -46,7 +46,7 @@ describe('AuthRepository.createOrganisationAndAdmin', () => {
     tx.organisation.create.mockRejectedValue(err);
     const repo = new AuthRepository(tenant as never);
     await expect(repo.createOrganisationAndAdmin({
-      organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', passwordHash: 'h',
+      organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', passwordHash: 'h', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'],
     })).rejects.toBeInstanceOf(ConflictException);
   });
 
@@ -62,7 +62,7 @@ describe('AuthRepository.createOrganisationAndAdmin', () => {
     tx.organisation.create.mockRejectedValue(err);
     const repo = new AuthRepository(tenant as never);
     await expect(repo.createOrganisationAndAdmin({
-      organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', passwordHash: 'h',
+      organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', passwordHash: 'h', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'],
     })).rejects.toBeInstanceOf(ConflictException);
   });
 });

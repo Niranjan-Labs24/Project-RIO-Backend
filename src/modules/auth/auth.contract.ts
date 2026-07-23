@@ -29,6 +29,13 @@ export const SignupBody = registerSchema(
       purpose: T.Optional(T.String({ maxLength: 500 })),
       registrationNumber: T.String({ minLength: 1, maxLength: 100 }),
       email: T.String({ format: 'email' }),
+      // KSA Geographic Reference hierarchy — mandatory at signup so every
+      // self-service org starts with its scope already configured (see
+      // AuthService.signup for the existence/hierarchy checks TypeBox can't
+      // express). Still editable later via Settings > Organization.
+      regionId: T.String({ format: 'uuid' }),
+      governorateIds: T.Array(T.String({ format: 'uuid' }), { minItems: 1, maxItems: 150 }),
+      centerIds: T.Array(T.String({ format: 'uuid' }), { minItems: 1, maxItems: 1404 }),
     },
     { additionalProperties: false },
   ),

@@ -5,8 +5,8 @@ import { getOrgStore, requireActor, requireOrgId } from "../../tenancy/org-conte
 import { roleByKey } from "../../rbac/role-matrix";
 import { AuditService } from "../audit/audit.service";
 import type {
-  CreateSharingRequestPayload, OrgLookupResult, SharedStudySnapshot, SharingRequest, SharingRequestRow,
-  StudyLookupResult,
+  CreateSharingRequestPayload, DecideSharingRequestPayload, OrgLookupResult, SharedStudySnapshot,
+  SharingRequest, SharingRequestRow, StudyLookupResult,
 } from "./sharing.types";
 
 // sharing_requests has no RLS (see the SharingRequest model comment in
@@ -78,12 +78,12 @@ export class SharingService {
     return this.enrichOne(row);
   }
 
-  async approve(id: string): Promise<SharingRequest> {
-    return this.decide(id, "approved");
+  async approve(id: string, payload: DecideSharingRequestPayload = {}): Promise<SharingRequest> {
+    return this.decide(id, "approved", payload.note);
   }
 
-  async reject(id: string): Promise<SharingRequest> {
-    return this.decide(id, "rejected");
+  async reject(id: string, payload: DecideSharingRequestPayload = {}): Promise<SharingRequest> {
+    return this.decide(id, "rejected", payload.note);
   }
 
   async getSharedSnapshot(id: string): Promise<SharedStudySnapshot> {
@@ -155,7 +155,11 @@ export class SharingService {
     return rows.map((r) => ({ id: r.id, title: r.title }));
   }
 
-  private async decide(id: string, status: "approved" | "rejected"): Promise<SharingRequest> {
+  private async decide(
+    id: string,
+    status: "approved" | "rejected",
+    decisionNote: string | undefined,
+  ): Promise<SharingRequest> {
     const orgId = requireOrgId();
     const decidedBy = requireActor();
     const existing = await this.prisma.sharingRequest.findUnique({ where: { id } });
@@ -175,7 +179,7 @@ export class SharingService {
 
     const row = await this.prisma.sharingRequest.update({
       where: { id },
-      data: { status, decidedBy, decidedAt: new Date() },
+      data: { status, decidedBy, decidedAt: new Date(), decisionNote: decisionNote ?? null },
     });
     const study = await this.tenant.runAsSupervisor((tx) =>
       tx.study.findUnique({ where: { id: row.studyId } }),
@@ -186,6 +190,7 @@ export class SharingService {
       entityId: row.id,
       entityLabel: `Sharing request for study "${study?.title ?? row.studyId}"`,
       organizationId: orgId,
+      ...(decisionNote ? { changes: [{ field: "Decision Note", before: null, after: decisionNote }] } : {}),
     });
     return this.enrichOne(row as unknown as SharingRequestRow);
   }
@@ -239,6 +244,7 @@ export class SharingService {
       decidedBy: row.decidedBy,
       decidedAt: row.decidedAt ? row.decidedAt.toISOString() : null,
       note: row.note,
+      decisionNote: row.decisionNote,
     }));
   }
 }

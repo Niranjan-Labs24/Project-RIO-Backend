@@ -10,11 +10,30 @@ import { conflictFor, uniqueField } from '../auth/auth.repository';
 import { AuditService } from '../audit/audit.service';
 import type { AuditChange } from '../audit/audit.types';
 import { DomainsService } from '../domains/domains.service';
+import { GeographyService } from '../geography/geography.service';
 import type {
   CreateOrganizationPayload, Organization, OrganizationSummary, OrgRow, UpdateOrganizationPayload,
 } from './organizations.types';
 
-const DIFF_FIELDS = ['name', 'region', 'email', 'sector', 'purpose', 'logoUrl', 'villages', 'isActive'] as const;
+const DIFF_FIELDS = [
+  'name', 'region', 'email', 'sector', 'purpose', 'logoUrl', 'villages',
+  'regionId', 'isActive',
+] as const;
+
+// Shape Prisma actually returns once the join tables are included — the raw
+// input to toOrgRow() below. Kept separate from OrgRow (this module's own
+// flattened shape) since the join rows need to be reduced to plain id
+// arrays before anything else in this file touches them. `regionId` is a
+// plain scalar column now (single-select), so no include/join needed for it.
+type RawOrgWithGeo = {
+  id: string; name: string; purpose: string | null; registrationNumber: string | null;
+  logoUrl: string | null; region: string[]; email: string | null; sector: string | null;
+  villages: string[]; regionId: string | null; isActive: boolean; createdAt: Date;
+  orgGovernorates: { governorateId: string }[];
+  orgCenters: { centerId: string }[];
+};
+
+const GEO_INCLUDE = { orgGovernorates: true, orgCenters: true } as const;
 
 @Injectable()
 export class OrganizationsService {
@@ -23,23 +42,61 @@ export class OrganizationsService {
     private readonly audit: AuditService,
     private readonly passwords: PasswordService,
     private readonly domains: DomainsService,
+    private readonly geography: GeographyService,
   ) {}
 
   async getCurrent(): Promise<Organization> {
-    const row = (await this.tenant.runInOrgContext((tx) => tx.organisation.findFirst())) as OrgRow | null;
+    const row = await this.tenant.runInOrgContext((tx) =>
+      tx.organisation.findFirst({ include: GEO_INCLUDE }),
+    );
     if (!row) throw new NotFoundException({ error: { code: 'ORG_NOT_FOUND', message: 'Organization not found' } });
-    return this.toOrganization(row);
+    return this.toOrganization(this.toOrgRow(row as RawOrgWithGeo));
   }
 
   async updateCurrent(patch: UpdateOrganizationPayload): Promise<Organization> {
     const orgId = requireOrgId();
     if (patch.sector !== undefined) await this.assertValidSector(patch.sector);
+
     const { updated, changes } = await this.tenant.runInOrgContext(async (tx) => {
-      const current = (await tx.organisation.findFirst()) as OrgRow | null;
-      if (!current) throw new NotFoundException({ error: { code: 'ORG_NOT_FOUND', message: 'Organization not found' } });
-      const changes = this.diff(current, patch);
-      const updated = (await tx.organisation.update({ where: { id: orgId }, data: this.buildUpdateData(patch) })) as OrgRow;
-      return { updated, changes };
+      const currentRaw = await tx.organisation.findFirst({ include: GEO_INCLUDE });
+      if (!currentRaw) throw new NotFoundException({ error: { code: 'ORG_NOT_FOUND', message: 'Organization not found' } });
+      const current = this.toOrgRow(currentRaw as RawOrgWithGeo);
+
+      // A patch that omits regionId/governorateIds/centerIds leaves that
+      // value unchanged — validate against whatever the *final* state will
+      // be, not just what's in this one patch.
+      const nextRegionId = patch.regionId !== undefined ? patch.regionId : current.regionId;
+      const nextGovernorateIds = patch.governorateIds ?? current.governorateIds;
+      const nextCenterIds = patch.centerIds ?? current.centerIds;
+      await this.geography.validateHierarchy({
+        regionId: nextRegionId,
+        governorateIds: nextGovernorateIds,
+        centerIds: nextCenterIds,
+      });
+
+      const changes = this.diff(current, patch, nextGovernorateIds, nextCenterIds);
+
+      await tx.organisation.update({ where: { id: orgId }, data: this.buildUpdateData(patch) });
+
+      if (patch.governorateIds !== undefined) {
+        await tx.organisationGovernorate.deleteMany({ where: { orgId } });
+        if (patch.governorateIds.length > 0) {
+          await tx.organisationGovernorate.createMany({
+            data: patch.governorateIds.map((governorateId) => ({ orgId, governorateId })),
+          });
+        }
+      }
+      if (patch.centerIds !== undefined) {
+        await tx.organisationCenter.deleteMany({ where: { orgId } });
+        if (patch.centerIds.length > 0) {
+          await tx.organisationCenter.createMany({
+            data: patch.centerIds.map((centerId) => ({ orgId, centerId })),
+          });
+        }
+      }
+
+      const updatedRaw = await tx.organisation.findFirst({ include: GEO_INCLUDE });
+      return { updated: this.toOrgRow(updatedRaw as RawOrgWithGeo), changes };
     });
     if (changes.length > 0) {
       await this.audit.record({ action: 'edit', entityType: 'organization', entityId: updated.id, entityLabel: updated.name, changes });
@@ -60,8 +117,8 @@ export class OrganizationsService {
     // signup path returns, instead of leaking a raw Prisma 500.
     let org: OrgRow;
     try {
-      org = (await this.tenant.runAsOrg(orgId, async (tx) => {
-        const created = await tx.organisation.create({
+      const created = await this.tenant.runAsOrg(orgId, async (tx) => {
+        const row = await tx.organisation.create({
           data: {
             id: orgId, name: payload.name, purpose: payload.purpose, registrationNumber: payload.registrationNumber,
             region: payload.region ?? [], email: payload.email ?? null,
@@ -71,8 +128,12 @@ export class OrganizationsService {
         await tx.user.create({
           data: { orgId, roleId: 'role_ngo_admin', name: payload.adminName, email: payload.adminEmail, status: UserStatus.invited, passwordHash },
         });
-        return created;
-      })) as OrgRow;
+        return row;
+      });
+      // A freshly-created org has no Governorate/Center selections yet — no
+      // join rows exist to fetch, so these are always empty on creation.
+      // `regionId` is a plain column, already present on `created` as-is.
+      org = { ...(created as unknown as Omit<OrgRow, 'governorateIds' | 'centerIds'>), governorateIds: [], centerIds: [] };
     } catch (err) {
       const field = uniqueField(err);
       if (field) throw conflictFor(field);
@@ -94,18 +155,26 @@ export class OrganizationsService {
     const take = Math.min(Math.max(opts.limit ?? 100, 1), 200);
     const skip = Math.max(opts.offset ?? 0, 0);
     const rows = await this.tenant.runAsSupervisor((tx) =>
-      tx.organisation.findMany({ include: { _count: { select: { users: true } } }, orderBy: { createdAt: 'desc' }, take, skip }),
+      tx.organisation.findMany({
+        include: { ...GEO_INCLUDE, _count: { select: { users: true } } },
+        orderBy: { createdAt: 'desc' },
+        take,
+        skip,
+      }),
     );
-    return (rows as (OrgRow & { _count: { users: number } })[]).map((r) => ({ ...this.toOrganization(r), memberCount: r._count.users }));
+    return (rows as (RawOrgWithGeo & { _count: { users: number } })[]).map((r) => ({
+      ...this.toOrganization(this.toOrgRow(r)),
+      memberCount: r._count.users,
+    }));
   }
 
   async getById(id: string): Promise<OrganizationSummary> {
     this.assertCrossEntity();
     const row = (await this.tenant.runAsSupervisor((tx) =>
-      tx.organisation.findUnique({ where: { id }, include: { _count: { select: { users: true } } } }),
-    )) as (OrgRow & { _count: { users: number } }) | null;
+      tx.organisation.findUnique({ where: { id }, include: { ...GEO_INCLUDE, _count: { select: { users: true } } } }),
+    )) as (RawOrgWithGeo & { _count: { users: number } }) | null;
     if (!row) throw new NotFoundException({ error: { code: 'ORG_NOT_FOUND', message: 'Organization not found' } });
-    return { ...this.toOrganization(row), memberCount: row._count.users };
+    return { ...this.toOrganization(this.toOrgRow(row)), memberCount: row._count.users };
   }
 
   // Mirrors AuthService's identical check (see auth.service.ts) — `sector`
@@ -138,11 +207,17 @@ export class OrganizationsService {
     if (patch.purpose !== undefined) data.purpose = patch.purpose;
     if (patch.logoUrl !== undefined) data.logoUrl = patch.logoUrl;
     if (patch.villages !== undefined) data.villages = patch.villages;
+    if (patch.regionId !== undefined) data.regionId = patch.regionId;
     if (patch.isActive !== undefined) data.isActive = patch.isActive;
     return data;
   }
 
-  private diff(current: OrgRow, patch: UpdateOrganizationPayload): AuditChange[] {
+  private diff(
+    current: OrgRow,
+    patch: UpdateOrganizationPayload,
+    nextGovernorateIds: string[],
+    nextCenterIds: string[],
+  ): AuditChange[] {
     const before = current as unknown as Record<string, unknown>;
     const after = patch as unknown as Record<string, unknown>;
     const changes: AuditChange[] = [];
@@ -158,14 +233,45 @@ export class OrganizationsService {
         changes.push({ field: f, before: before[f], after: after[f] });
       }
     }
+    // governorateIds/centerIds aren't real columns on `organisations` (they
+    // live in the join tables) so DIFF_FIELDS can't cover them generically —
+    // diff the *sets* directly against whatever the final set will be.
+    if (patch.governorateIds !== undefined && !this.sameIdSet(current.governorateIds, nextGovernorateIds)) {
+      changes.push({ field: 'governorateIds', before: current.governorateIds, after: nextGovernorateIds });
+    }
+    if (patch.centerIds !== undefined && !this.sameIdSet(current.centerIds, nextCenterIds)) {
+      changes.push({ field: 'centerIds', before: current.centerIds, after: nextCenterIds });
+    }
     return changes;
+  }
+
+  private sameIdSet(a: string[], b: string[]): boolean {
+    if (a.length !== b.length) return false;
+    const sorted = (xs: string[]) => [...xs].sort();
+    return JSON.stringify(sorted(a)) === JSON.stringify(sorted(b));
+  }
+
+  // Reduces the raw join-table arrays Prisma returns (once `orgGovernorates`/
+  // `orgCenters` are included) down to plain id arrays — every other method
+  // in this file works with that flattened OrgRow shape, never the raw join
+  // rows directly. `regionId` is a plain scalar column, read straight off.
+  private toOrgRow(raw: RawOrgWithGeo): OrgRow {
+    return {
+      id: raw.id, name: raw.name, purpose: raw.purpose, registrationNumber: raw.registrationNumber,
+      logoUrl: raw.logoUrl, region: raw.region, email: raw.email, sector: raw.sector,
+      villages: raw.villages, regionId: raw.regionId, isActive: raw.isActive, createdAt: raw.createdAt,
+      governorateIds: raw.orgGovernorates.map((g) => g.governorateId),
+      centerIds: raw.orgCenters.map((c) => c.centerId),
+    };
   }
 
   private toOrganization(row: OrgRow): Organization {
     return {
       id: row.id, name: row.name, purpose: row.purpose, registrationNumber: row.registrationNumber,
       logoUrl: row.logoUrl, region: row.region, email: row.email,
-      sector: row.sector, villages: row.villages, isActive: row.isActive, createdAt: row.createdAt.toISOString(),
+      sector: row.sector, villages: row.villages,
+      regionId: row.regionId, governorateIds: row.governorateIds, centerIds: row.centerIds,
+      isActive: row.isActive, createdAt: row.createdAt.toISOString(),
     };
   }
 }

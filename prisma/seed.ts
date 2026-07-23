@@ -224,6 +224,8 @@ async function main(): Promise<void> {
           orgId: demoOrgId,
           title,
           createdBy: officer.id,
+          // First Study ever seeded for this demo org.
+          cycleNumber: 1,
         },
       });
       const need = await tx.need.create({

@@ -1,4 +1,4 @@
-// A minimal, dependency-free, but genuinely valid single-page PDF writer.
+// A minimal, dependency-free, but genuinely valid multi-page PDF writer.
 // Real report rendering (RIO-NFR-007/008: Arabic RTL, export quality) is a
 // documented future step — this exists only so the placeholder export
 // actually opens in a PDF viewer instead of being plain text wearing a
@@ -28,33 +28,78 @@ function wrapLine(line: string, maxChars: number): string[] {
   return wrapped;
 }
 
-export function buildPlaceholderPdf(title: string, bodyLines: string[]): Buffer {
-  const pageWidth = 612;
-  const pageHeight = 792;
-  const marginLeft = 50;
-  const maxCharsPerLine = 90;
+const PAGE_WIDTH = 612;
+const PAGE_HEIGHT = 792;
+const MARGIN_LEFT = 50;
+const MAX_CHARS_PER_LINE = 90;
+// Conservative for every page, including the title page — the title itself
+// eats roughly 3 lines' worth of vertical space on page 1, so this constant
+// stays well under what a title-less page could actually fit. A byte-exact
+// per-page fit isn't worth the complexity for a placeholder renderer; this
+// just has to never silently overflow past the bottom margin, which the
+// previous single-page version did for any report longer than ~45 lines.
+const LINES_PER_PAGE = 40;
 
-  const wrappedLines = bodyLines.flatMap((line) => wrapLine(line, maxCharsPerLine));
-
-  const contentParts: string[] = ["BT", "/F1 16 Tf", `${marginLeft} ${pageHeight - 60} Td`, `(${escapePdfText(title)}) Tj`];
-  let y = 24;
-  contentParts.push("/F2 10 Tf");
-  for (const line of wrappedLines) {
-    contentParts.push(`0 -${y} Td`, `(${escapePdfText(line)}) Tj`);
-    y = 16;
+function buildPageContentStream(title: string | null, lines: string[]): string {
+  const parts: string[] = ["BT"];
+  if (title) {
+    parts.push("/F1 16 Tf", `${MARGIN_LEFT} ${PAGE_HEIGHT - 60} Td`, `(${escapePdfText(title)}) Tj`, "/F2 10 Tf");
+    let first = true;
+    for (const line of lines) {
+      parts.push(`0 -${first ? 24 : 16} Td`, `(${escapePdfText(line)}) Tj`);
+      first = false;
+    }
+  } else {
+    parts.push("/F2 10 Tf", `${MARGIN_LEFT} ${PAGE_HEIGHT - 50} Td`);
+    let first = true;
+    for (const line of lines) {
+      parts.push(`0 -${first ? 0 : 16} Td`, `(${escapePdfText(line)}) Tj`);
+      first = false;
+    }
   }
-  contentParts.push("ET");
-  const contentStream = contentParts.join("\n");
+  parts.push("ET");
+  return parts.join("\n");
+}
+
+export function buildPlaceholderPdf(title: string, bodyLines: string[]): Buffer {
+  const wrappedLines = bodyLines.flatMap((line) => wrapLine(line, MAX_CHARS_PER_LINE));
+
+  // Chunk into one page's worth at a time — page 1 carries the title,
+  // every subsequent page is body-only.
+  const pageChunks: string[][] = [];
+  for (let i = 0; i < wrappedLines.length; i += LINES_PER_PAGE) {
+    pageChunks.push(wrappedLines.slice(i, i + LINES_PER_PAGE));
+  }
+  if (pageChunks.length === 0) pageChunks.push([]);
+
+  const pageCount = pageChunks.length;
+  // Object numbering: 1=Catalog, 2=Pages, 3..3+pageCount-1=Page objects,
+  // then font objects, then one content-stream object per page.
+  const pageObjNums = pageChunks.map((_, i) => 3 + i);
+  const fontBoldObjNum = 3 + pageCount;
+  const fontRegularObjNum = fontBoldObjNum + 1;
+  const firstContentObjNum = fontRegularObjNum + 1;
 
   const objects: string[] = [];
-  objects.push("<< /Type /Catalog /Pages 2 0 R >>");
-  objects.push("<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+  objects.push(`<< /Type /Catalog /Pages 2 0 R >>`); // 1
   objects.push(
-    `<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Contents 6 0 R >>`,
-  );
-  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
-  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
-  objects.push(`<< /Length ${Buffer.byteLength(contentStream, "latin1")} >>\nstream\n${contentStream}\nendstream`);
+    `<< /Type /Pages /Kids [${pageObjNums.map((n) => `${n} 0 R`).join(" ")}] /Count ${pageCount} >>`,
+  ); // 2
+
+  pageChunks.forEach((_, i) => {
+    const contentObjNum = firstContentObjNum + i;
+    objects.push(
+      `<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 ${fontBoldObjNum} 0 R /F2 ${fontRegularObjNum} 0 R >> >> /MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}] /Contents ${contentObjNum} 0 R >>`,
+    );
+  });
+
+  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>"); // fontBoldObjNum
+  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"); // fontRegularObjNum
+
+  pageChunks.forEach((chunk, i) => {
+    const contentStream = buildPageContentStream(i === 0 ? title : null, chunk);
+    objects.push(`<< /Length ${Buffer.byteLength(contentStream, "latin1")} >>\nstream\n${contentStream}\nendstream`);
+  });
 
   let pdf = "%PDF-1.4\n";
   const offsets: number[] = [];

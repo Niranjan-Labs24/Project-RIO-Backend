@@ -5,6 +5,7 @@ export async function buildPlaceholderExcel(
   title: string,
   reportType: string,
   content: FlattenedContent,
+  metaRows: Array<{ field: string; value: string }> = [],
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "RIO";
@@ -18,6 +19,7 @@ export async function buildPlaceholderExcel(
   summarySheet.getRow(1).font = { bold: true };
   summarySheet.addRow({ field: "Report", value: title });
   summarySheet.addRow({ field: "Report Type", value: reportType });
+  for (const row of metaRows) summarySheet.addRow(row);
   for (const row of content.summaryRows) summarySheet.addRow(row);
 
   for (const table of content.tables) {

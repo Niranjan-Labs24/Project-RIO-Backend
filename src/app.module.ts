@@ -25,6 +25,7 @@ import { NeedsModule } from './modules/needs/needs.module';
 import { EvidenceModule } from './modules/evidence/evidence.module';
 import { AiDecisionsModule } from './modules/ai-decisions/ai-decisions.module';
 import { DomainsModule } from './modules/domains/domains.module';
+import { GeographyModule } from './modules/geography/geography.module';
 import { MethodologyConfigModule } from './modules/methodology-config/methodology-config.module';
 import { SupervisorOverviewModule } from './modules/supervisor-overview/supervisor-overview.module';
 import { PublicSurveysModule } from './modules/public-surveys/public-surveys.module';
@@ -32,6 +33,7 @@ import { CitizenModule } from './modules/citizen/citizen.module';
 import { ResponseQualityModule } from './modules/response-quality/response-quality.module';
 import { PriorityModule } from './modules/priority/priority.module';
 import { SharingModule } from './modules/sharing/sharing.module';
+import { ReportSharingModule } from './modules/report-sharing/report-sharing.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { ArchiveModule } from './modules/archive/archive.module';
 import { ReviewerSlaModule } from './modules/reviewer-sla/reviewer-sla.module';
@@ -73,6 +75,7 @@ import { SurveysModule } from './modules/surveys/surveys.module';
     EvidenceModule,
     AiDecisionsModule,
     DomainsModule,
+    GeographyModule,
     MethodologyConfigModule,
     SupervisorOverviewModule,
     PublicSurveysModule,
@@ -80,6 +83,7 @@ import { SurveysModule } from './modules/surveys/surveys.module';
     ResponseQualityModule,
     PriorityModule,
     SharingModule,
+    ReportSharingModule,
     ReportsModule,
     ArchiveModule,
     ReviewerSlaModule,

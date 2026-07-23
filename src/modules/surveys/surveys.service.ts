@@ -245,7 +245,40 @@ export class SurveysService {
     return this.getSurveyByNeedId(needId);
   }
 
-  async recommendQuestions(needId: string): Promise<any> {
+  // Public, manual "regenerate" entry point — used by the Researcher's
+  // legacy "Create Survey > Generate AI Suggestions" dialog and by the AI
+  // Review screen's Override-Domain flow (Phase 4), which passes an explicit
+  // candidate domain/subDomain that hasn't been approved yet. Falls back to
+  // whatever's already known about the Need (Approved Domain if set, else
+  // the AI's own original suggestion) when no override is given.
+  async recommendQuestions(needId: string, domainOverride?: { domain: string; subDomain: string }): Promise<any> {
+    const need = await this.tenant.runInOrgContext((tx) => tx.need.findUnique({ where: { id: needId } }));
+    if (!need) {
+      throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+    }
+    const domain = domainOverride?.domain ?? need.domain ?? need.aiSuggestedDomain;
+    const subDomain = domainOverride?.subDomain ?? need.subDomain ?? need.aiSuggestedSubDomain;
+    if (!domain || !subDomain) {
+      throw new BadRequestException({
+        error: { code: 'NO_APPROVED_DOMAIN', message: 'This need has no Domain/Sub-Domain to generate questions from yet.' },
+      });
+    }
+    return this.generateSuggestedQuestions(needId, domain, subDomain);
+  }
+
+  // Core question-suggestion logic, shared by:
+  //  - AiDecisionsService.classifyAutomatically, called automatically right
+  //    after classification succeeds, before any human has reviewed it;
+  //  - the manual recommendQuestions() entry point above;
+  //  - the AI Review screen's Override-Domain preview (Phase 4), re-run
+  //    against a candidate domain the Approver hasn't committed to yet.
+  // Deliberately NOT gated on Need-approval status (classification hasn't
+  // been reviewed yet the first time this runs) and does NOT write any
+  // Need-status transition of its own — only Survey/SurveyQuestion/
+  // AiSuggestion rows. Idempotent: always reuses an existing DRAFT Survey
+  // for this Need rather than creating a second one (Retry/regeneration
+  // make hitting this path far more common than before).
+  async generateSuggestedQuestions(needId: string, domain: string, subDomain: string): Promise<any> {
     const orgId = requireOrgId();
     const actorId = requireActor();
 
@@ -254,18 +287,10 @@ export class SurveysService {
       if (!need) {
         throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
       }
-      if (!need.domain || !need.subDomain) {
-        throw new BadRequestException({
-          error: { code: 'NO_APPROVED_DOMAIN', message: 'This need requires a Domain Category before generating a survey.' },
-        });
-      }
-      this.assertClassificationApproved(need.status);
       // Once published, a survey may already have live citizen responses —
       // re-running AI recommendation would otherwise silently delete and
       // replace its Question Bank items out from under them (see the
-      // deleteMany/createMany below). Checked before the Gemini call so a
-      // doomed request fails fast rather than burning an AI call first.
-      // SUBMITTED is blocked too — same reason updateQuestions is: the
+      // deleteMany/createMany below). SUBMITTED is blocked too — the
       // Approver reviews exactly what was submitted, not a moving target.
       const existingSurvey = await tx.survey.findFirst({ where: { needId } });
       if (existingSurvey?.status === 'PUBLISHED' || existingSurvey?.status === 'SUBMITTED') {
@@ -281,63 +306,73 @@ export class SurveysService {
       }
 
       const eligibleQuestions = await tx.question.findMany({
-        where: { domain: need.domain, subDomain: need.subDomain, usedInMvp: true },
+        where: { domain, subDomain, usedInMvp: true },
       });
 
       return { need, eligibleQuestions };
     });
 
     const { need, eligibleQuestions } = data;
-    if (eligibleQuestions.length === 0) {
-      throw new ConflictException({
-        error: { code: 'NO_ELIGIBLE_QUESTIONS', message: 'No questions found in this domain/subdomain' },
-      });
-    }
-
-    const systemInstruction = `You are a survey question recommendation assistant. You must recommend only question IDs from the provided eligible questions list. Do not create new question text. Do not edit question text. Return valid JSON only.`;
-
-    const prompt = `Need Statement: "${need.statement}"
-Approved Domain: "${need.domain}"
-Approved SubDomain: "${need.subDomain}"
-Eligible Questions: ${JSON.stringify(
-      eligibleQuestions.map((q) => ({
-        questionId: q.questionId,
-        questionText: q.questionText,
-        answerType: q.answerType,
-        answerOptions: typeof q.answerOptions === 'string' ? JSON.parse(q.answerOptions) : q.answerOptions,
-        indicator: q.indicator,
-        kpi: q.kpi,
-      })),
-    )}`;
-
-    const responseSchema = {
-      type: 'object',
-      properties: {
-        recommendedQuestionIds: {
-          type: 'array',
-          items: { type: 'string' },
-        },
-        confidence: { type: 'number' },
-        reason: { type: 'string' },
-      },
-      required: ['recommendedQuestionIds', 'confidence', 'reason'],
-    };
 
     let recommendedQuestionIds: string[] = [];
     let confidence = 0;
     let reason = '';
     let raw: any = null;
 
-    try {
-      const result = await this.ai.generateJson<any>(prompt, systemInstruction, responseSchema);
-      recommendedQuestionIds = result.response.recommendedQuestionIds || [];
-      confidence = result.response.confidence || 0;
-      reason = result.response.reason || '';
-      raw = result.raw;
-    } catch (err: any) {
-      throw new BadRequestException({
-        error: { code: 'AI_SURVEY_GENERATION_FAILED', message: `AI survey generation failed: ${err.message}` }
-      });
+    // A domain/subDomain with zero matching Question Bank rows (e.g. a
+    // reference-data mismatch between the configured sub-domain name and
+    // the Question Bank's own domain/subDomain strings) must still produce
+    // a Survey — just an empty one the Approver can fill from the Question
+    // Bank tab (any domain) or with custom questions, rather than a hard
+    // failure that silently leaves the Need with no Survey at all (see
+    // AiDecisionsService.runAndPersistClassification's best-effort catch).
+    if (eligibleQuestions.length === 0) {
+      reason =
+        'No Question Bank questions match this Domain/Sub-Domain — this survey was created with no recommended questions. Add questions from the Question Bank or as custom questions.';
+    } else {
+      const systemInstruction = `You are a survey question recommendation assistant. You must recommend only question IDs from the provided eligible questions list. Do not create new question text. Do not edit question text. Return valid JSON only.`;
+
+      const prompt = `Need Statement: "${need.statement}"
+Domain: "${domain}"
+SubDomain: "${subDomain}"
+Eligible Questions: ${JSON.stringify(
+        eligibleQuestions.map((q) => ({
+          questionId: q.questionId,
+          questionText: q.questionText,
+          answerType: q.answerType,
+          answerOptions: typeof q.answerOptions === 'string' ? JSON.parse(q.answerOptions) : q.answerOptions,
+          indicator: q.indicator,
+          kpi: q.kpi,
+        })),
+      )}`;
+
+      const responseSchema = {
+        type: 'object',
+        properties: {
+          recommendedQuestionIds: {
+            type: 'array',
+            items: { type: 'string' },
+          },
+          confidence: { type: 'number' },
+          reason: { type: 'string' },
+        },
+        required: ['recommendedQuestionIds', 'confidence', 'reason'],
+      };
+
+      try {
+        const result = await this.ai.generateJson<any>(prompt, systemInstruction, responseSchema);
+        recommendedQuestionIds = result.response.recommendedQuestionIds || [];
+        confidence = result.response.confidence || 0;
+        reason = result.response.reason || '';
+        raw = result.raw;
+      } catch (err: any) {
+        // Question suggestion must never leave the Need with nothing to show
+        // an Approver — if Gemini is unavailable, fall back to every eligible
+        // Question Bank entry for this domain/subDomain rather than throwing.
+        recommendedQuestionIds = eligibleQuestions.map((q) => q.questionId);
+        confidence = 0;
+        reason = `AI question recommendation was unavailable (${err.message}) — showing all eligible Question Bank questions for this Domain/Sub-Domain instead.`;
+      }
     }
 
     // Validate recommended questions exist in DB and match the criteria
@@ -348,7 +383,9 @@ Eligible Questions: ${JSON.stringify(
     // If validation results in 0 questions, use all eligible questions as fallback
     const finalQuestions = validatedQuestions.length > 0 ? validatedQuestions : eligibleQuestions;
 
-    // Log AI Suggestion
+    // Log AI Suggestion — the "suggested, as opposed to approved" snapshot.
+    // Never touched again after this; whatever the Approver leaves in
+    // SurveyQuestion at Approve time is the separate, approved set.
     await this.tenant.runInOrgContext(async (tx) =>
       tx.aiSuggestion.create({
         data: {
@@ -367,7 +404,7 @@ Eligible Questions: ${JSON.stringify(
       }),
     );
 
-    // Create or update survey draft
+    // Create-or-update, never a second Survey row for the same Need.
     const survey = await this.tenant.runInOrgContext(async (tx) => {
       let existingSurvey = await tx.survey.findFirst({ where: { needId } });
       if (!existingSurvey) {
@@ -381,7 +418,6 @@ Eligible Questions: ${JSON.stringify(
             createdBy: actorId,
           },
         });
-        await tx.need.update({ where: { id: needId }, data: { status: 'survey_created' } });
       } else {
         existingSurvey = await tx.survey.update({
           where: { id: existingSurvey.id },
@@ -391,8 +427,8 @@ Eligible Questions: ${JSON.stringify(
 
       // Recreate only the Question Bank links — any additional/open-ended
       // questions already on this survey (customText set, questionId null)
-      // are left untouched, since they're the Research Officer's own
-      // additions, not something Gemini's suggestion should ever wipe out.
+      // are left untouched, since they're the Researcher's own additions,
+      // not something regenerated suggestions should ever wipe out.
       await tx.surveyQuestion.deleteMany({ where: { surveyId: existingSurvey.id, questionId: { not: null } } });
       await tx.surveyQuestion.createMany({
         data: finalQuestions.map((q, idx) => ({
@@ -611,7 +647,11 @@ Eligible Questions: ${JSON.stringify(
     if (!survey) {
       throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
     }
-    if (survey.status !== 'SUBMITTED') {
+    // SUBMITTED is the legacy path (Researcher explicitly submitForApproval'd
+    // first). DRAFT is the new AI Review flow's path — there is no separate
+    // "submit for approval" step there; the Approver acts on the
+    // auto-generated DRAFT survey directly (see AiDecisionsService.approveAiReview).
+    if (survey.status !== 'SUBMITTED' && survey.status !== 'DRAFT') {
       throw new ConflictException({
         error: { code: 'SURVEY_NOT_PENDING_APPROVAL', message: 'This survey is not currently awaiting approval.' },
       });

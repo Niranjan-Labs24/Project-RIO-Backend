@@ -11,6 +11,10 @@ export interface SharingRequestRow {
   decidedBy: string | null;
   decidedAt: Date | null;
   note: string | null;
+  // Optional reason the owner gives when approving/rejecting — was
+  // previously missing entirely on this module (reject was a single click,
+  // no explanation). Same field shape as ReportSharingRequest.
+  decisionNote: string | null;
 }
 
 export interface SharingRequest {
@@ -27,6 +31,11 @@ export interface SharingRequest {
   decidedBy: string | null;
   decidedAt: string | null;
   note: string | null;
+  decisionNote: string | null;
+}
+
+export interface DecideSharingRequestPayload {
+  note?: string;
 }
 
 export interface CreateSharingRequestPayload {

@@ -3,7 +3,7 @@ import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { requireActor, requireOrgId } from '../../tenancy/org-context';
 import { AuditService } from '../audit/audit.service';
 import { EvidenceStorageService, MAX_EVIDENCE_FILES_PER_STUDY } from './evidence.storage.service';
-import { NEED_EDITABLE_STATUSES } from '../needs/needs.types';
+import { EVIDENCE_EDITABLE_STATUSES } from '../needs/needs.types';
 import type { Evidence, EvidenceRow, UploadedFilePayload } from './evidence.types';
 
 @Injectable()
@@ -30,6 +30,16 @@ export class EvidenceService {
     const need = await this.tenant.runInOrgContext((tx) => tx.need.findUnique({ where: { id: needId } }));
     if (!need) {
       throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+    }
+    // Evidence stays editable slightly longer than the Need's own Statement/
+    // Governorates/Centers (see EVIDENCE_EDITABLE_STATUSES) — through
+    // ai_classified, not just up to it — since classification never reads
+    // evidence content and an Approver hasn't acted yet at that stage.
+    // Locks once reviewer_approved+.
+    if (!EVIDENCE_EDITABLE_STATUSES.includes(need.status)) {
+      throw new ConflictException({
+        error: { code: 'EVIDENCE_NOT_EDITABLE', message: 'Evidence can no longer be added once this need has been approved.' },
+      });
     }
     const studyId = need.studyId;
 
@@ -96,16 +106,16 @@ export class EvidenceService {
 
   // RIO-FR-Add-01: an explicit step, separate from uploading — AI
   // Classification is gated on this having happened (see
-  // AiDecisionsService.classify), not merely on evidence existing.
+  // AiDecisionsService.classify), not on evidence existing. Evidence is
+  // optional: a Need can move straight to evidence_submitted (and from
+  // there to AI Classification) with zero files attached — the attachment
+  // is a supporting document a researcher may add if they have one, not a
+  // prerequisite.
   async submit(needId: string): Promise<void> {
     await this.tenant.runInOrgContext(async (tx) => {
       const need = await tx.need.findUnique({ where: { id: needId } });
       if (!need) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
       if (need.status === 'draft') {
-        const evidenceCount = await tx.evidence.count({ where: { needId } });
-        if (evidenceCount === 0) {
-          throw new ConflictException({ error: { code: 'EVIDENCE_REQUIRED', message: 'Upload at least one evidence file before submitting' } });
-        }
         await tx.need.update({ where: { id: needId }, data: { status: 'evidence_submitted' } });
       }
       // Already evidence_submitted/ai_classified/...: submitting again is a
@@ -146,7 +156,7 @@ export class EvidenceService {
       const existing = (await tx.evidence.findUnique({ where: { id } })) as EvidenceRow | null;
       if (!existing) throw new NotFoundException({ error: { code: 'EVIDENCE_NOT_FOUND', message: 'Evidence not found' } });
       const need = await tx.need.findUnique({ where: { id: existing.needId } });
-      if (need && !NEED_EDITABLE_STATUSES.includes(need.status)) {
+      if (need && !EVIDENCE_EDITABLE_STATUSES.includes(need.status)) {
         throw new ConflictException({
           error: {
             code: 'EVIDENCE_NOT_DELETABLE',

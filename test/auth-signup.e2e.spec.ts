@@ -33,9 +33,32 @@ describe('signup -> me -> change-password (cookie)', () => {
     const rn = `RN-${Date.now()}`;
     const email = `admin+${Date.now()}@e2e.test`;
 
+    // Geography reference endpoints are public (no @RequirePermission — see
+    // GeographyController), so these are reachable before the org exists.
+    const regions = await request(server).get('/api/regions').expect(200);
+    const regionId = regions.body[0].id;
+    const governorates = await request(server)
+      .get('/api/governorates')
+      .query({ regionId })
+      .expect(200);
+    const governorateId = governorates.body[0].id;
+    const centers = await request(server)
+      .get('/api/centers')
+      .query({ governorateId })
+      .expect(200);
+    const centerId = centers.body[0].id;
+
     const signup = await request(server)
       .post('/api/auth/signup')
-      .send({ organizationName: 'E2E NGO', purpose: 'testing', registrationNumber: rn, email })
+      .send({
+        organizationName: 'E2E NGO',
+        purpose: 'testing',
+        registrationNumber: rn,
+        email,
+        regionId,
+        governorateIds: [governorateId],
+        centerIds: [centerId],
+      })
       .expect(201);
 
     const cookie = signup.headers['set-cookie'];

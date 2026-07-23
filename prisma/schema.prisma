@@ -87,7 +87,8 @@ model Organisation {
   // A org can span more than one region — same array-of-strings shape as
   // `villages` below, not a single free-text field (was `String?` — a
   // comma-separated "Region A, Region B" entry used to be stored as one
-  // literal string instead of being treated as multiple regions).
+  // literal string instead of being treated as multiple regions). This is
+  // unrelated free text, not the KSA Geographic Reference link below.
   region             String[] @default([])
   email              String?  @db.VarChar(320)
   // A Domain's `name` from the Methodology Configuration screen (e.g.
@@ -98,9 +99,21 @@ model Organisation {
   sector             String?  @db.VarChar(200)
   logoUrl            String?  @map("logo_url")
   villages           String[] @default([])
+  // Optional link into the KSA Geographic Reference master data — additive,
+  // alongside the existing free-text `region`/`villages` arrays above, not a
+  // replacement for them. An org has exactly *one* Region (single-select,
+  // hence a plain scalar FK, not a join table), but can span *many*
+  // Governorates and *many* Centers — see OrganisationGovernorate/
+  // OrganisationCenter below.
+  regionId           String?  @map("region_id") @db.Uuid
   isActive           Boolean  @default(true) @map("is_active")
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  regionRef Region? @relation(fields: [regionId], references: [id], onDelete: Restrict)
+
+  orgGovernorates OrganisationGovernorate[]
+  orgCenters      OrganisationCenter[]
 
   users       User[]
   consents    ConsentAcceptance[]
@@ -117,6 +130,8 @@ model Organisation {
   priorityScores PriorityScore[]
   sharingRequestsOwned SharingRequest[] @relation("SharingRequestsOwned")
   sharingRequestsMade  SharingRequest[] @relation("SharingRequestsMade")
+  reportSharingRequestsOwned ReportSharingRequest[] @relation("ReportSharingRequestsOwned")
+  reportSharingRequestsMade  ReportSharingRequest[] @relation("ReportSharingRequestsMade")
   reports Report[]
   aiSuggestions AiSuggestion[]
   humanDecisions HumanDecision[]
@@ -126,6 +141,7 @@ model Organisation {
   scoreRollups               ScoreRollup[]
   villagePriorityAssessments VillagePriorityAssessment[]
 
+  @@index([regionId])
   @@map("organisations")
 }
 
@@ -212,13 +228,33 @@ model Study {
   // Selected from (or added alongside) the org's own configured villages
   // list — same array-of-strings shape as Organisation.villages, not a
   // master-data table, per the same "don't promote to master data" call
-  // made for Need.village.
+  // made for Need.village. Kept as-is, additive alongside the structured
+  // KSA Geographic Reference field below.
   villages  String[]    @default([])
+  // Optional link into the KSA Geographic Reference master data — a Study
+  // selects a *subset* of the owning Org's own selected Governorates/Centers
+  // (see StudyGovernorate/StudyCenter below), validated in
+  // StudiesService#assertGeographyInOrgScope both for hierarchy correctness
+  // (GeographyService.validateHierarchy) and org-scope membership.
+  // Region itself is never stored here — it's derived live from the owning
+  // Organisation's own single regionId, never a second copy.
+  //
+  // Sequential per-org counter (1, 2, 3... across every Study the org has
+  // ever created), assigned server-side at creation, never client-writable.
+  cycleNumber Int @map("cycle_number")
+  // Optional link to the real, status-gated MethodologyVersion master data
+  // (the same model Priority Scoring/Question Bank use) — only a PUBLISHED
+  // version may be selected (checked in StudiesService, not enforceable by
+  // the FK itself). Nullable: can be set later, not required at creation.
+  methodologyVersionId String? @map("methodology_version_id") @db.Uuid
   createdBy String      @map("created_by") @db.Uuid
   createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org      Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  methodologyVersion MethodologyVersion? @relation(fields: [methodologyVersionId], references: [id], onDelete: SetNull)
+  studyGovernorates StudyGovernorate[]
+  studyCenters      StudyCenter[]
   needs    Need[]
   // Denormalized studyId FK kept on these (see each model's own comment) —
   // Study still needs the Prisma back-relation array even though `needId` is
@@ -240,6 +276,7 @@ model Study {
   scoreRollups               ScoreRollup[]
   villagePriorityAssessments VillagePriorityAssessment[]
 
+  @@unique([orgId, cycleNumber])
   @@index([orgId])
   @@map("studies")
 }
@@ -250,8 +287,18 @@ model Study {
 // about a sibling Need's progress affects another).
 enum NeedStatus {
   draft
+  // Set immediately on creation (see NeedsService.create) — a Need sits
+  // here for the (synchronous, in-process) duration of its automatic AI
+  // classification call. Also the state a Need is returned to after an
+  // AI Review rejection, so it can be edited and re-classified.
+  pending_ai_classification
   evidence_submitted
   ai_classified
+  // Classification's fallback chain (AI -> prior Needs in the same
+  // geography -> default domain) is designed to always succeed — this
+  // value is only reached if every tier fails (e.g. zero active domains
+  // configured org-wide). See AiDecisionsService.retryClassification.
+  ai_classification_failed
   reviewer_approved
   survey_created
   survey_published
@@ -278,6 +325,11 @@ model Need {
   // being treated as multiple villages). Do not promote this to a
   // master-data table without an explicit ticket.
   village   String[]   @default([])
+  // Optional link into the KSA Geographic Reference master data — multi-
+  // select Governorates and Centers (see NeedGovernorate/NeedCenter below):
+  // a single Need can span multiple geographic areas. Must be a subset of
+  // the owning Study's own selected governorateIds/centerIds — checked in
+  // NeedsService, not enforceable by the FK alone.
   // Where this Need came from — assigned by the system based on the actual
   // creation path (see NeedsService.create / NeedsImportService), never
   // client-writable (RIO-FR-001). `citizen_input` and `field_survey` are
@@ -289,15 +341,14 @@ model Need {
   // against anything, purely a cross-reference back to their own records.
   referenceId String?  @map("reference_id") @db.VarChar(200)
   status    NeedStatus @default(draft)
-  // The AUTHORITATIVE Domain + Sub-Domain for this Need — selected manually
-  // by the Researcher at creation (mandatory; see CreateNeedBody), sourced
-  // from the same Question Bank domain/sub-domain pairs Survey Builder
-  // already matches questions against (QuestionsService.getDomainOptions).
-  // This is what reporting/scoring/downstream processing reads — it is
-  // never overwritten by AI Classification. Nullable at the column level
-  // only for backward compatibility with rows created before this field
-  // existed (e.g. via NeedsImportService's bulk CSV path, which doesn't
-  // collect a domain) — the manual-entry API contract itself requires both.
+  // The AUTHORITATIVE ("Approved") Domain + Sub-Domain for this Need — no
+  // longer collected manually at creation. Populated only when an Approver
+  // approves or overrides an AI Classification decision (see
+  // AiDecisionsService.review) via the AI Review screen. This is what
+  // reporting/scoring/Survey Builder's Question Bank matching reads.
+  // Distinct from aiSuggestedDomain/aiSuggestedSubDomain below, which is
+  // never overwritten once classification runs — domain/subDomain is the
+  // human's final decision, which may differ from the AI's suggestion.
   domain    String?    @db.VarChar(120)
   subDomain String?    @map("sub_domain") @db.VarChar(120)
   // AI Classification's own suggestion — stored for transparency/future
@@ -309,12 +360,22 @@ model Need {
   // just no longer writes onto the authoritative field.
   aiSuggestedDomain    String? @map("ai_suggested_domain") @db.VarChar(120)
   aiSuggestedSubDomain String? @map("ai_suggested_sub_domain") @db.VarChar(120)
+  // When the most recent classification attempt completed (success or
+  // failure) — cleared back to null and re-set on every retry, so it
+  // always reflects the latest attempt only, never a stale earlier one.
+  classifiedAt DateTime? @map("classified_at") @db.Timestamptz(6)
+  // Populated only when status = ai_classification_failed; cleared on
+  // retry before the next attempt runs. Never shown to citizens, only to
+  // Researchers/Approvers on the Need workspace / AI Review screens.
+  classificationError String? @map("classification_error")
   createdBy String     @map("created_by") @db.Uuid
   createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   study Study        @relation(fields: [studyId], references: [id], onDelete: Cascade)
   org   Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  needGovernorates NeedGovernorate[]
+  needCenters NeedCenter[]
   evidence Evidence[]
   aiDecisions AiDecision[]
   surveys Survey[]
@@ -328,6 +389,86 @@ model Need {
   @@index([orgId])
   @@index([studyId])
   @@map("needs")
+}
+
+// Multi-select Governorates for a Need — a Need selects a *subset* of the
+// owning Study's own selected Governorates (checked in NeedsService, not
+// enforceable by the FK alone). org_id is denormalized directly from
+// Need.orgId (not joined through Need) so this table gets a clean,
+// self-contained org-isolation RLS policy, the same pattern every other
+// org-scoped table in this schema uses.
+model NeedGovernorate {
+  id            String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  needId        String   @map("need_id") @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  governorateId String   @map("governorate_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  need        Need        @relation(fields: [needId], references: [id], onDelete: Cascade)
+  governorate Governorate @relation(fields: [governorateId], references: [id], onDelete: Restrict)
+
+  @@unique([needId, governorateId])
+  @@index([governorateId])
+  @@index([orgId])
+  @@map("need_governorates")
+}
+
+// Multi-select Centers for a Need — org_id is denormalized directly from
+// Need.orgId (not joined through Need) so this table gets a clean,
+// self-contained org-isolation RLS policy, the same pattern every other
+// org-scoped table in this schema uses.
+model NeedCenter {
+  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  needId    String   @map("need_id") @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  centerId  String   @map("center_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  need   Need   @relation(fields: [needId], references: [id], onDelete: Cascade)
+  center Center @relation(fields: [centerId], references: [id], onDelete: Restrict)
+
+  @@unique([needId, centerId])
+  @@index([centerId])
+  @@index([orgId])
+  @@map("need_centers")
+}
+
+// A Study selects a *subset* of the owning Org's own selected Governorates —
+// same org-scoped join-table pattern as OrganisationGovernorate/NeedCenter
+// (org_id denormalized for a clean, self-contained RLS isolation policy).
+model StudyGovernorate {
+  id            String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  studyId       String   @map("study_id") @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  governorateId String   @map("governorate_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  study       Study       @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  governorate Governorate @relation(fields: [governorateId], references: [id], onDelete: Restrict)
+
+  @@unique([studyId, governorateId])
+  @@index([governorateId])
+  @@index([orgId])
+  @@map("study_governorates")
+}
+
+// Same pattern as StudyGovernorate above, for a Study's selected Centers
+// (must belong to one of the Study's own selected Governorates — checked in
+// StudiesService, not enforceable by the FK itself).
+model StudyCenter {
+  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  studyId   String   @map("study_id") @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  centerId  String   @map("center_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  study  Study  @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  center Center @relation(fields: [centerId], references: [id], onDelete: Restrict)
+
+  @@unique([studyId, centerId])
+  @@index([centerId])
+  @@index([orgId])
+  @@map("study_centers")
 }
 
 // RIO-FR-Add-01: multiple files per Study, uploaded after the Need exists.
@@ -450,6 +591,118 @@ model SubDomain {
   @@map("sub_domains")
 }
 
+// ──────── KSA Geographic Reference (global, seeded, read-only to cnap_app) ────────
+// Official Saudi Arabia administrative hierarchy — Region -> Governorate ->
+// Center, per the Regions System (Royal Order A/92, 1412H/1992): 13 regions,
+// 150 governorates (including the amanahs of region capitals), 1,404
+// centers. Same pattern as Domain/SubDomain/Question — no org_id, no RLS,
+// seeded via prisma/import-geography.ts (idempotent upsert on `code`), pure
+// reference data for Organisation.regionId/governorateId/centerId to point
+// at. No deactivate/soft-delete flag: unlike Domain/SubDomain (which a
+// Methodology admin curates over time), this hierarchy is a fixed external
+// standard, not something the app edits.
+model Region {
+  id      String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  // The spreadsheet's own numeric region code (1-13), not a UUID — this is
+  // what the source data and any future re-import key off of.
+  code    Int    @unique
+  name    String @db.VarChar(150)
+  // ISO 3166-2 subdivision code, e.g. "SA-01".
+  isoCode String @unique @map("iso_code") @db.VarChar(10)
+  capital String @db.VarChar(150)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  governorates Governorate[]
+  orgs         Organisation[]
+
+  @@map("regions")
+}
+
+model Governorate {
+  id       String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  // The spreadsheet's own "Gov Code", e.g. "0101" — a zero-padded string,
+  // not numeric (some codes carry meaningful leading zeros).
+  code     String @unique @db.VarChar(10)
+  regionId String @map("region_id") @db.Uuid
+  name     String @db.VarChar(150)
+  // "Amanah (Region capital)" | "Category A" | "Category B" — free text
+  // exactly as the source spreadsheet labels it, not a fixed enum, since
+  // the source is the sole authority on what categories exist.
+  category String @db.VarChar(50)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  region          Region                    @relation(fields: [regionId], references: [id], onDelete: Restrict)
+  centers         Center[]
+  orgGovernorates OrganisationGovernorate[]
+  studyGovernorates StudyGovernorate[]
+  needGovernorates NeedGovernorate[]
+
+  @@index([regionId])
+  @@map("governorates")
+}
+
+model Center {
+  id            String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  // The spreadsheet's own "Center Code", e.g. "0101-001".
+  code          String @unique @db.VarChar(20)
+  governorateId String @map("governorate_id") @db.Uuid
+  name          String @db.VarChar(150)
+  // "Category A" | "Category B".
+  category      String @db.VarChar(50)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  governorate Governorate          @relation(fields: [governorateId], references: [id], onDelete: Restrict)
+  orgCenters  OrganisationCenter[]
+  needCenters NeedCenter[]
+  studyCenters StudyCenter[]
+
+  @@index([governorateId])
+  @@map("centers")
+}
+
+// An org has exactly one Region (plain scalar FK on Organisation itself, see
+// Organisation.regionId), but can independently span many Governorates and
+// many Centers (not necessarily one Center per selected Governorate) — each
+// gets its own join table rather than one nested/polymorphic structure, same
+// convention throughout this schema (see the deliberate choice not to
+// generalize this pattern with Report Sharing's own join table, documented
+// on ReportSharingRequest below). Org-scoped (has org_id, RLS applies —
+// unlike Region/Governorate/Center themselves, which are global reference
+// data with no org_id).
+model OrganisationGovernorate {
+  id            String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId         String   @map("org_id") @db.Uuid
+  governorateId String   @map("governorate_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org         Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  governorate Governorate  @relation(fields: [governorateId], references: [id], onDelete: Restrict)
+
+  @@unique([orgId, governorateId])
+  @@index([governorateId])
+  @@map("organisation_governorates")
+}
+
+model OrganisationCenter {
+  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  centerId  String   @map("center_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org    Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  center Center       @relation(fields: [centerId], references: [id], onDelete: Restrict)
+
+  @@unique([orgId, centerId])
+  @@index([centerId])
+  @@map("organisation_centers")
+}
+
 // ──────── Publish Survey + Generate QR / Citizen public flow ────────
 // Tenant-scoped (org_id + RLS, same isolation pattern as Study/Need/
 // Evidence) even though the citizen-facing routes that read/write
@@ -524,6 +777,15 @@ model CitizenOtpChallenge {
   @@map("citizen_otp_challenges")
 }
 
+// Self-reported by the citizen respondent — a fixed, small vocabulary
+// (not a free-text field) so gender-wise reporting can group on it directly.
+enum Gender {
+  male
+  female
+  other
+  prefer_not_to_say
+}
+
 // Generic response row — Response Quality, AI Summary, and Priority
 // Dashboard all read from this same table, seeded or real alike.
 model SurveyResponse {
@@ -535,6 +797,18 @@ model SurveyResponse {
   surveyLinkId String   @map("survey_link_id") @db.Uuid
   contactName  String?  @map("contact_name") @db.VarChar(200)
   contact      String   @db.VarChar(320)
+  gender       Gender?
+  // Geography snapshot — copied from the Need (its own multi-select
+  // Governorates/Centers, village) and the Organization (regionId) at
+  // submission time, not asked of the citizen directly. A pure denormalized
+  // copy for future governorate/village-wise reporting (see
+  // Need.needGovernorates/NeedCenter/Need.village and
+  // Organisation.regionId) — never independently edited, so plain array
+  // columns rather than a join table are enough here.
+  regionId       String?  @map("region_id") @db.Uuid
+  governorateIds String[] @default([]) @map("governorate_ids") @db.Uuid
+  centerIds      String[] @default([]) @map("center_ids") @db.Uuid
+  village        String[] @default([])
   answers      Json
   submittedAt  DateTime @default(now()) @map("submitted_at") @db.Timestamptz(6)
 
@@ -696,6 +970,12 @@ model SharingRequest {
   decidedBy        String?       @map("decided_by") @db.Uuid
   decidedAt        DateTime?     @map("decided_at") @db.Timestamptz(6)
   note             String?       @db.VarChar(1000)
+  // Optional reason the owner org gives when rejecting (or, less commonly,
+  // approving with a caveat) — was previously missing entirely; reject was
+  // a single click with no explanation. Nullable/optional on both approve
+  // and reject, same spirit as Survey rejection already requiring a comment
+  // elsewhere in this app, just not mandatory here.
+  decisionNote     String?       @map("decision_note") @db.VarChar(1000)
 
   ownerOrg      Organisation @relation("SharingRequestsOwned", fields: [ownerOrgId], references: [id], onDelete: Cascade)
   requestingOrg Organisation @relation("SharingRequestsMade", fields: [requestingOrgId], references: [id], onDelete: Cascade)
@@ -705,6 +985,42 @@ model SharingRequest {
   @@index([requestingOrgId])
   @@index([studyId])
   @@map("sharing_requests")
+}
+
+// Report Sharing (RIO-FR-014) — structurally identical to SharingRequest
+// above but keyed on Report instead of Study. Kept as its own table rather
+// than generalizing SharingRequest into one polymorphic
+// entity-type/entity-id row: this schema already has direct precedent for
+// one-join-table-per-relationship even between conceptually near-identical
+// links (see OrganisationGovernorate vs OrganisationCenter above, not one
+// generic "OrganisationGeographyLink"), and a real Prisma FK (with its
+// cascade rule) can only ever point at one table, so a polymorphic id would
+// trade away referential integrity for a generalization this codebase
+// doesn't use anywhere else. The actual code (service logic, frontend UI)
+// still avoids duplication — see ReportSharingService/SharingService's
+// shared base type and the shared `<SharingRequestsPage>` frontend
+// component, not this schema.
+model ReportSharingRequest {
+  id               String        @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  ownerOrgId       String        @map("owner_org_id") @db.Uuid
+  requestingOrgId  String        @map("requesting_org_id") @db.Uuid
+  reportId         String        @map("report_id") @db.Uuid
+  status           SharingStatus @default(pending)
+  requestedBy      String        @map("requested_by") @db.Uuid
+  requestedAt      DateTime      @default(now()) @map("requested_at") @db.Timestamptz(6)
+  decidedBy        String?       @map("decided_by") @db.Uuid
+  decidedAt        DateTime?     @map("decided_at") @db.Timestamptz(6)
+  note             String?       @db.VarChar(1000)
+  decisionNote     String?       @map("decision_note") @db.VarChar(1000)
+
+  ownerOrg      Organisation @relation("ReportSharingRequestsOwned", fields: [ownerOrgId], references: [id], onDelete: Cascade)
+  requestingOrg Organisation @relation("ReportSharingRequestsMade", fields: [requestingOrgId], references: [id], onDelete: Cascade)
+  report        Report       @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([ownerOrgId])
+  @@index([requestingOrgId])
+  @@index([reportId])
+  @@map("report_sharing_requests")
 }
 
 // ──────── Reports Module (RPT-01..RPT-13) ────────
@@ -753,6 +1069,7 @@ model Report {
 
   org   Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
   study Study?       @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  sharingRequests ReportSharingRequest[]
 
   @@index([orgId])
   @@index([reportType])
@@ -1054,6 +1371,7 @@ model MethodologyVersion {
   scoreRollups               ScoreRollup[]
   domainPriorityConfigs      DomainPriorityConfig[]
   villagePriorityAssessments VillagePriorityAssessment[]
+  studies                    Study[]
 
   @@map("methodology_versions")
 }
