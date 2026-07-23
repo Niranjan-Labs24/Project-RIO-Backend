@@ -48,7 +48,11 @@ describe("GET /collective-dashboard", () => {
     expect(Array.isArray(b.executiveSummary.reviewerNotes)).toBe(true);
   }, 20_000);
 
-  it("denies callers without reportsDashboards:read", async () => {
-    await request(app.getHttpServer()).get("/api/collective-dashboard").expect(403);
+  it("denies unauthenticated callers", async () => {
+    // JwtAuthGuard hard-blocks any non-@Public() route with no valid
+    // session before the permission guard even runs, so a caller with no
+    // token gets 401 here, not 403 — there's no seeded user without
+    // reportsDashboards:read to exercise a true permission-denied case.
+    await request(app.getHttpServer()).get("/api/collective-dashboard").expect(401);
   });
 });

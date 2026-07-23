@@ -10,6 +10,7 @@ import { AllExceptionsFilter } from "../src/common/filters/http-exception.filter
 describe("RPT14 from a scored study uses REAL data", () => {
   let app: INestApplication;
   let cookies: string[];
+  let csrf: string;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -23,6 +24,8 @@ describe("RPT14 from a scored study uses REAL data", () => {
       .send({ email: "admin@demo-ngo.org", password: "Passw0rd!" })
       .expect(200);
     cookies = login.headers["set-cookie"] as unknown as string[];
+    const csrfCookie = cookies.find((c) => c.startsWith("rio_csrf="));
+    csrf = csrfCookie?.match(/rio_csrf=([^;]*)/)?.[1] ?? "";
   });
   afterAll(async () => app.close());
 
@@ -34,6 +37,7 @@ describe("RPT14 from a scored study uses REAL data", () => {
     const res = await request(app.getHttpServer())
       .post("/api/reports")
       .set("Cookie", cookies)
+      .set("x-csrf-token", csrf)
       .send({ reportType: "RPT14", studyId: study.id, filters: { villageId: "Ad-Dilam" } })
       .expect(201);
 

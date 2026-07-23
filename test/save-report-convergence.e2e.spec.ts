@@ -14,6 +14,7 @@ import { AllExceptionsFilter } from "../src/common/filters/http-exception.filter
 describe("saveReportFromSummary → rich content", () => {
   let app: INestApplication;
   let cookies: string[];
+  let csrf: string;
   let summaryId: string;
   const supervisor = new PrismaClient({
     adapter: new PrismaPg({ connectionString: process.env.SUPERVISOR_DATABASE_URL, ssl: pgSslFromEnv() }),
@@ -31,6 +32,8 @@ describe("saveReportFromSummary → rich content", () => {
       .send({ email: "admin@demo-ngo.org", password: "Passw0rd!" })
       .expect(200);
     cookies = login.headers["set-cookie"] as unknown as string[];
+    const csrfCookie = cookies.find((c) => c.startsWith("rio_csrf="));
+    csrf = csrfCookie?.match(/rio_csrf=([^;]*)/)?.[1] ?? "";
 
     const study = await supervisor.study.findFirst({ where: { title: "Scored Assessment — Ad-Dilam" } });
     if (!study) throw new Error("Run `pnpm seed:scored` first.");
@@ -50,6 +53,7 @@ describe("saveReportFromSummary → rich content", () => {
     const res = await request(app.getHttpServer())
       .post(`/api/priority-summaries/${summaryId}/save-report`)
       .set("Cookie", cookies)
+      .set("x-csrf-token", csrf)
       .expect(201);
 
     const report = res.body;

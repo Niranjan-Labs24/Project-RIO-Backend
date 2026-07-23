@@ -47,6 +47,18 @@ jobs:
       # Seed roles + demo org/admins so the login-based e2e specs (auth, users,
       # organizations, audit) have data to authenticate against.
       - run: pnpm prisma:seed
+      # Order matters: scoring-lookups creates the MethodologyVersion row that
+      # domain-priority-config and seed:scored both require. questions/
+      # geography are independent of that chain but still needed —
+      # auth-signup.e2e.spec.ts reads real /api/regions data, and
+      # scored-report/save-report-convergence e2e specs need seed:scored's
+      # fully-scored study to exist.
+      - run: pnpm import:scoring-lookups
+      - run: pnpm import:domain-priority-config
+      - run: pnpm import:questions
+      - run: pnpm import:geography
+      - run: pnpm grant:access
+      - run: pnpm seed:scored
       - run: pnpm lint
       - run: pnpm build
       - run: pnpm test

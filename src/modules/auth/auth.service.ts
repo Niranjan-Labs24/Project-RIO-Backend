@@ -136,7 +136,10 @@ export class AuthService {
   }
 
   async logout(): Promise<void> {
-    const actorId = requireActor(); // 401 if not authenticated; stateless — client drops the token
+    // 401 if not authenticated. Not stateless — bumping sessionVersion below
+    // invalidates every outstanding token for this user, not just the one
+    // presented here (see JwtAuthGuard's sessionVersion check).
+    const actorId = requireActor();
     const found = (await this.tenant.runInOrgContext((tx) =>
       tx.user.findUnique({ where: { id: actorId } }),
     )) as { email: string } | null;

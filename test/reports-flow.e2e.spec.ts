@@ -42,7 +42,7 @@ describe("Reports lifecycle flow (RPT14 Village Report)", () => {
       .expect(200);
     cookies = login.headers["set-cookie"] as unknown as string[];
     const csrfCookie = cookies.find((c) => c.startsWith("rio_csrf="));
-    csrf = csrfCookie ? csrfCookie.split("=")[1].split(";")[0] : "";
+    csrf = csrfCookie?.match(/rio_csrf=([^;]*)/)?.[1] ?? "";
   });
 
   afterAll(async () => {

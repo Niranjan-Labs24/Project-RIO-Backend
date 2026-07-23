@@ -4,6 +4,7 @@ import cookieParser from 'cookie-parser';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AllExceptionsFilter } from '../src/common/filters/http-exception.filter';
+import { MailerService } from '../src/mailer/mailer.service';
 
 // Requires a running, migrated DB. Unlike auth.e2e.spec.ts (bearer-token
 // only), this flow is cookie-based, so the app must apply cookie-parser
@@ -13,7 +14,16 @@ describe('signup -> me -> change-password (cookie)', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+      // Force the "email couldn't be sent" branch deterministically — this
+      // test asserts on the temporary password revealed in the response,
+      // which only happens when the send fails. Without this override, an
+      // environment with real SMTP creds configured (e.g. a local .env)
+      // would email the password away instead and the response would omit
+      // it, regardless of NODE_ENV.
+      .overrideProvider(MailerService)
+      .useValue({ sendTemporaryPassword: async () => false, sendOtpCode: async () => false })
+      .compile();
     app = moduleRef.createNestApplication();
     app.use(cookieParser());
     app.setGlobalPrefix('api');
@@ -24,10 +34,6 @@ describe('signup -> me -> change-password (cookie)', () => {
     await app.close();
   });
 
-  // A real SMTP send (see .env's SMTP_HOST) takes longer than the default
-  // 5s test timeout — this only matters when testing against a live mail
-  // provider; the mocked mailer.service.spec.ts covers the unconfigured/
-  // failure paths quickly.
   it('signs up, sets rio_session cookie, resolves me, then changes password', async () => {
     const server = app.getHttpServer();
     const rn = `RN-${Date.now()}`;
@@ -61,25 +67,31 @@ describe('signup -> me -> change-password (cookie)', () => {
       })
       .expect(201);
 
-    const cookie = signup.headers['set-cookie'];
+    const cookie = signup.headers['set-cookie'] as unknown as string[];
     expect(cookie).toBeDefined();
     expect(Array.isArray(cookie)).toBe(true);
-    expect((cookie as unknown as string[]).join(';')).toContain('rio_session=');
+    expect(cookie.join(';')).toContain('rio_session=');
+    const csrfCookie = cookie.find((c) => c.startsWith('rio_csrf='));
+    const csrf = csrfCookie?.match(/rio_csrf=([^;]*)/)?.[1] ?? '';
     expect(signup.body.mustChangePassword).toBe(true);
     expect(signup.body.organization.registrationNumber).toBe(rn);
-    // Non-prod (NODE_ENV=test) with no SMTP configured -> temp password revealed.
+    // The MailerService override above forces the send to "fail" -> temp
+    // password revealed in the response, deterministically regardless of
+    // whether this environment has real SMTP creds configured.
+    expect(signup.body.temporaryPasswordEmailed).toBe(false);
     const tempPassword = signup.body.temporaryPassword as string;
     expect(typeof tempPassword).toBe('string');
 
     await request(server)
       .get('/api/auth/me')
-      .set('Cookie', cookie as unknown as string[])
+      .set('Cookie', cookie)
       .expect(200)
       .expect((r) => expect(r.body.user.email).toBe(email));
 
     await request(server)
       .post('/api/auth/change-password')
-      .set('Cookie', cookie as unknown as string[])
+      .set('Cookie', cookie)
+      .set('x-csrf-token', csrf)
       .send({ currentPassword: tempPassword, newPassword: 'BrandNewPass123!' })
       .expect(200)
       .expect((r) => expect(r.body.mustChangePassword).toBe(false));
