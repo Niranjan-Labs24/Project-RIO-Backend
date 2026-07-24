@@ -50,3 +50,11 @@ export interface UpdateMethodologyConfigPayload {
   priorityFactorWeights?: Array<{ key: string; weight: number }>;
   confidenceFlagSettings?: Partial<ConfidenceFlagSettings>;
 }
+
+// TEMPORARY — see the MethodologyVersionOption model comment in
+// schema.prisma. Just enough shape for a Researcher to pick a label from a
+// list; nothing else in the app reads this row shape.
+export interface MethodologyVersionOption {
+  id: string;
+  version: string;
+}

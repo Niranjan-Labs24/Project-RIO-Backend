@@ -21,10 +21,20 @@ export const UpdateSurveyQuestionsBody = registerSchema(
 );
 export type UpdateSurveyQuestionsDto = Static<typeof UpdateSurveyQuestionsBody>;
 
-export const SaveSurveyDraftBody = registerSchema(
-  'SaveSurveyDraftBody',
+export const RejectSurveyBody = registerSchema(
+  'RejectSurveyBody',
   T.Object({
-    status: T.Optional(T.String()),
+    // The Approver's reason — required, since "reject with no explanation"
+    // gives the Researcher nothing to act on before resubmitting.
+    comments: T.String({ minLength: 1, maxLength: 2000 }),
   }),
 );
-export type SaveSurveyDraftDto = Static<typeof SaveSurveyDraftBody>;
+export type RejectSurveyDto = Static<typeof RejectSurveyBody>;
+
+export const SetMethodologyVersionBody = registerSchema(
+  'SetMethodologyVersionBody',
+  T.Object({
+    version: T.String({ minLength: 1, maxLength: 100 }),
+  }),
+);
+export type SetMethodologyVersionDto = Static<typeof SetMethodologyVersionBody>;

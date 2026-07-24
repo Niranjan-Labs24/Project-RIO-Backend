@@ -1,8 +1,10 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
-import { requireActor, requireOrgId } from '../../tenancy/org-context';
+import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
+import { roleByKey } from '../../rbac/role-matrix';
 import { AuditService } from '../audit/audit.service';
 import { AiService } from '../ai/ai.service';
+import { MethodologyConfigService } from '../methodology-config/methodology-config.service';
 
 @Injectable()
 export class SurveysService {
@@ -10,7 +12,43 @@ export class SurveysService {
     private readonly tenant: TenantPrismaService,
     private readonly audit: AuditService,
     private readonly ai: AiService,
+    private readonly methodologyConfig: MethodologyConfigService,
   ) {}
+
+  // Survey creation (empty or AI-recommended) stays gated on the Need
+  // having gone through a *reviewed and approved* AI Classification — not
+  // just having a Domain Category. The Domain Category is now set manually
+  // at Need creation (always present), so domain-presence alone stopped
+  // being a meaningful gate; the Need's own status is what actually proves
+  // AI Classification was run and a human signed off on it (see
+  // AiDecisionsService.review, which is the only thing that moves a Need
+  // to `reviewer_approved`). `survey_created`/`survey_published` are later
+  // stages that already passed through `reviewer_approved` on the way, so
+  // they're allowed too (recommendQuestions can regenerate AI suggestions
+  // for an existing DRAFT/REJECTED survey).
+  private assertClassificationApproved(status: string): void {
+    const approved = status === 'reviewer_approved' || status === 'survey_created' || status === 'survey_published';
+    if (!approved) {
+      throw new ConflictException({
+        error: {
+          code: 'AI_CLASSIFICATION_NOT_APPROVED',
+          message: 'This need requires a reviewed and approved AI Classification before a survey can be created.',
+        },
+      });
+    }
+  }
+
+  // The shared AuditLog table has no dedicated role column (see
+  // AuditService) — every action across the whole app is missing this by
+  // default. The Survey Approval workflow's audit trail is explicitly
+  // required to carry the actor's role, so it's captured here as metadata
+  // (the one field AuditService already passes through untouched) rather
+  // than widening the shared schema for one feature.
+  private actorRoleMetadata(): Record<string, unknown> {
+    const roleKey = getOrgStore()?.role;
+    const role = roleKey ? roleByKey(roleKey) : undefined;
+    return role ? { actorRole: role.key, actorRoleName: role.name } : {};
+  }
 
   // Shared shape for both kinds of SurveyQuestion row — Question Bank
   // (question set, customText/customAnswerType null) and additional/
@@ -77,10 +115,10 @@ export class SurveysService {
   // PUBLISHED survey fresh, so if a survey is edited and republished later,
   // the next citizen to open the link gets the latest version automatically
   // — nothing about a link points at a frozen snapshot.
-  async getPublishedSurveyByStudyId(studyId: string) {
+  async getPublishedSurveyByNeedId(needId: string) {
     return this.tenant.runAsSupervisor(async (tx) => {
       const survey = await tx.survey.findFirst({
-        where: { studyId, status: 'PUBLISHED' },
+        where: { needId, status: 'PUBLISHED' },
         include: {
           surveyQuestions: {
             orderBy: { order: 'asc' },
@@ -91,18 +129,20 @@ export class SurveysService {
       if (!survey) return null;
       return {
         id: survey.id,
+        needId: survey.needId,
         studyId: survey.studyId,
         title: survey.title,
         status: survey.status,
+        methodologyVersion: survey.methodologyVersion,
         questions: survey.surveyQuestions.map((sq) => this.toQuestionDto(sq)),
       };
     });
   }
 
-  async getSurveyByStudyId(studyId: string) {
+  async getSurveyByNeedId(needId: string) {
     const row = await this.tenant.runInOrgContext(async (tx) => {
       const survey = await tx.survey.findFirst({
-        where: { studyId },
+        where: { needId },
         include: {
           surveyQuestions: {
             orderBy: { order: 'asc' },
@@ -114,14 +154,51 @@ export class SurveysService {
     });
 
     if (!row) return null;
+    return this.toSurveyDetailDto(row);
+  }
 
+  private async toSurveyDetailDto(row: {
+    id: string; needId: string; studyId: string; title: string; status: string;
+    methodologyVersion: string | null;
+    submittedAt: Date | null;
+    approverComments: string | null;
+    approvedAt: Date | null; approvedBy: string | null;
+    rejectedAt: Date | null; rejectedBy: string | null;
+    publishedAt: Date | null; publishedBy: string | null;
+    surveyQuestions: Parameters<SurveysService['toQuestionDto']>[0][];
+  }) {
+    const names = await this.resolveUserNames(
+      [row.approvedBy, row.rejectedBy, row.publishedBy].filter((id): id is string => id !== null),
+    );
     return {
       id: row.id,
+      needId: row.needId,
       studyId: row.studyId,
       title: row.title,
       status: row.status,
+      methodologyVersion: row.methodologyVersion,
+      submittedAt: row.submittedAt ? row.submittedAt.toISOString() : null,
+      approverComments: row.approverComments,
+      approvedAt: row.approvedAt ? row.approvedAt.toISOString() : null,
+      approvedBy: row.approvedBy,
+      approvedByName: row.approvedBy ? (names.get(row.approvedBy) ?? null) : null,
+      rejectedAt: row.rejectedAt ? row.rejectedAt.toISOString() : null,
+      rejectedBy: row.rejectedBy,
+      rejectedByName: row.rejectedBy ? (names.get(row.rejectedBy) ?? null) : null,
+      publishedAt: row.publishedAt ? row.publishedAt.toISOString() : null,
+      publishedBy: row.publishedBy,
+      publishedByName: row.publishedBy ? (names.get(row.publishedBy) ?? null) : null,
       questions: row.surveyQuestions.map((sq) => this.toQuestionDto(sq)),
     };
+  }
+
+  private async resolveUserNames(userIds: string[]): Promise<Map<string, string>> {
+    const distinctIds = [...new Set(userIds)];
+    if (distinctIds.length === 0) return new Map();
+    const users = await this.tenant.runInOrgContext((tx) =>
+      tx.user.findMany({ where: { id: { in: distinctIds } }, select: { id: true, name: true } }),
+    );
+    return new Map(users.map((u) => [u.id, u.name]));
   }
 
   // "Build Manually" path: Create Survey without calling Gemini — a bare
@@ -130,31 +207,30 @@ export class SurveysService {
   // combobox. Idempotent: if a survey already exists for this study (e.g.
   // AI suggestions were generated first, or this was already called), just
   // return it rather than wiping its questions.
-  async createEmptySurvey(studyId: string): Promise<any> {
+  async createEmptySurvey(needId: string): Promise<any> {
     const orgId = requireOrgId();
     const actorId = requireActor();
 
-    const { survey, created, studyTitle } = await this.tenant.runInOrgContext(async (tx) => {
-      const study = await tx.study.findUnique({ where: { id: studyId } });
-      if (!study) {
-        throw new NotFoundException({ error: { code: 'STUDY_NOT_FOUND', message: 'Study not found' } });
+    const { survey, created } = await this.tenant.runInOrgContext(async (tx) => {
+      const need = await tx.need.findUnique({ where: { id: needId } });
+      if (!need) {
+        throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
       }
-      if (!study.domain || !study.subDomain) {
+      if (!need.domain || !need.subDomain) {
         throw new BadRequestException({
-          error: {
-            code: 'NO_APPROVED_DOMAIN',
-            message: 'This study needs an approved AI Classification (domain/sub-domain) before generating a survey.',
-          },
+          error: { code: 'NO_APPROVED_DOMAIN', message: 'This need requires a Domain Category before generating a survey.' },
         });
       }
+      this.assertClassificationApproved(need.status);
 
-      const existing = await tx.survey.findFirst({ where: { studyId } });
-      if (existing) return { survey: existing, created: false, studyTitle: study.title };
+      const existing = await tx.survey.findFirst({ where: { needId } });
+      if (existing) return { survey: existing, created: false };
 
       const row = await tx.survey.create({
-        data: { orgId, studyId, title: `Survey: ${study.title}`, status: 'DRAFT', createdBy: actorId },
+        data: { orgId, needId, studyId: need.studyId, title: `Survey: ${need.title}`, status: 'DRAFT', createdBy: actorId },
       });
-      return { survey: row, created: true, studyTitle: study.title };
+      await tx.need.update({ where: { id: needId }, data: { status: 'survey_created' } });
+      return { survey: row, created: true };
     });
 
     if (created) {
@@ -162,95 +238,141 @@ export class SurveysService {
         action: 'create',
         entityType: 'survey',
         entityId: survey.id,
-        entityLabel: `Manually created survey for study "${studyTitle}"`,
+        entityLabel: `Manually created ${survey.title}`,
       });
     }
 
-    return this.getSurveyByStudyId(studyId);
+    return this.getSurveyByNeedId(needId);
   }
 
-  async recommendQuestions(studyId: string): Promise<any> {
+  // Public, manual "regenerate" entry point — used by the Researcher's
+  // legacy "Create Survey > Generate AI Suggestions" dialog and by the AI
+  // Review screen's Override-Domain flow (Phase 4), which passes an explicit
+  // candidate domain/subDomain that hasn't been approved yet. Falls back to
+  // whatever's already known about the Need (Approved Domain if set, else
+  // the AI's own original suggestion) when no override is given.
+  async recommendQuestions(needId: string, domainOverride?: { domain: string; subDomain: string }): Promise<any> {
+    const need = await this.tenant.runInOrgContext((tx) => tx.need.findUnique({ where: { id: needId } }));
+    if (!need) {
+      throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+    }
+    const domain = domainOverride?.domain ?? need.domain ?? need.aiSuggestedDomain;
+    const subDomain = domainOverride?.subDomain ?? need.subDomain ?? need.aiSuggestedSubDomain;
+    if (!domain || !subDomain) {
+      throw new BadRequestException({
+        error: { code: 'NO_APPROVED_DOMAIN', message: 'This need has no Domain/Sub-Domain to generate questions from yet.' },
+      });
+    }
+    return this.generateSuggestedQuestions(needId, domain, subDomain);
+  }
+
+  // Core question-suggestion logic, shared by:
+  //  - AiDecisionsService.classifyAutomatically, called automatically right
+  //    after classification succeeds, before any human has reviewed it;
+  //  - the manual recommendQuestions() entry point above;
+  //  - the AI Review screen's Override-Domain preview (Phase 4), re-run
+  //    against a candidate domain the Approver hasn't committed to yet.
+  // Deliberately NOT gated on Need-approval status (classification hasn't
+  // been reviewed yet the first time this runs) and does NOT write any
+  // Need-status transition of its own — only Survey/SurveyQuestion/
+  // AiSuggestion rows. Idempotent: always reuses an existing DRAFT Survey
+  // for this Need rather than creating a second one (Retry/regeneration
+  // make hitting this path far more common than before).
+  async generateSuggestedQuestions(needId: string, domain: string, subDomain: string): Promise<any> {
     const orgId = requireOrgId();
     const actorId = requireActor();
 
     const data = await this.tenant.runInOrgContext(async (tx) => {
-      const study = await tx.study.findUnique({ where: { id: studyId } });
-      if (!study) {
-        throw new NotFoundException({ error: { code: 'STUDY_NOT_FOUND', message: 'Study not found' } });
+      const need = await tx.need.findUnique({ where: { id: needId } });
+      if (!need) {
+        throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
       }
-
-      if (!study.domain || !study.subDomain) {
-        throw new BadRequestException({
+      // Once published, a survey may already have live citizen responses —
+      // re-running AI recommendation would otherwise silently delete and
+      // replace its Question Bank items out from under them (see the
+      // deleteMany/createMany below). SUBMITTED is blocked too — the
+      // Approver reviews exactly what was submitted, not a moving target.
+      const existingSurvey = await tx.survey.findFirst({ where: { needId } });
+      if (existingSurvey?.status === 'PUBLISHED' || existingSurvey?.status === 'SUBMITTED') {
+        throw new ConflictException({
           error: {
-            code: 'NO_APPROVED_DOMAIN',
-            message: 'This study needs an approved AI Classification (domain/sub-domain) before generating a survey.',
+            code: existingSurvey.status === 'PUBLISHED' ? 'SURVEY_ALREADY_PUBLISHED' : 'SURVEY_NOT_EDITABLE',
+            message:
+              existingSurvey.status === 'PUBLISHED'
+                ? 'This survey is already published and its questions can no longer be regenerated.'
+                : 'This survey is awaiting approval and its questions cannot be regenerated until it is reviewed.',
           },
         });
       }
 
-      // Problem description comes from the Need Statement (the existing
-      // Need workflow), never a Study-level field — see the Need/Evidence/
-      // AI Classification/Human Review BPM this reuses.
-      const need = await tx.need.findUnique({ where: { studyId } });
-
       const eligibleQuestions = await tx.question.findMany({
-        where: { domain: study.domain, subDomain: study.subDomain, usedInMvp: true },
+        where: { domain, subDomain, usedInMvp: true },
       });
 
-      return { study, need, eligibleQuestions };
+      return { need, eligibleQuestions };
     });
 
-    const { study, need, eligibleQuestions } = data;
-    if (eligibleQuestions.length === 0) {
-      throw new ConflictException({
-        error: { code: 'NO_ELIGIBLE_QUESTIONS', message: 'No questions found in this domain/subdomain' },
-      });
-    }
-
-    const systemInstruction = `You are a survey question recommendation assistant. You must recommend only question IDs from the provided eligible questions list. Do not create new question text. Do not edit question text. Return valid JSON only.`;
-
-    const prompt = `Need Statement: "${need?.statement ?? ''}"
-Approved Domain: "${study.domain}"
-Approved SubDomain: "${study.subDomain}"
-Eligible Questions: ${JSON.stringify(
-      eligibleQuestions.map((q) => ({
-        questionId: q.questionId,
-        questionText: q.questionText,
-        answerType: q.answerType,
-        answerOptions: typeof q.answerOptions === 'string' ? JSON.parse(q.answerOptions) : q.answerOptions,
-        indicator: q.indicator,
-        kpi: q.kpi,
-      })),
-    )}`;
-
-    const responseSchema = {
-      type: 'object',
-      properties: {
-        recommendedQuestionIds: {
-          type: 'array',
-          items: { type: 'string' },
-        },
-        confidence: { type: 'number' },
-        reason: { type: 'string' },
-      },
-      required: ['recommendedQuestionIds', 'confidence', 'reason'],
-    };
+    const { need, eligibleQuestions } = data;
 
     let recommendedQuestionIds: string[] = [];
     let confidence = 0;
     let reason = '';
     let raw: any = null;
 
-    try {
-      const result = await this.ai.generateJson<any>(prompt, systemInstruction, responseSchema);
-      recommendedQuestionIds = result.response.recommendedQuestionIds || [];
-      confidence = result.response.confidence || 0;
-      reason = result.response.reason || '';
-      raw = result.raw;
-    } catch (err: any) {
-      throw new BadRequestException({
-        error: { code: 'AI_SURVEY_GENERATION_FAILED', message: `AI survey generation failed: ${err.message}` }
-      });
+    // A domain/subDomain with zero matching Question Bank rows (e.g. a
+    // reference-data mismatch between the configured sub-domain name and
+    // the Question Bank's own domain/subDomain strings) must still produce
+    // a Survey — just an empty one the Approver can fill from the Question
+    // Bank tab (any domain) or with custom questions, rather than a hard
+    // failure that silently leaves the Need with no Survey at all (see
+    // AiDecisionsService.runAndPersistClassification's best-effort catch).
+    if (eligibleQuestions.length === 0) {
+      reason =
+        'No Question Bank questions match this Domain/Sub-Domain — this survey was created with no recommended questions. Add questions from the Question Bank or as custom questions.';
+    } else {
+      const systemInstruction = `You are a survey question recommendation assistant. You must recommend only question IDs from the provided eligible questions list. Do not create new question text. Do not edit question text. Return valid JSON only.`;
+
+      const prompt = `Need Statement: "${need.statement}"
+Domain: "${domain}"
+SubDomain: "${subDomain}"
+Eligible Questions: ${JSON.stringify(
+        eligibleQuestions.map((q) => ({
+          questionId: q.questionId,
+          questionText: q.questionText,
+          answerType: q.answerType,
+          answerOptions: typeof q.answerOptions === 'string' ? JSON.parse(q.answerOptions) : q.answerOptions,
+          indicator: q.indicator,
+          kpi: q.kpi,
+        })),
+      )}`;
+
+      const responseSchema = {
+        type: 'object',
+        properties: {
+          recommendedQuestionIds: {
+            type: 'array',
+            items: { type: 'string' },
+          },
+          confidence: { type: 'number' },
+          reason: { type: 'string' },
+        },
+        required: ['recommendedQuestionIds', 'confidence', 'reason'],
+      };
+
+      try {
+        const result = await this.ai.generateJson<any>(prompt, systemInstruction, responseSchema);
+        recommendedQuestionIds = result.response.recommendedQuestionIds || [];
+        confidence = result.response.confidence || 0;
+        reason = result.response.reason || '';
+        raw = result.raw;
+      } catch (err: any) {
+        // Question suggestion must never leave the Need with nothing to show
+        // an Approver — if Gemini is unavailable, fall back to every eligible
+        // Question Bank entry for this domain/subDomain rather than throwing.
+        recommendedQuestionIds = eligibleQuestions.map((q) => q.questionId);
+        confidence = 0;
+        reason = `AI question recommendation was unavailable (${err.message}) — showing all eligible Question Bank questions for this Domain/Sub-Domain instead.`;
+      }
     }
 
     // Validate recommended questions exist in DB and match the criteria
@@ -261,12 +383,15 @@ Eligible Questions: ${JSON.stringify(
     // If validation results in 0 questions, use all eligible questions as fallback
     const finalQuestions = validatedQuestions.length > 0 ? validatedQuestions : eligibleQuestions;
 
-    // Log AI Suggestion
-    const suggestion = await this.tenant.runInOrgContext(async (tx) =>
+    // Log AI Suggestion — the "suggested, as opposed to approved" snapshot.
+    // Never touched again after this; whatever the Approver leaves in
+    // SurveyQuestion at Approve time is the separate, approved set.
+    await this.tenant.runInOrgContext(async (tx) =>
       tx.aiSuggestion.create({
         data: {
           orgId,
-          studyId,
+          needId,
+          studyId: need.studyId,
           type: 'QUESTION_RECOMMENDATION',
           suggestedQuestionIds: finalQuestions.map((q) => q.questionId),
           confidence,
@@ -279,15 +404,16 @@ Eligible Questions: ${JSON.stringify(
       }),
     );
 
-    // Create or update survey draft
+    // Create-or-update, never a second Survey row for the same Need.
     const survey = await this.tenant.runInOrgContext(async (tx) => {
-      let existingSurvey = await tx.survey.findFirst({ where: { studyId } });
+      let existingSurvey = await tx.survey.findFirst({ where: { needId } });
       if (!existingSurvey) {
         existingSurvey = await tx.survey.create({
           data: {
             orgId,
-            studyId,
-            title: `Survey: ${study.title}`,
+            needId,
+            studyId: need.studyId,
+            title: `Survey: ${need.title}`,
             status: 'DRAFT',
             createdBy: actorId,
           },
@@ -295,14 +421,14 @@ Eligible Questions: ${JSON.stringify(
       } else {
         existingSurvey = await tx.survey.update({
           where: { id: existingSurvey.id },
-          data: { title: `Survey: ${study.title}` },
+          data: { title: `Survey: ${need.title}` },
         });
       }
 
       // Recreate only the Question Bank links — any additional/open-ended
       // questions already on this survey (customText set, questionId null)
-      // are left untouched, since they're the Research Officer's own
-      // additions, not something Gemini's suggestion should ever wipe out.
+      // are left untouched, since they're the Researcher's own additions,
+      // not something regenerated suggestions should ever wipe out.
       await tx.surveyQuestion.deleteMany({ where: { surveyId: existingSurvey.id, questionId: { not: null } } });
       await tx.surveyQuestion.createMany({
         data: finalQuestions.map((q, idx) => ({
@@ -320,10 +446,10 @@ Eligible Questions: ${JSON.stringify(
       action: 'create',
       entityType: 'survey',
       entityId: survey.id,
-      entityLabel: `AI recommended survey questions for study "${study.title}"`,
+      entityLabel: `AI recommended questions for ${survey.title}`,
     });
 
-    return this.getSurveyByStudyId(studyId);
+    return this.getSurveyByNeedId(needId);
   }
 
   async updateQuestions(
@@ -355,11 +481,12 @@ Eligible Questions: ${JSON.stringify(
       }
     }
 
-    const studyId = await this.tenant.runInOrgContext(async (tx) => {
+    const needId = await this.tenant.runInOrgContext(async (tx) => {
       const survey = await tx.survey.findUnique({ where: { id: surveyId } });
       if (!survey) {
         throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
       }
+      this.assertEditable(survey.status);
 
       // Re-create the links using the incoming array — the whole ordered
       // list (Question Bank + additional questions together) is the unit of
@@ -377,7 +504,7 @@ Eligible Questions: ${JSON.stringify(
         })),
       });
 
-      return survey.studyId;
+      return survey.needId;
     });
 
     await this.audit.record({
@@ -387,26 +514,217 @@ Eligible Questions: ${JSON.stringify(
       entityLabel: `Survey questions updated manually`,
     });
 
-    return this.getSurveyByStudyId(studyId);
+    return this.getSurveyByNeedId(needId);
   }
 
-  async saveDraft(surveyId: string, status: string = 'DRAFT') {
-    const updated = await this.tenant.runInOrgContext(async (tx) => {
+  // Content (questions, Methodology Version) is frozen the moment a survey
+  // is SUBMITTED — the Approver reviews exactly what was submitted, never a
+  // moving target. Same rule once PUBLISHED (terminal). Editing resumes
+  // only after a REJECTED verdict, or from DRAFT.
+  private assertEditable(status: string): void {
+    if (status === 'SUBMITTED' || status === 'PUBLISHED') {
+      throw new ConflictException({
+        error: {
+          code: 'SURVEY_NOT_EDITABLE',
+          message:
+            status === 'SUBMITTED'
+              ? 'This survey is awaiting approval and cannot be edited until it is reviewed.'
+              : 'This survey is already published and can no longer be edited.',
+        },
+      });
+    }
+  }
+
+  // Researcher: picks the Methodology Version this survey will publish
+  // under — mandatory before submitForApproval will allow SUBMITTED (see
+  // below). The Approver never calls this; they only review/publish
+  // whatever the Researcher already chose (approveAndPublish doesn't touch
+  // this field at all).
+  async setMethodologyVersion(surveyId: string, version: string) {
+    const options = await this.methodologyConfig.listVersionOptions();
+    if (!options.some((o) => o.version === version)) {
+      throw new BadRequestException({
+        error: { code: 'INVALID_METHODOLOGY_VERSION', message: 'Select a valid Methodology Version from the list.' },
+      });
+    }
+
+    const needId = await this.tenant.runInOrgContext(async (tx) => {
       const survey = await tx.survey.findUnique({ where: { id: surveyId } });
       if (!survey) {
         throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
       }
-      return tx.survey.update({
-        where: { id: surveyId },
-        data: { status },
-      });
+      this.assertEditable(survey.status);
+      await tx.survey.update({ where: { id: surveyId }, data: { methodologyVersion: version } });
+      return survey.needId;
     });
 
     await this.audit.record({
       action: 'edit',
       entityType: 'survey',
       entityId: surveyId,
-      entityLabel: `Survey saved as draft`,
+      entityLabel: `Methodology Version set to "${version}"`,
+      metadata: this.actorRoleMetadata(),
+    });
+
+    return this.getSurveyByNeedId(needId);
+  }
+
+  // ──────── Survey Approval workflow ────────
+  // Draft --[Researcher: submitForApproval]--> Submitted
+  //   --[Approver: approveAndPublish]--> Published (terminal)
+  //   --[Approver: rejectSurvey]--> Rejected
+  //      --[Researcher: edits (updateQuestions), then submitForApproval]--> Submitted (again)
+  // The Approver is never a co-author — approveAndPublish/rejectSurvey never
+  // touch surveyQuestions; the only way survey content changes is through
+  // updateQuestions, which the Researcher (surveyBuilder/write) calls, and
+  // which is itself blocked while SUBMITTED or PUBLISHED (see above).
+
+  // Researcher: hands the current content to the Approver. Valid from DRAFT
+  // (first submission) or REJECTED (resubmission after addressing
+  // comments) — never creates a new Survey row, this is the same one
+  // throughout its whole review history.
+  async submitForApproval(surveyId: string) {
+    const survey = await this.tenant.runInOrgContext((tx) => tx.survey.findUnique({ where: { id: surveyId } }));
+    if (!survey) {
+      throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
+    }
+    if (survey.status !== 'DRAFT' && survey.status !== 'REJECTED') {
+      throw new ConflictException({
+        error: { code: 'SURVEY_NOT_SUBMITTABLE', message: 'Only a draft or rejected survey can be submitted for approval.' },
+      });
+    }
+    // Same "nothing for a citizen to answer" guard publishing already had —
+    // still applies, just moved one step earlier in the flow.
+    const questionCount = await this.tenant.runInOrgContext((tx) => tx.surveyQuestion.count({ where: { surveyId } }));
+    if (questionCount === 0) {
+      throw new BadRequestException({
+        error: { code: 'SURVEY_HAS_NO_QUESTIONS', message: 'Add at least one question before submitting this survey for approval.' },
+      });
+    }
+    // The Researcher picks the Methodology Version (setMethodologyVersion,
+    // while the survey is still editable) before submitting — the Approver
+    // never chooses or changes it, only reviews/publishes whatever's
+    // already here (see approveAndPublish, which no longer touches this
+    // field at all).
+    if (!survey.methodologyVersion) {
+      throw new BadRequestException({
+        error: { code: 'SURVEY_NO_METHODOLOGY_VERSION', message: 'Select a Methodology Version before submitting this survey for approval.' },
+      });
+    }
+
+    const updated = await this.tenant.runInOrgContext((tx) =>
+      tx.survey.update({
+        where: { id: surveyId },
+        data: {
+          status: 'SUBMITTED',
+          submittedAt: new Date(),
+          // Clear the previous round's feedback — once resubmitted, that
+          // note no longer describes the current pending state. The audit
+          // log still has the full history regardless.
+          approverComments: null,
+          rejectedAt: null,
+          rejectedBy: null,
+        },
+      }),
+    );
+
+    await this.audit.record({
+      action: 'edit',
+      entityType: 'survey',
+      entityId: surveyId,
+      entityLabel: 'Survey submitted for approval',
+      metadata: this.actorRoleMetadata(),
+    });
+
+    return updated;
+  }
+
+  // Approver: the only path to PUBLISHED. Combines "approve" and "publish"
+  // into one action per the product decision — there's no intermediate
+  // "approved but not yet published" state.
+  async approveAndPublish(surveyId: string) {
+    const survey = await this.tenant.runInOrgContext((tx) => tx.survey.findUnique({ where: { id: surveyId } }));
+    if (!survey) {
+      throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
+    }
+    // SUBMITTED is the legacy path (Researcher explicitly submitForApproval'd
+    // first). DRAFT is the new AI Review flow's path — there is no separate
+    // "submit for approval" step there; the Approver acts on the
+    // auto-generated DRAFT survey directly (see AiDecisionsService.approveAiReview).
+    if (survey.status !== 'SUBMITTED' && survey.status !== 'DRAFT') {
+      throw new ConflictException({
+        error: { code: 'SURVEY_NOT_PENDING_APPROVAL', message: 'This survey is not currently awaiting approval.' },
+      });
+    }
+
+    const actorId = requireActor();
+    const now = new Date();
+
+    // methodologyVersion is deliberately NOT touched here — it's whatever
+    // the Researcher already chose via setMethodologyVersion before
+    // submitting (submitForApproval requires it to be set). The Approver
+    // reviews and publishes exactly that choice; they never select or
+    // change it themselves.
+    const updated = await this.tenant.runInOrgContext(async (tx) => {
+      const row = await tx.survey.update({
+        where: { id: surveyId },
+        data: {
+          status: 'PUBLISHED',
+          approvedAt: now,
+          approvedBy: actorId,
+          publishedAt: now,
+          publishedBy: actorId,
+        },
+      });
+      await tx.need.update({ where: { id: survey.needId }, data: { status: 'survey_published' } });
+      return row;
+    });
+
+    await this.audit.record({
+      action: 'approve',
+      entityType: 'survey',
+      entityId: surveyId,
+      entityLabel: 'Survey approved and published',
+      metadata: this.actorRoleMetadata(),
+    });
+
+    return updated;
+  }
+
+  // Approver: sends the survey back to the Researcher with required
+  // comments. Never touches surveyQuestions — any content change has to
+  // come from the Researcher through updateQuestions after this.
+  async rejectSurvey(surveyId: string, comments: string) {
+    const survey = await this.tenant.runInOrgContext((tx) => tx.survey.findUnique({ where: { id: surveyId } }));
+    if (!survey) {
+      throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
+    }
+    if (survey.status !== 'SUBMITTED') {
+      throw new ConflictException({
+        error: { code: 'SURVEY_NOT_PENDING_APPROVAL', message: 'This survey is not currently awaiting approval.' },
+      });
+    }
+
+    const actorId = requireActor();
+    const updated = await this.tenant.runInOrgContext((tx) =>
+      tx.survey.update({
+        where: { id: surveyId },
+        data: {
+          status: 'REJECTED',
+          rejectedAt: new Date(),
+          rejectedBy: actorId,
+          approverComments: comments,
+        },
+      }),
+    );
+
+    await this.audit.record({
+      action: 'edit',
+      entityType: 'survey',
+      entityId: surveyId,
+      entityLabel: 'Survey rejected',
+      changes: [{ field: 'Approver Comments', before: null, after: comments }],
+      metadata: this.actorRoleMetadata(),
     });
 
     return updated;

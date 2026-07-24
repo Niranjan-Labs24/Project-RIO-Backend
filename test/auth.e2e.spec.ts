@@ -29,7 +29,7 @@ describe('Auth (e2e)', () => {
     expect(res.body.user.email).toBe('admin@demo-ngo.org');
     expect(res.body.organization.name).toBe('Demo NGO');
     expect(res.body.role.key).toBe('ngo_admin');
-    expect(res.body.role.permissions).toHaveLength(12);
+    expect(res.body.role.permissions).toHaveLength(13);
     token = res.body.token;
   });
 
@@ -55,9 +55,16 @@ describe('Auth (e2e)', () => {
   });
 
   it('records consent with a versioned acceptance snapshot', async () => {
+    // The previous test's logout bumped sessionVersion server-side, so the
+    // outer `token` is now genuinely invalid (that's the point of logout
+    // invalidating outstanding tokens) — get a fresh one first.
+    const login = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({ email: 'admin@demo-ngo.org', password: 'Passw0rd!' })
+      .expect(200);
     const res = await request(app.getHttpServer())
       .post('/api/auth/consent')
-      .set('Authorization', `Bearer ${token}`)
+      .set('Authorization', `Bearer ${login.body.token}`)
       .expect(201);
     expect(typeof res.body.consentedAt).toBe('string');
     expect(res.body.policyVersion).toBe('v1');

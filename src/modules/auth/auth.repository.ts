@@ -1,7 +1,7 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { v7 as uuidv7 } from 'uuid';
-import { Prisma, UserStatus, type Sector } from '../../generated/prisma';
+import { Prisma, UserStatus } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 
 export interface CreateOrgAdminInput {
@@ -11,6 +11,9 @@ export interface CreateOrgAdminInput {
   registrationNumber: string;
   email: string;
   passwordHash: string;
+  regionId: string;
+  governorateIds: string[];
+  centerIds: string[];
 }
 
 export function generateTemporaryPassword(): string {
@@ -65,8 +68,20 @@ export class AuthRepository {
         const org = await tx.organisation.create({
           data: {
             id: orgId, name: input.organizationName, purpose: input.purpose,
-            sector: input.sector ? (input.sector as Sector) : null,
+            sector: input.sector ?? null,
             registrationNumber: input.registrationNumber, email: input.email,
+            regionId: input.regionId,
+            // Nested under the parent create — orgId is implied by the
+            // relation, not a field Prisma accepts here (unlike the
+            // standalone tx.organisationGovernorate.createMany() calls
+            // OrganizationsService.updateCurrent makes later, where it's
+            // required since there's no parent create to imply it).
+            orgGovernorates: {
+              createMany: { data: input.governorateIds.map((governorateId) => ({ governorateId })) },
+            },
+            orgCenters: {
+              createMany: { data: input.centerIds.map((centerId) => ({ centerId })) },
+            },
           },
         });
         // Consent is captured after first login (post password-reset), not
@@ -83,7 +98,15 @@ export class AuthRepository {
             mustChangePassword: true,
           },
         });
-        return { org, user };
+        // Just-created above — no join rows to fetch, build them straight
+        // from the input the same shape buildSession()/toOrgRow() expect
+        // (see OrganizationsService.createWithAdmin's identical pattern).
+        const orgWithGeo = {
+          ...org,
+          orgGovernorates: input.governorateIds.map((governorateId) => ({ governorateId })),
+          orgCenters: input.centerIds.map((centerId) => ({ centerId })),
+        };
+        return { org: orgWithGeo, user };
       });
     } catch (err) {
       const field = uniqueField(err);

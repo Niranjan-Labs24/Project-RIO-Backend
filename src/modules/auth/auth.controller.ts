@@ -82,9 +82,17 @@ export class AuthController {
   // any signed-in user may replace their own (signup-issued temporary) password.
   @Post('change-password')
   @HttpCode(200)
-  changePassword(
+  async changePassword(
     @Body(new TypeBoxValidationPipe(ChangePasswordBody)) body: ChangePasswordDto,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<SessionContext> {
-    return this.auth.changePassword(body);
+    const session = await this.auth.changePassword(body);
+    // changePassword() bumps sessionVersion and mints a fresh token to match
+    // (see AuthService#changePassword) — without re-issuing the cookie here,
+    // the browser keeps presenting the now-stale pre-change cookie, and the
+    // very next cookie-authenticated request (e.g. consent) is correctly
+    // rejected by JwtAuthGuard's sessionVersion check.
+    res.cookie(SESSION_COOKIE_NAME, session.token, sessionCookieOptions(this.config.nodeEnv === 'production'));
+    return session;
   }
 }

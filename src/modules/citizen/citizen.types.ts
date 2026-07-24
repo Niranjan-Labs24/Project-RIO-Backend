@@ -1,6 +1,7 @@
 export interface PublicSurveyLinkRow {
   id: string;
   orgId: string;
+  needId: string;
   studyId: string;
   token: string;
   createdBy: string;
@@ -55,6 +56,12 @@ export interface RequestOtpPayload {
 export interface RequestOtpResult {
   challengeId: string;
   expiresAt: string;
+  codeEmailed: boolean;
+  /** Only present when `codeEmailed` is false and the mailer isn't
+   * configured (dev/test) — mirrors the temp-password reveal convention in
+   * UsersService.invite/AuthService.signup, since there's otherwise no way
+   * for the respondent to get the code at all. */
+  code?: string;
 }
 
 export interface VerifyOtpPayload {
@@ -66,9 +73,12 @@ export interface VerifyOtpResult {
   verified: true;
 }
 
+export type Gender = 'male' | 'female' | 'other' | 'prefer_not_to_say';
+
 export interface SubmitResponsePayload {
   challengeId: string;
   contactName?: string;
+  gender?: Gender;
   answers: Record<string, unknown>;
 }
 

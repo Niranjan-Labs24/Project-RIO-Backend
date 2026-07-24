@@ -15,7 +15,8 @@
     "noImplicitOverride": true,
     "outDir": "./dist",
     "baseUrl": "./",
-    "sourceMap": true
+    "sourceMap": true,
+    "types": ["node", "express", "multer", "vitest/globals"]
   },
   "include": ["src/**/*", "test/**/*", "prisma/**/*"],
   "exclude": ["node_modules", "dist"]

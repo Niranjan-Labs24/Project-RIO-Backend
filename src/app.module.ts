@@ -26,6 +26,7 @@ import { NeedsModule } from './modules/needs/needs.module';
 import { EvidenceModule } from './modules/evidence/evidence.module';
 import { AiDecisionsModule } from './modules/ai-decisions/ai-decisions.module';
 import { DomainsModule } from './modules/domains/domains.module';
+import { GeographyModule } from './modules/geography/geography.module';
 import { MethodologyConfigModule } from './modules/methodology-config/methodology-config.module';
 import { SupervisorOverviewModule } from './modules/supervisor-overview/supervisor-overview.module';
 import { PublicSurveysModule } from './modules/public-surveys/public-surveys.module';
@@ -33,9 +34,12 @@ import { CitizenModule } from './modules/citizen/citizen.module';
 import { ResponseQualityModule } from './modules/response-quality/response-quality.module';
 import { PriorityModule } from './modules/priority/priority.module';
 import { SharingModule } from './modules/sharing/sharing.module';
+import { ReportSharingModule } from './modules/report-sharing/report-sharing.module';
+import { SharingAlertsModule } from './modules/sharing-alerts/sharing-alerts.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { ArchiveModule } from './modules/archive/archive.module';
 import { ReviewerSlaModule } from './modules/reviewer-sla/reviewer-sla.module';
+import { CollectiveDashboardModule } from './modules/collective-dashboard/collective-dashboard.module';
 import { AiModule } from './modules/ai/ai.module';
 import { QuestionsModule } from './modules/questions/questions.module';
 import { SurveysModule } from './modules/surveys/surveys.module';
@@ -74,6 +78,7 @@ import { SurveysModule } from './modules/surveys/surveys.module';
     EvidenceModule,
     AiDecisionsModule,
     DomainsModule,
+    GeographyModule,
     MethodologyConfigModule,
     SupervisorOverviewModule,
     PublicSurveysModule,
@@ -81,9 +86,12 @@ import { SurveysModule } from './modules/surveys/surveys.module';
     ResponseQualityModule,
     PriorityModule,
     SharingModule,
+    ReportSharingModule,
+    SharingAlertsModule,
     ReportsModule,
     ArchiveModule,
     ReviewerSlaModule,
+    CollectiveDashboardModule,
     AiModule,
     QuestionsModule,
     SurveysModule,

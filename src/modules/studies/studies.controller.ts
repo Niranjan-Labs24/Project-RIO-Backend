@@ -9,17 +9,8 @@ import type {
   Study,
   StudyDetail,
   StudyListResult,
-  StudyStatus,
   UpdateStudyPayload,
 } from './studies.types';
-
-const STUDY_STATUSES: readonly StudyStatus[] = [
-  'draft', 'need_captured', 'evidence_submitted', 'ai_classified', 'human_reviewed',
-];
-
-function parseStatus(value?: string): StudyStatus | undefined {
-  return STUDY_STATUSES.includes(value as StudyStatus) ? (value as StudyStatus) : undefined;
-}
 
 @Controller('studies')
 export class StudiesController {
@@ -36,14 +27,12 @@ export class StudiesController {
   list(
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
-    @Query('status') status?: string,
     @Query('village') village?: string,
     @Query('search') search?: string,
   ): Promise<StudyListResult> {
     return this.studies.list({
       limit: parseIntParam(limit),
       offset: parseIntParam(offset),
-      status: parseStatus(status),
       village: village || undefined,
       search: search || undefined,
     });

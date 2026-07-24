@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { getOrgStore, requireOrgId } from "../../tenancy/org-context";
 import { roleByKey } from "../../rbac/role-matrix";
+import { EXPORTABLE_STATUSES } from "../reports/reports.types";
 import type { ArchiveEntry, ListArchiveParams } from "./archive.types";
 
 // One filterable read view over Study + Report, not two parallel modules —
@@ -13,9 +14,9 @@ import type { ArchiveEntry, ListArchiveParams } from "./archive.types";
 //
 // entity/region/sector/village are real filters, not placeholders:
 // region/sector come from each entry's owning Organisation, village comes
-// from the Study's Need (a Study has exactly one Need today). For a
-// crossEntity role (system_admin, center_supervisor) this browses every
-// organisation's archive, same cross-org SELECT-only path
+// from the union of the Study's Needs (a Study can hold many Needs now).
+// For a crossEntity role (system_admin, center_supervisor) this browses
+// every organisation's archive, same cross-org SELECT-only path
 // SupervisorOverviewService uses; for everyone else it stays scoped to the
 // caller's own org exactly like before.
 @Injectable()
@@ -28,14 +29,14 @@ export class ArchiveService {
     const { organisations, studies, reports, needs } = await (isCrossEntity
       ? this.tenant.runAsSupervisor(async (tx) => ({
           organisations: await tx.organisation.findMany(),
-          studies: await tx.study.findMany({ where: { status: "human_reviewed" } }),
-          reports: await tx.report.findMany({ where: { status: "approved" } }),
+          studies: await tx.study.findMany(),
+          reports: await tx.report.findMany({ where: { status: { in: EXPORTABLE_STATUSES } } }),
           needs: await tx.need.findMany(),
         }))
       : this.tenant.runInOrgContext(async (tx) => ({
           organisations: await tx.organisation.findMany(),
-          studies: await tx.study.findMany({ where: { status: "human_reviewed" } }),
-          reports: await tx.report.findMany({ where: { status: "approved" } }),
+          studies: await tx.study.findMany(),
+          reports: await tx.report.findMany({ where: { status: { in: EXPORTABLE_STATUSES } } }),
           needs: await tx.need.findMany(),
         })));
 
@@ -45,24 +46,39 @@ export class ArchiveService {
     const scopedOrgId = isCrossEntity ? null : requireOrgId();
 
     const orgById = new Map(organisations.map((org) => [org.id, org]));
-    const villageByStudyId = new Map(needs.map((need) => [need.studyId, need.village]));
+    const needsByStudyId = new Map<string, typeof needs>();
+    for (const need of needs) {
+      const list = needsByStudyId.get(need.studyId) ?? [];
+      list.push(need);
+      needsByStudyId.set(need.studyId, list);
+    }
+    const villagesByStudyId = new Map(
+      [...needsByStudyId.entries()].map(([studyId, list]) => [studyId, [...new Set(list.flatMap((n) => n.village))]]),
+    );
+    // A Study is "completed" (archived) once every one of its Needs has
+    // reached its terminal state — a Study with no Needs yet, or with any
+    // Need still short of survey_published, isn't archive-eligible.
+    const completedStudies = studies.filter((s) => {
+      const studyNeeds = needsByStudyId.get(s.id) ?? [];
+      return studyNeeds.length > 0 && studyNeeds.every((n) => n.status === "survey_published");
+    });
 
     const results: ArchiveEntry[] = [];
     if (!params.kind || params.kind === "study") {
-      for (const study of studies) {
+      for (const study of completedStudies) {
         const org = orgById.get(study.orgId);
         results.push({
           id: study.id,
           kind: "study",
           title: study.title,
-          status: study.status,
+          status: "completed",
           date: study.updatedAt.toISOString(),
           studyId: study.id,
           organizationId: study.orgId,
           organizationName: org?.name ?? "",
           region: org?.region ?? [],
           sector: org?.sector ?? null,
-          villages: villageByStudyId.get(study.id) ?? [],
+          villages: villagesByStudyId.get(study.id) ?? [],
         });
       }
     }
@@ -80,7 +96,7 @@ export class ArchiveService {
           organizationName: org?.name ?? "",
           region: org?.region ?? [],
           sector: org?.sector ?? null,
-          villages: report.studyId ? (villageByStudyId.get(report.studyId) ?? []) : [],
+          villages: report.studyId ? (villagesByStudyId.get(report.studyId) ?? []) : [],
         });
       }
     }

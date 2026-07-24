@@ -1,10 +1,13 @@
-import { BadRequestException, GoneException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, GoneException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomInt } from 'node:crypto';
 import { Prisma } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { PasswordService } from '../../auth/password.service';
 import { MailerService } from '../../mailer/mailer.service';
+import { AuditService } from '../audit/audit.service';
 import { SurveysService } from '../surveys/surveys.service';
+import { DeterministicScoringService } from '../priority/scoring.service';
+import { ScoreRollupService } from '../priority/rollup.service';
 import type {
   CheckDuplicatePayload, CheckDuplicateResult, CitizenOtpChallengeRow, PublicSurveyLinkRow, RequestOtpPayload,
   RequestOtpResult, ResolvedSurvey, SubmitResponsePayload, SubmitResponseResult, VerifyOtpPayload, VerifyOtpResult,
@@ -12,17 +15,8 @@ import type {
 
 const OTP_TTL_MINUTES = 10;
 const OTP_MAX_ATTEMPTS = 5;
-// Matches the constant the frontend flow previously hardcoded client-side —
-// now computed once here so the Welcome screen's estimate and the actual
-// per-question pacing can never drift apart.
 const SECONDS_PER_QUESTION = 20;
 
-// Every route on this service is unauthenticated (no signed-in actor, no
-// ambient org context) — the owning org is resolved from the link token via
-// the cross-org SELECT-only supervisor connection, then every subsequent
-// write goes through TenantPrismaService.runAsOrg(resolvedOrgId, ...), the
-// same RLS-safe technique the org-creation bootstrap path already uses.
-// See the PublicSurveyLink model comment in schema.prisma.
 @Injectable()
 export class CitizenService {
   constructor(
@@ -30,6 +24,9 @@ export class CitizenService {
     private readonly passwords: PasswordService,
     private readonly mailer: MailerService,
     private readonly surveys: SurveysService,
+    private readonly audit: AuditService,
+    private readonly scoringEngine: DeterministicScoringService,
+    private readonly rollupService: ScoreRollupService,
   ) {}
 
   // The published Survey Builder survey is the only source of questions for
@@ -43,7 +40,7 @@ export class CitizenService {
         study: await tx.study.findUnique({ where: { id: link.studyId } }),
         org: await tx.organisation.findUnique({ where: { id: link.orgId } }),
       })),
-      this.surveys.getPublishedSurveyByStudyId(link.studyId),
+      this.surveys.getPublishedSurveyByNeedId(link.needId),
     ]);
 
     if (!survey) {
@@ -52,7 +49,7 @@ export class CitizenService {
       });
     }
 
-    const questions = survey.questions.map((q) => {
+    const questions = survey.questions.map((q: { answerType: string; answerOptions: string[] | null; id: string; questionText: string; isRequired: boolean }) => {
       const { type, options } = this.mapAnswerTypeForCitizen(q.answerType, q.answerOptions);
       return {
         // The SurveyQuestion row's own id — the one identity that exists
@@ -112,9 +109,14 @@ export class CitizenService {
   // creates or mutates any record.
   async checkDuplicate(token: string, payload: CheckDuplicatePayload): Promise<CheckDuplicateResult> {
     const link = await this.findActiveLinkOrThrow(token);
+    // Scoped to the Need, not the Study — each Need runs its own
+    // independent survey, so the same person may legitimately respond once
+    // per Need under the same Study. Contact normalized (see
+    // normalizeContact) so a trivial casing/whitespace difference can't
+    // bypass this check.
     const contact = this.normalizeContact(payload.contact);
     const existing = await this.tenant.runAsSupervisor((tx) =>
-      tx.surveyResponse.findFirst({ where: { studyId: link.studyId, contact } }),
+      tx.surveyResponse.findFirst({ where: { needId: link.needId, contact } }),
     );
     return { isDuplicate: existing !== null };
   }
@@ -131,22 +133,28 @@ export class CitizenService {
         data: { orgId: link.orgId, surveyLinkId: link.id, contact, codeHash, expiresAt },
       }),
     );
-    const delivered = await this.mailer.sendOtpCode(payload.contact, code);
-    if (!delivered) {
-      await this.tenant.runAsOrg(link.orgId, (tx) =>
-        tx.citizenOtpChallenge.update({ where: { id: challenge.id }, data: { expiresAt: new Date() } }),
-      );
-      throw new ServiceUnavailableException({
-        error: { code: 'OTP_DELIVERY_FAILED', message: 'We could not send a verification code. Please try again.' },
-      });
-    }
+    // Deliberately soft-fail, not hard-fail: an earlier version of this
+    // rejected the request outright when email delivery failed (expiring
+    // the challenge + throwing OTP_DELIVERY_FAILED), which stranded a
+    // citizen respondent with no way to ever get a code whenever SMTP
+    // wasn't configured/working. codeEmailed lets the frontend show the
+    // raw code instead in non-production, mirroring the same reveal
+    // convention used for temp-password delivery elsewhere in this app.
+    const codeEmailed = await this.mailer.sendOtpCode(payload.contact, code);
     // Dev only: surface the code so local/test runs aren't blocked on a
     // real inbox — same convention as OrganizationsService.createWithAdmin's
-    // temp-password console.log.
+    // temp-password reveal. Logged either way for local debugging; also
+    // returned to the frontend when not emailed so the respondent isn't
+    // stuck with no way to ever get the code.
     if (process.env.NODE_ENV !== 'production') {
       console.log(`OTP code for ${payload.contact} (challenge ${challenge.id}): ${code}`);
     }
-    return { challengeId: challenge.id, expiresAt: expiresAt.toISOString() };
+    return {
+      challengeId: challenge.id,
+      expiresAt: expiresAt.toISOString(),
+      codeEmailed,
+      code: !codeEmailed && process.env.NODE_ENV !== 'production' ? code : undefined,
+    };
   }
 
   async verifyOtp(token: string, payload: VerifyOtpPayload): Promise<VerifyOtpResult> {
@@ -201,7 +209,13 @@ export class CitizenService {
       });
     }
 
-    const row = await this.tenant.runAsOrg(link.orgId, async (tx) => {
+    const { row, needTitle } = await this.tenant.runAsOrg(link.orgId, async (tx) => {
+      // Atomic claim, before any other work — closes a race the plain
+      // `if (challenge.consumedAt)` check above can't: two concurrent
+      // submits could both pass that check before either write lands.
+      // updateMany's where-guard means only one request's write can ever
+      // match, so a second concurrent request is rejected here instead of
+      // both creating a SurveyResponse row.
       const claimed = await tx.citizenOtpChallenge.updateMany({
         where: { id: challenge.id, verifiedAt: { not: null }, consumedAt: null },
         data: { consumedAt: new Date() },
@@ -212,29 +226,90 @@ export class CitizenService {
         });
       }
       // Belt-and-suspenders: also block a second submission from the same
-      // contact for this study even via a *fresh* OTP request/verification,
-      // not just a reused challenge.
+      // contact for this Need even via a *fresh* OTP request/verification,
+      // not just a reused challenge. Scoped to the Need, not the Study — see
+      // checkDuplicate's comment.
       const existing = await tx.surveyResponse.findFirst({
-        where: { studyId: link.studyId, contact: challenge.contact },
+        where: { needId: link.needId, contact: challenge.contact },
       });
       if (existing) {
         throw new BadRequestException({
-          error: { code: 'DUPLICATE_SUBMISSION', message: 'A response for this study has already been submitted with this contact.' },
+          error: { code: 'DUPLICATE_SUBMISSION', message: 'A response for this need has already been submitted with this contact.' },
         });
       }
 
+      // Geography is snapshotted from the Need/Organization at submission
+      // time (never asked of the citizen directly) — see the Gender/
+      // geography columns' doc comment in schema.prisma. Fetched here, in
+      // the same transaction as the create, so the numbers a future
+      // governorate/village-wise report reads always match what this Need
+      // and org actually had at the moment this response came in.
+      const [need, org] = await Promise.all([
+        tx.need.findUnique({
+          where: { id: link.needId },
+          include: { needGovernorates: true, needCenters: true },
+        }),
+        tx.organisation.findUnique({ where: { id: link.orgId }, select: { regionId: true } }),
+      ]);
       const created = await tx.surveyResponse.create({
         data: {
           orgId: link.orgId,
+          needId: link.needId,
           studyId: link.studyId,
           surveyLinkId: link.id,
           contact: challenge.contact,
           contactName: payload.contactName ?? null,
+          gender: payload.gender ?? null,
+          regionId: org?.regionId ?? null,
+          governorateIds: need?.needGovernorates.map((g) => g.governorateId) ?? [],
+          centerIds: need?.needCenters.map((c) => c.centerId) ?? [],
+          village: need?.village ?? [],
           answers: payload.answers as unknown as Prisma.InputJsonValue,
         },
       });
-      return created;
+      // Challenge was already atomically claimed (consumedAt set) above —
+      // no second write needed here.
+      return { row: created, needTitle: need?.title ?? link.needId };
     });
+    // RIO-NFR-002 privacy audit: no signed-in actor exists for this request
+    // (citizen submissions are unauthenticated), so this is filed under the
+    // owning org explicitly with a null actor — the same "explicit org,
+    // no ambient context" path AuditService already supports for
+    // cross-org admin actions. Contact/answers are never logged in the
+    // metadata; only that a submission happened, when, and for which Need.
+    // Label the Need by its own title, not its id — the Audit Log is a
+    // human-facing screen and a raw UUID tells a reader nothing.
+    await this.audit.record({
+      action: 'create',
+      entityType: 'survey_response',
+      entityId: row.id,
+      entityLabel: `Survey response submitted for need "${needTitle}"`,
+      organizationId: link.orgId,
+    });
+
+    // Score and rollup asynchronously. Both calls take `orgId` explicitly —
+    // this continuation runs detached from the citizen's (unauthenticated)
+    // request, so there's no ambient org context for them to fall back to.
+    const { studyId, orgId } = row;
+    this.scoringEngine.scoreResponse(row.id, orgId).then(async () => {
+      const resp = await this.tenant.runAsSupervisor(async (tx) => tx.surveyResponse.findUnique({
+        where: { id: row.id },
+        include: { need: true }
+      }));
+      if (resp) {
+        const survey = await this.tenant.runAsSupervisor(async (tx) => tx.survey.findFirst({
+          where: { needId: resp.needId, status: 'PUBLISHED' }
+        }));
+        if (survey) {
+          const villageId = resp.need.village?.[0] || null;
+          await this.rollupService.calculateRollups(studyId, survey.id, villageId, { orgId });
+          await this.rollupService.calculateRollups(studyId, survey.id, null, { orgId });
+        }
+      }
+    }).catch(err => {
+      console.error(`Failed to calculate scores for response ${row.id}`, err);
+    });
+
     return { id: row.id, submittedAt: row.submittedAt.toISOString() };
   }
 

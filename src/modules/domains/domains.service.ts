@@ -2,7 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { Prisma } from '../../generated/prisma';
 import { PrismaService } from '../../prisma/prisma.service';
 import type {
-  CreateDomainPayload, CreateSubDomainPayload, Domain, DomainRow, DomainWithSubDomains, SubDomain, SubDomainRow,
+  CreateDomainPayload, CreateSubDomainPayload, Domain, DomainRow, DomainWithSubDomains, PublicDomainOption, SubDomain, SubDomainRow,
   UpdateDomainPayload, UpdateSubDomainPayload,
 } from './domains.types';
 
@@ -17,6 +17,18 @@ export class DomainsService {
   async listDomains(): Promise<Domain[]> {
     const rows = await this.prisma.domain.findMany({ orderBy: { displayOrder: 'asc' } });
     return rows.map((r) => this.toDomain(r));
+  }
+
+  // Active domain names only, reachable pre-login — backs the sector
+  // dropdown on the public signup form (see DomainsController's `/public`
+  // route, which carries no @RequirePermission).
+  async listActiveNames(): Promise<PublicDomainOption[]> {
+    const rows = await this.prisma.domain.findMany({
+      where: { isActive: true },
+      orderBy: { displayOrder: 'asc' },
+      select: { name: true },
+    });
+    return rows;
   }
 
   async createDomain(payload: CreateDomainPayload): Promise<Domain> {

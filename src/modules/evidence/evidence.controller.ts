@@ -5,7 +5,7 @@ import { EvidenceService } from './evidence.service';
 import { MAX_EVIDENCE_FILE_SIZE_BYTES, MAX_EVIDENCE_FILES_PER_STUDY } from './evidence.storage.service';
 import type { Evidence } from './evidence.types';
 
-@Controller('studies/:studyId/evidence')
+@Controller('needs/:needId/evidence')
 export class EvidenceController {
   constructor(private readonly evidence: EvidenceService) {}
 
@@ -17,22 +17,22 @@ export class EvidenceController {
     }),
   )
   upload(
-    @Param('studyId') studyId: string,
+    @Param('needId') needId: string,
     @UploadedFiles() files: Express.Multer.File[],
   ): Promise<Evidence[]> {
     if (!files || files.length === 0) {
       throw new BadRequestException({ error: { code: 'NO_FILES', message: 'At least one file is required' } });
     }
     return this.evidence.upload(
-      studyId,
+      needId,
       files.map((f) => ({ originalName: f.originalname, mimeType: f.mimetype, sizeBytes: f.size, buffer: f.buffer })),
     );
   }
 
   @Get()
   @RequirePermission('dataCollection', 'read')
-  list(@Param('studyId') studyId: string): Promise<Evidence[]> {
-    return this.evidence.listByStudyId(studyId);
+  list(@Param('needId') needId: string): Promise<Evidence[]> {
+    return this.evidence.listByNeedId(needId);
   }
 
   // A distinct step from uploading — AI Classification only
@@ -40,8 +40,8 @@ export class EvidenceController {
   @Post('submit')
   @HttpCode(200)
   @RequirePermission('dataCollection', 'write')
-  submit(@Param('studyId') studyId: string): Promise<void> {
-    return this.evidence.submit(studyId);
+  submit(@Param('needId') needId: string): Promise<void> {
+    return this.evidence.submit(needId);
   }
 }
 

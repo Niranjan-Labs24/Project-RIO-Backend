@@ -3,7 +3,13 @@ import { Prisma } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore } from '../../tenancy/org-context';
 import { roleByKey } from '../../rbac/role-matrix';
-import type { AuditChange, AuditEvent, RecordAuditInput } from './audit.types';
+import type {
+  AuditChange,
+  AuditEvent,
+  AuditListResult,
+  AuditQuery,
+  RecordAuditInput,
+} from './audit.types';
 
 interface AuditRow {
   id: string;
@@ -70,15 +76,11 @@ export class AuditService {
   // center_supervisor) read across orgs (all, or a specific organizationId).
   // Filters (entityType/entityId/actorId) support decision→source→actor→time
   // traceability (NFR-004); limit/offset bound the result set (NFR-006).
-  async list(opts: {
-    limit?: number; offset?: number; organizationId?: string;
-    entityType?: string; entityId?: string; actorId?: string;
-    action?: string; dateFrom?: string; dateTo?: string;
-  }): Promise<AuditEvent[]> {
+  async list(opts: AuditQuery & { limit?: number; offset?: number }): Promise<AuditListResult> {
     const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
     const offset = Math.max(opts.offset ?? 0, 0);
-    const { logs, actors } = await this.query(opts, limit, offset);
-    return this.mapRows(logs, actors);
+    const { logs, actors, total } = await this.query(opts, limit, offset);
+    return { items: this.mapRows(logs, actors), total, limit, offset };
   }
 
   /**
@@ -87,10 +89,7 @@ export class AuditService {
    * contract Reports export uses (see reports.placeholder.ts) so a future
    * real renderer swap doesn't change the response shape.
    */
-  async exportCsv(opts: {
-    organizationId?: string; entityType?: string; entityId?: string;
-    actorId?: string; action?: string; dateFrom?: string; dateTo?: string;
-  }): Promise<string> {
+  async exportCsv(opts: AuditQuery): Promise<string> {
     const { logs, actors } = await this.query(opts, 5000, 0);
     const events = this.mapRows(logs, actors);
     const header = ['Timestamp', 'Actor', 'Action', 'Entity Type', 'Entity', 'IP Address'];
@@ -104,13 +103,10 @@ export class AuditService {
   }
 
   private async query(
-    opts: {
-      organizationId?: string; entityType?: string; entityId?: string; actorId?: string;
-      action?: string; dateFrom?: string; dateTo?: string;
-    },
+    opts: AuditQuery,
     limit: number,
     offset: number,
-  ): Promise<{ logs: AuditRow[]; actors: ActorRow[] }> {
+  ): Promise<{ logs: AuditRow[]; actors: ActorRow[]; total: number }> {
     const roleKey = getOrgStore()?.role;
     const crossEntity = roleKey ? roleByKey(roleKey)?.crossEntity === true : false;
 
@@ -126,10 +122,27 @@ export class AuditService {
       };
     }
 
+    const search = opts.search?.trim();
+
     const runQuery = async (tx: Prisma.TransactionClient, where: Record<string, unknown>) => {
-      const logs = (await tx.auditLog.findMany({ where, orderBy: { createdAt: 'desc' }, take: limit, skip: offset })) as AuditRow[];
-      const actors = await this.loadActors(tx, logs);
-      return { logs, actors };
+      // Free-text search spans the entity label and the actor's name/email —
+      // the same three fields the Audit Log page searches — but the actor
+      // lives on `users`, not `audit_logs`, so matching ids are resolved
+      // first and folded into an OR alongside the label match.
+      const effectiveWhere = search
+        ? { ...where, OR: [
+            { entityLabel: { contains: search, mode: 'insensitive' } },
+            { actorUserId: { in: await this.findActorIdsMatching(tx, search) } },
+          ] }
+        : where;
+      // `total` counts every match, ignoring limit/offset — the client needs
+      // it to render page counts now that filtering happens here.
+      const [logs, total] = await Promise.all([
+        tx.auditLog.findMany({ where: effectiveWhere, orderBy: { createdAt: 'desc' }, take: limit, skip: offset }) as Promise<AuditRow[]>,
+        tx.auditLog.count({ where: effectiveWhere }),
+      ]);
+      const actors = await this.loadActors(logs);
+      return { logs, actors, total };
     };
 
     if (crossEntity) {
@@ -140,10 +153,40 @@ export class AuditService {
     return this.tenant.runInOrgContext((tx) => runQuery(tx, filters));
   }
 
-  private async loadActors(tx: Prisma.TransactionClient, logs: AuditRow[]): Promise<ActorRow[]> {
+  /** Ids of users whose name or email matches the free-text search term. */
+  private async findActorIdsMatching(_tx: Prisma.TransactionClient, search: string): Promise<string[]> {
+    // Cross-org lookup (see loadActors below) — a search term must match an
+    // actor regardless of which org's users RLS would otherwise restrict
+    // this query to.
+    const users = await this.tenant.runAsSupervisor((supTx) =>
+      supTx.user.findMany({
+        where: {
+          OR: [
+            { name: { contains: search, mode: 'insensitive' } },
+            { email: { contains: search, mode: 'insensitive' } },
+          ],
+        },
+        select: { id: true },
+      }),
+    );
+    return users.map((u) => u.id);
+  }
+
+  // Cross-org lookup, deliberately not scoped to the viewing org's own RLS
+  // context: an audit entry can legitimately be filed under one org (e.g.
+  // report-sharing's dual-org write — see ReportSharingService.create/
+  // decide) while its actor belongs to the *other* org. Resolving the
+  // actor under the viewer's own org-scoped `tx` would hide that user
+  // behind RLS and silently fall back to "System" even though a real
+  // person performed the action — this bypasses that, the same way
+  // `organisationId`/entity names on these cross-org events are already
+  // resolved via runAsSupervisor elsewhere (see ReportSharingService).
+  private async loadActors(logs: AuditRow[]): Promise<ActorRow[]> {
     const ids = [...new Set(logs.map((l) => l.actorUserId).filter((v): v is string => Boolean(v)))];
     if (ids.length === 0) return [];
-    return tx.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, email: true } });
+    return this.tenant.runAsSupervisor((tx) =>
+      tx.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, email: true } }),
+    );
   }
 
   private mapRows(logs: AuditRow[], actors: ActorRow[]): AuditEvent[] {

@@ -43,6 +43,13 @@ export interface DomainWithSubDomains extends Domain {
   subDomains: SubDomain[];
 }
 
+/** Just enough to populate a sector dropdown — reachable pre-login (signup
+ * form), so deliberately excludes `code`/`displayOrder`, which nobody
+ * outside Methodology Configuration needs to see. */
+export interface PublicDomainOption {
+  name: string;
+}
+
 export interface CreateDomainPayload {
   code: string;
   name: string;

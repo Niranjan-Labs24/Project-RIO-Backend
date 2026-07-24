@@ -1,15 +1,11 @@
 import { registerSchema, T, type Static } from '../../contract/typebox';
 
-// Sector enum mirrors prisma `Sector` (and the FE contract, lowercase).
-const SectorEnum = T.Union([
-  T.Literal('education'),
-  T.Literal('healthcare'),
-  T.Literal('agriculture'),
-  T.Literal('wash'),
-  T.Literal('livelihoods'),
-  T.Literal('disaster_relief'),
-  T.Literal('other'),
-]);
+// Not a fixed enum: `sector` is validated against the live, active Domain
+// list from Methodology Configuration (see OrganizationsService/AuthService
+// — DomainsService.listDomains()), or the literal "other". TypeBox can't
+// express "one of these dynamic values" at the schema level, so this only
+// checks shape/length here; the real check happens in the service.
+const SectorValue = T.String({ minLength: 1, maxLength: 200 });
 
 // Shared array-of-strings shape for both `villages` and `region` — an org
 // (or a Need, see needs.contract.ts) can span more than one of either, not
@@ -25,7 +21,7 @@ export const UpdateOrganizationBody = registerSchema(
     name: T.Optional(T.String({ minLength: 1, maxLength: 200 })),
     region: T.Optional(Villages),
     email: T.Optional(T.Union([T.String({ format: 'email', maxLength: 320 }), T.Null()])),
-    sector: T.Optional(T.Union([SectorEnum, T.Null()])),
+    sector: T.Optional(T.Union([SectorValue, T.Null()])),
     // Only meaningful when `sector` is `'other'` — the org's own free-text
     // description of what that is (see Settings > Organization's
     // sector/"specify other" pattern, and signup-form.tsx's identical one).
@@ -42,6 +38,15 @@ export const UpdateOrganizationBody = registerSchema(
     // URL again.
     logoUrl: T.Optional(T.Union([T.String({ maxLength: 2_800_000 }), T.Null()])),
     villages: T.Optional(Villages),
+    // Optional link into the KSA Geographic Reference master data — see
+    // GeographyService#validateHierarchy for the actual existence/hierarchy
+    // checks TypeBox can't express (every id must exist, and every selected
+    // Governorate/Center must belong to the selected Region/Governorates).
+    // `regionId` is single-select (an org has exactly one Region); `governorateIds`/
+    // `centerIds` replace the entire set when provided, not a merge.
+    regionId: T.Optional(T.Union([T.String({ format: 'uuid' }), T.Null()])),
+    governorateIds: T.Optional(T.Array(T.String({ format: 'uuid' }), { maxItems: 150 })),
+    centerIds: T.Optional(T.Array(T.String({ format: 'uuid' }), { maxItems: 1404 })),
     isActive: T.Optional(T.Boolean()),
   }),
 );
@@ -55,7 +60,7 @@ export const CreateOrganizationBody = registerSchema(
     registrationNumber: T.String({ minLength: 1, maxLength: 100 }),
     region: T.Optional(Villages),
     email: T.Optional(T.Union([T.String({ format: 'email', maxLength: 320 }), T.Null()])),
-    sector: T.Optional(T.Union([SectorEnum, T.Null()])),
+    sector: T.Optional(T.Union([SectorValue, T.Null()])),
     villages: T.Optional(Villages),
     adminName: T.String({ minLength: 1, maxLength: 200 }),
     adminEmail: T.String({ format: 'email', maxLength: 320 }),

@@ -1,15 +1,10 @@
 import { registerSchema, T, type Static } from '../../contract/typebox';
 
-// Mirrors organizations.contract.ts's own SectorEnum (and prisma `Sector`).
-const SectorEnum = T.Union([
-  T.Literal('education'),
-  T.Literal('healthcare'),
-  T.Literal('agriculture'),
-  T.Literal('wash'),
-  T.Literal('livelihoods'),
-  T.Literal('disaster_relief'),
-  T.Literal('other'),
-]);
+// Not a fixed enum: `sector` is validated against the live, active Domain
+// list from Methodology Configuration (see AuthService.signup —
+// DomainsService.listDomains()), or the literal "other". Mirrors
+// organizations.contract.ts's own SectorValue.
+const SectorValue = T.String({ minLength: 1, maxLength: 200 });
 
 /**
  * Public signup — no password/adminName fields: the email IS the NGO Admin
@@ -30,22 +25,44 @@ export const SignupBody = registerSchema(
   T.Object(
     {
       organizationName: T.String({ minLength: 1, maxLength: 200 }),
-      sector: T.Optional(SectorEnum),
+      sector: T.Optional(SectorValue),
       purpose: T.Optional(T.String({ maxLength: 500 })),
       registrationNumber: T.String({ minLength: 1, maxLength: 100 }),
       email: T.String({ format: 'email' }),
+      // KSA Geographic Reference hierarchy — mandatory at signup so every
+      // self-service org starts with its scope already configured (see
+      // AuthService.signup for the existence/hierarchy checks TypeBox can't
+      // express). Still editable later via Settings > Organization.
+      regionId: T.String({ format: 'uuid' }),
+      governorateIds: T.Array(T.String({ format: 'uuid' }), { minItems: 1, maxItems: 150 }),
+      centerIds: T.Array(T.String({ format: 'uuid' }), { minItems: 1, maxItems: 1404 }),
     },
     { additionalProperties: false },
   ),
 );
 export type SignupDto = Static<typeof SignupBody>;
 
+/**
+ * Complexity policy for a password the user *sets*: at least 8 characters,
+ * with one capital letter, one digit and one special character (anything
+ * that isn't a letter, digit or whitespace). Mirrored on the frontend in
+ * `src/lib/password-policy.ts` — keep the two in step.
+ *
+ * `currentPassword` is deliberately exempt: it must still accept the
+ * server-issued temporary password, which predates this policy.
+ */
+const NewPassword = T.String({
+  minLength: 8,
+  maxLength: 200,
+  pattern: '^(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9\\s]).{8,}$',
+});
+
 export const ChangePasswordBody = registerSchema(
   'ChangePasswordBody',
   T.Object(
     {
       currentPassword: T.String({ minLength: 1, maxLength: 200 }),
-      newPassword: T.String({ minLength: 8, maxLength: 200 }),
+      newPassword: NewPassword,
     },
     { additionalProperties: false },
   ),

@@ -19,6 +19,9 @@ export interface SessionOrg {
   email: string | null;
   sector: string | null;
   villages: string[];
+  regionId: string | null;
+  governorateIds: string[];
+  centerIds: string[];
   isActive: boolean;
   createdAt: string;
   purpose: string | null;

@@ -3,6 +3,7 @@ import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { requireActor, requireOrgId } from '../../tenancy/org-context';
 import { AuditService } from '../audit/audit.service';
 import { EvidenceStorageService, MAX_EVIDENCE_FILES_PER_STUDY } from './evidence.storage.service';
+import { EVIDENCE_EDITABLE_STATUSES } from '../needs/needs.types';
 import type { Evidence, EvidenceRow, UploadedFilePayload } from './evidence.types';
 
 @Injectable()
@@ -13,11 +14,11 @@ export class EvidenceService {
     private readonly storage: EvidenceStorageService,
   ) {}
 
-  // RIO-FR-Add-01: evidence is uploaded after the Need is captured. By
-  // design, uploading no longer advances Study.status by itself — the
+  // RIO-FR-Add-01: evidence is uploaded after its Need is captured. By
+  // design, uploading no longer advances Need.status by itself — the
   // researcher must explicitly submit() before AI Classification is allowed
   // to run, so status stays untouched here.
-  async upload(studyId: string, files: UploadedFilePayload[]): Promise<Evidence[]> {
+  async upload(needId: string, files: UploadedFilePayload[]): Promise<Evidence[]> {
     const orgId = requireOrgId();
     const uploadedBy = requireActor();
 
@@ -27,29 +28,40 @@ export class EvidenceService {
       this.storage.assertFileSignature(file.originalName, file.buffer);
     }
 
-    const need = await this.tenant.runInOrgContext((tx) => tx.need.findUnique({ where: { studyId } }));
+    const need = await this.tenant.runInOrgContext((tx) => tx.need.findUnique({ where: { id: needId } }));
     if (!need) {
-      throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Capture the need before uploading evidence' } });
+      throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
     }
+    // Evidence stays editable slightly longer than the Need's own Statement/
+    // Governorates/Centers (see EVIDENCE_EDITABLE_STATUSES) — through
+    // ai_classified, not just up to it — since classification never reads
+    // evidence content and an Approver hasn't acted yet at that stage.
+    // Locks once reviewer_approved+.
+    if (!EVIDENCE_EDITABLE_STATUSES.includes(need.status)) {
+      throw new ConflictException({
+        error: { code: 'EVIDENCE_NOT_EDITABLE', message: 'Evidence can no longer be added once this need has been approved.' },
+      });
+    }
+    const studyId = need.studyId;
 
-    const existingCount = await this.tenant.runInOrgContext((tx) => tx.evidence.count({ where: { studyId } }));
+    const existingCount = await this.tenant.runInOrgContext((tx) => tx.evidence.count({ where: { needId } }));
     if (existingCount + files.length > MAX_EVIDENCE_FILES_PER_STUDY) {
       throw new ConflictException({
         error: {
           code: 'EVIDENCE_LIMIT_REACHED',
-          message: `A study can have at most ${MAX_EVIDENCE_FILES_PER_STUDY} evidence files (${existingCount} already uploaded).`,
+          message: `A need can have at most ${MAX_EVIDENCE_FILES_PER_STUDY} evidence files (${existingCount} already uploaded).`,
         },
       });
     }
 
-    // Duplicate detection is scoped to studyId — a Study has exactly one
-    // Need (Need.studyId is unique), so "same Need" and "same Study" are
-    // already the same scope; no separate needId filter is needed. Seeded
-    // from what's already stored, then grown as this batch is processed so
-    // two copies of the same file in one request also flag the second one.
+    // Duplicate detection is scoped to needId — each Need runs its own
+    // independent evidence set, so the same file can validly reappear under
+    // a sibling Need without being flagged. Seeded from what's already
+    // stored, then grown as this batch is processed so two copies of the
+    // same file in one request also flag the second one.
     const existingHashes = new Set(
       (
-        await this.tenant.runInOrgContext((tx) => tx.evidence.findMany({ where: { studyId }, select: { fileHash: true } }))
+        await this.tenant.runInOrgContext((tx) => tx.evidence.findMany({ where: { needId }, select: { fileHash: true } }))
       )
         .map((r) => r.fileHash)
         // Rows predating the fileHash column have no hash and can't get one
@@ -76,7 +88,7 @@ export class EvidenceService {
         for (const file of prepared) {
           const row = await tx.evidence.create({
             data: {
-              studyId, orgId, fileName: file.originalName, fileType: file.mimeType,
+              needId, studyId, orgId, fileName: file.originalName, fileType: file.mimeType,
               fileSize: file.sizeBytes, storageKey: file.storageKey, fileHash: file.fileHash, uploadedBy,
             },
           });
@@ -99,32 +111,28 @@ export class EvidenceService {
 
   // RIO-FR-Add-01: an explicit step, separate from uploading — AI
   // Classification is gated on this having happened (see
-  // AiDecisionsService.classify), not merely on evidence existing.
-  async submit(studyId: string): Promise<void> {
+  // AiDecisionsService.classify), not on evidence existing. Evidence is
+  // optional: a Need can move straight to evidence_submitted (and from
+  // there to AI Classification) with zero files attached — the attachment
+  // is a supporting document a researcher may add if they have one, not a
+  // prerequisite.
+  async submit(needId: string): Promise<void> {
     await this.tenant.runInOrgContext(async (tx) => {
-      const study = await tx.study.findUnique({ where: { id: studyId } });
-      if (!study) throw new NotFoundException({ error: { code: 'STUDY_NOT_FOUND', message: 'Study not found' } });
-      if (study.status === 'draft' || study.status === 'need_captured') {
-        const need = await tx.need.findUnique({ where: { studyId } });
-        if (!need) {
-          throw new ConflictException({ error: { code: 'NEED_NOT_FOUND', message: 'Capture the need before submitting evidence' } });
-        }
-        const evidenceCount = await tx.evidence.count({ where: { studyId } });
-        if (evidenceCount === 0) {
-          throw new ConflictException({ error: { code: 'EVIDENCE_REQUIRED', message: 'Upload at least one evidence file before submitting' } });
-        }
-        await tx.study.update({ where: { id: studyId }, data: { status: 'evidence_submitted' } });
+      const need = await tx.need.findUnique({ where: { id: needId } });
+      if (!need) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+      if (need.status === 'draft') {
+        await tx.need.update({ where: { id: needId }, data: { status: 'evidence_submitted' } });
       }
-      // Already evidence_submitted/ai_classified/human_reviewed: submitting
-      // again is a harmless no-op, not an error — re-running upload+submit
-      // after adding more evidence shouldn't be blocked.
+      // Already evidence_submitted/ai_classified/...: submitting again is a
+      // harmless no-op, not an error — re-running upload+submit after
+      // adding more evidence shouldn't be blocked.
     });
-    await this.audit.record({ action: 'edit', entityType: 'study', entityId: studyId, entityLabel: 'evidence submitted' });
+    await this.audit.record({ action: 'edit', entityType: 'need', entityId: needId, entityLabel: 'evidence submitted' });
   }
 
-  async listByStudyId(studyId: string): Promise<Evidence[]> {
+  async listByNeedId(needId: string): Promise<Evidence[]> {
     const rows = (await this.tenant.runInOrgContext((tx) =>
-      tx.evidence.findMany({ where: { studyId }, orderBy: { uploadedAt: 'desc' } }),
+      tx.evidence.findMany({ where: { needId }, orderBy: { uploadedAt: 'desc' } }),
     )) as EvidenceRow[];
     const names = await this.resolveUserNames(rows.map((r) => r.uploadedBy));
     return rows.map((r) => this.toEvidence(r, names.get(r.uploadedBy) ?? null));
@@ -146,14 +154,14 @@ export class EvidenceService {
 
   // Confirmed gap: this used to delete unconditionally. Mirrors
   // StudiesService.remove's shape — once evidence has been submitted
-  // (Study.status past draft/need_captured), it underpins AI
-  // Classification/Human Review and can no longer be removed.
+  // (Need.status past draft), it underpins AI Classification/Human Review
+  // and can no longer be removed.
   async remove(id: string): Promise<void> {
     const row = await this.tenant.runInOrgContext(async (tx) => {
       const existing = (await tx.evidence.findUnique({ where: { id } })) as EvidenceRow | null;
       if (!existing) throw new NotFoundException({ error: { code: 'EVIDENCE_NOT_FOUND', message: 'Evidence not found' } });
-      const study = await tx.study.findUnique({ where: { id: existing.studyId } });
-      if (study && study.status !== 'draft' && study.status !== 'need_captured') {
+      const need = await tx.need.findUnique({ where: { id: existing.needId } });
+      if (need && !EVIDENCE_EDITABLE_STATUSES.includes(need.status)) {
         throw new ConflictException({
           error: {
             code: 'EVIDENCE_NOT_DELETABLE',
@@ -169,12 +177,13 @@ export class EvidenceService {
   }
 
   // isDuplicate is only meaningful right after an upload (it answers "did
-  // this exact file already exist in this study when it was uploaded?") —
-  // listByStudyId doesn't pass one, so it's omitted from that response
+  // this exact file already exist for this Need when it was uploaded?") —
+  // listByNeedId doesn't pass one, so it's omitted from that response
   // rather than recomputed against a different, order-dependent definition.
   private toEvidence(row: EvidenceRow, uploadedByName: string | null, isDuplicate?: boolean): Evidence {
     return {
       id: row.id,
+      needId: row.needId,
       studyId: row.studyId,
       fileName: row.fileName,
       fileType: row.fileType,

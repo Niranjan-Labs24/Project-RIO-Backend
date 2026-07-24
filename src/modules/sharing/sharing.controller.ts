@@ -2,10 +2,11 @@ import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common
 import { RequirePermission } from "../../common/guards/permission.guard";
 import { parseIntParam } from "../../common/http/query.util";
 import { TypeBoxValidationPipe } from "../../contract/validation.pipe";
-import { CreateSharingRequestBody } from "./sharing.contract";
+import { CreateSharingRequestBody, DecideSharingRequestBody } from "./sharing.contract";
 import { SharingService } from "./sharing.service";
 import type {
-  CreateSharingRequestPayload, OrgLookupResult, SharedStudySnapshot, SharingRequest, StudyLookupResult,
+  CreateSharingRequestPayload, DecideSharingRequestPayload, OrgLookupResult, SharedStudySnapshot,
+  SharingRequest, StudyLookupResult,
 } from "./sharing.types";
 
 // Under archiveSharingAudit — currently read-only for most roles; ngo_admin
@@ -51,14 +52,20 @@ export class SharingController {
 
   @Patch(":id/approve")
   @RequirePermission("archiveSharingAudit", "approve")
-  approve(@Param("id") id: string): Promise<SharingRequest> {
-    return this.sharing.approve(id);
+  approve(
+    @Param("id") id: string,
+    @Body(new TypeBoxValidationPipe(DecideSharingRequestBody)) body: DecideSharingRequestPayload,
+  ): Promise<SharingRequest> {
+    return this.sharing.approve(id, body ?? {});
   }
 
   @Patch(":id/reject")
   @RequirePermission("archiveSharingAudit", "approve")
-  reject(@Param("id") id: string): Promise<SharingRequest> {
-    return this.sharing.reject(id);
+  reject(
+    @Param("id") id: string,
+    @Body(new TypeBoxValidationPipe(DecideSharingRequestBody)) body: DecideSharingRequestPayload,
+  ): Promise<SharingRequest> {
+    return this.sharing.reject(id, body ?? {});
   }
 
   @Get(":id/shared-study")

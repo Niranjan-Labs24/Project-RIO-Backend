@@ -1,5 +1,7 @@
-import { ForbiddenException, HttpException, HttpStatus, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { UserStatus } from '../../generated/prisma';
+import { DomainsService } from '../domains/domains.service';
+import { GeographyService } from '../geography/geography.service';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { PasswordService } from '../../auth/password.service';
@@ -32,6 +34,9 @@ interface UserWithOrg {
     id: string; name: string; logoUrl: string | null; region: string[];
     email: string | null; sector: string | null; villages: string[]; isActive: boolean; createdAt: Date;
     purpose: string | null; registrationNumber: string | null;
+    regionId: string | null;
+    orgGovernorates?: { governorateId: string }[];
+    orgCenters?: { centerId: string }[];
   };
 }
 
@@ -53,11 +58,13 @@ export class AuthService {
     private readonly repo: AuthRepository,
     private readonly mailer: MailerService,
     private readonly config: ConfigService,
+    private readonly domains: DomainsService,
+    private readonly geography: GeographyService,
   ) {}
 
   async login(email: string, password: string): Promise<SessionContext> {
     const found = (await this.tenant.runAsSupervisor((tx) =>
-      tx.user.findUnique({ where: { email }, include: { org: true } }),
+      tx.user.findUnique({ where: { email }, include: { org: { include: { orgGovernorates: true, orgCenters: true } } } }),
     )) as UserWithOrg | null;
 
     if (!found || !found.passwordHash) {
@@ -112,7 +119,7 @@ export class AuthService {
   async me(): Promise<SessionContext> {
     const actorId = requireActor();
     const found = (await this.tenant.runInOrgContext((tx) =>
-      tx.user.findUnique({ where: { id: actorId }, include: { org: true } }),
+      tx.user.findUnique({ where: { id: actorId }, include: { org: { include: { orgGovernorates: true, orgCenters: true } } } }),
     )) as UserWithOrg | null;
     if (!found) {
       throw new UnauthorizedException({ error: { code: 'UNAUTHENTICATED', message: 'Authentication required' } });
@@ -129,7 +136,10 @@ export class AuthService {
   }
 
   async logout(): Promise<void> {
-    const actorId = requireActor(); // 401 if not authenticated; stateless — client drops the token
+    // 401 if not authenticated. Not stateless — bumping sessionVersion below
+    // invalidates every outstanding token for this user, not just the one
+    // presented here (see JwtAuthGuard's sessionVersion check).
+    const actorId = requireActor();
     const found = (await this.tenant.runInOrgContext((tx) =>
       tx.user.findUnique({ where: { id: actorId } }),
     )) as { email: string } | null;
@@ -166,6 +176,15 @@ export class AuthService {
       }
       return policy?.version ?? null;
     });
+    // RIO-FR-Add-02 governance: the org's data-sharing consent acceptance
+    // is itself an auditable event, not just a stored timestamp — same
+    // append-only trail as login/signup/password changes.
+    await this.audit.record({
+      action: 'consent',
+      entityType: 'user',
+      entityId: actorId,
+      entityLabel: policyVersion ? `Accepted consent policy ${policyVersion}` : 'Accepted consent',
+    });
     return { consentedAt: now.toISOString(), policyVersion };
   }
 
@@ -183,6 +202,15 @@ export class AuthService {
     if (await this.repo.findUserByEmail(dto.email)) {
       throw conflictFor('email');
     }
+    await this.assertValidSector(dto.sector);
+    // Existence + hierarchy only (every Governorate belongs to the chosen
+    // Region, every Center to a chosen Governorate) — there's no existing
+    // org scope to check against yet, this org is brand new.
+    await this.geography.validateHierarchy({
+      regionId: dto.regionId,
+      governorateIds: dto.governorateIds,
+      centerIds: dto.centerIds,
+    });
 
     const temporaryPassword = generateTemporaryPassword();
     const passwordHash = await this.passwords.hash(temporaryPassword);
@@ -194,6 +222,9 @@ export class AuthService {
       registrationNumber: dto.registrationNumber,
       email: dto.email,
       passwordHash,
+      regionId: dto.regionId,
+      governorateIds: dto.governorateIds,
+      centerIds: dto.centerIds,
     });
 
     const role = this.roleOf(user.roleId);
@@ -226,7 +257,7 @@ export class AuthService {
   async changePassword(dto: ChangePasswordDto): Promise<SessionContext> {
     const actorId = requireActor();
     const found = (await this.tenant.runInOrgContext((tx) =>
-      tx.user.findUnique({ where: { id: actorId }, include: { org: true } }),
+      tx.user.findUnique({ where: { id: actorId }, include: { org: { include: { orgGovernorates: true, orgCenters: true } } } }),
     )) as UserWithOrg | null;
     if (!found || !found.passwordHash) {
       throw new UnauthorizedException({ error: { code: 'UNAUTHENTICATED', message: 'Authentication required' } });
@@ -243,8 +274,19 @@ export class AuthService {
     const updated = (await this.tenant.runInOrgContext((tx) =>
       tx.user.update({
         where: { id: actorId },
-        data: { passwordHash, mustChangePassword: false, sessionVersion: { increment: 1 } },
-        include: { org: true },
+        // Replacing a temp password is unambiguous proof of a completed
+        // first login — activate here too, not just on consent accept,
+        // so status doesn't stay "invited" forever if a user closes the
+        // tab before reaching the consent gate. sessionVersion increments
+        // so any other session signed in with the old password is
+        // invalidated (see JwtAuthGuard's sessionVersion check).
+        data: {
+          passwordHash,
+          mustChangePassword: false,
+          status: UserStatus.active,
+          sessionVersion: { increment: 1 },
+        },
+        include: { org: { include: { orgGovernorates: true, orgCenters: true } } },
       }),
     )) as UserWithOrg;
     // Never log the actual password value — before/after stay null so the
@@ -254,6 +296,22 @@ export class AuthService {
     const role = this.roleOf(updated.roleId);
     const token = this.tokens.sign({ sub: updated.id, orgId: updated.org.id, roleKey: role.key, sessionVersion: updated.sessionVersion });
     return this.buildSession(updated, role, token);
+  }
+
+  // `sector` must match an active Methodology Configuration Domain name
+  // (e.g. "Health", "Water & Sanitation") or the literal "other" (paired
+  // with `purpose` for free text) — never an arbitrary string, since the
+  // whole point is this stays in lockstep with whatever domains are
+  // actually configured there.
+  private async assertValidSector(sector: string | undefined): Promise<void> {
+    if (!sector || sector === 'other') return;
+    const domains = await this.domains.listDomains();
+    const valid = domains.some((d) => d.isActive && d.name === sector);
+    if (!valid) {
+      throw new BadRequestException({
+        error: { code: 'INVALID_SECTOR', message: 'Sector must match an active domain or "other"' },
+      });
+    }
   }
 
   private roleOf(roleId: string): RoleDef {
@@ -273,6 +331,9 @@ export class AuthService {
     const organization: SessionOrg = {
       id: u.org.id, name: u.org.name, logoUrl: u.org.logoUrl, region: u.org.region,
       email: u.org.email, sector: u.org.sector, villages: u.org.villages,
+      regionId: u.org.regionId,
+      governorateIds: (u.org.orgGovernorates ?? []).map((g) => g.governorateId),
+      centerIds: (u.org.orgCenters ?? []).map((c) => c.centerId),
       isActive: u.org.isActive, createdAt: u.org.createdAt.toISOString(),
       purpose: u.org.purpose, registrationNumber: u.org.registrationNumber,
     };

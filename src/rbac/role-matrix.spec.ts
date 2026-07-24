@@ -11,7 +11,20 @@ describe('ROLE_MATRIX', () => {
     expect(can('ngo_admin', 'archiveSharingAudit', 'share')).toBe(true);
     expect(can('system_admin', 'entityTeam', 'create')).toBe(true);
     expect(can('system_admin', 'studySurvey', 'write')).toBe(false); // reads all, writes only accounts/orgs/config
+    // AI classification/Approve/Override/Reject is a merged step now (see
+    // AiDecisionsService.approveAiReview) — entirely the Reviewer/Approver's
+    // decision, same as a submitted Survey's approve/reject/publish. The
+    // Research Officer can only trigger/retry classification (`write`), and
+    // only views the finished suggestion — no approve/override/reject, and
+    // no curating the suggested question list (surveyBuilder is read-only
+    // for them now too).
     expect(can('human_reviewer', 'aiReview', 'approve')).toBe(true);
+    expect(can('human_reviewer', 'aiReview', 'write')).toBe(false);
+    expect(can('ngo_research_officer', 'aiReview', 'approve')).toBe(false);
+    expect(can('ngo_research_officer', 'aiReview', 'write')).toBe(true);
+    expect(can('ngo_research_officer', 'surveyBuilder', 'write')).toBe(false);
+    expect(can('human_reviewer', 'surveyBuilder', 'write')).toBe(true);
+    expect(can('human_reviewer', 'surveyBuilder', 'approve')).toBe(true);
     expect(can('ngo_research_officer', 'rolesPermissions', 'read')).toBe(false);
     expect(can(undefined, 'entityTeam', 'read')).toBe(false); // no role → deny
   });

@@ -1,4 +1,4 @@
-export type AuditAction = 'create' | 'edit' | 'approve' | 'share' | 'delete' | 'login' | 'logout';
+export type AuditAction = 'create' | 'edit' | 'approve' | 'share' | 'delete' | 'login' | 'logout' | 'consent';
 export type AuditEntityType =
   | 'organization'
   | 'user'
@@ -8,7 +8,9 @@ export type AuditEntityType =
   | 'evidence'
   | 'ai_decision'
   | 'report'
-  | 'sharing_request';
+  | 'sharing_request'
+  | 'report_sharing_request'
+  | 'survey_response';
 
 export interface AuditChange {
   field: string;
@@ -50,4 +52,32 @@ export interface AuditEvent {
   ipAddress: string | null;
   userAgent: string | null;
   createdAt: string;
+}
+
+/** Filters shared by the list and CSV-export endpoints. */
+export interface AuditQuery {
+  organizationId?: string;
+  entityType?: string;
+  entityId?: string;
+  actorId?: string;
+  action?: string;
+  /** ISO-8601 instant; inclusive lower bound on `createdAt`. */
+  dateFrom?: string;
+  /** ISO-8601 instant; inclusive upper bound on `createdAt`. */
+  dateTo?: string;
+  /** Free text matched against the entity label and the actor's name/email. */
+  search?: string;
+}
+
+/**
+ * Paginated envelope for the audit list — same `{ items, total, limit,
+ * offset }` shape studies uses. `total` is the count of rows matching the
+ * filters *before* limit/offset, which is what the client needs to render
+ * page counts once filtering moved server-side.
+ */
+export interface AuditListResult {
+  items: AuditEvent[];
+  total: number;
+  limit: number;
+  offset: number;
 }

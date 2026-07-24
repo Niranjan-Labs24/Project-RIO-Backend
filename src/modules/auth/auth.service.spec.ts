@@ -17,6 +17,10 @@ const auditStub = { record: async () => {} };
 const repoStub = { findByRegistrationNumber: vi.fn(), findUserByEmail: vi.fn(), createOrganisationAndAdmin: vi.fn() };
 const mailerStub = { sendTemporaryPassword: vi.fn() };
 const configStub = { nodeEnv: 'development' } as unknown as ConfigService;
+const domainsStub = {
+  listDomains: async () => [{ id: 'd1', code: 'W', name: 'Water & Sanitation', isActive: true }],
+};
+const geographyStub = { validateHierarchy: vi.fn().mockResolvedValue(undefined) };
 
 const orgFixture = {
   id: 'o1', name: 'Demo NGO', logoUrl: null, region: ['North'], email: 'admin@demo-ngo.org',
@@ -45,32 +49,32 @@ describe('AuthService.login', () => {
   });
 
   it('returns a SessionContext with token, user, org and role on valid credentials', async () => {
-    const svc = new AuthService(fakeTenant(user) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub);
+    const svc = new AuthService(fakeTenant(user) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never);
     const session = await svc.login('admin@demo-ngo.org', 'Passw0rd!');
     expect(session.token).toBeTruthy();
     expect(tokens.verify(session.token).sub).toBe('u1');
     expect(session.user.email).toBe('admin@demo-ngo.org');
     expect(session.organization.name).toBe('Demo NGO');
     expect(session.role.key).toBe('ngo_admin');
-    expect(session.role.permissions).toHaveLength(12);
+    expect(session.role.permissions).toHaveLength(13);
     expect(session.mustChangePassword).toBe(false);
     expect(session.organization.purpose).toBe('Water access');
     expect(session.organization.registrationNumber).toBe('RN-001');
   });
 
   it('throws 401 on a wrong password', async () => {
-    const svc = new AuthService(fakeTenant(user) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub);
+    const svc = new AuthService(fakeTenant(user) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never);
     await expect(svc.login('admin@demo-ngo.org', 'wrong')).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('throws 401 when the user does not exist', async () => {
-    const svc = new AuthService(fakeTenant(null) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub);
+    const svc = new AuthService(fakeTenant(null) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never);
     await expect(svc.login('nobody@x.org', 'whatever')).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('refuses valid credentials when the org is deactivated (403 ORG_INACTIVE)', async () => {
     const inactive = { ...user, org: { ...orgFixture, isActive: false } };
-    const svc = new AuthService(fakeTenant(inactive) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub);
+    const svc = new AuthService(fakeTenant(inactive) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never);
     await expect(svc.login('admin@demo-ngo.org', 'Passw0rd!')).rejects.toBeInstanceOf(ForbiddenException);
   });
 });
@@ -87,7 +91,7 @@ describe('AuthService.consent', () => {
           consentAcceptance: { create: async ({ data }: { data: Record<string, unknown> }) => { created.push(data); return data; } },
         }),
     };
-    const svc = new AuthService(tenant as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub);
+    const svc = new AuthService(tenant as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never);
     const res = await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'u1' }, () => svc.consent());
     expect(res.policyVersion).toBe('v1');
     expect(created).toHaveLength(1);
@@ -107,7 +111,7 @@ describe('AuthService.signup', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    service = new AuthService(tenant as never, passwords as never, tokens as never, audit as never, repo as never, mailer as never, config);
+    service = new AuthService(tenant as never, passwords as never, tokens as never, audit as never, repo as never, mailer as never, config, domainsStub as never, geographyStub as never);
   });
 
   it('signup: creates org+admin, records audit, returns emailed=true when mailer succeeds', async () => {
@@ -119,7 +123,7 @@ describe('AuthService.signup', () => {
     });
     mailer.sendTemporaryPassword.mockResolvedValue(true);
 
-    const res = await service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test' });
+    const res = await service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'] });
 
     expect(res.temporaryPasswordEmailed).toBe(true);
     expect(res.temporaryPassword).toBeUndefined();
@@ -130,7 +134,7 @@ describe('AuthService.signup', () => {
 
   it('signup: rejects a duplicate registration number before creating', async () => {
     repo.findByRegistrationNumber.mockResolvedValue({ id: 'existing' });
-    await expect(service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test' }))
+    await expect(service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'] }))
       .rejects.toMatchObject({ response: { error: { code: 'ORGANIZATION_ALREADY_REGISTERED' } } });
     expect(repo.createOrganisationAndAdmin).not.toHaveBeenCalled();
   });
@@ -144,7 +148,7 @@ describe('AuthService.signup', () => {
     });
     mailer.sendTemporaryPassword.mockResolvedValue(false);
     // config mock nodeEnv = 'development'
-    const res = await service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test' });
+    const res = await service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'] });
     expect(res.temporaryPasswordEmailed).toBe(false);
     expect(typeof res.temporaryPassword).toBe('string');
   });
@@ -158,9 +162,9 @@ describe('AuthService.signup', () => {
     });
     mailer.sendTemporaryPassword.mockResolvedValue(false);
     const prodConfig = { nodeEnv: 'production' } as unknown as ConfigService;
-    const prodService = new AuthService(tenant as never, passwords as never, tokens as never, audit as never, repo as never, mailer as never, prodConfig);
+    const prodService = new AuthService(tenant as never, passwords as never, tokens as never, audit as never, repo as never, mailer as never, prodConfig, domainsStub as never, geographyStub as never);
 
-    const res = await prodService.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test' });
+    const res = await prodService.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'] });
 
     expect(res.temporaryPasswordEmailed).toBe(false);
     expect(res.temporaryPassword).toBeUndefined();
@@ -182,7 +186,7 @@ describe('AuthService.changePassword', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    service = new AuthService(tenant as never, passwords as never, tokens, audit as never, repo as never, mailer as never, config);
+    service = new AuthService(tenant as never, passwords as never, tokens, audit as never, repo as never, mailer as never, config, domainsStub as never, geographyStub as never);
   });
 
   it('changePassword: rejects a wrong current password with 401 INVALID_CURRENT_PASSWORD', async () => {

@@ -4,8 +4,8 @@ import { getOrgStore, requireActor, requireOrgId } from "../../tenancy/org-conte
 import { roleByKey } from "../../rbac/role-matrix";
 import { AuditService } from "../audit/audit.service";
 import type {
-  CreateSharingRequestPayload, OrgLookupResult, SharedStudySnapshot, SharingRequest, SharingRequestRow,
-  StudyLookupResult,
+  CreateSharingRequestPayload, DecideSharingRequestPayload, OrgLookupResult, SharedStudySnapshot,
+  SharingRequest, SharingRequestRow, StudyLookupResult,
 } from "./sharing.types";
 
 // sharing_requests has no RLS (see the SharingRequest model comment in
@@ -50,12 +50,40 @@ export class SharingService {
         note: payload.note ?? null,
       },
     }));
+
+    const requestingOrg = await this.tenant.runAsSupervisor((tx) =>
+      tx.organisation.findUnique({ where: { id: requestingOrgId } }),
+    );
+    const ownerOrg = await this.tenant.runAsSupervisor((tx) =>
+      tx.organisation.findUnique({ where: { id: payload.ownerOrgId } }),
+    );
+    const requestingOrgName = requestingOrg?.name ?? requestingOrgId;
+    const ownerOrgName = ownerOrg?.name ?? payload.ownerOrgId;
+    // AuditLog is RLS-scoped per org -- a single record() call only ever
+    // lands in ONE org's own log. Written twice (once under each org, via
+    // record()'s existing `organizationId` override) so a cross-org event
+    // like this is legible from both sides. Org names go in `changes` so
+    // they render via the Audit Log's existing ChangeDetailsDialog.
+    const auditChanges = [
+      { field: "Requesting Organization", before: null, after: requestingOrgName },
+      { field: "Owning Organization", before: null, after: ownerOrgName },
+      { field: "Study", before: null, after: study.title },
+    ];
     await this.audit.record({
       action: "create",
       entityType: "sharing_request",
       entityId: row.id,
-      entityLabel: `Sharing request for study "${study.title}"`,
+      entityLabel: `Sharing request for study "${study.title}" (requested from ${ownerOrgName})`,
       organizationId: requestingOrgId,
+      changes: auditChanges,
+    });
+    await this.audit.record({
+      action: "create",
+      entityType: "sharing_request",
+      entityId: row.id,
+      entityLabel: `Sharing request for study "${study.title}" (requested by ${requestingOrgName})`,
+      organizationId: payload.ownerOrgId,
+      changes: auditChanges,
     });
     return this.enrichOne(row as unknown as SharingRequestRow);
   }
@@ -78,12 +106,12 @@ export class SharingService {
     return this.enrichOne(row);
   }
 
-  async approve(id: string): Promise<SharingRequest> {
-    return this.decide(id, "approved");
+  async approve(id: string, payload: DecideSharingRequestPayload = {}): Promise<SharingRequest> {
+    return this.decide(id, "approved", payload.note);
   }
 
-  async reject(id: string): Promise<SharingRequest> {
-    return this.decide(id, "rejected");
+  async reject(id: string, payload: DecideSharingRequestPayload = {}): Promise<SharingRequest> {
+    return this.decide(id, "rejected", payload.note);
   }
 
   async getSharedSnapshot(id: string): Promise<SharedStudySnapshot> {
@@ -103,14 +131,14 @@ export class SharingService {
     return this.tenant.runAsSupervisor(async (tx) => {
       const study = await tx.study.findUnique({ where: { id: row.studyId } });
       if (!study) throw new NotFoundException({ error: { code: "STUDY_NOT_FOUND", message: "Study not found" } });
-      const need = await tx.need.findUnique({ where: { studyId: row.studyId } });
+      // A Study can hold many Needs now — sharing the whole Study means
+      // sharing all of them, not "the" one.
+      const needs = await tx.need.findMany({ where: { studyId: row.studyId }, orderBy: { createdAt: "asc" } });
       const evidenceCount = await tx.evidence.count({ where: { studyId: row.studyId } });
       return {
         studyId: study.id,
         title: study.title,
-        status: study.status,
-        needStatement: need?.statement ?? null,
-        needVillages: need?.village ?? [],
+        needs: needs.map((n) => ({ id: n.id, statement: n.statement, village: n.village, status: n.status })),
         evidenceCount,
       };
     });
@@ -138,21 +166,28 @@ export class SharingService {
     return rows.map((r) => ({ id: r.id, name: r.name }));
   }
 
-  // Completed (human_reviewed) studies for a given org — the only ones
-  // eligible to be requested for sharing. Study is RLS-scoped per org, so a
-  // cross-org read has to go through the same SELECT-only supervisor path
-  // used elsewhere for cross-org lookups.
+  // Studies with at least one reviewer-approved (or further along) Need are
+  // the only ones eligible to be requested for sharing. Study/Need are
+  // RLS-scoped per org, so a cross-org read has to go through the same
+  // SELECT-only supervisor path used elsewhere for cross-org lookups.
   async lookupStudiesForOrg(ownerOrgId: string): Promise<StudyLookupResult[]> {
     const rows = await this.tenant.runAsSupervisor((tx) =>
       tx.study.findMany({
-        where: { orgId: ownerOrgId, status: "human_reviewed" },
+        where: {
+          orgId: ownerOrgId,
+          needs: { some: { status: { in: ["reviewer_approved", "survey_created", "survey_published"] } } },
+        },
         orderBy: { updatedAt: "desc" },
       }),
     );
     return rows.map((r) => ({ id: r.id, title: r.title }));
   }
 
-  private async decide(id: string, status: "approved" | "rejected"): Promise<SharingRequest> {
+  private async decide(
+    id: string,
+    status: "approved" | "rejected",
+    decisionNote: string | undefined,
+  ): Promise<SharingRequest> {
     const orgId = requireOrgId();
     const decidedBy = requireActor();
     const existing = await this.tenant.runInOrgContext((tx) => tx.sharingRequest.findUnique({ where: { id } }));
@@ -169,20 +204,54 @@ export class SharingService {
         error: { code: "SHARING_REQUEST_ALREADY_DECIDED", message: "This request has already been decided." },
       });
     }
+    // A reject must always explain why -- the requesting org otherwise has
+    // no idea what to change before asking again. Approve has no such
+    // requirement (the grant speaks for itself).
+    if (status === "rejected" && !decisionNote?.trim()) {
+      throw new BadRequestException({
+        error: { code: "REJECT_REASON_REQUIRED", message: "A reason is required when rejecting a request." },
+      });
+    }
 
     const row = await this.tenant.runInOrgContext((tx) => tx.sharingRequest.update({
       where: { id },
-      data: { status, decidedBy, decidedAt: new Date() },
-    });
+      data: { status, decidedBy, decidedAt: new Date(), decisionNote: decisionNote ?? null },
+    }));
     const study = await this.tenant.runAsSupervisor((tx) =>
       tx.study.findUnique({ where: { id: row.studyId } }),
     );
+    const [ownerOrg, requestingOrg] = await Promise.all([
+      this.tenant.runAsSupervisor((tx) => tx.organisation.findUnique({ where: { id: row.ownerOrgId } })),
+      this.tenant.runAsSupervisor((tx) => tx.organisation.findUnique({ where: { id: row.requestingOrgId } })),
+    ]);
+    const ownerOrgName = ownerOrg?.name ?? row.ownerOrgId;
+    const requestingOrgName = requestingOrg?.name ?? row.requestingOrgId;
+    const studyTitle = study?.title ?? row.studyId;
+    // Same dual-write as create() -- both the owner (who decided) and the
+    // requester (who needs to know the outcome) must see this in their own
+    // Audit Log.
+    const auditChanges = [
+      { field: "Requesting Organization", before: null, after: requestingOrgName },
+      { field: "Owning Organization", before: null, after: ownerOrgName },
+      { field: "Study", before: null, after: studyTitle },
+      ...(decisionNote ? [{ field: "Decision Note", before: null, after: decisionNote }] : []),
+    ];
+    const auditAction = status === "approved" ? "approve" : "edit";
     await this.audit.record({
-      action: status === "approved" ? "approve" : "edit",
+      action: auditAction,
       entityType: "sharing_request",
       entityId: row.id,
-      entityLabel: `Sharing request for study "${study?.title ?? row.studyId}"`,
-      organizationId: orgId,
+      entityLabel: `Sharing request for study "${studyTitle}" ${status} (requested by ${requestingOrgName})`,
+      organizationId: row.ownerOrgId,
+      changes: auditChanges,
+    });
+    await this.audit.record({
+      action: auditAction,
+      entityType: "sharing_request",
+      entityId: row.id,
+      entityLabel: `Sharing request for study "${studyTitle}" ${status} (owned by ${ownerOrgName})`,
+      organizationId: row.requestingOrgId,
+      changes: auditChanges,
     });
     return this.enrichOne(row as unknown as SharingRequestRow);
   }
@@ -238,6 +307,7 @@ export class SharingService {
       decidedBy: row.decidedBy,
       decidedAt: row.decidedAt ? row.decidedAt.toISOString() : null,
       note: row.note,
+      decisionNote: row.decisionNote,
     }));
   }
 }

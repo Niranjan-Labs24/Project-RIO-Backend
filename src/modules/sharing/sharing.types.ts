@@ -11,6 +11,10 @@ export interface SharingRequestRow {
   decidedBy: string | null;
   decidedAt: Date | null;
   note: string | null;
+  // Optional reason the owner gives when approving/rejecting — was
+  // previously missing entirely on this module (reject was a single click,
+  // no explanation). Same field shape as ReportSharingRequest.
+  decisionNote: string | null;
 }
 
 export interface SharingRequest {
@@ -27,20 +31,32 @@ export interface SharingRequest {
   decidedBy: string | null;
   decidedAt: string | null;
   note: string | null;
+  decisionNote: string | null;
+}
+
+export interface DecideSharingRequestPayload {
+  note?: string;
 }
 
 export interface CreateSharingRequestPayload {
   ownerOrgId: string;
   studyId: string;
-  note?: string;
+  /** "Purpose" in the UI — required (see sharing.contract.ts). */
+  note: string;
+}
+
+export interface SharedNeedSnapshot {
+  id: string;
+  statement: string;
+  village: string[];
+  status: string;
 }
 
 export interface SharedStudySnapshot {
   studyId: string;
   title: string;
-  status: string;
-  needStatement: string | null;
-  needVillages: string[];
+  // A Study can hold many Needs — sharing the whole Study shares all of them.
+  needs: SharedNeedSnapshot[];
   evidenceCount: number;
 }
 

@@ -4,8 +4,8 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { requireActor } from "../../tenancy/org-context";
 import type {
-  ConfidenceFlagSettings, MethodologyConfig, MethodologyConfigRow, PriorityFactorWeight,
-  PriorityThresholds, UpdateMethodologyConfigPayload,
+  ConfidenceFlagSettings, MethodologyConfig, MethodologyConfigRow, MethodologyVersionOption,
+  PriorityFactorWeight, PriorityThresholds, UpdateMethodologyConfigPayload,
 } from "./methodology-config.types";
 
 // Global reference/master data (no orgId, no RLS — same pattern as
@@ -21,6 +21,19 @@ export class MethodologyConfigService {
   async get(): Promise<MethodologyConfig> {
     const row = await this.findRowOrThrow();
     return this.toConfig(row);
+  }
+
+  // TEMPORARY — see the MethodologyVersionOption model comment in
+  // schema.prisma. Backs the Survey workflow's "select a Methodology
+  // Version before Submit for Approval" requirement until the real source
+  // of versions is clarified.
+  async listVersionOptions(): Promise<MethodologyVersionOption[]> {
+    const rows = await this.prisma.methodologyVersionOption.findMany({
+      where: { isActive: true },
+      orderBy: { sortOrder: "asc" },
+      select: { id: true, version: true },
+    });
+    return rows;
   }
 
   async update(payload: UpdateMethodologyConfigPayload): Promise<MethodologyConfig> {
@@ -84,7 +97,7 @@ export class MethodologyConfigService {
 
   // Critical > High > Medium is the methodology's own ordering (scope.md
   // §8's Priority Level Classification) — an inverted set of thresholds
-  // would make levelFor() in priority.placeholder.ts produce nonsensical
+  // would make mapPriorityLevel() in priority/scoring.ts produce nonsensical
   // rankings, so this is rejected before it's ever saved.
   private validateThresholds(thresholds: PriorityThresholds): void {
     const { criticalSeverity, highSeverity, mediumSeverity, equityHighSeverity } = thresholds;
