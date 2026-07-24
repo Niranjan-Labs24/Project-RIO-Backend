@@ -53,6 +53,9 @@ export interface ReportDataSnapshot {
     assessmentCycle: number;
     organizationName: string;
     methodologyVersionId: string;
+    // Human-readable version label (e.g. "v1.0") for the report header — the
+    // UUID methodologyVersionId is an internal key, never shown to users.
+    methodologyVersionLabel?: string;
   };
   responseQuality: {
     submittedResponseCount: number;
@@ -258,6 +261,7 @@ export class ReportSummaryService {
           assessmentCycle: study.cycleNumber,
           organizationName: study.org.name,
           methodologyVersionId: mv.id,
+          methodologyVersionLabel: mv.version,
         },
         responseQuality: {
           submittedResponseCount,
