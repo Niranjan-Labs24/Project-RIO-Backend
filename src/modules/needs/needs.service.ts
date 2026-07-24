@@ -342,6 +342,10 @@ export class NeedsService {
       aiSuggestedSubDomain: row.aiSuggestedSubDomain,
       classifiedAt: row.classifiedAt ? row.classifiedAt.toISOString() : null,
       classificationError: row.classificationError,
+      proposedDomains: Array.isArray(row.proposedDomains)
+        ? (row.proposedDomains as Array<{ domain: string; subDomain: string }>)
+        : null,
+      proposedReason: row.proposedReason,
       createdBy: row.createdBy,
       createdByName,
       createdAt: row.createdAt.toISOString(),

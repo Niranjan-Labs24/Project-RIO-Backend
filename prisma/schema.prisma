@@ -383,6 +383,19 @@ model Need {
   // retry before the next attempt runs. Never shown to citizens, only to
   // Researchers/Approvers on the Need workspace / AI Review screens.
   classificationError String? @map("classification_error")
+  // A staged (not-yet-decided) Override — set when a Researcher or Approver
+  // clicks "Preview Override" (see AiDecisionsService.overrideDomainPreview),
+  // cleared the moment it's consumed (approved-into-domain/needDomains, or
+  // discarded on Reject). Deliberately NOT the authoritative classification
+  // — domain/subDomain/needDomains above are the only fields anything
+  // downstream (Question Bank matching, scoring, reporting) ever reads;
+  // this exists purely so a proposal survives the round trip from whoever
+  // staged it (any session, any device) to whoever reviews/approves it,
+  // replacing an earlier sessionStorage-only draft that only the browser
+  // tab that staged it could ever see. Array of {domain, subDomain} pairs,
+  // same shape as needDomains, since an override can span several.
+  proposedDomains Json?   @map("proposed_domains")
+  proposedReason  String? @map("proposed_reason")
   createdBy String     @map("created_by") @db.Uuid
   createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)

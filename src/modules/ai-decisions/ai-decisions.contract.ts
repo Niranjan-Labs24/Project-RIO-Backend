@@ -56,6 +56,13 @@ export const AiReviewOverrideDomainBody = registerSchema(
   T.Object(
     {
       pairs: T.Array(DomainSubDomainPair, { minItems: 1 }),
+      // Persisted onto Need.proposedDomains/proposedReason (see
+      // AiDecisionsService.overrideDomainPreview) so whoever reviews next —
+      // any session, not just the browser tab that staged this — can see
+      // what was proposed and why. Optional only for backward compatibility
+      // with any in-flight client that predates this field; the UI always
+      // sends it.
+      reason: T.Optional(T.String({ minLength: 1, maxLength: 2000 })),
     },
     { additionalProperties: false },
   ),

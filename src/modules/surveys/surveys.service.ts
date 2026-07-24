@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { roleByKey } from '../../rbac/role-matrix';
@@ -8,6 +8,11 @@ import { MethodologyConfigService } from '../methodology-config/methodology-conf
 
 @Injectable()
 export class SurveysService {
+  // TEMP diagnostic logging (RIO-debug: research-officer override ->
+  // Question Bank tab not showing new sub-domain's questions) — remove once
+  // root cause is confirmed.
+  private readonly logger = new Logger(SurveysService.name);
+
   constructor(
     private readonly tenant: TenantPrismaService,
     private readonly audit: AuditService,
@@ -310,10 +315,15 @@ export class SurveysService {
   // AiSuggestion rows. Idempotent: always reuses an existing DRAFT Survey
   // for this Need rather than creating a second one (Retry/regeneration
   // make hitting this path far more common than before).
-  async generateSuggestedQuestions(needId: string, pairs: Array<{ domain: string; subDomain: string }>): Promise<any> {
+  async generateSuggestedQuestions(
+    needId: string,
+    pairs: Array<{ domain: string; subDomain: string }>,
+    options: { allowWhileSubmitted?: boolean } = {},
+  ): Promise<any> {
     const orgId = requireOrgId();
     const actorId = requireActor();
     const domainLabel = pairs.length > 0 ? pairs.map((p) => `${p.domain} / ${p.subDomain}`).join(', ') : 'All Domains';
+    this.logger.debug(`[QB-DEBUG] generateSuggestedQuestions(needId=${needId}) called by actor=${actorId} with pairs=${JSON.stringify(pairs)}`);
 
     const data = await this.tenant.runInOrgContext(async (tx) => {
       const need = await tx.need.findUnique({ where: { id: needId } });
@@ -323,17 +333,30 @@ export class SurveysService {
       // Once published, a survey may already have live citizen responses —
       // re-running AI recommendation would otherwise silently delete and
       // replace its Question Bank items out from under them (see the
-      // deleteMany/createMany below). SUBMITTED is blocked too — the
-      // Approver reviews exactly what was submitted, not a moving target.
+      // deleteMany/createMany below). Blocked for everyone, no exceptions.
+      //
+      // SUBMITTED is a moving-target concern only for the Researcher — they
+      // shouldn't change the domain a Survey is being reviewed against out
+      // from under the Approver. The Approver themselves is exactly who's
+      // doing that review right now, so `allowWhileSubmitted` (set by
+      // AiDecisionsService.overrideDomainPreview based on the caller's role)
+      // lets them override while it's SUBMITTED — see
+      // ai-classification-section.tsx's overrideDisabledForResearcher for
+      // the matching frontend-side gate.
       const existingSurvey = await tx.survey.findFirst({ where: { needId } });
-      if (existingSurvey?.status === 'PUBLISHED' || existingSurvey?.status === 'SUBMITTED') {
+      if (existingSurvey?.status === 'PUBLISHED') {
         throw new ConflictException({
           error: {
-            code: existingSurvey.status === 'PUBLISHED' ? 'SURVEY_ALREADY_PUBLISHED' : 'SURVEY_NOT_EDITABLE',
-            message:
-              existingSurvey.status === 'PUBLISHED'
-                ? 'This survey is already published and its questions can no longer be regenerated.'
-                : 'This survey is awaiting approval and its questions cannot be regenerated until it is reviewed.',
+            code: 'SURVEY_ALREADY_PUBLISHED',
+            message: 'This survey is already published and its questions can no longer be regenerated.',
+          },
+        });
+      }
+      if (existingSurvey?.status === 'SUBMITTED' && !options.allowWhileSubmitted) {
+        throw new ConflictException({
+          error: {
+            code: 'SURVEY_NOT_EDITABLE',
+            message: 'This survey is awaiting approval and its questions cannot be regenerated until it is reviewed.',
           },
         });
       }
@@ -349,6 +372,10 @@ export class SurveysService {
     });
 
     const { need, eligibleQuestions } = data;
+    this.logger.debug(
+      `[QB-DEBUG] needId=${needId} eligibleQuestions.length=${eligibleQuestions.length} for pairs=${JSON.stringify(pairs)}` +
+        (eligibleQuestions.length === 0 ? ' — NO Question Bank rows match these pairs (this is likely the bug: recommendedPairs on the Survey Builder page will be empty, so questionBankPairsFor falls back to the stale Need.needDomains).' : ''),
+    );
 
     let recommendedQuestionIds: string[] = [];
     let confidence = 0;
@@ -484,7 +511,16 @@ Eligible Questions: ${JSON.stringify(
       entityLabel: `AI recommended questions for ${survey.title}`,
     });
 
-    return this.getSurveyByNeedId(needId);
+    const result = await this.getSurveyByNeedId(needId);
+    this.logger.debug(
+      `[QB-DEBUG] needId=${needId} survey=${survey.id} finalQuestions.length=${finalQuestions.length}; ` +
+        `resulting survey.questions bank-linked pairs=${JSON.stringify(
+          (result?.questions ?? [])
+            .filter((q: any) => !q.isCustom)
+            .map((q: any) => ({ domain: q.domain, subDomain: q.subDomain })),
+        )}`,
+    );
+    return result;
   }
 
   async updateQuestions(
@@ -519,12 +555,18 @@ Eligible Questions: ${JSON.stringify(
       }
     }
 
+    // The Researcher can't keep editing a SUBMITTED survey out from under
+    // whoever's reviewing it, but the Approver themselves is exactly who's
+    // doing that review — they curate the question list (add/remove/
+    // reorder/custom) right up to Approve & Publish or Reject. Same role
+    // split as overrideDomainPreview/generateSuggestedQuestions.
+    const allowWhileSubmitted = getOrgStore()?.role !== 'ngo_research_officer';
     const needId = await this.tenant.runInOrgContext(async (tx) => {
       const survey = await tx.survey.findUnique({ where: { id: surveyId } });
       if (!survey) {
         throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
       }
-      this.assertEditable(survey.status);
+      this.assertEditable(survey.status, allowWhileSubmitted);
 
       // Re-create the links using the incoming array — the whole ordered
       // list (Question Bank + additional questions together) is the unit of
@@ -565,19 +607,24 @@ Eligible Questions: ${JSON.stringify(
   }
 
   // Content (questions, Methodology Version) is frozen the moment a survey
-  // is SUBMITTED — the Approver reviews exactly what was submitted, never a
-  // moving target. Same rule once PUBLISHED (terminal). Editing resumes
-  // only after a REJECTED verdict, or from DRAFT.
-  private assertEditable(status: string): void {
-    if (status === 'SUBMITTED' || status === 'PUBLISHED') {
+  // is SUBMITTED, for the Researcher — they shouldn't keep moving the
+  // target out from under whoever's reviewing it. The Approver is exactly
+  // who's reviewing it, so updateQuestions passes allowWhileSubmitted based
+  // on the caller's role (see there) to let them curate questions right up
+  // to their decision. setMethodologyVersion below never passes it — the
+  // Approver only ever reviews/publishes whatever Methodology Version the
+  // Researcher already chose, they don't change it. PUBLISHED is always
+  // terminal, for everyone, no exceptions — a live citizen-facing survey's
+  // questions/version can never change post-publish.
+  private assertEditable(status: string, allowWhileSubmitted = false): void {
+    if (status === 'PUBLISHED') {
       throw new ConflictException({
-        error: {
-          code: 'SURVEY_NOT_EDITABLE',
-          message:
-            status === 'SUBMITTED'
-              ? 'This survey is awaiting approval and cannot be edited until it is reviewed.'
-              : 'This survey is already published and can no longer be edited.',
-        },
+        error: { code: 'SURVEY_NOT_EDITABLE', message: 'This survey is already published and can no longer be edited.' },
+      });
+    }
+    if (status === 'SUBMITTED' && !allowWhileSubmitted) {
+      throw new ConflictException({
+        error: { code: 'SURVEY_NOT_EDITABLE', message: 'This survey is awaiting approval and cannot be edited until it is reviewed.' },
       });
     }
   }

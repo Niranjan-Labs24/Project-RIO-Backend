@@ -1,8 +1,13 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 
 @Injectable()
 export class QuestionsService {
+  // TEMP diagnostic logging (RIO-debug: research-officer override -> Question
+  // Bank tab not showing new sub-domain's questions) — remove once root cause
+  // is confirmed.
+  private readonly logger = new Logger(QuestionsService.name);
+
   constructor(private readonly tenant: TenantPrismaService) {}
 
   async getDomainOptions(): Promise<Array<{ domain: string; subDomain: string }>> {
@@ -41,6 +46,7 @@ export class QuestionsService {
   // covering both a single classified pair and an already-approved
   // multi-domain Need's several pairs.
   async getQuestions(pairs: Array<{ domain: string; subDomain: string }>) {
+    this.logger.debug(`[QB-DEBUG] QuestionsController/getQuestions called with pairs=${JSON.stringify(pairs)}`);
     const rows = await this.tenant.runAsSupervisor((tx) =>
       tx.question.findMany({
         where:
@@ -50,6 +56,7 @@ export class QuestionsService {
         orderBy: { questionId: 'asc' },
       }),
     );
+    this.logger.debug(`[QB-DEBUG] QuestionsController/getQuestions returning ${rows.length} row(s) for pairs=${JSON.stringify(pairs)}`);
     return rows.map((r) => ({
       id: r.id,
       questionId: r.questionId,

@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import type { Prisma } from '../../generated/prisma';
+import { Prisma } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
-import { requireActor, requireOrgId } from '../../tenancy/org-context';
+import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { AuditService } from '../audit/audit.service';
 import { AiService } from '../ai/ai.service';
 import { DomainsService } from '../domains/domains.service';
@@ -372,7 +372,12 @@ export class AiDecisionsService {
         // reflect the AI's original prediction, even after an override, so
         // the two can be compared side by side (audit trail of predicted
         // vs. decided).
-        await tx.need.update({ where: { id: row.needId }, data: { status: 'reviewer_approved' } });
+        // The proposal (if any) is now decided one way or another — clear it
+        // so a later, unrelated Override attempt doesn't pick up a stale one.
+        await tx.need.update({
+          where: { id: row.needId },
+          data: { status: 'reviewer_approved', proposedDomains: Prisma.JsonNull, proposedReason: null },
+        });
 
         // `pairs` is the full, final Domain/Sub-domain list for this Need —
         // either the Approver's override (any number of pairs, no limit) or,
@@ -420,7 +425,10 @@ export class AiDecisionsService {
         // fresh classification run against the edited data — it must NOT
         // advance to reviewer_approved, which would misrepresent a
         // rejection as an approval.
-        await tx.need.update({ where: { id: row.needId }, data: { status: 'pending_ai_classification' } });
+        await tx.need.update({
+          where: { id: row.needId },
+          data: { status: 'pending_ai_classification', proposedDomains: Prisma.JsonNull, proposedReason: null },
+        });
       }
       return { updated: row, needTitle: need.title };
     });
@@ -479,8 +487,36 @@ export class AiDecisionsService {
   // domainOverride handling (see review()) — only regenerates the Suggested
   // Questions list, merged+deduped across every candidate pair, so a
   // browser refresh mid-override never leaves the Need half-decided.
+  //
+  // Does persist the proposal itself (proposedDomains/proposedReason) onto
+  // the Need — previously this only lived in the staging browser's own
+  // sessionStorage, so a Researcher's staged override was invisible to the
+  // Approver reviewing in a different session, and re-opening Override even
+  // in the SAME session after a page reload lost it, falling back to
+  // showing the AI's original suggestion instead. These two fields are
+  // deliberately separate from the authoritative domain/subDomain/
+  // needDomains — nothing downstream reads them, they're consumed and
+  // cleared by review() below once a decision is actually made.
   async overrideDomainPreview(needId: string, body: AiReviewOverrideDomainDto): Promise<unknown> {
-    return this.surveys.generateSuggestedQuestions(needId, body.pairs);
+    // Both the Researcher and the Approver hold aiReview:approve (see
+    // role-matrix.ts's "full parity" decision), so permission alone can't
+    // tell them apart here. Only the Researcher is blocked from overriding a
+    // SUBMITTED survey's domain (they'd be moving the target out from under
+    // whoever's reviewing it) — the Approver is exactly who's reviewing it,
+    // so they're allowed regardless of Survey status (short of PUBLISHED,
+    // which SurveysService.generateSuggestedQuestions still blocks for
+    // everyone). Same rule as the frontend's overrideDisabledForResearcher.
+    const allowWhileSubmitted = getOrgStore()?.role !== 'ngo_research_officer';
+    await this.tenant.runInOrgContext((tx) =>
+      tx.need.update({
+        where: { id: needId },
+        data: {
+          proposedDomains: body.pairs as unknown as Prisma.InputJsonValue,
+          proposedReason: body.reason ?? null,
+        },
+      }),
+    );
+    return this.surveys.generateSuggestedQuestions(needId, body.pairs, { allowWhileSubmitted });
   }
 
   private async latestUndecidedDecision(needId: string): Promise<AiDecisionRow> {

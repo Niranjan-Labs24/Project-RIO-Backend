@@ -40,6 +40,10 @@ export interface NeedRow {
   aiSuggestedSubDomain: string | null;
   classifiedAt: Date | null;
   classificationError: string | null;
+  // A staged (not-yet-decided) Override — see schema.prisma's comment on
+  // Need.proposedDomains. Cleared once approved/rejected.
+  proposedDomains: unknown;
+  proposedReason: string | null;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
@@ -88,6 +92,12 @@ export interface Need {
   aiSuggestedSubDomain: string | null;
   classifiedAt: string | null;
   classificationError: string | null;
+  // A staged (not-yet-decided) Override, visible to anyone reviewing this
+  // Need regardless of who staged it or in which session — see
+  // AiDecisionsService.overrideDomainPreview and schema.prisma's comment on
+  // Need.proposedDomains. Cleared (both null) once approved/rejected.
+  proposedDomains: Array<{ domain: string; subDomain: string }> | null;
+  proposedReason: string | null;
   createdBy: string;
   // Resolved display name for Entered By — null if the creating user has
   // since been removed (e.g. no self-org lookup for a deleted account).
