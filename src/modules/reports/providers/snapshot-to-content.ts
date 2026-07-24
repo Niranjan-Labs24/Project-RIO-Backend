@@ -193,6 +193,7 @@ export function snapshotToSectorContent(input: MapperInput): SectorReportContent
       domains: [],
     },
     aiSummary: aiOutputToSummaryBlock(input.aiOutput),
+    demographics: input.demographics ?? null,
     filters: input.filters ?? {},
   };
 }
@@ -213,6 +214,7 @@ export function snapshotToRegionContent(input: MapperInput): RegionReportContent
       },
     ],
     aiSummary: aiOutputToSummaryBlock(input.aiOutput),
+    demographics: input.demographics ?? null,
     filters: input.filters ?? {},
   };
 }
@@ -233,6 +235,7 @@ export function snapshotToExecutiveContent(input: MapperInput): ExecutiveReportC
     aiSummary: aiOutputToSummaryBlock(input.aiOutput),
     anomalies,
     reviewerNotes: null,
+    demographics: input.demographics ?? null,
     filters: input.filters ?? {},
   };
 }

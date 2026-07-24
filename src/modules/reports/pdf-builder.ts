@@ -174,21 +174,28 @@ function renderHeader(pdf: Pdf, doc: ReportDoc): void {
   pdf.rule(ACCENT, 1.4);
   pdf.y += 6;
   if (doc.headerBand.length) {
-    // Two-column meta grid to save vertical space.
-    const half = Math.ceil(doc.headerBand.length / 2);
-    const colW = CONTENT_W / 2;
-    const bandH = half * 12 + 6;
+    // Single full-width row per field, wrapped rather than truncated — a
+    // fixed two-column grid left long values (e.g. a Methodology Version
+    // sentence) truncated mid-word since each value only got ~154pt.
+    const labelW = 106;
+    const valW = CONTENT_W - labelW - 10;
+    const size = 8;
+    const linesPerRow = doc.headerBand.map((m) => wrap(m.value, size, valW));
+    const bandH = linesPerRow.reduce((h, lines) => h + Math.max(1, lines.length) * 11, 0) + 6;
     pdf.rect(LEFT, CONTENT_W, bandH, LIGHT);
-    const startY = pdf.y + 5;
+    let rowY = pdf.y + 5;
     doc.headerBand.forEach((m, i) => {
-      const col = i < half ? 0 : 1;
-      const row = i < half ? i : i - half;
-      const x = LEFT + col * colW + 5;
-      pdf.y = startY + row * 12;
-      pdf.text(x, 8, true, `${m.label}:`);
-      pdf.text(x + 96, 8, false, truncate(m.value, 8, colW - 106));
+      const x = LEFT + 5;
+      pdf.y = rowY;
+      pdf.text(x, size, true, `${m.label}:`);
+      const lines = linesPerRow[i]!;
+      lines.forEach((ln, li) => {
+        pdf.y = rowY + li * 11;
+        pdf.text(x + labelW, size, false, ln);
+      });
+      rowY += Math.max(1, lines.length) * 11;
     });
-    pdf.y = startY + half * 12 + 4;
+    pdf.y = rowY + 4;
   }
 }
 
@@ -220,9 +227,26 @@ function renderTable(pdf: Pdf, columns: string[], rows: string[][]): void {
   const n = columns.length || 1;
   const size = n > 6 ? 7 : n > 4 ? 7.5 : 8.5;
   const rowH = size + 5;
+  // Guarantee every column at least enough room for its own header text first
+  // — a purely character-count-proportional split (the old approach) let one
+  // long-text column (e.g. "KPI") starve the others below even their own
+  // header's width, truncating "Severity"/"Confidence"/"Responses" headers
+  // themselves. Only after every header fits do we hand out the remaining
+  // space, proportional to how much each column's content actually overflows
+  // its header width (so the long-text column still gets most of it).
+  const headerMin = columns.map((c) => textWidth(c, size) + 10);
+  const headerMinSum = headerMin.reduce((a, b) => a + b, 0) || 1;
   const chars = columns.map((c, i) => Math.max(c.length, ...rows.map((r) => (r[i] ?? "").length), 3));
-  const totalChars = chars.reduce((a, b) => a + b, 0) || 1;
-  let widths = chars.map((ch) => Math.max(26, (ch / totalChars) * pdf.rw));
+  let widths: number[];
+  if (headerMinSum <= pdf.rw) {
+    const extra = pdf.rw - headerMinSum;
+    const overflow = chars.map((ch, i) => Math.max(0, ch * size * 0.52 - headerMin[i]!));
+    const totalOverflow = overflow.reduce((a, b) => a + b, 0);
+    widths = headerMin.map((hw, i) => hw + (totalOverflow > 0 ? (overflow[i]! / totalOverflow) * extra : extra / n));
+  } else {
+    // Not even every header fits — best effort, proportional to header width.
+    widths = headerMin.map((hw) => Math.max(26, (hw / headerMinSum) * pdf.rw));
+  }
   const sum = widths.reduce((a, b) => a + b, 0);
   if (sum > pdf.rw) widths = widths.map((w) => (w / sum) * pdf.rw);
   const xs: number[] = [];
@@ -232,21 +256,38 @@ function renderTable(pdf: Pdf, columns: string[], rows: string[][]): void {
     cursor += w;
   }
   const numeric = columns.map((_, i) => isNumericColumn(rows, i));
-  const drawRow = (cells: string[], bold: boolean) => {
-    pdf.ensure(rowH + 2);
-    cells.forEach((c, i) => {
+  // Data cells wrap onto up to 2 lines instead of truncating with "..": a
+  // value like "Core Methodology Domain" needs to actually be readable, not
+  // just hinted at — single-line truncation was cutting real column values
+  // (Domain, KPI text) off entirely even once headers themselves fit.
+  const MAX_LINES = 2;
+  const drawRow = (cells: string[], bold: boolean, wrapCells: boolean) => {
+    const cellLines = cells.map((c, i) => {
+      const w = widths[i] ?? 40;
+      if (!wrapCells) return [truncate(c, size, w - 6)];
+      const lines = wrap(c, size, w - 6);
+      if (lines.length <= MAX_LINES) return lines;
+      return [...lines.slice(0, MAX_LINES - 1), truncate(lines.slice(MAX_LINES - 1).join(" "), size, w - 6)];
+    });
+    const lineCount = Math.max(1, ...cellLines.map((l) => l.length));
+    const h = size + 5 + (lineCount - 1) * (size + 1);
+    pdf.ensure(h + 2);
+    const top = pdf.y;
+    cellLines.forEach((lines, i) => {
       const w = widths[i] ?? 40;
       const cx = xs[i] ?? pdf.rx;
-      const text = truncate(c, size, w - 6);
-      pdf.text(numeric[i] ? cx + w - 4 - textWidth(text, size) : cx + 3, size, bold, text);
+      lines.forEach((ln, li) => {
+        pdf.y = top + li * (size + 1);
+        pdf.text(numeric[i] ? cx + w - 4 - textWidth(ln, size) : cx + 3, size, bold, ln);
+      });
     });
-    pdf.y += rowH;
+    pdf.y = top + h;
   };
   pdf.rect(pdf.rx, pdf.rw, rowH, LIGHT);
-  drawRow(columns, true);
+  drawRow(columns, true, false);
   pdf.rule(GRAY, 0.5);
   pdf.y += 2;
-  for (const row of rows) drawRow(row, false);
+  for (const row of rows) drawRow(row, false, true);
 }
 
 function renderBars(pdf: Pdf, max: number, bars: Array<{ label: string; value: number }>): void {

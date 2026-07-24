@@ -24,7 +24,14 @@ function addTableSheet(wb: ExcelJS.Workbook, heading: string, columns: string[],
   const sheet = wb.addWorksheet(uniqueSheetName(wb, heading));
   sheet.columns = columns.map((c) => ({ header: c, key: c, width: Math.max(16, Math.min(40, c.length + 6)) }));
   styleHeaderRow(sheet.getRow(1));
-  for (const r of rows) sheet.addRow(r);
+  for (const r of rows) {
+    // Column width is sized off the header, not the data — a long cell
+    // value (a domain name, a KPI label, ...) with no wrap would otherwise
+    // render past its own column into whatever's next, rather than
+    // wrapping inside the cell it actually belongs to.
+    const row = sheet.addRow(r);
+    row.eachCell((cell) => (cell.alignment = { wrapText: true, vertical: "top" }));
+  }
 }
 
 function addBarsSheet(wb: ExcelJS.Workbook, s: Extract<DocSection, { kind: "bars" }>): void {
@@ -72,6 +79,13 @@ export async function renderReportExcel(doc: ReportDoc): Promise<Buffer> {
 
   const kv = (label: string, value: string, shaded = false) => {
     const row = summary.addRow({ field: label, value });
+    // Executive Summary/Key Findings/etc. routinely run several sentences
+    // long — without wrapText, Excel renders that past column B's own
+    // width into whatever empty cells sit to the right instead of actually
+    // wrapping inside the cell, looking like the text "overlaps" other
+    // cells (it's the same underlying issue addTableSheet fixes for table
+    // sheets).
+    row.getCell(2).alignment = { wrapText: true, vertical: "top" };
     if (shaded) row.eachCell((c) => (c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: LIGHT } }));
   };
 

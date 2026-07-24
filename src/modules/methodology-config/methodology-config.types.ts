@@ -51,9 +51,10 @@ export interface UpdateMethodologyConfigPayload {
   confidenceFlagSettings?: Partial<ConfidenceFlagSettings>;
 }
 
-// TEMPORARY — see the MethodologyVersionOption model comment in
-// schema.prisma. Just enough shape for a Researcher to pick a label from a
-// list; nothing else in the app reads this row shape.
+// The Survey Builder's "Methodology Version" dropdown option shape — sourced
+// from the single MethodologyConfig row's id/version now (see
+// MethodologyConfigService.listVersionOptions), not the old, disconnected
+// MethodologyVersionOption Prisma model.
 export interface MethodologyVersionOption {
   id: string;
   version: string;
