@@ -343,16 +343,29 @@ model Need {
   // against anything, purely a cross-reference back to their own records.
   referenceId String?  @map("reference_id") @db.VarChar(200)
   status    NeedStatus @default(draft)
-  // The AUTHORITATIVE ("Approved") Domain + Sub-Domain for this Need — no
-  // longer collected manually at creation. Populated only when an Approver
-  // approves or overrides an AI Classification decision (see
-  // AiDecisionsService.review) via the AI Review screen. This is what
-  // reporting/scoring/Survey Builder's Question Bank matching reads.
+  // The AUTHORITATIVE ("Approved") Domain + Sub-Domain for this Need —
+  // ALWAYS mirrors the first row of `needDomains` below (the real,
+  // multi-valued source of truth) so any reader not yet migrated to the
+  // full list — e.g. a table column, a one-line subtitle — still shows at
+  // least the primary domain rather than nothing. Never write this pair
+  // directly without also writing/replacing the matching `needDomains`
+  // rows; see AiDecisionsService for the one place both are kept in sync.
   // Distinct from aiSuggestedDomain/aiSuggestedSubDomain below, which is
-  // never overwritten once classification runs — domain/subDomain is the
-  // human's final decision, which may differ from the AI's suggestion.
+  // never overwritten once classification runs — domain/subDomain (and
+  // needDomains) are the human's final decision, which may differ from
+  // the AI's suggestion.
   domain    String?    @db.VarChar(120)
   subDomain String?    @map("sub_domain") @db.VarChar(120)
+  // True when AI could not confidently classify this Need at all (an
+  // "unclear need" outcome, not a hard failure — see
+  // AiDecisionsService.runAndPersistClassification) and every active
+  // Domain/Sub-domain is implicitly in scope rather than one specific
+  // pair. `needDomains` stays empty in this case — deliberately not
+  // materialized as ~40 literal rows — so Question Bank matching checks
+  // this flag first and skips filtering entirely rather than iterating a
+  // real list. Cleared the moment a human (Researcher or Approver)
+  // narrows it down via Override, which populates needDomains for real.
+  allDomainsSelected Boolean @default(false) @map("all_domains_selected")
   // AI Classification's own suggestion — stored for transparency/future
   // reference only, never read by anything downstream (Survey Builder's
   // Question Bank matching, reporting, scoring all use `domain`/`subDomain`
@@ -378,6 +391,7 @@ model Need {
   org   Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
   needGovernorates NeedGovernorate[]
   needCenters NeedCenter[]
+  needDomains NeedDomain[]
   evidence Evidence[]
   aiDecisions AiDecision[]
   surveys Survey[]
@@ -391,6 +405,32 @@ model Need {
   @@index([orgId])
   @@index([studyId])
   @@map("needs")
+}
+
+// Multi-select Domain/Sub-domain pairs for a Need — a Need can be manually
+// classified into more than one Domain, each with one or more Sub-domains
+// (e.g. Health/Access to Basic Healthcare AND Water & Sanitation/Drinking
+// Water Access on the same Need). Plain name strings, not a relation to
+// Domain/SubDomain — same "stores the name, not the id" convention as
+// Need.domain/subDomain and AiDecision.suggestion. org_id is denormalized
+// directly from Need.orgId (not joined through Need), same self-contained
+// RLS pattern as NeedGovernorate/NeedCenter below. Empty (zero rows) while
+// Need.allDomainsSelected is true — see that field's comment; a real,
+// specific selection always replaces the full set at once (see
+// AiDecisionsService), never an incremental add/remove of individual rows.
+model NeedDomain {
+  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  needId    String   @map("need_id") @db.Uuid
+  orgId     String   @map("org_id") @db.Uuid
+  domain    String   @db.VarChar(120)
+  subDomain String   @map("sub_domain") @db.VarChar(120)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  need Need @relation(fields: [needId], references: [id], onDelete: Cascade)
+
+  @@unique([needId, domain, subDomain])
+  @@index([orgId])
+  @@map("need_domains")
 }
 
 // Multi-select Governorates for a Need — a Need selects a *subset* of the
@@ -1132,19 +1172,15 @@ model MethodologyConfig {
   @@map("methodology_configs")
 }
 
-// TEMPORARY / PLACEHOLDER — the real source of truth for selectable
-// Methodology Versions has not yet been clarified by the business (as of
-// the 2026-07 Survey Approval workflow clarifications). `MethodologyConfig`
-// above is a single current-baseline row, not a list a Researcher can pick
-// from. This is a minimal seeded lookup table standing in for that until a
-// real versioning/history source is defined — deliberately just an id +
-// label + ordering, with no other model referencing it by foreign key (see
-// Survey.methodologyVersion, which stores the chosen label as a plain
-// string snapshot, not a relation to this table) — so swapping this out
-// later never requires touching Survey or anything else that reads
-// `Survey.methodologyVersion`.
-// TODO(business): replace with the real methodology-version source once
-// clarified, and drop this table.
+// UNUSED — superseded by sourcing the Survey Builder's "Methodology
+// Version" dropdown directly from `MethodologyConfig`'s own version/status
+// (see MethodologyConfigService.listVersionOptions): publishing a version in
+// Settings never wrote to this table, so it could never actually reflect
+// what was published. Left in place (additive-only migrations; not dropped)
+// rather than deleted, since nothing depends on removing it —
+// Survey.methodologyVersion stores the chosen label as a plain string
+// snapshot, never a relation to this table, so nothing breaks by leaving it
+// unread.
 model MethodologyVersionOption {
   id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   version   String   @db.VarChar(100)
@@ -1335,6 +1371,17 @@ model SurveyQuestion {
   // checkbox — null for every other additional-question type, and always
   // null for Question Bank questions (those use `questions.answer_options`).
   customOptions    Json?   @map("custom_options")
+  // Domain/Sub-domain/KPI for an additional (custom) question — a Question
+  // Bank question already carries this via its linked Question row
+  // (question.domain/subDomain/kpi), so these three are always null there;
+  // only meaningful when customText is set. Nullable and optional at the
+  // DB level even for custom rows: required-for-new-questions is an
+  // application-layer rule (Survey Builder's dialog + updateQuestions), not
+  // a DB constraint, so a custom question created before this field existed
+  // keeps working unmodified — see this model's migration comment.
+  domain           String? @db.VarChar(120)
+  subDomain        String? @map("sub_domain") @db.VarChar(120)
+  kpi              String? @db.VarChar(200)
   order            Int
   isRequired       Boolean @default(true) @map("is_required")
 

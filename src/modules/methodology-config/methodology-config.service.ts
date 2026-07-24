@@ -23,17 +23,21 @@ export class MethodologyConfigService {
     return this.toConfig(row);
   }
 
-  // TEMPORARY — see the MethodologyVersionOption model comment in
-  // schema.prisma. Backs the Survey workflow's "select a Methodology
-  // Version before Submit for Approval" requirement until the real source
-  // of versions is clarified.
+  // Backs the Survey workflow's "select a Methodology Version before Submit
+  // for Approval" requirement. Sourced directly from the single
+  // MethodologyConfig row now — the currently PUBLISHED version is the only
+  // one ever offered (an empty list while it's still `draft`, which the
+  // Survey Builder page's placeholder correctly reflects as "nothing to
+  // pick yet"). MethodologyVersionOption (a separate, hardcoded 2-row
+  // placeholder table from before real versioning existed) is no longer
+  // read here — publishing a version in Settings never wrote to that table,
+  // so the dropdown could show stale options with no way to know which one
+  // was actually published; this makes the dropdown reflect the one real
+  // published version instead.
   async listVersionOptions(): Promise<MethodologyVersionOption[]> {
-    const rows = await this.prisma.methodologyVersionOption.findMany({
-      where: { isActive: true },
-      orderBy: { sortOrder: "asc" },
-      select: { id: true, version: true },
-    });
-    return rows;
+    const row = await this.findRowOrThrow();
+    if (row.status !== "published") return [];
+    return [{ id: row.id, version: row.version }];
   }
 
   async update(payload: UpdateMethodologyConfigPayload): Promise<MethodologyConfig> {

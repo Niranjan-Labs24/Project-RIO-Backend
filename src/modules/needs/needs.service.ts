@@ -22,11 +22,12 @@ const DIFF_FIELD_LABELS: Record<(typeof DIFF_FIELDS)[number], string> = {
 // Raw shape Prisma returns once `needGovernorates`/`needCenters` are
 // included — reduced to plain id arrays before anything else in this file
 // touches it, same pattern as OrganizationsService's RawOrgWithGeo/toOrgRow.
-type RawNeedWithGeo = Omit<NeedRow, 'governorateIds' | 'centerIds'> & {
+type RawNeedWithGeo = Omit<NeedRow, 'governorateIds' | 'centerIds' | 'needDomains'> & {
   needGovernorates: { governorateId: string }[];
   needCenters: { centerId: string }[];
+  needDomains: { domain: string; subDomain: string }[];
 };
-const GEO_INCLUDE = { needGovernorates: true, needCenters: true } as const;
+const GEO_INCLUDE = { needGovernorates: true, needCenters: true, needDomains: true } as const;
 
 @Injectable()
 export class NeedsService {
@@ -78,11 +79,15 @@ export class NeedsService {
             createMany: { data: centerIds.map((centerId) => ({ orgId, centerId })) },
           },
         },
-      })) as NeedRow;
+      })) as unknown as NeedRow;
       return {
         ...row,
         needGovernorates: governorateIds.map((governorateId) => ({ governorateId })),
         needCenters: centerIds.map((centerId) => ({ centerId })),
+        // A freshly-created Need has no NeedDomain rows yet — classification
+        // (which populates them) runs only after this create transaction
+        // commits, see the fire-and-forget call below.
+        needDomains: [],
       };
     });
     await this.audit.record({ action: 'create', entityType: 'need', entityId: created.id, entityLabel: created.title.slice(0, 80) });
@@ -313,6 +318,7 @@ export class NeedsService {
       ...raw,
       governorateIds: raw.needGovernorates.map((g) => g.governorateId),
       centerIds: raw.needCenters.map((c) => c.centerId),
+      needDomains: raw.needDomains.map((d) => ({ domain: d.domain, subDomain: d.subDomain })),
     };
   }
 
@@ -330,6 +336,8 @@ export class NeedsService {
       status: row.status,
       domain: row.domain,
       subDomain: row.subDomain,
+      allDomainsSelected: row.allDomainsSelected,
+      needDomains: row.needDomains,
       aiSuggestedDomain: row.aiSuggestedDomain,
       aiSuggestedSubDomain: row.aiSuggestedSubDomain,
       classifiedAt: row.classifiedAt ? row.classifiedAt.toISOString() : null,

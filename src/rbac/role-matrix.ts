@@ -38,11 +38,15 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('dataCollection', { read: true, write: true, create: true }),
     perm('dataImport', { read: true, write: true, create: true }),
     perm('citizenChannel'),
-    // `write` (not `approve`) — can trigger/retry automatic AI
-    // Classification on their own Needs, but the actual decision
-    // (Approve/Override/Reject) is entirely the Reviewer/Approver's job —
-    // see role_human_reviewer below, which holds `approve` instead.
-    perm('aiReview', { read: true, write: true }),
+    // Product decision: full parity with the Reviewer/Approver on
+    // classification decisions — the Researcher can trigger/retry
+    // classification (`write`, as before) AND now also Approve/Override/
+    // Reject an AI classification themselves (`approve`), same as
+    // role_human_reviewer below. This does remove the Approver as a
+    // mandatory second reviewer for classification specifically — that's
+    // intentional here, not an oversight. The Approver still exclusively
+    // owns the separate Survey Approve & Publish step (surveyBuilder:approve).
+    perm('aiReview', { read: true, write: true, approve: true }),
     // `create` (not full write/approve) — lets them trigger
     // Recalculate/Run Priority Scoring on their own studies' Insights page,
     // same as Admin; they still can't approve a priority score elsewhere in
@@ -52,10 +56,13 @@ export const ROLE_MATRIX: RoleDef[] = [
     // Read-only Archive + able to request cross-org Sharing access (the
     // owning org's admin still has to approve — see SharingService.decide).
     perm('archiveSharingAudit', { read: true, create: true }),
-    // Read-only — curating suggested questions (add from Question Bank/add
-    // custom/remove) and publishing is entirely the Reviewer/Approver's job
-    // now (see role_human_reviewer below, which holds `write`+`approve`).
-    perm('surveyBuilder', RO),
+    // `write` (not `approve`) — product decision: the Researcher now
+    // curates questions too (select Domain/Sub-domain when AI can't
+    // classify, add from Question Bank, add/remove custom questions),
+    // alongside the Reviewer/Approver who retains the same `write` plus
+    // `approve` (see role_human_reviewer below) — publishing the finished
+    // survey stays exclusively the Approver's `approve` action.
+    perm('surveyBuilder', { read: true, write: true }),
   ] },
   { id: 'role_field_researcher', key: 'field_researcher', name: 'Field Researcher', description: 'Enters needs and documents the source and field notes.', crossEntity: false, permissions: [
     perm('entityTeam'), perm('rolesPermissions'), perm('onboardingConsent'),
@@ -75,12 +82,14 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('studySurvey', { read: true, create: true }),
     perm('dataCollection', RO),
     perm('dataImport', RO), perm('citizenChannel', RO),
-    // `approve` (not `write`) — this role's entire job is deciding on an
-    // AI classification once it's ready for review (Approve/Override/Reject
-    // — see AiDecisionsService.approveAiReview/rejectAiReview), now a single
-    // merged step with Survey approval on the Need workspace page. They
-    // never trigger classification/Retry themselves (no `write`) — that's
-    // the Researcher's own action (see role_ngo_research_officer above).
+    // `approve` (not `write`) — deciding on an AI classification
+    // (Approve/Override/Reject — see
+    // AiDecisionsService.approveAiReview/rejectAiReview) is shared with the
+    // Researcher now (full parity — see role_ngo_research_officer above,
+    // which also holds `approve`), a deliberate product decision that the
+    // Approver is no longer a mandatory second reviewer for classification
+    // specifically. This role never triggers classification/Retry itself
+    // (no `write`) — that's still the Researcher's own action.
     perm('aiReview', { read: true, approve: true }),
     perm('priorityScoring', RO),
     // Reviewer's work starts at Studies/Reviewer-SLA, not an executive
@@ -88,10 +97,12 @@ export const ROLE_MATRIX: RoleDef[] = [
     // once a study's classification/review work is done.
     perm('reportsDashboards', RO), perm('archiveSharingAudit', RO),
     // `write` — curating the suggested question list (add from Question
-    // Bank/add custom/remove/reorder) is this role's own job now, alongside
-    // `approve` (which covers Approve/Override/Reject — see
+    // Bank/add custom/remove/reorder) is shared with the Researcher now
+    // (see role_ngo_research_officer above), alongside `approve` (which
+    // covers Approve/Override/Reject — see
     // AiDecisionsService.approveAiReview/rejectAiReview — and legacy
-    // Survey approve/reject/publish via SurveysService).
+    // Survey approve/reject/publish via SurveysService), which stays
+    // exclusive to this role.
     perm('surveyBuilder', { read: true, write: true, approve: true }),
   ] },
   { id: 'role_data_analyst', key: 'data_analyst', name: 'Data Analyst', description: 'Processes data, reviews quality, and prepares reports and dashboards.', crossEntity: false, permissions: [

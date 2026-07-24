@@ -13,6 +13,14 @@ export const ReviewDecisionBody = registerSchema(
 );
 export type ReviewDecisionDto = Static<typeof ReviewDecisionBody>;
 
+// A Need can span multiple Domain/Sub-domain pairs (see NeedDomain) — every
+// override/manual-classify payload carries an array of these instead of a
+// single {domain, subDomain}, no limit on how many.
+const DomainSubDomainPair = T.Object({
+  domain: T.String({ minLength: 1 }),
+  subDomain: T.String({ minLength: 1 }),
+});
+
 // Approve here only decides the classification (Override + Approve) — it
 // no longer touches the survey's question list or publishes it. Curating
 // questions (Question Bank + AI-suggested + open-ended) and Submit for
@@ -24,8 +32,7 @@ export const AiReviewApproveBody = registerSchema(
     {
       domainOverride: T.Optional(
         T.Object({
-          domain: T.String({ minLength: 1 }),
-          subDomain: T.String({ minLength: 1 }),
+          pairs: T.Array(DomainSubDomainPair, { minItems: 1 }),
           reason: T.String({ minLength: 1, maxLength: 2000 }),
         }),
       ),
@@ -48,8 +55,7 @@ export const AiReviewOverrideDomainBody = registerSchema(
   'AiReviewOverrideDomainBody',
   T.Object(
     {
-      domain: T.String({ minLength: 1 }),
-      subDomain: T.String({ minLength: 1 }),
+      pairs: T.Array(DomainSubDomainPair, { minItems: 1 }),
     },
     { additionalProperties: false },
   ),

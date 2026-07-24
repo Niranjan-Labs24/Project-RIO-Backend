@@ -27,6 +27,15 @@ export interface NeedRow {
   status: NeedStatus;
   domain: string | null;
   subDomain: string | null;
+  // True when AI couldn't confidently classify this Need at all — every
+  // active Domain/Sub-domain is implicitly in scope rather than one
+  // specific pair (see schema.prisma's Need.allDomainsSelected comment).
+  allDomainsSelected: boolean;
+  // The real, multi-valued source of truth for this Need's classification
+  // (see NeedDomain) — domain/subDomain above always mirror needDomains[0].
+  // Empty while allDomainsSelected is true (deliberately not materialized
+  // as one row per active Domain/Sub-domain — see schema comment).
+  needDomains: { domain: string; subDomain: string }[];
   aiSuggestedDomain: string | null;
   aiSuggestedSubDomain: string | null;
   classifiedAt: Date | null;
@@ -62,6 +71,15 @@ export interface Need {
   // construction once an override happens.
   domain: string | null;
   subDomain: string | null;
+  // True when AI couldn't confidently classify this Need at all — every
+  // active Domain/Sub-domain is implicitly in scope rather than one
+  // specific pair (see schema.prisma's Need.allDomainsSelected comment).
+  allDomainsSelected: boolean;
+  // The real, multi-valued source of truth for this Need's classification
+  // (see NeedDomain) — domain/subDomain above always mirror needDomains[0].
+  // Empty while allDomainsSelected is true (deliberately not materialized
+  // as one row per active Domain/Sub-domain — see schema comment).
+  needDomains: { domain: string; subDomain: string }[];
   // AI Classification's own original suggestion — written once when
   // classification completes and never overwritten again, including on
   // Approver override, so it always reflects what the AI actually

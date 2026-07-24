@@ -65,12 +65,17 @@ export class SurveysService {
     customText: string | null;
     customAnswerType: string | null;
     customOptions: unknown;
+    domain: string | null;
+    subDomain: string | null;
+    kpi: string | null;
     question: {
       id: string;
       questionId: string;
       questionText: string;
       answerType: string;
       answerOptions: unknown;
+      domain: string;
+      subDomain: string;
       indicator: string | null;
       kpi: string | null;
     } | null;
@@ -86,6 +91,8 @@ export class SurveysService {
           typeof sq.question.answerOptions === 'string'
             ? JSON.parse(sq.question.answerOptions)
             : sq.question.answerOptions,
+        domain: sq.question.domain,
+        subDomain: sq.question.subDomain,
         indicator: sq.question.indicator,
         kpi: sq.question.kpi,
         isCustom: false,
@@ -101,8 +108,13 @@ export class SurveysService {
       answerType: sq.customAnswerType ?? 'long_text',
       answerOptions:
         typeof sq.customOptions === 'string' ? JSON.parse(sq.customOptions) : (sq.customOptions ?? null),
+      // Null for a custom question saved before this field existed — see
+      // the migration/contract comments. Not backfilled; just unset until
+      // someone edits it again through the dialog.
+      domain: sq.domain,
+      subDomain: sq.subDomain,
       indicator: null,
-      kpi: null,
+      kpi: sq.kpi,
       isCustom: true,
       order: sq.order,
       isRequired: sq.isRequired,
@@ -246,41 +258,62 @@ export class SurveysService {
   }
 
   // Public, manual "regenerate" entry point — used by the Researcher's
-  // legacy "Create Survey > Generate AI Suggestions" dialog and by the AI
-  // Review screen's Override-Domain flow (Phase 4), which passes an explicit
-  // candidate domain/subDomain that hasn't been approved yet. Falls back to
-  // whatever's already known about the Need (Approved Domain if set, else
-  // the AI's own original suggestion) when no override is given.
-  async recommendQuestions(needId: string, domainOverride?: { domain: string; subDomain: string }): Promise<any> {
-    const need = await this.tenant.runInOrgContext((tx) => tx.need.findUnique({ where: { id: needId } }));
-    if (!need) {
-      throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+  // legacy "Create Survey > Generate AI Suggestions" dialog. No override is
+  // ever passed in from the controller (it never accepted a body) — this
+  // always regenerates from whatever's already known about the Need: its
+  // real, multi-valued NeedDomain rows if any exist (an already-approved
+  // multi-domain Need), else "every active domain" if allDomainsSelected,
+  // else the single Approved Domain/AI-suggested pair, in that order.
+  async recommendQuestions(needId: string): Promise<any> {
+    const { need, needDomains } = await this.tenant.runInOrgContext(async (tx) => {
+      const need = await tx.need.findUnique({ where: { id: needId } });
+      if (!need) {
+        throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+      }
+      const needDomains = await tx.needDomain.findMany({ where: { needId } });
+      return { need, needDomains };
+    });
+    if (needDomains.length > 0) {
+      return this.generateSuggestedQuestions(
+        needId,
+        needDomains.map((d) => ({ domain: d.domain, subDomain: d.subDomain })),
+      );
     }
-    const domain = domainOverride?.domain ?? need.domain ?? need.aiSuggestedDomain;
-    const subDomain = domainOverride?.subDomain ?? need.subDomain ?? need.aiSuggestedSubDomain;
+    if (need.allDomainsSelected) {
+      return this.generateSuggestedQuestions(needId, []);
+    }
+    const domain = need.domain ?? need.aiSuggestedDomain;
+    const subDomain = need.subDomain ?? need.aiSuggestedSubDomain;
     if (!domain || !subDomain) {
       throw new BadRequestException({
         error: { code: 'NO_APPROVED_DOMAIN', message: 'This need has no Domain/Sub-Domain to generate questions from yet.' },
       });
     }
-    return this.generateSuggestedQuestions(needId, domain, subDomain);
+    return this.generateSuggestedQuestions(needId, [{ domain, subDomain }]);
   }
 
   // Core question-suggestion logic, shared by:
-  //  - AiDecisionsService.classifyAutomatically, called automatically right
-  //    after classification succeeds, before any human has reviewed it;
+  //  - AiDecisionsService.runAndPersistClassification, called automatically
+  //    right after classification succeeds, before any human has reviewed it;
+  //  - AiDecisionsService.manualClassify;
   //  - the manual recommendQuestions() entry point above;
-  //  - the AI Review screen's Override-Domain preview (Phase 4), re-run
-  //    against a candidate domain the Approver hasn't committed to yet.
+  //  - the AI Review screen's Override-Domain preview
+  //    (AiDecisionsService.overrideDomainPreview), re-run against candidate
+  //    pairs the Approver hasn't committed to yet.
+  // `pairs` is empty exactly when the Need is allDomainsSelected (AI
+  // couldn't classify it into anything specific) — in that case every
+  // active Question Bank entry is eligible, with no domain/subDomain filter
+  // at all, rather than iterating every real Domain/Sub-domain combination.
   // Deliberately NOT gated on Need-approval status (classification hasn't
   // been reviewed yet the first time this runs) and does NOT write any
   // Need-status transition of its own — only Survey/SurveyQuestion/
   // AiSuggestion rows. Idempotent: always reuses an existing DRAFT Survey
   // for this Need rather than creating a second one (Retry/regeneration
   // make hitting this path far more common than before).
-  async generateSuggestedQuestions(needId: string, domain: string, subDomain: string): Promise<any> {
+  async generateSuggestedQuestions(needId: string, pairs: Array<{ domain: string; subDomain: string }>): Promise<any> {
     const orgId = requireOrgId();
     const actorId = requireActor();
+    const domainLabel = pairs.length > 0 ? pairs.map((p) => `${p.domain} / ${p.subDomain}`).join(', ') : 'All Domains';
 
     const data = await this.tenant.runInOrgContext(async (tx) => {
       const need = await tx.need.findUnique({ where: { id: needId } });
@@ -306,7 +339,10 @@ export class SurveysService {
       }
 
       const eligibleQuestions = await tx.question.findMany({
-        where: { domain, subDomain, usedInMvp: true },
+        where:
+          pairs.length > 0
+            ? { usedInMvp: true, OR: pairs.map((p) => ({ domain: p.domain, subDomain: p.subDomain })) }
+            : { usedInMvp: true },
       });
 
       return { need, eligibleQuestions };
@@ -319,7 +355,7 @@ export class SurveysService {
     let reason = '';
     let raw: any = null;
 
-    // A domain/subDomain with zero matching Question Bank rows (e.g. a
+    // Zero matching Question Bank rows for the given pair(s) (e.g. a
     // reference-data mismatch between the configured sub-domain name and
     // the Question Bank's own domain/subDomain strings) must still produce
     // a Survey — just an empty one the Approver can fill from the Question
@@ -328,13 +364,12 @@ export class SurveysService {
     // AiDecisionsService.runAndPersistClassification's best-effort catch).
     if (eligibleQuestions.length === 0) {
       reason =
-        'No Question Bank questions match this Domain/Sub-Domain — this survey was created with no recommended questions. Add questions from the Question Bank or as custom questions.';
+        `No Question Bank questions match ${domainLabel} — this survey was created with no recommended questions. Add questions from the Question Bank or as custom questions.`;
     } else {
       const systemInstruction = `You are a survey question recommendation assistant. You must recommend only question IDs from the provided eligible questions list. Do not create new question text. Do not edit question text. Return valid JSON only.`;
 
       const prompt = `Need Statement: "${need.statement}"
-Domain: "${domain}"
-SubDomain: "${subDomain}"
+Domain(s): "${domainLabel}"
 Eligible Questions: ${JSON.stringify(
         eligibleQuestions.map((q) => ({
           questionId: q.questionId,
@@ -371,7 +406,7 @@ Eligible Questions: ${JSON.stringify(
         // Question Bank entry for this domain/subDomain rather than throwing.
         recommendedQuestionIds = eligibleQuestions.map((q) => q.questionId);
         confidence = 0;
-        reason = `AI question recommendation was unavailable (${err.message}) — showing all eligible Question Bank questions for this Domain/Sub-Domain instead.`;
+        reason = `AI question recommendation was unavailable (${err.message}) — showing all eligible Question Bank questions for ${domainLabel} instead.`;
       }
     }
 
@@ -459,6 +494,9 @@ Eligible Questions: ${JSON.stringify(
       customText?: string;
       customAnswerType?: string;
       customOptions?: string[];
+      domain?: string;
+      subDomain?: string;
+      kpi?: string;
       order: number;
       isRequired: boolean;
     }>,
@@ -499,6 +537,15 @@ Eligible Questions: ${JSON.stringify(
           customText: q.customText ?? null,
           customAnswerType: q.questionId ? null : (q.customAnswerType ?? 'long_text'),
           customOptions: q.questionId ? undefined : (q.customOptions ?? undefined),
+          // Question Bank items resolve Domain/Sub-domain/KPI via their
+          // linked Question row instead — these three stay null for them,
+          // same as customAnswerType/customOptions above. For a custom
+          // item, null here just means it predates this field (see the
+          // migration/contract comments) — not rejected, just displayed as
+          // unset until someone edits it through the dialog again.
+          domain: q.questionId ? null : (q.domain ?? null),
+          subDomain: q.questionId ? null : (q.subDomain ?? null),
+          kpi: q.questionId ? null : (q.kpi ?? null),
           order: q.order,
           isRequired: q.isRequired,
         })),
