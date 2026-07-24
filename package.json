@@ -24,6 +24,7 @@
     "import:geography": "tsx prisma/import-geography.ts",
     "grant:access": "tsx prisma/grant-access.ts",
     "seed:scored": "tsx prisma/seed-scored-study.ts",
+    "fix:report-methodology": "tsx prisma/fix-report-methodology-label.ts",
     "score:study": "tsx prisma/score-study.ts",
     "load:seed": "tsx load-test/load-seed.ts",
     "test:load": "artillery run load-test/pilot.yml",

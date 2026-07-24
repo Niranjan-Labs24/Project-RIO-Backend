@@ -52,7 +52,8 @@ function buildHeader(snapshot: ReportDataSnapshot, methodologyVersion?: string):
   return {
     studyName: snapshot.study.studyName,
     entityName: snapshot.study.organizationName ?? null,
-    methodologyVersion: methodologyVersion ?? snapshot.study.methodologyVersionId,
+    methodologyVersion:
+      methodologyVersion ?? snapshot.study.methodologyVersionLabel ?? snapshot.study.methodologyVersionId,
     reportGeneratedAt: snapshot.generatedAt,
   };
 }
