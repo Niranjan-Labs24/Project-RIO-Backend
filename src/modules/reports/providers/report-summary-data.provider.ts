@@ -17,6 +17,7 @@ import {
   type ScopeFilters,
   type SummaryScopeType,
 } from "../report-summary.service";
+import { PriorityV2Service } from "../../priority/priority-v2.service";
 import { aggregateDemographics } from "./aggregate-demographics";
 import { MockReportDataProvider } from "./mock-report-data.provider";
 import {
@@ -44,6 +45,9 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
     private readonly tenant: TenantPrismaService,
     // Cross-study aggregates (collective/sharing) and the no-data fallback.
     private readonly fallback: MockReportDataProvider,
+    // Authoritative org-wide priority rows for the collective dashboard —
+    // the same source the Priority Dashboard reads, so the two reconcile.
+    private readonly priorityV2: PriorityV2Service,
   ) {
     super();
   }
@@ -72,10 +76,14 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
     try {
       if (!query.studyId) throw new Error("studyId required");
       const surveyId = await this.resolveSurveyId(query.studyId, query.filters);
-      const { snapshot, aiOutput } = await this.realData(query.studyId, surveyId, "SECTOR", {
-        domainKey: typeof query.filters.domainKey === "string" ? query.filters.domainKey : undefined,
-      });
-      return snapshotToSectorContent({ snapshot, aiOutput, filters: query.filters });
+      const domainKey = typeof query.filters.domainKey === "string" ? query.filters.domainKey : undefined;
+      const { snapshot, aiOutput } = await this.realData(query.studyId, surveyId, "SECTOR", { domainKey });
+      // Demographics (gender/settlement) aren't domain-scoped — same
+      // study-wide (or village-scoped, if a village context was also picked)
+      // aggregate as every other scope, not silently skipped.
+      const villageId = typeof query.filters.villageId === "string" ? query.filters.villageId : "";
+      const demographics = await aggregateDemographics(this.tenant, query.studyId, villageId);
+      return snapshotToSectorContent({ snapshot, aiOutput, filters: query.filters, demographics });
     } catch (err) {
       this.logger.warn(`Sector report real data unavailable (${(err as Error).message}); using fallback.`);
       return this.fallback.getSectorReport(query);
@@ -86,10 +94,16 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
     try {
       if (!query.studyId) throw new Error("studyId required");
       const surveyId = await this.resolveSurveyId(query.studyId, query.filters);
-      const { snapshot, aiOutput } = await this.realData(query.studyId, surveyId, "REGION", {
-        regionId: typeof query.filters.regionId === "string" ? query.filters.regionId : undefined,
-      });
-      return snapshotToRegionContent({ snapshot, aiOutput, filters: query.filters });
+      const regionId = typeof query.filters.regionId === "string" ? query.filters.regionId : undefined;
+      const { snapshot, aiOutput } = await this.realData(query.studyId, surveyId, "REGION", { regionId });
+      // TODO(multi-region): this aggregates study-wide (or the optional
+      // village sub-filter), not scoped down to just this region's own
+      // villages — regionId isn't resolved to a village list anywhere in
+      // this pipeline yet. Still real, non-null data rather than the
+      // previous hard-coded "unavailable".
+      const villageId = typeof query.filters.villageId === "string" ? query.filters.villageId : "";
+      const demographics = await aggregateDemographics(this.tenant, query.studyId, villageId);
+      return snapshotToRegionContent({ snapshot, aiOutput, filters: query.filters, demographics });
     } catch (err) {
       this.logger.warn(`Region report real data unavailable (${(err as Error).message}); using fallback.`);
       return this.fallback.getRegionReport(query);
@@ -101,7 +115,10 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
       if (!query.studyId) throw new Error("studyId required");
       const surveyId = await this.resolveSurveyId(query.studyId, query.filters);
       const { snapshot, aiOutput } = await this.realData(query.studyId, surveyId, "EXECUTIVE", {});
-      return snapshotToExecutiveContent({ snapshot, aiOutput, filters: query.filters });
+      // Consolidated across every village in the study — same "no villageId
+      // filter" convention aggregateDemographics already uses.
+      const demographics = await aggregateDemographics(this.tenant, query.studyId, "");
+      return snapshotToExecutiveContent({ snapshot, aiOutput, filters: query.filters, demographics });
     } catch (err) {
       this.logger.warn(`Executive report real data unavailable (${(err as Error).message}); using fallback.`);
       return this.fallback.getExecutiveReport(query);
@@ -119,8 +136,121 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
   getSharingStatus(query: ScopedReportQuery): Promise<SharingStatusContent> {
     return this.fallback.getSharingStatus(query);
   }
-  getCollectiveDashboard(query: ScopedReportQuery): Promise<CollectiveDashboardData> {
-    return this.fallback.getCollectiveDashboard(query);
+  // Collective dashboard — REAL org-wide aggregation. Needs count + scoring
+  // distribution + top priorities come from the same VillagePriorityAssessment
+  // rows the Priority Dashboard reads (so the two reconcile); anomalies from
+  // ResponseQualityResult flags; reviewer notes from decided AiDecisions. An
+  // org with no needs yet returns real zeros (not the Sample-Village mock);
+  // only an unexpected error falls back to the mock so the screen never dies.
+  async getCollectiveDashboard(query: ScopedReportQuery): Promise<CollectiveDashboardData> {
+    try {
+      // Authoritative scores — identical to the Priority Dashboard's rows.
+      const entries = await this.priorityV2.listForOrg();
+
+      const { needCount, needById, lowConfidenceCount, duplicateCount, reviewerNotes } =
+        await this.tenant.runInOrgContext(async (tx) => {
+          const [needCount, needs, quality, decisions] = await Promise.all([
+            tx.need.count(),
+            tx.need.findMany({
+              select: { id: true, statement: true, title: true, domain: true, village: true, studyId: true },
+            }),
+            tx.responseQualityResult.findMany({ select: { confidenceFlag: true, isDuplicate: true } }),
+            tx.aiDecision.findMany({
+              where: { decidedAt: { not: null } },
+              orderBy: { decidedAt: "desc" },
+            }),
+          ]);
+
+          // Reviewer notes = decided AiDecisions that carry free-text notes.
+          const noted = decisions
+            .map((d) => ({ d, hd: d.humanDecision as { notes?: string | null } | null }))
+            .filter((x) => typeof x.hd?.notes === "string" && x.hd.notes.trim().length > 0)
+            .slice(0, 5);
+          const authorIds = Array.from(
+            new Set(noted.map((x) => x.d.decidedBy).filter((id): id is string => id !== null)),
+          );
+          const authors =
+            authorIds.length === 0
+              ? []
+              : await tx.user.findMany({ where: { id: { in: authorIds } }, select: { id: true, name: true } });
+          const authorName = new Map(authors.map((u) => [u.id, u.name]));
+
+          return {
+            needCount,
+            needById: new Map(needs.map((n) => [n.id, n])),
+            lowConfidenceCount: quality.filter((q) => q.confidenceFlag === "low").length,
+            duplicateCount: quality.filter((q) => q.isDuplicate).length,
+            reviewerNotes: noted.map((x) => ({
+              author: (x.d.decidedBy && authorName.get(x.d.decidedBy)) || "Reviewer",
+              note: (x.hd!.notes as string).trim(),
+              at: x.d.decidedAt!.toISOString(),
+            })),
+          };
+        });
+
+      // Empty org → honest zeros, not the mock fixtures.
+      if (needCount === 0) {
+        return { needCount: 0, scoringDistribution: [], topPriorities: [], trends: [], anomalies: [], reviewerNotes: [] };
+      }
+
+      const scored = entries.filter((e): e is typeof e & { score: NonNullable<typeof e.score> } => e.score !== null);
+
+      // Scoring distribution: fold the four priority levels into the three
+      // reporting bands (critical rolls up into High).
+      const bandOf = (level: string): "High" | "Medium" | "Low" =>
+        level === "critical" || level === "high" ? "High" : level === "medium" ? "Medium" : "Low";
+      const bandCounts = { High: 0, Medium: 0, Low: 0 };
+      for (const e of scored) bandCounts[bandOf(e.score.level)] += 1;
+      const scoringDistribution = [
+        { band: "High", count: bandCounts.High },
+        { band: "Medium", count: bandCounts.Medium },
+        { band: "Low", count: bandCounts.Low },
+      ];
+
+      // Top priorities: most-urgent first (critical → high → medium → low),
+      // then by weighted severity. v2's priorityScore is performance-weighted
+      // (lower = more urgent), so severity = 100 − score reads higher-is-worse
+      // in the "Severity" column, consistent with the per-scope reports.
+      const levelRank = { critical: 0, high: 1, medium: 2, low: 3 } as const;
+      const topPriorities = [...scored]
+        .map((e) => ({ e, severity: Math.round(100 - e.score.overallScore) }))
+        .sort((a, b) => levelRank[a.e.score.level] - levelRank[b.e.score.level] || b.severity - a.severity)
+        .slice(0, 5)
+        .map(({ e, severity }, i) => {
+          const need = needById.get(e.needId);
+          return {
+            rank: i + 1,
+            label: need?.statement || need?.title || "Need",
+            domain: need?.domain || "Unclassified",
+            severityScore: severity,
+            entity: need?.village?.[0] || e.studyTitle,
+          };
+        });
+
+      // Anomalies: derived from real response-quality flags.
+      const anomalies: CollectiveDashboardData["anomalies"] = [];
+      if (lowConfidenceCount > 0)
+        anomalies.push({
+          severity: "warning",
+          note: `${lowConfidenceCount} response(s) flagged Low Confidence — findings should be field-validated.`,
+        });
+      if (duplicateCount > 0)
+        anomalies.push({
+          severity: "info",
+          note: `${duplicateCount} potential duplicate response(s) detected.`,
+        });
+
+      // Trends need a prior assessment cycle to compare against; none is stored
+      // yet, so surface an honest placeholder (same as the village report).
+      const trends: CollectiveDashboardData["trends"] = [
+        { label: "Assessment trend", direction: "flat", note: "Trend pending — first assessment cycle." },
+      ];
+
+      return { needCount, scoringDistribution, topPriorities, trends, anomalies, reviewerNotes };
+    } catch (err) {
+      this.logger.warn(`Collective dashboard real data unavailable (${(err as Error).message}); using fallback.`);
+      return this.fallback.getCollectiveDashboard(query);
+    }
   }
   getDemographics(query: ScopedReportQuery): Promise<Demographics | null> {
     return this.fallback.getDemographics(query);

@@ -131,6 +131,7 @@ export class MockReportApiClient {
         trendNote: "Cycle 1 assessment: Trend Pending.",
         recommendations: ["Prioritise Water & Sanitation interventions.", "Validate low-confidence sector findings."],
       },
+      demographics: null,
       filters: query.filters,
     };
   }
@@ -153,6 +154,7 @@ export class MockReportApiClient {
         trendNote: "Cycle 1 assessment: Trend Pending.",
         recommendations: ["Focus resources on the highest-priority governorate."],
       },
+      demographics: null,
       filters: query.filters,
     };
   }
@@ -184,6 +186,7 @@ export class MockReportApiClient {
       },
       anomalies: ["Water & Sanitation flagged: Low Confidence with a critical-domain override."],
       reviewerNotes: null,
+      demographics: null,
       filters: query.filters,
     };
   }

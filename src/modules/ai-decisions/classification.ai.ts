@@ -1,6 +1,16 @@
 import { AiService } from '../ai/ai.service';
 import type { ClassificationCandidate, ClassificationResult, ClassificationSubject } from './classification.placeholder';
 
+// Thrown only when the AI genuinely ran and declined/couldn't decide (a
+// vague/gibberish statement, or a hallucinated domain name outside the given
+// list — see runClassification's own throw site) — as opposed to a real
+// technical failure (rate-limited, upstream outage, timeout, missing config,
+// zero domains configured). AiDecisionsService.runAndPersistClassification
+// distinguishes the two by type, not by message-sniffing: this one becomes
+// the "unclear — every Domain/Sub-domain selected" success path;
+// everything else lands the Need on ai_classification_failed with a Retry.
+export class AiClassificationDeclinedError extends Error {}
+
 // Real Gemini-backed classification — same input/output shape as
 // classification.placeholder.ts's classifyNeed, so AiDecisionsService can
 // try this first and fall back to the placeholder without either caller or
@@ -53,7 +63,7 @@ ${JSON.stringify(candidates)}`;
   // AiDecisionsService also does, which only ever caught a hallucinated
   // name outside the given list, never a deliberate decline.
   if (!response.classified || !response.domain || !response.subDomain) {
-    throw new Error(
+    throw new AiClassificationDeclinedError(
       response.rationale || 'AI could not confidently classify this need into any of the available domains.',
     );
   }

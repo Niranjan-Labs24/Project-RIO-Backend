@@ -6,7 +6,7 @@ import { AuditService } from '../audit/audit.service';
 import { AiService } from '../ai/ai.service';
 import { DomainsService } from '../domains/domains.service';
 import { SurveysService } from '../surveys/surveys.service';
-import { classifyNeedWithAi } from './classification.ai';
+import { AiClassificationDeclinedError, classifyNeedWithAi } from './classification.ai';
 import { redactPii, type ClassificationCandidate, type ClassificationResult } from './classification.placeholder';
 import { scoreStub } from './scoring.placeholder';
 import type {
@@ -50,21 +50,20 @@ export class AiDecisionsService {
   // never actually rest at post-creation, but a still-`draft` Need (e.g. one
   // imported before NeedsImportService set this explicitly) needs the same
   // "kick off classification" path, not a dead end. ai_classification_failed
-  // is no longer a real outcome runAndPersistClassification ever produces
-  // (see its own comment) — kept in the guard below defensively, but this
-  // branch is effectively unreachable via the automatic path now.
+  // is reachable again for a genuine technical failure (see
+  // runAndPersistClassification's catch block) — an "unclear" classification
+  // (AI ran and declined/hallucinated) is the only case that instead lands
+  // on ai_classified + allDomainsSelected.
   async classifyAutomatically(needId: string): Promise<AiDecision> {
     return this.runAndPersistClassification(needId);
   }
 
-  // Retry — was the primary way off ai_classification_failed; that status
-  // is no longer produced by runAndPersistClassification (an "unclear"
-  // outcome is now ai_classified + allDomainsSelected instead — see that
-  // method), so this guard's ai_classification_failed branch is dead for
-  // now. Left in place rather than removed: Phase 3's extended Override
-  // mechanism is the intended replacement path for "re-run AI on an
-  // allDomainsSelected Need," at which point this whole method may be
-  // retired — not decided yet. `draft` stays reachable (see
+  // Retry — the way off ai_classification_failed, now reachable again for a
+  // genuine technical failure (rate-limited, upstream outage, timeout,
+  // misconfiguration) — see runAndPersistClassification and
+  // AiClassificationDeclinedError's own comments for how that's
+  // distinguished from "AI ran and declined/hallucinated," which never
+  // produces this status. `draft` stays reachable (see
   // classifyAutomatically's comment).
   async retryClassification(needId: string): Promise<AiDecision> {
     await this.tenant.runInOrgContext(async (tx) => {
@@ -83,13 +82,12 @@ export class AiDecisionsService {
     return this.runAndPersistClassification(needId);
   }
 
-  // Researcher-driven manual classification — same status caveat as
-  // retryClassification above: ai_classification_failed is no longer a
-  // real outcome, so this method's guard is currently unreachable via the
-  // automatic path. Left as-is pending Phase 3, which extends the Override
-  // mechanism to also cover changing domains on an ai_classified (incl.
-  // allDomainsSelected) Need — this method may end up redundant with that,
-  // not decided yet. There is no AI suggestion here for an Approver to
+  // Researcher-driven manual classification — reachable while
+  // ai_classification_failed (a genuine technical failure — see
+  // retryClassification's comment) or draft. Left as-is pending a decision
+  // on whether the Override mechanism (which also covers changing domains
+  // on an ai_classified/allDomainsSelected Need) makes this redundant — not
+  // decided yet. There is no AI suggestion here for an Approver to
   // review/approve/override: the Researcher's own Domain/Sub-domain
   // selection directly becomes the authoritative classification, so this
   // writes exactly what review()'s approved/modified branch would
@@ -182,15 +180,37 @@ export class AiDecisionsService {
     try {
       result = await this.runClassification({ statement: need.statement, village: need.village });
     } catch (err) {
-      // Product decision: AI being unable to confidently classify this Need
-      // (unavailable, zero active domains, or an unclear/hallucinated
-      // response — see runClassification) is now a special kind of SUCCESS,
-      // not a dead end. Every active Domain/Sub-domain is implicitly in
-      // scope (Need.allDomainsSelected) and this flows through the exact
-      // same ai_classified -> Override/Approve/Reject pipeline as a real
-      // classification, with a synthetic AiDecision recording why, instead
-      // of the old separate ai_classification_failed status/UI branch.
-      const message = (err as Error).message || 'AI could not confidently classify this need.';
+      if (!(err instanceof AiClassificationDeclinedError)) {
+        // A genuine technical failure (rate-limited, upstream outage,
+        // timeout, missing API key, zero domains configured — anything
+        // that isn't the AI actually running and declining/hallucinating,
+        // see AiClassificationDeclinedError's own comment) is NOT the same
+        // as "AI looked at this and couldn't decide." Treating it as
+        // allDomainsSelected would misrepresent a service problem as a
+        // classification outcome, and would silently generate a survey off
+        // every active Question Bank question for a Need the AI never
+        // actually looked at. This lands the Need on the same
+        // ai_classification_failed + Retry path the UI has always had,
+        // instead — no AiDecision row (nothing to review), no question
+        // generation.
+        const message = (err as Error).message || 'AI classification failed.';
+        await this.tenant.runInOrgContext((tx) =>
+          tx.need.update({
+            where: { id: needId },
+            data: { status: 'ai_classification_failed', classificationError: message, classifiedAt: new Date() },
+          }),
+        );
+        this.logger.warn(`Classification failed for need ${needId}: ${message}`);
+        throw err;
+      }
+      // Product decision: the AI genuinely ran and declined/hallucinated
+      // (a vague/gibberish statement, or a name outside the given list) is
+      // a special kind of SUCCESS, not a dead end. Every active Domain/
+      // Sub-domain is implicitly in scope (Need.allDomainsSelected) and
+      // this flows through the exact same ai_classified ->
+      // Override/Approve/Reject pipeline as a real classification, with a
+      // synthetic AiDecision recording why.
+      const message = err.message || 'AI could not confidently classify this need.';
       result = {
         modelName: 'unclear-all-domains',
         modelVersion: '1.0.0',
@@ -262,9 +282,12 @@ export class AiDecisionsService {
   }
 
   // No fallback tier of its own — still just AI-succeeds-or-throws. The
-  // caller (runAndPersistClassification) is what decides what a throw here
-  // means (an ai_classified Need with allDomainsSelected, not a dead end —
-  // see that method's own comment); this function itself never guesses.
+  // caller (runAndPersistClassification) distinguishes what a throw here
+  // means by type: AiClassificationDeclinedError (AI ran and declined/
+  // hallucinated) becomes ai_classified + allDomainsSelected; anything else
+  // (a real technical failure) lands on ai_classification_failed instead —
+  // this function itself never guesses which is which, it just throws the
+  // right error type at each site.
   private async runClassification(
     subject: { statement: string; village: string[] },
   ): Promise<ClassificationResult> {
@@ -285,7 +308,7 @@ export class AiDecisionsService {
     const subDomain = result.suggestion.subDomains[0];
     const matchedDomain = candidates.find((c) => c.domainName === domain);
     if (!domain || !subDomain || !matchedDomain || !matchedDomain.subDomains.some((sd) => sd.name === subDomain)) {
-      throw new Error('AI returned an unclear or unrecognized domain/sub-domain classification.');
+      throw new AiClassificationDeclinedError('AI returned an unclear or unrecognized domain/sub-domain classification.');
     }
 
     return result;

@@ -52,7 +52,12 @@ export const ROLE_MATRIX: RoleDef[] = [
     // same as Admin; they still can't approve a priority score elsewhere in
     // the app (no such action exists on this role's other screens anyway).
     perm('priorityScoring', { read: true, create: true }),
-    perm('reportsDashboards', { read: true, export: true }),
+    // `create` (not `write`/`approve`) — lets the Researcher generate a
+    // report draft from their own study's data, same "kick it off, Approver
+    // reviews/releases it" pattern as priorityScoring above. They still
+    // can't confirm/approve/release/archive it themselves (no `write`/
+    // `approve` here) — that stays the Reviewer/Approver's job.
+    perm('reportsDashboards', { read: true, create: true, export: true }),
     // Read-only Archive + able to request cross-org Sharing access (the
     // owning org's admin still has to approve — see SharingService.decide).
     perm('archiveSharingAudit', { read: true, create: true }),

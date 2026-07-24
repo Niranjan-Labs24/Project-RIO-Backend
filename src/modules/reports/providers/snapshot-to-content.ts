@@ -52,7 +52,8 @@ function buildHeader(snapshot: ReportDataSnapshot, methodologyVersion?: string):
   return {
     studyName: snapshot.study.studyName,
     entityName: snapshot.study.organizationName ?? null,
-    methodologyVersion: methodologyVersion ?? snapshot.study.methodologyVersionId,
+    methodologyVersion:
+      methodologyVersion ?? snapshot.study.methodologyVersionLabel ?? snapshot.study.methodologyVersionId,
     reportGeneratedAt: snapshot.generatedAt,
   };
 }
@@ -192,6 +193,7 @@ export function snapshotToSectorContent(input: MapperInput): SectorReportContent
       domains: [],
     },
     aiSummary: aiOutputToSummaryBlock(input.aiOutput),
+    demographics: input.demographics ?? null,
     filters: input.filters ?? {},
   };
 }
@@ -212,6 +214,7 @@ export function snapshotToRegionContent(input: MapperInput): RegionReportContent
       },
     ],
     aiSummary: aiOutputToSummaryBlock(input.aiOutput),
+    demographics: input.demographics ?? null,
     filters: input.filters ?? {},
   };
 }
@@ -232,6 +235,7 @@ export function snapshotToExecutiveContent(input: MapperInput): ExecutiveReportC
     aiSummary: aiOutputToSummaryBlock(input.aiOutput),
     anomalies,
     reviewerNotes: null,
+    demographics: input.demographics ?? null,
     filters: input.filters ?? {},
   };
 }
