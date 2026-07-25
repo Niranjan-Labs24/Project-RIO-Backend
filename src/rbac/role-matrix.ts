@@ -99,8 +99,11 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('priorityScoring', RO),
     // Reviewer's work starts at Studies/Reviewer-SLA, not an executive
     // dashboard, but they still need read access to Reports/Archive/Sharing
-    // once a study's classification/review work is done.
-    perm('reportsDashboards', RO), perm('archiveSharingAudit', RO),
+    // once a study's classification/review work is done. `export` —
+    // product decision: the Approver can export a report's PDF/Excel
+    // themselves, same as the Research Officer (reportsDashboards.export
+    // above) — not just read it on-screen.
+    perm('reportsDashboards', { read: true, export: true }), perm('archiveSharingAudit', RO),
     // `write` — curating the suggested question list (add from Question
     // Bank/add custom/remove/reorder) is shared with the Researcher now
     // (see role_ngo_research_officer above), alongside `approve` (which

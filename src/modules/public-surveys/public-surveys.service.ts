@@ -1,11 +1,13 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import ExcelJS from 'exceljs';
+import QRCode from 'qrcode';
 import { Prisma } from '../../generated/prisma';
 import { ConfigService } from '../../config/config.service';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { requireOrgId, requireActor } from '../../tenancy/org-context';
 import { AuditService } from '../audit/audit.service';
+import { MailerService } from '../../mailer/mailer.service';
 import type {
   CreateSurveyLinkPayload,
   PublicSurveyLink,
@@ -25,6 +27,7 @@ export class PublicSurveysService {
     private readonly tenant: TenantPrismaService,
     private readonly config: ConfigService,
     private readonly audit: AuditService,
+    private readonly mailer: MailerService,
   ) {}
 
   async listLinks(needId: string): Promise<PublicSurveyLink[]> {
@@ -87,6 +90,42 @@ export class PublicSurveysService {
     });
     await this.audit.record({ action: 'edit', entityType: 'survey', entityId: row.id, entityLabel: row.label, changes: [{ field: 'isActive', before: true, after: false }] });
     return this.toPublicLink(row as unknown as LinkWithResponseCount);
+  }
+
+  // Sends the link (plus the same QR code shown in-app, generated fresh
+  // server-side rather than trusting a client-supplied image) as a real,
+  // formatted email — a mailto: link can't carry an attached image at all,
+  // so this is the only way to actually deliver "link + QR code" together.
+  async shareLinkByEmail(needId: string, linkId: string, email: string): Promise<void> {
+    const need = await this.findNeedOrThrow(needId);
+    const link = await this.tenant.runInOrgContext(async (tx) => {
+      const existing = await tx.publicSurveyLink.findUnique({ where: { id: linkId } });
+      if (!existing || existing.needId !== needId) {
+        throw new NotFoundException({ error: { code: 'SURVEY_LINK_NOT_FOUND', message: 'Survey link not found' } });
+      }
+      return existing;
+    });
+    const publicUrl = `${this.config.publicAppUrl}/public/survey/${link.token}`;
+    const qrCodePng = await QRCode.toBuffer(publicUrl, { type: 'png', width: 300, margin: 1 });
+
+    const sent = await this.mailer.sendSurveyLink(email, {
+      needTitle: need.title,
+      linkLabel: link.label,
+      publicUrl,
+      qrCodePng,
+    });
+    if (!sent) {
+      throw new ServiceUnavailableException({
+        error: { code: 'SURVEY_LINK_EMAIL_FAILED', message: 'Could not send the survey link by email. Please try again.' },
+      });
+    }
+    await this.audit.record({
+      action: 'share',
+      entityType: 'survey',
+      entityId: link.id,
+      entityLabel: link.label,
+      metadata: { channel: 'email' },
+    });
   }
 
   // Survey Responses — Name/Email/Submitted Date list, single-response

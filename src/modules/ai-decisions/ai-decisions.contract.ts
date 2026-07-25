@@ -33,7 +33,9 @@ export const AiReviewApproveBody = registerSchema(
       domainOverride: T.Optional(
         T.Object({
           pairs: T.Array(DomainSubDomainPair, { minItems: 1 }),
-          reason: T.String({ minLength: 1, maxLength: 2000 }),
+          // Optional, matching AiReviewOverrideDomainBody.reason below — a
+          // rationale is helpful but not something every override needs.
+          reason: T.Optional(T.String({ maxLength: 2000 })),
         }),
       ),
     },
