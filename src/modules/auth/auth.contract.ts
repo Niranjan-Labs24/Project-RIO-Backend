@@ -68,3 +68,21 @@ export const ChangePasswordBody = registerSchema(
   ),
 );
 export type ChangePasswordDto = Static<typeof ChangePasswordBody>;
+
+export const ForgotPasswordBody = registerSchema(
+  'ForgotPasswordBody',
+  T.Object({ email: T.String({ format: 'email' }) }, { additionalProperties: false }),
+);
+export type ForgotPasswordDto = Static<typeof ForgotPasswordBody>;
+
+export const ResetPasswordBody = registerSchema(
+  'ResetPasswordBody',
+  T.Object(
+    {
+      token: T.String({ minLength: 1, maxLength: 500 }),
+      password: NewPassword,
+    },
+    { additionalProperties: false },
+  ),
+);
+export type ResetPasswordDto = Static<typeof ResetPasswordBody>;

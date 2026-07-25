@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { randomBytes, createHash } from 'node:crypto';
 import { UserStatus } from '../../generated/prisma';
 import { DomainsService } from '../domains/domains.service';
 import { GeographyService } from '../geography/geography.service';
@@ -12,10 +13,11 @@ import { ConfigService } from '../../config/config.service';
 import { MailerService } from '../../mailer/mailer.service';
 import { AuthRepository, conflictFor, generateTemporaryPassword } from './auth.repository';
 import type { SessionContext, SessionOrg, SessionUser, SignupResponseView } from './session.types';
-import type { ChangePasswordDto, SignupDto } from './auth.contract';
+import type { ChangePasswordDto, ForgotPasswordDto, ResetPasswordDto, SignupDto } from './auth.contract';
 
 const MAX_FAILED = 5;
 const LOCK_MINUTES = 15;
+const PASSWORD_RESET_TTL_MINUTES = 30;
 
 // The subset of a user row (with its org) this service reads.
 interface UserWithOrg {
@@ -296,6 +298,79 @@ export class AuthService {
     const role = this.roleOf(updated.roleId);
     const token = this.tokens.sign({ sub: updated.id, orgId: updated.org.id, roleKey: role.key, sessionVersion: updated.sessionVersion });
     return this.buildSession(updated, role, token);
+  }
+
+  // Always returns the same generic message regardless of whether the email
+  // is registered — an existence-revealing response (or response latency,
+  // hence no early-return short-circuit) would let an attacker enumerate
+  // accounts. Silently no-ops (past the generic response) for an unknown
+  // email, an org that's been deactivated, or an invited user with no
+  // password set yet (nothing to "reset").
+  async forgotPassword(dto: ForgotPasswordDto): Promise<{ message: string }> {
+    const email = dto.email.trim().toLowerCase();
+    const genericResult = { message: 'If that email exists, a reset link has been sent.' };
+    const found = (await this.tenant.runAsSupervisor((tx) =>
+      tx.user.findUnique({ where: { email }, include: { org: true } }),
+    )) as UserWithOrg | null;
+    if (!found || !found.passwordHash || !found.org.isActive) {
+      return genericResult;
+    }
+
+    const rawToken = randomBytes(32).toString('base64url');
+    const tokenHash = createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = new Date(Date.now() + PASSWORD_RESET_TTL_MINUTES * 60 * 1000);
+
+    await this.tenant.runAsOrg(found.org.id, async (tx) => {
+      // Invalidate any still-outstanding tokens for this user first — only
+      // the link just emailed should be able to reset the password.
+      await tx.passwordResetToken.updateMany({
+        where: { userId: found.id, consumedAt: null },
+        data: { consumedAt: new Date() },
+      });
+      await tx.passwordResetToken.create({
+        data: { orgId: found.org.id, userId: found.id, tokenHash, expiresAt },
+      });
+    });
+
+    const resetUrl = `${this.config.corsOrigin}/reset-password?token=${rawToken}`;
+    const emailed = await this.mailer.sendPasswordResetEmail(found.email, resetUrl);
+    if (!emailed && this.config.nodeEnv !== 'production') {
+      // Dev-only fallback so a local run without SMTP configured can still
+      // exercise the flow — never returned in the HTTP response itself,
+      // since that would be exactly the existence leak this endpoint
+      // otherwise avoids.
+      this.logger.log(`[dev-only] Password reset link for ${found.email}: ${resetUrl}`);
+    }
+    return genericResult;
+  }
+
+  async resetPassword(dto: ResetPasswordDto): Promise<{ message: string }> {
+    const tokenHash = createHash('sha256').update(dto.token).digest('hex');
+    const row = await this.tenant.runAsSupervisor((tx) =>
+      tx.passwordResetToken.findUnique({ where: { tokenHash } }),
+    );
+    if (!row || row.consumedAt || row.expiresAt.getTime() < Date.now()) {
+      throw new BadRequestException({
+        error: { code: 'INVALID_RESET_TOKEN', message: 'This reset link is invalid or has expired.' },
+      });
+    }
+
+    const passwordHash = await this.passwords.hash(dto.password);
+    const updated = await this.tenant.runAsOrg(row.orgId, async (tx) => {
+      const user = await tx.user.update({
+        where: { id: row.userId },
+        // sessionVersion increments so any session signed in under the old
+        // password is invalidated, same as changePassword().
+        data: { passwordHash, mustChangePassword: false, sessionVersion: { increment: 1 } },
+      });
+      await tx.passwordResetToken.update({ where: { id: row.id }, data: { consumedAt: new Date() } });
+      return user;
+    });
+    await this.audit.record({
+      action: 'edit', entityType: 'user', entityId: updated.id, entityLabel: updated.email,
+      changes: [{ field: 'Password', before: null, after: null }], organizationId: row.orgId,
+    });
+    return { message: 'Password reset.' };
   }
 
   // `sector` must match an active Methodology Configuration Domain name

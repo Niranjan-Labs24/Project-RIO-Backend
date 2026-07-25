@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable } from "@nestjs/common";
 import { Prisma } from "../../generated/prisma";
 import { PrismaService } from "../../prisma/prisma.service";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
@@ -123,12 +123,45 @@ export class MethodologyConfigService {
     }
   }
 
+  // Single global row, meant to always exist (seeded by migration — see
+  // schema.prisma's comment on MethodologyConfig) — but nothing ever
+  // enforced that after the fact. If it's ever missing (deleted directly,
+  // or a fresh DB that skipped that migration's seed insert), this used to
+  // 404 the entire Methodology Configuration page with no way to recover
+  // short of a manual DB insert. Self-heals instead: recreate it with the
+  // same defaults the original migration seeded, so the feature never goes
+  // permanently dark just because the one row it depends on got deleted.
   private async findRowOrThrow(): Promise<MethodologyConfigRow> {
     const row = await this.prisma.methodologyConfig.findFirst();
-    if (!row) {
-      throw new NotFoundException({ error: { code: "METHODOLOGY_CONFIG_NOT_FOUND", message: "Methodology configuration not found" } });
-    }
-    return row as unknown as MethodologyConfigRow;
+    if (row) return row as unknown as MethodologyConfigRow;
+
+    const created = await this.prisma.methodologyConfig.create({
+      data: {
+        version: "v1.0 - Approved implementation baseline",
+        priorityThresholds: {
+          criticalSeverity: 80,
+          highSeverity: 70,
+          mediumSeverity: 40,
+          equityHighSeverity: 50,
+        } satisfies PriorityThresholds as unknown as Prisma.InputJsonValue,
+        priorityFactorWeights: [
+          { key: "severity", label: "Severity", weight: 0.2 },
+          { key: "affected_population", label: "Affected population", weight: 0.15 },
+          { key: "service_availability_gap", label: "Service availability gap", weight: 0.12 },
+          { key: "urgency", label: "Urgency", weight: 0.12 },
+          { key: "data_confidence", label: "Data confidence", weight: 0.1 },
+          { key: "frequency", label: "Frequency of similar needs", weight: 0.1 },
+          { key: "geographic_coverage", label: "Geographic coverage", weight: 0.08 },
+          { key: "vulnerable_groups", label: "Vulnerable groups (equity)", weight: 0.08 },
+          { key: "strategic_alignment", label: "Strategic alignment", weight: 0.05 },
+        ] satisfies PriorityFactorWeight[] as unknown as Prisma.InputJsonValue,
+        confidenceFlagSettings: {
+          dontKnowRatioThreshold: 0.2,
+          minRespondentsForStandardConfidence: 10,
+        } satisfies ConfidenceFlagSettings as unknown as Prisma.InputJsonValue,
+      },
+    });
+    return created as unknown as MethodologyConfigRow;
   }
 
   // `users` is RLS-scoped per org; this global reference table has no

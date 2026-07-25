@@ -262,6 +262,48 @@ export class SurveysService {
     return this.getSurveyByNeedId(needId);
   }
 
+  // Custom (open-ended) questions a Research Officer previously typed in
+  // from scratch on some OTHER survey, for this exact Domain/Sub-domain —
+  // lets a later survey targeting the same Domain/Sub-domain reuse one
+  // instead of recreating it. Deliberately org-wide (not scoped to one
+  // Need/Survey) and deliberately filtered to the current Need's own
+  // Domain/Sub-domain — showing every custom question ever created,
+  // unfiltered, would defeat the point (see the product discussion this
+  // was requested from). Deduped by question text (case/whitespace-
+  // insensitive) since the same wording can easily have been reused across
+  // several surveys already; the most recently created copy wins the dedupe
+  // so answerType/options reflect its latest form.
+  async listReusableCustomQuestions(domain: string, subDomain: string) {
+    const rows = await this.tenant.runInOrgContext((tx) =>
+      tx.surveyQuestion.findMany({
+        where: { customText: { not: null }, domain, subDomain },
+        orderBy: { id: 'desc' },
+        include: { survey: { select: { title: true } } },
+      }),
+    );
+
+    const seen = new Set<string>();
+    const deduped: typeof rows = [];
+    for (const row of rows) {
+      const key = (row.customText ?? '').trim().toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(row);
+    }
+
+    return deduped.map((row) => ({
+      id: row.id,
+      questionText: row.customText ?? '',
+      answerType: row.customAnswerType ?? 'long_text',
+      answerOptions:
+        typeof row.customOptions === 'string' ? JSON.parse(row.customOptions) : (row.customOptions ?? null),
+      domain: row.domain,
+      subDomain: row.subDomain,
+      kpi: row.kpi,
+      sourceSurveyTitle: row.survey.title,
+    }));
+  }
+
   // Public, manual "regenerate" entry point — used by the Researcher's
   // legacy "Create Survey > Generate AI Suggestions" dialog. No override is
   // ever passed in from the controller (it never accepted a body) — this

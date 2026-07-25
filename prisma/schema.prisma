@@ -124,6 +124,7 @@ model Organisation {
   aiDecisions            AiDecision[]
   surveyLinks            PublicSurveyLink[]
   otpChallenges          CitizenOtpChallenge[]
+  passwordResetTokens    PasswordResetToken[]
   surveyResponses        SurveyResponse[]
   responseQualityResults ResponseQualityResult[]
   aiSummaries AiSummary[]
@@ -171,9 +172,34 @@ model User {
   org              Organisation        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   role             Role                @relation(fields: [roleId], references: [id])
   consents         ConsentAcceptance[]
+  passwordResetTokens PasswordResetToken[]
   @@index([orgId])
   @@index([roleId])
   @@map("users")
+}
+
+// Forgot-password flow. The raw token is emailed to the user and never
+// stored — only its SHA-256 digest (`tokenHash`, a fast deterministic hash
+// suitable for exact-match lookup, unlike the salted/slow bcrypt hash used
+// for CitizenOtpChallenge's short guessable codes: a 32-byte random token
+// has enough entropy that brute-forcing the hash isn't a realistic threat).
+model PasswordResetToken {
+  id         String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId      String    @map("org_id") @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash") @db.VarChar(64)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
+  // Set once used to actually reset the password — a consumed token can
+  // never be replayed, closing off resubmission via a still-known link.
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org  Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([userId])
+  @@map("password_reset_tokens")
 }
 
 model ConsentAcceptance {
@@ -807,7 +833,17 @@ model CitizenOtpChallenge {
   id           String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
   orgId        String    @map("org_id") @db.Uuid
   surveyLinkId String    @map("survey_link_id") @db.Uuid
+  // Email — kept as `contact` (not renamed) since every downstream reader
+  // (reports, scoring, respondent dedup — see SurveyResponse.contact's own
+  // comment) already treats this column as the respondent's email identity.
   contact      String    @db.VarChar(320)
+  // Mobile number — new, alongside `contact`. Both are required by the
+  // request contract (RequestOtpBody) for every new challenge going
+  // forward; nullable here only so existing pre-this-feature rows don't
+  // need a backfill. The same OTP code is sent to both (see
+  // CitizenService.requestOtp) and verifies regardless of which one the
+  // respondent actually checked.
+  mobile       String?   @db.VarChar(32)
   codeHash     String    @map("code_hash") @db.VarChar(255)
   attempts     Int       @default(0)
   expiresAt    DateTime  @map("expires_at") @db.Timestamptz(6)
@@ -854,7 +890,19 @@ model SurveyResponse {
   studyId      String   @map("study_id") @db.Uuid
   surveyLinkId String   @map("survey_link_id") @db.Uuid
   contactName  String?  @map("contact_name") @db.VarChar(200)
+  // Email — see CitizenOtpChallenge.contact's comment; every downstream
+  // reader (reports, scoring, respondent dedup) already treats this as the
+  // respondent's email identity, so it keeps its existing name.
   contact      String   @db.VarChar(320)
+  // Mobile number — new, alongside `contact`. Both are copied from the
+  // CitizenOtpChallenge that verified this submission (see
+  // CitizenService.submitResponse); either one matching a prior response
+  // for this Need counts as a duplicate (see the two unique constraints
+  // below), since either channel uniquely identifies a person. Nullable
+  // only so pre-this-feature rows don't need a backfill — Postgres treats
+  // multiple NULLs as distinct under a unique index, so this doesn't weaken
+  // the dedup guarantee for any row that does have one.
+  mobile       String?  @db.VarChar(32)
   gender       Gender?
   settlementType SettlementType? @map("settlement_type")
   // Geography snapshot — copied from the Need (its own multi-select
@@ -882,7 +930,10 @@ model SurveyResponse {
   // Scoped to needId, not studyId — each Need runs its own independent
   // survey, so the same contact may legitimately respond once per Need
   // under the same Study (see CitizenService.checkDuplicate/submitResponse).
+  // Two separate constraints (not one composite) so a match on EITHER
+  // channel alone is enough to block a second submission.
   @@unique([needId, contact])
+  @@unique([needId, mobile])
   @@index([orgId])
   @@index([needId])
   @@index([studyId])

@@ -7,7 +7,10 @@ import { RateLimit } from '../../common/guards/rate-limit.guard';
 import { CSRF_COOKIE_NAME, csrfCookieOptions, SESSION_COOKIE_NAME, sessionCookieOptions } from '../../auth/session-cookie';
 import { CsrfExempt } from '../../common/guards/csrf.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
-import { ChangePasswordBody, SignupBody, type ChangePasswordDto, type SignupDto } from './auth.contract';
+import {
+  ChangePasswordBody, ForgotPasswordBody, ResetPasswordBody, SignupBody,
+  type ChangePasswordDto, type ForgotPasswordDto, type ResetPasswordDto, type SignupDto,
+} from './auth.contract';
 import { AuthService } from './auth.service';
 import type { SessionContext, SignupResponseView } from './session.types';
 
@@ -58,6 +61,32 @@ export class AuthController {
     res.cookie(SESSION_COOKIE_NAME, result.token, sessionCookieOptions(this.config.nodeEnv === 'production'));
     res.cookie(CSRF_COOKIE_NAME, randomBytes(18).toString('base64url'), csrfCookieOptions(this.config.nodeEnv === 'production'));
     return result;
+  }
+
+  // Open routes: unauthenticated by definition (the whole point is to
+  // recover access without a session). CSRF-exempt for the same reason as
+  // login/signup — no session cookie exists yet for either of these calls
+  // to double-submit against.
+  @Post('forgot-password')
+  @Public()
+  @RateLimit(3, 600)
+  @HttpCode(200)
+  @CsrfExempt()
+  forgotPassword(
+    @Body(new TypeBoxValidationPipe(ForgotPasswordBody)) body: ForgotPasswordDto,
+  ): Promise<{ message: string }> {
+    return this.auth.forgotPassword(body);
+  }
+
+  @Post('reset-password')
+  @Public()
+  @RateLimit(10, 600)
+  @HttpCode(200)
+  @CsrfExempt()
+  resetPassword(
+    @Body(new TypeBoxValidationPipe(ResetPasswordBody)) body: ResetPasswordDto,
+  ): Promise<{ message: string }> {
+    return this.auth.resetPassword(body);
   }
 
   @Get('me')
