@@ -9,13 +9,13 @@ DATABASE_URL="$(grep -E '^DATABASE_URL=' .env | head -1 | cut -d= -f2-)"
 export DATABASE_URL
 
 echo "1/12 Installing dependencies..."
-pnpm install
+npm install
 
 echo "2/12 Resetting database..."
-pnpm exec prisma migrate reset --force
+npx prisma migrate reset --force
 
 echo "3/12 Regenerating Prisma client..."
-pnpm run prisma:generate
+npm run prisma:generate
 
 # feat/report-types (Karthika's branch, merged here): new tables
 # (ai_priority_summaries) and RPT14/village-report support landed via real
@@ -26,28 +26,22 @@ pnpm run prisma:generate
 # app hits "permission denied for table ai_priority_summaries" at runtime
 # (same class of bug as the study_governorates grant gap from earlier).
 echo "4/12 Applying grants + RLS policy for tables outside migrations..."
-pnpm run grant:access
+npx tsx prisma/grant-access.ts
 
 echo "5/12 Seeding base data..."
-pnpm run prisma:seed
+npm run prisma:seed
 
-# import:scoring-lookups looks up each CSV row's Question by questionId
-# *before* it creates the MethodologyVersion row, so questions must be
-# imported first — otherwise every lookup row is skipped (Question not
-# found) and the MethodologyVersion (nested inside that same per-row loop)
-# never gets created either, which then breaks import:domain-priority-config
-# and seed:scored, which both require a PUBLISHED MethodologyVersion.
 echo "6/12 Importing extended Question Bank..."
-pnpm run import:questions
+npx tsx prisma/import-questions.ts
 
 echo "7/12 Deactivating legacy duplicate questions..."
 psql "$DATABASE_URL" -c "UPDATE \"questions\" SET \"used_in_mvp\" = false WHERE \"question_id\" !~ '^(CU|ED|EN|GV|H|IN|LV|SD|WS)[0-9]+\$' AND (\"domain\", \"sub_domain\") IN (SELECT \"domain\", \"sub_domain\" FROM \"questions\" WHERE \"question_id\" ~ '^(CU|ED|EN|GV|H|IN|LV|SD|WS)[0-9]+\$');"
 
 echo "8/12 Importing scoring lookups..."
-pnpm run import:scoring-lookups
+npx tsx prisma/import-scoring-lookups.ts
 
 echo "9/12 Importing domain priority weights..."
-pnpm run import:domain-priority-config
+npx tsx prisma/import-domain-priority-config.ts
 
 # Region -> Governorate -> Center reference data (KSA_Geographic_Reference_EN.xlsx).
 # `prisma migrate reset` wipes this table set along with everything else, and
@@ -55,7 +49,7 @@ pnpm run import:domain-priority-config
 # creation, and Need creation all have empty Governorate/Center pickers on a
 # fresh setup (confirmed missing during this session's UAT pass).
 echo "10/12 Importing geography reference data (Region/Governorate/Center)..."
-pnpm run import:geography
+npx tsx prisma/import-geography.ts
 
 # feat/report-types: seeds ONE fully-scored study (Study -> Need -> Survey ->
 # responses -> ScoreRollups -> VillagePriorityAssessment -> Evidence) so the
@@ -64,8 +58,7 @@ pnpm run import:geography
 # exercise report generation end to end (and therefore Report Sharing) after
 # this merge. Idempotent — safe to re-run, skips if the study already exists.
 echo "11/12 Seeding one fully-scored study for real report generation..."
-pnpm run seed:scored
+npm run seed:scored
 
 echo "12/12 Done. Starting app..."
-pnpm run dev
- 
+npm run dev

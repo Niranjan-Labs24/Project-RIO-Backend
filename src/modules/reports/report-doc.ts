@@ -34,10 +34,23 @@ function titleCase(key: string): string {
     .replace(/^./, (c) => c.toUpperCase());
 }
 
-function scalar(value: unknown): string {
+// Any field whose key looks like a 0-100 score/index — these round to a
+// whole number everywhere in the app (dashboards, gauges, ...), so a report
+// showing "58.4135" or "76.28999999999999" for the exact same figure reads
+// as a bug, not precision.
+const WHOLE_NUMBER_KEY = /score|index/i;
+
+function scalar(value: unknown, key?: string): string {
   if (value === null || value === undefined) return "—";
   if (typeof value === "object") return JSON.stringify(value);
   if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "number") {
+    if (key && WHOLE_NUMBER_KEY.test(key)) return String(Math.round(value));
+    // Floating-point rollups (e.g. 76.28999999999999) are real math, not a
+    // display value — cap to 2 decimals so every other number stays legible
+    // without losing meaningful precision (weights, rates, ...).
+    return Number.isInteger(value) ? String(value) : String(Math.round(value * 100) / 100);
+  }
   // Fold ISO datetimes to a compact, human-readable stamp (e.g. 22 Jul 2026,
   // 10:30) so reports never show raw "2026-07-22T10:30:00.000Z".
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value)) {
@@ -60,7 +73,7 @@ function isObjectArray(v: unknown): v is Array<Record<string, unknown>> {
 function kvRows(obj: Record<string, unknown>): Array<{ label: string; value: string }> {
   const rows: Array<{ label: string; value: string }> = [];
   for (const [k, v] of Object.entries(obj)) {
-    if (!isPlainObject(v) && !Array.isArray(v)) rows.push({ label: titleCase(k), value: scalar(v) });
+    if (!isPlainObject(v) && !Array.isArray(v)) rows.push({ label: titleCase(k), value: scalar(v, k) });
   }
   return rows;
 }
@@ -71,7 +84,7 @@ function tableSection(heading: string, arr: Array<Record<string, unknown>>): Doc
     kind: "table",
     heading,
     columns: keys.map(titleCase),
-    rows: arr.map((o) => keys.map((k) => scalar(o[k]))),
+    rows: arr.map((o) => keys.map((k) => scalar(o[k], k))),
   };
 }
 
@@ -88,7 +101,7 @@ function pickTableSection(heading: string, arr: Array<Record<string, unknown>>, 
     kind: "table",
     heading,
     columns: present.map((c) => c.label),
-    rows: arr.map((o) => present.map((c) => scalar(o[c.key]))),
+    rows: arr.map((o) => present.map((c) => scalar(o[c.key], c.key))),
   };
 }
 
@@ -123,7 +136,9 @@ function barsSection(
     max,
     bars: arr
       .filter((o) => typeof o[valueKey] === "number")
-      .map((o) => ({ label: scalar(o[labelKey]), value: o[valueKey] as number })),
+      // Bar charts print `value` as raw text next to the track (see
+      // renderBars) — round it same as every other score, it bypasses scalar().
+      .map((o) => ({ label: scalar(o[labelKey]), value: Math.round(o[valueKey] as number) })),
   };
 }
 
@@ -198,7 +213,10 @@ export function buildReportDoc(
     if (sev) {
       const idx = Number(sev.overallVillageNeedsIndex);
       if (!Number.isNaN(idx)) {
-        gauge = { kind: "gauge", heading: "Needs Index", value: idx, max: 100, sub: typeof sev.label === "string" ? sev.label : undefined };
+        // The gauge's `value` is a raw number field (not routed through
+        // scalar()), so it needs its own rounding — otherwise the dial shows
+        // "46.19..." instead of a whole number like every other score in the app.
+        gauge = { kind: "gauge", heading: "Needs Index", value: Math.round(idx), max: 100, sub: typeof sev.label === "string" ? sev.label : undefined };
       }
     }
     if (domains) {

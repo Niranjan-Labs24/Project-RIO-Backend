@@ -76,10 +76,14 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
     try {
       if (!query.studyId) throw new Error("studyId required");
       const surveyId = await this.resolveSurveyId(query.studyId, query.filters);
-      const { snapshot, aiOutput } = await this.realData(query.studyId, surveyId, "SECTOR", {
-        domainKey: typeof query.filters.domainKey === "string" ? query.filters.domainKey : undefined,
-      });
-      return snapshotToSectorContent({ snapshot, aiOutput, filters: query.filters });
+      const domainKey = typeof query.filters.domainKey === "string" ? query.filters.domainKey : undefined;
+      const { snapshot, aiOutput } = await this.realData(query.studyId, surveyId, "SECTOR", { domainKey });
+      // Demographics (gender/settlement) aren't domain-scoped — same
+      // study-wide (or village-scoped, if a village context was also picked)
+      // aggregate as every other scope, not silently skipped.
+      const villageId = typeof query.filters.villageId === "string" ? query.filters.villageId : "";
+      const demographics = await aggregateDemographics(this.tenant, query.studyId, villageId);
+      return snapshotToSectorContent({ snapshot, aiOutput, filters: query.filters, demographics });
     } catch (err) {
       this.logger.warn(`Sector report real data unavailable (${(err as Error).message}); using fallback.`);
       return this.fallback.getSectorReport(query);
@@ -90,10 +94,16 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
     try {
       if (!query.studyId) throw new Error("studyId required");
       const surveyId = await this.resolveSurveyId(query.studyId, query.filters);
-      const { snapshot, aiOutput } = await this.realData(query.studyId, surveyId, "REGION", {
-        regionId: typeof query.filters.regionId === "string" ? query.filters.regionId : undefined,
-      });
-      return snapshotToRegionContent({ snapshot, aiOutput, filters: query.filters });
+      const regionId = typeof query.filters.regionId === "string" ? query.filters.regionId : undefined;
+      const { snapshot, aiOutput } = await this.realData(query.studyId, surveyId, "REGION", { regionId });
+      // TODO(multi-region): this aggregates study-wide (or the optional
+      // village sub-filter), not scoped down to just this region's own
+      // villages — regionId isn't resolved to a village list anywhere in
+      // this pipeline yet. Still real, non-null data rather than the
+      // previous hard-coded "unavailable".
+      const villageId = typeof query.filters.villageId === "string" ? query.filters.villageId : "";
+      const demographics = await aggregateDemographics(this.tenant, query.studyId, villageId);
+      return snapshotToRegionContent({ snapshot, aiOutput, filters: query.filters, demographics });
     } catch (err) {
       this.logger.warn(`Region report real data unavailable (${(err as Error).message}); using fallback.`);
       return this.fallback.getRegionReport(query);
@@ -105,7 +115,10 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
       if (!query.studyId) throw new Error("studyId required");
       const surveyId = await this.resolveSurveyId(query.studyId, query.filters);
       const { snapshot, aiOutput } = await this.realData(query.studyId, surveyId, "EXECUTIVE", {});
-      return snapshotToExecutiveContent({ snapshot, aiOutput, filters: query.filters });
+      // Consolidated across every village in the study — same "no villageId
+      // filter" convention aggregateDemographics already uses.
+      const demographics = await aggregateDemographics(this.tenant, query.studyId, "");
+      return snapshotToExecutiveContent({ snapshot, aiOutput, filters: query.filters, demographics });
     } catch (err) {
       this.logger.warn(`Executive report real data unavailable (${(err as Error).message}); using fallback.`);
       return this.fallback.getExecutiveReport(query);

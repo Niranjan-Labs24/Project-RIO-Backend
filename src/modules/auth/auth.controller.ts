@@ -69,8 +69,14 @@ export class AuthController {
   @HttpCode(204)
   async logout(@Res({ passthrough: true }) res: Response): Promise<void> {
     await this.auth.logout();
-    res.clearCookie(SESSION_COOKIE_NAME, { path: '/' });
-    res.clearCookie(CSRF_COOKIE_NAME, { path: '/' });
+    // clearCookie must be called with the same attributes the cookie was
+    // set with (sameSite/secure) — passing only `path` still works in most
+    // browsers, but some browsers only expire the exact attribute
+    // combination they stored, leaving the old cookie value visible in
+    // devtools even though the session itself is already dead server-side.
+    const isProd = this.config.nodeEnv === 'production';
+    res.clearCookie(SESSION_COOKIE_NAME, { ...sessionCookieOptions(isProd), maxAge: undefined });
+    res.clearCookie(CSRF_COOKIE_NAME, { ...csrfCookieOptions(isProd), maxAge: undefined });
   }
 
   @Post('consent')

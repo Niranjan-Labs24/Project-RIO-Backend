@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { roleByKey } from '../../rbac/role-matrix';
@@ -8,6 +8,11 @@ import { MethodologyConfigService } from '../methodology-config/methodology-conf
 
 @Injectable()
 export class SurveysService {
+  // TEMP diagnostic logging (RIO-debug: research-officer override ->
+  // Question Bank tab not showing new sub-domain's questions) — remove once
+  // root cause is confirmed.
+  private readonly logger = new Logger(SurveysService.name);
+
   constructor(
     private readonly tenant: TenantPrismaService,
     private readonly audit: AuditService,
@@ -65,12 +70,17 @@ export class SurveysService {
     customText: string | null;
     customAnswerType: string | null;
     customOptions: unknown;
+    domain: string | null;
+    subDomain: string | null;
+    kpi: string | null;
     question: {
       id: string;
       questionId: string;
       questionText: string;
       answerType: string;
       answerOptions: unknown;
+      domain: string;
+      subDomain: string;
       indicator: string | null;
       kpi: string | null;
     } | null;
@@ -86,6 +96,8 @@ export class SurveysService {
           typeof sq.question.answerOptions === 'string'
             ? JSON.parse(sq.question.answerOptions)
             : sq.question.answerOptions,
+        domain: sq.question.domain,
+        subDomain: sq.question.subDomain,
         indicator: sq.question.indicator,
         kpi: sq.question.kpi,
         isCustom: false,
@@ -101,8 +113,13 @@ export class SurveysService {
       answerType: sq.customAnswerType ?? 'long_text',
       answerOptions:
         typeof sq.customOptions === 'string' ? JSON.parse(sq.customOptions) : (sq.customOptions ?? null),
+      // Null for a custom question saved before this field existed — see
+      // the migration/contract comments. Not backfilled; just unset until
+      // someone edits it again through the dialog.
+      domain: sq.domain,
+      subDomain: sq.subDomain,
       indicator: null,
-      kpi: null,
+      kpi: sq.kpi,
       isCustom: true,
       order: sq.order,
       isRequired: sq.isRequired,
@@ -246,41 +263,67 @@ export class SurveysService {
   }
 
   // Public, manual "regenerate" entry point — used by the Researcher's
-  // legacy "Create Survey > Generate AI Suggestions" dialog and by the AI
-  // Review screen's Override-Domain flow (Phase 4), which passes an explicit
-  // candidate domain/subDomain that hasn't been approved yet. Falls back to
-  // whatever's already known about the Need (Approved Domain if set, else
-  // the AI's own original suggestion) when no override is given.
-  async recommendQuestions(needId: string, domainOverride?: { domain: string; subDomain: string }): Promise<any> {
-    const need = await this.tenant.runInOrgContext((tx) => tx.need.findUnique({ where: { id: needId } }));
-    if (!need) {
-      throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+  // legacy "Create Survey > Generate AI Suggestions" dialog. No override is
+  // ever passed in from the controller (it never accepted a body) — this
+  // always regenerates from whatever's already known about the Need: its
+  // real, multi-valued NeedDomain rows if any exist (an already-approved
+  // multi-domain Need), else "every active domain" if allDomainsSelected,
+  // else the single Approved Domain/AI-suggested pair, in that order.
+  async recommendQuestions(needId: string): Promise<any> {
+    const { need, needDomains } = await this.tenant.runInOrgContext(async (tx) => {
+      const need = await tx.need.findUnique({ where: { id: needId } });
+      if (!need) {
+        throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+      }
+      const needDomains = await tx.needDomain.findMany({ where: { needId } });
+      return { need, needDomains };
+    });
+    if (needDomains.length > 0) {
+      return this.generateSuggestedQuestions(
+        needId,
+        needDomains.map((d) => ({ domain: d.domain, subDomain: d.subDomain })),
+      );
     }
-    const domain = domainOverride?.domain ?? need.domain ?? need.aiSuggestedDomain;
-    const subDomain = domainOverride?.subDomain ?? need.subDomain ?? need.aiSuggestedSubDomain;
+    if (need.allDomainsSelected) {
+      return this.generateSuggestedQuestions(needId, []);
+    }
+    const domain = need.domain ?? need.aiSuggestedDomain;
+    const subDomain = need.subDomain ?? need.aiSuggestedSubDomain;
     if (!domain || !subDomain) {
       throw new BadRequestException({
         error: { code: 'NO_APPROVED_DOMAIN', message: 'This need has no Domain/Sub-Domain to generate questions from yet.' },
       });
     }
-    return this.generateSuggestedQuestions(needId, domain, subDomain);
+    return this.generateSuggestedQuestions(needId, [{ domain, subDomain }]);
   }
 
   // Core question-suggestion logic, shared by:
-  //  - AiDecisionsService.classifyAutomatically, called automatically right
-  //    after classification succeeds, before any human has reviewed it;
+  //  - AiDecisionsService.runAndPersistClassification, called automatically
+  //    right after classification succeeds, before any human has reviewed it;
+  //  - AiDecisionsService.manualClassify;
   //  - the manual recommendQuestions() entry point above;
-  //  - the AI Review screen's Override-Domain preview (Phase 4), re-run
-  //    against a candidate domain the Approver hasn't committed to yet.
+  //  - the AI Review screen's Override-Domain preview
+  //    (AiDecisionsService.overrideDomainPreview), re-run against candidate
+  //    pairs the Approver hasn't committed to yet.
+  // `pairs` is empty exactly when the Need is allDomainsSelected (AI
+  // couldn't classify it into anything specific) — in that case every
+  // active Question Bank entry is eligible, with no domain/subDomain filter
+  // at all, rather than iterating every real Domain/Sub-domain combination.
   // Deliberately NOT gated on Need-approval status (classification hasn't
   // been reviewed yet the first time this runs) and does NOT write any
   // Need-status transition of its own — only Survey/SurveyQuestion/
   // AiSuggestion rows. Idempotent: always reuses an existing DRAFT Survey
   // for this Need rather than creating a second one (Retry/regeneration
   // make hitting this path far more common than before).
-  async generateSuggestedQuestions(needId: string, domain: string, subDomain: string): Promise<any> {
+  async generateSuggestedQuestions(
+    needId: string,
+    pairs: Array<{ domain: string; subDomain: string }>,
+    options: { allowWhileSubmitted?: boolean } = {},
+  ): Promise<any> {
     const orgId = requireOrgId();
     const actorId = requireActor();
+    const domainLabel = pairs.length > 0 ? pairs.map((p) => `${p.domain} / ${p.subDomain}`).join(', ') : 'All Domains';
+    this.logger.debug(`[QB-DEBUG] generateSuggestedQuestions(needId=${needId}) called by actor=${actorId} with pairs=${JSON.stringify(pairs)}`);
 
     const data = await this.tenant.runInOrgContext(async (tx) => {
       const need = await tx.need.findUnique({ where: { id: needId } });
@@ -290,36 +333,56 @@ export class SurveysService {
       // Once published, a survey may already have live citizen responses —
       // re-running AI recommendation would otherwise silently delete and
       // replace its Question Bank items out from under them (see the
-      // deleteMany/createMany below). SUBMITTED is blocked too — the
-      // Approver reviews exactly what was submitted, not a moving target.
+      // deleteMany/createMany below). Blocked for everyone, no exceptions.
+      //
+      // SUBMITTED is a moving-target concern only for the Researcher — they
+      // shouldn't change the domain a Survey is being reviewed against out
+      // from under the Approver. The Approver themselves is exactly who's
+      // doing that review right now, so `allowWhileSubmitted` (set by
+      // AiDecisionsService.overrideDomainPreview based on the caller's role)
+      // lets them override while it's SUBMITTED — see
+      // ai-classification-section.tsx's overrideDisabledForResearcher for
+      // the matching frontend-side gate.
       const existingSurvey = await tx.survey.findFirst({ where: { needId } });
-      if (existingSurvey?.status === 'PUBLISHED' || existingSurvey?.status === 'SUBMITTED') {
+      if (existingSurvey?.status === 'PUBLISHED') {
         throw new ConflictException({
           error: {
-            code: existingSurvey.status === 'PUBLISHED' ? 'SURVEY_ALREADY_PUBLISHED' : 'SURVEY_NOT_EDITABLE',
-            message:
-              existingSurvey.status === 'PUBLISHED'
-                ? 'This survey is already published and its questions can no longer be regenerated.'
-                : 'This survey is awaiting approval and its questions cannot be regenerated until it is reviewed.',
+            code: 'SURVEY_ALREADY_PUBLISHED',
+            message: 'This survey is already published and its questions can no longer be regenerated.',
+          },
+        });
+      }
+      if (existingSurvey?.status === 'SUBMITTED' && !options.allowWhileSubmitted) {
+        throw new ConflictException({
+          error: {
+            code: 'SURVEY_NOT_EDITABLE',
+            message: 'This survey is awaiting approval and its questions cannot be regenerated until it is reviewed.',
           },
         });
       }
 
       const eligibleQuestions = await tx.question.findMany({
-        where: { domain, subDomain, usedInMvp: true },
+        where:
+          pairs.length > 0
+            ? { usedInMvp: true, OR: pairs.map((p) => ({ domain: p.domain, subDomain: p.subDomain })) }
+            : { usedInMvp: true },
       });
 
       return { need, eligibleQuestions };
     });
 
     const { need, eligibleQuestions } = data;
+    this.logger.debug(
+      `[QB-DEBUG] needId=${needId} eligibleQuestions.length=${eligibleQuestions.length} for pairs=${JSON.stringify(pairs)}` +
+        (eligibleQuestions.length === 0 ? ' — NO Question Bank rows match these pairs (this is likely the bug: recommendedPairs on the Survey Builder page will be empty, so questionBankPairsFor falls back to the stale Need.needDomains).' : ''),
+    );
 
     let recommendedQuestionIds: string[] = [];
     let confidence = 0;
     let reason = '';
     let raw: any = null;
 
-    // A domain/subDomain with zero matching Question Bank rows (e.g. a
+    // Zero matching Question Bank rows for the given pair(s) (e.g. a
     // reference-data mismatch between the configured sub-domain name and
     // the Question Bank's own domain/subDomain strings) must still produce
     // a Survey — just an empty one the Approver can fill from the Question
@@ -328,13 +391,12 @@ export class SurveysService {
     // AiDecisionsService.runAndPersistClassification's best-effort catch).
     if (eligibleQuestions.length === 0) {
       reason =
-        'No Question Bank questions match this Domain/Sub-Domain — this survey was created with no recommended questions. Add questions from the Question Bank or as custom questions.';
+        `No Question Bank questions match ${domainLabel} — this survey was created with no recommended questions. Add questions from the Question Bank or as custom questions.`;
     } else {
       const systemInstruction = `You are a survey question recommendation assistant. You must recommend only question IDs from the provided eligible questions list. Do not create new question text. Do not edit question text. Return valid JSON only.`;
 
       const prompt = `Need Statement: "${need.statement}"
-Domain: "${domain}"
-SubDomain: "${subDomain}"
+Domain(s): "${domainLabel}"
 Eligible Questions: ${JSON.stringify(
         eligibleQuestions.map((q) => ({
           questionId: q.questionId,
@@ -371,7 +433,7 @@ Eligible Questions: ${JSON.stringify(
         // Question Bank entry for this domain/subDomain rather than throwing.
         recommendedQuestionIds = eligibleQuestions.map((q) => q.questionId);
         confidence = 0;
-        reason = `AI question recommendation was unavailable (${err.message}) — showing all eligible Question Bank questions for this Domain/Sub-Domain instead.`;
+        reason = `AI question recommendation was unavailable (${err.message}) — showing all eligible Question Bank questions for ${domainLabel} instead.`;
       }
     }
 
@@ -449,7 +511,16 @@ Eligible Questions: ${JSON.stringify(
       entityLabel: `AI recommended questions for ${survey.title}`,
     });
 
-    return this.getSurveyByNeedId(needId);
+    const result = await this.getSurveyByNeedId(needId);
+    this.logger.debug(
+      `[QB-DEBUG] needId=${needId} survey=${survey.id} finalQuestions.length=${finalQuestions.length}; ` +
+        `resulting survey.questions bank-linked pairs=${JSON.stringify(
+          (result?.questions ?? [])
+            .filter((q: any) => !q.isCustom)
+            .map((q: any) => ({ domain: q.domain, subDomain: q.subDomain })),
+        )}`,
+    );
+    return result;
   }
 
   async updateQuestions(
@@ -459,6 +530,9 @@ Eligible Questions: ${JSON.stringify(
       customText?: string;
       customAnswerType?: string;
       customOptions?: string[];
+      domain?: string;
+      subDomain?: string;
+      kpi?: string;
       order: number;
       isRequired: boolean;
     }>,
@@ -481,12 +555,18 @@ Eligible Questions: ${JSON.stringify(
       }
     }
 
+    // The Researcher can't keep editing a SUBMITTED survey out from under
+    // whoever's reviewing it, but the Approver themselves is exactly who's
+    // doing that review — they curate the question list (add/remove/
+    // reorder/custom) right up to Approve & Publish or Reject. Same role
+    // split as overrideDomainPreview/generateSuggestedQuestions.
+    const allowWhileSubmitted = getOrgStore()?.role !== 'ngo_research_officer';
     const needId = await this.tenant.runInOrgContext(async (tx) => {
       const survey = await tx.survey.findUnique({ where: { id: surveyId } });
       if (!survey) {
         throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
       }
-      this.assertEditable(survey.status);
+      this.assertEditable(survey.status, allowWhileSubmitted);
 
       // Re-create the links using the incoming array — the whole ordered
       // list (Question Bank + additional questions together) is the unit of
@@ -499,6 +579,15 @@ Eligible Questions: ${JSON.stringify(
           customText: q.customText ?? null,
           customAnswerType: q.questionId ? null : (q.customAnswerType ?? 'long_text'),
           customOptions: q.questionId ? undefined : (q.customOptions ?? undefined),
+          // Question Bank items resolve Domain/Sub-domain/KPI via their
+          // linked Question row instead — these three stay null for them,
+          // same as customAnswerType/customOptions above. For a custom
+          // item, null here just means it predates this field (see the
+          // migration/contract comments) — not rejected, just displayed as
+          // unset until someone edits it through the dialog again.
+          domain: q.questionId ? null : (q.domain ?? null),
+          subDomain: q.questionId ? null : (q.subDomain ?? null),
+          kpi: q.questionId ? null : (q.kpi ?? null),
           order: q.order,
           isRequired: q.isRequired,
         })),
@@ -518,19 +607,24 @@ Eligible Questions: ${JSON.stringify(
   }
 
   // Content (questions, Methodology Version) is frozen the moment a survey
-  // is SUBMITTED — the Approver reviews exactly what was submitted, never a
-  // moving target. Same rule once PUBLISHED (terminal). Editing resumes
-  // only after a REJECTED verdict, or from DRAFT.
-  private assertEditable(status: string): void {
-    if (status === 'SUBMITTED' || status === 'PUBLISHED') {
+  // is SUBMITTED, for the Researcher — they shouldn't keep moving the
+  // target out from under whoever's reviewing it. The Approver is exactly
+  // who's reviewing it, so updateQuestions passes allowWhileSubmitted based
+  // on the caller's role (see there) to let them curate questions right up
+  // to their decision. setMethodologyVersion below never passes it — the
+  // Approver only ever reviews/publishes whatever Methodology Version the
+  // Researcher already chose, they don't change it. PUBLISHED is always
+  // terminal, for everyone, no exceptions — a live citizen-facing survey's
+  // questions/version can never change post-publish.
+  private assertEditable(status: string, allowWhileSubmitted = false): void {
+    if (status === 'PUBLISHED') {
       throw new ConflictException({
-        error: {
-          code: 'SURVEY_NOT_EDITABLE',
-          message:
-            status === 'SUBMITTED'
-              ? 'This survey is awaiting approval and cannot be edited until it is reviewed.'
-              : 'This survey is already published and can no longer be edited.',
-        },
+        error: { code: 'SURVEY_NOT_EDITABLE', message: 'This survey is already published and can no longer be edited.' },
+      });
+    }
+    if (status === 'SUBMITTED' && !allowWhileSubmitted) {
+      throw new ConflictException({
+        error: { code: 'SURVEY_NOT_EDITABLE', message: 'This survey is awaiting approval and cannot be edited until it is reviewed.' },
       });
     }
   }

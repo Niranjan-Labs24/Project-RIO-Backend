@@ -77,7 +77,7 @@ export class ReportsService {
       }),
     );
     await this.audit.record({ action: "create", entityType: "report", entityId: row.id, entityLabel: title });
-    return this.toReport(row as unknown as ReportRow);
+    return this.toReport(row as unknown as ReportRow, await this.namesFor([row as unknown as ReportRow]));
   }
 
   async list(params: ListReportsParams): Promise<Report[]> {
@@ -91,7 +91,9 @@ export class ReportsService {
         skip,
       }),
     );
-    return (rows as unknown as ReportRow[]).map((r) => this.toReport(r));
+    const typedRows = rows as unknown as ReportRow[];
+    const nameById = await this.namesFor(typedRows);
+    return typedRows.map((r) => this.toReport(r, nameById));
   }
 
   async getById(id: string): Promise<Report> {
@@ -100,7 +102,7 @@ export class ReportsService {
     if (!this.canSeeAllStatuses() && !EXPORTABLE_STATUSES.includes(row.status)) {
       throw new NotFoundException({ error: { code: "REPORT_NOT_FOUND", message: "Report not found" } });
     }
-    return this.toReport(row);
+    return this.toReport(row, await this.namesFor([row]));
   }
 
   // Officers/reviewers/analysts (anyone who can create/write/approve reports)
@@ -137,7 +139,7 @@ export class ReportsService {
       tx.report.update({ where: { id }, data: { officerConfirmedBy: officer, officerConfirmedAt: new Date() } }),
     );
     await this.audit.record({ action: "approve", entityType: "report", entityId: row.id, entityLabel: row.title, metadata: { step: "confirm" } });
-    return this.toReport(row as unknown as ReportRow);
+    return this.toReport(row as unknown as ReportRow, await this.namesFor([row as unknown as ReportRow]));
   }
 
   // Reviewer approves → released. Requires a prior officer confirm (two-step).
@@ -158,7 +160,7 @@ export class ReportsService {
       tx.report.update({ where: { id }, data: { status: "released", reviewedBy: reviewer, reviewedAt: new Date() } }),
     );
     await this.audit.record({ action: "approve", entityType: "report", entityId: row.id, entityLabel: row.title, metadata: { status: "released" } });
-    return this.toReport(row as unknown as ReportRow);
+    return this.toReport(row as unknown as ReportRow, await this.namesFor([row as unknown as ReportRow]));
   }
 
   async reject(id: string): Promise<Report> {
@@ -173,7 +175,7 @@ export class ReportsService {
       tx.report.update({ where: { id }, data: { status: "rejected", reviewedBy: reviewer, reviewedAt: new Date() } }),
     );
     await this.audit.record({ action: "approve", entityType: "report", entityId: row.id, entityLabel: row.title, metadata: { status: "rejected" } });
-    return this.toReport(row as unknown as ReportRow);
+    return this.toReport(row as unknown as ReportRow, await this.namesFor([row as unknown as ReportRow]));
   }
 
   // Post-study archival — released → archived. Archived reports stay searchable
@@ -190,7 +192,7 @@ export class ReportsService {
       tx.report.update({ where: { id }, data: { status: "archived", archivedAt: new Date() } }),
     );
     await this.audit.record({ action: "edit", entityType: "report", entityId: row.id, entityLabel: row.title, metadata: { status: "archived" } });
-    return this.toReport(row as unknown as ReportRow);
+    return this.toReport(row as unknown as ReportRow, await this.namesFor([row as unknown as ReportRow]));
   }
 
   async export(id: string, format: ExportFormat): Promise<{ filename: string; contentType: string; body: Buffer }> {
@@ -292,7 +294,7 @@ export class ReportsService {
       tx.report.findUnique({ where: { id } }),
     )) as unknown as ReportRow | null;
     if (!row) throw new NotFoundException({ error: { code: "REPORT_NOT_FOUND", message: "Report not found" } });
-    return this.toReport(row);
+    return this.toReport(row, await this.namesFor([row], true));
   }
 
   // RPT-01 and RPT-14 have real generators. RPT-14 (Village Report) reads
@@ -405,7 +407,7 @@ export class ReportsService {
     return buildPlaceholderReport(reportType);
   }
 
-  private toReport(row: ReportRow): Report {
+  private toReport(row: ReportRow, nameById: Map<string, string> = new Map()): Report {
     const meta = REPORT_TYPE_META[row.reportType];
     return {
       id: row.id,
@@ -416,13 +418,33 @@ export class ReportsService {
       filters: row.filters as Record<string, unknown>,
       content: row.content as Record<string, unknown>,
       generatedBy: row.generatedBy,
+      generatedByName: nameById.get(row.generatedBy) ?? null,
       generatedAt: row.generatedAt.toISOString(),
       officerConfirmedBy: row.officerConfirmedBy,
+      officerConfirmedByName: row.officerConfirmedBy ? (nameById.get(row.officerConfirmedBy) ?? null) : null,
       officerConfirmedAt: row.officerConfirmedAt ? row.officerConfirmedAt.toISOString() : null,
       reviewedBy: row.reviewedBy,
+      reviewedByName: row.reviewedBy ? (nameById.get(row.reviewedBy) ?? null) : null,
       reviewedAt: row.reviewedAt ? row.reviewedAt.toISOString() : null,
       archivedAt: row.archivedAt ? row.archivedAt.toISOString() : null,
       exportFormats: meta.exportFormats,
     };
+  }
+
+  // The on-screen viewer showed raw user ids for "Officer Confirmed By" /
+  // "Reviewed By" (the PDF/Excel export already resolves these — see
+  // resolveExportAuditMeta) — this batches the same lookup for one or many
+  // rows so toReport can attach the *Name fields consistently everywhere.
+  private async namesFor(rows: ReportRow[], crossOrg = false): Promise<Map<string, string>> {
+    const userIds = [
+      ...new Set(rows.flatMap((r) => [r.generatedBy, r.officerConfirmedBy, r.reviewedBy]).filter((id): id is string => id !== null)),
+    ];
+    if (userIds.length === 0) return new Map();
+    // findAcrossOrgsOrThrow's report may belong to a different org than the
+    // caller's own — the normal org-scoped RLS context wouldn't see its users.
+    const users = crossOrg
+      ? await this.tenant.runAsSupervisor((tx) => tx.user.findMany({ where: { id: { in: userIds } } }))
+      : await this.tenant.runInOrgContext((tx) => tx.user.findMany({ where: { id: { in: userIds } } }));
+    return new Map(users.map((u) => [u.id, u.name]));
   }
 }
