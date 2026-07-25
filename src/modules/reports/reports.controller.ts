@@ -22,13 +22,21 @@ export class ReportsController {
   @Get()
   @RequirePermission("reportsDashboards", "read")
   list(
+    @Query("organizationId") organizationId?: string,
     @Query("reportType") reportType?: ReportTypeCode,
     @Query("status") status?: ReportStatus,
     @Query("studyId") studyId?: string,
     @Query("limit") limit?: string,
     @Query("offset") offset?: string,
   ): Promise<Report[]> {
-    const params: ListReportsParams = { reportType, status, studyId, limit: parseIntParam(limit), offset: parseIntParam(offset) };
+    const params: ListReportsParams = {
+      organizationId: organizationId || undefined,
+      reportType,
+      status,
+      studyId,
+      limit: parseIntParam(limit),
+      offset: parseIntParam(offset),
+    };
     return this.reports.list(params);
   }
 

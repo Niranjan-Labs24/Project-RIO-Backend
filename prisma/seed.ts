@@ -43,21 +43,15 @@ async function setOrg(tx: { $executeRawUnsafe: (s: string) => Promise<number> },
 // Realistic-looking generation criteria per report type, stored in Report.filters
 // — same fields a real "generate report" form would collect (region/village/
 // date range), not used for any actual query since content is placeholder.
-function buildPlaceholderReportFilters(reportType: PlaceholderReportType, studyId?: string): Record<string, unknown> {
+function buildPlaceholderReportFilters(reportType: PlaceholderReportType): Record<string, unknown> {
   const dateFrom = '2026-01-01';
   const dateTo = '2026-06-30';
   switch (reportType) {
     case 'RPT05':
-    case 'RPT06':
       return { region: 'North', village: 'Village A', dateFrom, dateTo };
     case 'RPT07':
-      return { dateFrom, dateTo };
     case 'RPT11':
       return { dateFrom, dateTo };
-    case 'RPT12':
-      return {};
-    case 'RPT13':
-      return { studyId, dateFrom, dateTo };
     default:
       return { dateFrom, dateTo };
   }
@@ -288,8 +282,8 @@ async function main(): Promise<void> {
           reportType,
           status: 'draft',
           title,
-          studyId: reportType === 'RPT13' ? (demoStudyId ?? null) : null,
-          filters: buildPlaceholderReportFilters(reportType, demoStudyId) as Prisma.InputJsonValue,
+          studyId: null,
+          filters: buildPlaceholderReportFilters(reportType) as Prisma.InputJsonValue,
           content: content as Prisma.InputJsonValue,
           generatedBy: officer.id,
         },

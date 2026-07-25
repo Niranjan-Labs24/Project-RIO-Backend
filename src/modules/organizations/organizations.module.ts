@@ -4,9 +4,10 @@ import { OrganizationsService } from './organizations.service';
 import { PasswordService } from '../../auth/password.service';
 import { DomainsModule } from '../domains/domains.module';
 import { GeographyModule } from '../geography/geography.module';
+import { UsersModule } from '../users/users.module';
 
 @Module({
-  imports: [DomainsModule, GeographyModule],
+  imports: [DomainsModule, GeographyModule, UsersModule],
   controllers: [OrganizationsController],
   providers: [OrganizationsService, PasswordService],
 })

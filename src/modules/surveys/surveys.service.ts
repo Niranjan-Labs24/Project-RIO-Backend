@@ -894,4 +894,145 @@ Eligible Questions: ${JSON.stringify(
       };
     });
   }
+
+  async listSurveys(opts: { organizationId?: string; studyId?: string; status?: string; search?: string; limit?: number; offset?: number }) {
+    const store = getOrgStore();
+    const isSysAdmin = store?.role === 'system_admin';
+
+    const take = Math.min(Math.max(opts.limit ?? 100, 1), 200);
+    const skip = Math.max(opts.offset ?? 0, 0);
+
+    const where: any = {
+      ...(opts.organizationId ? { need: { orgId: opts.organizationId } } : {}),
+      ...(opts.studyId ? { need: { studyId: opts.studyId } } : {}),
+      ...(opts.status ? { status: opts.status } : {}),
+      ...(opts.search ? { title: { contains: opts.search, mode: 'insensitive' } } : {}),
+    };
+
+    let items: any[] = [];
+    let total = 0;
+
+    const include = { need: { include: { study: true, org: true } }, responses: { select: { id: true } } };
+
+    if (isSysAdmin) {
+      const result = await this.tenant.runAsSupervisor((tx) =>
+        Promise.all([
+          tx.survey.findMany({ where, orderBy: { createdAt: 'desc' }, take, skip, include }),
+          tx.survey.count({ where }),
+        ]),
+      );
+      items = result[0];
+      total = result[1];
+
+      await this.audit.record({
+        action: 'SYSTEM_ADMIN_VIEWED_SURVEY',
+        entityType: 'survey',
+        entityId: opts.organizationId ?? 'all',
+        entityLabel: opts.organizationId ? 'Organization Surveys' : 'All Platform Surveys',
+        organizationId: opts.organizationId,
+      });
+    } else {
+      const result = await this.tenant.runInOrgContext((tx) =>
+        Promise.all([
+          tx.survey.findMany({ where, orderBy: { createdAt: 'desc' }, take, skip, include }),
+          tx.survey.count({ where }),
+        ]),
+      );
+      items = result[0];
+      total = result[1];
+    }
+
+    return {
+      items: items.map((s) => ({
+        id: s.id,
+        title: s.title ?? s.need?.title ?? 'Untitled Survey',
+        needId: s.needId,
+        studyId: s.need?.studyId ?? null,
+        studyTitle: s.need?.study?.title ?? null,
+        orgId: s.need?.orgId ?? null,
+        orgName: s.need?.org?.name ?? null,
+        status: s.status,
+        responseCount: s.responses?.length ?? 0,
+        publishedAt: s.publishedAt ? s.publishedAt.toISOString() : null,
+        closedAt: s.closedAt ? s.closedAt.toISOString() : null,
+        createdAt: s.createdAt ? s.createdAt.toISOString() : null,
+      })),
+      total,
+      limit: take,
+      offset: skip,
+    };
+  }
+
+  async getSurveyDetailById(id: string) {
+    const store = getOrgStore();
+    const isSysAdmin = store?.role === 'system_admin';
+
+    const include = {
+      need: {
+        include: {
+          study: true,
+          org: true,
+          priorityScores: { take: 1, orderBy: { scoredAt: 'desc' as const } },
+          _count: { select: { evidence: true } },
+          surveyResponses: { select: { id: true, channel: true, createdAt: true } },
+        },
+      },
+      surveyQuestions: { include: { question: true }, orderBy: { order: 'asc' as const } },
+    };
+
+    let survey: any = null;
+    if (isSysAdmin) {
+      survey = await this.tenant.runAsSupervisor((tx) =>
+        tx.survey.findUnique({ where: { id }, include }),
+      );
+      if (survey) {
+        await this.audit.record({
+          action: 'SYSTEM_ADMIN_VIEWED_SURVEY',
+          entityType: 'survey',
+          entityId: id,
+          entityLabel: survey.title ?? survey.need?.title ?? 'Untitled Survey',
+          organizationId: survey.need?.orgId,
+        });
+      }
+    } else {
+      survey = await this.tenant.runInOrgContext((tx) =>
+        tx.survey.findUnique({ where: { id }, include }),
+      );
+    }
+
+    if (!survey) {
+      throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
+    }
+
+    const questions = (survey.surveyQuestions ?? []).map((sq: any) => this.toQuestionDto(sq));
+    const responses = survey.need?.surveyResponses ?? [];
+
+    return {
+      id: survey.id,
+      title: survey.title ?? survey.need?.title ?? 'Untitled Survey',
+      needId: survey.needId,
+      studyId: survey.need?.studyId ?? null,
+      studyTitle: survey.need?.study?.title ?? null,
+      orgId: survey.need?.orgId ?? null,
+      orgName: survey.need?.org?.name ?? null,
+      village: Array.isArray(survey.need?.village) ? survey.need.village.join(', ') : (survey.need?.village ?? '—'),
+      domainCategory: survey.need?.domain ?? survey.need?.aiSuggestedDomain ?? '—',
+      status: survey.status,
+      publicToken: survey.publicToken ?? null,
+      methodologyVersionId: survey.methodologyVersion,
+      questionsCount: questions.length,
+      responseCount: responses.length,
+      evidenceCount: survey.need?._count?.evidence ?? 0,
+      score: survey.need?.priorityScores?.[0]?.overallScore ?? null,
+      questions,
+      responsesSummary: {
+        total: responses.length,
+        citizenChannelCount: responses.filter((r: any) => r.channel === 'citizen').length,
+        fieldCollectorCount: responses.filter((r: any) => r.channel !== 'citizen').length,
+      },
+      publishedAt: survey.publishedAt ? survey.publishedAt.toISOString() : null,
+      closedAt: survey.closedAt ? survey.closedAt.toISOString() : null,
+      createdAt: survey.createdAt ? survey.createdAt.toISOString() : null,
+    };
+  }
 }

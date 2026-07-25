@@ -89,4 +89,48 @@ describe('OrganizationsService', () => {
     await orgContext.run({ requestId: 'r', orgId: 'o1', role: 'ngo_admin' }, () => svc.updateCurrent({ name: 'Old' }));
     expect(recorded).toHaveLength(0);
   });
+
+  it('updateStatus toggles isActive and records ORGANIZATION_DEACTIVATED audit event', async () => {
+    const recorded: { action: string; entityId: string; metadata?: { reason?: string } }[] = [];
+    const audit = { record: async (i: unknown) => { recorded.push(i as never); } };
+    let state = { ...baseRow, isActive: true };
+    const fake = {
+      runAsSupervisor: async (fn: (tx: unknown) => unknown) =>
+        fn({
+          organisation: {
+            findUnique: async () => ({
+              ...state,
+              orgGovernorates: [],
+              orgCenters: [],
+              users: [],
+              _count: { users: 2, studies: 1, surveys: 0, reports: 0 },
+            }),
+            update: async ({ data }: { data: { isActive: boolean } }) => {
+              state = { ...state, isActive: data.isActive };
+              return state;
+            },
+          },
+        }),
+      runAsOrg: async (_orgId: string, fn: (tx: unknown) => unknown) =>
+        fn({
+          organisation: {
+            update: async ({ data }: { data: { isActive: boolean } }) => {
+              state = { ...state, isActive: data.isActive };
+              return state;
+            },
+          },
+        }),
+    };
+    const svc = new OrganizationsService(fake as never, audit as never, {} as never, domainsStub as never, geographyStub as never);
+
+    const result = await orgContext.run({ requestId: 'r', orgId: 'o1', role: 'system_admin' }, () =>
+      svc.updateStatus('o1', { isActive: false, reason: 'Maintenance' }),
+    );
+
+    expect(result.isActive).toBe(false);
+    expect(recorded).toHaveLength(2); // Deactivation event + getById view event
+    expect(recorded[0]?.action).toBe('ORGANIZATION_DEACTIVATED');
+    expect(recorded[0]?.metadata?.reason).toBe('Maintenance');
+    expect(recorded[1]?.action).toBe('SYSTEM_ADMIN_VIEWED_ORGANIZATION');
+  });
 });

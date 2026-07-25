@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Res } from '@nestjs/common';
+import { Controller, Get, Param, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { parseIntParam } from '../../common/http/query.util';
@@ -68,5 +68,17 @@ export class AuditController {
       'Content-Disposition': `attachment; filename="audit-log-${new Date().toISOString().slice(0, 10)}.csv"`,
     });
     return csv;
+  }
+
+  @Get('summary')
+  @RequirePermission('archiveSharingAudit', 'read')
+  getSummary() {
+    return this.audit.getSummary();
+  }
+
+  @Get(':id')
+  @RequirePermission('archiveSharingAudit', 'read')
+  getById(@Param('id') id: string) {
+    return this.audit.getById(id);
   }
 }

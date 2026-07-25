@@ -23,6 +23,7 @@ interface UserWithOrg {
   name: string;
   email: string;
   roleId: string;
+  status: UserStatus;
   passwordHash: string | null;
   consentedAt: Date | null;
   consentedPolicyVersion: string | null;
@@ -93,6 +94,10 @@ export class AuthService {
     // Credentials are valid — but a deactivated org must not yield a session.
     // (Checked post-verification so org state is never revealed to an
     // unauthenticated caller.)
+    if (found.status === UserStatus.disabled) {
+      throw new ForbiddenException({ error: { code: 'USER_DISABLED', message: 'This user account is disabled' } });
+    }
+
     if (!found.org.isActive) {
       throw new ForbiddenException({ error: { code: 'ORG_INACTIVE', message: 'This organization is not active' } });
     }
@@ -127,6 +132,10 @@ export class AuthService {
     // Stop refreshing a session (and re-issuing a token) once the org is
     // deactivated. NOTE: this does not revoke an already-issued token before it
     // expires — stateless JWTs have no server-side revocation yet (see below).
+    if (found.status === UserStatus.disabled) {
+      throw new ForbiddenException({ error: { code: 'USER_DISABLED', message: 'This user account is disabled' } });
+    }
+
     if (!found.org.isActive) {
       throw new ForbiddenException({ error: { code: 'ORG_INACTIVE', message: 'This organization is not active' } });
     }

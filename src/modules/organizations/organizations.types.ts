@@ -25,6 +25,17 @@ export interface Organization {
 
 export interface OrganizationSummary extends Organization {
   memberCount: number;
+  studyCount?: number;
+  surveyCount?: number;
+  reportCount?: number;
+  ngoAdminName?: string | null;
+  ngoAdminEmail?: string | null;
+  deactivationReason?: string | null;
+}
+
+export interface UpdateOrganizationStatusPayload {
+  isActive: boolean;
+  reason?: string | null;
 }
 
 export interface UpdateOrganizationPayload {
@@ -45,14 +56,14 @@ export interface UpdateOrganizationPayload {
 
 export interface CreateOrganizationPayload {
   name: string;
-  purpose: string;
+  purpose?: string | null;
   registrationNumber: string;
   region?: string[];
   email?: string | null;
   sector?: string | null;
   villages?: string[];
-  adminName: string;
-  adminEmail: string;
+  adminName?: string;
+  adminEmail?: string;
 }
 
 // Shape of an organisations row as this module reads it.
