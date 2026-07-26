@@ -78,6 +78,23 @@ function kvRows(obj: Record<string, unknown>): Array<{ label: string; value: str
   return rows;
 }
 
+// Response Quality rows, but the qualitative confidence band and its numeric %
+// are folded into one row ("Overall Confidence: STANDARD (90%)") so the two read
+// together and the raw confidencePct isn't shown as a separate line.
+function responseQualityRows(obj: Record<string, unknown>): Array<{ label: string; value: string }> {
+  const rows: Array<{ label: string; value: string }> = [];
+  for (const [k, v] of Object.entries(obj)) {
+    if (k === "confidencePct") continue; // folded into the confidence row below
+    if (isPlainObject(v) || Array.isArray(v)) continue;
+    if (k === "overallConfidence" && typeof obj.confidencePct === "number") {
+      rows.push({ label: titleCase(k), value: `${scalar(v, k)} (${obj.confidencePct}%)` });
+    } else {
+      rows.push({ label: titleCase(k), value: scalar(v, k) });
+    }
+  }
+  return rows;
+}
+
 function tableSection(heading: string, arr: Array<Record<string, unknown>>): DocSection {
   const keys = [...new Set(arr.flatMap((o) => Object.keys(o)))];
   return {
@@ -94,6 +111,9 @@ function tableSection(heading: string, arr: Array<Record<string, unknown>>): Doc
 interface Col {
   key: string;
   label: string;
+  // Optional custom cell renderer — e.g. to combine two fields into one column
+  // (Confidence = qualitative band + quantitative %). Falls back to scalar().
+  format?: (o: Record<string, unknown>) => string;
 }
 function pickTableSection(heading: string, arr: Array<Record<string, unknown>>, cols: Col[]): DocSection {
   const present = cols.filter((c) => arr.some((o) => o[c.key] !== undefined));
@@ -101,16 +121,27 @@ function pickTableSection(heading: string, arr: Array<Record<string, unknown>>, 
     kind: "table",
     heading,
     columns: present.map((c) => c.label),
-    rows: arr.map((o) => present.map((c) => scalar(o[c.key], c.key))),
+    rows: arr.map((o) => present.map((c) => (c.format ? c.format(o) : scalar(o[c.key], c.key)))),
   };
 }
 
 const DOMAIN_TABLE_COLS: Col[] = [
   { key: "name", label: "Domain" },
+  // Methodology domain code — maps the row back to the methodology indicators.
+  { key: "domainCode", label: "Code" },
   { key: "severityScore", label: "Severity" },
   { key: "performanceScore", label: "Performance" },
   { key: "weight", label: "Weight" },
-  { key: "confidence", label: "Confidence" },
+  // KPIs contributing to this domain's severity.
+  { key: "kpiCount", label: "KPIs" },
+  // Confidence shows both the qualitative band and the quantitative % (e.g.
+  // "STANDARD (82%)"). confidencePct is folded in here rather than a column.
+  {
+    key: "confidence",
+    label: "Confidence",
+    format: (o) =>
+      typeof o.confidencePct === "number" ? `${scalar(o.confidence)} (${o.confidencePct}%)` : scalar(o.confidence),
+  },
   { key: "isCriticalDomain", label: "Critical" },
 ];
 
@@ -198,8 +229,22 @@ export function buildReportDoc(
   const sections: DocSection[] = [];
 
   if (isCore) {
+    // Structured scope (Executive report) — Region / Governorate coverage,
+    // shown up front rather than only mentioned in the narrative.
+    if (isPlainObject(content.scope)) {
+      const scope = content.scope as Record<string, unknown>;
+      sections.push({
+        kind: "keyvalue",
+        heading: "Region / Governorate",
+        rows: [
+          { label: "Coverage", value: scalar(scope.villages) },
+          { label: "Governorate", value: scalar(scope.governorate) },
+        ],
+      });
+    }
+
     const rq: DocSection | null = isPlainObject(content.responseQuality)
-      ? { kind: "keyvalue", heading: "Response Quality", rows: kvRows(content.responseQuality) }
+      ? { kind: "keyvalue", heading: "Response Quality", rows: responseQualityRows(content.responseQuality) }
       : null;
 
     // Severity block → a Needs Index gauge (paired with Response Quality), a
@@ -235,6 +280,18 @@ export function buildReportDoc(
     else if (bars) sections.push(bars);
     if (domainsTable) sections.push(domainsTable);
 
+    // Per-domain trend notes — surfaced consistently for every domain (not just
+    // one global note). One line per domain: "<Domain>: <trendNote>".
+    if (domains && domains.some((d) => typeof d.trendNote === "string" && d.trendNote)) {
+      sections.push({
+        kind: "keyvalue",
+        heading: "Domain Trend Notes",
+        rows: domains
+          .filter((d) => typeof d.trendNote === "string" && d.trendNote)
+          .map((d) => ({ label: scalar(d.name), value: String(d.trendNote) })),
+      });
+    }
+
     if (isPlainObject(content.priority)) {
       sections.push({ kind: "keyvalue", heading: "Priority", rows: kvRows(content.priority) });
     }
@@ -255,9 +312,16 @@ export function buildReportDoc(
     if (isObjectArray(content.topKpis)) sections.push(pickTableSection("Top KPIs", content.topKpis, TOP_KPI_COLS));
     if (isObjectArray(content.topPriorities)) sections.push(tableSection("Top Priorities", content.topPriorities));
 
-    // Demographic pies side by side.
+    // Demographic pies side by side. The Executive report may have an empty
+    // topPriorities list, so also treat a report carrying Response Quality as a
+    // needs report — otherwise it would silently drop the demographics
+    // placeholder that every other needs report shows.
     const isNeedsReport =
-      !!sev || !!domains || isObjectArray(content.regions) || isObjectArray(content.topPriorities);
+      !!sev ||
+      !!domains ||
+      isObjectArray(content.regions) ||
+      isObjectArray(content.topPriorities) ||
+      isPlainObject(content.responseQuality);
     const demo = isPlainObject(content.demographics) ? content.demographics : null;
     const toSlices = (arr: Array<Record<string, unknown>>) => arr.map((r) => ({ label: scalar(r.label), value: Number(r.count) || 0 }));
     const genderPie: DocSection | null =
@@ -273,6 +337,14 @@ export function buildReportDoc(
       sections.push(tableSection("Qualitative Evidence", content.qualitativeEvidence));
     }
     if (isPlainObject(content.aiSummary)) sections.push(...aiSummarySections(content.aiSummary));
+    // First-class Data Quality and Trend notes (promoted out of the AI Summary,
+    // currently the region report) — rendered as their own labeled sections.
+    if (typeof content.dataQualityNote === "string" && content.dataQualityNote) {
+      sections.push({ kind: "note", heading: "Data Quality Note", text: content.dataQualityNote });
+    }
+    if (typeof content.trendNote === "string" && content.trendNote) {
+      sections.push({ kind: "note", heading: "Trend Note", text: content.trendNote });
+    }
     if (Array.isArray(content.anomalies) && content.anomalies.length) {
       sections.push({ kind: "list", heading: "Anomalies Flagged", items: content.anomalies.map(String) });
     }

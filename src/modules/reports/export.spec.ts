@@ -11,6 +11,7 @@ const auditMeta: ExportAuditMeta = {
   officerConfirmedByName: "Research Officer - Demo User",
   officerConfirmedAt: "2026-07-22T09:30:00Z",
   reviewedByName: "Reviewer - Demo User",
+  reviewedByRole: "Reviewer/Approver",
   reviewedAt: "2026-07-22T10:20:00Z",
   archivedAt: null,
 };

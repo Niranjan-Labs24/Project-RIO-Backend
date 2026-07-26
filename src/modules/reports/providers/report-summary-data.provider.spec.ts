@@ -8,11 +8,11 @@ import { ReportSummaryDataProvider } from "./report-summary-data.provider";
 function snapshot(overrides: Partial<ReportDataSnapshot["severity"] & ReportDataSnapshot["priority"]> = {}): ReportDataSnapshot {
   return {
     snapshotId: "s", generatedAt: "2026-07-22T10:30:00Z", scope: "VILLAGE", scopeFilters: {},
-    study: { studyId: "study-1", studyName: "Water Assessment", surveyId: "srv-1", villageId: "VIL-1", villageName: "Ad-Dilam", assessmentCycle: 1, organizationName: "Demo NGO", methodologyVersionId: "mv" },
+    study: { studyId: "study-1", studyName: "Water Assessment", surveyId: "srv-1", villageId: "VIL-1", villageName: "Ad-Dilam", assessmentCycle: 1, organizationName: "Demo NGO", methodologyVersionId: "mv", governorateName: "Riyadh", regionName: "Riyadh Region" },
     responseQuality: { submittedResponseCount: 42, validResponseCount: 38, dontKnowRate: 12.4, confidenceLevel: "STANDARD", confidenceReason: "" },
     severity: {
       overallVillageNeedsIndex: 63.8, severityBand: "Medium",
-      domainSeverityScores: [{ domainKey: "HEALTH", domainName: "Health", severityScore: 72, confidenceLevel: "STANDARD", validResponseCount: 35 }],
+      domainSeverityScores: [{ domainKey: "HEALTH", domainName: "Health", severityScore: 72, confidenceLevel: "STANDARD", validResponseCount: 35, excludedResponseCount: 3, dontKnowRate: 0.05, kpiCount: 6 }],
       topKpis: [{ rank: 1, kpiName: "Water Access", indicatorName: "I1", domainName: "Water", severityScore: 88, confidenceLevel: "LOW", validResponseCount: 8 }],
       ...(overrides.overallVillageNeedsIndex !== undefined ? { overallVillageNeedsIndex: overrides.overallVillageNeedsIndex } : {}),
     },

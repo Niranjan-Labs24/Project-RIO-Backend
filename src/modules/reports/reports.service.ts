@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { Prisma } from "../../generated/prisma";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { getOrgStore, requireActor, requireOrgId } from "../../tenancy/org-context";
-import { can } from "../../rbac/role-matrix";
+import { can, ROLE_MATRIX } from "../../rbac/role-matrix";
 import { AuditService } from "../audit/audit.service";
 import { buildPlaceholderReport, buildExportStub, type ExportAuditMeta } from "./reports.placeholder";
 import { villageGenerator } from "./generators/village.generator";
@@ -24,6 +24,11 @@ import {
   type ReportTypeCode,
 } from "./reports.types";
 
+// Role id → human-readable role name, from the RBAC source of truth. Used to
+// annotate the audit trail with the reviewer's role (e.g. "Reviewer/Approver"
+// vs "Center Supervisor").
+const roleNameById = new Map(ROLE_MATRIX.map((r) => [r.id, r.name]));
+
 // The real assessment window = the study's survey-response collection span
 // (first → last submittedAt). Formatted like "01 July 2026 - 15 July 2026";
 // undefined when no responses exist yet (mock supplies its own fallback).
@@ -38,7 +43,7 @@ function formatAssessmentPeriod(min: Date | null, max: Date | null): string | un
 // Minimal shape both runInOrgContext and runAsSupervisor transaction clients
 // satisfy — just enough for resolveExportAuditMeta's own two lookups.
 interface ExportMetaTx {
-  user: { findMany: (args: { where: { id: { in: string[] } } }) => Promise<{ id: string; name: string }[]> };
+  user: { findMany: (args: { where: { id: { in: string[] } } }) => Promise<{ id: string; name: string; roleId: string }[]> };
   study: { findUnique: (args: { where: { id: string } }) => Promise<{ title: string } | null> };
 }
 
@@ -229,6 +234,7 @@ export class ReportsService {
       row.studyId ? tx.study.findUnique({ where: { id: row.studyId } }) : Promise.resolve(null),
     ]);
     const nameById = new Map(users.map((u) => [u.id, u.name]));
+    const roleById = new Map(users.map((u) => [u.id, roleNameById.get(u.roleId) ?? null]));
     return {
       generatedAt: row.generatedAt.toISOString(),
       status: row.status,
@@ -237,6 +243,7 @@ export class ReportsService {
       officerConfirmedByName: row.officerConfirmedBy ? (nameById.get(row.officerConfirmedBy) ?? null) : null,
       officerConfirmedAt: row.officerConfirmedAt ? row.officerConfirmedAt.toISOString() : null,
       reviewedByName: row.reviewedBy ? (nameById.get(row.reviewedBy) ?? null) : null,
+      reviewedByRole: row.reviewedBy ? (roleById.get(row.reviewedBy) ?? null) : null,
       reviewedAt: row.reviewedAt ? row.reviewedAt.toISOString() : null,
       archivedAt: row.archivedAt ? row.archivedAt.toISOString() : null,
     };
@@ -407,7 +414,10 @@ export class ReportsService {
     return buildPlaceholderReport(reportType);
   }
 
-  private toReport(row: ReportRow, nameById: Map<string, string> = new Map()): Report {
+  private toReport(
+    row: ReportRow,
+    nameById: Map<string, { name: string; role: string | null }> = new Map(),
+  ): Report {
     const meta = REPORT_TYPE_META[row.reportType];
     return {
       id: row.id,
@@ -418,13 +428,14 @@ export class ReportsService {
       filters: row.filters as Record<string, unknown>,
       content: row.content as Record<string, unknown>,
       generatedBy: row.generatedBy,
-      generatedByName: nameById.get(row.generatedBy) ?? null,
+      generatedByName: nameById.get(row.generatedBy)?.name ?? null,
       generatedAt: row.generatedAt.toISOString(),
       officerConfirmedBy: row.officerConfirmedBy,
-      officerConfirmedByName: row.officerConfirmedBy ? (nameById.get(row.officerConfirmedBy) ?? null) : null,
+      officerConfirmedByName: row.officerConfirmedBy ? (nameById.get(row.officerConfirmedBy)?.name ?? null) : null,
       officerConfirmedAt: row.officerConfirmedAt ? row.officerConfirmedAt.toISOString() : null,
       reviewedBy: row.reviewedBy,
-      reviewedByName: row.reviewedBy ? (nameById.get(row.reviewedBy) ?? null) : null,
+      reviewedByName: row.reviewedBy ? (nameById.get(row.reviewedBy)?.name ?? null) : null,
+      reviewedByRole: row.reviewedBy ? (nameById.get(row.reviewedBy)?.role ?? null) : null,
       reviewedAt: row.reviewedAt ? row.reviewedAt.toISOString() : null,
       archivedAt: row.archivedAt ? row.archivedAt.toISOString() : null,
       exportFormats: meta.exportFormats,
@@ -435,7 +446,7 @@ export class ReportsService {
   // "Reviewed By" (the PDF/Excel export already resolves these — see
   // resolveExportAuditMeta) — this batches the same lookup for one or many
   // rows so toReport can attach the *Name fields consistently everywhere.
-  private async namesFor(rows: ReportRow[], crossOrg = false): Promise<Map<string, string>> {
+  private async namesFor(rows: ReportRow[], crossOrg = false): Promise<Map<string, { name: string; role: string | null }>> {
     const userIds = [
       ...new Set(rows.flatMap((r) => [r.generatedBy, r.officerConfirmedBy, r.reviewedBy]).filter((id): id is string => id !== null)),
     ];
@@ -445,6 +456,8 @@ export class ReportsService {
     const users = crossOrg
       ? await this.tenant.runAsSupervisor((tx) => tx.user.findMany({ where: { id: { in: userIds } } }))
       : await this.tenant.runInOrgContext((tx) => tx.user.findMany({ where: { id: { in: userIds } } }));
-    return new Map(users.map((u) => [u.id, u.name]));
+    // Role name resolved in-memory from ROLE_MATRIX (the RBAC source of truth,
+    // seeded into `roles`) — no extra join needed.
+    return new Map(users.map((u) => [u.id, { name: u.name, role: roleNameById.get(u.roleId) ?? null }]));
   }
 }

@@ -22,6 +22,7 @@ import {
   EXECUTIVE_REPORT_SUMMARY_PROMPT_VERSION,
   EXECUTIVE_REPORT_SUMMARY_SYSTEM_PROMPT,
 } from '../ai/prompts/executive-report-summary.system';
+import { normalizeDomainKey } from '../priority/priority-v2.service';
 import { aggregateDemographics } from './providers/aggregate-demographics';
 import {
   snapshotToExecutiveContent,
@@ -56,6 +57,13 @@ export interface ReportDataSnapshot {
     // Human-readable version label (e.g. "v1.0") for the report header — the
     // UUID methodologyVersionId is an internal key, never shown to users.
     methodologyVersionLabel?: string;
+    // Study's governorate name(s), joined; null when none selected. Feeds the
+    // region report's Governorate column.
+    governorateName: string | null;
+    // Region name(s) where the study was conducted (parent of the selected
+    // governorates); null when none selected. Feeds the region report's Region
+    // Name column.
+    regionName: string | null;
   };
   responseQuality: {
     submittedResponseCount: number;
@@ -73,6 +81,13 @@ export interface ReportDataSnapshot {
       severityScore: number | null;
       confidenceLevel: string;
       validResponseCount: number;
+      // Excluded responses for this domain — with validResponseCount gives the
+      // submitted total, so the report can show a quantitative confidence %
+      // (valid / submitted). dontKnowRate carried alongside for the note.
+      excludedResponseCount: number;
+      dontKnowRate: number;
+      // Number of methodology KPIs defined under this domain.
+      kpiCount: number;
     }>;
     topKpis: Array<{
       rank: number;
@@ -165,9 +180,24 @@ export class ReportSummaryService {
     return this.tenant.runInOrgContext(async (tx) => {
       const study = await tx.study.findUnique({
         where: { id: studyId },
-        include: { org: true },
+        include: {
+          org: true,
+          studyGovernorates: { include: { governorate: { include: { region: true } } } },
+        },
       });
       if (!study) throw new NotFoundException('Study not found');
+
+      // Governorate name(s) for the region report — a study may select several,
+      // so join their names; null (→ "–") when the study has none selected.
+      const governorateName =
+        study.studyGovernorates.map((sg) => sg.governorate.name).join(', ') || null;
+
+      // Region name(s) where the study was conducted — derived from the selected
+      // governorates' parent Region. Distinct + joined; null when none selected,
+      // so the report falls back to the study name.
+      const regionName =
+        [...new Set(study.studyGovernorates.map((sg) => sg.governorate.region.name))].join(', ') ||
+        null;
 
       const survey = await tx.survey.findUnique({
         where: { id: surveyId },
@@ -206,6 +236,27 @@ export class ReportSummaryService {
 
       if (scope === 'SECTOR' && scopeFilters.domainKey) {
         domainRollups = domainRollups.filter((d) => d.entityId === scopeFilters.domainKey);
+      }
+
+      // Count the methodology KPIs contributing to each domain's severity. The
+      // KPI→domain link isn't carried on ScoreRollup (KPI rollups don't store
+      // their parent domain), so we read it from the Question set: distinct
+      // non-null `kpi` grouped by normalized domain. We use the SAME selector
+      // the scoring pipeline uses (`usedInMvp: true`, not methodologyVersionId —
+      // questions may carry a null methodologyVersionId) so this count reflects
+      // the real KPIs that actually fed the rollups. Keyed by normalized domain
+      // to join onto the domain rollups (whose entityId is the domain name).
+      const methodologyQuestions = await tx.question.findMany({
+        where: { usedInMvp: true, kpi: { not: null } },
+        select: { domain: true, kpi: true },
+      });
+      const kpiCountByDomainKey = new Map<string, Set<string>>();
+      for (const q of methodologyQuestions) {
+        if (!q.kpi) continue;
+        const key = normalizeDomainKey(q.domain);
+        const set = kpiCountByDomainKey.get(key) ?? new Set<string>();
+        set.add(q.kpi);
+        kpiCountByDomainKey.set(key, set);
       }
 
       const kpiRollups = await tx.scoreRollup.findMany({
@@ -262,11 +313,16 @@ export class ReportSummaryService {
           studyName: study.title,
           surveyId,
           villageId: villageId || 'ALL_VILLAGES',
-          villageName: villageId || 'Consolidated Villages',
+          // Consolidated (no single village) scope label aligns with the agreed
+          // Region → Governorate hierarchy: "Consolidated Governorates" rather
+          // than "Villages". A specific villageId keeps its own identity.
+          villageName: villageId || 'Consolidated Governorates',
           assessmentCycle: study.cycleNumber,
           organizationName: study.org.name,
           methodologyVersionId: mv.id,
           methodologyVersionLabel: mv.version,
+          governorateName,
+          regionName,
         },
         responseQuality: {
           submittedResponseCount,
@@ -284,6 +340,9 @@ export class ReportSummaryService {
             severityScore: d.severityScore ? Number(d.severityScore) : null,
             confidenceLevel: d.confidenceLevel,
             validResponseCount: d.validResponseCount,
+            excludedResponseCount: d.excludedResponseCount,
+            dontKnowRate: Number(d.dontKnowRate),
+            kpiCount: kpiCountByDomainKey.get(normalizeDomainKey(d.entityId))?.size ?? 0,
           })),
           topKpis: kpiRollups.map((k, index) => ({
             rank: index + 1,
