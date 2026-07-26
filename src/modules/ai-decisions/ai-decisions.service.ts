@@ -1,15 +1,14 @@
-import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import type { Prisma } from '../../generated/prisma';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Prisma } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
-import { requireActor, requireOrgId } from '../../tenancy/org-context';
+import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { AuditService } from '../audit/audit.service';
 import { AiService } from '../ai/ai.service';
 import { DomainsService } from '../domains/domains.service';
 import { SurveysService } from '../surveys/surveys.service';
-import { classifyNeedWithAi } from './classification.ai';
+import { AiClassificationDeclinedError, classifyNeedWithAi } from './classification.ai';
 import { redactPii, type ClassificationCandidate, type ClassificationResult } from './classification.placeholder';
 import { scoreStub } from './scoring.placeholder';
-import { findMostSimilar } from './text-similarity';
 import type {
   AiDecision,
   AiDecisionRow,
@@ -17,20 +16,19 @@ import type {
   ScoringStubResponse,
 } from './ai-decisions.types';
 import type { AiReviewApproveDto, AiReviewOverrideDomainDto } from './ai-decisions.contract';
+import type { NeedStatus } from '../needs/needs.types';
 
-// The three tiers runClassificationWithFallback tries, in order — recorded
-// on every AiDecision.suggestion so the UI (and this file's own tests) can
-// tell a real Gemini call apart from a fallback. "Never leave the Need
-// without AI suggestions": tier 3 is a plain domain-list lookup and can
-// only fail if literally zero domains are configured for this org.
-type ClassificationSource = 'ai' | 'prior_needs' | 'default';
-
-// Below this Jaccard similarity score (see text-similarity.ts), a prior
-// Need is considered "not actually about the same issue" and Tier 2 falls
-// through to Tier 3 (default domain) instead of reusing it. Deliberately a
-// named constant, not inlined -- the one number to tune if this tier reuses
-// too eagerly or too rarely in practice.
-const PRIOR_NEED_SIMILARITY_THRESHOLD = 0.25;
+// Product decision (confirmed): a Researcher's manual classification is
+// currently treated as equivalent to an Approver override — it lands the
+// Need on the same reviewer_approved status review()'s approved/modified
+// branch would produce, with no separate Approver review step of its own.
+// This is the ONE place that decision is expressed — manualClassify() below
+// reads this constant rather than writing 'reviewer_approved' inline, so if
+// the client later wants a real Approver review step after manual
+// classification (e.g. landing on 'ai_classified' instead, same as the
+// AI-success path), changing that behavior is a one-line edit here, not a
+// hunt through the method body.
+const MANUAL_CLASSIFICATION_RESULT_STATUS: NeedStatus = 'reviewer_approved';
 
 @Injectable()
 export class AiDecisionsService {
@@ -47,23 +45,26 @@ export class AiDecisionsService {
   // Called once, synchronously, right after NeedsService.create() commits
   // its own transaction (never from inside that transaction — a slow/failing
   // AI call must never block or roll back Need creation). Only ever invoked
-  // while pending_ai_classification (first run, set by NeedsService.create)
-  // or ai_classification_failed (see retryClassification) — anything further
-  // along throws, same guard as the old manual classify() had. `draft` is
-  // also accepted defensively — it's the bare schema default a Need should
+  // while pending_ai_classification (the normal case, set by
+  // NeedsService.create) or draft — the bare schema default a Need should
   // never actually rest at post-creation, but a still-`draft` Need (e.g. one
   // imported before NeedsImportService set this explicitly) needs the same
-  // "kick off classification" path, not a dead end.
+  // "kick off classification" path, not a dead end. ai_classification_failed
+  // is reachable again for a genuine technical failure (see
+  // runAndPersistClassification's catch block) — an "unclear" classification
+  // (AI ran and declined/hallucinated) is the only case that instead lands
+  // on ai_classified + allDomainsSelected.
   async classifyAutomatically(needId: string): Promise<AiDecision> {
     return this.runAndPersistClassification(needId);
   }
 
-  // Approver/Researcher-facing Retry — reachable while ai_classification_failed
-  // (the normal case) or draft (see classifyAutomatically's comment — a Need
-  // stuck at the bare default with no classification ever having run needs
-  // the same "start it" action, not a separate one). Clears any previous
-  // attempt's error/timestamp before re-running, so a failed run never
-  // leaves stale fields behind once a later attempt succeeds.
+  // Retry — the way off ai_classification_failed, now reachable again for a
+  // genuine technical failure (rate-limited, upstream outage, timeout,
+  // misconfiguration) — see runAndPersistClassification and
+  // AiClassificationDeclinedError's own comments for how that's
+  // distinguished from "AI ran and declined/hallucinated," which never
+  // produces this status. `draft` stays reachable (see
+  // classifyAutomatically's comment).
   async retryClassification(needId: string): Promise<AiDecision> {
     await this.tenant.runInOrgContext(async (tx) => {
       const need = await tx.need.findUnique({ where: { id: needId } });
@@ -79,6 +80,80 @@ export class AiDecisionsService {
       });
     });
     return this.runAndPersistClassification(needId);
+  }
+
+  // Researcher-driven manual classification — reachable while
+  // ai_classification_failed (a genuine technical failure — see
+  // retryClassification's comment) or draft. Left as-is pending a decision
+  // on whether the Override mechanism (which also covers changing domains
+  // on an ai_classified/allDomainsSelected Need) makes this redundant — not
+  // decided yet. There is no AI suggestion here for an Approver to
+  // review/approve/override: the Researcher's own Domain/Sub-domain
+  // selection directly becomes the authoritative classification, so this
+  // writes exactly what review()'s approved/modified branch would
+  // (Need.domain/subDomain + the status in MANUAL_CLASSIFICATION_RESULT_STATUS
+  // above) without an AiDecision row to route through — a manual pick has
+  // nothing to route.
+  async manualClassify(needId: string, body: AiReviewOverrideDomainDto): Promise<void> {
+    // Only honors the first pair — manualClassify predates multi-domain and
+    // is already effectively unreachable via the automatic path (see the
+    // guard below and this method's own doc comment above); extending it to
+    // genuinely commit every pair is exactly the "reductant... optimization"
+    // deferred alongside deciding whether this method survives at all.
+    // Contract enforces minItems: 1, so index 0 always exists at runtime.
+    const { domain, subDomain } = body.pairs[0]!;
+    const { needTitle } = await this.tenant.runInOrgContext(async (tx) => {
+      const need = await tx.need.findUnique({ where: { id: needId } });
+      if (!need) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+      if (need.status !== 'ai_classification_failed' && need.status !== 'draft') {
+        throw new ConflictException({
+          error: {
+            code: 'NEED_NOT_FAILED',
+            message: 'Manual classification is only available for a Need whose automatic classification failed.',
+          },
+        });
+      }
+      if (!(await this.isActiveDomainSubDomain(domain, subDomain))) {
+        throw new BadRequestException({
+          error: { code: 'INVALID_DOMAIN', message: 'Select a valid, active Domain and Sub-domain.' },
+        });
+      }
+      await tx.need.update({
+        where: { id: needId },
+        data: {
+          domain,
+          subDomain,
+          status: MANUAL_CLASSIFICATION_RESULT_STATUS,
+          classifiedAt: new Date(),
+          classificationError: null,
+        },
+      });
+      return { needTitle: need.title };
+    });
+    await this.audit.record({
+      action: 'edit',
+      entityType: 'need',
+      entityId: needId,
+      entityLabel: `Manual classification for need "${needTitle}"`,
+      changes: [
+        { field: 'Domain', before: null, after: domain },
+        { field: 'Sub-Domain', before: null, after: subDomain },
+      ],
+    });
+    // Same "never leave the Need without suggested questions" guarantee as
+    // the automatic path (runAndPersistClassification) — best-effort, a
+    // failure here must not undo the classification that just succeeded.
+    try {
+      await this.surveys.generateSuggestedQuestions(needId, [{ domain, subDomain }]);
+    } catch (err) {
+      this.logger.warn(`Suggested-question generation failed for manually classified need ${needId}: ${(err as Error).message}`);
+    }
+  }
+
+  private async isActiveDomainSubDomain(domain: string, subDomain: string): Promise<boolean> {
+    const domains = (await this.domains.listDomainsWithSubDomains()).filter((d) => d.isActive);
+    const matched = domains.find((d) => d.name === domain);
+    return Boolean(matched?.subDomains.some((sd) => sd.isActive && sd.name === subDomain));
   }
 
   private async runAndPersistClassification(needId: string): Promise<AiDecision> {
@@ -101,23 +176,56 @@ export class AiDecisionsService {
     });
 
     let result: ClassificationResult;
-    let source: ClassificationSource;
+    let allDomainsSelected = false;
     try {
-      const tier = await this.runClassificationWithFallback(needId, { statement: need.statement, village: need.village });
-      result = tier.result;
-      source = tier.source;
+      result = await this.runClassification({ statement: need.statement, village: need.village });
     } catch (err) {
-      // Only reachable if the guaranteed-to-succeed default-domain tier
-      // itself throws (zero active domains configured org-wide) — the only
-      // case that legitimately produces ai_classification_failed.
-      const message = (err as Error).message || 'AI classification failed and no fallback domain was available.';
-      await this.tenant.runInOrgContext((tx) =>
-        tx.need.update({
-          where: { id: needId },
-          data: { status: 'ai_classification_failed', classificationError: message, classifiedAt: new Date() },
-        }),
-      );
-      throw err;
+      if (!(err instanceof AiClassificationDeclinedError)) {
+        // A genuine technical failure (rate-limited, upstream outage,
+        // timeout, missing API key, zero domains configured — anything
+        // that isn't the AI actually running and declining/hallucinating,
+        // see AiClassificationDeclinedError's own comment) is NOT the same
+        // as "AI looked at this and couldn't decide." Treating it as
+        // allDomainsSelected would misrepresent a service problem as a
+        // classification outcome, and would silently generate a survey off
+        // every active Question Bank question for a Need the AI never
+        // actually looked at. This lands the Need on the same
+        // ai_classification_failed + Retry path the UI has always had,
+        // instead — no AiDecision row (nothing to review), no question
+        // generation.
+        const message = (err as Error).message || 'AI classification failed.';
+        await this.tenant.runInOrgContext((tx) =>
+          tx.need.update({
+            where: { id: needId },
+            data: { status: 'ai_classification_failed', classificationError: message, classifiedAt: new Date() },
+          }),
+        );
+        this.logger.warn(`Classification failed for need ${needId}: ${message}`);
+        throw err;
+      }
+      // Product decision: the AI genuinely ran and declined/hallucinated
+      // (a vague/gibberish statement, or a name outside the given list) is
+      // a special kind of SUCCESS, not a dead end. Every active Domain/
+      // Sub-domain is implicitly in scope (Need.allDomainsSelected) and
+      // this flows through the exact same ai_classified ->
+      // Override/Approve/Reject pipeline as a real classification, with a
+      // synthetic AiDecision recording why.
+      const message = err.message || 'AI could not confidently classify this need.';
+      result = {
+        modelName: 'unclear-all-domains',
+        modelVersion: '1.0.0',
+        confidence: 0,
+        suggestion: {
+          domains: [],
+          subDomains: [],
+          rationale:
+            `AI could not confidently classify this need (${message}). Every Domain and Sub-domain has ` +
+            'been selected by default — narrow this down via Override.',
+          redactedStatement: redactPii(need.statement),
+          village: need.village.join(', '),
+        },
+      };
+      allDomainsSelected = true;
     }
 
     const created = await this.tenant.runInOrgContext(async (tx) => {
@@ -131,7 +239,7 @@ export class AiDecisionsService {
           subjectId: need.id,
           modelName: result.modelName,
           modelVersion: result.modelVersion,
-          suggestion: { ...result.suggestion, source } as unknown as Prisma.InputJsonValue,
+          suggestion: { ...result.suggestion } as unknown as Prisma.InputJsonValue,
           confidence: result.confidence,
         },
       })) as unknown as AiDecisionRow;
@@ -141,9 +249,11 @@ export class AiDecisionsService {
           status: 'ai_classified',
           classifiedAt: new Date(),
           classificationError: null,
+          allDomainsSelected,
           // Written once, here — never touched again, including by review()
           // on approve/override, so this always reflects what AI actually
-          // predicted regardless of what a human later decides.
+          // predicted regardless of what a human later decides. Null in the
+          // allDomainsSelected case — there's no single prediction to freeze.
           aiSuggestedDomain: result.suggestion.domains[0] ?? null,
           aiSuggestedSubDomain: result.suggestion.subDomains[0] ?? null,
         },
@@ -156,132 +266,52 @@ export class AiDecisionsService {
     // generate them off whatever domain/subDomain this classification landed
     // on, immediately, before any human has looked at it. Best-effort: a
     // failure here must not undo the classification that just succeeded.
+    // Empty pairs (the allDomainsSelected case) is handled by
+    // generateSuggestedQuestions itself — every active Question Bank entry
+    // is eligible, no domain filter at all.
     const domain = result.suggestion.domains[0];
     const subDomain = result.suggestion.subDomains[0];
-    if (domain && subDomain) {
-      try {
-        await this.surveys.generateSuggestedQuestions(needId, domain, subDomain);
-      } catch (err) {
-        this.logger.warn(`Suggested-question generation failed for need ${needId}: ${(err as Error).message}`);
-      }
+    const pairs = domain && subDomain ? [{ domain, subDomain }] : [];
+    try {
+      await this.surveys.generateSuggestedQuestions(needId, pairs);
+    } catch (err) {
+      this.logger.warn(`Suggested-question generation failed for need ${needId}: ${(err as Error).message}`);
     }
 
     return this.toAiDecision(created);
   }
 
-  private async runClassificationWithFallback(
-    needId: string,
+  // No fallback tier of its own — still just AI-succeeds-or-throws. The
+  // caller (runAndPersistClassification) distinguishes what a throw here
+  // means by type: AiClassificationDeclinedError (AI ran and declined/
+  // hallucinated) becomes ai_classified + allDomainsSelected; anything else
+  // (a real technical failure) lands on ai_classification_failed instead —
+  // this function itself never guesses which is which, it just throws the
+  // right error type at each site.
+  private async runClassification(
     subject: { statement: string; village: string[] },
-  ): Promise<{ result: ClassificationResult; source: ClassificationSource }> {
-    // Tier 1 — real AI (unchanged from before).
-    try {
-      const domains = (await this.domains.listDomainsWithSubDomains()).filter((d) => d.isActive);
-      const candidates: ClassificationCandidate[] = domains.map((d) => ({
-        domainCode: d.code,
-        domainName: d.name,
-        subDomains: d.subDomains.filter((sd) => sd.isActive).map((sd) => ({ code: sd.code, name: sd.name })),
-      }));
-      if (candidates.length === 0) throw new Error('No active domains configured');
-      const result = await classifyNeedWithAi(this.ai, subject, redactPii(subject.statement), candidates);
-      return { result, source: 'ai' };
-    } catch (err) {
-      this.logger.warn(`Real AI classification unavailable, trying prior-Needs fallback: ${(err as Error).message}`);
-    }
-
-    // Tier 2 — the most textually similar prior classified Need among this
-    // Need's own Governorates/Centers, reused ONLY if it clears a similarity
-    // threshold. A frequency-based "most common domain around here" (the
-    // previous approach) reused stale classifications for Needs that just
-    // happened to share a village, regardless of what they were actually
-    // about — this compares the actual Statement text instead.
-    try {
-      const fallback = await this.classifyFromPriorNeeds(needId, subject);
-      if (fallback) return { result: fallback, source: 'prior_needs' };
-    } catch (err) {
-      this.logger.warn(`Prior-Needs fallback unavailable, trying default domain: ${(err as Error).message}`);
-    }
-
-    // Tier 3 — default domain. Cannot fail unless zero active domains exist
-    // for this org at all, which is the only case that should ever surface
-    // as ai_classification_failed.
+  ): Promise<ClassificationResult> {
     const domains = (await this.domains.listDomainsWithSubDomains()).filter((d) => d.isActive);
-    const top = domains.find((d) => d.subDomains.some((sd) => sd.isActive));
-    if (!top) {
-      throw new Error('No active domains are configured for this organization.');
+    const candidates: ClassificationCandidate[] = domains.map((d) => ({
+      domainCode: d.code,
+      domainName: d.name,
+      subDomains: d.subDomains.filter((sd) => sd.isActive).map((sd) => ({ code: sd.code, name: sd.name })),
+    }));
+    if (candidates.length === 0) throw new Error('No active domains configured');
+    const result = await classifyNeedWithAi(this.ai, subject, redactPii(subject.statement), candidates);
+
+    // The AI is instructed to only pick from the given candidate list, but
+    // nothing enforces that — an unclear/hallucinated response naming a
+    // domain or sub-domain outside it must be treated as a failed
+    // classification (routed to manual), not silently accepted.
+    const domain = result.suggestion.domains[0];
+    const subDomain = result.suggestion.subDomains[0];
+    const matchedDomain = candidates.find((c) => c.domainName === domain);
+    if (!domain || !subDomain || !matchedDomain || !matchedDomain.subDomains.some((sd) => sd.name === subDomain)) {
+      throw new AiClassificationDeclinedError('AI returned an unclear or unrecognized domain/sub-domain classification.');
     }
-    const topSubDomain = top.subDomains.find((sd) => sd.isActive)!;
-    const result: ClassificationResult = {
-      modelName: 'default-domain-fallback',
-      modelVersion: '1.0.0',
-      confidence: 0,
-      suggestion: {
-        domains: [top.name],
-        subDomains: [topSubDomain.name],
-        rationale: 'No AI suggestion or prior classified Need was available in this geography — defaulted to the top configured domain.',
-        redactedStatement: redactPii(subject.statement),
-        village: subject.village.join(', '),
-      },
-    };
-    return { result, source: 'default' };
-  }
 
-  private async classifyFromPriorNeeds(
-    needId: string,
-    subject: { statement: string; village: string[] },
-  ): Promise<ClassificationResult | null> {
-    const geo = await this.tenant.runInOrgContext(async (tx) => {
-      const need = await tx.need.findUnique({
-        where: { id: needId },
-        include: { needGovernorates: true, needCenters: true },
-      });
-      return {
-        governorateIds: (need?.needGovernorates ?? []).map((g) => g.governorateId),
-        centerIds: (need?.needCenters ?? []).map((c) => c.centerId),
-      };
-    });
-    if (geo.governorateIds.length === 0 && geo.centerIds.length === 0) return null;
-
-    const priorNeeds = await this.tenant.runInOrgContext(async (tx) =>
-      tx.need.findMany({
-        where: {
-          id: { not: needId },
-          domain: { not: null },
-          subDomain: { not: null },
-          OR: [
-            ...(geo.governorateIds.length > 0
-              ? [{ needGovernorates: { some: { governorateId: { in: geo.governorateIds } } } }]
-              : []),
-            ...(geo.centerIds.length > 0 ? [{ needCenters: { some: { centerId: { in: geo.centerIds } } } }] : []),
-          ],
-        },
-        select: { statement: true, domain: true, subDomain: true, classifiedAt: true },
-        orderBy: { classifiedAt: 'desc' },
-        take: 200,
-      }),
-    );
-    if (priorNeeds.length === 0) return null;
-
-    // Only reuse a prior Need's classification if it is actually about a
-    // similar issue, not just "something in this org was classified
-    // before" -- a frequency-based majority vote (the previous approach)
-    // could confidently reuse a completely unrelated domain just because
-    // it happened to be the most common one in the area.
-    const match = findMostSimilar(subject.statement, priorNeeds);
-    if (!match || match.score < PRIOR_NEED_SIMILARITY_THRESHOLD) return null;
-    const { candidate: best, score } = match;
-
-    return {
-      modelName: 'prior-needs-fallback',
-      modelVersion: '1.0.0',
-      confidence: 0,
-      suggestion: {
-        domains: [best.domain as string],
-        subDomains: [best.subDomain as string],
-        rationale: `AI classification was unavailable -- a similar previously classified Need in the same geography (${Math.round(score * 100)}% text similarity) was reused instead.`,
-        redactedStatement: redactPii(subject.statement),
-        village: subject.village.join(', '),
-      },
-    };
+    return result;
   }
 
   async listByNeedId(needId: string): Promise<AiDecision[]> {
@@ -342,17 +372,51 @@ export class AiDecisionsService {
         // reflect the AI's original prediction, even after an override, so
         // the two can be compared side by side (audit trail of predicted
         // vs. decided).
-        await tx.need.update({ where: { id: row.needId }, data: { status: 'reviewer_approved' } });
-        const source =
-          payload.decision === 'modified' && payload.overrideValue
-            ? (payload.overrideValue as { domains?: string[]; subDomains?: string[] })
-            : (existing.suggestion as { domains?: string[]; subDomains?: string[] } | null);
-        const approvedDomain = source?.domains?.[0];
-        const approvedSubDomain = source?.subDomains?.[0];
-        if (approvedDomain && approvedSubDomain) {
+        // The proposal (if any) is now decided one way or another — clear it
+        // so a later, unrelated Override attempt doesn't pick up a stale one.
+        await tx.need.update({
+          where: { id: row.needId },
+          data: { status: 'reviewer_approved', proposedDomains: Prisma.JsonNull, proposedReason: null },
+        });
+
+        // `pairs` is the full, final Domain/Sub-domain list for this Need —
+        // either the Approver's override (any number of pairs, no limit) or,
+        // on a plain as-is Approve, the AI's own single suggested pair (empty
+        // when the AI couldn't classify at all — allDomainsSelected stays
+        // true in that case, since nothing narrowed it down).
+        const overridePairs =
+          payload.decision === 'modified'
+            ? (payload.overrideValue as { pairs?: Array<{ domain: string; subDomain: string }> } | undefined)?.pairs
+            : undefined;
+        const suggestion = existing.suggestion as { domains?: string[]; subDomains?: string[] } | null;
+        const pairs =
+          overridePairs ??
+          (suggestion?.domains?.[0] && suggestion?.subDomains?.[0]
+            ? [{ domain: suggestion.domains[0], subDomain: suggestion.subDomains[0] }]
+            : []);
+
+        if (pairs.length > 0) {
+          // Full replace, not append — a Researcher/Approver's multi-select
+          // is always the final word on a Need's classification (confirmed
+          // product decision), so any prior NeedDomain rows (from an earlier
+          // override, or none at all) are wiped and rewritten from scratch.
+          // Dedupe defensively in case the client sent the same pair twice.
+          const deduped = [...new Map(pairs.map((p) => [`${p.domain} ${p.subDomain}`, p])).values()];
+          await tx.needDomain.deleteMany({ where: { needId: row.needId } });
+          await tx.needDomain.createMany({
+            data: deduped.map((p) => ({ needId: row.needId, orgId: need.orgId, domain: p.domain, subDomain: p.subDomain })),
+          });
           await tx.need.update({
             where: { id: row.needId },
-            data: { domain: approvedDomain, subDomain: approvedSubDomain },
+            data: {
+              // pairs.length > 0 guarantees deduped is non-empty too.
+              domain: deduped[0]!.domain,
+              subDomain: deduped[0]!.subDomain,
+              // A real, narrowed-down classification exists now — this is
+              // exactly what clears the "AI couldn't classify, everything is
+              // implicitly in scope" sentinel from runAndPersistClassification.
+              allDomainsSelected: false,
+            },
           });
         }
       } else {
@@ -361,7 +425,10 @@ export class AiDecisionsService {
         // fresh classification run against the edited data — it must NOT
         // advance to reviewer_approved, which would misrepresent a
         // rejection as an approval.
-        await tx.need.update({ where: { id: row.needId }, data: { status: 'pending_ai_classification' } });
+        await tx.need.update({
+          where: { id: row.needId },
+          data: { status: 'pending_ai_classification', proposedDomains: Prisma.JsonNull, proposedReason: null },
+        });
       }
       return { updated: row, needTitle: need.title };
     });
@@ -392,9 +459,7 @@ export class AiDecisionsService {
     await this.review(latest.id, {
       decision: payload.domainOverride ? 'modified' : 'approved',
       notes: payload.domainOverride?.reason,
-      overrideValue: payload.domainOverride
-        ? { domains: [payload.domainOverride.domain], subDomains: [payload.domainOverride.subDomain] }
-        : undefined,
+      overrideValue: payload.domainOverride ? { pairs: payload.domainOverride.pairs } : undefined,
     });
   }
 
@@ -417,12 +482,41 @@ export class AiDecisionsService {
     }
   }
 
-  // Override-Domain preview: does NOT write domain/subDomain onto the Need
-  // (that only happens inside approveAiReview's domainOverride handling) —
-  // only regenerates the Suggested Questions list for the candidate domain,
-  // so a browser refresh mid-override never leaves the Need half-decided.
+  // Override-Domain preview: does NOT write domain/subDomain (or NeedDomain
+  // rows) onto the Need — that only happens inside approveAiReview's
+  // domainOverride handling (see review()) — only regenerates the Suggested
+  // Questions list, merged+deduped across every candidate pair, so a
+  // browser refresh mid-override never leaves the Need half-decided.
+  //
+  // Does persist the proposal itself (proposedDomains/proposedReason) onto
+  // the Need — previously this only lived in the staging browser's own
+  // sessionStorage, so a Researcher's staged override was invisible to the
+  // Approver reviewing in a different session, and re-opening Override even
+  // in the SAME session after a page reload lost it, falling back to
+  // showing the AI's original suggestion instead. These two fields are
+  // deliberately separate from the authoritative domain/subDomain/
+  // needDomains — nothing downstream reads them, they're consumed and
+  // cleared by review() below once a decision is actually made.
   async overrideDomainPreview(needId: string, body: AiReviewOverrideDomainDto): Promise<unknown> {
-    return this.surveys.generateSuggestedQuestions(needId, body.domain, body.subDomain);
+    // Both the Researcher and the Approver hold aiReview:approve (see
+    // role-matrix.ts's "full parity" decision), so permission alone can't
+    // tell them apart here. Only the Researcher is blocked from overriding a
+    // SUBMITTED survey's domain (they'd be moving the target out from under
+    // whoever's reviewing it) — the Approver is exactly who's reviewing it,
+    // so they're allowed regardless of Survey status (short of PUBLISHED,
+    // which SurveysService.generateSuggestedQuestions still blocks for
+    // everyone). Same rule as the frontend's overrideDisabledForResearcher.
+    const allowWhileSubmitted = getOrgStore()?.role !== 'ngo_research_officer';
+    await this.tenant.runInOrgContext((tx) =>
+      tx.need.update({
+        where: { id: needId },
+        data: {
+          proposedDomains: body.pairs as unknown as Prisma.InputJsonValue,
+          proposedReason: body.reason ?? null,
+        },
+      }),
+    );
+    return this.surveys.generateSuggestedQuestions(needId, body.pairs, { allowWhileSubmitted });
   }
 
   private async latestUndecidedDecision(needId: string): Promise<AiDecisionRow> {

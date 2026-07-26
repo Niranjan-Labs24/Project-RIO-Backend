@@ -59,10 +59,13 @@ export interface Report {
   filters: Record<string, unknown>;
   content: Record<string, unknown>;
   generatedBy: string;
+  generatedByName: string | null;
   generatedAt: string;
   officerConfirmedBy: string | null;
+  officerConfirmedByName: string | null;
   officerConfirmedAt: string | null;
   reviewedBy: string | null;
+  reviewedByName: string | null;
   reviewedAt: string | null;
   archivedAt: string | null;
   exportFormats: ExportFormat[];

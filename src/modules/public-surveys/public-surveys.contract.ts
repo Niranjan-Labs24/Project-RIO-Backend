@@ -19,3 +19,12 @@ export const CreateSurveyLinkBody = registerSchema(
   ),
 );
 export type CreateSurveyLinkDto = Static<typeof CreateSurveyLinkBody>;
+
+export const ShareSurveyLinkEmailBody = registerSchema(
+  'ShareSurveyLinkEmailBody',
+  T.Object(
+    { email: T.String({ format: 'email', maxLength: 320 }) },
+    { additionalProperties: false },
+  ),
+);
+export type ShareSurveyLinkEmailDto = Static<typeof ShareSurveyLinkEmailBody>;

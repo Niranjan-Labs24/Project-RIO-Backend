@@ -27,10 +27,23 @@ export interface NeedRow {
   status: NeedStatus;
   domain: string | null;
   subDomain: string | null;
+  // True when AI couldn't confidently classify this Need at all — every
+  // active Domain/Sub-domain is implicitly in scope rather than one
+  // specific pair (see schema.prisma's Need.allDomainsSelected comment).
+  allDomainsSelected: boolean;
+  // The real, multi-valued source of truth for this Need's classification
+  // (see NeedDomain) — domain/subDomain above always mirror needDomains[0].
+  // Empty while allDomainsSelected is true (deliberately not materialized
+  // as one row per active Domain/Sub-domain — see schema comment).
+  needDomains: { domain: string; subDomain: string }[];
   aiSuggestedDomain: string | null;
   aiSuggestedSubDomain: string | null;
   classifiedAt: Date | null;
   classificationError: string | null;
+  // A staged (not-yet-decided) Override — see schema.prisma's comment on
+  // Need.proposedDomains. Cleared once approved/rejected.
+  proposedDomains: unknown;
+  proposedReason: string | null;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
@@ -62,6 +75,15 @@ export interface Need {
   // construction once an override happens.
   domain: string | null;
   subDomain: string | null;
+  // True when AI couldn't confidently classify this Need at all — every
+  // active Domain/Sub-domain is implicitly in scope rather than one
+  // specific pair (see schema.prisma's Need.allDomainsSelected comment).
+  allDomainsSelected: boolean;
+  // The real, multi-valued source of truth for this Need's classification
+  // (see NeedDomain) — domain/subDomain above always mirror needDomains[0].
+  // Empty while allDomainsSelected is true (deliberately not materialized
+  // as one row per active Domain/Sub-domain — see schema comment).
+  needDomains: { domain: string; subDomain: string }[];
   // AI Classification's own original suggestion — written once when
   // classification completes and never overwritten again, including on
   // Approver override, so it always reflects what the AI actually
@@ -70,6 +92,12 @@ export interface Need {
   aiSuggestedSubDomain: string | null;
   classifiedAt: string | null;
   classificationError: string | null;
+  // A staged (not-yet-decided) Override, visible to anyone reviewing this
+  // Need regardless of who staged it or in which session — see
+  // AiDecisionsService.overrideDomainPreview and schema.prisma's comment on
+  // Need.proposedDomains. Cleared (both null) once approved/rejected.
+  proposedDomains: Array<{ domain: string; subDomain: string }> | null;
+  proposedReason: string | null;
   createdBy: string;
   // Resolved display name for Entered By — null if the creating user has
   // since been removed (e.g. no self-org lookup for a deleted account).

@@ -123,6 +123,10 @@ export interface SectorReportContent {
   domains: DomainComponent[];
   overall: SeverityBlock;
   aiSummary: AiSummaryBlock;
+  // Gender/rural breakdown — same convention as VillageReportContent's own
+  // field: null until demographic capture ships or no matching responses
+  // exist, never omitted just because this is a non-Village scope.
+  demographics: Demographics | null;
   filters: Record<string, unknown>;
 }
 
@@ -136,6 +140,7 @@ export interface RegionReportContent {
     needCount: number;
   }>;
   aiSummary: AiSummaryBlock;
+  demographics: Demographics | null;
   filters: Record<string, unknown>;
 }
 
@@ -146,6 +151,7 @@ export interface ExecutiveReportContent {
   aiSummary: AiSummaryBlock;
   anomalies: string[];
   reviewerNotes: string | null;
+  demographics: Demographics | null;
   filters: Record<string, unknown>;
 }
 

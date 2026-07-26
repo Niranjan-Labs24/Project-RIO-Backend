@@ -11,18 +11,22 @@ describe('ROLE_MATRIX', () => {
     expect(can('ngo_admin', 'archiveSharingAudit', 'share')).toBe(true);
     expect(can('system_admin', 'entityTeam', 'create')).toBe(true);
     expect(can('system_admin', 'studySurvey', 'write')).toBe(false); // reads all, writes only accounts/orgs/config
-    // AI classification/Approve/Override/Reject is a merged step now (see
-    // AiDecisionsService.approveAiReview) — entirely the Reviewer/Approver's
-    // decision, same as a submitted Survey's approve/reject/publish. The
-    // Research Officer can only trigger/retry classification (`write`), and
-    // only views the finished suggestion — no approve/override/reject, and
-    // no curating the suggested question list (surveyBuilder is read-only
-    // for them now too).
+    // AI classification/Approve/Override/Reject (see
+    // AiDecisionsService.approveAiReview/rejectAiReview) is full parity
+    // between both roles now — a deliberate product decision that the
+    // Approver is no longer a mandatory second reviewer for classification
+    // specifically. Only the Researcher can trigger classification/Retry
+    // itself (`write`) — the Approver never does. Curating the survey's
+    // question list (Domain/Sub-domain select, add from Question Bank,
+    // add/remove custom questions) is shared `write` between both roles
+    // too; only the Approver holds surveyBuilder `approve` (Survey
+    // Approve & Publish / Reject stays Approver-exclusive).
     expect(can('human_reviewer', 'aiReview', 'approve')).toBe(true);
     expect(can('human_reviewer', 'aiReview', 'write')).toBe(false);
-    expect(can('ngo_research_officer', 'aiReview', 'approve')).toBe(false);
+    expect(can('ngo_research_officer', 'aiReview', 'approve')).toBe(true);
     expect(can('ngo_research_officer', 'aiReview', 'write')).toBe(true);
-    expect(can('ngo_research_officer', 'surveyBuilder', 'write')).toBe(false);
+    expect(can('ngo_research_officer', 'surveyBuilder', 'write')).toBe(true);
+    expect(can('ngo_research_officer', 'surveyBuilder', 'approve')).toBe(false);
     expect(can('human_reviewer', 'surveyBuilder', 'write')).toBe(true);
     expect(can('human_reviewer', 'surveyBuilder', 'approve')).toBe(true);
     expect(can('ngo_research_officer', 'rolesPermissions', 'read')).toBe(false);

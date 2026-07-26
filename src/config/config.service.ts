@@ -96,4 +96,10 @@ export class ConfigService {
   get geminiApiKey(): string | undefined {
     return this.config.GEMINI_API_KEY;
   }
+  get unifonicAppSid(): string | undefined {
+    return this.config.UNIFONIC_APP_SID;
+  }
+  get unifonicSenderId(): string | undefined {
+    return this.config.UNIFONIC_SENDER_ID;
+  }
 }

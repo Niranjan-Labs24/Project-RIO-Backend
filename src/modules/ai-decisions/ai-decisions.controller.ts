@@ -39,9 +39,11 @@ export class AiDecisionsController {
   }
 }
 
-// The unified AI Review screen's own actions — Approve/Reject/Override are
-// all Approver-only (`aiReview:approve`), same permission the old inline
-// Approve/Override on the Need workspace page required.
+// The unified AI Review screen's own actions. Approve/Reject/Override are
+// Approver-only (`aiReview:approve`), same permission the old inline
+// Approve/Override on the Need workspace page required. Retry and Manual
+// Classify are `aiReview:write` instead — both are Researcher actions on a
+// Need with no AI suggestion yet to approve/reject/override.
 @Controller('needs/:needId/ai-review')
 export class AiReviewController {
   constructor(private readonly aiDecisions: AiDecisionsService) {}
@@ -79,6 +81,23 @@ export class AiReviewController {
   @RequirePermission('aiReview', 'write')
   retry(@Param('needId') needId: string): Promise<AiDecision> {
     return this.aiDecisions.retryClassification(needId);
+  }
+
+  // Researcher-driven manual classification, only reachable while the Need
+  // is ai_classification_failed — the other way off that status, alongside
+  // Retry above. Reuses override-domain's own request contract unchanged
+  // (already exactly {domain, subDomain}); unlike override-domain (an
+  // Approver's preview of a candidate change to an existing AI suggestion),
+  // this persists immediately, since a manual pick has no AI suggestion to
+  // preview against.
+  @Post('manual-classify')
+  @HttpCode(204)
+  @RequirePermission('aiReview', 'write')
+  manualClassify(
+    @Param('needId') needId: string,
+    @Body(new TypeBoxValidationPipe(AiReviewOverrideDomainBody)) body: AiReviewOverrideDomainDto,
+  ): Promise<void> {
+    return this.aiDecisions.manualClassify(needId, body);
   }
 }
 

@@ -8,9 +8,13 @@ import { ReportDataProvider } from "./providers/report-data.provider";
 import { PrioritySummaryController } from "./priority-summary.controller";
 import { ReportSummaryService } from "./report-summary.service";
 import { AiModule } from "../ai/ai.module";
+import { PriorityModule } from "../priority/priority.module";
 
 @Module({
-  imports: [AiModule],
+  // PriorityModule exports PriorityV2Service — the authoritative org-wide
+  // priority rows the collective dashboard aggregates (reconciles with the
+  // Priority Dashboard).
+  imports: [AiModule, PriorityModule],
   controllers: [ReportsController, PrioritySummaryController],
   providers: [
     ReportsService, ReportSummaryService,

@@ -1,6 +1,13 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '../../config/config.service';
 
+// Report/summary prompts (Region/Executive scope especially) can carry a lot
+// more context than a single Need's classification prompt — Gemini
+// genuinely takes longer on those, and the previous no-timeout fetch would
+// just hang on the platform's own upstream request limit instead of ever
+// giving the caller a clean, actionable error.
+const GEMINI_TIMEOUT_MS = 60_000;
+
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
@@ -36,6 +43,9 @@ export class AiService {
       },
     };
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -43,6 +53,7 @@ export class AiService {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),
+        signal: controller.signal,
       });
 
       if (!res.ok) {
@@ -73,8 +84,24 @@ export class AiService {
       const response = JSON.parse(text) as T;
       return { response, raw: data };
     } catch (err: any) {
+      if (err.name === 'AbortError') {
+        this.logger.error(`Gemini call timed out after ${GEMINI_TIMEOUT_MS}ms`);
+        throw new ServiceUnavailableException({
+          error: {
+            code: 'AI_TIMEOUT',
+            message: 'AI service took too long to respond. Please try again — a narrower scope (e.g. one village) usually completes faster.',
+          },
+        });
+      }
+      // Anything else (rate-limited/unavailable thrown above, a bad status,
+      // an unparsable response, ...) keeps its own specific message —
+      // callers such as AiDecisionsService.runAndPersistClassification store
+      // this verbatim as the classification failure reason, so collapsing
+      // it to a generic string here would throw away real diagnostic detail.
       this.logger.error(`Failed to call Gemini: ${err.message}`);
       throw err;
+    } finally {
+      clearTimeout(timeout);
     }
   }
 }

@@ -3,7 +3,7 @@ import { randomInt } from 'node:crypto';
 import { Prisma } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { PasswordService } from '../../auth/password.service';
-import { MailerService } from '../../mailer/mailer.service';
+import { SmsService } from '../../sms/sms.service';
 import { AuditService } from '../audit/audit.service';
 import { SurveysService } from '../surveys/surveys.service';
 import { DeterministicScoringService } from '../priority/scoring.service';
@@ -22,7 +22,7 @@ export class CitizenService {
   constructor(
     private readonly tenant: TenantPrismaService,
     private readonly passwords: PasswordService,
-    private readonly mailer: MailerService,
+    private readonly sms: SmsService,
     private readonly surveys: SurveysService,
     private readonly audit: AuditService,
     private readonly scoringEngine: DeterministicScoringService,
@@ -111,12 +111,16 @@ export class CitizenService {
     const link = await this.findActiveLinkOrThrow(token);
     // Scoped to the Need, not the Study — each Need runs its own
     // independent survey, so the same person may legitimately respond once
-    // per Need under the same Study. Contact normalized (see
-    // normalizeContact) so a trivial casing/whitespace difference can't
-    // bypass this check.
+    // per Need under the same Study. Both channels normalized (see
+    // normalizeContact/normalizeMobile) so a trivial casing/whitespace
+    // difference can't bypass this check. A match on EITHER channel counts
+    // as a duplicate — see SurveyResponse.mobile's comment.
     const contact = this.normalizeContact(payload.contact);
+    const mobile = this.normalizeMobile(payload.mobile);
     const existing = await this.tenant.runAsSupervisor((tx) =>
-      tx.surveyResponse.findFirst({ where: { needId: link.needId, contact } }),
+      tx.surveyResponse.findFirst({
+        where: { needId: link.needId, OR: [{ contact }, { mobile }] },
+      }),
     );
     return { isDuplicate: existing !== null };
   }
@@ -124,36 +128,38 @@ export class CitizenService {
   async requestOtp(token: string, payload: RequestOtpPayload): Promise<RequestOtpResult> {
     const link = await this.findActiveLinkOrThrow(token);
     const contact = this.normalizeContact(payload.contact);
+    const mobile = this.normalizeMobile(payload.mobile);
     const code = randomInt(100_000, 999_999).toString();
     const codeHash = await this.passwords.hash(code);
     const expiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
 
     const challenge = await this.tenant.runAsOrg(link.orgId, (tx) =>
       tx.citizenOtpChallenge.create({
-        data: { orgId: link.orgId, surveyLinkId: link.id, contact, codeHash, expiresAt },
+        data: { orgId: link.orgId, surveyLinkId: link.id, contact, mobile, codeHash, expiresAt },
       }),
     );
-    // Deliberately soft-fail, not hard-fail: an earlier version of this
-    // rejected the request outright when email delivery failed (expiring
-    // the challenge + throwing OTP_DELIVERY_FAILED), which stranded a
-    // citizen respondent with no way to ever get a code whenever SMTP
-    // wasn't configured/working. codeEmailed lets the frontend show the
-    // raw code instead in non-production, mirroring the same reveal
-    // convention used for temp-password delivery elsewhere in this app.
-    const codeEmailed = await this.mailer.sendOtpCode(payload.contact, code);
+    // Mobile-only verification: `contact` (email) is captured for the
+    // duplicate check and stored on the eventual SurveyResponse, but never
+    // OTP'd — it's additional contact info, not a second verification
+    // channel. Deliberately soft-fail, not hard-fail: an earlier version of
+    // this rejected the request outright when delivery failed (expiring the
+    // challenge + throwing OTP_DELIVERY_FAILED), which stranded a citizen
+    // respondent with no way to ever get a code whenever SMS wasn't
+    // configured/working.
+    const codeTexted = await this.sms.sendOtpCode(payload.mobile, code);
     // Dev only: surface the code so local/test runs aren't blocked on a
-    // real inbox — same convention as OrganizationsService.createWithAdmin's
+    // real phone — same convention as OrganizationsService.createWithAdmin's
     // temp-password reveal. Logged either way for local debugging; also
-    // returned to the frontend when not emailed so the respondent isn't
-    // stuck with no way to ever get the code.
+    // returned to the frontend when delivery failed, so the respondent
+    // isn't stuck with no way to ever get the code.
     if (process.env.NODE_ENV !== 'production') {
-      console.log(`OTP code for ${payload.contact} (challenge ${challenge.id}): ${code}`);
+      console.log(`OTP code for ${payload.mobile} (challenge ${challenge.id}): ${code}`);
     }
     return {
       challengeId: challenge.id,
       expiresAt: expiresAt.toISOString(),
-      codeEmailed,
-      code: !codeEmailed && process.env.NODE_ENV !== 'production' ? code : undefined,
+      codeTexted,
+      code: !codeTexted && process.env.NODE_ENV !== 'production' ? code : undefined,
     };
   }
 
@@ -226,11 +232,15 @@ export class CitizenService {
         });
       }
       // Belt-and-suspenders: also block a second submission from the same
-      // contact for this Need even via a *fresh* OTP request/verification,
-      // not just a reused challenge. Scoped to the Need, not the Study — see
-      // checkDuplicate's comment.
+      // contact/mobile for this Need even via a *fresh* OTP request/
+      // verification, not just a reused challenge. Scoped to the Need, not
+      // the Study — see checkDuplicate's comment. `mobile` is only in the
+      // OR when the challenge actually has one (see its nullable comment).
       const existing = await tx.surveyResponse.findFirst({
-        where: { needId: link.needId, contact: challenge.contact },
+        where: {
+          needId: link.needId,
+          OR: [{ contact: challenge.contact }, ...(challenge.mobile ? [{ mobile: challenge.mobile }] : [])],
+        },
       });
       if (existing) {
         throw new BadRequestException({
@@ -258,6 +268,7 @@ export class CitizenService {
           studyId: link.studyId,
           surveyLinkId: link.id,
           contact: challenge.contact,
+          mobile: challenge.mobile,
           contactName: payload.contactName ?? null,
           gender: payload.gender ?? null,
           regionId: org?.regionId ?? null,
@@ -336,5 +347,13 @@ export class CitizenService {
 
   private normalizeContact(contact: string): string {
     return contact.trim().toLowerCase();
+  }
+
+  // Strips phone punctuation (spaces, dashes, parens) but keeps the
+  // leading '+' and digits — good enough for exact-match dedup/lookup
+  // without a full E.164 validator; genuinely malformed numbers just fail
+  // at the Unifonic call and soft-fail like any other delivery error.
+  private normalizeMobile(mobile: string): string {
+    return mobile.trim().replace(/[\s\-()]/g, '');
   }
 }

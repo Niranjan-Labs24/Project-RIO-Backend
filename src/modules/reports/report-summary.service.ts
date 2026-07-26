@@ -53,6 +53,9 @@ export interface ReportDataSnapshot {
     assessmentCycle: number;
     organizationName: string;
     methodologyVersionId: string;
+    // Human-readable version label (e.g. "v1.0") for the report header — the
+    // UUID methodologyVersionId is an internal key, never shown to users.
+    methodologyVersionLabel?: string;
   };
   responseQuality: {
     submittedResponseCount: number;
@@ -213,7 +216,12 @@ export class ReportSummaryService {
           rollupLevel: 'KPI',
           ...(villageId ? { villageId } : {}),
         },
-        orderBy: { severityScore: 'desc' },
+        // Postgres defaults DESC to NULLS FIRST — without an explicit
+        // `nulls: 'last'`, every unscored (severityScore: null) KPI rollup
+        // sorted ahead of the real, non-null scores, so `take: 10` could
+        // fill the "Top KPIs" table with nulls (shown as 0) and push actual
+        // results off the list entirely.
+        orderBy: { severityScore: { sort: 'desc', nulls: 'last' } },
         take: 10,
       });
 
@@ -258,6 +266,7 @@ export class ReportSummaryService {
           assessmentCycle: study.cycleNumber,
           organizationName: study.org.name,
           methodologyVersionId: mv.id,
+          methodologyVersionLabel: mv.version,
         },
         responseQuality: {
           submittedResponseCount,
@@ -585,7 +594,14 @@ ${JSON.stringify(snapshot, null, 2)}
     // Rebuild the real snapshot; reuse the confirmed AI output (officer edits win).
     const { snapshot } = await this.buildReportDataSnapshot(summary.studyId, summary.surveyId, scope, scopeFilters);
     const aiOutput = (summary.officerEditedOutputJson ?? summary.aiOutputJson) as Record<string, unknown> | null;
-    const demographics = scope === 'VILLAGE' ? await aggregateDemographics(this.tenant, summary.studyId, villageId) : null;
+    // Gender/rural breakdown is real respondent data, independent of which
+    // scope this report is — computing it only for VILLAGE and hard-coding
+    // null everywhere else meant Sector/Region/Executive reports always
+    // showed "Not available" even when matching SurveyResponse rows exist.
+    // `villageId` is still whatever the scope's own filters resolved to
+    // (empty for SECTOR/EXECUTIVE unless a village sub-filter was picked,
+    // which aggregateDemographics already treats as "whole study").
+    const demographics = await aggregateDemographics(this.tenant, summary.studyId, villageId);
 
     const mapperArgs = { snapshot, aiOutput, demographics, filters: scopeFilters as Record<string, unknown> };
     const content =

@@ -60,6 +60,22 @@ export class SurveysController {
     return this.service.recommendQuestions(needId);
   }
 
+  // Backs the Survey Builder's "Custom Questions" tab — custom questions
+  // previously typed in from scratch on some OTHER survey, for this exact
+  // Domain/Sub-domain, so they can be reused instead of retyped. Org-wide
+  // (not scoped to :needId — a reusable question can have come from any
+  // survey), which is why it lives at its own path instead of nested under
+  // needs/:needId like the rest of this controller.
+  @Get('custom-questions')
+  @RequirePermission('surveyBuilder', 'read')
+  listReusableCustomQuestions(
+    @Query('domain') domain?: string,
+    @Query('subDomain') subDomain?: string,
+  ) {
+    if (!domain || !subDomain) return [];
+    return this.service.listReusableCustomQuestions(domain, subDomain);
+  }
+
   @Patch('surveys/:id/questions')
   @RequirePermission('surveyBuilder', 'write')
   updateQuestions(

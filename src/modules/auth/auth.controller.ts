@@ -7,7 +7,10 @@ import { RateLimit } from '../../common/guards/rate-limit.guard';
 import { CSRF_COOKIE_NAME, csrfCookieOptions, SESSION_COOKIE_NAME, sessionCookieOptions } from '../../auth/session-cookie';
 import { CsrfExempt } from '../../common/guards/csrf.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
-import { ChangePasswordBody, SignupBody, type ChangePasswordDto, type SignupDto } from './auth.contract';
+import {
+  ChangePasswordBody, ForgotPasswordBody, ResetPasswordBody, SignupBody,
+  type ChangePasswordDto, type ForgotPasswordDto, type ResetPasswordDto, type SignupDto,
+} from './auth.contract';
 import { AuthService } from './auth.service';
 import type { SessionContext, SignupResponseView } from './session.types';
 
@@ -60,6 +63,32 @@ export class AuthController {
     return result;
   }
 
+  // Open routes: unauthenticated by definition (the whole point is to
+  // recover access without a session). CSRF-exempt for the same reason as
+  // login/signup — no session cookie exists yet for either of these calls
+  // to double-submit against.
+  @Post('forgot-password')
+  @Public()
+  @RateLimit(3, 600)
+  @HttpCode(200)
+  @CsrfExempt()
+  forgotPassword(
+    @Body(new TypeBoxValidationPipe(ForgotPasswordBody)) body: ForgotPasswordDto,
+  ): Promise<{ message: string }> {
+    return this.auth.forgotPassword(body);
+  }
+
+  @Post('reset-password')
+  @Public()
+  @RateLimit(10, 600)
+  @HttpCode(200)
+  @CsrfExempt()
+  resetPassword(
+    @Body(new TypeBoxValidationPipe(ResetPasswordBody)) body: ResetPasswordDto,
+  ): Promise<{ message: string }> {
+    return this.auth.resetPassword(body);
+  }
+
   @Get('me')
   me(): Promise<SessionContext> {
     return this.auth.me();
@@ -69,8 +98,14 @@ export class AuthController {
   @HttpCode(204)
   async logout(@Res({ passthrough: true }) res: Response): Promise<void> {
     await this.auth.logout();
-    res.clearCookie(SESSION_COOKIE_NAME, { path: '/' });
-    res.clearCookie(CSRF_COOKIE_NAME, { path: '/' });
+    // clearCookie must be called with the same attributes the cookie was
+    // set with (sameSite/secure) — passing only `path` still works in most
+    // browsers, but some browsers only expire the exact attribute
+    // combination they stored, leaving the old cookie value visible in
+    // devtools even though the session itself is already dead server-side.
+    const isProd = this.config.nodeEnv === 'production';
+    res.clearCookie(SESSION_COOKIE_NAME, { ...sessionCookieOptions(isProd), maxAge: undefined });
+    res.clearCookie(CSRF_COOKIE_NAME, { ...csrfCookieOptions(isProd), maxAge: undefined });
   }
 
   @Post('consent')
