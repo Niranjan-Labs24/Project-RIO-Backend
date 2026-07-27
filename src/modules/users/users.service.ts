@@ -218,7 +218,7 @@ export class UsersService {
     const ngoAdminRoleId = 'role_ngo_admin';
     const fallbackRoleId = 'role_ngo_research_officer';
 
-    await this.tenant.runAsSupervisor(async (tx) => {
+    await this.tenant.runAsOrg(organizationId, async (tx) => {
       // Find current NGO Admins in org (excluding target)
       const previousAdmins = await tx.user.findMany({
         where: { orgId: organizationId, roleId: ngoAdminRoleId, id: { not: targetUser.id } },
@@ -292,7 +292,7 @@ export class UsersService {
 
     const wasNgoAdmin = existing.roleId === 'role_ngo_admin';
 
-    const updated = (await this.tenant.runAsSupervisor((tx) =>
+    const updated = (await this.tenant.runAsOrg(organizationId, (tx) =>
       tx.user.update({
         where: { id: userId },
         data: { roleId: role.id, sessionVersion: { increment: 1 } },
@@ -365,7 +365,7 @@ export class UsersService {
       return this.toOrgUser(existing);
     }
 
-    const updated = (await this.tenant.runAsSupervisor((tx) =>
+    const updated = (await this.tenant.runAsOrg(organizationId, (tx) =>
       tx.user.update({
         where: { id: userId },
         data: { status: payload.status as UserStatus, sessionVersion: { increment: 1 } },

@@ -1038,9 +1038,13 @@ Eligible Questions: ${JSON.stringify(
     const take = Math.min(Math.max(opts.limit ?? 100, 1), 200);
     const skip = Math.max(opts.offset ?? 0, 0);
 
+    const needWhere: any = {
+      ...(opts.organizationId ? { orgId: opts.organizationId } : {}),
+      ...(opts.studyId ? { studyId: opts.studyId } : {}),
+    };
+
     const where: any = {
-      ...(opts.organizationId ? { need: { orgId: opts.organizationId } } : {}),
-      ...(opts.studyId ? { need: { studyId: opts.studyId } } : {}),
+      ...(Object.keys(needWhere).length > 0 ? { need: needWhere } : {}),
       ...(opts.status ? { status: opts.status } : {}),
       ...(opts.search ? { title: { contains: opts.search, mode: 'insensitive' } } : {}),
     };
@@ -1063,9 +1067,10 @@ Eligible Questions: ${JSON.stringify(
       await this.audit.record({
         action: 'SYSTEM_ADMIN_VIEWED_SURVEY',
         entityType: 'survey',
-        entityId: opts.organizationId ?? 'all',
+        entityId: opts.organizationId ?? null,
         entityLabel: opts.organizationId ? 'Organization Surveys' : 'All Platform Surveys',
         organizationId: opts.organizationId,
+        metadata: { scope: opts.organizationId ? 'organization' : 'all' },
       });
     } else {
       const result = await this.tenant.runInOrgContext((tx) =>

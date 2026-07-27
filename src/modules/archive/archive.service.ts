@@ -64,7 +64,7 @@ export class ArchiveService {
     // Need still short of survey_published, isn't archive-eligible.
     const completedStudies = studies.filter((s) => {
       const studyNeeds = needsByStudyId.get(s.id) ?? [];
-      return studyNeeds.length > 0 && studyNeeds.every((n) => n.status === "survey_published");
+      return s.status === "archived" && studyNeeds.length > 0 && studyNeeds.every((n) => n.status === "survey_published");
     });
 
     const results: ArchiveEntry[] = [];

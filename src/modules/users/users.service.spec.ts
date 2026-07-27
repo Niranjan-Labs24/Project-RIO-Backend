@@ -163,6 +163,28 @@ describe('UsersService', () => {
     let targetUser = { id: 'u2', orgId: 'o1', name: 'User2', email: 'u2@x.org', roleId: 'role_ngo_research_officer', status: 'active', createdAt: new Date('2026-01-01T00:00:00Z') };
 
     const fake = {
+      runAsOrg: async (_orgId: string, fn: (tx: unknown) => unknown) =>
+        fn({
+          organisation: {
+            findUnique: async () => ({ id: 'o1', name: 'Test Org', isActive: true }),
+          },
+          user: {
+            findUnique: async ({ where }: { where: { id: string } }) => {
+              if (where.id === 'u1') return currentAdmin;
+              if (where.id === 'u2') return targetUser;
+              return null;
+            },
+            findMany: async ({ where }: { where: { roleId?: string } }) => {
+              if (where?.roleId === 'role_ngo_admin') return [currentAdmin];
+              return [];
+            },
+            update: async ({ where, data }: { where: { id: string }; data: { roleId: string } }) => {
+              if (where.id === 'u1') { currentAdmin = { ...currentAdmin, roleId: data.roleId }; return currentAdmin; }
+              if (where.id === 'u2') { targetUser = { ...targetUser, roleId: data.roleId }; return targetUser; }
+              return null;
+            },
+          },
+        }),
       runAsSupervisor: async (fn: (tx: unknown) => unknown) =>
         fn({
           organisation: {
@@ -200,6 +222,12 @@ describe('UsersService', () => {
 
   it('assignNgoAdmin rejects assignment for an inactive organization', async () => {
     const fake = {
+      runAsOrg: async (_orgId: string, fn: (tx: unknown) => unknown) =>
+        fn({
+          organisation: {
+            findUnique: async () => ({ id: 'o1', name: 'Test Org', isActive: false }),
+          },
+        }),
       runAsSupervisor: async (fn: (tx: unknown) => unknown) =>
         fn({
           organisation: {
@@ -221,6 +249,19 @@ describe('UsersService', () => {
     let userRow = { id: 'u3', orgId: 'o1', name: 'Target', email: 't@x.org', roleId: 'role_ngo_research_officer', status: 'active' as 'active' | 'invited' | 'disabled', createdAt: new Date('2026-01-01T00:00:00Z') };
 
     const fake = {
+      runAsOrg: async (_orgId: string, fn: (tx: unknown) => unknown) =>
+        fn({
+          organisation: {
+            findUnique: async () => ({ id: 'o1', name: 'Test Org', isActive: true }),
+          },
+          user: {
+            findUnique: async () => userRow,
+            update: async ({ data }: { data: { status: 'active' | 'disabled' } }) => {
+              userRow = { ...userRow, status: data.status };
+              return userRow;
+            },
+          },
+        }),
       runAsSupervisor: async (fn: (tx: unknown) => unknown) =>
         fn({
           organisation: {

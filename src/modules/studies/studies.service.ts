@@ -479,21 +479,22 @@ export class StudiesService {
 
     const needs = raw.needs ?? [];
     const reports = raw.reports ?? [];
-    const hasIncompleteNeeds = needs.length > 0 && needs.some((n: any) => n.status !== 'survey_published');
+    const hasNeeds = needs.length > 0;
+    const allNeedsCompleted = hasNeeds && needs.every((n: any) => n.status === 'survey_published');
     const hasReleasedReport = reports.some((r: any) => r.status === 'released' || r.status === 'archived');
 
-    if (hasIncompleteNeeds && !hasReleasedReport) {
+    if (!hasNeeds || !allNeedsCompleted || !hasReleasedReport) {
       throw new BadRequestException({
         error: {
           code: 'STUDY_INCOMPLETE_FOR_ARCHIVE',
-          message: 'Study cannot be archived until all surveys are completed and reports are published.',
+          message: 'Study cannot be archived until all surveys are completed and at least one report is published.',
         },
       });
     }
 
     const now = new Date();
     const updated = isSysAdmin
-      ? await this.tenant.runAsSupervisor((tx) =>
+      ? await this.tenant.runAsOrg(raw.orgId, (tx) =>
           tx.study.update({
             where: { id },
             data: { status: 'archived', archivedAt: now, archivedBy: actorId, archiveReason: reason ?? null },
@@ -538,7 +539,7 @@ export class StudiesService {
     }
 
     const updated = isSysAdmin
-      ? await this.tenant.runAsSupervisor((tx) =>
+      ? await this.tenant.runAsOrg(raw.orgId, (tx) =>
           tx.study.update({
             where: { id },
             data: { status: 'completed', archivedAt: null, archivedBy: null, archiveReason: null },

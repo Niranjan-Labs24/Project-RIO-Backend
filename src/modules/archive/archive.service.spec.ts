@@ -32,7 +32,7 @@ const auditStub = { record: async () => {} };
 describe('ArchiveService', () => {
   it('list filters completed studies by organization', async () => {
     const studies = [
-      { id: 's1', orgId: 'o1', title: 'Study 1', updatedAt: new Date('2026-01-01T00:00:00Z') },
+      { id: 's1', orgId: 'o1', title: 'Study 1', status: 'archived', updatedAt: new Date('2026-01-01T00:00:00Z') },
     ];
     const needs = [
       { id: 'n1', studyId: 's1', status: 'survey_published', village: ['Village A'] },
