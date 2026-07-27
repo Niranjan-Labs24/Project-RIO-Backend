@@ -15,6 +15,7 @@ datasource db {
 enum UserStatus {
   active
   invited
+  disabled
 }
 
 enum PermissionModule {
@@ -274,6 +275,10 @@ model Study {
   // version may be selected (checked in StudiesService, not enforceable by
   // the FK itself). Nullable: can be set later, not required at creation.
   methodologyVersionId String? @map("methodology_version_id") @db.Uuid
+  status String @default("active") @db.VarChar(50)
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
+  archivedBy String? @map("archived_by") @db.Uuid
+  archiveReason String? @map("archive_reason") @db.VarChar(500)
   createdBy String      @map("created_by") @db.Uuid
   createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)

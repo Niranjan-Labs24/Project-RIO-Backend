@@ -1023,4 +1023,169 @@ Eligible Questions: ${JSON.stringify(
       };
     });
   }
+
+  async listSurveys(opts: { organizationId?: string; studyId?: string; status?: string; search?: string; limit?: number; offset?: number }) {
+    const store = getOrgStore();
+    const isSysAdmin = store?.role === 'system_admin';
+
+    const take = Math.min(Math.max(opts.limit ?? 100, 1), 200);
+    const skip = Math.max(opts.offset ?? 0, 0);
+
+    const needWhere: Prisma.NeedWhereInput = {
+      ...(opts.organizationId ? { orgId: opts.organizationId } : {}),
+      ...(opts.studyId ? { studyId: opts.studyId } : {}),
+    };
+
+    const where: Prisma.SurveyWhereInput = {
+      ...(Object.keys(needWhere).length > 0 ? { need: needWhere } : {}),
+      ...(opts.status ? { status: opts.status } : {}),
+      ...(opts.search ? { title: { contains: opts.search, mode: 'insensitive' } } : {}),
+    };
+
+    // `responses` is not a relation on Survey (response counts live on
+    // Need.surveyResponses) — fetched here via the nested `need` include,
+    // same as getSurveyDetailById below. A prior `include: { responses: ... }`
+    // directly on Survey referenced a relation that doesn't exist and would
+    // have thrown at query time the first time this endpoint was actually
+    // called; caught here while removing `any` from this method's typing.
+    const include = {
+      need: { include: { study: true, org: true, surveyResponses: { select: { id: true } } } },
+    };
+    type SurveyListItem = Prisma.SurveyGetPayload<{ include: typeof include }>;
+    let items: SurveyListItem[] = [];
+    let total = 0;
+
+    if (isSysAdmin) {
+      const result = await this.tenant.runAsSupervisor((tx) =>
+        Promise.all([
+          tx.survey.findMany({ where, orderBy: { createdAt: 'desc' }, take, skip, include }),
+          tx.survey.count({ where }),
+        ]),
+      );
+      items = result[0];
+      total = result[1];
+
+      await this.audit.record({
+        action: 'SYSTEM_ADMIN_VIEWED_SURVEY',
+        entityType: 'survey',
+        entityId: opts.organizationId ?? null,
+        entityLabel: opts.organizationId ? 'Organization Surveys' : 'All Platform Surveys',
+        organizationId: opts.organizationId,
+        metadata: { scope: opts.organizationId ? 'organization' : 'all' },
+      });
+    } else {
+      const result = await this.tenant.runInOrgContext((tx) =>
+        Promise.all([
+          tx.survey.findMany({ where, orderBy: { createdAt: 'desc' }, take, skip, include }),
+          tx.survey.count({ where }),
+        ]),
+      );
+      items = result[0];
+      total = result[1];
+    }
+
+    return {
+      items: items.map((s) => ({
+        id: s.id,
+        title: s.title ?? s.need?.title ?? 'Untitled Survey',
+        needId: s.needId,
+        studyId: s.need?.studyId ?? null,
+        studyTitle: s.need?.study?.title ?? null,
+        orgId: s.need?.orgId ?? null,
+        orgName: s.need?.org?.name ?? null,
+        status: s.status,
+        responseCount: s.need?.surveyResponses?.length ?? 0,
+        publishedAt: s.publishedAt ? s.publishedAt.toISOString() : null,
+        // Survey has no `closedAt` column (never did) — kept as a literal
+        // null so the response shape is unchanged rather than dropping the
+        // key; surfaced while removing `any` from this method's typing.
+        closedAt: null,
+        createdAt: s.createdAt ? s.createdAt.toISOString() : null,
+      })),
+      total,
+      limit: take,
+      offset: skip,
+    };
+  }
+
+  async getSurveyDetailById(id: string) {
+    const store = getOrgStore();
+    const isSysAdmin = store?.role === 'system_admin';
+
+    const include = {
+      need: {
+        include: {
+          study: true,
+          org: true,
+          priorityScores: { take: 1, orderBy: { scoredAt: 'desc' as const } },
+          _count: { select: { evidence: true } },
+          surveyResponses: { select: { id: true, channel: true, createdAt: true } },
+        },
+      },
+      surveyQuestions: { include: { question: true }, orderBy: { order: 'asc' as const } },
+    };
+
+    type SurveyDetailRow = Prisma.SurveyGetPayload<{ include: typeof include }>;
+    let survey: SurveyDetailRow | null = null;
+    if (isSysAdmin) {
+      survey = await this.tenant.runAsSupervisor((tx) =>
+        tx.survey.findUnique({ where: { id }, include }),
+      );
+      if (survey) {
+        await this.audit.record({
+          action: 'SYSTEM_ADMIN_VIEWED_SURVEY',
+          entityType: 'survey',
+          entityId: id,
+          entityLabel: survey.title ?? survey.need?.title ?? 'Untitled Survey',
+          organizationId: survey.need?.orgId,
+        });
+      }
+    } else {
+      survey = await this.tenant.runInOrgContext((tx) =>
+        tx.survey.findUnique({ where: { id }, include }),
+      );
+    }
+
+    if (!survey) {
+      throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
+    }
+
+    const questions = (survey.surveyQuestions ?? []).map((sq) => this.toQuestionDto(sq));
+    const responses = survey.need?.surveyResponses ?? [];
+
+    return {
+      id: survey.id,
+      title: survey.title ?? survey.need?.title ?? 'Untitled Survey',
+      needId: survey.needId,
+      studyId: survey.need?.studyId ?? null,
+      studyTitle: survey.need?.study?.title ?? null,
+      orgId: survey.need?.orgId ?? null,
+      orgName: survey.need?.org?.name ?? null,
+      village: Array.isArray(survey.need?.village) ? survey.need.village.join(', ') : (survey.need?.village ?? '—'),
+      domainCategory: survey.need?.domain ?? survey.need?.aiSuggestedDomain ?? '—',
+      status: survey.status,
+      // Survey has no `publicToken` field — the citizen-facing public link
+      // token lives on PublicSurveyLink (a separate model, see
+      // public-surveys.service.ts), which this query doesn't join. Kept as a
+      // literal null so the response shape is unchanged; surfaced while
+      // removing `any` from this method's typing.
+      publicToken: null,
+      methodologyVersionId: survey.methodologyVersion,
+      questionsCount: questions.length,
+      responseCount: responses.length,
+      evidenceCount: survey.need?._count?.evidence ?? 0,
+      score: survey.need?.priorityScores?.[0]?.overallScore ?? null,
+      questions,
+      responsesSummary: {
+        total: responses.length,
+        citizenChannelCount: responses.filter((r) => r.channel === 'citizen').length,
+        fieldCollectorCount: responses.filter((r) => r.channel !== 'citizen').length,
+      },
+      publishedAt: survey.publishedAt ? survey.publishedAt.toISOString() : null,
+      // Survey has no `closedAt` column (never did) — see the matching note
+      // in listSurveys above.
+      closedAt: null,
+      createdAt: survey.createdAt ? survey.createdAt.toISOString() : null,
+    };
+  }
 }

@@ -81,6 +81,7 @@ export interface CreateReportPayload {
 }
 
 export interface ListReportsParams {
+  organizationId?: string;
   reportType?: ReportTypeCode;
   status?: ReportStatus;
   studyId?: string;

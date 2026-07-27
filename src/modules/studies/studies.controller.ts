@@ -26,12 +26,14 @@ export class StudiesController {
   @Get()
   @RequirePermission('studySurvey', 'read')
   list(
+    @Query('organizationId') organizationId?: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
     @Query('village') village?: string,
     @Query('search') search?: string,
   ): Promise<StudyListResult> {
     return this.studies.list({
+      organizationId: organizationId || undefined,
       limit: parseIntParam(limit),
       offset: parseIntParam(offset),
       village: village || undefined,
@@ -59,5 +61,17 @@ export class StudiesController {
   @RequirePermission('studySurvey', 'write')
   remove(@Param('id', new UuidParamPipe()) id: string): Promise<void> {
     return this.studies.remove(id);
+  }
+
+  @Post(':id/archive')
+  @RequirePermission('archiveSharingAudit', 'write')
+  archive(@Param('id') id: string, @Body('reason') reason?: string): Promise<Study> {
+    return this.studies.archive(id, reason);
+  }
+
+  @Post(':id/restore')
+  @RequirePermission('archiveSharingAudit', 'write')
+  restore(@Param('id') id: string): Promise<Study> {
+    return this.studies.restore(id);
   }
 }

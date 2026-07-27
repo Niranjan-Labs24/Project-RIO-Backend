@@ -104,7 +104,7 @@ export class OrganizationsService {
     return this.toOrganization(updated);
   }
 
-  // System-Admin creates an org + its first NGO Admin (invited) in one action.
+  // System-Admin creates an org + optional first NGO Admin (invited) in one action.
   async createWithAdmin(payload: CreateOrganizationPayload): Promise<Organization> {
     this.assertCrossEntity();
     await this.assertValidSector(payload.sector);
@@ -120,14 +120,16 @@ export class OrganizationsService {
       const created = await this.tenant.runAsOrg(orgId, async (tx) => {
         const row = await tx.organisation.create({
           data: {
-            id: orgId, name: payload.name, purpose: payload.purpose, registrationNumber: payload.registrationNumber,
+            id: orgId, name: payload.name, purpose: payload.purpose ?? null, registrationNumber: payload.registrationNumber,
             region: payload.region ?? [], email: payload.email ?? null,
             sector: payload.sector ?? null, villages: payload.villages ?? [], isActive: true,
           },
         });
-        await tx.user.create({
-          data: { orgId, roleId: 'role_ngo_admin', name: payload.adminName, email: payload.adminEmail, status: UserStatus.invited, passwordHash },
-        });
+        if (payload.adminName && payload.adminEmail) {
+          await tx.user.create({
+            data: { orgId, roleId: 'role_ngo_admin', name: payload.adminName, email: payload.adminEmail, status: UserStatus.invited, passwordHash },
+          });
+        }
         return row;
       });
       // A freshly-created org has no Governorate/Center selections yet — no
@@ -142,7 +144,7 @@ export class OrganizationsService {
 
     // File under the newly-created org (not the acting system_admin's org) so
     // the creation event is traceable from the new entity's audit trail.
-    await this.audit.record({ action: 'create', entityType: 'organization', entityId: org.id, entityLabel: org.name, organizationId: org.id });
+    await this.audit.record({ action: 'ORGANIZATION_CREATED', entityType: 'organization', entityId: org.id, entityLabel: org.name, organizationId: org.id });
     return this.toOrganization(org);
   }
 
@@ -152,25 +154,92 @@ export class OrganizationsService {
     const skip = Math.max(opts.offset ?? 0, 0);
     const rows = await this.tenant.runAsSupervisor((tx) =>
       tx.organisation.findMany({
-        include: { ...GEO_INCLUDE, _count: { select: { users: true } } },
+        include: {
+          ...GEO_INCLUDE,
+          users: { where: { roleId: 'role_ngo_admin' }, take: 1, select: { name: true, email: true } },
+          _count: { select: { users: true, studies: true, surveys: true, reports: true } },
+        },
         orderBy: { createdAt: 'desc' },
         take,
         skip,
       }),
     );
-    return (rows as (RawOrgWithGeo & { _count: { users: number } })[]).map((r) => ({
+    return (rows as (RawOrgWithGeo & {
+      users: { name: string; email: string }[];
+      _count: { users: number; studies: number; surveys: number; reports: number };
+    })[]).map((r) => ({
       ...this.toOrganization(this.toOrgRow(r)),
       memberCount: r._count.users,
+      studyCount: r._count.studies,
+      surveyCount: r._count.surveys,
+      reportCount: r._count.reports,
+      ngoAdminName: r.users[0]?.name ?? null,
+      ngoAdminEmail: r.users[0]?.email ?? null,
     }));
   }
 
   async getById(id: string): Promise<OrganizationSummary> {
     this.assertCrossEntity();
     const row = (await this.tenant.runAsSupervisor((tx) =>
-      tx.organisation.findUnique({ where: { id }, include: { ...GEO_INCLUDE, _count: { select: { users: true } } } }),
-    )) as (RawOrgWithGeo & { _count: { users: number } }) | null;
+      tx.organisation.findUnique({
+        where: { id },
+        include: {
+          ...GEO_INCLUDE,
+          users: { where: { roleId: 'role_ngo_admin' }, take: 1, select: { name: true, email: true } },
+          _count: { select: { users: true, studies: true, surveys: true, reports: true } },
+        },
+      }),
+    )) as (RawOrgWithGeo & {
+      users: { name: string; email: string }[];
+      _count: { users: number; studies: number; surveys: number; reports: number };
+    }) | null;
+
     if (!row) throw new NotFoundException({ error: { code: 'ORG_NOT_FOUND', message: 'Organization not found' } });
-    return { ...this.toOrganization(this.toOrgRow(row)), memberCount: row._count.users };
+
+    await this.audit.record({
+      action: 'SYSTEM_ADMIN_VIEWED_ORGANIZATION',
+      entityType: 'organization',
+      entityId: row.id,
+      entityLabel: row.name,
+      organizationId: row.id,
+    });
+
+    return {
+      ...this.toOrganization(this.toOrgRow(row)),
+      memberCount: row._count.users,
+      studyCount: row._count.studies,
+      surveyCount: row._count.surveys,
+      reportCount: row._count.reports,
+      ngoAdminName: row.users[0]?.name ?? null,
+      ngoAdminEmail: row.users[0]?.email ?? null,
+    };
+  }
+
+  async updateStatus(id: string, payload: { isActive: boolean; reason?: string | null }): Promise<OrganizationSummary> {
+    this.assertCrossEntity();
+    const current = await this.tenant.runAsSupervisor((tx) =>
+      tx.organisation.findUnique({ where: { id } }),
+    );
+    if (!current) throw new NotFoundException({ error: { code: 'ORG_NOT_FOUND', message: 'Organization not found' } });
+
+    await this.tenant.runAsOrg(id, (tx) =>
+      tx.organisation.update({
+        where: { id },
+        data: { isActive: payload.isActive },
+      }),
+    );
+
+    const action = payload.isActive ? 'ORGANIZATION_REACTIVATED' : 'ORGANIZATION_DEACTIVATED';
+    await this.audit.record({
+      action,
+      entityType: 'organization',
+      entityId: current.id,
+      entityLabel: current.name,
+      organizationId: current.id,
+      metadata: payload.reason ? { reason: payload.reason } : undefined,
+    });
+
+    return this.getById(id);
   }
 
   // Mirrors AuthService's identical check (see auth.service.ts) — `sector`

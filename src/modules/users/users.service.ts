@@ -10,7 +10,7 @@ import { generateTemporaryPassword } from '../auth/auth.repository';
 import { AuditService } from '../audit/audit.service';
 import type { AuditChange } from '../audit/audit.types';
 import type {
-  CreateForOrgPayload, InviteUserPayload, InviteUserResponse, OrgUser, UpdateUserPayload, UserRow,
+  AssignNgoAdminPayload, CreateForOrgPayload, InviteUserPayload, InviteUserResponse, OrgUser, UpdateUserPayload, UpdateUserRolePayload, UpdateUserStatusPayload, UserRow,
 } from './users.types';
 
 const DIFF_FIELDS = ['name', 'roleId', 'status'] as const;
@@ -128,7 +128,304 @@ export class UsersService {
     const rows = (await this.tenant.runAsSupervisor((tx) =>
       tx.user.findMany({ where: { orgId: organizationId }, orderBy: { createdAt: 'asc' }, take, skip }),
     )) as UserRow[];
+
+    await this.audit.record({
+      action: 'SYSTEM_ADMIN_VIEWED_ORGANIZATION_USERS',
+      entityType: 'organization',
+      entityId: organizationId,
+      entityLabel: organizationId,
+      organizationId,
+    });
+
     return rows.map((r) => this.toOrgUser(r));
+  }
+
+  // System-Admin fetch NGO Admins for org.
+  async getNgoAdminsForOrg(organizationId: string): Promise<OrgUser[]> {
+    this.assertCrossEntity();
+    const rows = (await this.tenant.runAsSupervisor((tx) =>
+      tx.user.findMany({ where: { orgId: organizationId, roleId: 'role_ngo_admin' }, orderBy: { createdAt: 'asc' } }),
+    )) as UserRow[];
+    return rows.map((r) => this.toOrgUser(r));
+  }
+
+  // System-Admin Assign / Change NGO Admin for an organization.
+  async assignNgoAdmin(organizationId: string, payload: AssignNgoAdminPayload): Promise<InviteUserResponse> {
+    this.assertCrossEntity();
+
+    // 1. Verify organization exists and is active.
+    const org = await this.tenant.runAsSupervisor((tx) =>
+      tx.organisation.findUnique({ where: { id: organizationId } }),
+    );
+    if (!org) {
+      throw new NotFoundException({ error: { code: 'ORG_NOT_FOUND', message: 'Organization not found' } });
+    }
+    if (!org.isActive) {
+      throw new BadRequestException({
+        error: { code: 'INACTIVE_ORG', message: 'Cannot assign NGO Admin to an inactive organization' },
+      });
+    }
+
+    let targetUser: UserRow;
+    let credentials: { temporaryPasswordEmailed: boolean; temporaryPassword?: string } = { temporaryPasswordEmailed: false };
+
+    if (payload.userId) {
+      // Assign existing user
+      const existing = (await this.tenant.runAsSupervisor((tx) =>
+        tx.user.findUnique({ where: { id: payload.userId } }),
+      )) as UserRow | null;
+
+      if (!existing || existing.orgId !== organizationId) {
+        throw new NotFoundException({
+          error: { code: 'USER_NOT_FOUND', message: 'User not found in selected organization' },
+        });
+      }
+
+      targetUser = existing;
+    } else if (payload.name && payload.email) {
+      // Invite new user as NGO Admin
+      const created = (await this.createUser(() =>
+        this.tenant.runAsOrg(organizationId, async (tx) => {
+          return tx.user.create({
+            data: {
+              orgId: organizationId,
+              name: payload.name!,
+              email: payload.email!,
+              roleId: 'role_ngo_admin',
+              status: UserStatus.invited,
+            },
+          });
+        }),
+      )) as UserRow;
+
+      targetUser = created;
+      await this.audit.record({
+        action: 'USER_INVITED_BY_SYSTEM_ADMIN',
+        entityType: 'user',
+        entityId: created.id,
+        entityLabel: created.email,
+        organizationId,
+        metadata: { roleId: 'role_ngo_admin', reason: payload.reason },
+      });
+
+      credentials = await this.provisionTemporaryPassword(created.id, created.email, org.name, organizationId);
+    } else {
+      throw new BadRequestException({
+        error: { code: 'INVALID_ASSIGNMENT_PAYLOAD', message: 'Must provide either userId or name and email' },
+      });
+    }
+
+    // 2. Transaction: Demote existing NGO Admin(s) and promote target user
+    const ngoAdminRoleId = 'role_ngo_admin';
+    const fallbackRoleId = 'role_ngo_research_officer';
+
+    await this.tenant.runAsOrg(organizationId, async (tx) => {
+      // Find current NGO Admins in org (excluding target)
+      const previousAdmins = await tx.user.findMany({
+        where: { orgId: organizationId, roleId: ngoAdminRoleId, id: { not: targetUser.id } },
+      });
+
+      // Demote previous NGO Admins to Research Officer
+      for (const prev of previousAdmins) {
+        await tx.user.update({
+          where: { id: prev.id },
+          data: { roleId: fallbackRoleId, sessionVersion: { increment: 1 } },
+        });
+
+        await this.audit.record({
+          action: 'NGO_ADMIN_CHANGED',
+          entityType: 'user',
+          entityId: prev.id,
+          entityLabel: prev.email,
+          organizationId,
+          changes: [{ field: 'roleId', before: ngoAdminRoleId, after: fallbackRoleId }],
+          metadata: { newNgoAdminId: targetUser.id, reason: payload.reason },
+        });
+      }
+
+      // Promote target user to NGO Admin if not already
+      if (targetUser.roleId !== ngoAdminRoleId) {
+        await tx.user.update({
+          where: { id: targetUser.id },
+          data: { roleId: ngoAdminRoleId, sessionVersion: { increment: 1 } },
+        });
+      }
+    });
+
+    await this.audit.record({
+      action: 'NGO_ADMIN_ASSIGNED',
+      entityType: 'user',
+      entityId: targetUser.id,
+      entityLabel: targetUser.email,
+      organizationId,
+      metadata: { reason: payload.reason },
+    });
+
+    const updatedUser = (await this.tenant.runAsSupervisor((tx) =>
+      tx.user.findUnique({ where: { id: targetUser.id } }),
+    )) as UserRow;
+
+    return { ...this.toOrgUser(updatedUser), ...credentials };
+  }
+
+  // System-Admin update user role for an organization.
+  async updateUserRoleForOrg(
+    organizationId: string,
+    userId: string,
+    payload: UpdateUserRolePayload,
+  ): Promise<OrgUser> {
+    this.assertCrossEntity();
+    if (payload.roleId === 'role_ngo_admin') {
+      const result = await this.assignNgoAdmin(organizationId, { userId, reason: payload.reason });
+      return result;
+    }
+
+    const role = this.validateRole(payload.roleId);
+    const existing = (await this.tenant.runAsSupervisor((tx) =>
+      tx.user.findUnique({ where: { id: userId } }),
+    )) as UserRow | null;
+
+    if (!existing || existing.orgId !== organizationId) {
+      throw new NotFoundException({
+        error: { code: 'USER_NOT_FOUND', message: 'User not found in selected organization' },
+      });
+    }
+
+    const wasNgoAdmin = existing.roleId === 'role_ngo_admin';
+
+    const updated = (await this.tenant.runAsOrg(organizationId, (tx) =>
+      tx.user.update({
+        where: { id: userId },
+        data: { roleId: role.id, sessionVersion: { increment: 1 } },
+      }),
+    )) as UserRow;
+
+    if (wasNgoAdmin) {
+      await this.audit.record({
+        action: 'NGO_ADMIN_ROLE_REMOVED',
+        entityType: 'user',
+        entityId: userId,
+        entityLabel: existing.email,
+        organizationId,
+        changes: [{ field: 'roleId', before: 'role_ngo_admin', after: role.id }],
+        metadata: { reason: payload.reason },
+      });
+    } else {
+      await this.audit.record({
+        action: 'USER_ROLE_CHANGED_BY_SYSTEM_ADMIN',
+        entityType: 'user',
+        entityId: userId,
+        entityLabel: existing.email,
+        organizationId,
+        changes: [{ field: 'roleId', before: existing.roleId, after: role.id }],
+        metadata: payload.reason ? { reason: payload.reason } : undefined,
+      });
+    }
+
+    return this.toOrgUser(updated);
+  }
+
+  // System-Admin update user status for an organization (enable / disable).
+  async updateUserStatusForOrg(
+    organizationId: string,
+    userId: string,
+    payload: UpdateUserStatusPayload,
+  ): Promise<OrgUser> {
+    this.assertCrossEntity();
+    const actorId = requireActor();
+    if (userId === actorId && payload.status === 'disabled') {
+      throw new BadRequestException({
+        error: { code: 'CANNOT_DISABLE_SELF', message: 'You cannot disable your own administrator account' },
+      });
+    }
+
+    const org = await this.tenant.runAsSupervisor((tx) =>
+      tx.organisation.findUnique({ where: { id: organizationId } }),
+    );
+    if (!org) {
+      throw new NotFoundException({ error: { code: 'ORG_NOT_FOUND', message: 'Organization not found' } });
+    }
+
+    if (payload.status === 'active' && !org.isActive) {
+      throw new BadRequestException({
+        error: { code: 'INACTIVE_ORG', message: 'Cannot enable user in an inactive organization' },
+      });
+    }
+
+    const existing = (await this.tenant.runAsSupervisor((tx) =>
+      tx.user.findUnique({ where: { id: userId } }),
+    )) as UserRow | null;
+
+    if (!existing || existing.orgId !== organizationId) {
+      throw new NotFoundException({
+        error: { code: 'USER_NOT_FOUND', message: 'User not found in selected organization' },
+      });
+    }
+
+    if (existing.status === payload.status) {
+      return this.toOrgUser(existing);
+    }
+
+    const updated = (await this.tenant.runAsOrg(organizationId, (tx) =>
+      tx.user.update({
+        where: { id: userId },
+        data: { status: payload.status as UserStatus, sessionVersion: { increment: 1 } },
+      }),
+    )) as UserRow;
+
+    const action = payload.status === 'disabled' ? 'USER_DISABLED_BY_SYSTEM_ADMIN' : 'USER_ENABLED_BY_SYSTEM_ADMIN';
+    await this.audit.record({
+      action,
+      entityType: 'user',
+      entityId: userId,
+      entityLabel: existing.email,
+      organizationId,
+      changes: [{ field: 'status', before: existing.status, after: payload.status }],
+      metadata: payload.reason ? { reason: payload.reason } : undefined,
+    });
+
+    return this.toOrgUser(updated);
+  }
+
+  // System-Admin resend invite for a user.
+  async resendInviteForOrg(organizationId: string, userId: string): Promise<InviteUserResponse> {
+    this.assertCrossEntity();
+
+    const org = await this.tenant.runAsSupervisor((tx) =>
+      tx.organisation.findUnique({ where: { id: organizationId } }),
+    );
+    if (!org || !org.isActive) {
+      throw new BadRequestException({
+        error: { code: 'INACTIVE_ORG', message: 'Cannot resend invitation for an inactive organization' },
+      });
+    }
+
+    const user = (await this.tenant.runAsSupervisor((tx) =>
+      tx.user.findUnique({ where: { id: userId } }),
+    )) as UserRow | null;
+
+    if (!user || user.orgId !== organizationId) {
+      throw new NotFoundException({
+        error: { code: 'USER_NOT_FOUND', message: 'User not found in selected organization' },
+      });
+    }
+
+    if (user.status !== 'invited') {
+      throw new BadRequestException({
+        error: { code: 'USER_NOT_INVITED', message: 'Can only resend invitations for users in invited status' },
+      });
+    }
+
+    await this.audit.record({
+      action: 'USER_INVITATION_RESENT',
+      entityType: 'user',
+      entityId: userId,
+      entityLabel: user.email,
+      organizationId,
+    });
+
+    const credentials = await this.provisionTemporaryPassword(user.id, user.email, org.name, organizationId);
+    return { ...this.toOrgUser(user), ...credentials };
   }
 
   // System-Admin cross-org invite.

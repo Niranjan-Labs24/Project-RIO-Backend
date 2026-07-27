@@ -9,7 +9,7 @@ export interface OrgUser {
   name: string;
   email: string;
   role: OrgUserRole;
-  status: 'active' | 'invited';
+  status: 'active' | 'invited' | 'disabled';
   createdAt: string;
 }
 
@@ -38,11 +38,29 @@ export interface CreateForOrgPayload extends InviteUserPayload {
   organizationId: string;
 }
 
+export interface AssignNgoAdminPayload {
+  userId?: string;
+  name?: string;
+  email?: string;
+  reason?: string;
+}
+
+export interface UpdateUserRolePayload {
+  roleId: string;
+  reason?: string;
+}
+
+export interface UpdateUserStatusPayload {
+  status: 'active' | 'invited' | 'disabled';
+  reason?: string;
+}
+
 export interface UserRow {
   id: string;
+  orgId: string;
   name: string;
   email: string;
   roleId: string;
-  status: 'active' | 'invited';
+  status: 'active' | 'invited' | 'disabled';
   createdAt: Date;
 }

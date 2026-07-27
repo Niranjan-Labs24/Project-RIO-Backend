@@ -1,6 +1,7 @@
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { RequirePermission } from '../../common/guards/permission.guard';
+import { parseIntParam } from '../../common/http/query.util';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import {
   RejectSurveyBody,
@@ -17,6 +18,32 @@ import { SurveysService } from './surveys.service';
 @Controller()
 export class SurveysController {
   constructor(private readonly service: SurveysService) {}
+
+  @Get('surveys')
+  @RequirePermission('surveyBuilder', 'read')
+  listSurveys(
+    @Query('organizationId') organizationId?: string,
+    @Query('studyId') studyId?: string,
+    @Query('status') status?: string,
+    @Query('search') search?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    return this.service.listSurveys({
+      organizationId: organizationId || undefined,
+      studyId: studyId || undefined,
+      status: status || undefined,
+      search: search || undefined,
+      limit: parseIntParam(limit),
+      offset: parseIntParam(offset),
+    });
+  }
+
+  @Get('surveys/:id')
+  @RequirePermission('surveyBuilder', 'read')
+  getSurveyById(@Param('id') id: string) {
+    return this.service.getSurveyDetailById(id);
+  }
 
   @Get('needs/:needId/survey')
   @RequirePermission('surveyBuilder', 'read')

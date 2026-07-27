@@ -56,14 +56,23 @@ export const CreateOrganizationBody = registerSchema(
   'CreateOrganizationBody',
   T.Object({
     name: T.String({ minLength: 1, maxLength: 200 }),
-    purpose: T.String({ minLength: 1, maxLength: 500 }),
+    purpose: T.Optional(T.Union([T.String({ maxLength: 500 }), T.Null()])),
     registrationNumber: T.String({ minLength: 1, maxLength: 100 }),
     region: T.Optional(Villages),
     email: T.Optional(T.Union([T.String({ format: 'email', maxLength: 320 }), T.Null()])),
     sector: T.Optional(T.Union([SectorValue, T.Null()])),
     villages: T.Optional(Villages),
-    adminName: T.String({ minLength: 1, maxLength: 200 }),
-    adminEmail: T.String({ format: 'email', maxLength: 320 }),
+    adminName: T.Optional(T.String({ minLength: 1, maxLength: 200 })),
+    adminEmail: T.Optional(T.String({ format: 'email', maxLength: 320 })),
   }),
 );
 export type CreateOrganizationDto = Static<typeof CreateOrganizationBody>;
+
+export const UpdateOrganizationStatusBody = registerSchema(
+  'UpdateOrganizationStatusBody',
+  T.Object({
+    isActive: T.Boolean(),
+    reason: T.Optional(T.Union([T.String({ maxLength: 500 }), T.Null()])),
+  }),
+);
+export type UpdateOrganizationStatusDto = Static<typeof UpdateOrganizationStatusBody>;

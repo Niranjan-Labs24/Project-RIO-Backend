@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
-import { requireActor, requireOrgId } from '../../tenancy/org-context';
+import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { AuditService } from '../audit/audit.service';
 import type { AuditChange } from '../audit/audit.types';
 import { GeographyService } from '../geography/geography.service';
@@ -16,6 +16,18 @@ import type {
 } from './studies.types';
 
 const DIFF_FIELDS = ['title', 'villages', 'methodologyVersionId'] as const;
+
+// Matches the `include` shape of the two (system-admin/tenant) `need.findMany`
+// calls in getById below — both queries request the same fields, just via
+// different tenant-context roles, so one type covers both.
+type NeedWithSurveyMeta = Prisma.NeedGetPayload<{
+  include: {
+    surveys: { include: { _count: { select: { surveyQuestions: true } } } };
+    surveyResponses: { select: { id: true } };
+    _count: { select: { evidence: true } };
+    priorityScores: true;
+  };
+}>;
 
 // Raw shape Prisma returns once `studyGovernorates`/`studyCenters` are
 // included — reduced to plain id arrays before anything else in this file
@@ -48,65 +60,60 @@ export class StudiesService {
     return this.toStudy(created);
   }
 
-  // Assigns the next sequential per-org cycleNumber (1, 2, 3... across
-  // every Study the org has ever created) and creates the Study in one
-  // step. A concurrent create for the same org could race between reading
-  // the current max and inserting — the @@unique([orgId, cycleNumber])
-  // constraint catches that as a P2002, retried once with a freshly-read
-  // max before giving up with a clean error (same "map P2002 to a clean
-  // error" precedent as OrganizationsService.createWithAdmin).
   private async createWithCycleNumber(
     tx: Prisma.TransactionClient,
     orgId: string,
     createdBy: string,
     payload: CreateStudyPayload,
-    attempt = 0,
   ): Promise<StudyRow> {
-    const cycleNumber = await this.nextCycleNumber(tx, orgId);
     try {
-      const row = await tx.study.create({
+      const maxRow = await tx.study.findFirst({
+        where: { orgId },
+        orderBy: { cycleNumber: 'desc' },
+        select: { cycleNumber: true },
+      });
+      const cycleNumber = (maxRow?.cycleNumber ?? 0) + 1;
+      const created = await tx.study.create({
         data: {
           orgId,
           title: payload.title,
           villages: payload.villages ?? [],
-          createdBy,
-          cycleNumber,
           methodologyVersionId: payload.methodologyVersionId ?? null,
-          studyGovernorates: {
-            createMany: { data: payload.governorateIds.map((governorateId) => ({ orgId, governorateId })) },
-          },
-          studyCenters: {
-            createMany: { data: payload.centerIds.map((centerId) => ({ orgId, centerId })) },
-          },
+          cycleNumber,
+          createdBy,
+          studyGovernorates: { createMany: { data: payload.governorateIds.map((governorateId) => ({ orgId, governorateId })) } },
+          studyCenters: { createMany: { data: payload.centerIds.map((centerId) => ({ orgId, centerId })) } },
         },
         include: GEO_INCLUDE,
       });
-      return this.toStudyRow(row as RawStudyWithGeo);
-    } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        if (attempt === 0) return this.createWithCycleNumber(tx, orgId, createdBy, payload, attempt + 1);
-        throw new ConflictException({
-          error: { code: 'CYCLE_NUMBER_CONFLICT', message: 'Could not assign a Cycle Number for this organization — please retry.' },
+      return this.toStudyRow(created as RawStudyWithGeo);
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        const maxRow = await tx.study.findFirst({
+          where: { orgId },
+          orderBy: { cycleNumber: 'desc' },
+          select: { cycleNumber: true },
         });
+        const cycleNumber = (maxRow?.cycleNumber ?? 0) + 1;
+        const created = await tx.study.create({
+          data: {
+            orgId,
+            title: payload.title,
+            villages: payload.villages ?? [],
+            methodologyVersionId: payload.methodologyVersionId ?? null,
+            cycleNumber,
+            createdBy,
+            studyGovernorates: { createMany: { data: payload.governorateIds.map((governorateId) => ({ orgId, governorateId })) } },
+            studyCenters: { createMany: { data: payload.centerIds.map((centerId) => ({ orgId, centerId })) } },
+          },
+          include: GEO_INCLUDE,
+        });
+        return this.toStudyRow(created as RawStudyWithGeo);
       }
-      throw err;
+      throw e;
     }
   }
 
-  private async nextCycleNumber(tx: Prisma.TransactionClient, orgId: string): Promise<number> {
-    const agg = await tx.study.aggregate({ where: { orgId }, _max: { cycleNumber: true } });
-    return (agg._max.cycleNumber ?? 0) + 1;
-  }
-
-  // A Study's Governorates/Centers must each be one of the Organization's
-  // own selected Governorates/Centers — not just any real Governorate/
-  // Center that happens to exist — otherwise a Study could reference
-  // geography the org itself never configured. Checked in this order so
-  // the caller always gets the most specific, actionable error first:
-  //   1. Every Governorate/Center exists and the hierarchy is internally
-  //      consistent (via GeographyService, using the org's own Region).
-  //   2. Every Governorate is one of the org's own selected Governorates.
-  //   3. Every Center is one of the org's own selected Centers.
   private async assertGeographyInOrgScope(
     tx: Prisma.TransactionClient,
     orgId: string,
@@ -151,24 +158,75 @@ export class StudiesService {
     }
   }
 
-  // Bounded pagination (NFR-006): default 100, hard cap 200. `village`/
-  // `search` are optional filters — an API-consistency addition, not a new
-  // business rule, so they're inert (list everything) when omitted.
   async list(opts: ListStudiesQuery = {}): Promise<StudyListResult> {
+    const store = getOrgStore();
+    const isSysAdmin = store?.role === 'system_admin';
+
     const take = Math.min(Math.max(opts.limit ?? 100, 1), 200);
     const skip = Math.max(opts.offset ?? 0, 0);
-    const where = {
+    const where: Prisma.StudyWhereInput = {
+      ...(opts.organizationId ? { orgId: opts.organizationId } : {}),
       ...(opts.village ? { villages: { has: opts.village } } : {}),
       ...(opts.search ? { title: { contains: opts.search, mode: 'insensitive' as const } } : {}),
     };
-    const [rows, total] = await this.tenant.runInOrgContext((tx) =>
-      Promise.all([
-        tx.study.findMany({ where, orderBy: { createdAt: 'desc' }, take, skip, include: GEO_INCLUDE }),
-        tx.study.count({ where }),
-      ]),
-    );
+
+    let rows: (RawStudyWithGeo & { org?: { name: string } | null; _count?: { needs: number } })[] = [];
+    let total = 0;
+
+    if (isSysAdmin) {
+      const result = await this.tenant.runAsSupervisor((tx) =>
+        Promise.all([
+          tx.study.findMany({
+            where,
+            orderBy: { createdAt: 'desc' },
+            take,
+            skip,
+            include: {
+              ...GEO_INCLUDE,
+              org: { select: { name: true } },
+              _count: { select: { needs: true } },
+            },
+          }),
+          tx.study.count({ where }),
+        ]),
+      );
+      rows = result[0] as (RawStudyWithGeo & { org?: { name: string } | null; _count?: { needs: number } })[];
+      total = result[1];
+
+      await this.audit.record({
+        action: 'SYSTEM_ADMIN_VIEWED_STUDIES',
+        entityType: 'study',
+        entityId: opts.organizationId ?? 'all',
+        entityLabel: opts.organizationId ? 'Organization Studies' : 'All Platform Studies',
+        organizationId: opts.organizationId,
+      });
+    } else {
+      const result = await this.tenant.runInOrgContext((tx) =>
+        Promise.all([
+          tx.study.findMany({
+            where,
+            orderBy: { createdAt: 'desc' },
+            take,
+            skip,
+            include: {
+              ...GEO_INCLUDE,
+              org: { select: { name: true } },
+              _count: { select: { needs: true } },
+            },
+          }),
+          tx.study.count({ where }),
+        ]),
+      );
+      rows = result[0] as (RawStudyWithGeo & { org?: { name: string } | null; _count?: { needs: number } })[];
+      total = result[1];
+    }
+
     return {
-      items: (rows as RawStudyWithGeo[]).map((r) => this.toStudy(this.toStudyRow(r))),
+      items: rows.map((r) => ({
+        ...this.toStudy(this.toStudyRow(r)),
+        orgName: r.org?.name ?? undefined,
+        surveysCount: r._count?.needs ?? 0,
+      })),
       total,
       limit: take,
       offset: skip,
@@ -176,22 +234,109 @@ export class StudiesService {
   }
 
   async getById(id: string): Promise<StudyDetail> {
-    const [row, evidenceCount, needCount] = await this.tenant.runInOrgContext((tx) =>
-      Promise.all([
-        tx.study.findUnique({ where: { id }, include: GEO_INCLUDE }),
-        tx.evidence.count({ where: { studyId: id } }),
-        tx.need.count({ where: { studyId: id } }),
-      ]),
-    );
+    const store = getOrgStore();
+    const isSysAdmin = store?.role === 'system_admin';
+
+    let row: (RawStudyWithGeo & { org?: { name: string } | null }) | null = null;
+    let evidenceCount = 0;
+    let needCount = 0;
+    let needsList: NeedWithSurveyMeta[] = [];
+
+    if (isSysAdmin) {
+      const result = await this.tenant.runAsSupervisor((tx) =>
+        Promise.all([
+          tx.study.findUnique({
+            where: { id },
+            include: {
+              ...GEO_INCLUDE,
+              org: { select: { name: true } },
+            },
+          }),
+          tx.evidence.count({ where: { studyId: id } }),
+          tx.need.count({ where: { studyId: id } }),
+          tx.need.findMany({
+            where: { studyId: id },
+            orderBy: { createdAt: 'desc' },
+            include: {
+              surveys: { include: { _count: { select: { surveyQuestions: true } } } },
+              surveyResponses: { select: { id: true } },
+              _count: { select: { evidence: true } },
+              priorityScores: { take: 1, orderBy: { scoredAt: 'desc' } },
+            },
+          }),
+        ]),
+      );
+      row = result[0] as (RawStudyWithGeo & { org?: { name: string } | null }) | null;
+      evidenceCount = result[1];
+      needCount = result[2];
+      needsList = result[3];
+
+      if (row) {
+        await this.audit.record({
+          action: 'SYSTEM_ADMIN_VIEWED_STUDIES',
+          entityType: 'study',
+          entityId: id,
+          entityLabel: row.title,
+          organizationId: row.orgId,
+        });
+      }
+    } else {
+      const result = await this.tenant.runInOrgContext((tx) =>
+        Promise.all([
+          tx.study.findUnique({
+            where: { id },
+            include: {
+              ...GEO_INCLUDE,
+              org: { select: { name: true } },
+            },
+          }),
+          tx.evidence.count({ where: { studyId: id } }),
+          tx.need.count({ where: { studyId: id } }),
+          tx.need.findMany({
+            where: { studyId: id },
+            orderBy: { createdAt: 'desc' },
+            include: {
+              surveys: { include: { _count: { select: { surveyQuestions: true } } } },
+              surveyResponses: { select: { id: true } },
+              _count: { select: { evidence: true } },
+              priorityScores: { take: 1, orderBy: { scoredAt: 'desc' } },
+            },
+          }),
+        ]),
+      );
+      row = result[0] as (RawStudyWithGeo & { org?: { name: string } | null }) | null;
+      evidenceCount = result[1];
+      needCount = result[2];
+      needsList = result[3];
+    }
+
     if (!row) throw new NotFoundException({ error: { code: 'STUDY_NOT_FOUND', message: 'Study not found' } });
-    return { ...this.toStudy(this.toStudyRow(row as RawStudyWithGeo)), evidenceCount, needCount };
+
+    const needs = needsList.map((n) => {
+      const survey = n.surveys?.[0];
+      return {
+        id: n.id,
+        title: n.title,
+        status: n.status,
+        village: Array.isArray(n.village) ? n.village.join(', ') : (n.village ?? '—'),
+        domainCategory: n.domain ?? n.aiSuggestedDomain ?? '—',
+        createdAt: n.createdAt ? new Date(n.createdAt).toISOString() : new Date().toISOString(),
+        responseCount: n.surveyResponses?.length ?? 0,
+        questionCount: survey?._count?.surveyQuestions ?? 0,
+        score: n.priorityScores?.[0]?.overallScore ?? null,
+        evidenceCount: n._count?.evidence ?? 0,
+      };
+    });
+
+    return {
+      ...this.toStudy(this.toStudyRow(row)),
+      orgName: row.org?.name ?? undefined,
+      evidenceCount,
+      needCount,
+      needs,
+    };
   }
 
-  // Title, villages, governorateIds, centerIds, and methodologyVersionId are
-  // the only Study-level fields — a Study is a pure container. Governorates/
-  // Centers/MethodologyVersion are independently patchable; validated
-  // against the *final* merged state (patch value or current), same pattern
-  // as OrganizationsService.updateCurrent.
   async update(id: string, payload: UpdateStudyPayload): Promise<Study> {
     const orgId = requireOrgId();
     const { updated, changes } = await this.tenant.runInOrgContext(async (tx) => {
@@ -325,5 +470,110 @@ export class StudiesService {
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     };
+  }
+
+  async archive(id: string, reason?: string): Promise<Study> {
+    const actorId = requireActor();
+    const store = getOrgStore();
+    const isSysAdmin = store?.role === 'system_admin';
+
+    const raw = isSysAdmin
+      ? await this.tenant.runAsSupervisor((tx) => tx.study.findUnique({ where: { id }, include: { needs: true, reports: true, ...GEO_INCLUDE } }))
+      : await this.tenant.runInOrgContext((tx) => tx.study.findUnique({ where: { id }, include: { needs: true, reports: true, ...GEO_INCLUDE } }));
+
+    if (!raw) {
+      throw new NotFoundException({ error: { code: 'STUDY_NOT_FOUND', message: 'Study not found' } });
+    }
+
+    if (raw.status === 'archived') {
+      throw new BadRequestException({ error: { code: 'STUDY_ALREADY_ARCHIVED', message: 'Study is already archived.' } });
+    }
+
+    const needs = raw.needs ?? [];
+    const reports = raw.reports ?? [];
+    const hasNeeds = needs.length > 0;
+    const allNeedsCompleted = hasNeeds && needs.every((n) => n.status === 'survey_published');
+    const hasReleasedReport = reports.some((r) => r.status === 'released' || r.status === 'archived');
+
+    if (!hasNeeds || !allNeedsCompleted || !hasReleasedReport) {
+      throw new BadRequestException({
+        error: {
+          code: 'STUDY_INCOMPLETE_FOR_ARCHIVE',
+          message: 'Study cannot be archived until all surveys are completed and at least one report is published.',
+        },
+      });
+    }
+
+    const now = new Date();
+    const updated = isSysAdmin
+      ? await this.tenant.runAsOrg(raw.orgId, (tx) =>
+          tx.study.update({
+            where: { id },
+            data: { status: 'archived', archivedAt: now, archivedBy: actorId, archiveReason: reason ?? null },
+            include: GEO_INCLUDE,
+          }),
+        )
+      : await this.tenant.runInOrgContext((tx) =>
+          tx.study.update({
+            where: { id },
+            data: { status: 'archived', archivedAt: now, archivedBy: actorId, archiveReason: reason ?? null },
+            include: GEO_INCLUDE,
+          }),
+        );
+
+    await this.audit.record({
+      action: 'STUDY_ARCHIVED',
+      entityType: 'study',
+      entityId: id,
+      entityLabel: raw.title,
+      organizationId: raw.orgId,
+      metadata: { reason: reason ?? null },
+    });
+
+    return this.toStudy(this.toStudyRow(updated as RawStudyWithGeo));
+  }
+
+  async restore(id: string): Promise<Study> {
+    requireActor();
+    const store = getOrgStore();
+    const isSysAdmin = store?.role === 'system_admin';
+
+    const raw = isSysAdmin
+      ? await this.tenant.runAsSupervisor((tx) => tx.study.findUnique({ where: { id }, include: GEO_INCLUDE }))
+      : await this.tenant.runInOrgContext((tx) => tx.study.findUnique({ where: { id }, include: GEO_INCLUDE }));
+
+    if (!raw) {
+      throw new NotFoundException({ error: { code: 'STUDY_NOT_FOUND', message: 'Study not found' } });
+    }
+
+    if (raw.status !== 'archived') {
+      throw new BadRequestException({ error: { code: 'STUDY_NOT_ARCHIVED', message: 'Only an archived study can be restored.' } });
+    }
+
+    const updated = isSysAdmin
+      ? await this.tenant.runAsOrg(raw.orgId, (tx) =>
+          tx.study.update({
+            where: { id },
+            data: { status: 'completed', archivedAt: null, archivedBy: null, archiveReason: null },
+            include: GEO_INCLUDE,
+          }),
+        )
+      : await this.tenant.runInOrgContext((tx) =>
+          tx.study.update({
+            where: { id },
+            data: { status: 'completed', archivedAt: null, archivedBy: null, archiveReason: null },
+            include: GEO_INCLUDE,
+          }),
+        );
+
+    await this.audit.record({
+      action: 'STUDY_RESTORED',
+      entityType: 'study',
+      entityId: id,
+      entityLabel: raw.title,
+      organizationId: raw.orgId,
+    });
+
+    return this.toStudy(this.toStudyRow(updated as RawStudyWithGeo));
   }
 }
