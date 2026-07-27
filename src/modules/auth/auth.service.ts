@@ -11,13 +11,25 @@ import { ROLE_MATRIX, type RoleDef } from '../../rbac/role-matrix';
 import { AuditService } from '../audit/audit.service';
 import { ConfigService } from '../../config/config.service';
 import { MailerService } from '../../mailer/mailer.service';
-import { AuthRepository, conflictFor, generateTemporaryPassword } from './auth.repository';
+import { AuthRepository, conflictFor } from './auth.repository';
 import type { SessionContext, SessionOrg, SessionUser, SignupResponseView } from './session.types';
 import type { ChangePasswordDto, ForgotPasswordDto, ResetPasswordDto, SignupDto } from './auth.contract';
 
 const MAX_FAILED = 5;
 const LOCK_MINUTES = 15;
 const PASSWORD_RESET_TTL_MINUTES = 30;
+
+// TEMPORARY: the email provider's free-trial plan can only deliver to one
+// pre-verified address, so a randomly generated temporary password is
+// useless to any other signup — it can never reach the new admin's inbox,
+// and this dev-only fallback only reveals it when NODE_ENV !== 'production'.
+// Using a fixed, known password here means every new organization's first
+// login works regardless of email delivery. The user still goes through
+// the existing mandatory first-login password change, so this password is
+// never a long-term credential. Revert to generateTemporaryPassword() once
+// a verified sending domain is configured (see Known Limitations in the
+// Functional Handover Guide).
+const SIGNUP_TEMP_PASSWORD = 'Welcome@123';
 
 // The subset of a user row (with its org) this service reads.
 interface UserWithOrg {
@@ -214,7 +226,7 @@ export class AuthService {
       centerIds: dto.centerIds,
     });
 
-    const temporaryPassword = generateTemporaryPassword();
+    const temporaryPassword = SIGNUP_TEMP_PASSWORD;
     const passwordHash = await this.passwords.hash(temporaryPassword);
 
     const { org, user } = await this.repo.createOrganisationAndAdmin({

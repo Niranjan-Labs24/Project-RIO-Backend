@@ -1,28 +1,20 @@
 import { Injectable, Logger } from '@nestjs/common';
-import * as nodemailer from 'nodemailer';
-import type { Transporter } from 'nodemailer';
+import { Resend } from 'resend';
 import { ConfigService } from '../config/config.service';
 
 @Injectable()
 export class MailerService {
   private readonly logger = new Logger(MailerService.name);
-  private readonly transport?: Transporter;
+  private readonly client?: Resend;
 
   constructor(private readonly config: ConfigService) {
-    const host = this.config.smtpHost;
-    if (!host) return; // not configured — sendTemporaryPassword returns false
-    const user = this.config.smtpUser;
-    const pass = this.config.smtpPass;
-    this.transport = nodemailer.createTransport({
-      host,
-      port: this.config.smtpPort,
-      secure: this.config.smtpSecure,
-      auth: user ? { user, pass } : undefined,
-    });
+    const apiKey = this.config.resendApiKey;
+    if (!apiKey) return; // not configured — sendTemporaryPassword returns false
+    this.client = new Resend(apiKey);
   }
 
   async sendTemporaryPassword(email: string, orgName: string, tempPassword: string): Promise<boolean> {
-    if (!this.transport) return false;
+    if (!this.client) return false;
     const signInUrl = this.config.corsOrigin;
     const mail = {
       from: this.config.mailFrom,
@@ -32,24 +24,22 @@ export class MailerService {
       html: temporaryPasswordHtml({ orgName, email, tempPassword, signInUrl }),
     };
     // One retry after a short delay before falling back to the "reveal in
-    // response" path — a single attempt against a real SMTP provider (e.g.
-    // Gmail) occasionally fails on transient network blips or brief
-    // rate-limiting, not a real config problem, and shouldn't immediately
-    // expose the temp password client-side when a second try would have
-    // gone through.
+    // response" path — a single attempt against the provider occasionally
+    // fails on transient network blips or brief rate-limiting, not a real
+    // config problem, and shouldn't immediately expose the temp password
+    // client-side when a second try would have gone through.
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
-        await this.transport.sendMail(mail);
-        return true;
-      } catch (err) {
-        const e = err as { code?: string; responseCode?: number; response?: string; message?: string };
+        const { error } = await this.client.emails.send(mail);
+        if (!error) return true;
         this.logger.error(
-          `Failed to email temporary password to ${email} (attempt ${attempt}/2): ` +
-            `code=${e.code ?? "?"} responseCode=${e.responseCode ?? "?"} response=${e.response ?? e.message ?? "?"}`,
+          `Failed to email temporary password to ${email} (attempt ${attempt}/2): ${error.name} ${error.message}`,
         );
-        if (attempt === 2) return false;
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+      } catch (err) {
+        this.logger.error(`Failed to email temporary password to ${email} (attempt ${attempt}/2)`, err as Error);
       }
+      if (attempt === 2) return false;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
     return false;
   }
@@ -61,15 +51,19 @@ export class MailerService {
    * delivery failure never leaks whether the account exists.
    */
   async sendPasswordResetEmail(email: string, resetUrl: string): Promise<boolean> {
-    if (!this.transport) return false;
+    if (!this.client) return false;
     try {
-      await this.transport.sendMail({
+      const { error } = await this.client.emails.send({
         from: this.config.mailFrom,
         to: email,
         subject: 'Reset your RIO password',
         text: passwordResetText({ resetUrl }),
         html: passwordResetHtml({ resetUrl }),
       });
+      if (error) {
+        this.logger.error(`Failed to email password reset link to ${email}: ${error.name} ${error.message}`);
+        return false;
+      }
       return true;
     } catch (err) {
       this.logger.error(`Failed to email password reset link to ${email}`, err as Error);
@@ -89,10 +83,10 @@ export class MailerService {
    * rather than the noreply mailbox.
    */
   async sendContactRequest(recipients: string[], enquiry: ContactEnquiryInput): Promise<boolean> {
-    if (!this.transport) return false;
+    if (!this.client) return false;
     if (recipients.length === 0) return false;
     try {
-      await this.transport.sendMail({
+      const { error } = await this.client.emails.send({
         from: this.config.mailFrom,
         to: this.config.mailFrom,
         bcc: recipients,
@@ -101,6 +95,10 @@ export class MailerService {
         text: contactRequestText(enquiry),
         html: contactRequestHtml(enquiry),
       });
+      if (error) {
+        this.logger.error(`Failed to email contact enquiry for ${enquiry.orgName}: ${error.name} ${error.message}`);
+        return false;
+      }
       return true;
     } catch (err) {
       this.logger.error(`Failed to email contact enquiry for ${enquiry.orgName}`, err as Error);
@@ -117,9 +115,9 @@ export class MailerService {
    * is why this goes through the real mailer instead.
    */
   async sendSurveyLink(email: string, input: SurveyLinkEmailInput): Promise<boolean> {
-    if (!this.transport) return false;
+    if (!this.client) return false;
     try {
-      await this.transport.sendMail({
+      const { error } = await this.client.emails.send({
         from: this.config.mailFrom,
         to: email,
         subject: `Survey link: ${input.needTitle}`,
@@ -129,10 +127,14 @@ export class MailerService {
           {
             filename: 'survey-qr-code.png',
             content: input.qrCodePng,
-            cid: 'survey-qr-code',
+            contentId: 'survey-qr-code',
           },
         ],
       });
+      if (error) {
+        this.logger.error(`Failed to email survey link to ${email}: ${error.name} ${error.message}`);
+        return false;
+      }
       return true;
     } catch (err) {
       this.logger.error(`Failed to email survey link to ${email}`, err as Error);

@@ -51,20 +51,18 @@ export const EnvSchema = Type.Object({
   // CORS_ORIGIN so existing dev/staging setups keep working without a new
   // env var, but should be set explicitly in any real environment.
   PUBLIC_APP_URL: Type.Optional(Type.String()),
-  // SMTP (nodemailer). When SMTP_HOST is unset the mailer is "not configured"
-  // and signup falls back to the dev-only temp-password reveal.
-  SMTP_HOST: Type.Optional(Type.String()),
-  SMTP_PORT: Type.Number({ default: 587 }),
-  SMTP_SECURE: Type.Boolean({ default: false }),
-  SMTP_USER: Type.Optional(Type.String()),
-  SMTP_PASS: Type.Optional(Type.String()),
+  // Resend (email API — see MailerService). When RESEND_API_KEY is unset the
+  // mailer is "not configured" and signup falls back to the dev-only
+  // temp-password reveal.
+  RESEND_API_KEY: Type.Optional(Type.String()),
   MAIL_FROM: Type.String({ default: 'RIO <no-reply@rio.local>' }),
-  // Unifonic (SMS OTP delivery for the citizen public survey flow — see
-  // SmsService). When UNIFONIC_APP_SID is unset the SMS channel is "not
-  // configured", same not-configured/soft-fail convention as SMTP above —
+  // Twilio (SMS OTP delivery for the citizen public survey flow — see
+  // SmsService). When TWILIO_ACCOUNT_SID is unset the SMS channel is "not
+  // configured", same not-configured/soft-fail convention as Resend above —
   // a mobile number just won't get a text until these are set.
-  UNIFONIC_APP_SID: Type.Optional(Type.String()),
-  UNIFONIC_SENDER_ID: Type.Optional(Type.String()),
+  TWILIO_ACCOUNT_SID: Type.Optional(Type.String()),
+  TWILIO_AUTH_TOKEN: Type.Optional(Type.String()),
+  TWILIO_FROM_NUMBER: Type.Optional(Type.String()),
   // Double-submit CSRF enforcement for cookie-authenticated mutations. Default
   // on; bearer and anonymous requests do not carry ambient session authority.
   CSRF_ENFORCE: Type.Boolean({ default: true }),

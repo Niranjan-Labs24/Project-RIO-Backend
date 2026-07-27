@@ -28,10 +28,14 @@ auto-reads `.env` for the `${DB_HOST_PORT:-5432}` substitution in `docker-compos
 ### Env vars (see `.env.example` for full defaults/comments)
 - `CORS_ORIGIN` — single frontend origin allowed to send credentialed (cookie) requests. Defaults to
   `http://localhost:3000`; credentials mode forbids a wildcard, so this must be an exact origin.
-- `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` / `SMTP_USER` / `SMTP_PASS` — nodemailer transport for the
-  signup temporary-password email. Leave `SMTP_HOST` unset to disable email entirely: signup then
-  falls back to returning/logging the temp password, but **only** outside production (`NODE_ENV`
-  defaults to `production` when unset, so this fallback fails closed by default).
+- `RESEND_API_KEY` — Resend API key for the signup temporary-password/password-reset/survey-link
+  emails. Leave unset to disable email entirely: signup then falls back to returning/logging the
+  temp password, but **only** outside production (`NODE_ENV` defaults to `production` when unset,
+  so this fallback fails closed by default).
+- `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM_NUMBER` — Twilio SMS for the citizen
+  survey's mobile OTP. `TWILIO_FROM_NUMBER` must be a number actually provisioned on that Twilio
+  account, in E.164 format. Leave `TWILIO_ACCOUNT_SID` unset to disable SMS entirely — same
+  dev-only fallback as email.
 - `MAIL_FROM` — the `From:` address/display name used for that email (default `RIO <no-reply@rio.local>`).
 - `CSRF_ENFORCE` — double-submit CSRF check for cookie-authenticated mutations (`CsrfGuard`). **Default `true`**; the
   frontend must first read the `rio_csrf` cookie and echo it as `X-CSRF-Token` on unsafe methods

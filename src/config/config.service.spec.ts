@@ -70,15 +70,13 @@ describe('ConfigService', () => {
     return new ConfigService();
   }
 
-  it('exposes CORS, SMTP, and CSRF config with safe defaults', () => {
+  it('exposes CORS, Resend, and CSRF config with safe defaults', () => {
     const config = makeConfig({
       CORS_ORIGIN: 'http://localhost:3000',
-      SMTP_HOST: 'smtp.example.test',
+      RESEND_API_KEY: 're_test_key',
     });
     expect(config.corsOrigin).toBe('http://localhost:3000');
-    expect(config.smtpHost).toBe('smtp.example.test');
-    expect(config.smtpPort).toBe(587);
-    expect(config.smtpSecure).toBe(false);
+    expect(config.resendApiKey).toBe('re_test_key');
     expect(config.mailFrom).toBe('RIO <no-reply@rio.local>');
     expect(config.csrfEnforce).toBe(true);
   });
