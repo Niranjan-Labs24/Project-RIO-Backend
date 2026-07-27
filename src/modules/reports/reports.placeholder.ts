@@ -27,6 +27,9 @@ export interface ExportAuditMeta {
   officerConfirmedByName: string | null;
   officerConfirmedAt: string | null;
   reviewedByName: string | null;
+  // Reviewer's role name (e.g. "Reviewer/Approver" vs "Center Supervisor") —
+  // shown in the audit trail for clarity on who approved, in what capacity.
+  reviewedByRole: string | null;
   reviewedAt: string | null;
   archivedAt: string | null;
 }
@@ -49,6 +52,7 @@ function auditMetaLines(meta: ExportAuditMeta): Array<{ field: string; value: st
   if (meta.officerConfirmedByName) rows.push({ field: "Officer Confirmed By", value: meta.officerConfirmedByName });
   if (meta.officerConfirmedAt) rows.push({ field: "Officer Confirmed At", value: fmtStamp(meta.officerConfirmedAt) });
   if (meta.reviewedByName) rows.push({ field: "Reviewed By", value: meta.reviewedByName });
+  if (meta.reviewedByRole) rows.push({ field: "Reviewer Role", value: meta.reviewedByRole });
   if (meta.reviewedAt) rows.push({ field: "Reviewed At", value: fmtStamp(meta.reviewedAt) });
   if (meta.archivedAt) rows.push({ field: "Archived At", value: fmtStamp(meta.archivedAt) });
   return rows;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ReportDataSnapshot } from "../report-summary.service";
+import { DATA_QUALITY_NOTE_UNAVAILABLE, SINGLE_CYCLE_TREND_NOTE } from "../report-content.types";
 import {
   EMPTY_APPROVAL,
   aiOutputToSummaryBlock,
@@ -24,6 +25,8 @@ function snapshot(): ReportDataSnapshot {
       assessmentCycle: 1,
       organizationName: "Demo NGO",
       methodologyVersionId: "mv-uuid",
+      governorateName: "Riyadh",
+      regionName: "Riyadh Region",
     },
     responseQuality: {
       submittedResponseCount: 42,
@@ -36,8 +39,8 @@ function snapshot(): ReportDataSnapshot {
       overallVillageNeedsIndex: 63.8,
       severityBand: "Medium",
       domainSeverityScores: [
-        { domainKey: "HEALTH", domainName: "Health", severityScore: 72, confidenceLevel: "STANDARD", validResponseCount: 35 },
-        { domainKey: "WATER_SANITATION", domainName: "Water & Sanitation", severityScore: 81, confidenceLevel: "LOW", validResponseCount: 8 },
+        { domainKey: "HEALTH", domainName: "Health", severityScore: 72, confidenceLevel: "STANDARD", validResponseCount: 35, excludedResponseCount: 3, dontKnowRate: 0.05, kpiCount: 6 },
+        { domainKey: "WATER_SANITATION", domainName: "Water & Sanitation", severityScore: 81, confidenceLevel: "LOW", validResponseCount: 8, excludedResponseCount: 12, dontKnowRate: 0.25, kpiCount: 5 },
       ],
       topKpis: [
         { rank: 1, kpiName: "Daily Clean Water Access", indicatorName: "IND-1", domainName: "Water & Sanitation", severityScore: 88, confidenceLevel: "LOW", validResponseCount: 8 },
@@ -96,6 +99,12 @@ describe("snapshot-to-content mappers", () => {
     expect(water.confidence).toBe("LOW");
     expect(water.isCriticalDomain).toBe(true);
     expect(water.validResponseCount).toBe(8); // low-confidence domains surface sample size
+    // New domain columns: methodology code, KPI count, quantitative confidence
+    // % (valid-response ratio = 8 / (8 + 12) = 40%), and per-domain trend note.
+    expect(water.domainCode).toBe("WATER_SANITATION");
+    expect(water.kpiCount).toBe(5);
+    expect(water.confidencePct).toBe(40);
+    expect(water.trendNote).toBe(SINGLE_CYCLE_TREND_NOTE);
 
     expect(c.priority.villagePriorityScore).toBe(37.45);
     expect(c.priority.priorityStatus).toBe("HIGH");
@@ -109,6 +118,11 @@ describe("snapshot-to-content mappers", () => {
     expect(c.aiSummary.executiveSummary).toBe("Ad-Dilam has a High Priority status.");
     expect(c.aiSummary.keyFindings).toContain("highest severity");
     expect(c.aiSummary.recommendations).toEqual(["Validate water-access findings.", "Assess safe-water availability."]);
+    // Data Quality + Trend notes promoted to first-class fields, blanked in aiSummary.
+    expect(c.dataQualityNote).toBe("Water & Sanitation has Low Confidence.");
+    expect(c.trendNote).toBe("Cycle 1 assessment: Trend Pending.");
+    expect(c.aiSummary.dataQualityNote).toBe("");
+    expect(c.aiSummary.trendNote).toBe("");
 
     expect(c.demographics).toBeNull();
     expect(c.approval).toEqual(EMPTY_APPROVAL);
@@ -133,14 +147,36 @@ describe("snapshot-to-content mappers", () => {
   it("maps sector / region / executive scopes", () => {
     const sector = snapshotToSectorContent({ snapshot: snapshot() });
     expect(sector.domains.some((d) => d.name === "Health")).toBe(true);
+    // No AI output → notes fall back to placeholders (never blank), and are
+    // still present as first-class fields.
+    expect(sector.dataQualityNote).toBe(DATA_QUALITY_NOTE_UNAVAILABLE);
+    expect(sector.trendNote).toBe(SINGLE_CYCLE_TREND_NOTE);
+    expect(sector.aiSummary.dataQualityNote).toBe("");
 
-    const region = snapshotToRegionContent({ snapshot: snapshot() });
+    const region = snapshotToRegionContent({ snapshot: snapshot(), aiOutput });
     expect(region.regions[0]?.priorityStatus).toBe("HIGH");
     expect(region.regions[0]?.priorityScore).toBe(37.45);
+    // New/populated region columns: actual region name, governorate name,
+    // contributing responses, and severity score shown alongside priority score.
+    expect(region.regions[0]?.regionName).toBe("Riyadh Region");
+    expect(region.regions[0]?.governorate).toBe("Riyadh");
+    expect(region.regions[0]?.responseCount).toBe(38);
+    expect(region.regions[0]?.severityScore).toBe(63.8);
+    // Data Quality and Trend notes are promoted to first-class fields and
+    // removed from the AI Summary block (no duplication).
+    expect(region.dataQualityNote).toBe("Water & Sanitation has Low Confidence.");
+    expect(region.trendNote).toBe("Cycle 1 assessment: Trend Pending.");
+    expect(region.aiSummary.dataQualityNote).toBe("");
+    expect(region.aiSummary.trendNote).toBe("");
 
     const exec = snapshotToExecutiveContent({ snapshot: snapshot(), aiOutput });
     expect(exec.topPriorities.length).toBeGreaterThan(0);
     // Water & Sanitation is Low-confidence + critical → flagged as an anomaly.
     expect(exec.anomalies.some((a) => a.includes("Water & Sanitation"))).toBe(true);
+    // Structured scope (Region / Governorate) and quantitative confidence %.
+    expect(exec.scope.villages).toBe("Ad-Dilam");
+    expect(exec.scope.governorate).toBe("Riyadh");
+    // 38 valid / 42 submitted = 90%.
+    expect(exec.responseQuality.confidencePct).toBe(90);
   });
 });

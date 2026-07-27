@@ -66,6 +66,9 @@ export interface Report {
   officerConfirmedAt: string | null;
   reviewedBy: string | null;
   reviewedByName: string | null;
+  // Reviewer's role name (e.g. "Reviewer/Approver", "Center Supervisor") for
+  // audit clarity — who, in what capacity, approved the report.
+  reviewedByRole: string | null;
   reviewedAt: string | null;
   archivedAt: string | null;
   exportFormats: ExportFormat[];
