@@ -13,6 +13,9 @@ type Tag =
   | 'Needs'
   | 'Evidence'
   | 'AI Decisions'
+  | 'Priority'
+  | 'Surveys'
+  | 'Priority Summary'
   | 'Audit'
   | 'Health';
 
@@ -40,6 +43,9 @@ const TAGS: Array<{ name: Tag; description: string }> = [
   { name: 'Needs', description: 'RIO-FR-001 — the one need captured per study.' },
   { name: 'Evidence', description: 'RIO-FR-Add-01 — supporting documents uploaded against a study.' },
   { name: 'AI Decisions', description: 'RIO-FR-003 — classification/scoring placeholders and human review.' },
+  { name: 'Surveys', description: 'Survey Builder — question set, methodology version, approval, and citizen submission.' },
+  { name: 'Priority', description: 'Deterministic severity scoring, dashboards, and methodology-version/lookup management.' },
+  { name: 'Priority Summary', description: 'Priority summary drafting/approval workflow feeding the Reports module.' },
   { name: 'Users', description: "Manage the caller's own organisation's members." },
   { name: 'Organizations', description: "The caller's own organisation profile, plus cross-entity org listing." },
   { name: 'Roles', description: 'The fixed 9-role permission matrix.' },
@@ -47,14 +53,23 @@ const TAGS: Array<{ name: Tag; description: string }> = [
   { name: 'Health', description: 'Liveness/readiness probes.' },
 ];
 
-// Hand-maintained to mirror each controller exactly — there are ~25 routes
-// total, small enough that duplicating them here (rather than reflecting
-// Nest's route metadata at runtime) stays easy to keep in sync. When you add
-// or change a route in a *.controller.ts file, add/update its entry here too.
+// Hand-maintained to mirror each controller exactly — small enough that
+// duplicating routes here (rather than reflecting Nest's route metadata at
+// runtime) stays easy to keep in sync. When you add or change a route in a
+// *.controller.ts file, add/update its entry here too.
+//
+// NOTE: this file documents a curated subset of the API, not every
+// controller — e.g. public-surveys, sharing, report-sharing, response-
+// quality, studies-evidence-adjacent routes, and several others exist in
+// src/modules/** with no entry here at all. The Surveys/Priority/Priority
+// Summary tags below were added specifically to cover the routes given new
+// TypeBox/AJV request-body validation in the backend remediation pass
+// (2026-07-27) — not a full sweep of the whole controller surface, which
+// would be a materially larger, separate documentation task.
 const ROUTES: RouteDoc[] = [
   {
     method: 'post', path: '/auth/login', tag: 'Auth', summary: 'Sign in with email + password',
-    auth: undefined, response: 'SessionContext',
+    auth: undefined, requestSchema: 'LoginBody', response: 'SessionContext',
   },
   {
     method: 'post', path: '/auth/signup', tag: 'Auth', summary: 'Public NGO signup — creates the organisation + its first NGO Admin',
@@ -198,6 +213,162 @@ const ROUTES: RouteDoc[] = [
   {
     method: 'get', path: '/health/db', tag: 'Health', summary: 'Readiness probe — confirms the database is reachable',
     auth: undefined, response: '{ status: "ok" } | 503',
+  },
+  {
+    method: 'get', path: '/health/redis', tag: 'Health', summary: 'Readiness probe — confirms Redis is reachable',
+    auth: undefined, response: '{ status: "ok" } | 503',
+  },
+  // Surveys — Survey Builder question set, methodology version, approval,
+  // and the citizen-facing public submission.
+  {
+    method: 'get', path: '/needs/{needId}/survey', tag: 'Surveys', summary: "Get a Need's survey (question set + status)",
+    auth: { module: 'surveyBuilder', action: 'read' }, response: 'Survey',
+  },
+  {
+    method: 'post', path: '/needs/{needId}/survey', tag: 'Surveys', summary: 'Create an empty (hand-built) survey for a Need',
+    auth: { module: 'surveyBuilder', action: 'write' }, response: 'Survey',
+  },
+  {
+    method: 'post', path: '/needs/{needId}/recommend-questions', tag: 'Surveys', summary: 'Auto-populate a survey from the Question Bank for this Need',
+    auth: { module: 'surveyBuilder', action: 'write' }, response: 'Survey',
+  },
+  {
+    method: 'get', path: '/custom-questions', tag: 'Surveys', summary: 'Org-wide reusable custom questions, filtered by domain/subDomain',
+    auth: { module: 'surveyBuilder', action: 'read' }, query: ['domain', 'subDomain'], response: 'CustomQuestion[]',
+  },
+  {
+    method: 'patch', path: '/surveys/{id}/questions', tag: 'Surveys', summary: "Replace a draft survey's question set",
+    auth: { module: 'surveyBuilder', action: 'write' }, requestSchema: 'UpdateSurveyQuestionsBody', response: 'Survey',
+  },
+  {
+    method: 'patch', path: '/surveys/{id}/methodology-version', tag: 'Surveys', summary: "Set the survey's methodology version",
+    auth: { module: 'surveyBuilder', action: 'write' }, requestSchema: 'SetMethodologyVersionBody', response: 'Survey',
+  },
+  {
+    method: 'post', path: '/surveys/{id}/submit', tag: 'Surveys', summary: 'Researcher: submit the draft survey for Approver review',
+    auth: { module: 'surveyBuilder', action: 'write' }, response: 'Survey',
+  },
+  {
+    method: 'post', path: '/surveys/{id}/approve', tag: 'Surveys', summary: 'Approver: approve and publish the survey',
+    auth: { module: 'surveyBuilder', action: 'approve' }, response: 'Survey',
+  },
+  {
+    method: 'post', path: '/surveys/{id}/reject', tag: 'Surveys', summary: 'Approver: reject the submitted survey back to draft',
+    auth: { module: 'surveyBuilder', action: 'approve' }, requestSchema: 'RejectSurveyBody', response: 'Survey',
+  },
+  {
+    method: 'get', path: '/surveys/public/{id}', tag: 'Surveys', summary: 'Citizen-facing: get a published survey by its public link id',
+    auth: undefined, response: 'PublicSurveyView',
+  },
+  {
+    // NOTE: this route has neither a @RequirePermission nor an explicit
+    // @Public() decorator in surveys.controller.ts — documented here as
+    // public (auth: undefined) to match its actual runtime behavior, not
+    // because that's confirmed to be the intended design. Flagged as a
+    // possible separate follow-up in the backend remediation pass (Task 5)
+    // notes, not resolved in this pass.
+    method: 'post', path: '/surveys/public/{id}/submit', tag: 'Surveys', summary: 'Citizen-facing: submit answers to a published survey',
+    auth: undefined, requestSchema: 'SubmitSurveyBody', response: 'SurveyResponse',
+  },
+  {
+    method: 'get', path: '/surveys/{id}/responses', tag: 'Surveys', summary: 'List a survey’s submitted responses',
+    auth: { module: 'surveyBuilder', action: 'read' }, response: 'SurveyResponse[]',
+  },
+  // Priority — deterministic severity scoring, dashboards, and
+  // methodology-version/lookup management.
+  {
+    method: 'post', path: '/needs/{needId}/priority-score', tag: 'Priority', summary: "Compute and save a Need's priority score",
+    auth: { module: 'priorityScoring', action: 'create' }, query: ['surveyLinkId'], response: 'PriorityScore',
+  },
+  {
+    method: 'get', path: '/needs/{needId}/priority-score', tag: 'Priority', summary: "Get a Need's latest priority score",
+    auth: { module: 'priorityScoring', action: 'read' }, query: ['surveyLinkId'], response: 'PriorityScore | null',
+  },
+  {
+    method: 'get', path: '/studies/{studyId}/surveys/{surveyId}/severity-dashboard', tag: 'Priority', summary: 'Severity dashboard for a study/survey',
+    auth: { module: 'priorityScoring', action: 'read' }, query: ['villageId'], response: 'SeverityDashboard',
+  },
+  {
+    method: 'get', path: '/studies/{studyId}/surveys/{surveyId}/severity-kpis', tag: 'Priority', summary: 'KPI severity ranking for a study/survey',
+    auth: { module: 'priorityScoring', action: 'read' }, query: ['villageId'], response: 'KpiRanking[]',
+  },
+  {
+    method: 'get', path: '/studies/{studyId}/surveys/{surveyId}/questions/{questionId}', tag: 'Priority', summary: 'Per-question severity detail',
+    auth: { module: 'priorityScoring', action: 'read' }, query: ['villageId'], response: 'QuestionDetail',
+  },
+  {
+    method: 'post', path: '/studies/{studyId}/surveys/{surveyId}/recalculate', tag: 'Priority', summary: 'Recalculate KPI → Indicator → Sub-Domain → Domain rollups',
+    auth: { module: 'priorityScoring', action: 'create' }, response: '{ success: true }',
+  },
+  {
+    method: 'get', path: '/studies/{studyId}/surveys/{surveyId}/village-priority', tag: 'Priority', summary: 'Village-level priority ranking',
+    auth: { module: 'priorityScoring', action: 'read' }, query: ['villageId'], response: 'VillagePriority',
+  },
+  {
+    method: 'get', path: '/methodology-versions', tag: 'Priority', summary: 'List methodology versions',
+    auth: { module: 'methodologyQuestionBank', action: 'read' }, response: 'MethodologyVersion[]',
+  },
+  {
+    method: 'post', path: '/methodology-versions', tag: 'Priority', summary: 'Create a new methodology version',
+    auth: { module: 'methodologyQuestionBank', action: 'create' }, requestSchema: 'CreateMethodologyVersionBody', response: 'MethodologyVersion',
+  },
+  {
+    method: 'post', path: '/methodology-versions/{id}/upload-lookups', tag: 'Priority', summary: 'Upload a scoring-lookup CSV for a methodology version',
+    auth: { module: 'methodologyQuestionBank', action: 'create' }, response: 'MethodologyVersion',
+  },
+  {
+    method: 'get', path: '/priority-scores', tag: 'Priority', summary: 'Cross-Need priority-score dashboard for the org',
+    auth: { module: 'priorityScoring', action: 'read' }, response: 'PriorityDashboardEntry[]',
+  },
+  {
+    method: 'patch', path: '/priority-scores/{id}/approve', tag: 'Priority', summary: 'Approve a computed priority score',
+    auth: { module: 'priorityScoring', action: 'approve' }, response: 'PriorityScore',
+  },
+  // Priority Summary — the drafting/approval workflow feeding the Reports
+  // module (see report-summary.service.ts).
+  {
+    method: 'post', path: '/studies/{studyId}/surveys/{surveyId}/priority-summary/preview-snapshot', tag: 'Priority Summary', summary: 'Preview a priority-summary snapshot for a scope, without saving it',
+    auth: { module: 'priorityScoring', action: 'read' }, requestSchema: 'SummaryScopeBody', response: 'PrioritySummaryPreview',
+  },
+  {
+    method: 'post', path: '/studies/{studyId}/surveys/{surveyId}/priority-summary/generate', tag: 'Priority Summary', summary: 'Generate and save a priority summary for a scope',
+    auth: { module: 'priorityScoring', action: 'create' }, requestSchema: 'SummaryScopeBody', response: 'PrioritySummary',
+  },
+  {
+    method: 'get', path: '/studies/{studyId}/surveys/{surveyId}/priority-summary', tag: 'Priority Summary', summary: 'Get the current priority summary for a scope',
+    auth: { module: 'priorityScoring', action: 'read' }, query: ['scope', 'villageId'], response: 'PrioritySummary',
+  },
+  {
+    method: 'patch', path: '/priority-summaries/{summaryId}', tag: 'Priority Summary', summary: "Save a draft edit to a priority summary's output JSON",
+    auth: { module: 'priorityScoring', action: 'write' }, requestSchema: 'SaveDraftEditsBody', response: 'PrioritySummary',
+  },
+  {
+    method: 'post', path: '/priority-summaries/{summaryId}/save', tag: 'Priority Summary', summary: 'Save (finalize a draft of) a priority summary',
+    auth: { module: 'priorityScoring', action: 'write' }, requestSchema: 'SaveSummaryBody', response: 'PrioritySummary',
+  },
+  {
+    method: 'get', path: '/studies/{studyId}/surveys/{surveyId}/priority-summaries/saved', tag: 'Priority Summary', summary: 'List saved priority summaries for a study/survey',
+    auth: { module: 'priorityScoring', action: 'read' }, response: 'PrioritySummary[]',
+  },
+  {
+    method: 'delete', path: '/priority-summaries/{summaryId}', tag: 'Priority Summary', summary: 'Delete a saved priority summary',
+    auth: { module: 'priorityScoring', action: 'write' }, response: '204 No Content',
+  },
+  {
+    method: 'post', path: '/priority-summaries/{summaryId}/confirm', tag: 'Priority Summary', summary: 'Confirm (approve) a priority summary',
+    auth: { module: 'priorityScoring', action: 'approve' }, response: 'PrioritySummary',
+  },
+  {
+    method: 'get', path: '/studies/{studyId}/surveys/{surveyId}/priority-summary/history', tag: 'Priority Summary', summary: 'Priority-summary revision history for a scope',
+    auth: { module: 'priorityScoring', action: 'read' }, query: ['scope'], response: 'PrioritySummary[]',
+  },
+  {
+    method: 'patch', path: '/evidence/{evidenceId}/toggle-inclusion', tag: 'Priority Summary', summary: "Toggle an evidence item's inclusion in the generated report",
+    auth: { module: 'studySurvey', action: 'write' }, requestSchema: 'ToggleEvidenceInclusionBody', response: 'Evidence',
+  },
+  {
+    method: 'post', path: '/priority-summaries/{summaryId}/save-report', tag: 'Priority Summary', summary: 'Save a priority summary as a formal Report',
+    auth: { module: 'reportsDashboards', action: 'create' }, response: 'Report',
   },
 ];
 

@@ -58,7 +58,13 @@ describe('ConfigService', () => {
   const ORIGINAL_ENV = process.env;
 
   beforeEach(() => {
-    process.env = { ...ORIGINAL_ENV };
+    // Deliberately dropped rather than copied from ORIGINAL_ENV: this test
+    // asserts the schema's *default* MAIL_FROM value, which only a real
+    // developer machine's own .env (not CI) would otherwise leak in here,
+    // making the test's pass/fail depend on whichever email address was
+    // last configured locally instead of on the code under test.
+    const { MAIL_FROM: _mailFrom, ...rest } = ORIGINAL_ENV;
+    process.env = { ...rest };
   });
 
   afterAll(() => {

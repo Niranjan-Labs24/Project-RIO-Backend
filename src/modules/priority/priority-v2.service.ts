@@ -361,7 +361,7 @@ export class PriorityV2Service {
     studyId: string,
     surveyId: string,
     villageId: string | null,
-  ): Promise<any> {
+  ) {
     const vId = villageId || '';
     return this.tenant.runInOrgContext(async (tx) => {
       const survey = await tx.survey.findUnique({ where: { id: surveyId } });

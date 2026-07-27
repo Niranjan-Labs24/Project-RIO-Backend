@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
+import { Prisma } from '../../generated/prisma';
 import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { roleByKey } from '../../rbac/role-matrix';
 import { AuditService } from '../audit/audit.service';
@@ -224,7 +225,7 @@ export class SurveysService {
   // combobox. Idempotent: if a survey already exists for this study (e.g.
   // AI suggestions were generated first, or this was already called), just
   // return it rather than wiping its questions.
-  async createEmptySurvey(needId: string): Promise<any> {
+  async createEmptySurvey(needId: string) {
     const orgId = requireOrgId();
     const actorId = requireActor();
 
@@ -311,7 +312,7 @@ export class SurveysService {
   // real, multi-valued NeedDomain rows if any exist (an already-approved
   // multi-domain Need), else "every active domain" if allDomainsSelected,
   // else the single Approved Domain/AI-suggested pair, in that order.
-  async recommendQuestions(needId: string): Promise<any> {
+  async recommendQuestions(needId: string) {
     const { need, needDomains } = await this.tenant.runInOrgContext(async (tx) => {
       const need = await tx.need.findUnique({ where: { id: needId } });
       if (!need) {
@@ -361,11 +362,10 @@ export class SurveysService {
     needId: string,
     pairs: Array<{ domain: string; subDomain: string }>,
     options: { allowWhileSubmitted?: boolean } = {},
-  ): Promise<any> {
+  ) {
     const orgId = requireOrgId();
     const actorId = requireActor();
     const domainLabel = pairs.length > 0 ? pairs.map((p) => `${p.domain} / ${p.subDomain}`).join(', ') : 'All Domains';
-    this.logger.debug(`[QB-DEBUG] generateSuggestedQuestions(needId=${needId}) called by actor=${actorId} with pairs=${JSON.stringify(pairs)}`);
 
     const data = await this.tenant.runInOrgContext(async (tx) => {
       const need = await tx.need.findUnique({ where: { id: needId } });
@@ -414,15 +414,11 @@ export class SurveysService {
     });
 
     const { need, eligibleQuestions } = data;
-    this.logger.debug(
-      `[QB-DEBUG] needId=${needId} eligibleQuestions.length=${eligibleQuestions.length} for pairs=${JSON.stringify(pairs)}` +
-        (eligibleQuestions.length === 0 ? ' — NO Question Bank rows match these pairs (this is likely the bug: recommendedPairs on the Survey Builder page will be empty, so questionBankPairsFor falls back to the stale Need.needDomains).' : ''),
-    );
 
     let recommendedQuestionIds: string[] = [];
     let confidence = 0;
     let reason = '';
-    let raw: any = null;
+    let raw: unknown = null;
 
     // Zero matching Question Bank rows for the given pair(s) (e.g. a
     // reference-data mismatch between the configured sub-domain name and
@@ -464,18 +460,23 @@ Eligible Questions: ${JSON.stringify(
       };
 
       try {
-        const result = await this.ai.generateJson<any>(prompt, systemInstruction, responseSchema);
+        const result = await this.ai.generateJson<{
+          recommendedQuestionIds?: string[];
+          confidence?: number;
+          reason?: string;
+        }>(prompt, systemInstruction, responseSchema);
         recommendedQuestionIds = result.response.recommendedQuestionIds || [];
         confidence = result.response.confidence || 0;
         reason = result.response.reason || '';
         raw = result.raw;
-      } catch (err: any) {
+      } catch (err) {
         // Question suggestion must never leave the Need with nothing to show
         // an Approver — if Gemini is unavailable, fall back to every eligible
         // Question Bank entry for this domain/subDomain rather than throwing.
         recommendedQuestionIds = eligibleQuestions.map((q) => q.questionId);
         confidence = 0;
-        reason = `AI question recommendation was unavailable (${err.message}) — showing all eligible Question Bank questions for ${domainLabel} instead.`;
+        const message = err instanceof Error ? err.message : String(err);
+        reason = `AI question recommendation was unavailable (${message}) — showing all eligible Question Bank questions for ${domainLabel} instead.`;
       }
     }
 
@@ -502,7 +503,7 @@ Eligible Questions: ${JSON.stringify(
           reason,
           modelName: 'gemini-2.5-flash',
           promptVersion: '1.0.0',
-          rawResponse: raw as any,
+          rawResponse: raw as Prisma.InputJsonValue,
           createdBy: actorId,
         },
       }),
@@ -554,14 +555,6 @@ Eligible Questions: ${JSON.stringify(
     });
 
     const result = await this.getSurveyByNeedId(needId);
-    this.logger.debug(
-      `[QB-DEBUG] needId=${needId} survey=${survey.id} finalQuestions.length=${finalQuestions.length}; ` +
-        `resulting survey.questions bank-linked pairs=${JSON.stringify(
-          (result?.questions ?? [])
-            .filter((q: any) => !q.isCustom)
-            .map((q: any) => ({ domain: q.domain, subDomain: q.subDomain })),
-        )}`,
-    );
     return result;
   }
 
@@ -866,7 +859,7 @@ Eligible Questions: ${JSON.stringify(
     return updated;
   }
 
-  async getPublicSurvey(id: string): Promise<any> {
+  async getPublicSurvey(id: string) {
     return this.tenant.runAsSupervisor(async (tx) => {
       const survey = await tx.survey.findUnique({
         where: { id },
@@ -899,7 +892,7 @@ Eligible Questions: ${JSON.stringify(
     });
   }
 
-  async submitSurvey(surveyId: string, answers: Record<string, string>): Promise<any> {
+  async submitSurvey(surveyId: string, answers: Record<string, string>) {
     const survey = await this.tenant.runAsSupervisor(async (tx) => {
       return tx.survey.findUnique({ where: { id: surveyId } });
     });
@@ -915,13 +908,13 @@ Eligible Questions: ${JSON.stringify(
       return tx.surveyBuilderResponse.create({
         data: {
           surveyId,
-          answers: answers as any
+          answers: answers as Prisma.InputJsonValue
         }
       });
     });
   }
 
-  async getSurveyResponses(surveyId: string): Promise<any> {
+  async getSurveyResponses(surveyId: string) {
     return this.tenant.runAsSupervisor(async (tx) => {
       const survey = await tx.survey.findUnique({
         where: { id: surveyId },

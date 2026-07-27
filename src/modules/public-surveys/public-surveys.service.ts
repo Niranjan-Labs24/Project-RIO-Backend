@@ -1,13 +1,15 @@
 import { ConflictException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
+import { Writable } from 'node:stream';
 import ExcelJS from 'exceljs';
 import QRCode from 'qrcode';
-import { Prisma } from '../../generated/prisma';
+import { Prisma, type SurveyResponse } from '../../generated/prisma';
 import { ConfigService } from '../../config/config.service';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { requireOrgId, requireActor } from '../../tenancy/org-context';
 import { AuditService } from '../audit/audit.service';
 import { MailerService } from '../../mailer/mailer.service';
+import { sanitizeForSpreadsheet } from '../../common/security/spreadsheet-sanitize';
 import type {
   CreateSurveyLinkPayload,
   PublicSurveyLink,
@@ -20,6 +22,25 @@ import type {
 } from './public-surveys.types';
 
 type LinkWithResponseCount = Omit<PublicSurveyLinkRow, 'responseCount'> & { _count: { responses: number } };
+
+// Hard ceiling for the two unbounded-by-design reads below
+// (listResponsesWithAnswers, the CSV/XLSX export loader) — neither paginates
+// today (the summary screen and export both need every matching row, not a
+// page of them), so without some bound a single Need with a pathologically
+// large response count (abuse, or a bulk-import mistake) can pull unbounded
+// rows into process memory in one query. 50,000 is far beyond any real
+// community-assessment survey's realistic respondent count for one Need,
+// so this changes no real-world behavior — it only stops the unbounded case.
+const MAX_EXPORTABLE_RESPONSES = 50_000;
+
+// Cursor-batch size for the export readers below — bounds how many
+// SurveyResponse rows are ever in memory at once (as opposed to one
+// `take: MAX_EXPORTABLE_RESPONSES` findMany pulling up to 50,000 full rows,
+// each carrying a `Json` answers blob, into memory simultaneously). `id` is
+// a uuidv7 (time-ordered) so `orderBy: [{ submittedAt: 'desc' }, { id: 'desc' }]`
+// with an `id` cursor gives a stable, gapless total order across batches even
+// when multiple responses share the same `submittedAt` millisecond.
+const EXPORT_BATCH_SIZE = 1_000;
 
 @Injectable()
 export class PublicSurveysService {
@@ -180,6 +201,7 @@ export class PublicSurveysService {
       const rows = await tx.surveyResponse.findMany({
         where: { needId, ...(surveyLinkId ? { surveyLinkId } : {}) },
         orderBy: { submittedAt: 'desc' },
+        take: MAX_EXPORTABLE_RESPONSES,
       });
       const questionMap = await this.buildQuestionMap(tx, needId);
       return { rows, questionMap };
@@ -252,63 +274,117 @@ export class PublicSurveysService {
   }
 
   async exportResponsesCsv(needId: string, surveyLinkId?: string): Promise<string> {
-    const { rows, questionMap } = await this.loadResponsesForExport(needId, surveyLinkId);
-    const questions = Array.from(questionMap.values());
-    const header = ['Name', 'Email', 'Submitted Date', ...questions.map((q) => q.questionText)];
+    await this.findNeedOrThrow(needId);
     const escape = (value: string): string => `"${value.replace(/"/g, '""')}"`;
-    const csvRows = rows.map((row) => {
-      const answers = (row.answers ?? {}) as Record<string, string>;
-      return [
-        row.contactName ?? '',
-        row.contact,
-        row.submittedAt.toISOString(),
-        ...questions.map((q) => answers[q.questionId] ?? ''),
-      ]
-        .map((v) => escape(String(v)))
-        .join(',');
+    return this.tenant.runInOrgContext(async (tx) => {
+      const questionMap = await this.buildQuestionMap(tx, needId);
+      const questions = Array.from(questionMap.values());
+      const lines = [
+        ['Name', 'Email', 'Submitted Date', ...questions.map((q) => q.questionText)].map(escape).join(','),
+      ];
+      for await (const batch of this.iterateResponsesForExport(tx, needId, surveyLinkId)) {
+        for (const row of batch) {
+          const answers = (row.answers ?? {}) as Record<string, string>;
+          lines.push(
+            [
+              sanitizeForSpreadsheet(row.contactName ?? ''),
+              sanitizeForSpreadsheet(row.contact),
+              row.submittedAt.toISOString(),
+              ...questions.map((q) => sanitizeForSpreadsheet(answers[q.questionId] ?? '')),
+            ]
+              .map((v) => escape(String(v)))
+              .join(','),
+          );
+        }
+      }
+      return lines.join('\n');
     });
-    return [header.map(escape).join(','), ...csvRows].join('\n');
   }
 
   async exportResponsesExcel(needId: string, surveyLinkId?: string): Promise<Buffer> {
-    const { rows, questionMap } = await this.loadResponsesForExport(needId, surveyLinkId);
-    const questions = Array.from(questionMap.values());
-
-    const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'RIO';
-    workbook.created = new Date();
-    const sheet = workbook.addWorksheet('Survey Responses');
-    sheet.columns = [
-      { header: 'Name', key: 'name', width: 24 },
-      { header: 'Email', key: 'email', width: 28 },
-      { header: 'Submitted Date', key: 'submittedAt', width: 22 },
-      ...questions.map((q) => ({ header: q.questionText, key: q.questionId, width: 32 })),
-    ];
-    sheet.getRow(1).font = { bold: true };
-    for (const row of rows) {
-      const answers = (row.answers ?? {}) as Record<string, string>;
-      sheet.addRow({
-        name: row.contactName ?? '',
-        email: row.contact,
-        submittedAt: row.submittedAt.toISOString(),
-        ...Object.fromEntries(questions.map((q) => [q.questionId, answers[q.questionId] ?? ''])),
-      });
-    }
-
-    const arrayBuffer = await workbook.xlsx.writeBuffer();
-    return Buffer.from(arrayBuffer);
-  }
-
-  private async loadResponsesForExport(needId: string, surveyLinkId?: string) {
     await this.findNeedOrThrow(needId);
     return this.tenant.runInOrgContext(async (tx) => {
-      const rows = await tx.surveyResponse.findMany({
-        where: { needId, ...(surveyLinkId ? { surveyLinkId } : {}) },
-        orderBy: { submittedAt: 'desc' },
-      });
       const questionMap = await this.buildQuestionMap(tx, needId);
-      return { rows, questionMap };
+      const questions = Array.from(questionMap.values());
+
+      // Streaming writer, not the in-memory Workbook/Worksheet API: rows are
+      // committed (and released from ExcelJS's own memory) one batch at a
+      // time as they're written, rather than the whole sheet accumulating in
+      // memory before a single writeBuffer() call — bounds ExcelJS's own
+      // memory usage to ~EXPORT_BATCH_SIZE rows at a time regardless of how
+      // many total rows the export contains (up to the MAX_EXPORTABLE_
+      // RESPONSES cap).
+      const chunks: Buffer[] = [];
+      const sink = new Writable({
+        write(chunk: Buffer, _enc, callback) {
+          chunks.push(Buffer.from(chunk));
+          callback();
+        },
+      });
+      const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({ stream: sink, useStyles: true });
+      workbook.creator = 'RIO';
+      workbook.created = new Date();
+      const sheet = workbook.addWorksheet('Survey Responses');
+      sheet.columns = [
+        { header: 'Name', key: 'name', width: 24 },
+        { header: 'Email', key: 'email', width: 28 },
+        { header: 'Submitted Date', key: 'submittedAt', width: 22 },
+        ...questions.map((q) => ({ header: q.questionText, key: q.questionId, width: 32 })),
+      ];
+      sheet.getRow(1).font = { bold: true };
+      sheet.getRow(1).commit();
+
+      for await (const batch of this.iterateResponsesForExport(tx, needId, surveyLinkId)) {
+        for (const row of batch) {
+          const answers = (row.answers ?? {}) as Record<string, string>;
+          const excelRow = sheet.addRow({
+            name: sanitizeForSpreadsheet(row.contactName ?? ''),
+            email: sanitizeForSpreadsheet(row.contact),
+            submittedAt: row.submittedAt.toISOString(),
+            ...Object.fromEntries(
+              questions.map((q) => [q.questionId, sanitizeForSpreadsheet(answers[q.questionId] ?? '')]),
+            ),
+          });
+          excelRow.commit();
+        }
+      }
+      sheet.commit();
+      await workbook.commit();
+      return Buffer.concat(chunks);
     });
+  }
+
+  // Cursor-paginated in batches of EXPORT_BATCH_SIZE, capped in total at
+  // MAX_EXPORTABLE_RESPONSES — replaces a single `take: 50_000` findMany
+  // with repeated smaller reads, so at most one batch's worth of full
+  // SurveyResponse rows (each carrying a `Json` answers blob) is ever held
+  // in memory at once. `id` (uuidv7, time-ordered) is the cursor field;
+  // `orderBy` includes it as a tiebreaker after `submittedAt` so the cursor
+  // is stable even when multiple responses share a submittedAt millisecond.
+  private async *iterateResponsesForExport(
+    tx: Prisma.TransactionClient,
+    needId: string,
+    surveyLinkId?: string,
+  ): AsyncGenerator<SurveyResponse[]> {
+    const where = { needId, ...(surveyLinkId ? { surveyLinkId } : {}) };
+    let cursor: { id: string } | undefined;
+    let fetched = 0;
+    while (fetched < MAX_EXPORTABLE_RESPONSES) {
+      const take = Math.min(EXPORT_BATCH_SIZE, MAX_EXPORTABLE_RESPONSES - fetched);
+      const batch = await tx.surveyResponse.findMany({
+        where,
+        orderBy: [{ submittedAt: 'desc' }, { id: 'desc' }],
+        take,
+        ...(cursor ? { cursor, skip: 1 } : {}),
+      });
+      if (batch.length === 0) return;
+      yield batch;
+      fetched += batch.length;
+      const last = batch[batch.length - 1];
+      if (!last) return;
+      cursor = { id: last.id };
+      if (batch.length < take) return;
+    }
   }
 
   // Maps SurveyQuestion.id -> {questionText, answerType} for the Need's

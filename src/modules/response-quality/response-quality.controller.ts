@@ -1,3 +1,4 @@
+import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { Controller, Get, Param, Post, Query } from "@nestjs/common";
 import { RequirePermission } from "../../common/guards/permission.guard";
 import { ResponseQualityService } from "./response-quality.service";
@@ -18,7 +19,7 @@ export class ResponseQualityController {
   @Post("response-quality/assess")
   @RequirePermission("aiReview", "write")
   assess(
-    @Param("needId") needId: string,
+    @Param("needId", new UuidParamPipe()) needId: string,
     @Query("surveyLinkId") surveyLinkId?: string,
   ): Promise<ResponseQualityResult[]> {
     return this.responseQuality.assess(needId, surveyLinkId);
@@ -27,7 +28,7 @@ export class ResponseQualityController {
   @Get("response-quality")
   @RequirePermission("aiReview", "read")
   list(
-    @Param("needId") needId: string,
+    @Param("needId", new UuidParamPipe()) needId: string,
     @Query("surveyLinkId") surveyLinkId?: string,
   ): Promise<ResponseQualityResult[]> {
     return this.responseQuality.listForNeed(needId, surveyLinkId);
@@ -36,7 +37,7 @@ export class ResponseQualityController {
   @Post("ai-summary/generate")
   @RequirePermission("aiReview", "write")
   generateSummary(
-    @Param("needId") needId: string,
+    @Param("needId", new UuidParamPipe()) needId: string,
     @Query("surveyLinkId") surveyLinkId?: string,
   ): Promise<AiSummary> {
     return this.responseQuality.generateSummary(needId, surveyLinkId);
@@ -45,7 +46,7 @@ export class ResponseQualityController {
   @Get("ai-summary")
   @RequirePermission("aiReview", "read")
   async getSummary(
-    @Param("needId") needId: string,
+    @Param("needId", new UuidParamPipe()) needId: string,
     @Query("surveyLinkId") surveyLinkId?: string,
   ): Promise<AiSummary | null> {
     return this.responseQuality.getLatestSummary(needId, surveyLinkId);

@@ -72,8 +72,9 @@ export class UsersService {
     );
     const emailed = await this.mailer.sendTemporaryPassword(email, orgName, temporaryPassword);
     if (emailed) return { temporaryPasswordEmailed: true };
+    // Dev only: surface the password in the response itself (below), never
+    // logged — see AuthService.signup's identical reasoning.
     if (this.config.nodeEnv !== 'production') {
-      this.logger.log(`[dev-only] Temporary password for ${email}: ${temporaryPassword}`);
       return { temporaryPasswordEmailed: false, temporaryPassword };
     }
     return { temporaryPasswordEmailed: false };

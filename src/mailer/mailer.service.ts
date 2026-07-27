@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Resend } from 'resend';
 import { ConfigService } from '../config/config.service';
+import { redactEmail } from '../common/security/redact';
 
 @Injectable()
 export class MailerService {
@@ -33,10 +34,10 @@ export class MailerService {
         const { error } = await this.client.emails.send(mail);
         if (!error) return true;
         this.logger.error(
-          `Failed to email temporary password to ${email} (attempt ${attempt}/2): ${error.name} ${error.message}`,
+          `Failed to email temporary password to ${redactEmail(email)} (attempt ${attempt}/2): ${error.name} ${error.message}`,
         );
       } catch (err) {
-        this.logger.error(`Failed to email temporary password to ${email} (attempt ${attempt}/2)`, err as Error);
+        this.logger.error(`Failed to email temporary password to ${redactEmail(email)} (attempt ${attempt}/2)`, err as Error);
       }
       if (attempt === 2) return false;
       await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -61,12 +62,12 @@ export class MailerService {
         html: passwordResetHtml({ resetUrl }),
       });
       if (error) {
-        this.logger.error(`Failed to email password reset link to ${email}: ${error.name} ${error.message}`);
+        this.logger.error(`Failed to email password reset link to ${redactEmail(email)}: ${error.name} ${error.message}`);
         return false;
       }
       return true;
     } catch (err) {
-      this.logger.error(`Failed to email password reset link to ${email}`, err as Error);
+      this.logger.error(`Failed to email password reset link to ${redactEmail(email)}`, err as Error);
       return false;
     }
   }
@@ -132,12 +133,12 @@ export class MailerService {
         ],
       });
       if (error) {
-        this.logger.error(`Failed to email survey link to ${email}: ${error.name} ${error.message}`);
+        this.logger.error(`Failed to email survey link to ${redactEmail(email)}: ${error.name} ${error.message}`);
         return false;
       }
       return true;
     } catch (err) {
-      this.logger.error(`Failed to email survey link to ${email}`, err as Error);
+      this.logger.error(`Failed to email survey link to ${redactEmail(email)}`, err as Error);
       return false;
     }
   }

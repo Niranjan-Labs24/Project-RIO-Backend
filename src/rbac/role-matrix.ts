@@ -102,8 +102,13 @@ export const ROLE_MATRIX: RoleDef[] = [
     // once a study's classification/review work is done. `export` —
     // product decision: the Approver can export a report's PDF/Excel
     // themselves, same as the Research Officer (reportsDashboards.export
-    // above) — not just read it on-screen.
-    perm('reportsDashboards', { read: true, export: true }), perm('archiveSharingAudit', RO),
+    // above) — not just read it on-screen. `approve` — this is the actual
+    // Approve/Reject/Archive step of the Report workflow (see
+    // ReportsController's :id/approve, :id/reject, :id/archive, all gated
+    // on this exact action) — without it the Approver could only read and
+    // export a report, never release or reject one, which defeats the
+    // Officer-confirms/Approver-approves two-step workflow entirely.
+    perm('reportsDashboards', { read: true, approve: true, export: true }), perm('archiveSharingAudit', RO),
     // `write` — curating the suggested question list (add from Question
     // Bank/add custom/remove/reorder) is shared with the Researcher now
     // (see role_ngo_research_officer above), alongside `approve` (which

@@ -1,3 +1,4 @@
+import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { Body, Controller, Get, Param, Patch, Post, Query, Res } from "@nestjs/common";
 import type { Response } from "express";
 import { RequirePermission } from "../../common/guards/permission.guard";
@@ -34,7 +35,7 @@ export class ReportsController {
 
   @Get(":id")
   @RequirePermission("reportsDashboards", "read")
-  getById(@Param("id") id: string): Promise<Report> {
+  getById(@Param("id", new UuidParamPipe()) id: string): Promise<Report> {
     return this.reports.getById(id);
   }
 
@@ -42,31 +43,31 @@ export class ReportsController {
   // distinct from the Reviewer's `approve` that follows.
   @Patch(":id/confirm")
   @RequirePermission("reportsDashboards", "write")
-  confirm(@Param("id") id: string): Promise<Report> {
+  confirm(@Param("id", new UuidParamPipe()) id: string): Promise<Report> {
     return this.reports.confirm(id);
   }
 
   @Patch(":id/approve")
   @RequirePermission("reportsDashboards", "approve")
-  approve(@Param("id") id: string): Promise<Report> {
+  approve(@Param("id", new UuidParamPipe()) id: string): Promise<Report> {
     return this.reports.approve(id);
   }
 
   @Patch(":id/reject")
   @RequirePermission("reportsDashboards", "approve")
-  reject(@Param("id") id: string): Promise<Report> {
+  reject(@Param("id", new UuidParamPipe()) id: string): Promise<Report> {
     return this.reports.reject(id);
   }
 
   @Patch(":id/archive")
   @RequirePermission("reportsDashboards", "approve")
-  archive(@Param("id") id: string): Promise<Report> {
+  archive(@Param("id", new UuidParamPipe()) id: string): Promise<Report> {
     return this.reports.archive(id);
   }
 
   @Get(":id/export")
   @RequirePermission("reportsDashboards", "export")
-  async export(@Param("id") id: string, @Query("format") format: ExportFormat, @Res() res: Response): Promise<void> {
+  async export(@Param("id", new UuidParamPipe()) id: string, @Query("format") format: ExportFormat, @Res() res: Response): Promise<void> {
     const file = await this.reports.export(id, format);
     res.set({
       "Content-Type": file.contentType,

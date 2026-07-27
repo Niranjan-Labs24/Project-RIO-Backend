@@ -1,3 +1,4 @@
+import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { RequirePermission } from "../../common/guards/permission.guard";
 import { TypeBoxValidationPipe } from "../../contract/validation.pipe";
@@ -38,20 +39,20 @@ export class ReportSharingController {
 
   @Get("lookup/organizations/:orgId/reports")
   @RequirePermission("archiveSharingAudit", "create")
-  lookupReportsForOrg(@Param("orgId") orgId: string): Promise<ReportLookupResult[]> {
+  lookupReportsForOrg(@Param("orgId", new UuidParamPipe()) orgId: string): Promise<ReportLookupResult[]> {
     return this.reportSharing.lookupReportsForOrg(orgId);
   }
 
   @Get(":id")
   @RequirePermission("archiveSharingAudit", "read")
-  getById(@Param("id") id: string): Promise<ReportSharingRequest> {
+  getById(@Param("id", new UuidParamPipe()) id: string): Promise<ReportSharingRequest> {
     return this.reportSharing.getById(id);
   }
 
   @Patch(":id/approve")
   @RequirePermission("archiveSharingAudit", "approve")
   approve(
-    @Param("id") id: string,
+    @Param("id", new UuidParamPipe()) id: string,
     @Body(new TypeBoxValidationPipe(DecideReportSharingRequestBody)) body: DecideReportSharingRequestPayload,
   ): Promise<ReportSharingRequest> {
     return this.reportSharing.approve(id, body ?? {});
@@ -60,7 +61,7 @@ export class ReportSharingController {
   @Patch(":id/reject")
   @RequirePermission("archiveSharingAudit", "approve")
   reject(
-    @Param("id") id: string,
+    @Param("id", new UuidParamPipe()) id: string,
     @Body(new TypeBoxValidationPipe(DecideReportSharingRequestBody)) body: DecideReportSharingRequestPayload,
   ): Promise<ReportSharingRequest> {
     return this.reportSharing.reject(id, body ?? {});
@@ -68,7 +69,7 @@ export class ReportSharingController {
 
   @Get(":id/shared-report")
   @RequirePermission("archiveSharingAudit", "read")
-  getSharedSnapshot(@Param("id") id: string): Promise<SharedReportSnapshot> {
+  getSharedSnapshot(@Param("id", new UuidParamPipe()) id: string): Promise<SharedReportSnapshot> {
     return this.reportSharing.getSharedSnapshot(id);
   }
 

@@ -93,4 +93,7 @@ export class ConfigService {
   get twilioFromNumber(): string | undefined {
     return this.config.TWILIO_FROM_NUMBER;
   }
+  get smsTimeoutMs(): number {
+    return this.config.SMS_TIMEOUT_MS;
+  }
 }

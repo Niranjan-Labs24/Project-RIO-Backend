@@ -1,4 +1,4 @@
-import { BadRequestException, GoneException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, GoneException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomInt } from 'node:crypto';
 import { Prisma } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
@@ -19,6 +19,8 @@ const SECONDS_PER_QUESTION = 20;
 
 @Injectable()
 export class CitizenService {
+  private readonly logger = new Logger(CitizenService.name);
+
   constructor(
     private readonly tenant: TenantPrismaService,
     private readonly passwords: PasswordService,
@@ -147,14 +149,10 @@ export class CitizenService {
     // respondent with no way to ever get a code whenever SMS wasn't
     // configured/working.
     const codeTexted = await this.sms.sendOtpCode(payload.mobile, code);
-    // Dev only: surface the code so local/test runs aren't blocked on a
-    // real phone — same convention as OrganizationsService.createWithAdmin's
-    // temp-password reveal. Logged either way for local debugging; also
-    // returned to the frontend when delivery failed, so the respondent
-    // isn't stuck with no way to ever get the code.
-    if (process.env.NODE_ENV !== 'production') {
-      console.log(`OTP code for ${payload.mobile} (challenge ${challenge.id}): ${code}`);
-    }
+    // Dev only: surface the code in the response itself (below) so
+    // local/test runs aren't blocked on a real phone when delivery fails —
+    // never logged (OTPs and raw phone numbers must never appear in logs;
+    // this is the sole reveal channel, not a redundant one).
     return {
       challengeId: challenge.id,
       expiresAt: expiresAt.toISOString(),
@@ -317,8 +315,8 @@ export class CitizenService {
           await this.rollupService.calculateRollups(studyId, survey.id, null, { orgId });
         }
       }
-    }).catch(err => {
-      console.error(`Failed to calculate scores for response ${row.id}`, err);
+    }).catch((err: Error) => {
+      this.logger.error(`Failed to calculate scores for response ${row.id}`, err.stack);
     });
 
     return { id: row.id, submittedAt: row.submittedAt.toISOString() };

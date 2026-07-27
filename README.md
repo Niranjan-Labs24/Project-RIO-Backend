@@ -11,7 +11,7 @@ one worked example module (`notes`).
 ```bash
 pnpm install
 cp .env.example .env
-docker compose up -d db          # postgres:18 + provisions cnap_owner / cnap_app roles
+pnpm db:up                       # postgres:18 + provisions cnap_owner / cnap_app roles
 pnpm prisma migrate deploy       # apply schema + RLS
 pnpm prisma:seed                 # optional demo data (Org A / Org B)
 pnpm dev                         # http://localhost:3000  (docs at /docs, spec at /openapi.json)
@@ -24,6 +24,35 @@ present, this is a harmless no-op — config comes from the environment (compose
 If your host already has PostgreSQL bound to port 5432 (e.g. a native Windows service), set
 `DB_HOST_PORT=<free port>` in `.env` and update the two `*_URL` values to match — docker compose
 auto-reads `.env` for the `${DB_HOST_PORT:-5432}` substitution in `docker-compose.yml`.
+
+### Local development vs. production Compose
+`docker-compose.yml` on its own is the production-safe definition: it has no default database
+password and no default `db`/`api` connection strings, and does not publish the database to a host
+port at all — `docker compose config` fails closed (`POSTGRES_PASSWORD must be set`, etc.) unless
+those are actually provided. `docker-compose.dev.yml` is a small override that only re-adds the
+database's host port publish for local tooling (psql, a GUI client). `pnpm db:up`/`pnpm db:down`
+already apply both files (`docker compose -f docker-compose.yml -f docker-compose.dev.yml ...`), so
+local development needs no extra commands.
+
+The actual dev-only credentials (`POSTGRES_PASSWORD`, `DOCKER_APP_DATABASE_URL`,
+`DOCKER_SUPERVISOR_DATABASE_URL`) come from `.env` — which docker compose auto-loads for variable
+substitution — not from `docker-compose.dev.yml` itself; see `.env.example`'s comments. A real
+deployment simply doesn't ship that `.env` file and supplies its own values through whatever
+secret-injection mechanism it uses (the same pattern `JWT_SECRET` already used before this).
+
+**Credential rotation for a real deployment:** `db/init/00-init.sql` and the
+`20260713031212_rls_domain` migration hardcode the initial `cnap_owner`/`cnap_app`/`cnap_supervisor`
+role passwords (`*_dev_pw`) — this is unavoidable for a from-scratch `prisma migrate deploy` against
+an empty database, since Prisma migrations are immutable history and can't read a runtime secret.
+Any real deployment must rotate these immediately after the first `prisma migrate deploy`:
+```sql
+ALTER ROLE cnap_owner WITH PASSWORD '<new-random-secret>';
+ALTER ROLE cnap_app WITH PASSWORD '<new-random-secret>';
+ALTER ROLE cnap_supervisor WITH PASSWORD '<new-random-secret>';
+```
+then update `DATABASE_URL`/`APP_DATABASE_URL`/`SUPERVISOR_DATABASE_URL` (and
+`DOCKER_APP_DATABASE_URL`/`DOCKER_SUPERVISOR_DATABASE_URL` if using Compose) to match before
+starting the app against that database.
 
 ### Env vars (see `.env.example` for full defaults/comments)
 - `CORS_ORIGIN` — single frontend origin allowed to send credentialed (cookie) requests. Defaults to
@@ -46,13 +75,13 @@ auto-reads `.env` for the `${DB_HOST_PORT:-5432}` substitution in `docker-compos
 
 ## Running the whole stack in Docker (db + api)
 ```bash
-docker compose up -d db          # start Postgres first
+pnpm db:up                       # start Postgres first
 pnpm prisma migrate deploy       # apply schema + RLS from the host — see "Migrations in Docker" below
 docker compose up -d --build     # builds and starts the api image (db is already up)
-curl http://localhost:3000/health
-curl http://localhost:3000/health/db
-curl http://localhost:3000/openapi.json
-docker compose down              # add -v to also drop the db volume
+curl http://localhost:4000/health
+curl http://localhost:4000/health/db
+curl http://localhost:4000/openapi.json
+pnpm db:down                     # add -- -v to also drop the db volume
 ```
 Applying migrations before the `api` container starts (or at least before hitting any non-health
 endpoint) matters: `/health` responds without touching the database, but `/health/db` and every
@@ -121,6 +150,27 @@ built-in `Logger` (e.g. inside `AllExceptionsFilter`) are routed through it. Eve
 enriched with the request's correlation id and, once tenant context is established, the org id
 (`requestId` / `orgId`, sourced from the async-local-storage-backed org context) — never request
 bodies or the `authorization`/`cookie`/`x-org-id` headers, which are redacted.
+
+## Operational runbook
+- **Database unavailable**: `/api/health/db` returns 503 without leaking the driver error/hostname
+  to the client (logged server-side only, Task 6 of the backend remediation pass). Recovery: check
+  `docker compose ps db` / the managed Postgres instance's own health; the app retries per-request,
+  no restart needed once the DB is back.
+- **Redis unavailable**: `/api/health/redis` returns 503; `RateLimitGuard` silently no-ops (fails
+  open, not closed) rather than blocking all traffic — see `src/redis/redis.service.ts`. Recovery:
+  restart/restore Redis; no app restart needed, it reconnects.
+- **SMS/Gemini provider timeout**: bounded by `SMS_TIMEOUT_MS`/`GEMINI_TIMEOUT_MS` (Task 7) — a
+  timeout surfaces as a normal error response to the caller, logged server-side with the phone
+  number/prompt redacted, never blocking the event loop indefinitely.
+- **Connection-pool exhaustion**: see `load-test/README.md`'s 2026-07-27 result — a real,
+  reproduced failure mode under concurrent load in this environment
+  (`PrismaClientKnownRequestError: Transaction API error: Unable to start a transaction in the
+  given time.`), not yet fixed (tracked there as a follow-up, consistent with the pre-existing
+  "connection-pool sizing" note in that file).
+- **Load-test acceptance thresholds and alert-worthy events**: documented in
+  `load-test/README.md` (p95/p99, error rate, heap, DB/Redis connection budgets). No metrics/
+  tracing platform is wired into this codebase yet — that file's Notes section is the honest status
+  of that gap, not a claim that it's done.
 
 ## Error envelope
 Uncaught exceptions and thrown `HttpException`s are normalized by a global `AllExceptionsFilter`

@@ -63,6 +63,11 @@ export const EnvSchema = Type.Object({
   TWILIO_ACCOUNT_SID: Type.Optional(Type.String()),
   TWILIO_AUTH_TOKEN: Type.Optional(Type.String()),
   TWILIO_FROM_NUMBER: Type.Optional(Type.String()),
+  // Bounds every outbound Twilio API call (SmsService) — the Twilio SDK's
+  // own default is 30s, which is too long to leave a citizen's OTP request
+  // hanging on a slow/unresponsive provider. 10s is a conservative default;
+  // override per environment if Twilio's own latency profile warrants it.
+  SMS_TIMEOUT_MS: Type.Number({ default: 10_000, minimum: 1000, maximum: 60_000 }),
   // Double-submit CSRF enforcement for cookie-authenticated mutations. Default
   // on; bearer and anonymous requests do not carry ambient session authority.
   CSRF_ENFORCE: Type.Boolean({ default: true }),

@@ -8,6 +8,18 @@ import { ConfigService } from '../../config/config.service';
 // giving the caller a clean, actionable error.
 const GEMINI_TIMEOUT_MS = 60_000;
 
+// The subset of Gemini's generateContent response this method actually
+// reads — everything else in the real payload (safetyRatings,
+// usageMetadata, ...) is genuinely unknown/unvalidated here, hence
+// `unknown` rather than a full response type.
+interface GeminiGenerateContentResponse {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{ text?: string }>;
+    };
+  }>;
+}
+
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
@@ -74,7 +86,7 @@ export class AiService {
         throw new Error(`Gemini API returned status ${res.status}`);
       }
 
-      const data = await res.json() as any;
+      const data = (await res.json()) as unknown as GeminiGenerateContentResponse;
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!text) {
         this.logger.error(`Invalid Gemini response format: ${JSON.stringify(data)}`);
@@ -83,8 +95,8 @@ export class AiService {
 
       const response = JSON.parse(text) as T;
       return { response, raw: data };
-    } catch (err: any) {
-      if (err.name === 'AbortError') {
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
         this.logger.error(`Gemini call timed out after ${GEMINI_TIMEOUT_MS}ms`);
         throw new ServiceUnavailableException({
           error: {
@@ -98,7 +110,7 @@ export class AiService {
       // callers such as AiDecisionsService.runAndPersistClassification store
       // this verbatim as the classification failure reason, so collapsing
       // it to a generic string here would throw away real diagnostic detail.
-      this.logger.error(`Failed to call Gemini: ${err.message}`);
+      this.logger.error(`Failed to call Gemini: ${err instanceof Error ? err.message : String(err)}`);
       throw err;
     } finally {
       clearTimeout(timeout);

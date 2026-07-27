@@ -1,6 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
-import { Prisma } from '../../generated/prisma';
+import { Prisma, type Question, type ScoringLookup } from '../../generated/prisma';
+
+// Shared with parseRawAnswerValue/evaluateConditionalRule/calculateSeverity
+// below — one raw survey answer, normalized to whichever of these four
+// shapes its question's measurementMode implies. Only ever one of
+// optionId/optionIds/numericValue/text is non-null for a given answer.
+export interface ParsedAnswer {
+  optionId: string | null;
+  optionIds: string[] | null;
+  numericValue: number | null;
+  text: string | null;
+}
 
 @Injectable()
 export class DeterministicScoringService {
@@ -83,7 +94,7 @@ export class DeterministicScoringService {
 
       // Read raw answers from response JSON
       // Answers is a Record of surveyQuestionId -> answerValue
-      const rawAnswers = (response.answers || {}) as Record<string, any>;
+      const rawAnswers = (response.answers || {}) as Record<string, unknown>;
 
       // Load all scoring lookups for this methodology version
       const lookups = await tx.scoringLookup.findMany({
@@ -92,17 +103,12 @@ export class DeterministicScoringService {
 
       // Map raw answers to a structured map for rule evaluation
       // Key: questionId (e.g. H01), Value: { optionId, optionIds, numericValue, text }
-      const answersMapByQuestionId = new Map<string, {
-        optionId: string | null;
-        optionIds: string[] | null;
-        numericValue: number | null;
-        text: string | null;
-      }>();
+      const answersMapByQuestionId = new Map<string, ParsedAnswer>();
 
       const questionMappings: Array<{
         surveyQuestionId: string;
-        question: any;
-        rawAnswer: any;
+        question: Question;
+        rawAnswer: unknown;
       }> = [];
 
       for (const sq of survey.surveyQuestions) {
@@ -259,8 +265,8 @@ export class DeterministicScoringService {
               calculationVersion: 'v1',
             }
           });
-        } catch (e: any) {
-          this.logger.error(`Error scoring question ${qId}: ${e.message}`);
+        } catch (e) {
+          this.logger.error(`Error scoring question ${qId}: ${e instanceof Error ? e.message : String(e)}`);
           await tx.responseSeverityScore.create({
             data: {
               orgId,
@@ -283,15 +289,10 @@ export class DeterministicScoringService {
     });
   }
 
-  private parseRawAnswerValue(
-    raw: any,
+  parseRawAnswerValue(
+    raw: unknown,
     mode: string
-  ): {
-    optionId: string | null;
-    optionIds: string[] | null;
-    numericValue: number | null;
-    text: string | null;
-  } {
+  ): ParsedAnswer {
     const res = { optionId: null as string | null, optionIds: null as string[] | null, numericValue: null as number | null, text: null as string | null };
     if (raw === null || raw === undefined || raw === '') return res;
 
@@ -313,12 +314,12 @@ export class DeterministicScoringService {
     return res;
   }
 
-  private evaluateConditionalRule(question: any, answersMap: Map<string, any>): boolean {
+  evaluateConditionalRule(question: Question, answersMap: Map<string, ParsedAnswer>): boolean {
     if (!question.conditionalRule) return true;
     try {
-      const rule = typeof question.conditionalRule === 'string'
+      const rule = (typeof question.conditionalRule === 'string'
         ? JSON.parse(question.conditionalRule)
-        : question.conditionalRule;
+        : question.conditionalRule) as { dependsOn?: string; value?: string } | null;
       if (rule && rule.dependsOn) {
         const parent = answersMap.get(rule.dependsOn);
         if (!parent) return false;
@@ -331,12 +332,12 @@ export class DeterministicScoringService {
         }
       }
     } catch (e) {
-      this.logger.error(`Error parsing conditional rule on question ${question.questionId}`, e);
+      this.logger.error(`Error parsing conditional rule on question ${question.questionId}`, e as Error);
     }
     return true;
   }
 
-  private getOptionExclusion(optionId: string | null, lookups: any[], questionId: string) {
+  getOptionExclusion(optionId: string | null, lookups: ScoringLookup[], questionId: string) {
     if (!optionId) return null;
     const lookup = lookups.find(l => l.questionId === questionId && l.optionId === optionId);
     if (lookup && lookup.isExcluded) {
@@ -348,10 +349,10 @@ export class DeterministicScoringService {
     return null;
   }
 
-  private calculateSeverity(
-    question: any,
-    parsed: any,
-    lookups: any[]
+  calculateSeverity(
+    question: Question,
+    parsed: ParsedAnswer,
+    lookups: ScoringLookup[]
   ): {
     score: number | null;
     status: string;
@@ -400,7 +401,7 @@ export class DeterministicScoringService {
         }
       }
       const score = Math.min(sum, 100);
-      return { score, status: 'SCORED', scoringLookupId: usedLookupId };
+      return { score, status: 'SCORED', scoringLookupId: usedLookupId ?? null };
     }
 
     // SINGLE_SELECT or LIKERT_5

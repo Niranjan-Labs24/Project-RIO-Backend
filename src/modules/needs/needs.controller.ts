@@ -1,3 +1,4 @@
+import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { RequirePermission } from '../../common/guards/permission.guard';
@@ -25,7 +26,7 @@ export class NeedsController {
   @Post('studies/:studyId/needs')
   @RequirePermission('dataCollection', 'create')
   create(
-    @Param('studyId') studyId: string,
+    @Param('studyId', new UuidParamPipe()) studyId: string,
     @Body(new TypeBoxValidationPipe(CreateNeedBody)) body: CreateNeedPayload,
   ): Promise<Need> {
     return this.needs.create(studyId, body);
@@ -33,7 +34,7 @@ export class NeedsController {
 
   @Get('studies/:studyId/needs')
   @RequirePermission('dataCollection', 'read')
-  listByStudyId(@Param('studyId') studyId: string): Promise<Need[]> {
+  listByStudyId(@Param('studyId', new UuidParamPipe()) studyId: string): Promise<Need[]> {
     return this.needs.listByStudyId(studyId);
   }
 
@@ -42,7 +43,7 @@ export class NeedsController {
   @RequirePermission('dataCollection', 'create')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_IMPORT_FILE_SIZE_BYTES } }))
   importNeeds(
-    @Param('studyId') studyId: string,
+    @Param('studyId', new UuidParamPipe()) studyId: string,
     @UploadedFile() file: Express.Multer.File,
   ): Promise<ImportNeedsResult> {
     if (!file) {
@@ -53,14 +54,14 @@ export class NeedsController {
 
   @Get('needs/:needId')
   @RequirePermission('dataCollection', 'read')
-  getById(@Param('needId') needId: string): Promise<Need> {
+  getById(@Param('needId', new UuidParamPipe()) needId: string): Promise<Need> {
     return this.needs.getById(needId);
   }
 
   @Patch('needs/:needId')
   @RequirePermission('dataCollection', 'write')
   update(
-    @Param('needId') needId: string,
+    @Param('needId', new UuidParamPipe()) needId: string,
     @Body(new TypeBoxValidationPipe(UpdateNeedBody)) body: UpdateNeedPayload,
   ): Promise<Need> {
     return this.needs.update(needId, body ?? {});
@@ -69,7 +70,7 @@ export class NeedsController {
   @Delete('needs/:needId')
   @HttpCode(204)
   @RequirePermission('dataCollection', 'write')
-  remove(@Param('needId') needId: string): Promise<void> {
+  remove(@Param('needId', new UuidParamPipe()) needId: string): Promise<void> {
     return this.needs.remove(needId);
   }
 }

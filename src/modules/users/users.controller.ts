@@ -1,3 +1,4 @@
+import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
@@ -30,14 +31,14 @@ export class UsersController {
 
   @Patch(':id')
   @RequirePermission('entityTeam', 'write')
-  update(@Param('id') id: string, @Body(new TypeBoxValidationPipe(UpdateUserBody)) body: UpdateUserPayload): Promise<OrgUser> {
+  update(@Param('id', new UuidParamPipe()) id: string, @Body(new TypeBoxValidationPipe(UpdateUserBody)) body: UpdateUserPayload): Promise<OrgUser> {
     return this.users.update(id, body ?? {});
   }
 
   @Delete(':id')
   @HttpCode(204)
   @RequirePermission('entityTeam', 'write')
-  remove(@Param('id') id: string): Promise<void> {
+  remove(@Param('id', new UuidParamPipe()) id: string): Promise<void> {
     return this.users.remove(id);
   }
 }
