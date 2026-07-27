@@ -60,17 +60,33 @@ describe("Reports lifecycle flow (RPT14 Village Report)", () => {
   it("walks create → confirm → approve → export → archive", async () => {
     const server = app.getHttpServer();
 
-    // 0. Need a study for RPT14 (requiresStudyId). Use the seeded demo study.
+    // 0. RPT14 needs a SCORED study — there is no mock fallback any more, so an
+    //    un-scored study is rejected outright (see step 0b). `pnpm seed:scored`
+    //    creates this one specifically to exercise the real pipeline.
     const studies = await auth(request(server).get("/api/studies")).expect(200);
-    const items = studies.body.items ?? [];
+    const items: Array<{ id: string; title: string }> = studies.body.items ?? [];
     if (!items.length) {
       throw new Error("No study found — run `pnpm prisma:seed` first, then re-run this test.");
     }
-    const studyId = items[0].id;
+    const scored = items.find((s) => s.title === "Scored Assessment — Ad-Dilam");
+    if (!scored) {
+      throw new Error("No scored study found — run `pnpm seed:scored` first, then re-run this test.");
+    }
+    const studyId = scored.id;
+
+    // 0b. An un-scored study is a 409, not a fabricated report. (Before the mock
+    //     was removed this returned 201 with Sample Village fixtures.)
+    const unscored = items.find((s) => s.id !== studyId);
+    if (unscored) {
+      await auth(request(server).post("/api/reports"))
+        .send({ reportType: "RPT14", studyId: unscored.id, filters: { villageId: "Ad-Dilam" } })
+        .expect(409)
+        .expect((r) => expect(r.body.error.code).toBe("STUDY_NOT_SCORED"));
+    }
 
     // 1. Create → starts in draft.
     const created = await auth(request(server).post("/api/reports"))
-      .send({ reportType: "RPT14", studyId, filters: { villageId: "Village A" } })
+      .send({ reportType: "RPT14", studyId, filters: { villageId: "Ad-Dilam" } })
       .expect(201);
     const id = created.body.id;
     expect(created.body.status).toBe("draft");

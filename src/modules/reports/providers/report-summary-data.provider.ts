@@ -1,9 +1,7 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, Logger, forwardRef } from "@nestjs/common";
 import { TenantPrismaService } from "../../../tenancy/tenant-prisma.service";
-import type { Demographics } from "../report-content.types";
 import type {
   CollectiveDashboardData,
-  CollectiveKpis,
   CollectiveReportContent,
   ExecutiveReportContent,
   RegionReportContent,
@@ -18,8 +16,10 @@ import {
   type SummaryScopeType,
 } from "../report-summary.service";
 import { PriorityV2Service } from "../../priority/priority-v2.service";
+import { ReportSharingService } from "../../report-sharing/report-sharing.service";
+import { ReviewerSlaService } from "../../reviewer-sla/reviewer-sla.service";
+import { slaComplianceFromAlerts } from "../../reviewer-sla/sla-compliance";
 import { aggregateDemographics } from "./aggregate-demographics";
-import { MockReportDataProvider } from "./mock-report-data.provider";
 import {
   ReportDataProvider,
   type ScopedReportQuery,
@@ -32,10 +32,11 @@ import {
   snapshotToVillageContent,
 } from "./snapshot-to-content";
 
-// Real report data provider — backed by ReportSummaryService (real DB snapshot
-// + Gemini AI narrative) and real survey demographics. Falls back to the mock
-// provider only when a study has no scored data yet, so report generation never
-// hard-fails on an un-scored study (and existing tests stay green).
+// Real report data provider — every method reads real data. There is no mock
+// fallback: a study with no scores yet raises STUDY_NOT_SCORED (409) so the
+// caller can act on it, and an infrastructure fault propagates as a 500. Both
+// used to be answered with fixtures, which could be confirmed, approved and
+// exported with nothing in the document marking the data as fake.
 @Injectable()
 export class ReportSummaryDataProvider extends ReportDataProvider {
   private readonly logger = new Logger(ReportSummaryDataProvider.name);
@@ -43,13 +44,34 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
   constructor(
     private readonly summary: ReportSummaryService,
     private readonly tenant: TenantPrismaService,
-    // Cross-study aggregates (collective/sharing) and the no-data fallback.
-    private readonly fallback: MockReportDataProvider,
     // Authoritative org-wide priority rows for the collective dashboard —
     // the same source the Priority Dashboard reads, so the two reconcile.
     private readonly priorityV2: PriorityV2Service,
+    // RPT12 reads real cross-org sharing requests. forwardRef because
+    // ReportSharingModule imports ReportsModule (see reports.module.ts).
+    @Inject(forwardRef(() => ReportSharingService))
+    private readonly sharing: ReportSharingService,
+    // RPT02's SLA compliance figure — same source the dashboard screen uses.
+    private readonly sla: ReviewerSlaService,
   ) {
     super();
+  }
+
+  // A study with no scored data isn't an error condition to hide — it's a
+  // state the caller can fix by running scoring. Anything else is a genuine
+  // fault and must not be dressed up as an empty-but-valid report.
+  private rethrow(scope: string, err: unknown): never {
+    if ((err as Error).message === "no-data") {
+      throw new ConflictException({
+        error: {
+          code: "STUDY_NOT_SCORED",
+          message: "This study has no scored data yet. Run scoring before generating this report.",
+        },
+      });
+    }
+    // Detail stays server-side — it carries study/survey ids and Prisma internals.
+    this.logger.error(`${scope} report generation failed: ${(err as Error).message}`);
+    throw err;
   }
 
   async getVillageReport(query: VillageReportQuery): Promise<VillageReportContent> {
@@ -67,8 +89,7 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
         filters: query.filters,
       });
     } catch (err) {
-      this.logger.warn(`Village report real data unavailable (${(err as Error).message}); using fallback.`);
-      return this.fallback.getVillageReport(query);
+      this.rethrow("Village", err);
     }
   }
 
@@ -85,8 +106,7 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
       const demographics = await aggregateDemographics(this.tenant, query.studyId, villageId);
       return snapshotToSectorContent({ snapshot, aiOutput, filters: query.filters, demographics });
     } catch (err) {
-      this.logger.warn(`Sector report real data unavailable (${(err as Error).message}); using fallback.`);
-      return this.fallback.getSectorReport(query);
+      this.rethrow("Sector", err);
     }
   }
 
@@ -105,8 +125,7 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
       const demographics = await aggregateDemographics(this.tenant, query.studyId, villageId);
       return snapshotToRegionContent({ snapshot, aiOutput, filters: query.filters, demographics });
     } catch (err) {
-      this.logger.warn(`Region report real data unavailable (${(err as Error).message}); using fallback.`);
-      return this.fallback.getRegionReport(query);
+      this.rethrow("Region", err);
     }
   }
 
@@ -120,21 +139,66 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
       const demographics = await aggregateDemographics(this.tenant, query.studyId, "");
       return snapshotToExecutiveContent({ snapshot, aiOutput, filters: query.filters, demographics });
     } catch (err) {
-      this.logger.warn(`Executive report real data unavailable (${(err as Error).message}); using fallback.`);
-      return this.fallback.getExecutiveReport(query);
+      this.rethrow("Executive", err);
     }
   }
 
-  // Cross-study aggregates aren't per-scope snapshots — keep them on the
-  // existing (mock) path until a real aggregation task lands.
-  getCollectiveKpis(query: ScopedReportQuery): Promise<CollectiveKpis> {
-    return this.fallback.getCollectiveKpis(query);
+  // RPT02 Collective Report — the exportable form of the Collective Dashboard.
+  // Reuses the same real aggregate (so the export and the screen agree) and the
+  // same reviewer-SLA compliance figure. The narrative is derived from those
+  // real numbers rather than generated: SummaryScopeType has no COLLECTIVE
+  // scope, so a Gemini narrative here would need a new snapshot shape — a
+  // factual paragraph beats an invented one in the meantime.
+  async getCollectiveReport(query: ScopedReportQuery): Promise<CollectiveReportContent> {
+    const [data, alerts] = await Promise.all([this.getCollectiveDashboard(query), this.sla.listAlerts()]);
+    const { slaCompliancePct } = slaComplianceFromAlerts(alerts);
+
+    return {
+      header: {
+        studyName: query.studyTitle ?? "Collective Community Needs Report",
+        entityName: null,
+        // Cross-study aggregate — no single methodology version applies.
+        methodologyVersion: "Cross-study aggregate",
+        reportGeneratedAt: new Date().toISOString(),
+      },
+      kpis: { needCount: data.needCount, slaCompliancePct },
+      scoringDistribution: data.scoringDistribution,
+      aiSummary: buildCollectiveNarrative(data, slaCompliancePct),
+      filters: query.filters,
+    };
   }
-  getCollectiveReport(query: ScopedReportQuery): Promise<CollectiveReportContent> {
-    return this.fallback.getCollectiveReport(query);
-  }
-  getSharingStatus(query: ScopedReportQuery): Promise<SharingStatusContent> {
-    return this.fallback.getSharingStatus(query);
+
+  // RPT12 Report Sharing Status — real ReportSharingRequest rows. Goes through
+  // ReportSharingService rather than querying the table directly so the
+  // cross-org visibility rule (superadmin sees all, otherwise owner-or-
+  // requester only) stays defined in exactly one place.
+  async getSharingStatus(query: ScopedReportQuery): Promise<SharingStatusContent> {
+    const rows = await this.sharing.list();
+    const tally = { approved: 0, pending: 0, rejected: 0 };
+    for (const r of rows) {
+      if (r.status === "approved") tally.approved += 1;
+      else if (r.status === "rejected") tally.rejected += 1;
+      else if (r.status === "pending") tally.pending += 1;
+    }
+
+    return {
+      header: {
+        studyName: "Report Sharing Status",
+        entityName: null,
+        methodologyVersion: "Cross-organisation sharing log",
+        reportGeneratedAt: new Date().toISOString(),
+      },
+      summary: tally,
+      requests: rows.map((r) => ({
+        reportTitle: r.reportTitle,
+        requestingOrg: r.requestingOrgName,
+        ownerOrg: r.ownerOrgName,
+        status: r.status,
+        requestedAt: r.requestedAt,
+        decidedAt: r.decidedAt,
+      })),
+      filters: query.filters,
+    };
   }
   // Collective dashboard — REAL org-wide aggregation. Needs count + scoring
   // distribution + top priorities come from the same VillagePriorityAssessment
@@ -142,7 +206,9 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
   // ResponseQualityResult flags; reviewer notes from decided AiDecisions. An
   // org with no needs yet returns real zeros (not the Sample-Village mock);
   // only an unexpected error falls back to the mock so the screen never dies.
-  async getCollectiveDashboard(query: ScopedReportQuery): Promise<CollectiveDashboardData> {
+  // The aggregate is org-wide — scoped by the tenant context, not by `query`,
+  // which is why the parameter is unused (it was only read by the old fallback).
+  async getCollectiveDashboard(_query: ScopedReportQuery): Promise<CollectiveDashboardData> {
     try {
       // Authoritative scores — identical to the Priority Dashboard's rows.
       const entries = await this.priorityV2.listForOrg();
@@ -248,12 +314,8 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
 
       return { needCount, scoringDistribution, topPriorities, trends, anomalies, reviewerNotes };
     } catch (err) {
-      this.logger.warn(`Collective dashboard real data unavailable (${(err as Error).message}); using fallback.`);
-      return this.fallback.getCollectiveDashboard(query);
+      this.rethrow("Collective dashboard", err);
     }
-  }
-  getDemographics(query: ScopedReportQuery): Promise<Demographics | null> {
-    return this.fallback.getDemographics(query);
   }
 
   // ── internals ──
@@ -305,4 +367,56 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
       (s.priority.villagePriorityScore as number | null) !== null
     );
   }
+}
+
+// RPT02's narrative, stated from the real aggregate only. Every sentence is
+// traceable to a number in `data` — nothing is asserted that wasn't measured.
+function buildCollectiveNarrative(
+  data: CollectiveDashboardData,
+  slaCompliancePct: number | null,
+): CollectiveReportContent["aiSummary"] {
+  if (data.needCount === 0) {
+    return {
+      executiveSummary: "No needs have been recorded for this organisation yet.",
+      keyFindings: "There is no scored data to summarise.",
+      dataQualityNote: "No responses have been assessed.",
+      trendNote: "Trend pending — no assessment cycle has completed.",
+      recommendations: [],
+    };
+  }
+
+  const high = data.scoringDistribution.find((b) => b.band === "High")?.count ?? 0;
+  const scored = data.scoringDistribution.reduce((n, b) => n + b.count, 0);
+  const domains = [...new Set(data.topPriorities.map((p) => p.domain))];
+  const leading = domains.slice(0, 2).join(" and ");
+
+  const executiveSummary =
+    `${data.needCount} need(s) recorded, of which ${scored} are scored. ` +
+    `${high} are High priority` +
+    (leading ? `; the highest-severity needs fall under ${leading}.` : ".");
+
+  const keyFindings = data.topPriorities.length
+    ? data.topPriorities
+        .map((p) => `${p.rank}. ${p.label} (${p.domain}, severity ${p.severityScore})`)
+        .join("; ")
+    : "No needs have been scored yet, so no priority ranking is available.";
+
+  const dataQualityNote = data.anomalies.length
+    ? data.anomalies.map((a) => a.note).join(" ")
+    : "No response-quality anomalies were flagged.";
+
+  const recommendations: string[] = [];
+  if (domains[0]) recommendations.push(`Prioritise interventions in ${domains[0]}.`);
+  if (data.anomalies.some((a) => a.severity === "warning"))
+    recommendations.push("Field-validate the findings flagged as low confidence.");
+  if (slaCompliancePct !== null && slaCompliancePct < 100)
+    recommendations.push(`Clear the overdue reviewer queue — SLA compliance is ${slaCompliancePct}%.`);
+
+  return {
+    executiveSummary,
+    keyFindings,
+    dataQualityNote,
+    trendNote: data.trends[0]?.note ?? "Trend pending — first assessment cycle.",
+    recommendations,
+  };
 }
