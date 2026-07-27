@@ -86,8 +86,37 @@ export class ReportsService {
   }
 
   async list(params: ListReportsParams): Promise<Report[]> {
+    const store = getOrgStore();
+    const isSysAdmin = store?.role === "system_admin";
+
     const take = Math.min(Math.max(params.limit ?? 100, 1), 200);
     const skip = Math.max(params.offset ?? 0, 0);
+
+    if (isSysAdmin) {
+      const where = {
+        ...(params.organizationId ? { orgId: params.organizationId } : {}),
+        ...(params.reportType ? { reportType: params.reportType } : {}),
+        ...(params.status ? { status: params.status } : {}),
+        ...(params.studyId ? { studyId: params.studyId } : {}),
+      };
+      const rows = await this.tenant.runAsSupervisor((tx) =>
+        tx.report.findMany({
+          where,
+          orderBy: { generatedAt: "desc" },
+          take,
+          skip,
+        }),
+      );
+      await this.audit.record({
+        action: "SYSTEM_ADMIN_VIEWED_REPORT",
+        entityType: "report",
+        entityId: params.organizationId ?? "all",
+        entityLabel: params.organizationId ? "Organization Reports" : "All Platform Reports",
+        organizationId: params.organizationId,
+      });
+      return (rows as unknown as ReportRow[]).map((r) => this.toReport(r));
+    }
+
     const rows = await this.tenant.runInOrgContext((tx) =>
       tx.report.findMany({
         where: { reportType: params.reportType, status: this.visibleStatusWhere(params.status), studyId: params.studyId },
@@ -102,6 +131,24 @@ export class ReportsService {
   }
 
   async getById(id: string): Promise<Report> {
+    const store = getOrgStore();
+    const isSysAdmin = store?.role === "system_admin";
+
+    if (isSysAdmin) {
+      const row = (await this.tenant.runAsSupervisor((tx) =>
+        tx.report.findUnique({ where: { id } }),
+      )) as ReportRow | null;
+      if (!row) throw new NotFoundException({ error: { code: "REPORT_NOT_FOUND", message: "Report not found" } });
+      await this.audit.record({
+        action: "SYSTEM_ADMIN_VIEWED_REPORT",
+        entityType: "report",
+        entityId: id,
+        entityLabel: row.title,
+        organizationId: row.orgId,
+      });
+      return this.toReport(row);
+    }
+
     const row = await this.findOrThrow(id);
     // Don't leak in-review (draft/rejected) reports to read-only entity users.
     if (!this.canSeeAllStatuses() && !EXPORTABLE_STATUSES.includes(row.status)) {
@@ -116,6 +163,7 @@ export class ReportsService {
   private canSeeAllStatuses(): boolean {
     const role = getOrgStore()?.role;
     return (
+      role === "system_admin" ||
       can(role, "reportsDashboards", "write") ||
       can(role, "reportsDashboards", "approve") ||
       can(role, "reportsDashboards", "create")
@@ -201,7 +249,19 @@ export class ReportsService {
   }
 
   async export(id: string, format: ExportFormat): Promise<{ filename: string; contentType: string; body: Buffer }> {
-    const row = await this.findOrThrow(id);
+    const store = getOrgStore();
+    const isSysAdmin = store?.role === "system_admin";
+
+    let row: ReportRow | null = null;
+    if (isSysAdmin) {
+      row = (await this.tenant.runAsSupervisor((tx) =>
+        tx.report.findUnique({ where: { id } }),
+      )) as ReportRow | null;
+      if (!row) throw new NotFoundException({ error: { code: "REPORT_NOT_FOUND", message: "Report not found" } });
+    } else {
+      row = await this.findOrThrow(id);
+    }
+
     const meta = REPORT_TYPE_META[row.reportType];
     if (!EXPORTABLE_STATUSES.includes(row.status)) {
       throw new ForbiddenException({
@@ -213,8 +273,26 @@ export class ReportsService {
         error: { code: "EXPORT_FORMAT_NOT_SUPPORTED", message: `${row.reportType} doesn't support ${format} export.` },
       });
     }
+
+    if (isSysAdmin) {
+      await this.audit.record({
+        action: "SYSTEM_ADMIN_DOWNLOADED_REPORT",
+        entityType: "report",
+        entityId: row.id,
+        entityLabel: row.title,
+        organizationId: row.orgId,
+        metadata: { format },
+      });
+      const auditMeta = await this.tenant.runAsSupervisor((tx) => this.resolveExportAuditMeta(row!, tx));
+      return buildExportStub(
+        format,
+        { id: row.id, title: row.title, reportType: row.reportType, content: row.content as Record<string, unknown> },
+        auditMeta,
+      );
+    }
+
     await this.audit.record({ action: "share", entityType: "report", entityId: row.id, entityLabel: row.title, metadata: { format } });
-    const auditMeta = await this.tenant.runInOrgContext((tx) => this.resolveExportAuditMeta(row, tx));
+    const auditMeta = await this.tenant.runInOrgContext((tx) => this.resolveExportAuditMeta(row!, tx));
     return buildExportStub(
       format,
       { id: row.id, title: row.title, reportType: row.reportType, content: row.content as Record<string, unknown> },

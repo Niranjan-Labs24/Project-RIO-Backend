@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from "@nestjs/common";
+import { Controller, Get, Param, Query } from "@nestjs/common";
 import { RequirePermission } from "../../common/guards/permission.guard";
 import { ArchiveService } from "./archive.service";
 import type { ArchiveEntry, ArchiveEntryKind } from "./archive.types";
@@ -20,5 +20,11 @@ export class ArchiveController {
     @Query("village") village?: string,
   ): Promise<ArchiveEntry[]> {
     return this.archive.list({ kind, search, dateFrom, dateTo, organizationId, region, sector, village });
+  }
+
+  @Get(":studyId")
+  @RequirePermission("archiveSharingAudit", "read")
+  getDetail(@Param("studyId") studyId: string) {
+    return this.archive.getArchiveDetail(studyId);
   }
 }

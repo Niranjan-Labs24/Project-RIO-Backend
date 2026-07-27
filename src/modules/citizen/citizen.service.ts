@@ -325,8 +325,10 @@ export class CitizenService {
   }
 
   private async findActiveLinkOrThrow(token: string): Promise<PublicSurveyLinkRow> {
-    const link = await this.tenant.runAsSupervisor((tx) => tx.publicSurveyLink.findUnique({ where: { token } }));
-    if (!link || !link.isActive) {
+    const link = await this.tenant.runAsSupervisor((tx) =>
+      tx.publicSurveyLink.findUnique({ where: { token }, include: { org: true } }),
+    );
+    if (!link || !link.isActive || !link.org?.isActive) {
       throw new NotFoundException({ error: { code: 'SURVEY_LINK_NOT_FOUND', message: 'This survey link is not available.' } });
     }
     if (link.expiresAt && link.expiresAt.getTime() < Date.now()) {

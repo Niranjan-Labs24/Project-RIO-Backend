@@ -11,6 +11,7 @@
     "start": "node dist/main.js",
     "dev": "nest start --watch",
     "lint": "eslint \"{src,test}/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
     "format": "prettier --write \"{src,test}/**/*.ts\"",
     "test": "vitest run",
     "test:watch": "vitest",

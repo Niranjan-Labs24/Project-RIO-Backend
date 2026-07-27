@@ -58,7 +58,7 @@ describe("report export rendering (Step 4)", () => {
     expect(body.subarray(0, 2).toString("latin1")).toBe("PK"); // xlsx = zip
 
     const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(body);
+    await wb.xlsx.load(body as any);
     const names = wb.worksheets.map((w) => w.name);
     expect(names).toContain("Summary");
     expect(names.some((n) => n.startsWith("Domain Severity"))).toBe(true);

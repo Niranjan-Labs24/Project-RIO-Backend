@@ -43,6 +43,7 @@ import { CollectiveDashboardModule } from './modules/collective-dashboard/collec
 import { AiModule } from './modules/ai/ai.module';
 import { QuestionsModule } from './modules/questions/questions.module';
 import { SurveysModule } from './modules/surveys/surveys.module';
+import { AppController } from './app.controller';
 
 @Module({
   imports: [
@@ -96,7 +97,7 @@ import { SurveysModule } from './modules/surveys/surveys.module';
     QuestionsModule,
     SurveysModule,
   ],
-  controllers: [],
+  controllers: [AppController],
   providers: [
     TokenService,
     { provide: APP_GUARD, useClass: RateLimitGuard },
