@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MockReportApiClient } from "../providers/mock-report-api.client";
-import { MockReportDataProvider } from "../providers/mock-report-data.provider";
+import { StubReportDataProvider } from "../providers/__fixtures__/report-content.fixtures";
 import type {
   ExecutiveReportContent,
   RegionReportContent,
@@ -15,7 +14,7 @@ import type { GeneratorCtx } from "./index";
 
 function ctx(over: Partial<GeneratorCtx> = {}): GeneratorCtx {
   return {
-    provider: new MockReportDataProvider(new MockReportApiClient()),
+    provider: new StubReportDataProvider(),
     orgId: "org-1",
     studyId: "study-1",
     filters: {},

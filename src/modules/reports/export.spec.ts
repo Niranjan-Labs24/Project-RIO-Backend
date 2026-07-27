@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
-import { MockReportApiClient } from "./providers/mock-report-api.client";
+import { StubReportDataProvider } from "./providers/__fixtures__/report-content.fixtures";
 import { buildExportStub, type ExportAuditMeta } from "./reports.placeholder";
 
 const auditMeta: ExportAuditMeta = {
@@ -17,7 +17,7 @@ const auditMeta: ExportAuditMeta = {
 };
 
 async function villageContent(): Promise<Record<string, unknown>> {
-  const c = await new MockReportApiClient().fetchVillageReport({
+  const c = await new StubReportDataProvider().getVillageReport({
     studyId: "s", villageId: "VIL-001", orgId: "o", filters: {},
   });
   return c as unknown as Record<string, unknown>;
