@@ -206,7 +206,9 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
   // ResponseQualityResult flags; reviewer notes from decided AiDecisions. An
   // org with no needs yet returns real zeros (not the Sample-Village mock);
   // only an unexpected error falls back to the mock so the screen never dies.
-  async getCollectiveDashboard(query: ScopedReportQuery): Promise<CollectiveDashboardData> {
+  // The aggregate is org-wide — scoped by the tenant context, not by `query`,
+  // which is why the parameter is unused (it was only read by the old fallback).
+  async getCollectiveDashboard(_query: ScopedReportQuery): Promise<CollectiveDashboardData> {
     try {
       // Authoritative scores — identical to the Priority Dashboard's rows.
       const entries = await this.priorityV2.listForOrg();
