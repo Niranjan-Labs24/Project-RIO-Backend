@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, Res } from "@nestjs/common";
 import type { Response } from "express";
 import { RequirePermission } from "../../common/guards/permission.guard";
+import { parseIntParam } from "../../common/http/query.util";
 import { TypeBoxValidationPipe } from "../../contract/validation.pipe";
 import { CreateReportBody } from "./reports.contract";
 import { ReportsService } from "./reports.service";
@@ -21,11 +22,21 @@ export class ReportsController {
   @Get()
   @RequirePermission("reportsDashboards", "read")
   list(
+    @Query("organizationId") organizationId?: string,
     @Query("reportType") reportType?: ReportTypeCode,
     @Query("status") status?: ReportStatus,
     @Query("studyId") studyId?: string,
+    @Query("limit") limit?: string,
+    @Query("offset") offset?: string,
   ): Promise<Report[]> {
-    const params: ListReportsParams = { reportType, status, studyId };
+    const params: ListReportsParams = {
+      organizationId: organizationId || undefined,
+      reportType,
+      status,
+      studyId,
+      limit: parseIntParam(limit),
+      offset: parseIntParam(offset),
+    };
     return this.reports.list(params);
   }
 
@@ -33,6 +44,14 @@ export class ReportsController {
   @RequirePermission("reportsDashboards", "read")
   getById(@Param("id") id: string): Promise<Report> {
     return this.reports.getById(id);
+  }
+
+  // Officer confirms (step 1 of two-step approval) — a `write`-level action,
+  // distinct from the Reviewer's `approve` that follows.
+  @Patch(":id/confirm")
+  @RequirePermission("reportsDashboards", "write")
+  confirm(@Param("id") id: string): Promise<Report> {
+    return this.reports.confirm(id);
   }
 
   @Patch(":id/approve")
@@ -45,6 +64,12 @@ export class ReportsController {
   @RequirePermission("reportsDashboards", "approve")
   reject(@Param("id") id: string): Promise<Report> {
     return this.reports.reject(id);
+  }
+
+  @Patch(":id/archive")
+  @RequirePermission("reportsDashboards", "approve")
+  archive(@Param("id") id: string): Promise<Report> {
+    return this.reports.archive(id);
   }
 
   @Get(":id/export")

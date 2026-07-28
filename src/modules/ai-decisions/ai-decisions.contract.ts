@@ -12,3 +12,61 @@ export const ReviewDecisionBody = registerSchema(
   ),
 );
 export type ReviewDecisionDto = Static<typeof ReviewDecisionBody>;
+
+// A Need can span multiple Domain/Sub-domain pairs (see NeedDomain) — every
+// override/manual-classify payload carries an array of these instead of a
+// single {domain, subDomain}, no limit on how many.
+const DomainSubDomainPair = T.Object({
+  domain: T.String({ minLength: 1 }),
+  subDomain: T.String({ minLength: 1 }),
+});
+
+// Approve here only decides the classification (Override + Approve) — it
+// no longer touches the survey's question list or publishes it. Curating
+// questions (Question Bank + AI-suggested + open-ended) and Submit for
+// Approval / Approve & Publish all happen separately, on the Survey Builder
+// page, once this need is `reviewer_approved` (see SurveysController).
+export const AiReviewApproveBody = registerSchema(
+  'AiReviewApproveBody',
+  T.Object(
+    {
+      domainOverride: T.Optional(
+        T.Object({
+          pairs: T.Array(DomainSubDomainPair, { minItems: 1 }),
+          // Optional, matching AiReviewOverrideDomainBody.reason below — a
+          // rationale is helpful but not something every override needs.
+          reason: T.Optional(T.String({ maxLength: 2000 })),
+        }),
+      ),
+    },
+    { additionalProperties: false },
+  ),
+);
+export type AiReviewApproveDto = Static<typeof AiReviewApproveBody>;
+
+export const AiReviewRejectBody = registerSchema(
+  'AiReviewRejectBody',
+  T.Object(
+    { comments: T.String({ minLength: 1, maxLength: 2000 }) },
+    { additionalProperties: false },
+  ),
+);
+export type AiReviewRejectDto = Static<typeof AiReviewRejectBody>;
+
+export const AiReviewOverrideDomainBody = registerSchema(
+  'AiReviewOverrideDomainBody',
+  T.Object(
+    {
+      pairs: T.Array(DomainSubDomainPair, { minItems: 1 }),
+      // Persisted onto Need.proposedDomains/proposedReason (see
+      // AiDecisionsService.overrideDomainPreview) so whoever reviews next —
+      // any session, not just the browser tab that staged this — can see
+      // what was proposed and why. Optional only for backward compatibility
+      // with any in-flight client that predates this field; the UI always
+      // sends it.
+      reason: T.Optional(T.String({ minLength: 1, maxLength: 2000 })),
+    },
+    { additionalProperties: false },
+  ),
+);
+export type AiReviewOverrideDomainDto = Static<typeof AiReviewOverrideDomainBody>;

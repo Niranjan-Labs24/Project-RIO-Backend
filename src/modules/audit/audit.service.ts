@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore } from '../../tenancy/org-context';
@@ -39,36 +39,42 @@ export class AuditService {
   // org context (authenticated request) before mutating; login sets it after
   // resolving the user.
   async record(input: RecordAuditInput): Promise<void> {
-    const store = getOrgStore();
-    const metadata: Record<string, unknown> = { ...(input.metadata ?? {}) };
-    if (input.changes && input.changes.length > 0) {
-      metadata.changes = input.changes;
-    }
-    // File the event under the explicit org when given (cross-org admin action),
-    // otherwise under the caller's ambient org. The RLS WITH CHECK requires
-    // organisation_id to equal the transaction's org GUC, so both must match.
-    const orgId = input.organizationId ?? store?.orgId ?? null;
-    const write = (tx: Prisma.TransactionClient): Promise<unknown> =>
-      tx.auditLog.create({
-        data: {
-          organisationId: orgId,
-          actorUserId: store?.actorId ?? null,
-          action: input.action,
-          entityType: input.entityType,
-          entityId: input.entityId,
-          entityLabel: input.entityLabel,
-          metadata:
-            Object.keys(metadata).length > 0
-              ? (metadata as unknown as Prisma.InputJsonValue)
-              : undefined,
-          ipAddress: store?.ip ?? null,
-          userAgent: store?.userAgent ?? null,
-        },
-      });
-    if (input.organizationId) {
-      await this.tenant.runAsOrg(input.organizationId, write);
-    } else {
-      await this.tenant.runInOrgContext(write);
+    try {
+      const store = getOrgStore();
+      const metadata: Record<string, unknown> = { ...(input.metadata ?? {}) };
+      if (input.changes && input.changes.length > 0) {
+        metadata.changes = input.changes;
+      }
+      const rawOrgId = input.organizationId ?? store?.orgId ?? null;
+      const isVirtualOrg = !rawOrgId || rawOrgId === '00000000-0000-0000-0000-000000000001';
+      const targetOrgId = isVirtualOrg ? null : rawOrgId;
+
+      const write = (tx: Prisma.TransactionClient): Promise<unknown> =>
+        tx.auditLog.create({
+          data: {
+            organisationId: targetOrgId,
+            actorUserId: store?.actorId ?? null,
+            action: input.action,
+            entityType: input.entityType,
+            entityId: input.entityId,
+            entityLabel: input.entityLabel,
+            metadata:
+              Object.keys(metadata).length > 0
+                ? (metadata as unknown as Prisma.InputJsonValue)
+                : undefined,
+            ipAddress: store?.ip ?? null,
+            userAgent: store?.userAgent ?? null,
+          },
+        });
+
+      if (targetOrgId) {
+        await this.tenant.runAsOrg(targetOrgId, write);
+      } else {
+        await this.tenant.runAsSupervisor(write);
+      }
+    } catch (err) {
+      // Audit recording should log a warning but never crash the primary read/write request
+      console.warn('Audit recording warning:', err);
     }
   }
 
@@ -141,7 +147,7 @@ export class AuditService {
         tx.auditLog.findMany({ where: effectiveWhere, orderBy: { createdAt: 'desc' }, take: limit, skip: offset }) as Promise<AuditRow[]>,
         tx.auditLog.count({ where: effectiveWhere }),
       ]);
-      const actors = await this.loadActors(tx, logs);
+      const actors = await this.loadActors(logs);
       return { logs, actors, total };
     };
 
@@ -154,23 +160,39 @@ export class AuditService {
   }
 
   /** Ids of users whose name or email matches the free-text search term. */
-  private async findActorIdsMatching(tx: Prisma.TransactionClient, search: string): Promise<string[]> {
-    const users = await tx.user.findMany({
-      where: {
-        OR: [
-          { name: { contains: search, mode: 'insensitive' } },
-          { email: { contains: search, mode: 'insensitive' } },
-        ],
-      },
-      select: { id: true },
-    });
+  private async findActorIdsMatching(_tx: Prisma.TransactionClient, search: string): Promise<string[]> {
+    // Cross-org lookup (see loadActors below) — a search term must match an
+    // actor regardless of which org's users RLS would otherwise restrict
+    // this query to.
+    const users = await this.tenant.runAsSupervisor((supTx) =>
+      supTx.user.findMany({
+        where: {
+          OR: [
+            { name: { contains: search, mode: 'insensitive' } },
+            { email: { contains: search, mode: 'insensitive' } },
+          ],
+        },
+        select: { id: true },
+      }),
+    );
     return users.map((u) => u.id);
   }
 
-  private async loadActors(tx: Prisma.TransactionClient, logs: AuditRow[]): Promise<ActorRow[]> {
+  // Cross-org lookup, deliberately not scoped to the viewing org's own RLS
+  // context: an audit entry can legitimately be filed under one org (e.g.
+  // report-sharing's dual-org write — see ReportSharingService.create/
+  // decide) while its actor belongs to the *other* org. Resolving the
+  // actor under the viewer's own org-scoped `tx` would hide that user
+  // behind RLS and silently fall back to "System" even though a real
+  // person performed the action — this bypasses that, the same way
+  // `organisationId`/entity names on these cross-org events are already
+  // resolved via runAsSupervisor elsewhere (see ReportSharingService).
+  private async loadActors(logs: AuditRow[]): Promise<ActorRow[]> {
     const ids = [...new Set(logs.map((l) => l.actorUserId).filter((v): v is string => Boolean(v)))];
     if (ids.length === 0) return [];
-    return tx.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, email: true } });
+    return this.tenant.runAsSupervisor((tx) =>
+      tx.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, email: true } }),
+    );
   }
 
   private mapRows(logs: AuditRow[], actors: ActorRow[]): AuditEvent[] {
@@ -188,12 +210,104 @@ export class AuditService {
         entityType: l.entityType,
         entityId: l.entityId,
         entityLabel: l.entityLabel,
-        changes,
-        metadata: Object.keys(meta).length > 0 ? meta : undefined,
+        changes: changes ? (maskSensitiveData(changes) as AuditChange[]) : undefined,
+        metadata: Object.keys(meta).length > 0 ? (maskSensitiveData(meta) as Record<string, unknown>) : undefined,
         ipAddress: l.ipAddress,
         userAgent: l.userAgent,
         createdAt: l.createdAt.toISOString(),
       };
     });
   }
+
+  private isCrossEntity(): boolean {
+    const roleKey = getOrgStore()?.role;
+    return roleKey !== undefined && roleByKey(roleKey)?.crossEntity === true;
+  }
+
+  async getById(id: string): Promise<AuditEvent> {
+    const isCross = this.isCrossEntity();
+    const row = await (isCross
+      ? this.tenant.runAsSupervisor((tx) => tx.auditLog.findUnique({ where: { id } }))
+      : this.tenant.runInOrgContext((tx) => tx.auditLog.findUnique({ where: { id } })));
+
+    if (!row) {
+      throw new NotFoundException({ error: { code: 'AUDIT_LOG_NOT_FOUND', message: 'Audit record not found' } });
+    }
+
+    const actors = await this.loadActors([row as AuditRow]);
+    const mapped = this.mapRows([row as AuditRow], actors)[0];
+    if (!mapped) {
+      throw new NotFoundException({ error: { code: 'AUDIT_LOG_NOT_FOUND', message: 'Audit record not found' } });
+    }
+    return mapped;
+  }
+
+  async getSummary() {
+    const isCross = this.isCrossEntity();
+    const runSummary = async (tx: Prisma.TransactionClient) => {
+      const [total, orgChanges, userChanges, securityEvents, reportActions, archiveActions, recentDeactivated, recentAdminChanges, recentUserDisables, recentArchives] = await Promise.all([
+        tx.auditLog.count(),
+        tx.auditLog.count({ where: { action: { in: ['ORGANIZATION_CREATED', 'ORGANIZATION_UPDATED', 'ORGANIZATION_DEACTIVATED', 'ORGANIZATION_REACTIVATED'] } } }),
+        tx.auditLog.count({ where: { action: { in: ['NGO_ADMIN_ASSIGNED', 'NGO_ADMIN_CHANGED', 'USER_INVITED', 'USER_ROLE_CHANGED_BY_SYSTEM_ADMIN', 'USER_DISABLED_BY_SYSTEM_ADMIN', 'USER_ENABLED_BY_SYSTEM_ADMIN', 'USER_INVITATION_RESENT'] } } }),
+        tx.auditLog.count({ where: { action: { in: ['ACCESS_DENIED', 'USER_DISABLED_BY_SYSTEM_ADMIN'] } } }),
+        tx.auditLog.count({ where: { action: { in: ['REPORT_GENERATED', 'REPORT_APPROVED', 'REPORT_PUBLISHED', 'SYSTEM_ADMIN_VIEWED_REPORT', 'SYSTEM_ADMIN_DOWNLOADED_REPORT'] } } }),
+        tx.auditLog.count({ where: { action: { in: ['STUDY_ARCHIVED', 'STUDY_RESTORED', 'SYSTEM_ADMIN_VIEWED_ARCHIVE', 'SYSTEM_ADMIN_VIEWED_ARCHIVED_REPORT'] } } }),
+        tx.auditLog.findMany({ where: { action: 'ORGANIZATION_DEACTIVATED' }, orderBy: { createdAt: 'desc' }, take: 5 }),
+        tx.auditLog.findMany({ where: { action: { in: ['NGO_ADMIN_ASSIGNED', 'NGO_ADMIN_CHANGED'] } }, orderBy: { createdAt: 'desc' }, take: 5 }),
+        tx.auditLog.findMany({ where: { action: 'USER_DISABLED_BY_SYSTEM_ADMIN' }, orderBy: { createdAt: 'desc' }, take: 5 }),
+        tx.auditLog.findMany({ where: { action: { in: ['STUDY_ARCHIVED', 'STUDY_RESTORED'] } }, orderBy: { createdAt: 'desc' }, take: 5 }),
+      ]);
+
+      const allLogs = [...recentDeactivated, ...recentAdminChanges, ...recentUserDisables, ...recentArchives] as AuditRow[];
+      const actors = await this.loadActors(allLogs);
+
+      return {
+        stats: {
+          totalEvents: total,
+          organizationChanges: orgChanges,
+          userRoleChanges: userChanges,
+          securityEvents,
+          reportActions,
+          archiveActions,
+        },
+        recentDeactivatedOrgs: this.mapRows(recentDeactivated as AuditRow[], actors),
+        recentAdminChanges: this.mapRows(recentAdminChanges as AuditRow[], actors),
+        recentUserDisables: this.mapRows(recentUserDisables as AuditRow[], actors),
+        recentArchiveActions: this.mapRows(recentArchives as AuditRow[], actors),
+      };
+    };
+
+    if (isCross) {
+      return this.tenant.runAsSupervisor(runSummary);
+    }
+    return this.tenant.runInOrgContext(runSummary);
+  }
+}
+
+const SENSITIVE_KEYS = new Set(['password', 'passwordhash', 'token', 'secret', 'otp', 'authorization', 'secretkey', 'access_token']);
+
+function maskSensitiveData(data: unknown): unknown {
+  if (!data || typeof data !== 'object') return data;
+  if (Array.isArray(data)) return data.map(maskSensitiveData);
+
+  const obj = data as Record<string, unknown>;
+  if (typeof obj.field === 'string' && SENSITIVE_KEYS.has(obj.field.toLowerCase())) {
+    return {
+      field: obj.field,
+      before: obj.before !== undefined ? '[REDACTED]' : undefined,
+      after: obj.after !== undefined ? '[REDACTED]' : undefined,
+    };
+  }
+
+  const masked: Record<string, unknown> = {};
+  for (const [key, val] of Object.entries(obj)) {
+    if (SENSITIVE_KEYS.has(key.toLowerCase())) {
+      masked[key] = '[REDACTED]';
+    } else if (val && typeof val === 'object') {
+      masked[key] = maskSensitiveData(val);
+    } else {
+      masked[key] = val;
+    }
+  }
+  return masked;
 }

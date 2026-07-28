@@ -2,10 +2,15 @@ import { randomBytes } from 'node:crypto';
 import { BadRequestException, Body, Controller, Get, HttpCode, Post, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ConfigService } from '../../config/config.service';
+import { Public } from '../../auth/public.decorator';
+import { RateLimit } from '../../common/guards/rate-limit.guard';
 import { CSRF_COOKIE_NAME, csrfCookieOptions, SESSION_COOKIE_NAME, sessionCookieOptions } from '../../auth/session-cookie';
 import { CsrfExempt } from '../../common/guards/csrf.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
-import { ChangePasswordBody, SignupBody, type ChangePasswordDto, type SignupDto } from './auth.contract';
+import {
+  ChangePasswordBody, ForgotPasswordBody, ResetPasswordBody, SignupBody,
+  type ChangePasswordDto, type ForgotPasswordDto, type ResetPasswordDto, type SignupDto,
+} from './auth.contract';
 import { AuthService } from './auth.service';
 import type { SessionContext, SignupResponseView } from './session.types';
 
@@ -25,6 +30,8 @@ export class AuthController {
   // CSRF-exempt: login issues the rio_csrf cookie, so no cookie exists yet for
   // this request to double-submit — it establishes the session, not consumes it.
   @Post('login')
+  @Public()
+  @RateLimit(5, 60)
   @HttpCode(200)
   @CsrfExempt()
   async login(@Body() body: LoginBody, @Res({ passthrough: true }) res: Response): Promise<SessionContext> {
@@ -43,6 +50,8 @@ export class AuthController {
   // first admin and issues a session, same as login. CSRF-exempt for the same
   // reason as login: it issues the rio_csrf cookie rather than consuming it.
   @Post('signup')
+  @Public()
+  @RateLimit(3, 3600)
   @CsrfExempt()
   async signup(
     @Body(new TypeBoxValidationPipe(SignupBody)) body: SignupDto,
@@ -54,6 +63,32 @@ export class AuthController {
     return result;
   }
 
+  // Open routes: unauthenticated by definition (the whole point is to
+  // recover access without a session). CSRF-exempt for the same reason as
+  // login/signup — no session cookie exists yet for either of these calls
+  // to double-submit against.
+  @Post('forgot-password')
+  @Public()
+  @RateLimit(3, 600)
+  @HttpCode(200)
+  @CsrfExempt()
+  forgotPassword(
+    @Body(new TypeBoxValidationPipe(ForgotPasswordBody)) body: ForgotPasswordDto,
+  ): Promise<{ message: string }> {
+    return this.auth.forgotPassword(body);
+  }
+
+  @Post('reset-password')
+  @Public()
+  @RateLimit(10, 600)
+  @HttpCode(200)
+  @CsrfExempt()
+  resetPassword(
+    @Body(new TypeBoxValidationPipe(ResetPasswordBody)) body: ResetPasswordDto,
+  ): Promise<{ message: string }> {
+    return this.auth.resetPassword(body);
+  }
+
   @Get('me')
   me(): Promise<SessionContext> {
     return this.auth.me();
@@ -63,8 +98,14 @@ export class AuthController {
   @HttpCode(204)
   async logout(@Res({ passthrough: true }) res: Response): Promise<void> {
     await this.auth.logout();
-    res.clearCookie(SESSION_COOKIE_NAME, { path: '/' });
-    res.clearCookie(CSRF_COOKIE_NAME, { path: '/' });
+    // clearCookie must be called with the same attributes the cookie was
+    // set with (sameSite/secure) — passing only `path` still works in most
+    // browsers, but some browsers only expire the exact attribute
+    // combination they stored, leaving the old cookie value visible in
+    // devtools even though the session itself is already dead server-side.
+    const isProd = this.config.nodeEnv === 'production';
+    res.clearCookie(SESSION_COOKIE_NAME, { ...sessionCookieOptions(isProd), maxAge: undefined });
+    res.clearCookie(CSRF_COOKIE_NAME, { ...csrfCookieOptions(isProd), maxAge: undefined });
   }
 
   @Post('consent')
@@ -76,9 +117,17 @@ export class AuthController {
   // any signed-in user may replace their own (signup-issued temporary) password.
   @Post('change-password')
   @HttpCode(200)
-  changePassword(
+  async changePassword(
     @Body(new TypeBoxValidationPipe(ChangePasswordBody)) body: ChangePasswordDto,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<SessionContext> {
-    return this.auth.changePassword(body);
+    const session = await this.auth.changePassword(body);
+    // changePassword() bumps sessionVersion and mints a fresh token to match
+    // (see AuthService#changePassword) — without re-issuing the cookie here,
+    // the browser keeps presenting the now-stale pre-change cookie, and the
+    // very next cookie-authenticated request (e.g. consent) is correctly
+    // rejected by JwtAuthGuard's sessionVersion check.
+    res.cookie(SESSION_COOKIE_NAME, session.token, sessionCookieOptions(this.config.nodeEnv === 'production'));
+    return session;
   }
 }

@@ -1,5 +1,6 @@
 import { Controller, Get } from '@nestjs/common';
 import { RequirePermission } from '../../common/guards/permission.guard';
+import { Public } from '../../auth/public.decorator';
 import { ConsentService } from './consent.service';
 import type { ActiveConsentPolicy, OrganizationConsentStatus } from './consent.types';
 
@@ -10,6 +11,7 @@ export class ConsentController {
   // Open route (no @RequirePermission): the signup screen needs the policy
   // text + version before the caller has any account/session at all.
   @Get('active')
+  @Public()
   getActive(): Promise<ActiveConsentPolicy> {
     return this.consent.getActivePolicy();
   }

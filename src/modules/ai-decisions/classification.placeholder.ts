@@ -40,22 +40,3 @@ export interface ClassificationResult {
 export function redactPii(text: string): string {
   return text.replace(EMAIL_RE, '[redacted-email]').replace(PHONE_RE, '[redacted-phone]');
 }
-
-// TODO(RIO-FR-003):
-// Replace placeholder classification with actual AI classification
-// after business rules and LLM integration are finalized.
-export function classifyNeed(subject: ClassificationSubject): ClassificationResult {
-  const redactedStatement = redactPii(subject.statement);
-  return {
-    modelName: 'placeholder-classifier',
-    modelVersion: '0.1.0',
-    suggestion: {
-      domains: ['Uncategorized'],
-      subDomains: ['Uncategorized'],
-      rationale: 'Placeholder classification pending business rules and LLM integration.',
-      redactedStatement,
-      village: subject.village.join(', '),
-    },
-    confidence: 0,
-  };
-}

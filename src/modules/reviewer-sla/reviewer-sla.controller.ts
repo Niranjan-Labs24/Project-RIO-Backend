@@ -8,13 +8,23 @@ export class ReviewerSlaController {
   constructor(private readonly reviewerSla: ReviewerSlaService) {}
 
   @Get("config")
-  @RequirePermission("aiReview", "read")
+  // Was gated on aiReview:read — a permission the Research Officer also
+  // holds (full parity on classification decisions), which leaked the
+  // Approver's "surveys awaiting review" queue to them too. surveyBuilder:read
+  // is what both roles that actually belong here hold — the branch inside
+  // ReviewerSlaService.listAlerts decides which alerts each of them gets.
+  @RequirePermission("surveyBuilder", "read")
   getConfig(): SlaConfig {
     return this.reviewerSla.getConfig();
   }
 
   @Get("alerts")
-  @RequirePermission("aiReview", "read")
+  // Was gated on aiReview:read — a permission the Research Officer also
+  // holds (full parity on classification decisions), which leaked the
+  // Approver's "surveys awaiting review" queue to them too. surveyBuilder:read
+  // is what both roles that actually belong here hold — the branch inside
+  // ReviewerSlaService.listAlerts decides which alerts each of them gets.
+  @RequirePermission("surveyBuilder", "read")
   listAlerts(): Promise<SlaAlert[]> {
     return this.reviewerSla.listAlerts();
   }

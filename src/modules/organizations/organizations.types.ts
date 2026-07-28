@@ -11,12 +11,31 @@ export interface Organization {
   email: string | null;
   sector: string | null;
   villages: string[];
+  // Optional link into the KSA Geographic Reference master data — additive
+  // alongside the free-text `region`/`villages` above, not a replacement
+  // for them. An org has exactly *one* Region (single-select, plain scalar),
+  // but can span *many* Governorates and *many* Centers (both many-to-many
+  // join tables).
+  regionId: string | null;
+  governorateIds: string[];
+  centerIds: string[];
   isActive: boolean;
   createdAt: string;
 }
 
 export interface OrganizationSummary extends Organization {
   memberCount: number;
+  studyCount?: number;
+  surveyCount?: number;
+  reportCount?: number;
+  ngoAdminName?: string | null;
+  ngoAdminEmail?: string | null;
+  deactivationReason?: string | null;
+}
+
+export interface UpdateOrganizationStatusPayload {
+  isActive: boolean;
+  reason?: string | null;
 }
 
 export interface UpdateOrganizationPayload {
@@ -27,19 +46,24 @@ export interface UpdateOrganizationPayload {
   purpose?: string | null;
   logoUrl?: string | null;
   villages?: string[];
+  regionId?: string | null;
+  // Replaces the *entire* set when provided (not a merge/append) — see
+  // OrganizationsService#updateCurrent.
+  governorateIds?: string[];
+  centerIds?: string[];
   isActive?: boolean;
 }
 
 export interface CreateOrganizationPayload {
   name: string;
-  purpose: string;
+  purpose?: string | null;
   registrationNumber: string;
   region?: string[];
   email?: string | null;
   sector?: string | null;
   villages?: string[];
-  adminName: string;
-  adminEmail: string;
+  adminName?: string;
+  adminEmail?: string;
 }
 
 // Shape of an organisations row as this module reads it.
@@ -53,6 +77,9 @@ export interface OrgRow {
   email: string | null;
   sector: string | null;
   villages: string[];
+  regionId: string | null;
+  governorateIds: string[];
+  centerIds: string[];
   isActive: boolean;
   createdAt: Date;
 }

@@ -2,7 +2,7 @@ import { CanActivate, ExecutionContext, ForbiddenException, Injectable, SetMetad
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import { ConfigService } from '../../config/config.service';
-import { CSRF_COOKIE_NAME } from '../../auth/session-cookie';
+import { CSRF_COOKIE_NAME, SESSION_COOKIE_NAME } from '../../auth/session-cookie';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -15,9 +15,8 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 export const CSRF_EXEMPT_KEY = 'csrfExempt';
 export const CsrfExempt = (): MethodDecorator & ClassDecorator => SetMetadata(CSRF_EXEMPT_KEY, true);
 
-// Opt-in double-submit CSRF. Off by default (CSRF_ENFORCE=false) so it does not
-// break the frontend until the frontend echoes the rio_csrf cookie as the
-// X-CSRF-Token header. Turn on only for cross-site (sameSite=none) deployments.
+// Double-submit CSRF for cookie-authenticated mutations. Bearer and anonymous
+// requests are not subject to ambient-cookie CSRF and pass without a token.
 @Injectable()
 export class CsrfGuard implements CanActivate {
   constructor(
@@ -29,6 +28,7 @@ export class CsrfGuard implements CanActivate {
     if (!this.config.csrfEnforce) return true;
     const req = context.switchToHttp().getRequest<Request & { cookies?: Record<string, string> }>();
     if (SAFE_METHODS.has(req.method)) return true;
+    if (!req.cookies?.[SESSION_COOKIE_NAME]) return true;
     const exempt = this.reflector.getAllAndOverride<boolean>(CSRF_EXEMPT_KEY, [context.getHandler(), context.getClass()]);
     if (exempt) return true;
 

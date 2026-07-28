@@ -52,7 +52,7 @@ export class DeterministicScoringService {
         throw new Error(`SurveyResponse not found: ${surveyResponseId}`);
       }
 
-      const { needId, studyId, orgId, surveyLinkId } = response;
+      const { needId, studyId, orgId } = response;
       const villageId = response.need.village?.[0] || null;
       const respondentId = response.contact;
 
@@ -73,7 +73,7 @@ export class DeterministicScoringService {
 
       // Determine Methodology Version
       // If the survey has a snapshot version, find it, otherwise fall back to latest published version
-      let methodologyVersion = await tx.methodologyVersion.findFirst({
+      const methodologyVersion = await tx.methodologyVersion.findFirst({
         where: survey.methodologyVersion ? { version: survey.methodologyVersion } : { status: 'PUBLISHED' },
         orderBy: { createdAt: 'desc' }
       });
@@ -116,7 +116,7 @@ export class DeterministicScoringService {
       }
 
       // Process each question
-      for (const { surveyQuestionId, question, rawAnswer } of questionMappings) {
+      for (const { question, rawAnswer } of questionMappings) {
         const qId = question.questionId;
         const parsed = answersMapByQuestionId.get(qId)!;
 
@@ -392,7 +392,7 @@ export class DeterministicScoringService {
       }
 
       let sum = 0;
-      let usedLookupId = relevantLookups[0]?.id; // default to first lookup record as primary tracking lookup
+      const usedLookupId = relevantLookups[0]?.id; // default to first lookup record as primary tracking lookup
       for (const opt of selected) {
         const match = relevantLookups.find(l => l.optionId === opt);
         if (match) {

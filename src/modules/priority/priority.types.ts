@@ -38,12 +38,19 @@ export interface PriorityScore {
   approvedAt: string | null;
 }
 
-// Org-wide dashboard row — every study, whether or not it's been scored yet
-// (a study with no PriorityScore row must still show up, just unscored —
-// see the fixed listForOrg()). Only approved scores are ever surfaced here.
+// Org-wide dashboard row — every Need, whether or not it's been scored yet
+// (a Need with no VillagePriorityAssessment must still show up, just
+// unscored). Backed by PriorityV2Service.listForOrg() (the real,
+// methodology-driven village-priority pipeline) — not the older
+// PriorityService/PriorityScore placeholder, which no UI writes to anymore.
 export interface PriorityDashboardEntry {
   studyId: string;
   studyTitle: string;
   needId: string;
-  score: PriorityScore | null;
+  score: {
+    overallScore: number;
+    level: "critical" | "high" | "medium" | "low";
+    gapType: string | null;
+    scoredAt: string;
+  } | null;
 }

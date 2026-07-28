@@ -28,13 +28,13 @@ describe('CsrfGuard', () => {
 
   it('rejects an unsafe method with missing/mismatched token when enforcing', () => {
     const guard = new CsrfGuard({ csrfEnforce: true } as never, reflectorStub(false));
-    expect(() => guard.canActivate(ctx('POST', {}, { rio_csrf: 'a' }))).toThrow(ForbiddenException);
-    expect(() => guard.canActivate(ctx('POST', { 'x-csrf-token': 'b' }, { rio_csrf: 'a' }))).toThrow(ForbiddenException);
+    expect(() => guard.canActivate(ctx('POST', {}, { rio_session: 's', rio_csrf: 'a' }))).toThrow(ForbiddenException);
+    expect(() => guard.canActivate(ctx('POST', { 'x-csrf-token': 'b' }, { rio_session: 's', rio_csrf: 'a' }))).toThrow(ForbiddenException);
   });
 
   it('allows an unsafe method when header matches cookie', () => {
     const guard = new CsrfGuard({ csrfEnforce: true } as never, reflectorStub(false));
-    expect(guard.canActivate(ctx('POST', { 'x-csrf-token': 'a' }, { rio_csrf: 'a' }))).toBe(true);
+    expect(guard.canActivate(ctx('POST', { 'x-csrf-token': 'a' }, { rio_session: 's', rio_csrf: 'a' }))).toBe(true);
   });
 
   it('allows an unsafe method with no CSRF cookie when the handler is @CsrfExempt (login/signup)', () => {
@@ -42,8 +42,8 @@ describe('CsrfGuard', () => {
     expect(guard.canActivate(ctx('POST', {}, {}))).toBe(true);
   });
 
-  it('still enforces a non-exempt unsafe route even when the reflector is consulted', () => {
+  it('allows an anonymous unsafe route because no ambient session cookie is present', () => {
     const guard = new CsrfGuard({ csrfEnforce: true } as never, reflectorStub(false));
-    expect(() => guard.canActivate(ctx('POST', {}, {}))).toThrow(ForbiddenException);
+    expect(guard.canActivate(ctx('POST', {}, {}))).toBe(true);
   });
 });

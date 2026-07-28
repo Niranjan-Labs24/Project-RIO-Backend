@@ -1,9 +1,13 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import { parseIntParam } from '../../common/http/query.util';
-import { CreateSurveyLinkBody } from './public-surveys.contract';
+import {
+  CreateSurveyLinkBody,
+  ShareSurveyLinkEmailBody,
+  type ShareSurveyLinkEmailDto,
+} from './public-surveys.contract';
 import { PublicSurveysService } from './public-surveys.service';
 import type {
   CreateSurveyLinkPayload,
@@ -40,6 +44,20 @@ export class PublicSurveysController {
   @RequirePermission('studySurvey', 'write')
   deactivateLink(@Param('needId') needId: string, @Param('linkId') linkId: string): Promise<PublicSurveyLink> {
     return this.surveys.deactivateLink(needId, linkId);
+  }
+
+  // Gated on the same permission as viewing the link (listLinks) — no role
+  // holds studySurvey:share (that action isn't granted anywhere in
+  // role-matrix.ts), so anyone who can see this link can send it by email.
+  @Post('survey-links/:linkId/share-email')
+  @HttpCode(204)
+  @RequirePermission('studySurvey', 'read')
+  shareLinkByEmail(
+    @Param('needId') needId: string,
+    @Param('linkId') linkId: string,
+    @Body(new TypeBoxValidationPipe(ShareSurveyLinkEmailBody)) body: ShareSurveyLinkEmailDto,
+  ): Promise<void> {
+    return this.surveys.shareLinkByEmail(needId, linkId, body.email);
   }
 
   @Get('survey-responses')

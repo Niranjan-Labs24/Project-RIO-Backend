@@ -44,7 +44,7 @@ function makeService(tenant: ReturnType<typeof fakeTenant>, audit: unknown = aud
 describe('UsersService', () => {
   it('list maps rows to OrgUser with role summary and status', async () => {
     const rows: UserRow[] = [
-      { id: 'u1', name: 'A', email: 'a@x.org', roleId: 'role_ngo_admin', status: 'active', createdAt: new Date('2026-01-01T00:00:00Z') },
+      { id: 'u1', orgId: 'o1', name: 'A', email: 'a@x.org', roleId: 'role_ngo_admin', status: 'active', createdAt: new Date('2026-01-01T00:00:00Z') },
     ];
     const svc = makeService(fakeTenant({ rows }));
     const users = await orgContext.run({ requestId: 'r', orgId: 'o1' }, () => svc.list());
@@ -85,7 +85,7 @@ describe('UsersService', () => {
         svc.invite({ name: 'X', email: 'x@x.org', roleId: 'role_system_admin' })),
     ).rejects.toBeInstanceOf(ForbiddenException);
 
-    const current: UserRow = { id: 'u1', name: 'Me', email: 'me@x.org', roleId: 'role_ngo_admin', status: 'active', createdAt: new Date('2026-01-01T00:00:00Z') };
+    const current: UserRow = { id: 'u1', orgId: 'o1', name: 'Me', email: 'me@x.org', roleId: 'role_ngo_admin', status: 'active', createdAt: new Date('2026-01-01T00:00:00Z') };
     await expect(
       orgContext.run({ requestId: 'r', orgId: 'o1', role: 'ngo_admin' }, () =>
         makeService(fakeTenant({ current })).update('u1', { roleId: 'role_center_supervisor' })),
@@ -100,7 +100,7 @@ describe('UsersService', () => {
   });
 
   it('update computes changes and records an edit', async () => {
-    const current: UserRow = { id: 'u1', name: 'Old', email: 'o@x.org', roleId: 'role_field_researcher', status: 'invited', createdAt: new Date('2026-01-01T00:00:00Z') };
+    const current: UserRow = { id: 'u1', orgId: 'o1', name: 'Old', email: 'o@x.org', roleId: 'role_field_researcher', status: 'invited', createdAt: new Date('2026-01-01T00:00:00Z') };
     const recorded: { changes?: { field: string; before: unknown; after: unknown }[] }[] = [];
     const audit = { record: async (i: unknown) => { recorded.push(i as never); } };
     const svc = makeService(fakeTenant({ current }), audit);
@@ -128,7 +128,7 @@ describe('UsersService', () => {
   });
 
   it('forbids a non-crossEntity admin from removing a crossEntity (system) account', async () => {
-    const current: UserRow = { id: 'sys', name: 'System Admin', email: 'sys@x.org', roleId: 'role_system_admin', status: 'active', createdAt: new Date('2026-01-01T00:00:00Z') };
+    const current: UserRow = { id: 'sys', orgId: 'o1', name: 'System Admin', email: 'sys@x.org', roleId: 'role_system_admin', status: 'active', createdAt: new Date('2026-01-01T00:00:00Z') };
     let deleted = false;
     const svc = makeService(fakeTenant({ current, onDelete: () => { deleted = true; } }));
     await expect(
@@ -138,7 +138,7 @@ describe('UsersService', () => {
   });
 
   it('removes a regular user and records a delete audit event', async () => {
-    const current: UserRow = { id: 'u9', name: 'Field', email: 'field@x.org', roleId: 'role_field_researcher', status: 'active', createdAt: new Date('2026-01-01T00:00:00Z') };
+    const current: UserRow = { id: 'u9', orgId: 'o1', name: 'Field', email: 'field@x.org', roleId: 'role_field_researcher', status: 'active', createdAt: new Date('2026-01-01T00:00:00Z') };
     const recorded: { action?: string; entityId?: string; entityLabel?: string }[] = [];
     const audit = { record: async (i: unknown) => { recorded.push(i as never); } };
     let deletedWhere: unknown;
@@ -149,10 +149,191 @@ describe('UsersService', () => {
   });
 
   it('lets a crossEntity admin (system_admin) remove a crossEntity account', async () => {
-    const current: UserRow = { id: 'sys2', name: 'Other System', email: 'sys2@x.org', roleId: 'role_system_admin', status: 'active', createdAt: new Date('2026-01-01T00:00:00Z') };
+    const current: UserRow = { id: 'sys2', orgId: 'o1', name: 'Other System', email: 'sys2@x.org', roleId: 'role_system_admin', status: 'active', createdAt: new Date('2026-01-01T00:00:00Z') };
     let deleted = false;
     const svc = makeService(fakeTenant({ current, onDelete: () => { deleted = true; } }));
     await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'me', role: 'system_admin' }, () => svc.remove('sys2'));
     expect(deleted).toBe(true);
+  });
+
+  it('assignNgoAdmin promotes target user and demotes previous admin', async () => {
+    const recorded: { action?: string }[] = [];
+    const audit = { record: async (i: unknown) => { recorded.push(i as never); } };
+    let currentAdmin = { id: 'u1', orgId: 'o1', name: 'Admin', email: 'admin@x.org', roleId: 'role_ngo_admin', status: 'active', createdAt: new Date('2026-01-01T00:00:00Z') };
+    let targetUser = { id: 'u2', orgId: 'o1', name: 'User2', email: 'u2@x.org', roleId: 'role_ngo_research_officer', status: 'active', createdAt: new Date('2026-01-01T00:00:00Z') };
+
+    const fake = {
+      runAsOrg: async (_orgId: string, fn: (tx: unknown) => unknown) =>
+        fn({
+          organisation: {
+            findUnique: async () => ({ id: 'o1', name: 'Test Org', isActive: true }),
+          },
+          user: {
+            findUnique: async ({ where }: { where: { id: string } }) => {
+              if (where.id === 'u1') return currentAdmin;
+              if (where.id === 'u2') return targetUser;
+              return null;
+            },
+            findMany: async ({ where }: { where: { roleId?: string } }) => {
+              if (where?.roleId === 'role_ngo_admin') return [currentAdmin];
+              return [];
+            },
+            update: async ({ where, data }: { where: { id: string }; data: { roleId: string } }) => {
+              if (where.id === 'u1') { currentAdmin = { ...currentAdmin, roleId: data.roleId }; return currentAdmin; }
+              if (where.id === 'u2') { targetUser = { ...targetUser, roleId: data.roleId }; return targetUser; }
+              return null;
+            },
+          },
+        }),
+      runAsSupervisor: async (fn: (tx: unknown) => unknown) =>
+        fn({
+          organisation: {
+            findUnique: async () => ({ id: 'o1', name: 'Test Org', isActive: true }),
+          },
+          user: {
+            findUnique: async ({ where }: { where: { id: string } }) => {
+              if (where.id === 'u1') return currentAdmin;
+              if (where.id === 'u2') return targetUser;
+              return null;
+            },
+            findMany: async ({ where }: { where: { roleId?: string } }) => {
+              if (where?.roleId === 'role_ngo_admin') return [currentAdmin];
+              return [];
+            },
+            update: async ({ where, data }: { where: { id: string }; data: { roleId: string } }) => {
+              if (where.id === 'u1') { currentAdmin = { ...currentAdmin, roleId: data.roleId }; return currentAdmin; }
+              if (where.id === 'u2') { targetUser = { ...targetUser, roleId: data.roleId }; return targetUser; }
+              return null;
+            },
+          },
+        }),
+    };
+
+    const svc = new UsersService(fake as never, audit as never, passwordsStub as never, mailerStub as never, configStub as never);
+    const res = await orgContext.run({ requestId: 'r', orgId: 'o1', role: 'system_admin' }, () =>
+      svc.assignNgoAdmin('o1', { userId: 'u2', reason: 'Reassignment' }),
+    );
+
+    expect(res.role.key).toBe('ngo_admin');
+    expect(currentAdmin.roleId).toBe('role_ngo_research_officer');
+    expect(recorded.some((a) => a.action === 'NGO_ADMIN_ASSIGNED')).toBe(true);
+    expect(recorded.some((a) => a.action === 'NGO_ADMIN_CHANGED')).toBe(true);
+  });
+
+  it('assignNgoAdmin rejects assignment for an inactive organization', async () => {
+    const fake = {
+      runAsOrg: async (_orgId: string, fn: (tx: unknown) => unknown) =>
+        fn({
+          organisation: {
+            findUnique: async () => ({ id: 'o1', name: 'Test Org', isActive: false }),
+          },
+        }),
+      runAsSupervisor: async (fn: (tx: unknown) => unknown) =>
+        fn({
+          organisation: {
+            findUnique: async () => ({ id: 'o1', name: 'Test Org', isActive: false }),
+          },
+        }),
+    };
+    const svc = new UsersService(fake as never, auditStub as never, passwordsStub as never, mailerStub as never, configStub as never);
+    await expect(
+      orgContext.run({ requestId: 'r', orgId: 'o1', role: 'system_admin' }, () =>
+        svc.assignNgoAdmin('o1', { userId: 'u2' }),
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('updateUserStatusForOrg disables and enables user and logs audit events', async () => {
+    const recorded: { action?: string }[] = [];
+    const audit = { record: async (i: unknown) => { recorded.push(i as never); } };
+    let userRow = { id: 'u3', orgId: 'o1', name: 'Target', email: 't@x.org', roleId: 'role_ngo_research_officer', status: 'active' as 'active' | 'invited' | 'disabled', createdAt: new Date('2026-01-01T00:00:00Z') };
+
+    const fake = {
+      runAsOrg: async (_orgId: string, fn: (tx: unknown) => unknown) =>
+        fn({
+          organisation: {
+            findUnique: async () => ({ id: 'o1', name: 'Test Org', isActive: true }),
+          },
+          user: {
+            findUnique: async () => userRow,
+            update: async ({ data }: { data: { status: 'active' | 'disabled' } }) => {
+              userRow = { ...userRow, status: data.status };
+              return userRow;
+            },
+          },
+        }),
+      runAsSupervisor: async (fn: (tx: unknown) => unknown) =>
+        fn({
+          organisation: {
+            findUnique: async () => ({ id: 'o1', name: 'Test Org', isActive: true }),
+          },
+          user: {
+            findUnique: async () => userRow,
+            update: async ({ data }: { data: { status: 'active' | 'disabled' } }) => {
+              userRow = { ...userRow, status: data.status };
+              return userRow;
+            },
+          },
+        }),
+    };
+
+    const svc = new UsersService(fake as never, audit as never, passwordsStub as never, mailerStub as never, configStub as never);
+
+    // Disable user
+    const resDisabled = await orgContext.run({ requestId: 'r', actorId: 'admin1', orgId: 'o1', role: 'system_admin' }, () =>
+      svc.updateUserStatusForOrg('o1', 'u3', { status: 'disabled', reason: 'Policy violation' }),
+    );
+    expect(resDisabled.status).toBe('disabled');
+    expect(recorded.some((a) => a.action === 'USER_DISABLED_BY_SYSTEM_ADMIN')).toBe(true);
+
+    // Enable user
+    const resEnabled = await orgContext.run({ requestId: 'r', actorId: 'admin1', orgId: 'o1', role: 'system_admin' }, () =>
+      svc.updateUserStatusForOrg('o1', 'u3', { status: 'active' }),
+    );
+    expect(resEnabled.status).toBe('active');
+    expect(recorded.some((a) => a.action === 'USER_ENABLED_BY_SYSTEM_ADMIN')).toBe(true);
+  });
+
+  it('updateUserStatusForOrg rejects enabling user in an inactive organization', async () => {
+    const fake = {
+      runAsSupervisor: async (fn: (tx: unknown) => unknown) =>
+        fn({
+          organisation: {
+            findUnique: async () => ({ id: 'o1', name: 'Test Org', isActive: false }),
+          },
+        }),
+    };
+    const svc = new UsersService(fake as never, auditStub as never, passwordsStub as never, mailerStub as never, configStub as never);
+    await expect(
+      orgContext.run({ requestId: 'r', actorId: 'admin1', orgId: 'o1', role: 'system_admin' }, () =>
+        svc.updateUserStatusForOrg('o1', 'u3', { status: 'active' }),
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('updateUserStatusForOrg prevents System Admin from disabling self', async () => {
+    const fake = {
+      runAsSupervisor: async (fn: (tx: unknown) => unknown) =>
+        fn({
+          organisation: {
+            findUnique: async () => ({ id: 'o1', name: 'Test Org', isActive: true }),
+          },
+        }),
+    };
+    const svc = new UsersService(fake as never, auditStub as never, passwordsStub as never, mailerStub as never, configStub as never);
+    await expect(
+      orgContext.run({ requestId: 'r', actorId: 'sys-self', orgId: 'o1', role: 'system_admin' }, () =>
+        svc.updateUserStatusForOrg('o1', 'sys-self', { status: 'disabled' }),
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects cross-org user management for non-system_admin roles', async () => {
+    const svc = new UsersService({} as never, auditStub as never, passwordsStub as never, mailerStub as never, configStub as never);
+    await expect(
+      orgContext.run({ requestId: 'r', actorId: 'ngo1', orgId: 'o1', role: 'ngo_admin' }, () =>
+        svc.updateUserStatusForOrg('o1', 'u3', { status: 'disabled' }),
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 });

@@ -3,7 +3,7 @@ import { randomInt } from 'node:crypto';
 import { Prisma } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { PasswordService } from '../../auth/password.service';
-import { MailerService } from '../../mailer/mailer.service';
+import { SmsService } from '../../sms/sms.service';
 import { AuditService } from '../audit/audit.service';
 import { SurveysService } from '../surveys/surveys.service';
 import { DeterministicScoringService } from '../priority/scoring.service';
@@ -22,7 +22,7 @@ export class CitizenService {
   constructor(
     private readonly tenant: TenantPrismaService,
     private readonly passwords: PasswordService,
-    private readonly mailer: MailerService,
+    private readonly sms: SmsService,
     private readonly surveys: SurveysService,
     private readonly audit: AuditService,
     private readonly scoringEngine: DeterministicScoringService,
@@ -111,32 +111,56 @@ export class CitizenService {
     const link = await this.findActiveLinkOrThrow(token);
     // Scoped to the Need, not the Study — each Need runs its own
     // independent survey, so the same person may legitimately respond once
-    // per Need under the same Study.
+    // per Need under the same Study. Both channels normalized (see
+    // normalizeContact/normalizeMobile) so a trivial casing/whitespace
+    // difference can't bypass this check. A match on EITHER channel counts
+    // as a duplicate — see SurveyResponse.mobile's comment.
+    const contact = this.normalizeContact(payload.contact);
+    const mobile = this.normalizeMobile(payload.mobile);
     const existing = await this.tenant.runAsSupervisor((tx) =>
-      tx.surveyResponse.findFirst({ where: { needId: link.needId, contact: payload.contact } }),
+      tx.surveyResponse.findFirst({
+        where: { needId: link.needId, OR: [{ contact }, { mobile }] },
+      }),
     );
     return { isDuplicate: existing !== null };
   }
 
   async requestOtp(token: string, payload: RequestOtpPayload): Promise<RequestOtpResult> {
     const link = await this.findActiveLinkOrThrow(token);
+    const contact = this.normalizeContact(payload.contact);
+    const mobile = this.normalizeMobile(payload.mobile);
     const code = randomInt(100_000, 999_999).toString();
     const codeHash = await this.passwords.hash(code);
     const expiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
 
     const challenge = await this.tenant.runAsOrg(link.orgId, (tx) =>
       tx.citizenOtpChallenge.create({
-        data: { orgId: link.orgId, surveyLinkId: link.id, contact: payload.contact, codeHash, expiresAt },
+        data: { orgId: link.orgId, surveyLinkId: link.id, contact, mobile, codeHash, expiresAt },
       }),
     );
-    await this.mailer.sendOtpCode(payload.contact, code);
+    // Mobile-only verification: `contact` (email) is captured for the
+    // duplicate check and stored on the eventual SurveyResponse, but never
+    // OTP'd — it's additional contact info, not a second verification
+    // channel. Deliberately soft-fail, not hard-fail: an earlier version of
+    // this rejected the request outright when delivery failed (expiring the
+    // challenge + throwing OTP_DELIVERY_FAILED), which stranded a citizen
+    // respondent with no way to ever get a code whenever SMS wasn't
+    // configured/working.
+    const codeTexted = await this.sms.sendOtpCode(payload.mobile, code);
     // Dev only: surface the code so local/test runs aren't blocked on a
-    // real inbox — same convention as OrganizationsService.createWithAdmin's
-    // temp-password console.log.
+    // real phone — same convention as OrganizationsService.createWithAdmin's
+    // temp-password reveal. Logged either way for local debugging; also
+    // returned to the frontend when delivery failed, so the respondent
+    // isn't stuck with no way to ever get the code.
     if (process.env.NODE_ENV !== 'production') {
-      console.log(`OTP code for ${payload.contact} (challenge ${challenge.id}): ${code}`);
+      console.log(`OTP code for ${payload.mobile} (challenge ${challenge.id}): ${code}`);
     }
-    return { challengeId: challenge.id, expiresAt: expiresAt.toISOString() };
+    return {
+      challengeId: challenge.id,
+      expiresAt: expiresAt.toISOString(),
+      codeTexted,
+      code: !codeTexted && process.env.NODE_ENV !== 'production' ? code : undefined,
+    };
   }
 
   async verifyOtp(token: string, payload: VerifyOtpPayload): Promise<VerifyOtpResult> {
@@ -152,12 +176,23 @@ export class CitizenService {
     }
 
     const matches = await this.passwords.verify(challenge.codeHash, payload.code);
-    await this.tenant.runAsOrg(link.orgId, (tx) =>
-      tx.citizenOtpChallenge.update({
-        where: { id: challenge.id },
+    const changed = await this.tenant.runAsOrg(link.orgId, (tx) =>
+      tx.citizenOtpChallenge.updateMany({
+        where: {
+          id: challenge.id,
+          verifiedAt: null,
+          consumedAt: null,
+          expiresAt: { gt: new Date() },
+          attempts: { lt: OTP_MAX_ATTEMPTS },
+        },
         data: matches ? { verifiedAt: new Date() } : { attempts: { increment: 1 } },
       }),
     );
+    if (changed.count !== 1) {
+      throw new BadRequestException({
+        error: { code: 'OTP_TOO_MANY_ATTEMPTS', message: 'This verification session can no longer be used.' },
+      });
+    }
     if (!matches) {
       throw new BadRequestException({ error: { code: 'OTP_INCORRECT', message: 'Incorrect verification code.' } });
     }
@@ -181,12 +216,31 @@ export class CitizenService {
     }
 
     const { row, needTitle } = await this.tenant.runAsOrg(link.orgId, async (tx) => {
+      // Atomic claim, before any other work — closes a race the plain
+      // `if (challenge.consumedAt)` check above can't: two concurrent
+      // submits could both pass that check before either write lands.
+      // updateMany's where-guard means only one request's write can ever
+      // match, so a second concurrent request is rejected here instead of
+      // both creating a SurveyResponse row.
+      const claimed = await tx.citizenOtpChallenge.updateMany({
+        where: { id: challenge.id, verifiedAt: { not: null }, consumedAt: null },
+        data: { consumedAt: new Date() },
+      });
+      if (claimed.count !== 1) {
+        throw new BadRequestException({
+          error: { code: 'OTP_ALREADY_USED', message: 'This verification code has already been used to submit a response.' },
+        });
+      }
       // Belt-and-suspenders: also block a second submission from the same
-      // contact for this Need even via a *fresh* OTP request/verification,
-      // not just a reused challenge. Scoped to the Need, not the Study — see
-      // checkDuplicate's comment.
+      // contact/mobile for this Need even via a *fresh* OTP request/
+      // verification, not just a reused challenge. Scoped to the Need, not
+      // the Study — see checkDuplicate's comment. `mobile` is only in the
+      // OR when the challenge actually has one (see its nullable comment).
       const existing = await tx.surveyResponse.findFirst({
-        where: { needId: link.needId, contact: challenge.contact },
+        where: {
+          needId: link.needId,
+          OR: [{ contact: challenge.contact }, ...(challenge.mobile ? [{ mobile: challenge.mobile }] : [])],
+        },
       });
       if (existing) {
         throw new BadRequestException({
@@ -194,21 +248,38 @@ export class CitizenService {
         });
       }
 
-      const [created, need] = await Promise.all([
-        tx.surveyResponse.create({
-          data: {
-            orgId: link.orgId,
-            needId: link.needId,
-            studyId: link.studyId,
-            surveyLinkId: link.id,
-            contact: challenge.contact,
-            contactName: payload.contactName ?? null,
-            answers: payload.answers as unknown as Prisma.InputJsonValue,
-          },
+      // Geography is snapshotted from the Need/Organization at submission
+      // time (never asked of the citizen directly) — see the Gender/
+      // geography columns' doc comment in schema.prisma. Fetched here, in
+      // the same transaction as the create, so the numbers a future
+      // governorate/village-wise report reads always match what this Need
+      // and org actually had at the moment this response came in.
+      const [need, org] = await Promise.all([
+        tx.need.findUnique({
+          where: { id: link.needId },
+          include: { needGovernorates: true, needCenters: true },
         }),
-        tx.need.findUnique({ where: { id: link.needId } }),
+        tx.organisation.findUnique({ where: { id: link.orgId }, select: { regionId: true } }),
       ]);
-      await tx.citizenOtpChallenge.update({ where: { id: challenge.id }, data: { consumedAt: new Date() } });
+      const created = await tx.surveyResponse.create({
+        data: {
+          orgId: link.orgId,
+          needId: link.needId,
+          studyId: link.studyId,
+          surveyLinkId: link.id,
+          contact: challenge.contact,
+          mobile: challenge.mobile,
+          contactName: payload.contactName ?? null,
+          gender: payload.gender ?? null,
+          regionId: org?.regionId ?? null,
+          governorateIds: need?.needGovernorates.map((g) => g.governorateId) ?? [],
+          centerIds: need?.needCenters.map((c) => c.centerId) ?? [],
+          village: need?.village ?? [],
+          answers: payload.answers as unknown as Prisma.InputJsonValue,
+        },
+      });
+      // Challenge was already atomically claimed (consumedAt set) above —
+      // no second write needed here.
       return { row: created, needTitle: need?.title ?? link.needId };
     });
     // RIO-NFR-002 privacy audit: no signed-in actor exists for this request
@@ -254,8 +325,10 @@ export class CitizenService {
   }
 
   private async findActiveLinkOrThrow(token: string): Promise<PublicSurveyLinkRow> {
-    const link = await this.tenant.runAsSupervisor((tx) => tx.publicSurveyLink.findUnique({ where: { token } }));
-    if (!link || !link.isActive) {
+    const link = await this.tenant.runAsSupervisor((tx) =>
+      tx.publicSurveyLink.findUnique({ where: { token }, include: { org: true } }),
+    );
+    if (!link || !link.isActive || !link.org?.isActive) {
       throw new NotFoundException({ error: { code: 'SURVEY_LINK_NOT_FOUND', message: 'This survey link is not available.' } });
     }
     if (link.expiresAt && link.expiresAt.getTime() < Date.now()) {
@@ -270,5 +343,17 @@ export class CitizenService {
       throw new NotFoundException({ error: { code: 'OTP_CHALLENGE_NOT_FOUND', message: 'Verification session not found.' } });
     }
     return challenge;
+  }
+
+  private normalizeContact(contact: string): string {
+    return contact.trim().toLowerCase();
+  }
+
+  // Strips phone punctuation (spaces, dashes, parens) but keeps the
+  // leading '+' and digits — good enough for exact-match dedup/lookup
+  // without a full E.164 validator; genuinely malformed numbers just fail
+  // at the Unifonic call and soft-fail like any other delivery error.
+  private normalizeMobile(mobile: string): string {
+    return mobile.trim().replace(/[\s\-()]/g, '');
   }
 }

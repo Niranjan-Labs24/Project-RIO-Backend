@@ -7,6 +7,7 @@ const valid = {
   APP_DATABASE_URL: 'postgresql://cnap_app:pw@localhost:5432/cnap',
   SUPERVISOR_DATABASE_URL: 'postgresql://cnap_supervisor:pw@localhost:5432/cnap',
   JWT_SECRET: 'test_jwt_secret_at_least_32_chars_long_xx',
+  REDIS_URL: 'redis://localhost:6379',
   LOG_LEVEL: 'info',
 };
 
@@ -46,6 +47,11 @@ describe('validateEnv', () => {
     const cfg = validateEnv(rest);
     expect(cfg.NODE_ENV).toBe('production');
   });
+
+  it('requires distributed rate-limit storage in production', () => {
+    const { REDIS_URL: _omit, ...rest } = valid;
+    expect(() => validateEnv({ ...rest, NODE_ENV: 'production' })).toThrow(/REDIS_URL/);
+  });
 });
 
 describe('ConfigService', () => {
@@ -74,6 +80,6 @@ describe('ConfigService', () => {
     expect(config.smtpPort).toBe(587);
     expect(config.smtpSecure).toBe(false);
     expect(config.mailFrom).toBe('RIO <no-reply@rio.local>');
-    expect(config.csrfEnforce).toBe(false);
+    expect(config.csrfEnforce).toBe(true);
   });
 });

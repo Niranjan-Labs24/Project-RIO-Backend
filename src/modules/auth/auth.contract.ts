@@ -29,6 +29,13 @@ export const SignupBody = registerSchema(
       purpose: T.Optional(T.String({ maxLength: 500 })),
       registrationNumber: T.String({ minLength: 1, maxLength: 100 }),
       email: T.String({ format: 'email' }),
+      // KSA Geographic Reference hierarchy — mandatory at signup so every
+      // self-service org starts with its scope already configured (see
+      // AuthService.signup for the existence/hierarchy checks TypeBox can't
+      // express). Still editable later via Settings > Organization.
+      regionId: T.String({ format: 'uuid' }),
+      governorateIds: T.Array(T.String({ format: 'uuid' }), { minItems: 1, maxItems: 150 }),
+      centerIds: T.Array(T.String({ format: 'uuid' }), { minItems: 1, maxItems: 1404 }),
     },
     { additionalProperties: false },
   ),
@@ -61,3 +68,21 @@ export const ChangePasswordBody = registerSchema(
   ),
 );
 export type ChangePasswordDto = Static<typeof ChangePasswordBody>;
+
+export const ForgotPasswordBody = registerSchema(
+  'ForgotPasswordBody',
+  T.Object({ email: T.String({ format: 'email' }) }, { additionalProperties: false }),
+);
+export type ForgotPasswordDto = Static<typeof ForgotPasswordBody>;
+
+export const ResetPasswordBody = registerSchema(
+  'ResetPasswordBody',
+  T.Object(
+    {
+      token: T.String({ minLength: 1, maxLength: 500 }),
+      password: NewPassword,
+    },
+    { additionalProperties: false },
+  ),
+);
+export type ResetPasswordDto = Static<typeof ResetPasswordBody>;

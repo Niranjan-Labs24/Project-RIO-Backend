@@ -106,12 +106,15 @@ export class PriorityController {
 
 @Controller("priority-scores")
 export class PriorityDashboardController {
-  constructor(private readonly priority: PriorityService) {}
+  constructor(
+    private readonly priority: PriorityService,
+    private readonly priorityV2: PriorityV2Service,
+  ) {}
 
   @Get()
   @RequirePermission("priorityScoring", "read")
   list(): Promise<PriorityDashboardEntry[]> {
-    return this.priority.listForOrg();
+    return this.priorityV2.listForOrg();
   }
 
   @Patch(":id/approve")

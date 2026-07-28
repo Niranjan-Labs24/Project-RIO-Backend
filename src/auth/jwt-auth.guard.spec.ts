@@ -6,71 +6,56 @@ import { TokenService } from './token.service';
 const jwt = new JwtService({ secret: 'x'.repeat(32), signOptions: { expiresIn: '12h' } });
 const tokens = new TokenService(jwt);
 
-interface MockRequest {
-  headers?: Record<string, string>;
-  cookies?: Record<string, string>;
+function makeContext(req: { headers?: Record<string, string>; cookies?: Record<string, string> } = {}) {
+  const request = { headers: req.headers ?? {}, cookies: req.cookies ?? {} };
+  return {
+    switchToHttp: () => ({ getRequest: () => request }),
+    getHandler: () => ({}),
+    getClass: () => ({}),
+  } as never;
 }
 
-// Builds a fake ExecutionContext exposing both `headers` and `cookies` on the
-// mocked request (cookie-parser populates `cookies` in the real app). Real
-// `getOrgStore()` is used (not mocked) — running the assertion inside
-// `orgContext.run(store, ...)` makes `getOrgStore()` return that exact store.
-function makeContext(req: MockRequest = {}) {
-  const request = { headers: req.headers ?? {}, cookies: req.cookies ?? {} };
-  return { switchToHttp: () => ({ getRequest: () => request }) } as never;
+function makeGuard(isPublic = false, user: object | null = {
+  orgId: 'o1', roleId: 'role_ngo_admin', sessionVersion: 0, org: { isActive: true },
+}) {
+  const reflector = { getAllAndOverride: () => isPublic } as never;
+  const tenant = {
+    runAsSupervisor: (fn: (tx: object) => unknown) => fn({ user: { findUnique: () => Promise.resolve(user) } }),
+  } as never;
+  return new JwtAuthGuard(tokens, reflector, tenant);
 }
 
 describe('JwtAuthGuard', () => {
-  const guard = new JwtAuthGuard(tokens);
-
-  it('passes through when there is no bearer token (open route / dev seam)', () => {
-    orgContext.run({ requestId: 'r' }, () => {
-      expect(guard.canActivate(makeContext())).toBe(true);
+  it('allows an explicitly public route without a token', async () => {
+    await orgContext.run({ requestId: 'r' }, async () => {
+      await expect(makeGuard(true).canActivate(makeContext())).resolves.toBe(true);
     });
   });
 
-  it('populates the store from a valid token (Authorization header)', () => {
-    const t = tokens.sign({ sub: 'u1', orgId: 'o1', roleKey: 'ngo_admin' });
-    orgContext.run({ requestId: 'r' }, () => {
-      expect(guard.canActivate(makeContext({ headers: { authorization: `Bearer ${t}` } }))).toBe(true);
-      const s = orgContext.getStore()!;
-      expect(s.actorId).toBe('u1');
-      expect(s.orgId).toBe('o1');
-      expect(s.role).toBe('ngo_admin');
+  it('rejects a protected route without a token', async () => {
+    await orgContext.run({ requestId: 'r' }, async () => {
+      await expect(makeGuard().canActivate(makeContext())).rejects.toThrow();
     });
   });
 
-  it('401s on an invalid token', () => {
-    orgContext.run({ requestId: 'r' }, () => {
-      expect(() => guard.canActivate(makeContext({ headers: { authorization: 'Bearer not.a.jwt' } }))).toThrow();
+  it('populates current database identity from a valid token', async () => {
+    const token = tokens.sign({ sub: 'u1', orgId: 'o1', roleKey: 'center_supervisor' });
+    await orgContext.run({ requestId: 'r' }, async () => {
+      await expect(makeGuard().canActivate(makeContext({ headers: { authorization: `Bearer ${token}` } }))).resolves.toBe(true);
+      expect(orgContext.getStore()).toMatchObject({ actorId: 'u1', orgId: 'o1', role: 'ngo_admin' });
     });
   });
 
-  it('populates the store from the rio_session cookie when no Authorization header', () => {
-    const t = tokens.sign({ sub: 'u1', orgId: 'o1', roleKey: 'ngo_admin' });
-    orgContext.run({ requestId: 'r' }, () => {
-      expect(guard.canActivate(makeContext({ cookies: { rio_session: t } }))).toBe(true);
-      const s = orgContext.getStore()!;
-      expect(s.actorId).toBe('u1');
-      expect(s.orgId).toBe('o1');
-      expect(s.role).toBe('ngo_admin');
-    });
+  it('rejects an invalid bearer token', async () => {
+    await expect(makeGuard().canActivate(makeContext({ headers: { authorization: 'Bearer bad' } }))).rejects.toThrow();
   });
 
-  it('treats an invalid cookie token as anonymous (non-blocking, no 401)', () => {
-    orgContext.run({ requestId: 'r' }, () => {
-      expect(guard.canActivate(makeContext({ cookies: { rio_session: 'bad' } }))).toBe(true);
-      const s = orgContext.getStore()!;
-      expect(s.actorId).toBeUndefined();
-    });
+  it('rejects a token after its user or organization is unavailable', async () => {
+    const token = tokens.sign({ sub: 'u1', orgId: 'o1', roleKey: 'ngo_admin' });
+    await expect(makeGuard(false, null).canActivate(makeContext({ cookies: { rio_session: token } }))).rejects.toThrow();
   });
 
-  it('still hard-401s on an invalid Bearer header even when a cookie is present', () => {
-    const t = tokens.sign({ sub: 'u1', orgId: 'o1', roleKey: 'ngo_admin' });
-    orgContext.run({ requestId: 'r' }, () => {
-      expect(() =>
-        guard.canActivate(makeContext({ headers: { authorization: 'Bearer bad' }, cookies: { rio_session: t } })),
-      ).toThrow();
-    });
+  it('ignores an invalid stale cookie on a public route', async () => {
+    await expect(makeGuard(true).canActivate(makeContext({ cookies: { rio_session: 'bad' } }))).resolves.toBe(true);
   });
 });

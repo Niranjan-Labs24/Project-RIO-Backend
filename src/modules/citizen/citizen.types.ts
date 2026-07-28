@@ -15,6 +15,7 @@ export interface CitizenOtpChallengeRow {
   orgId: string;
   surveyLinkId: string;
   contact: string;
+  mobile: string | null;
   codeHash: string;
   attempts: number;
   expiresAt: Date;
@@ -43,6 +44,7 @@ export interface ResolvedSurvey {
 
 export interface CheckDuplicatePayload {
   contact: string;
+  mobile: string;
 }
 
 export interface CheckDuplicateResult {
@@ -51,11 +53,18 @@ export interface CheckDuplicateResult {
 
 export interface RequestOtpPayload {
   contact: string;
+  mobile: string;
 }
 
 export interface RequestOtpResult {
   challengeId: string;
   expiresAt: string;
+  codeTexted: boolean;
+  /** Only present when `codeTexted` is false and SMS isn't configured
+   * (dev/test) — mirrors the temp-password reveal convention in
+   * UsersService.invite/AuthService.signup, since there's otherwise no way
+   * for the respondent to get the code at all. */
+  code?: string;
 }
 
 export interface VerifyOtpPayload {
@@ -67,9 +76,12 @@ export interface VerifyOtpResult {
   verified: true;
 }
 
+export type Gender = 'male' | 'female' | 'other' | 'prefer_not_to_say';
+
 export interface SubmitResponsePayload {
   challengeId: string;
   contactName?: string;
+  gender?: Gender;
   answers: Record<string, unknown>;
 }
 

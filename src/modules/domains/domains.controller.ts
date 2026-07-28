@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { CsrfExempt } from '../../common/guards/csrf.guard';
+import { Public } from '../../auth/public.decorator';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import {
@@ -20,11 +21,14 @@ export class DomainsController {
 
   // Open by design, same reasoning as ContactController — the sector
   // dropdown on the public signup form is reached by people who cannot sign
-  // in yet, so this carries no @RequirePermission and is @CsrfExempt (an
-  // anonymous caller has no rio_csrf cookie to double-submit). Read-only and
-  // name-only, so there's nothing tenant-sensitive exposed.
+  // in yet, so this carries no @RequirePermission, is @CsrfExempt (an
+  // anonymous caller has no rio_csrf cookie to double-submit), and is
+  // @Public() (JwtAuthGuard now hard-blocks any non-@Public() route with no
+  // session). Read-only and name-only, so there's nothing tenant-sensitive
+  // exposed.
   @Get('public')
   @CsrfExempt()
+  @Public()
   listPublicDomains(): Promise<PublicDomainOption[]> {
     return this.domains.listActiveNames();
   }

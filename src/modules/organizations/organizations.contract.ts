@@ -38,6 +38,15 @@ export const UpdateOrganizationBody = registerSchema(
     // URL again.
     logoUrl: T.Optional(T.Union([T.String({ maxLength: 2_800_000 }), T.Null()])),
     villages: T.Optional(Villages),
+    // Optional link into the KSA Geographic Reference master data — see
+    // GeographyService#validateHierarchy for the actual existence/hierarchy
+    // checks TypeBox can't express (every id must exist, and every selected
+    // Governorate/Center must belong to the selected Region/Governorates).
+    // `regionId` is single-select (an org has exactly one Region); `governorateIds`/
+    // `centerIds` replace the entire set when provided, not a merge.
+    regionId: T.Optional(T.Union([T.String({ format: 'uuid' }), T.Null()])),
+    governorateIds: T.Optional(T.Array(T.String({ format: 'uuid' }), { maxItems: 150 })),
+    centerIds: T.Optional(T.Array(T.String({ format: 'uuid' }), { maxItems: 1404 })),
     isActive: T.Optional(T.Boolean()),
   }),
 );
@@ -47,14 +56,23 @@ export const CreateOrganizationBody = registerSchema(
   'CreateOrganizationBody',
   T.Object({
     name: T.String({ minLength: 1, maxLength: 200 }),
-    purpose: T.String({ minLength: 1, maxLength: 500 }),
+    purpose: T.Optional(T.Union([T.String({ maxLength: 500 }), T.Null()])),
     registrationNumber: T.String({ minLength: 1, maxLength: 100 }),
     region: T.Optional(Villages),
     email: T.Optional(T.Union([T.String({ format: 'email', maxLength: 320 }), T.Null()])),
     sector: T.Optional(T.Union([SectorValue, T.Null()])),
     villages: T.Optional(Villages),
-    adminName: T.String({ minLength: 1, maxLength: 200 }),
-    adminEmail: T.String({ format: 'email', maxLength: 320 }),
+    adminName: T.Optional(T.String({ minLength: 1, maxLength: 200 })),
+    adminEmail: T.Optional(T.String({ format: 'email', maxLength: 320 })),
   }),
 );
 export type CreateOrganizationDto = Static<typeof CreateOrganizationBody>;
+
+export const UpdateOrganizationStatusBody = registerSchema(
+  'UpdateOrganizationStatusBody',
+  T.Object({
+    isActive: T.Boolean(),
+    reason: T.Optional(T.Union([T.String({ maxLength: 500 }), T.Null()])),
+  }),
+);
+export type UpdateOrganizationStatusDto = Static<typeof UpdateOrganizationStatusBody>;

@@ -1,7 +1,9 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, NotFoundException } from "@nestjs/common";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { getOrgStore, requireOrgId } from "../../tenancy/org-context";
 import { roleByKey } from "../../rbac/role-matrix";
+import { AuditService } from "../audit/audit.service";
+import { EXPORTABLE_STATUSES } from "../reports/reports.types";
 import type { ArchiveEntry, ListArchiveParams } from "./archive.types";
 
 // One filterable read view over Study + Report, not two parallel modules —
@@ -20,7 +22,10 @@ import type { ArchiveEntry, ListArchiveParams } from "./archive.types";
 // caller's own org exactly like before.
 @Injectable()
 export class ArchiveService {
-  constructor(private readonly tenant: TenantPrismaService) {}
+  constructor(
+    private readonly tenant: TenantPrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   async list(params: ListArchiveParams): Promise<ArchiveEntry[]> {
     const isCrossEntity = this.isCrossEntity();
@@ -29,13 +34,13 @@ export class ArchiveService {
       ? this.tenant.runAsSupervisor(async (tx) => ({
           organisations: await tx.organisation.findMany(),
           studies: await tx.study.findMany(),
-          reports: await tx.report.findMany({ where: { status: "approved" } }),
+          reports: await tx.report.findMany({ where: { status: { in: EXPORTABLE_STATUSES } } }),
           needs: await tx.need.findMany(),
         }))
       : this.tenant.runInOrgContext(async (tx) => ({
           organisations: await tx.organisation.findMany(),
           studies: await tx.study.findMany(),
-          reports: await tx.report.findMany({ where: { status: "approved" } }),
+          reports: await tx.report.findMany({ where: { status: { in: EXPORTABLE_STATUSES } } }),
           needs: await tx.need.findMany(),
         })));
 
@@ -59,7 +64,7 @@ export class ArchiveService {
     // Need still short of survey_published, isn't archive-eligible.
     const completedStudies = studies.filter((s) => {
       const studyNeeds = needsByStudyId.get(s.id) ?? [];
-      return studyNeeds.length > 0 && studyNeeds.every((n) => n.status === "survey_published");
+      return s.status === "archived" && studyNeeds.length > 0 && studyNeeds.every((n) => n.status === "survey_published");
     });
 
     const results: ArchiveEntry[] = [];
@@ -115,5 +120,87 @@ export class ArchiveService {
   private isCrossEntity(): boolean {
     const role = getOrgStore()?.role;
     return role !== undefined && roleByKey(role)?.crossEntity === true;
+  }
+
+  async getArchiveDetail(studyId: string) {
+    const isCrossEntity = this.isCrossEntity();
+    const include = {
+      org: true,
+      methodologyVersion: true,
+      needs: true,
+      reports: true,
+      evidence: true,
+    };
+
+    const study = await (isCrossEntity
+      ? this.tenant.runAsSupervisor((tx) => tx.study.findUnique({ where: { id: studyId }, include }))
+      : this.tenant.runInOrgContext((tx) => tx.study.findUnique({ where: { id: studyId }, include })));
+
+    if (!study) {
+      throw new NotFoundException({ error: { code: 'STUDY_NOT_FOUND', message: 'Archived study not found' } });
+    }
+
+    const auditLogs = await (isCrossEntity
+      ? this.tenant.runAsSupervisor((tx) =>
+          tx.auditLog.findMany({
+            where: { entityType: 'study', entityId: studyId },
+            orderBy: { createdAt: 'desc' },
+            take: 20,
+          }),
+        )
+      : this.tenant.runInOrgContext((tx) =>
+          tx.auditLog.findMany({
+            where: { entityType: 'study', entityId: studyId },
+            orderBy: { createdAt: 'desc' },
+            take: 20,
+          }),
+        ));
+
+    if (isCrossEntity) {
+      await this.audit.record({
+        action: 'SYSTEM_ADMIN_VIEWED_ARCHIVED_REPORT',
+        entityType: 'study',
+        entityId: studyId,
+        entityLabel: study.title,
+        organizationId: study.orgId,
+      });
+    }
+
+    return {
+      id: study.id,
+      title: study.title,
+      status: study.status,
+      cycleNumber: study.cycleNumber,
+      organizationId: study.orgId,
+      organizationName: study.org?.name ?? '',
+      region: study.org?.region ?? [],
+      sector: study.org?.sector ?? null,
+      villages: study.villages,
+      createdAt: study.createdAt.toISOString(),
+      updatedAt: study.updatedAt.toISOString(),
+      archivedAt: study.archivedAt ? study.archivedAt.toISOString() : null,
+      archivedBy: study.archivedBy,
+      archiveReason: study.archiveReason,
+      methodologyVersion: study.methodologyVersion
+        ? { id: study.methodologyVersion.id, version: study.methodologyVersion.version, name: study.methodologyVersion.name }
+        : null,
+      evidenceCount: study.evidence?.length ?? 0,
+      needsCount: study.needs?.length ?? 0,
+      reports:
+        study.reports?.map((r) => ({
+          id: r.id,
+          title: r.title,
+          status: r.status,
+          reportType: r.reportType,
+          generatedAt: r.generatedAt.toISOString(),
+        })) ?? [],
+      auditHistory: auditLogs.map((log) => ({
+        id: log.id,
+        action: log.action,
+        actorUserId: log.actorUserId,
+        createdAt: log.createdAt.toISOString(),
+        metadata: log.metadata,
+      })),
+    };
   }
 }

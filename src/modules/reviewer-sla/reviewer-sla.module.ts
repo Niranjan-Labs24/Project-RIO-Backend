@@ -5,5 +5,6 @@ import { ReviewerSlaService } from "./reviewer-sla.service";
 @Module({
   controllers: [ReviewerSlaController],
   providers: [ReviewerSlaService],
+  exports: [ReviewerSlaService],
 })
 export class ReviewerSlaModule {}

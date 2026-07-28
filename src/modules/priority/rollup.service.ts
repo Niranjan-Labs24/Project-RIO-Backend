@@ -50,7 +50,7 @@ export class ScoreRollupService {
         where: { surveyResponseId: { in: responseIds } }
       });
 
-      let mv = await tx.methodologyVersion.findFirst({
+      const mv = await tx.methodologyVersion.findFirst({
         where: survey.methodologyVersion ? { version: survey.methodologyVersion } : { status: 'PUBLISHED' },
         orderBy: { createdAt: 'desc' }
       });
@@ -78,7 +78,7 @@ export class ScoreRollupService {
         const orgId = r.orgId;
         const resolvedVillageId = r.need.village?.[0] || null;
 
-        for (const { sqId, question, rawAnswer } of questionMappings) {
+        for (const { question, rawAnswer } of questionMappings) {
           const qId = question.questionId;
           const parsed = answersMap.get(qId);
 
@@ -209,7 +209,7 @@ export class ScoreRollupService {
                 calculationVersion: 'v1',
               }
             });
-          } catch (e) {
+          } catch {
             await tx.responseSeverityScore.create({
               data: {
                 orgId,
@@ -273,7 +273,7 @@ export class ScoreRollupService {
       });
       if (!survey) return;
 
-      let methodologyVersion = await tx.methodologyVersion.findFirst({
+      const methodologyVersion = await tx.methodologyVersion.findFirst({
         where: survey.methodologyVersion ? { version: survey.methodologyVersion } : { status: 'PUBLISHED' },
         orderBy: { createdAt: 'desc' }
       });

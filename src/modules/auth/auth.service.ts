@@ -1,6 +1,8 @@
 import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { randomBytes, createHash } from 'node:crypto';
 import { UserStatus } from '../../generated/prisma';
 import { DomainsService } from '../domains/domains.service';
+import { GeographyService } from '../geography/geography.service';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { PasswordService } from '../../auth/password.service';
@@ -11,10 +13,11 @@ import { ConfigService } from '../../config/config.service';
 import { MailerService } from '../../mailer/mailer.service';
 import { AuthRepository, conflictFor, generateTemporaryPassword } from './auth.repository';
 import type { SessionContext, SessionOrg, SessionUser, SignupResponseView } from './session.types';
-import type { ChangePasswordDto, SignupDto } from './auth.contract';
+import type { ChangePasswordDto, ForgotPasswordDto, ResetPasswordDto, SignupDto } from './auth.contract';
 
 const MAX_FAILED = 5;
 const LOCK_MINUTES = 15;
+const PASSWORD_RESET_TTL_MINUTES = 30;
 
 // The subset of a user row (with its org) this service reads.
 interface UserWithOrg {
@@ -22,16 +25,21 @@ interface UserWithOrg {
   name: string;
   email: string;
   roleId: string;
+  status: UserStatus;
   passwordHash: string | null;
   consentedAt: Date | null;
   consentedPolicyVersion: string | null;
   failedLoginAttempts: number;
   lockedUntil: Date | null;
   mustChangePassword: boolean;
+  sessionVersion: number;
   org: {
     id: string; name: string; logoUrl: string | null; region: string[];
     email: string | null; sector: string | null; villages: string[]; isActive: boolean; createdAt: Date;
     purpose: string | null; registrationNumber: string | null;
+    regionId: string | null;
+    orgGovernorates?: { governorateId: string }[];
+    orgCenters?: { centerId: string }[];
   };
 }
 
@@ -54,11 +62,12 @@ export class AuthService {
     private readonly mailer: MailerService,
     private readonly config: ConfigService,
     private readonly domains: DomainsService,
+    private readonly geography: GeographyService,
   ) {}
 
   async login(email: string, password: string): Promise<SessionContext> {
     const found = (await this.tenant.runAsSupervisor((tx) =>
-      tx.user.findUnique({ where: { email }, include: { org: true } }),
+      tx.user.findUnique({ where: { email }, include: { org: { include: { orgGovernorates: true, orgCenters: true } } } }),
     )) as UserWithOrg | null;
 
     if (!found || !found.passwordHash) {
@@ -87,6 +96,10 @@ export class AuthService {
     // Credentials are valid — but a deactivated org must not yield a session.
     // (Checked post-verification so org state is never revealed to an
     // unauthenticated caller.)
+    if (found.status === UserStatus.disabled) {
+      throw new ForbiddenException({ error: { code: 'USER_DISABLED', message: 'This user account is disabled' } });
+    }
+
     if (!found.org.isActive) {
       throw new ForbiddenException({ error: { code: 'ORG_INACTIVE', message: 'This organization is not active' } });
     }
@@ -106,14 +119,14 @@ export class AuthService {
     }
     await this.audit.record({ action: 'login', entityType: 'user', entityId: found.id, entityLabel: found.email });
 
-    const token = this.tokens.sign({ sub: found.id, orgId: found.org.id, roleKey: role.key });
+    const token = this.tokens.sign({ sub: found.id, orgId: found.org.id, roleKey: role.key, sessionVersion: found.sessionVersion });
     return this.buildSession(found, role, token);
   }
 
   async me(): Promise<SessionContext> {
     const actorId = requireActor();
     const found = (await this.tenant.runInOrgContext((tx) =>
-      tx.user.findUnique({ where: { id: actorId }, include: { org: true } }),
+      tx.user.findUnique({ where: { id: actorId }, include: { org: { include: { orgGovernorates: true, orgCenters: true } } } }),
     )) as UserWithOrg | null;
     if (!found) {
       throw new UnauthorizedException({ error: { code: 'UNAUTHENTICATED', message: 'Authentication required' } });
@@ -121,16 +134,23 @@ export class AuthService {
     // Stop refreshing a session (and re-issuing a token) once the org is
     // deactivated. NOTE: this does not revoke an already-issued token before it
     // expires — stateless JWTs have no server-side revocation yet (see below).
+    if (found.status === UserStatus.disabled) {
+      throw new ForbiddenException({ error: { code: 'USER_DISABLED', message: 'This user account is disabled' } });
+    }
+
     if (!found.org.isActive) {
       throw new ForbiddenException({ error: { code: 'ORG_INACTIVE', message: 'This organization is not active' } });
     }
     const role = this.roleOf(found.roleId);
-    const token = this.tokens.sign({ sub: found.id, orgId: found.org.id, roleKey: role.key });
+    const token = this.tokens.sign({ sub: found.id, orgId: found.org.id, roleKey: role.key, sessionVersion: found.sessionVersion });
     return this.buildSession(found, role, token);
   }
 
   async logout(): Promise<void> {
-    const actorId = requireActor(); // 401 if not authenticated; stateless — client drops the token
+    // 401 if not authenticated. Not stateless — bumping sessionVersion below
+    // invalidates every outstanding token for this user, not just the one
+    // presented here (see JwtAuthGuard's sessionVersion check).
+    const actorId = requireActor();
     const found = (await this.tenant.runInOrgContext((tx) =>
       tx.user.findUnique({ where: { id: actorId } }),
     )) as { email: string } | null;
@@ -138,6 +158,9 @@ export class AuthService {
       action: 'logout', entityType: 'user', entityId: actorId,
       entityLabel: found?.email ?? actorId,
     });
+    await this.tenant.runInOrgContext((tx) =>
+      tx.user.update({ where: { id: actorId }, data: { sessionVersion: { increment: 1 } } }),
+    );
   }
 
   async consent(): Promise<{ consentedAt: string; policyVersion: string | null }> {
@@ -191,6 +214,14 @@ export class AuthService {
       throw conflictFor('email');
     }
     await this.assertValidSector(dto.sector);
+    // Existence + hierarchy only (every Governorate belongs to the chosen
+    // Region, every Center to a chosen Governorate) — there's no existing
+    // org scope to check against yet, this org is brand new.
+    await this.geography.validateHierarchy({
+      regionId: dto.regionId,
+      governorateIds: dto.governorateIds,
+      centerIds: dto.centerIds,
+    });
 
     const temporaryPassword = generateTemporaryPassword();
     const passwordHash = await this.passwords.hash(temporaryPassword);
@@ -202,6 +233,9 @@ export class AuthService {
       registrationNumber: dto.registrationNumber,
       email: dto.email,
       passwordHash,
+      regionId: dto.regionId,
+      governorateIds: dto.governorateIds,
+      centerIds: dto.centerIds,
     });
 
     const role = this.roleOf(user.roleId);
@@ -213,7 +247,7 @@ export class AuthService {
     }
     await this.audit.record({ action: 'create', entityType: 'organization', entityId: org.id, entityLabel: org.name, organizationId: org.id });
 
-    const token = this.tokens.sign({ sub: user.id, orgId: org.id, roleKey: role.key });
+    const token = this.tokens.sign({ sub: user.id, orgId: org.id, roleKey: role.key, sessionVersion: user.sessionVersion });
     const session = this.buildSession({ ...user, org } as never, role, token);
 
     const emailed = await this.mailer.sendTemporaryPassword(user.email, org.name, temporaryPassword);
@@ -234,7 +268,7 @@ export class AuthService {
   async changePassword(dto: ChangePasswordDto): Promise<SessionContext> {
     const actorId = requireActor();
     const found = (await this.tenant.runInOrgContext((tx) =>
-      tx.user.findUnique({ where: { id: actorId }, include: { org: true } }),
+      tx.user.findUnique({ where: { id: actorId }, include: { org: { include: { orgGovernorates: true, orgCenters: true } } } }),
     )) as UserWithOrg | null;
     if (!found || !found.passwordHash) {
       throw new UnauthorizedException({ error: { code: 'UNAUTHENTICATED', message: 'Authentication required' } });
@@ -249,15 +283,103 @@ export class AuthService {
     }
     const passwordHash = await this.passwords.hash(dto.newPassword);
     const updated = (await this.tenant.runInOrgContext((tx) =>
-      tx.user.update({ where: { id: actorId }, data: { passwordHash, mustChangePassword: false }, include: { org: true } }),
+      tx.user.update({
+        where: { id: actorId },
+        // Replacing a temp password is unambiguous proof of a completed
+        // first login — activate here too, not just on consent accept,
+        // so status doesn't stay "invited" forever if a user closes the
+        // tab before reaching the consent gate. sessionVersion increments
+        // so any other session signed in with the old password is
+        // invalidated (see JwtAuthGuard's sessionVersion check).
+        data: {
+          passwordHash,
+          mustChangePassword: false,
+          status: UserStatus.active,
+          sessionVersion: { increment: 1 },
+        },
+        include: { org: { include: { orgGovernorates: true, orgCenters: true } } },
+      }),
     )) as UserWithOrg;
     // Never log the actual password value — before/after stay null so the
     // entry only confirms *that* it changed, via the eye icon's "Password"
     // row, same field-label convention as Name/Email/Role elsewhere.
     await this.audit.record({ action: 'edit', entityType: 'user', entityId: updated.id, entityLabel: updated.email, changes: [{ field: 'Password', before: null, after: null }] });
     const role = this.roleOf(updated.roleId);
-    const token = this.tokens.sign({ sub: updated.id, orgId: updated.org.id, roleKey: role.key });
+    const token = this.tokens.sign({ sub: updated.id, orgId: updated.org.id, roleKey: role.key, sessionVersion: updated.sessionVersion });
     return this.buildSession(updated, role, token);
+  }
+
+  // Always returns the same generic message regardless of whether the email
+  // is registered — an existence-revealing response (or response latency,
+  // hence no early-return short-circuit) would let an attacker enumerate
+  // accounts. Silently no-ops (past the generic response) for an unknown
+  // email, an org that's been deactivated, or an invited user with no
+  // password set yet (nothing to "reset").
+  async forgotPassword(dto: ForgotPasswordDto): Promise<{ message: string }> {
+    const email = dto.email.trim().toLowerCase();
+    const genericResult = { message: 'If that email exists, a reset link has been sent.' };
+    const found = (await this.tenant.runAsSupervisor((tx) =>
+      tx.user.findUnique({ where: { email }, include: { org: true } }),
+    )) as UserWithOrg | null;
+    if (!found || !found.passwordHash || !found.org.isActive) {
+      return genericResult;
+    }
+
+    const rawToken = randomBytes(32).toString('base64url');
+    const tokenHash = createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = new Date(Date.now() + PASSWORD_RESET_TTL_MINUTES * 60 * 1000);
+
+    await this.tenant.runAsOrg(found.org.id, async (tx) => {
+      // Invalidate any still-outstanding tokens for this user first — only
+      // the link just emailed should be able to reset the password.
+      await tx.passwordResetToken.updateMany({
+        where: { userId: found.id, consumedAt: null },
+        data: { consumedAt: new Date() },
+      });
+      await tx.passwordResetToken.create({
+        data: { orgId: found.org.id, userId: found.id, tokenHash, expiresAt },
+      });
+    });
+
+    const resetUrl = `${this.config.corsOrigin}/reset-password?token=${rawToken}`;
+    const emailed = await this.mailer.sendPasswordResetEmail(found.email, resetUrl);
+    if (!emailed && this.config.nodeEnv !== 'production') {
+      // Dev-only fallback so a local run without SMTP configured can still
+      // exercise the flow — never returned in the HTTP response itself,
+      // since that would be exactly the existence leak this endpoint
+      // otherwise avoids.
+      this.logger.log(`[dev-only] Password reset link for ${found.email}: ${resetUrl}`);
+    }
+    return genericResult;
+  }
+
+  async resetPassword(dto: ResetPasswordDto): Promise<{ message: string }> {
+    const tokenHash = createHash('sha256').update(dto.token).digest('hex');
+    const row = await this.tenant.runAsSupervisor((tx) =>
+      tx.passwordResetToken.findUnique({ where: { tokenHash } }),
+    );
+    if (!row || row.consumedAt || row.expiresAt.getTime() < Date.now()) {
+      throw new BadRequestException({
+        error: { code: 'INVALID_RESET_TOKEN', message: 'This reset link is invalid or has expired.' },
+      });
+    }
+
+    const passwordHash = await this.passwords.hash(dto.password);
+    const updated = await this.tenant.runAsOrg(row.orgId, async (tx) => {
+      const user = await tx.user.update({
+        where: { id: row.userId },
+        // sessionVersion increments so any session signed in under the old
+        // password is invalidated, same as changePassword().
+        data: { passwordHash, mustChangePassword: false, sessionVersion: { increment: 1 } },
+      });
+      await tx.passwordResetToken.update({ where: { id: row.id }, data: { consumedAt: new Date() } });
+      return user;
+    });
+    await this.audit.record({
+      action: 'edit', entityType: 'user', entityId: updated.id, entityLabel: updated.email,
+      changes: [{ field: 'Password', before: null, after: null }], organizationId: row.orgId,
+    });
+    return { message: 'Password reset.' };
   }
 
   // `sector` must match an active Methodology Configuration Domain name
@@ -293,6 +415,9 @@ export class AuthService {
     const organization: SessionOrg = {
       id: u.org.id, name: u.org.name, logoUrl: u.org.logoUrl, region: u.org.region,
       email: u.org.email, sector: u.org.sector, villages: u.org.villages,
+      regionId: u.org.regionId,
+      governorateIds: (u.org.orgGovernorates ?? []).map((g) => g.governorateId),
+      centerIds: (u.org.orgCenters ?? []).map((c) => c.centerId),
       isActive: u.org.isActive, createdAt: u.org.createdAt.toISOString(),
       purpose: u.org.purpose, registrationNumber: u.org.registrationNumber,
     };

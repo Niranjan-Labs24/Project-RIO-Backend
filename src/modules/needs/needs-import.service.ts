@@ -1,8 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { extname } from 'node:path';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { requireActor, requireOrgId } from '../../tenancy/org-context';
 import { AuditService } from '../audit/audit.service';
+import { AiDecisionsService } from '../ai-decisions/ai-decisions.service';
 import { parseCsvNeeds, parseExcelNeeds, type ParsedNeedRow } from './needs-import.parser';
 import type { ImportNeedsResult } from './needs-import.types';
 
@@ -32,9 +33,12 @@ function dedupeKey(title: string, village: string, referenceId: string): string 
 
 @Injectable()
 export class NeedsImportService {
+  private readonly logger = new Logger(NeedsImportService.name);
+
   constructor(
     private readonly tenant: TenantPrismaService,
     private readonly audit: AuditService,
+    private readonly aiDecisions: AiDecisionsService,
   ) {}
 
   // CSV/Excel only — PDF isn't parsed for Needs (no AI extraction yet); a
@@ -106,7 +110,7 @@ export class NeedsImportService {
       }
 
       try {
-        await this.tenant.runInOrgContext((tx) =>
+        const created = await this.tenant.runInOrgContext((tx) =>
           tx.need.create({
             data: {
               studyId,
@@ -120,11 +124,23 @@ export class NeedsImportService {
               source: 'file_upload',
               referenceId: row.referenceId || null,
               createdBy,
+              // Same automatic-classification entry point as the manual
+              // create form (NeedsService.create) — without this, an
+              // imported Need silently defaulted to `draft` and never
+              // classified, leaving its AI Classification section showing
+              // "in progress" forever with nothing actually running.
+              status: 'pending_ai_classification',
             },
           }),
         );
         seenKeys.add(key);
         imported += 1;
+        // Fire-and-forget, same reasoning as NeedsService.create — never let
+        // a slow/failing AI call turn a successful import row into an error,
+        // and never block the rest of the batch on one row's classification.
+        this.aiDecisions.classifyAutomatically(created.id).catch((err: Error) => {
+          this.logger.warn(`Automatic classification failed for imported need ${created.id}: ${err.message}`);
+        });
       } catch {
         errors.push({
           row: row.row,
