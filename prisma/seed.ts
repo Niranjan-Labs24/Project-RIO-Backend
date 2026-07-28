@@ -43,6 +43,11 @@ async function setOrg(tx: { $executeRawUnsafe: (s: string) => Promise<number> },
 // Realistic-looking generation criteria per report type, stored in Report.filters
 // — same fields a real "generate report" form would collect (region/village/
 // date range), not used for any actual query since content is placeholder.
+// RPT06/RPT12/RPT13 used to be handled here too, back when they were still
+// placeholder types — they've since graduated to real generators (see
+// reports.placeholder.ts's PlaceholderReportType exclusion list) and are no
+// longer reachable through this function; `studyId` is accordingly unused
+// now (it was only ever read for the since-removed RPT13 case).
 function buildPlaceholderReportFilters(reportType: PlaceholderReportType): Record<string, unknown> {
   const dateFrom = '2026-01-01';
   const dateTo = '2026-06-30';

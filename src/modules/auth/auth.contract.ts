@@ -1,5 +1,26 @@
 import { registerSchema, T, type Static } from '../../contract/typebox';
 
+/**
+ * Deliberately not `format: 'email'` — the controller trims/lowercases
+ * before calling AuthService.login(), and login's own failure path already
+ * returns a generic 401 for any bad credential shape, so tightening this to
+ * a strict email format risks rejecting input the manual presence check
+ * (`!email || !password`) this replaces used to accept. `maxLength: 320`
+ * mirrors RFC 5321's email length ceiling as a DoS/oversized-payload bound,
+ * not a format constraint.
+ */
+export const LoginBody = registerSchema(
+  'LoginBody',
+  T.Object(
+    {
+      email: T.String({ minLength: 1, maxLength: 320 }),
+      password: T.String({ minLength: 1, maxLength: 200 }),
+    },
+    { additionalProperties: false },
+  ),
+);
+export type LoginDto = Static<typeof LoginBody>;
+
 // Not a fixed enum: `sector` is validated against the live, active Domain
 // list from Methodology Configuration (see AuthService.signup —
 // DomainsService.listDomains()), or the literal "other". Mirrors

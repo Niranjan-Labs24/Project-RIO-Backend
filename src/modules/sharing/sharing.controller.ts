@@ -1,3 +1,4 @@
+import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { RequirePermission } from "../../common/guards/permission.guard";
 import { parseIntParam } from "../../common/http/query.util";
@@ -40,20 +41,20 @@ export class SharingController {
 
   @Get("lookup/organizations/:orgId/studies")
   @RequirePermission("archiveSharingAudit", "create")
-  lookupStudiesForOrg(@Param("orgId") orgId: string): Promise<StudyLookupResult[]> {
+  lookupStudiesForOrg(@Param("orgId", new UuidParamPipe()) orgId: string): Promise<StudyLookupResult[]> {
     return this.sharing.lookupStudiesForOrg(orgId);
   }
 
   @Get(":id")
   @RequirePermission("archiveSharingAudit", "read")
-  getById(@Param("id") id: string): Promise<SharingRequest> {
+  getById(@Param("id", new UuidParamPipe()) id: string): Promise<SharingRequest> {
     return this.sharing.getById(id);
   }
 
   @Patch(":id/approve")
   @RequirePermission("archiveSharingAudit", "approve")
   approve(
-    @Param("id") id: string,
+    @Param("id", new UuidParamPipe()) id: string,
     @Body(new TypeBoxValidationPipe(DecideSharingRequestBody)) body: DecideSharingRequestPayload,
   ): Promise<SharingRequest> {
     return this.sharing.approve(id, body ?? {});
@@ -62,7 +63,7 @@ export class SharingController {
   @Patch(":id/reject")
   @RequirePermission("archiveSharingAudit", "approve")
   reject(
-    @Param("id") id: string,
+    @Param("id", new UuidParamPipe()) id: string,
     @Body(new TypeBoxValidationPipe(DecideSharingRequestBody)) body: DecideSharingRequestPayload,
   ): Promise<SharingRequest> {
     return this.sharing.reject(id, body ?? {});
@@ -70,7 +71,7 @@ export class SharingController {
 
   @Get(":id/shared-study")
   @RequirePermission("archiveSharingAudit", "read")
-  getSharedSnapshot(@Param("id") id: string): Promise<SharedStudySnapshot> {
+  getSharedSnapshot(@Param("id", new UuidParamPipe()) id: string): Promise<SharedStudySnapshot> {
     return this.sharing.getSharedSnapshot(id);
   }
 }

@@ -1,0 +1,17 @@
+# Development-only override: re-adds the database host port publish so
+# local tools (psql, a GUI client, `pnpm prisma migrate deploy` from the
+# host) can reach it directly. Applied automatically by `pnpm db:up` — see
+# README's "Local development vs. production Compose" section.
+#
+# Credentials are NOT set here — POSTGRES_PASSWORD/DOCKER_APP_DATABASE_URL/
+# DOCKER_SUPERVISOR_DATABASE_URL come from your .env file (docker compose
+# auto-loads it) via docker-compose.yml's own ${VAR:?...} interpolation, the
+# same mechanism JWT_SECRET already used. .env.example documents the
+# dev-only values to copy in.
+services:
+  db:
+    ports:
+      # If your host already has PostgreSQL bound to 5432 (e.g. a native
+      # Windows service), set DB_HOST_PORT in your local .env to an unused
+      # port instead — docker compose auto-reads .env for this substitution.
+      - '${DB_HOST_PORT:-5432}:5432'

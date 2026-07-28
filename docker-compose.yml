@@ -1,6 +1,10 @@
 services:
   redis:
-    image: redis:7-alpine
+    # Pinned to a reviewed digest (Task 9, container hardening) rather than
+    # the floating `redis:7-alpine` tag. Re-pin deliberately (docker pull
+    # redis:7-alpine && docker inspect ...) for a genuine upgrade — never
+    # widen this back to a bare tag.
+    image: redis:7-alpine@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
     command: redis-server --appendonly yes
     volumes:
       - cnap-redis-data:/data
@@ -29,20 +33,24 @@ services:
     container_name: cnap-db
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      # No hardcoded default — interpolated from your .env (docker compose
+      # auto-loads it), same mechanism JWT_SECRET below already used. Local
+      # development's value lives in .env.example; a real deployment sets
+      # its own via whatever secret-injection mechanism it uses. See
+      # README's "Local development vs. production Compose" section —
+      # including why the cnap_owner/cnap_app/cnap_supervisor role
+      # passwords created by db/init/ and the RLS migration are a separate
+      # rotation step, not one of the env vars here.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set — see README}
       POSTGRES_DB: postgres
       # postgres:18 images store versioned data in a PG_MAJOR-named subdirectory by
       # default (PGDATA=/var/lib/postgresql/18/docker) and refuse to start if a volume
       # is mounted directly at /var/lib/postgresql/data without one. Point PGDATA at a
       # subdirectory of our mount so the existing /data mount path keeps working.
       PGDATA: /var/lib/postgresql/data/pgdata
-    ports:
-      # Host port defaults to 5432. If your host already has PostgreSQL bound to
-      # 5432 (e.g. a native Windows service), set DB_HOST_PORT in your local .env
-      # to an unused port instead — docker compose auto-reads .env for this
-      # substitution. The container's internal port always stays 5432; update
-      # DATABASE_URL / APP_DATABASE_URL host ports to match if you override this.
-      - '${DB_HOST_PORT:-5432}:5432'
+    # No host port publish here — a production database should not be
+    # reachable from outside the compose network at all. Local development
+    # re-adds it via docker-compose.dev.yml ("pnpm db:up" applies both files).
     volumes:
       - cnap-db-data:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d:ro
@@ -63,16 +71,19 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4000
-      # Inside the compose network the api reaches the db container by its
-      # service name on the container's *internal* port (always 5432,
-      # regardless of DB_HOST_PORT — that variable only remaps the host-side
-      # publish port used by host tools like `pnpm prisma migrate deploy`).
+      # Deliberately separate from the app's own APP_DATABASE_URL/
+      # SUPERVISOR_DATABASE_URL host-side env vars (which point at
+      # localhost:<DB_HOST_PORT> for `pnpm dev` running outside Docker) —
+      # this containerized service reaches the db by its compose service
+      # name instead, so it needs its own value. No hardcoded default: a
+      # predictable connection string baked directly into a
+      # production-labeled container is exactly the finding this fixes.
       # NOTE: DATABASE_URL (cnap_owner, the migration/seed role) is
       # intentionally NOT set here. The api container never runs migrations
       # (see below) and the app schema no longer accepts/requires owner
       # credentials — only APP_DATABASE_URL (cnap_app, NOBYPASSRLS).
-      APP_DATABASE_URL: postgresql://cnap_app:cnap_app_dev_pw@db:5432/cnap
-      SUPERVISOR_DATABASE_URL: postgresql://cnap_supervisor:cnap_supervisor_dev_pw@db:5432/cnap
+      APP_DATABASE_URL: ${DOCKER_APP_DATABASE_URL:?DOCKER_APP_DATABASE_URL must be set — see README}
+      SUPERVISOR_DATABASE_URL: ${DOCKER_SUPERVISOR_DATABASE_URL:?DOCKER_SUPERVISOR_DATABASE_URL must be set — see README}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
       REDIS_URL: redis://redis:6379
       TRUST_PROXY: loopback
@@ -88,6 +99,20 @@ services:
       # http://localhost:4000/api). Override with API_HOST_PORT in your local
       # .env if 4000 is already taken on your machine.
       - '${API_HOST_PORT:-4000}:4000'
+    healthcheck:
+      # Liveness, not readiness — this only confirms the process is up and
+      # accepting connections. curl/wget aren't installed on node:24-slim, so
+      # the check shells out to Node's own http client instead of adding a
+      # package just for this.
+      test:
+        - CMD
+        - node
+        - -e
+        - "require('http').get('http://127.0.0.1:4000/api/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 volumes:
   cnap-db-data:

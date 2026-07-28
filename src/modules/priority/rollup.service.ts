@@ -1,8 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
-import { Prisma } from '../../generated/prisma';
-import { DeterministicScoringService } from './scoring.service';
+import { Prisma, type Question } from '../../generated/prisma';
+import { DeterministicScoringService, type ParsedAnswer } from './scoring.service';
 import { PriorityV2Service } from './priority-v2.service';
+
+// Shared shape for the KPI/Indicator/Sub-Domain/Domain rollup maps below —
+// each level aggregates its children into exactly this, one level at a time
+// (KPI -> Indicator -> Sub-Domain -> Domain).
+interface RollupAggregate {
+  severityScore: number | null;
+  confidenceLevel: 'LOW' | 'STANDARD';
+  validResponseCount: number;
+  dontKnowRate: number;
+}
 
 @Injectable()
 export class ScoreRollupService {
@@ -62,14 +72,14 @@ export class ScoreRollupService {
 
       // Re-run scoring for each response
       for (const r of responses) {
-        const rawAnswers = (r.answers || {}) as Record<string, any>;
+        const rawAnswers = (r.answers || {}) as Record<string, unknown>;
 
-        const answersMap = new Map<string, any>();
-        const questionMappings: any[] = [];
+        const answersMap = new Map<string, ParsedAnswer>();
+        const questionMappings: Array<{ sqId: string; question: Question; rawAnswer: unknown }> = [];
         for (const sq of survey.surveyQuestions) {
           if (sq.question) {
             const q = sq.question;
-            const parsed = (this.scoringEngine as any).parseRawAnswerValue(rawAnswers[sq.id], q.measurementMode);
+            const parsed = this.scoringEngine.parseRawAnswerValue(rawAnswers[sq.id], q.measurementMode);
             answersMap.set(q.questionId, parsed);
             questionMappings.push({ sqId: sq.id, question: q, rawAnswer: rawAnswers[sq.id] });
           }
@@ -80,7 +90,10 @@ export class ScoreRollupService {
 
         for (const { question, rawAnswer } of questionMappings) {
           const qId = question.questionId;
-          const parsed = answersMap.get(qId);
+          // Guaranteed present: questionMappings and answersMap are built from
+          // the same survey.surveyQuestions loop above, one entry each per
+          // sq.question — every qId reachable here was just .set() there.
+          const parsed = answersMap.get(qId)!;
 
           const answerRecord = await tx.responseAnswer.create({
             data: {
@@ -100,7 +113,7 @@ export class ScoreRollupService {
             }
           });
 
-          const isApplicable = (this.scoringEngine as any).evaluateConditionalRule(question, answersMap);
+          const isApplicable = this.scoringEngine.evaluateConditionalRule(question, answersMap);
           if (!isApplicable) {
             await tx.responseAnswer.update({
               where: { id: answerRecord.id },
@@ -166,7 +179,7 @@ export class ScoreRollupService {
             continue;
           }
 
-          const exclusion = (this.scoringEngine as any).getOptionExclusion(parsed.optionId, lookups, qId);
+          const exclusion = this.scoringEngine.getOptionExclusion(parsed.optionId, lookups, qId);
           if (exclusion) {
             await tx.responseSeverityScore.create({
               data: {
@@ -190,7 +203,7 @@ export class ScoreRollupService {
           }
 
           try {
-            const scoreResult = (this.scoringEngine as any).calculateSeverity(question, parsed, lookups);
+            const scoreResult = this.scoringEngine.calculateSeverity(question, parsed, lookups);
             await tx.responseSeverityScore.create({
               data: {
                 orgId,
@@ -297,7 +310,7 @@ export class ScoreRollupService {
       });
 
       // Map questionId -> Question record
-      const questionMap = new Map<string, any>();
+      const questionMap = new Map<string, (typeof questions)[number]>();
       for (const q of questions) {
         questionMap.set(q.questionId, q);
       }
@@ -383,7 +396,7 @@ export class ScoreRollupService {
         }
       }
 
-      const kpiRollups = new Map<string, any>();
+      const kpiRollups = new Map<string, RollupAggregate>();
       for (const [kpiName, qIds] of kpis.entries()) {
         const childRollups = qIds.map(id => questionRollups.get(id)).filter(Boolean);
         if (childRollups.length === 0) continue;
@@ -434,7 +447,7 @@ export class ScoreRollupService {
         }
       }
 
-      const indicatorRollups = new Map<string, any>();
+      const indicatorRollups = new Map<string, RollupAggregate>();
       for (const [indName, kNames] of indicators.entries()) {
         const childRollups = kNames.map(name => kpiRollups.get(name)).filter(Boolean);
         if (childRollups.length === 0) continue;
@@ -482,7 +495,7 @@ export class ScoreRollupService {
         }
       }
 
-      const subDomainRollups = new Map<string, any>();
+      const subDomainRollups = new Map<string, RollupAggregate>();
       for (const [subName, iNames] of subDomains.entries()) {
         const childRollups = iNames.map(name => indicatorRollups.get(name)).filter(Boolean);
         if (childRollups.length === 0) continue;
@@ -530,7 +543,7 @@ export class ScoreRollupService {
         }
       }
 
-      const domainRollups = new Map<string, any>();
+      const domainRollups = new Map<string, RollupAggregate>();
       for (const [domName, sNames] of domains.entries()) {
         const childRollups = sNames.map(name => subDomainRollups.get(name)).filter(Boolean);
         if (childRollups.length === 0) continue;
@@ -572,7 +585,7 @@ export class ScoreRollupService {
         const scoredChildren = childRollups.filter(r => r.severityScore !== null);
         let overallScore: number | null = null;
         if (scoredChildren.length > 0) {
-          overallScore = scoredChildren.reduce((acc, curr) => acc + curr.severityScore, 0) / scoredChildren.length;
+          overallScore = scoredChildren.reduce((acc, curr) => acc + curr.severityScore!, 0) / scoredChildren.length;
         }
 
         const avgValidCount = Math.round(childRollups.reduce((acc, curr) => acc + curr.validResponseCount, 0) / childRollups.length);

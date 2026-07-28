@@ -142,10 +142,6 @@ export class OrganizationsService {
       throw err;
     }
 
-    // Dev only: surface the first-admin temp password (a real invite/reset flow supersedes this).
-    if (process.env.NODE_ENV !== 'production' && payload.adminEmail) {
-      console.log(`Created org ${payload.name}: admin ${payload.adminEmail} temp password: ${tempPassword}`);
-    }
     // File under the newly-created org (not the acting system_admin's org) so
     // the creation event is traceable from the new entity's audit trail.
     await this.audit.record({ action: 'ORGANIZATION_CREATED', entityType: 'organization', entityId: org.id, entityLabel: org.name, organizationId: org.id });

@@ -2,11 +2,11 @@
 // the shape the frontend viewer renders. Single source of truth for both.
 //
 // These types mirror the team's AI-summary mock (RPT-2026-001). They are
-// produced by the ReportDataProvider seam (see providers/report-data.provider.ts):
-// today MockReportDataProvider fills them from the mock API; later
-// PrismaReportDataProvider fills the identical shapes from real analytics
-// tables + real LLM, with no change here, in the generators, or on the
-// frontend. "Body changes, contract doesn't."
+// produced by the ReportDataProvider seam (see providers/report-data.provider.ts),
+// implemented by ReportSummaryDataProvider against real analytics tables —
+// the mock implementation (MockReportDataProvider/MockReportApiClient) has
+// been removed now that the real provider is in place. "Body changes,
+// contract doesn't."
 
 /** Confidence banding carried through from ScoreRollup.confidenceLevel. */
 export type ConfidenceLevel = "LOW" | "STANDARD";

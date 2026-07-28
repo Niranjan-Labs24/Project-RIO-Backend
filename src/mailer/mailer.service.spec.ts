@@ -4,40 +4,44 @@ import type { ConfigService } from '../config/config.service';
 
 // vi.mock is hoisted above this file's imports, so the mock factory below
 // cannot close over a plain top-level `const`. vi.hoisted() defines the
-// value inside that hoisted scope so `sendMail` exists by the time the
-// factory runs (Jest's `jest.fn()` doesn't need this because Jest allows
+// value inside that hoisted scope so `send` exists by the time the factory
+// runs (Jest's `jest.fn()` doesn't need this because Jest allows
 // referencing plain out-of-scope variables from the mock factory).
-const { sendMail } = vi.hoisted(() => ({ sendMail: vi.fn() }));
+const { send } = vi.hoisted(() => ({ send: vi.fn() }));
 
-vi.mock('nodemailer', () => ({
-  createTransport: vi.fn(() => ({ sendMail })),
+vi.mock('resend', () => ({
+  // A plain arrow function can't be used with `new` — Resend is
+  // constructed as `new Resend(apiKey)`, so the mock needs a real
+  // constructor function.
+  Resend: vi.fn().mockImplementation(function (this: { emails: { send: typeof send } }) {
+    this.emails = { send };
+  }),
 }));
 
 function config(over: Partial<Record<string, unknown>> = {}): ConfigService {
   return {
-    smtpHost: 'smtp.example.test', smtpPort: 587, smtpSecure: false,
-    smtpUser: undefined, smtpPass: undefined, mailFrom: 'RIO <no-reply@rio.local>',
+    resendApiKey: 're_test_key', mailFrom: 'RIO <no-reply@rio.local>',
     corsOrigin: 'https://app.rio.example',
     ...over,
   } as unknown as ConfigService;
 }
 
 describe('MailerService', () => {
-  beforeEach(() => { sendMail.mockReset(); });
+  beforeEach(() => { send.mockReset(); });
 
-  it('sends and returns true when SMTP is configured', async () => {
-    sendMail.mockResolvedValue({ messageId: '1' });
+  it('sends and returns true when Resend is configured', async () => {
+    send.mockResolvedValue({ data: { id: '1' }, error: null });
     const svc = new MailerService(config());
     await expect(svc.sendTemporaryPassword('a@b.test', 'Org', 'pw')).resolves.toBe(true);
-    expect(sendMail).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(1);
   });
 
   it('sends a formatted welcome email with the workspace, email, temp password, and a sign-in link', async () => {
-    sendMail.mockResolvedValue({ messageId: '1' });
+    send.mockResolvedValue({ data: { id: '1' }, error: null });
     const svc = new MailerService(config());
     await svc.sendTemporaryPassword('a@b.test', 'Acme NGO', 'temp-pw-123');
 
-    const firstCall = sendMail.mock.calls[0];
+    const firstCall = send.mock.calls[0];
     expect(firstCall).toBeDefined();
     const message = firstCall![0];
     expect(message.subject).toContain('Acme NGO');
@@ -52,14 +56,20 @@ describe('MailerService', () => {
     expect(message.html).toContain('<h1');
   });
 
-  it('returns false (no throw) when SMTP is not configured', async () => {
-    const svc = new MailerService(config({ smtpHost: undefined }));
+  it('returns false (no throw) when Resend is not configured', async () => {
+    const svc = new MailerService(config({ resendApiKey: undefined }));
     await expect(svc.sendTemporaryPassword('a@b.test', 'Org', 'pw')).resolves.toBe(false);
-    expect(sendMail).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
   });
 
   it('returns false when the send throws', async () => {
-    sendMail.mockRejectedValue(new Error('smtp down'));
+    send.mockRejectedValue(new Error('resend down'));
+    const svc = new MailerService(config());
+    await expect(svc.sendTemporaryPassword('a@b.test', 'Org', 'pw')).resolves.toBe(false);
+  });
+
+  it('returns false when Resend responds with an error object', async () => {
+    send.mockResolvedValue({ data: null, error: { name: 'invalid_api_key', message: 'bad key', statusCode: 401 } });
     const svc = new MailerService(config());
     await expect(svc.sendTemporaryPassword('a@b.test', 'Org', 'pw')).resolves.toBe(false);
   });

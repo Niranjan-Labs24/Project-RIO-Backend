@@ -1,3 +1,4 @@
+import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { BadRequestException, Controller, Delete, Get, HttpCode, Param, Post, UploadedFiles, UseInterceptors } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { RequirePermission } from '../../common/guards/permission.guard';
@@ -17,7 +18,7 @@ export class EvidenceController {
     }),
   )
   upload(
-    @Param('needId') needId: string,
+    @Param('needId', new UuidParamPipe()) needId: string,
     @UploadedFiles() files: Express.Multer.File[],
   ): Promise<Evidence[]> {
     if (!files || files.length === 0) {
@@ -31,7 +32,7 @@ export class EvidenceController {
 
   @Get()
   @RequirePermission('dataCollection', 'read')
-  list(@Param('needId') needId: string): Promise<Evidence[]> {
+  list(@Param('needId', new UuidParamPipe()) needId: string): Promise<Evidence[]> {
     return this.evidence.listByNeedId(needId);
   }
 
@@ -40,7 +41,7 @@ export class EvidenceController {
   @Post('submit')
   @HttpCode(200)
   @RequirePermission('dataCollection', 'write')
-  submit(@Param('needId') needId: string): Promise<void> {
+  submit(@Param('needId', new UuidParamPipe()) needId: string): Promise<void> {
     return this.evidence.submit(needId);
   }
 }
@@ -52,7 +53,7 @@ export class EvidenceDeleteController {
   @Delete(':id')
   @HttpCode(204)
   @RequirePermission('dataCollection', 'write')
-  remove(@Param('id') id: string): Promise<void> {
+  remove(@Param('id', new UuidParamPipe()) id: string): Promise<void> {
     return this.evidence.remove(id);
   }
 }

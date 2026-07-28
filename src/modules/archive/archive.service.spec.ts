@@ -2,14 +2,46 @@ import { describe, expect, it } from 'vitest';
 import { ArchiveService } from './archive.service';
 import { orgContext } from '../../tenancy/org-context';
 
-function fakeTenant(opts: { studies?: any[]; reports?: any[]; needs?: any[]; orgs?: any[]; auditLogs?: any[] }) {
-  const tx = {
+// Minimal local shapes for this file's own mock fixtures — only the fields
+// the two tests below actually set/read, not the full Prisma model types.
+interface FakeStudy {
+  id: string;
+  orgId?: string;
+  title: string;
+  status: string;
+  updatedAt?: Date;
+  cycleNumber?: number;
+  villages?: string[];
+  createdAt?: Date;
+  archivedAt?: Date;
+  archivedBy?: string;
+  archiveReason?: string;
+  org?: { name: string; region: string[]; sector: string };
+  methodologyVersion?: { id: string; version: string; name: string } | null;
+  needs?: { id: string }[];
+  reports?: { id: string; title: string; status: string; reportType: string; generatedAt: Date }[];
+  evidence?: { id: string }[];
+}
+interface FakeReport { id: string; title: string; status: string; reportType: string; generatedAt: Date }
+interface FakeNeed { id: string; studyId: string; status: string; village: string[] }
+interface FakeOrg { id: string; name: string; region: string[]; sector: string }
+interface FakeAuditLog { id: string; action: string; actorUserId: string; createdAt: Date; metadata: unknown }
+interface FakeTx {
+  organisation: { findMany: () => Promise<FakeOrg[]> };
+  study: { findMany: () => Promise<FakeStudy[]>; findUnique: (args: { where: { id: string } }) => Promise<FakeStudy | null> };
+  report: { findMany: () => Promise<FakeReport[]> };
+  need: { findMany: () => Promise<FakeNeed[]> };
+  auditLog: { findMany: () => Promise<FakeAuditLog[]> };
+}
+
+function fakeTenant(opts: { studies?: FakeStudy[]; reports?: FakeReport[]; needs?: FakeNeed[]; orgs?: FakeOrg[]; auditLogs?: FakeAuditLog[] }) {
+  const tx: FakeTx = {
     organisation: {
       findMany: async () => opts.orgs ?? [{ id: 'o1', name: 'Org 1', region: ['Region A'], sector: 'Health' }],
     },
     study: {
       findMany: async () => opts.studies ?? [],
-      findUnique: async ({ where }: any) => opts.studies?.find((s) => s.id === where.id) ?? null,
+      findUnique: async ({ where }) => opts.studies?.find((s) => s.id === where.id) ?? null,
     },
     report: {
       findMany: async () => opts.reports ?? [],
@@ -22,8 +54,8 @@ function fakeTenant(opts: { studies?: any[]; reports?: any[]; needs?: any[]; org
     },
   };
   return {
-    runInOrgContext: async (fn: (tx: any) => any) => fn(tx),
-    runAsSupervisor: async (fn: (tx: any) => any) => fn(tx),
+    runInOrgContext: async (fn: (tx: FakeTx) => unknown) => fn(tx),
+    runAsSupervisor: async (fn: (tx: FakeTx) => unknown) => fn(tx),
   };
 }
 
@@ -38,7 +70,7 @@ describe('ArchiveService', () => {
       { id: 'n1', studyId: 's1', status: 'survey_published', village: ['Village A'] },
     ];
     const tenant = fakeTenant({ studies, needs });
-    const svc = new ArchiveService(tenant as any, auditStub as any);
+    const svc = new ArchiveService(tenant as never, auditStub as never);
 
     const result = await orgContext.run(
       { requestId: 'r1', actorId: 'sys1', role: 'system_admin' },
@@ -73,7 +105,7 @@ describe('ArchiveService', () => {
     ];
 
     const tenant = fakeTenant({ studies: [study], auditLogs });
-    const svc = new ArchiveService(tenant as any, auditStub as any);
+    const svc = new ArchiveService(tenant as never, auditStub as never);
 
     const detail = await orgContext.run(
       { requestId: 'r1', actorId: 'sys1', role: 'system_admin' },

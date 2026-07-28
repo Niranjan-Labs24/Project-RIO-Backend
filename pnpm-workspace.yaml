@@ -1,0 +1,37 @@
+onlyBuiltDependencies:
+  - '@prisma/client'
+  - '@prisma/engines'
+  - prisma
+  - esbuild
+  - '@swc/core'
+  - argon2
+
+# find-my-way/valibot are transitive dependencies of @prisma/dev, Prisma's
+# own dev-server tooling (never reachable at runtime by this app) — pulled
+# in only because @prisma/client depends on prisma at build/dev time.
+# uuid/brace-expansion are bundled by exceljs's own archiver dependency
+# chain, which hasn't published a release picking up either patched
+# version. All are forced here since none is independently upgradable
+# through our own package.json ranges.
+#
+# brace-expansion is scoped to exceljs's own two archiver>...>minimatch
+# paths specifically (not a bare "brace-expansion" override) — 5.x changed
+# its export shape in a way older minimatch versions elsewhere in the tree
+# (e.g. ESLint's own minimatch@3.1.5) don't expect, so a global override
+# breaks anything still on the old API; forcing it only inside exceljs's
+# own chain avoids that collision entirely.
+overrides:
+  find-my-way: '>=9.7.0'
+  valibot: '>=1.4.2'
+  uuid@<11.1.1: '>=11.1.1'
+  # Scoped to glob's own dependency edge (not a bare "minimatch" or
+  # "brace-expansion" override) specifically so ESLint's own direct,
+  # unrelated `minimatch@^3.1.5` dependency is left untouched — a global
+  # brace-expansion override broke it (old minimatch calling brace-
+  # expansion 5.x's changed export shape). glob>minimatch pulls in a
+  # self-consistent, already-patched minimatch+brace-expansion pair instead
+  # of mismatching an old minimatch against a new brace-expansion.
+  glob>minimatch: '^10.0.0'
+  # readdir-glob (also part of exceljs's archiver chain) depends on
+  # minimatch directly rather than via "glob" — same reasoning as above.
+  readdir-glob>minimatch: '^10.0.0'

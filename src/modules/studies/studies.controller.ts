@@ -1,3 +1,4 @@
+import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
@@ -42,14 +43,14 @@ export class StudiesController {
 
   @Get(':id')
   @RequirePermission('studySurvey', 'read')
-  getById(@Param('id') id: string): Promise<StudyDetail> {
+  getById(@Param('id', new UuidParamPipe()) id: string): Promise<StudyDetail> {
     return this.studies.getById(id);
   }
 
   @Patch(':id')
   @RequirePermission('studySurvey', 'write')
   update(
-    @Param('id') id: string,
+    @Param('id', new UuidParamPipe()) id: string,
     @Body(new TypeBoxValidationPipe(UpdateStudyBody)) body: UpdateStudyPayload,
   ): Promise<Study> {
     return this.studies.update(id, body);
@@ -58,7 +59,7 @@ export class StudiesController {
   @Delete(':id')
   @HttpCode(204)
   @RequirePermission('studySurvey', 'write')
-  remove(@Param('id') id: string): Promise<void> {
+  remove(@Param('id', new UuidParamPipe()) id: string): Promise<void> {
     return this.studies.remove(id);
   }
 

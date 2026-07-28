@@ -23,7 +23,7 @@ describe('RateLimitGuard', () => {
     const headers: Record<string, number> = {};
     const ctx = context(headers);
     const reflector = { getAllAndOverride: () => ({ limit: 2, windowSeconds: 60 }) } as never;
-    const guard = new RateLimitGuard(reflector, { redisUrl: undefined } as never);
+    const guard = new RateLimitGuard(reflector, { redisUrl: undefined } as never, { client: undefined } as never);
     await expect(guard.canActivate(ctx.value)).resolves.toBe(true);
     await expect(guard.canActivate(ctx.value)).resolves.toBe(true);
     await expect(guard.canActivate(ctx.value)).rejects.toMatchObject({ status: 429 });
@@ -33,7 +33,7 @@ describe('RateLimitGuard', () => {
 
   it('keeps identifiers in separate buckets', async () => {
     const reflector = { getAllAndOverride: () => ({ limit: 1, windowSeconds: 60 }) } as never;
-    const guard = new RateLimitGuard(reflector, { redisUrl: undefined } as never);
+    const guard = new RateLimitGuard(reflector, { redisUrl: undefined } as never, { client: undefined } as never);
     await expect(guard.canActivate(context({}).value)).resolves.toBe(true);
     await expect(guard.canActivate(context({}, 'other@example.test').value)).resolves.toBe(true);
   });

@@ -1,3 +1,4 @@
+import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { CsrfExempt } from '../../common/guards/csrf.guard';
 import { Public } from '../../auth/public.decorator';
@@ -57,7 +58,7 @@ export class DomainsController {
   @Patch(':id')
   @RequirePermission('methodologyQuestionBank', 'write')
   updateDomain(
-    @Param('id') id: string,
+    @Param('id', new UuidParamPipe()) id: string,
     @Body(new TypeBoxValidationPipe(UpdateDomainBody)) body: UpdateDomainPayload,
   ): Promise<Domain> {
     return this.domains.updateDomain(id, body);
@@ -65,26 +66,26 @@ export class DomainsController {
 
   @Patch(':id/activate')
   @RequirePermission('methodologyQuestionBank', 'write')
-  activateDomain(@Param('id') id: string): Promise<Domain> {
+  activateDomain(@Param('id', new UuidParamPipe()) id: string): Promise<Domain> {
     return this.domains.setDomainActive(id, true);
   }
 
   @Patch(':id/deactivate')
   @RequirePermission('methodologyQuestionBank', 'write')
-  deactivateDomain(@Param('id') id: string): Promise<Domain> {
+  deactivateDomain(@Param('id', new UuidParamPipe()) id: string): Promise<Domain> {
     return this.domains.setDomainActive(id, false);
   }
 
   @Get(':id/subdomains')
   @RequirePermission('methodologyQuestionBank', 'read')
-  listSubDomains(@Param('id') id: string): Promise<SubDomain[]> {
+  listSubDomains(@Param('id', new UuidParamPipe()) id: string): Promise<SubDomain[]> {
     return this.domains.listSubDomains(id);
   }
 
   @Post(':id/subdomains')
   @RequirePermission('methodologyQuestionBank', 'write')
   createSubDomain(
-    @Param('id') id: string,
+    @Param('id', new UuidParamPipe()) id: string,
     @Body(new TypeBoxValidationPipe(CreateSubDomainBody)) body: CreateSubDomainPayload,
   ): Promise<SubDomain> {
     return this.domains.createSubDomain(id, body);
@@ -93,8 +94,8 @@ export class DomainsController {
   @Patch(':id/subdomains/:subId')
   @RequirePermission('methodologyQuestionBank', 'write')
   updateSubDomain(
-    @Param('id') id: string,
-    @Param('subId') subId: string,
+    @Param('id', new UuidParamPipe()) id: string,
+    @Param('subId', new UuidParamPipe()) subId: string,
     @Body(new TypeBoxValidationPipe(UpdateSubDomainBody)) body: UpdateSubDomainPayload,
   ): Promise<SubDomain> {
     return this.domains.updateSubDomain(id, subId, body);
@@ -102,13 +103,13 @@ export class DomainsController {
 
   @Patch(':id/subdomains/:subId/activate')
   @RequirePermission('methodologyQuestionBank', 'write')
-  activateSubDomain(@Param('id') id: string, @Param('subId') subId: string): Promise<SubDomain> {
+  activateSubDomain(@Param('id', new UuidParamPipe()) id: string, @Param('subId', new UuidParamPipe()) subId: string): Promise<SubDomain> {
     return this.domains.setSubDomainActive(id, subId, true);
   }
 
   @Patch(':id/subdomains/:subId/deactivate')
   @RequirePermission('methodologyQuestionBank', 'write')
-  deactivateSubDomain(@Param('id') id: string, @Param('subId') subId: string): Promise<SubDomain> {
+  deactivateSubDomain(@Param('id', new UuidParamPipe()) id: string, @Param('subId', new UuidParamPipe()) subId: string): Promise<SubDomain> {
     return this.domains.setSubDomainActive(id, subId, false);
   }
 }

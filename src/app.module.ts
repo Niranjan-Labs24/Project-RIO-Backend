@@ -11,6 +11,7 @@ import { ConfigModule } from './config/config.module';
 import { ConfigService } from './config/config.service';
 import { buildLoggerConfig } from './common/logger/logger.config';
 import { PrismaModule } from './prisma/prisma.module';
+import { RedisModule } from './redis/redis.module';
 import { TenancyModule } from './tenancy/tenancy.module';
 import { OrgContextMiddleware } from './tenancy/org-context.middleware';
 import { HealthModule } from './health/health.module';
@@ -65,6 +66,7 @@ import { AppController } from './app.controller';
       }),
     }),
     PrismaModule,
+    RedisModule,
     TenancyModule,
     HealthModule,
     RolesModule,

@@ -1,8 +1,12 @@
 # syntax=docker/dockerfile:1
-FROM node:24-slim AS build
+# Pinned to a reviewed digest (Task 9, container hardening) rather than the
+# floating `node:24-slim` tag, so a rebuild can't silently pull a different
+# image. Re-pin deliberately (docker pull node:24-slim && docker inspect ...)
+# when a genuine upgrade is wanted — never widen this back to a bare tag.
+FROM node:24-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS build
 WORKDIR /app
 RUN corepack enable
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY . .
 # Prisma 7 custom client output (src/generated/prisma) is gitignored and must
@@ -19,11 +23,11 @@ COPY . .
 ENV DATABASE_URL=postgresql://build:build@build-time-only:5432/build
 RUN pnpm prisma generate && pnpm build
 
-FROM node:24-slim AS runtime
+FROM node:24-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS runtime
 WORKDIR /app
 RUN corepack enable
 ENV NODE_ENV=production
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 # Production install only: the app never imports the `prisma` CLI, ts-node,
 # @nestjs/cli, etc. at runtime. Everything the running app needs
 # (@prisma/adapter-pg, pg, @prisma/client-runtime-utils, nestjs-pino, helmet,
@@ -37,5 +41,20 @@ RUN pnpm install --frozen-lockfile --prod
 # prisma.config.ts (schema/migrations are a CLI-only concern — see README for
 # how migrations are applied; the running app never reads prisma/schema.prisma).
 COPY --from=build /app/dist ./dist
-EXPOSE 3000
+# EvidenceStorageService lazily mkdir -p's subdirectories under
+# EVIDENCE_STORAGE_PATH (default ./storage/evidence, relative to /app) the
+# first time a file is written — pre-create the parent here, owned by the
+# non-root runtime user below, so that first write doesn't need root.
+RUN mkdir -p /app/storage/evidence
+# node:24-slim (the official Docker image) already ships a non-root `node`
+# user/group (uid/gid 1000) — reused here rather than creating a new one.
+# Everything under /app must be owned by it, not just storage/, since the
+# process itself (node executing dist/main.js) also needs read access to
+# dist/ and node_modules/ as that user.
+RUN chown -R node:node /app
+USER node
+# Matches docker-compose.yml's PORT: 4000 (and API_HOST_PORT's default) —
+# EXPOSE is documentation only and doesn't itself bind the port, but it
+# should still describe the port the app actually listens on.
+EXPOSE 4000
 CMD ["node", "dist/main.js"]

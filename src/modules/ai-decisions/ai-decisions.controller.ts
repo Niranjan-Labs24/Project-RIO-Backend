@@ -1,3 +1,4 @@
+import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { Body, Controller, Get, HttpCode, Param, Patch, Post } from '@nestjs/common';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
@@ -22,13 +23,13 @@ export class AiDecisionsController {
   // action for a Need whose automatic classification failed.
   @Post('classify')
   @RequirePermission('aiReview', 'write')
-  retryClassification(@Param('needId') needId: string): Promise<AiDecision> {
+  retryClassification(@Param('needId', new UuidParamPipe()) needId: string): Promise<AiDecision> {
     return this.aiDecisions.retryClassification(needId);
   }
 
   @Get()
   @RequirePermission('aiReview', 'read')
-  list(@Param('needId') needId: string): Promise<AiDecision[]> {
+  list(@Param('needId', new UuidParamPipe()) needId: string): Promise<AiDecision[]> {
     return this.aiDecisions.listByNeedId(needId);
   }
 
@@ -52,7 +53,7 @@ export class AiReviewController {
   @HttpCode(204)
   @RequirePermission('aiReview', 'approve')
   approve(
-    @Param('needId') needId: string,
+    @Param('needId', new UuidParamPipe()) needId: string,
     @Body(new TypeBoxValidationPipe(AiReviewApproveBody)) body: AiReviewApproveDto,
   ): Promise<void> {
     return this.aiDecisions.approveAiReview(needId, body);
@@ -62,7 +63,7 @@ export class AiReviewController {
   @HttpCode(204)
   @RequirePermission('aiReview', 'approve')
   reject(
-    @Param('needId') needId: string,
+    @Param('needId', new UuidParamPipe()) needId: string,
     @Body(new TypeBoxValidationPipe(AiReviewRejectBody)) body: AiReviewRejectDto,
   ): Promise<void> {
     return this.aiDecisions.rejectAiReview(needId, body.comments);
@@ -71,7 +72,7 @@ export class AiReviewController {
   @Post('override-domain')
   @RequirePermission('aiReview', 'approve')
   overrideDomain(
-    @Param('needId') needId: string,
+    @Param('needId', new UuidParamPipe()) needId: string,
     @Body(new TypeBoxValidationPipe(AiReviewOverrideDomainBody)) body: AiReviewOverrideDomainDto,
   ): Promise<unknown> {
     return this.aiDecisions.overrideDomainPreview(needId, body);
@@ -79,7 +80,7 @@ export class AiReviewController {
 
   @Post('retry-classification')
   @RequirePermission('aiReview', 'write')
-  retry(@Param('needId') needId: string): Promise<AiDecision> {
+  retry(@Param('needId', new UuidParamPipe()) needId: string): Promise<AiDecision> {
     return this.aiDecisions.retryClassification(needId);
   }
 
@@ -94,7 +95,7 @@ export class AiReviewController {
   @HttpCode(204)
   @RequirePermission('aiReview', 'write')
   manualClassify(
-    @Param('needId') needId: string,
+    @Param('needId', new UuidParamPipe()) needId: string,
     @Body(new TypeBoxValidationPipe(AiReviewOverrideDomainBody)) body: AiReviewOverrideDomainDto,
   ): Promise<void> {
     return this.aiDecisions.manualClassify(needId, body);
@@ -108,7 +109,7 @@ export class AiDecisionsReviewController {
   @Patch(':id/review')
   @RequirePermission('aiReview', 'approve')
   review(
-    @Param('id') id: string,
+    @Param('id', new UuidParamPipe()) id: string,
     @Body(new TypeBoxValidationPipe(ReviewDecisionBody)) body: ReviewDecisionPayload,
   ): Promise<AiDecision> {
     return this.aiDecisions.review(id, body);

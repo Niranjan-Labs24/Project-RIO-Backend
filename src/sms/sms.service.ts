@@ -1,45 +1,40 @@
 import { Injectable, Logger } from '@nestjs/common';
+import Twilio from 'twilio';
 import { ConfigService } from '../config/config.service';
-
-const UNIFONIC_SEND_URL = 'https://el.cloud.unifonic.com/rest/SMS/messages';
+import { redactPhone } from '../common/security/redact';
 
 @Injectable()
 export class SmsService {
   private readonly logger = new Logger(SmsService.name);
+  private readonly client?: Twilio.Twilio;
+  private readonly fromNumber?: string;
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(private readonly config: ConfigService) {
+    const sid = this.config.twilioAccountSid;
+    const token = this.config.twilioAuthToken;
+    this.fromNumber = this.config.twilioFromNumber;
+    if (!sid || !token || !this.fromNumber) return; // not configured — sendOtpCode returns false
+    // Bounds every request this client makes (Twilio's own SDK default is
+    // 30s otherwise) — see SMS_TIMEOUT_MS in env.schema.ts.
+    this.client = Twilio(sid, token, { timeout: this.config.smsTimeoutMs });
+  }
 
   /**
-   * Citizen public flow OTP delivery over SMS, via Unifonic's REST API
-   * (plain HTTP form POST — no SDK). Same soft-fail contract as
-   * MailerService.sendOtpCode (never throws; a hard failure would strand a
+   * Citizen public flow OTP delivery over SMS — same soft-fail contract as
+   * MailerService's sends (never throws; a hard failure would strand a
    * citizen with no way to get a code).
    */
   async sendOtpCode(phoneNumber: string, code: string): Promise<boolean> {
-    const appSid = this.config.unifonicAppSid;
-    const senderId = this.config.unifonicSenderId;
-    if (!appSid || !senderId) return false; // not configured
+    if (!this.client || !this.fromNumber) return false;
     try {
-      const body = new URLSearchParams({
-        AppSid: appSid,
-        SenderID: senderId,
-        Body: `Your RIO survey verification code is ${code}. It expires in 10 minutes.`,
-        Recipient: phoneNumber,
-        responseType: 'JSON',
+      await this.client.messages.create({
+        to: phoneNumber,
+        from: this.fromNumber,
+        body: `Your RIO survey verification code is ${code}. It expires in 10 minutes.`,
       });
-      const res = await fetch(UNIFONIC_SEND_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body,
-      });
-      const data = (await res.json()) as { success?: boolean; errorCode?: number; message?: string };
-      if (!res.ok || data.success === false) {
-        this.logger.error(`Unifonic rejected OTP send to ${phoneNumber}: ${data.message ?? res.status}`);
-        return false;
-      }
       return true;
     } catch (err) {
-      this.logger.error(`Failed to text OTP code to ${phoneNumber}`, err as Error);
+      this.logger.error(`Failed to text OTP code to ${redactPhone(phoneNumber)}`, err as Error);
       return false;
     }
   }

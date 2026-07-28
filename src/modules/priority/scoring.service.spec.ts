@@ -1,4 +1,36 @@
 import { describe, it, expect } from 'vitest';
+import type { ParsedAnswer } from './scoring.service';
+
+// Minimal local shapes for this file's own mock fixtures — not the full
+// Prisma models (which would force every fixture to fill in dozens of
+// irrelevant required fields), just the subset these inline helpers
+// (deliberately mirroring scoring.service.ts/rollup.service.ts's real
+// logic) actually read.
+interface TestQuestion {
+  questionId: string;
+  measurementMode?: string;
+  conditionalRule?: { dependsOn?: string; value?: string } | null;
+  isScoreable?: boolean;
+}
+
+interface TestLookup {
+  id: string;
+  questionId: string;
+  optionId?: string | null;
+  lookupType?: string;
+  isExcluded?: boolean;
+  exclusionReason?: string | null;
+  numericFloor?: number | string | null;
+  numericCeiling?: number | string | null;
+  severityDirection?: string;
+  severityScore?: number | string | null;
+}
+
+interface TestResponseScore {
+  scoreStatus: string;
+  severityScore: number | string | null;
+  exclusionReason?: string | null;
+}
 
 /**
  * Unit tests for DeterministicScoringService — scoring logic only.
@@ -25,7 +57,7 @@ function toOptionId(label: string): string {
 
 function getOptionExclusion(
   optionId: string | null,
-  lookups: any[],
+  lookups: TestLookup[],
   questionId: string
 ): { lookupId: string; exclusionReason: string } | null {
   if (!optionId) return null;
@@ -42,9 +74,9 @@ function getOptionExclusion(
 }
 
 function calculateSeverity(
-  question: any,
-  parsed: any,
-  lookups: any[]
+  question: TestQuestion,
+  parsed: Partial<ParsedAnswer>,
+  lookups: TestLookup[]
 ): { score: number | null; status: string; scoringLookupId: string | null; exclusionReason?: string } {
   const qId = question.questionId;
   const mode = question.measurementMode;
@@ -83,7 +115,7 @@ function calculateSeverity(
       if (match) sum += Number(match.severityScore || 0);
     }
     const score = Math.min(sum, 100);
-    return { score, status: 'SCORED', scoringLookupId: usedLookupId };
+    return { score, status: 'SCORED', scoringLookupId: usedLookupId ?? null };
   }
 
   // SINGLE_SELECT or LIKERT_5
@@ -111,7 +143,7 @@ function calculateSeverity(
 
 // ─── Rollup "valid" filter matching rollup.service.ts line 303 exactly ───────
 
-function computeQuestionRollup(responseScores: any[]) {
+function computeQuestionRollup(responseScores: TestResponseScore[]) {
   const scoredItems = responseScores.filter(
     (s) => s.scoreStatus === 'SCORED' && s.severityScore !== null
   );
@@ -356,7 +388,10 @@ describe('Exclusion handling — score is null and excluded from denominator', (
 
   it('not-applicable conditional → scoreStatus=NOT_APPLICABLE, score=null', () => {
     // evaluateConditionalRule returns false when parent answer does not match
-    function evaluateConditionalRule(question: any, answersMap: Map<string, any>): boolean {
+    function evaluateConditionalRule(
+      question: TestQuestion,
+      answersMap: Map<string, ParsedAnswer>
+    ): boolean {
       if (!question.conditionalRule) return true;
       const rule = question.conditionalRule;
       if (rule.dependsOn) {
@@ -367,8 +402,10 @@ describe('Exclusion handling — score is null and excluded from denominator', (
       return true;
     }
 
-    const q = { questionId: 'Q-C', conditionalRule: { dependsOn: 'Q-PARENT', value: 'YES' } };
-    const answersMap = new Map([['Q-PARENT', { optionId: 'NO' }]]);
+    const q: TestQuestion = { questionId: 'Q-C', conditionalRule: { dependsOn: 'Q-PARENT', value: 'YES' } };
+    const answersMap = new Map<string, ParsedAnswer>([
+      ['Q-PARENT', { optionId: 'NO', optionIds: null, numericValue: null, text: null }],
+    ]);
     expect(evaluateConditionalRule(q, answersMap)).toBe(false);
     // → scoreStatus = 'NOT_APPLICABLE', severityScore = null
   });
@@ -382,8 +419,8 @@ describe('Exclusion handling — score is null and excluded from denominator', (
 
   it('OPEN_TEXT question → parsed.text set, optionId=null — treated as missing/not-scored', () => {
     // parseRawAnswerValue with mode=OPEN_TEXT returns text only, no optionId
-    function parseRaw(raw: any, mode: string) {
-      const res: any = { optionId: null, optionIds: null, numericValue: null, text: null };
+    function parseRaw(raw: unknown, mode: string): ParsedAnswer {
+      const res: ParsedAnswer = { optionId: null, optionIds: null, numericValue: null, text: null };
       if (mode === 'OPEN_TEXT') { res.text = String(raw); }
       return res;
     }

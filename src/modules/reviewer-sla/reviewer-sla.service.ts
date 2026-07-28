@@ -44,9 +44,26 @@ export class ReviewerSlaService {
 
   async listAlerts(): Promise<SlaAlert[]> {
     const role = getOrgStore()?.role;
-    return can(role, "surveyBuilder", "approve")
-      ? this.listSurveyApprovalAlerts()
-      : this.listOwnSurveyStatusAlerts();
+    const [surveyAlerts, reportAlerts] = await Promise.all([
+      can(role, "surveyBuilder", "approve")
+        ? this.listSurveyApprovalAlerts()
+        : this.listOwnSurveyStatusAlerts(),
+      can(role, "reportsDashboards", "approve")
+        ? this.listReportApprovalAlerts()
+        : can(role, "reportsDashboards", "write")
+          ? this.listOwnReportStatusAlerts()
+          : Promise.resolve([]),
+    ]);
+    // Each list is already sorted per its own convention (oldest-first for
+    // a still-open queue, newest-first for already-resolved items) —
+    // interleave both same-convention lists together rather than imposing
+    // one global sort that would mix the two meanings.
+    return [...surveyAlerts, ...reportAlerts].sort((a, b) => {
+      const aTime = new Date(a.createdAt).getTime();
+      const bTime = new Date(b.createdAt).getTime();
+      const pendingQueue = can(role, "surveyBuilder", "approve") || can(role, "reportsDashboards", "approve");
+      return pendingQueue ? aTime - bTime : bTime - aTime;
+    });
   }
 
   // Approver-facing: Surveys awaiting THEIR decision, org-wide.
@@ -92,6 +109,7 @@ export class ReviewerSlaService {
         needId: survey.needId,
         studyId: survey.studyId,
         surveyId: survey.id,
+        reportId: null,
         studyTitle: studyById.get(survey.studyId)?.title ?? survey.studyId,
         needStatement: needById.get(survey.needId)?.statement ?? null,
         touchpoint: "survey_approval",
@@ -140,6 +158,7 @@ export class ReviewerSlaService {
         needId: survey.needId,
         studyId: survey.studyId,
         surveyId: survey.id,
+        reportId: null,
         studyTitle: studyById.get(survey.studyId)?.title ?? survey.studyId,
         needStatement: needById.get(survey.needId)?.statement ?? null,
         touchpoint: isApproved ? "survey_approved" : "survey_rejected",
@@ -149,6 +168,92 @@ export class ReviewerSlaService {
         // just means "unread" (see markReviewerSlaAlertsSeen on the frontend).
         status: "pending",
         comments: isApproved ? undefined : survey.approverComments,
+      };
+    });
+
+    return alerts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  // Approver-facing: Reports the Research Officer has confirmed but that
+  // are still awaiting Approve/Reject, org-wide. No configured SLA clock
+  // for Reports (unlike Surveys) — this is a plain "needs your attention"
+  // notification, so `status` is always "pending", never at_risk/breached.
+  private async listReportApprovalAlerts(): Promise<SlaAlert[]> {
+    const { pendingReports, studies } = await this.tenant.runInOrgContext(async (tx) => {
+      const pendingReports = await tx.report.findMany({
+        where: { status: "draft", officerConfirmedAt: { not: null } },
+        orderBy: { officerConfirmedAt: "asc" },
+      });
+      const studyIds = Array.from(
+        new Set(pendingReports.map((r) => r.studyId).filter((id): id is string => id !== null)),
+      );
+      const studies = await tx.study.findMany({ where: { id: { in: studyIds } } });
+      return { pendingReports, studies };
+    });
+
+    const studyById = new Map(studies.map((s) => [s.id, s]));
+
+    const alerts: SlaAlert[] = pendingReports.map((report) => {
+      // officerConfirmedAt is guaranteed non-null by the where clause above.
+      const confirmedAt = report.officerConfirmedAt!;
+      return {
+        id: report.id,
+        type: "report_approval",
+        needId: null,
+        studyId: report.studyId,
+        surveyId: null,
+        reportId: report.id,
+        // A Report may be org-wide (studyId null — see Report.studyId's own
+        // comment), so this can't always resolve to a real Study title; the
+        // Report's own title is always meaningful either way.
+        studyTitle: report.title,
+        needStatement: report.studyId ? (studyById.get(report.studyId)?.title ?? null) : null,
+        touchpoint: "report_approval",
+        createdAt: confirmedAt.toISOString(),
+        dueAt: confirmedAt.toISOString(),
+        status: "pending",
+      };
+    });
+
+    return alerts.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  }
+
+  // Research Officer-facing: their own generated Reports that just got
+  // resolved (released or rejected).
+  private async listOwnReportStatusAlerts(): Promise<SlaAlert[]> {
+    const actorId = requireActor();
+
+    const resolvedReports = await this.tenant.runInOrgContext((tx) =>
+      tx.report.findMany({
+        where: { generatedBy: actorId, status: { in: ["released", "rejected"] } },
+        orderBy: { reviewedAt: "desc" },
+      }),
+    );
+
+    const alerts: SlaAlert[] = resolvedReports.map((report) => {
+      const isApproved = report.status === "released";
+      // reviewedAt is always set on the Approve/Reject transition (see
+      // ReportsService.approve/reject) — the `?? generatedAt` fallback is
+      // defensive only, never expected to trigger.
+      const resolvedAt = report.reviewedAt ?? report.generatedAt;
+      return {
+        id: report.id,
+        type: isApproved ? "report_released" : "report_rejected",
+        needId: null,
+        studyId: report.studyId,
+        surveyId: null,
+        reportId: report.id,
+        studyTitle: report.title,
+        needStatement: null,
+        touchpoint: isApproved ? "report_released" : "report_rejected",
+        createdAt: resolvedAt.toISOString(),
+        dueAt: resolvedAt.toISOString(),
+        // No SLA clock applies to an already-resolved item — "pending" here
+        // just means "unread" (see markReviewerSlaAlertsSeen on the frontend).
+        status: "pending",
+        // Reports have no rejection-reason field today (unlike Surveys'
+        // approverComments) — nothing to surface here yet.
+        comments: undefined,
       };
     });
 

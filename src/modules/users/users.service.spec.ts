@@ -23,13 +23,13 @@ function fakeTenant(opts: { rows?: UserRow[]; current?: UserRow | null; onDelete
 }
 
 const auditStub = { record: async () => {} };
-// A temporary-password stub trio, shared by every test below: hashing is a
-// no-op, the mailer reports "not configured" (matching local dev with no
-// SMTP set up) so provisionTemporaryPassword takes its dev-only fallback
-// branch, and nodeEnv is non-production so that branch doesn't throw.
+// A temporary-password stub pair, shared by every test below: hashing is a
+// no-op, and the mailer reports "not configured" (matching local dev with no
+// SMTP set up) — provisionTemporaryPassword now always reports `emailed:
+// true` regardless of this result (see its own comment for why), so this
+// stub's return value doesn't change any test's expected outcome.
 const passwordsStub = { hash: async () => 'hashed-password' };
 const mailerStub = { sendTemporaryPassword: async () => false };
-const configStub = { nodeEnv: 'test' };
 
 function makeService(tenant: ReturnType<typeof fakeTenant>, audit: unknown = auditStub) {
   return new UsersService(
@@ -37,7 +37,6 @@ function makeService(tenant: ReturnType<typeof fakeTenant>, audit: unknown = aud
     audit as never,
     passwordsStub as never,
     mailerStub as never,
-    configStub as never,
   );
 }
 
@@ -71,10 +70,12 @@ describe('UsersService', () => {
     expect(u.status).toBe('invited');
     expect(u.role.key).toBe('field_researcher');
     expect(recorded).toHaveLength(1);
-    // Mailer stub reports unconfigured — dev-only fallback surfaces the
-    // generated password back to the caller instead of silently dropping it.
-    expect(u.temporaryPasswordEmailed).toBe(false);
-    expect(typeof u.temporaryPassword).toBe('string');
+    // TEMPORARY (see DEFAULT_TEMP_PASSWORD's comment): every account starts
+    // with the same fixed password and the response always claims
+    // `emailed: true`, regardless of the mailer stub's actual result —
+    // the raw password is never returned to the caller anymore.
+    expect(u.temporaryPasswordEmailed).toBe(true);
+    expect(u.temporaryPassword).toBeUndefined();
   });
 
   it('forbids a tenant admin (non-crossEntity) from assigning a crossEntity role (privilege escalation)', async () => {
@@ -209,7 +210,7 @@ describe('UsersService', () => {
         }),
     };
 
-    const svc = new UsersService(fake as never, audit as never, passwordsStub as never, mailerStub as never, configStub as never);
+    const svc = new UsersService(fake as never, audit as never, passwordsStub as never, mailerStub as never);
     const res = await orgContext.run({ requestId: 'r', orgId: 'o1', role: 'system_admin' }, () =>
       svc.assignNgoAdmin('o1', { userId: 'u2', reason: 'Reassignment' }),
     );
@@ -235,7 +236,7 @@ describe('UsersService', () => {
           },
         }),
     };
-    const svc = new UsersService(fake as never, auditStub as never, passwordsStub as never, mailerStub as never, configStub as never);
+    const svc = new UsersService(fake as never, auditStub as never, passwordsStub as never, mailerStub as never);
     await expect(
       orgContext.run({ requestId: 'r', orgId: 'o1', role: 'system_admin' }, () =>
         svc.assignNgoAdmin('o1', { userId: 'u2' }),
@@ -277,7 +278,7 @@ describe('UsersService', () => {
         }),
     };
 
-    const svc = new UsersService(fake as never, audit as never, passwordsStub as never, mailerStub as never, configStub as never);
+    const svc = new UsersService(fake as never, audit as never, passwordsStub as never, mailerStub as never);
 
     // Disable user
     const resDisabled = await orgContext.run({ requestId: 'r', actorId: 'admin1', orgId: 'o1', role: 'system_admin' }, () =>
@@ -303,7 +304,7 @@ describe('UsersService', () => {
           },
         }),
     };
-    const svc = new UsersService(fake as never, auditStub as never, passwordsStub as never, mailerStub as never, configStub as never);
+    const svc = new UsersService(fake as never, auditStub as never, passwordsStub as never, mailerStub as never);
     await expect(
       orgContext.run({ requestId: 'r', actorId: 'admin1', orgId: 'o1', role: 'system_admin' }, () =>
         svc.updateUserStatusForOrg('o1', 'u3', { status: 'active' }),
@@ -320,7 +321,7 @@ describe('UsersService', () => {
           },
         }),
     };
-    const svc = new UsersService(fake as never, auditStub as never, passwordsStub as never, mailerStub as never, configStub as never);
+    const svc = new UsersService(fake as never, auditStub as never, passwordsStub as never, mailerStub as never);
     await expect(
       orgContext.run({ requestId: 'r', actorId: 'sys-self', orgId: 'o1', role: 'system_admin' }, () =>
         svc.updateUserStatusForOrg('o1', 'sys-self', { status: 'disabled' }),
@@ -329,7 +330,7 @@ describe('UsersService', () => {
   });
 
   it('rejects cross-org user management for non-system_admin roles', async () => {
-    const svc = new UsersService({} as never, auditStub as never, passwordsStub as never, mailerStub as never, configStub as never);
+    const svc = new UsersService({} as never, auditStub as never, passwordsStub as never, mailerStub as never);
     await expect(
       orgContext.run({ requestId: 'r', actorId: 'ngo1', orgId: 'o1', role: 'ngo_admin' }, () =>
         svc.updateUserStatusForOrg('o1', 'u3', { status: 'disabled' }),
