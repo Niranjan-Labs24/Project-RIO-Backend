@@ -1,6 +1,7 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
+import { ScheduleModule } from '@nestjs/schedule';
 import { LoggerModule } from 'nestjs-pino';
 import { PermissionGuard } from './common/guards/permission.guard';
 import { CsrfGuard } from './common/guards/csrf.guard';
@@ -44,6 +45,7 @@ import { CollectiveDashboardModule } from './modules/collective-dashboard/collec
 import { AiModule } from './modules/ai/ai.module';
 import { QuestionsModule } from './modules/questions/questions.module';
 import { SurveysModule } from './modules/surveys/surveys.module';
+import { BackupModule } from './modules/backup/backup.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -65,6 +67,9 @@ import { AppController } from './app.controller';
         signOptions: { expiresIn: config.jwtExpiresIn as unknown as number },
       }),
     }),
+    // Global: makes SchedulerRegistry injectable anywhere (BackupModule)
+    // without importing ScheduleModule again there.
+    ScheduleModule.forRoot(),
     PrismaModule,
     RedisModule,
     TenancyModule,
@@ -98,6 +103,7 @@ import { AppController } from './app.controller';
     AiModule,
     QuestionsModule,
     SurveysModule,
+    BackupModule,
   ],
   controllers: [AppController],
   providers: [

@@ -13,6 +13,11 @@ export class ConfigService {
     return this.config[key];
   }
 
+  // Owner-role connection — see env.schema.ts's comment on DATABASE_URL for
+  // why BackupService (and only BackupService) reads this at runtime.
+  get databaseUrl(): string {
+    return this.config.DATABASE_URL;
+  }
   get appDatabaseUrl(): string {
     return this.config.APP_DATABASE_URL;
   }
@@ -95,5 +100,14 @@ export class ConfigService {
   }
   get smsTimeoutMs(): number {
     return this.config.SMS_TIMEOUT_MS;
+  }
+  get backupDir(): string {
+    return this.config.BACKUP_DIR;
+  }
+  get backupCronSchedule(): string {
+    return this.config.BACKUP_CRON_SCHEDULE;
+  }
+  get pgDumpPath(): string | undefined {
+    return this.config.PG_DUMP_PATH;
   }
 }

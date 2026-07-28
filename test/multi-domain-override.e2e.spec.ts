@@ -126,7 +126,7 @@ describe("Need -> multi-pair Override Domain -> Approve (e2e)", () => {
       .post(`/api/needs/${needId}/ai-review/override-domain`)
       .set("Cookie", reviewerCookies)
       .set("x-csrf-token", reviewerCsrf)
-      .send({ pairs: previewPairs })
+      .send({ pairs: previewPairs, reason: "Spans both Health and Education." })
       .expect(201);
 
     const afterPreview = await request(server).get(`/api/needs/${needId}`).set("Cookie", officerCookies).expect(200);

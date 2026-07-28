@@ -4,6 +4,7 @@ import { validateEnv } from './env.schema';
 const valid = {
   NODE_ENV: 'development',
   PORT: '3000',
+  DATABASE_URL: 'postgresql://cnap_owner:pw@localhost:5432/cnap',
   APP_DATABASE_URL: 'postgresql://cnap_app:pw@localhost:5432/cnap',
   SUPERVISOR_DATABASE_URL: 'postgresql://cnap_supervisor:pw@localhost:5432/cnap',
   JWT_SECRET: 'test_jwt_secret_at_least_32_chars_long_xx',
@@ -32,14 +33,9 @@ describe('validateEnv', () => {
     expect(() => validateEnv({ ...valid, NODE_ENV: 'banana' })).toThrow(/NODE_ENV/);
   });
 
-  it('does not require DATABASE_URL (owner creds are CLI-only, not app config)', () => {
-    const { DATABASE_URL: _omit, ...rest } = { ...valid, DATABASE_URL: 'ignored' };
-    expect(() => validateEnv(rest)).not.toThrow();
-  });
-
-  it('ignores an extra DATABASE_URL key if present in the environment', () => {
-    const cfg = validateEnv({ ...valid, DATABASE_URL: 'postgresql://cnap_owner:pw@localhost:5432/cnap' });
-    expect(cfg.APP_DATABASE_URL).toContain('cnap_app');
+  it('requires DATABASE_URL (BackupService reads it at runtime for pg_dump)', () => {
+    const { DATABASE_URL: _omit, ...rest } = valid;
+    expect(() => validateEnv(rest)).toThrow(/DATABASE_URL/);
   });
 
   it('defaults NODE_ENV to production when omitted (fail-safe)', () => {
