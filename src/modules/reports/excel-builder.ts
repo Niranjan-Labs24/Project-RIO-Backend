@@ -145,6 +145,34 @@ export async function renderReportExcel(doc: ReportDoc): Promise<Buffer> {
         summary.addRow({ field: `— ${s.heading} —`, value: "" }).font = { bold: true };
         kv("", s.text);
         break;
+      // Count tiles are label/value pairs — they belong on the Summary sheet
+      // next to the rest of the report's identity, not on a chart sheet of
+      // their own (the figures are unrelated to each other by design).
+      case "stats":
+        summary.addRow({ field: `— ${s.heading} —`, value: "" }).font = { bold: true };
+        for (const t of s.tiles) kv(t.label, t.sub ? `${t.value} (${t.sub})` : t.value, true);
+        break;
+      // One row per group, one column per series, plus the delta — the same
+      // comparison the PDF draws as paired bars, in the form a spreadsheet
+      // user can actually sort and filter.
+      case "groupedBars": {
+        const sheet = wb.addWorksheet(uniqueSheetName(wb, s.heading));
+        sheet.columns = [
+          { header: "Metric", key: "group", width: 30 },
+          ...s.series.map((se, i) => ({ header: se.name, key: `s${i}`, width: 18 })),
+          ...(s.series.length === 2 ? [{ header: "Difference", key: "delta", width: 14 }] : []),
+        ];
+        styleHeaderRow(sheet.getRow(1));
+        s.groups.forEach((g, gi) => {
+          const row: Record<string, string | number> = { group: g };
+          s.series.forEach((se, si) => (row[`s${si}`] = se.values[gi] ?? 0));
+          if (s.series.length === 2) {
+            row.delta = (s.series[0]!.values[gi] ?? 0) - (s.series[1]!.values[gi] ?? 0);
+          }
+          sheet.addRow(row);
+        });
+        break;
+      }
     }
   }
 

@@ -119,6 +119,100 @@ export interface AiSummaryBlock {
   recommendations: string[];
 }
 
+// ──────── Survey-scoped reports (RPT01 / RPT15) ────────
+
+/** Identity band for a report generated from ONE survey, as opposed to a whole
+ *  study. Answers "which survey, under which need, covering where, when". */
+export interface SurveyIdentity {
+  surveyId: string;
+  surveyTitle: string;
+  surveyStatus: string;
+  needStatement: string;
+  needStatus: string;
+  villageName: string;
+  assessmentCycle: number;
+  assessmentPeriod: string;
+  /** Snapshot taken at publish time — never a live methodology reference. */
+  methodologyVersion: string | null;
+  publishedAt: string | null; // ISO-8601
+}
+
+/** Survey-level volume/coverage counts. Every field is a real count; an empty
+ *  study reports honest zeros rather than omitting the tile, so the band keeps
+ *  the same shape across reports. Built by providers/coverage-counts.ts. */
+export interface CoverageBlock {
+  studyTitle: string;
+  studyCycleNumber: number;
+  needsInStudy: number;
+  /** Always 1 — a Survey belongs to one Need. Rendered as "1 of N". */
+  needsCoveredByThisSurvey: number;
+  surveysInStudy: number;
+  villagesCovered: number;
+  villageNames: string[];
+  governoratesCovered: number;
+  centersCovered: number;
+  surveyQuestionsTotal: number;
+  surveyQuestionsFromBank: number;
+  surveyQuestionsCustom: number;
+  publicSurveyLinks: number;
+  activeSurveyLinks: number;
+  responsesSubmitted: number;
+  responsesValid: number;
+  responsesExcluded: number;
+  dontKnowRatePct: number;
+  duplicateResponses: number;
+  lowConfidenceResponses: number;
+  evidenceFilesTotal: number;
+  evidenceIncludedInReport: number;
+  domainsScored: number;
+  kpisScored: number;
+  assessmentPeriod: string;
+}
+
+/** Organisation-wide volume counts — RPT15 only. Org-scoped, never cross-org. */
+export interface PortfolioBlock {
+  studiesTotal: number;
+  needsTotal: number;
+  needsByStatus: Array<{ label: string; count: number }>;
+  surveysTotal: number;
+  surveysByStatus: Array<{ label: string; count: number }>;
+  publicLinksTotal: number;
+  responsesTotal: number;
+  evidenceFilesTotal: number;
+  reportsTotal: number;
+  reportsByStatus: Array<{ label: string; count: number }>;
+  sharingRequestsTotal: number;
+  sharingRequestsByStatus: Array<{ label: string; count: number }>;
+  villagesCovered: number;
+  governoratesCovered: number;
+  /** How much of the org's total field data this one survey represents. */
+  thisSurveyShareOfResponsesPct: number;
+}
+
+/** One step of the data-collection funnel — links → submitted → valid → scored.
+ *  Rendered as bars so drop-off between stages is visible at a glance. */
+export interface FunnelStage {
+  stage: string;
+  count: number;
+}
+
+/** Questions contributing to each domain in this survey — a bar chart that
+ *  shows where the questionnaire's weight actually sits. */
+export interface DomainCount {
+  domain: string;
+  count: number;
+}
+
+/** One row of RPT15's reconciliation band: this survey against the org-wide
+ *  figure for the same metric. `delta` is survey − org. */
+export interface ComparisonRow {
+  metric: string;
+  surveyValue: number;
+  orgAverage: number;
+  delta: number;
+  direction: "above" | "below" | "inline";
+}
+
 /** Two-actor audit block — Officer confirms, Reviewer approves (Step 3 fills
  *  the officer fields; null-safe until then). */
 export interface ApprovalBlock {
@@ -149,6 +243,89 @@ export interface VillageReportContent {
   demographics: Demographics | null;
   // Applied dashboard filters snapshotted at generation time — the belt-and-
   // suspenders half of the reconcile guarantee.
+  filters: Record<string, unknown>;
+}
+
+/** RPT01 Individual Survey Report — one survey, end to end.
+ *
+ *  Deliberately carries `header` + `severity` so it satisfies the `isCore`
+ *  predicate in report-doc.ts and report-content-view.tsx, and therefore
+ *  inherits the existing gauge / radar / severity-bars / demographics-donut
+ *  rendering for free. `coverage`, `responseFunnel` and `questionCoverage` are
+ *  the new blocks this report adds on top. */
+export interface IndividualSurveyReportContent {
+  header: ReportHeader;
+  survey: SurveyIdentity;
+  coverage: CoverageBlock;
+  responseQuality: ResponseQuality;
+  severity: SeverityBlock;
+  priority: PriorityBlock;
+  topKpis: TopKpi[];
+  responseFunnel: FunnelStage[];
+  questionCoverage: DomainCount[];
+  qualitativeEvidence: QualitativeEvidenceItem[];
+  aiSummary: AiSummaryBlock;
+  dataQualityNote: string;
+  trendNote: string;
+  approval: ApprovalBlock;
+  demographics: Demographics | null;
+  filters: Record<string, unknown>;
+}
+
+/** RPT15 Survey & Dashboard Report — one survey's results merged with
+ *  the organisation's dashboard outputs, plus the band that reconciles them.
+ *
+ *  Reconciliation rule: `responseQuality` / `severity` / `priority` / `topKpis`
+ *  / `demographics` MUST come from the same ReportDataSnapshot that RPT01 uses,
+ *  and `dashboard.*` from a single getCollectiveDashboard() call. Recomputing a
+ *  figure twice is how the two halves silently drift apart — see the
+ *  reconciliation spec. */
+export interface CombinedReportContent {
+  header: ReportHeader;
+  survey: SurveyIdentity;
+  coverage: CoverageBlock;
+  portfolio: PortfolioBlock;
+
+  // ── Survey half (same shapes as RPT01, same snapshot) ──
+  responseQuality: ResponseQuality;
+  severity: SeverityBlock;
+  priority: PriorityBlock;
+  topKpis: TopKpi[];
+  responseFunnel: FunnelStage[];
+  questionCoverage: DomainCount[];
+  demographics: Demographics | null;
+
+  // ── Dashboard half ──
+  dashboard: {
+    // The survey half is a frozen snapshot; the dashboard is live at generation
+    // time. Both stamps are rendered so a reader knows what each half is as-of.
+    capturedAt: string;
+    kpis: {
+      needCount: number;
+      slaCompliancePct: number | null;
+      slaBreaches: number;
+      slaAtRisk: number;
+    };
+    scoringDistribution: Array<{ band: string; count: number }>;
+    topPriorities: Array<{
+      rank: number;
+      label: string;
+      domain: string;
+      severityScore: number;
+      entity?: string;
+    }>;
+    trends: Array<{ label: string; direction: "up" | "down" | "flat"; note: string }>;
+    anomalies: string[];
+    reviewerNotes: Array<{ author: string; note: string; at: string }>;
+  };
+
+  /** What makes this "combined" rather than two reports stapled together. */
+  comparison: ComparisonRow[];
+
+  aiSummary: AiSummaryBlock;
+  dataQualityNote: string;
+  trendNote: string;
+  approval: ApprovalBlock;
   filters: Record<string, unknown>;
 }
 

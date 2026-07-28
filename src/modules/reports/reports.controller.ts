@@ -27,6 +27,7 @@ export class ReportsController {
     @Query("reportType") reportType?: ReportTypeCode,
     @Query("status") status?: ReportStatus,
     @Query("studyId") studyId?: string,
+    @Query("surveyId") surveyId?: string,
     @Query("limit") limit?: string,
     @Query("offset") offset?: string,
   ): Promise<Report[]> {
@@ -35,6 +36,7 @@ export class ReportsController {
       reportType,
       status,
       studyId,
+      surveyId: surveyId || undefined,
       limit: parseIntParam(limit),
       offset: parseIntParam(offset),
     };
