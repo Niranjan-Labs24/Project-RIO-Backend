@@ -6,6 +6,9 @@ one worked example module (`notes`).
 
 ## Prerequisites
 - Node 24 LTS, pnpm 10, Docker Desktop
+- `pg_dump` on `PATH`, matching Postgres 18 (`postgresql-client-18`) — only needed if running the
+  app directly on the host (`pnpm dev`/`pnpm start`); the Docker image installs it already. Without
+  it, `BackupService`'s scheduled backup logs an error every tick but does not crash the app.
 
 ## Quick start (local dev, app runs on the host)
 ```bash
@@ -51,8 +54,10 @@ ALTER ROLE cnap_app WITH PASSWORD '<new-random-secret>';
 ALTER ROLE cnap_supervisor WITH PASSWORD '<new-random-secret>';
 ```
 then update `DATABASE_URL`/`APP_DATABASE_URL`/`SUPERVISOR_DATABASE_URL` (and
-`DOCKER_APP_DATABASE_URL`/`DOCKER_SUPERVISOR_DATABASE_URL` if using Compose) to match before
-starting the app against that database.
+`DOCKER_DATABASE_URL`/`DOCKER_APP_DATABASE_URL`/`DOCKER_SUPERVISOR_DATABASE_URL` if using Compose)
+to match before starting the app against that database. Also grant `cnap_owner` the `BYPASSRLS`
+attribute at this point — see "Database backup — required role prerequisite" below; it's a separate
+grant from anything above and easy to miss during provisioning.
 
 ### Env vars (see `.env.example` for full defaults/comments)
 - `CORS_ORIGIN` — single frontend origin allowed to send credentialed (cookie) requests. Defaults to
@@ -72,6 +77,39 @@ starting the app against that database.
   with this on, cross-site (different-site frontend/API) deployments additionally need
   `sameSite: 'none'` on the session/CSRF cookies (`session-cookie.ts`) — that is a separate,
   not-yet-automated deploy-config step, out of scope for the guard itself.
+- `BACKUP_DIR` — directory `BackupService`'s periodic `pg_dump` writes into (created if missing;
+  default `./storage/backups`). `BACKUP_CRON_SCHEDULE` — standard 5-field cron expression for how
+  often it runs (default weekly, `0 3 * * 0`, Sundays at 03:00 — use a faster interval like
+  `*/1 * * * *` to verify a new environment's backup works, then leave it at the weekly default).
+  `PG_DUMP_PATH` — optional override when the bare `pg_dump` on `PATH` doesn't match the server's
+  major version (common with Homebrew's "linked version" model on a dev machine; not needed in
+  Docker, which only ever has one matching version installed). Requires `pg_dump` on `PATH`
+  (see "Prerequisites" above) and
+  reads `DATABASE_URL` (not `APP_DATABASE_URL`) for a connection that bypasses RLS — see
+  `env.schema.ts`'s comment on `DATABASE_URL` for why.
+
+### Database backup — required role prerequisite (`cnap_owner` BYPASSRLS)
+`BackupService`'s `pg_dump` connects as `cnap_owner` (via `DATABASE_URL`) rather than the app's own
+`NOBYPASSRLS` roles, since a complete backup can't be RLS-filtered — see the "Backup DB role"
+decision above. That alone is **not sufficient**, though: this schema applies
+`FORCE ROW LEVEL SECURITY` on most tables (`ai_decisions`, `surveys`, `village_priority_assessments`,
+`response_answers`, and ~20 others — see the `FORCE ROW LEVEL SECURITY` migrations), which strips
+even a table's own owner of the usual RLS bypass. Without one more grant, `pg_dump` fails partway
+through with `ERROR: query would be affected by row-level security policy for table "..."` the
+moment it reaches the first FORCE-RLS table — confirmed by actually running it, not just inferred.
+
+**This is a one-time database role/permission prerequisite, not an application or schema change** —
+no migration, no table DDL, nothing Prisma tracks. It must be applied once per environment (as the
+Postgres superuser, not as `cnap_owner` itself — `cnap_owner`'s own `CREATEROLE` doesn't extend to
+altering its own attributes) during database provisioning, before backups can succeed there:
+```sql
+ALTER ROLE cnap_owner BYPASSRLS;
+```
+Treat this the same way as the `cnap_owner`/`cnap_app`/`cnap_supervisor` password rotation step
+above — a manual provisioning step for whoever sets up each environment's database, tracked here
+rather than in a migration file. Confirmed working end-to-end locally: `pg_dump` against a
+`cnap` database with this grant applied produces a valid, restorable custom-format archive; without
+it, the same command fails on the first FORCE-RLS table it reaches.
 
 ## Running the whole stack in Docker (db + api)
 ```bash

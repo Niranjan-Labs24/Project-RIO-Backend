@@ -27,6 +27,26 @@ FROM node:24-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83
 WORKDIR /app
 RUN corepack enable
 ENV NODE_ENV=production
+# BackupService shells out to `pg_dump` (see src/modules/backup) — not
+# available on node:24-slim by default. The db service runs postgres:18
+# (see db/Dockerfile), and pg_dump generally needs to be >= the server's
+# major version, which the base image's own Debian repos aren't guaranteed
+# to carry yet — pull postgresql-client-18 from the official PGDG apt repo
+# instead of whatever `postgresql-client` happens to resolve to, so the
+# client version is pinned to match the server rather than left to chance.
+# curl/gnupg/ca-certificates are build-time-only (fetching+verifying the
+# PGDG signing key) and are purged again before this layer is done, so the
+# final image only carries postgresql-client-18 itself.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends curl ca-certificates gnupg \
+  && install -d /usr/share/postgresql-common/pgdg \
+  && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+  && . /etc/os-release \
+  && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends postgresql-client-18 \
+  && apt-get purge -y --auto-remove curl gnupg \
+  && rm -rf /var/lib/apt/lists/*
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 # Production install only: the app never imports the `prisma` CLI, ts-node,
 # @nestjs/cli, etc. at runtime. Everything the running app needs
@@ -45,7 +65,8 @@ COPY --from=build /app/dist ./dist
 # EVIDENCE_STORAGE_PATH (default ./storage/evidence, relative to /app) the
 # first time a file is written — pre-create the parent here, owned by the
 # non-root runtime user below, so that first write doesn't need root.
-RUN mkdir -p /app/storage/evidence
+# BackupService does the same under BACKUP_DIR (default ./storage/backups).
+RUN mkdir -p /app/storage/evidence /app/storage/backups
 # node:24-slim (the official Docker image) already ships a non-root `node`
 # user/group (uid/gid 1000) — reused here rather than creating a new one.
 # Everything under /app must be owned by it, not just storage/, since the
