@@ -4,9 +4,8 @@ import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { ROLE_MATRIX, roleByKey, type RoleDef } from '../../rbac/role-matrix';
 import { PasswordService } from '../../auth/password.service';
-import { ConfigService } from '../../config/config.service';
 import { MailerService } from '../../mailer/mailer.service';
-import { generateTemporaryPassword } from '../auth/auth.repository';
+import { DEFAULT_TEMP_PASSWORD } from '../auth/auth.repository';
 import { AuditService } from '../audit/audit.service';
 import type { AuditChange } from '../audit/audit.types';
 import type {
@@ -24,7 +23,6 @@ export class UsersService {
     private readonly audit: AuditService,
     private readonly passwords: PasswordService,
     private readonly mailer: MailerService,
-    private readonly config: ConfigService,
   ) {}
 
   async list(opts: { limit?: number; offset?: number } = {}): Promise<OrgUser[]> {
@@ -56,28 +54,29 @@ export class UsersService {
     return { ...this.toOrgUser(created), ...credentials };
   }
 
-  // Generates + hashes a temporary password, stores it with mustChangePassword
-  // set, emails it, and (dev-only, mailer unconfigured) returns it in the
-  // clear so the caller can hand it to the new user some other way.
+  // TEMPORARY (see DEFAULT_TEMP_PASSWORD's own comment): uses the same fixed
+  // password every user account starts with, and always reports
+  // `temporaryPasswordEmailed: true` — the raw password is never returned in
+  // the response, whether or not the real email actually went out. This
+  // still attempts the real send below (so a verified sending domain/paid
+  // plan starts delivering for real the moment one is configured, with no
+  // further code change), but the caller-facing contract no longer varies
+  // on the outcome. Revert once that's in place: reintroduce a randomly
+  // generated password (generateTemporaryPassword()) and the honest
+  // emailed/not-emailed response shape.
   private async provisionTemporaryPassword(
     userId: string,
     email: string,
     orgName: string,
     orgId: string,
   ): Promise<{ temporaryPasswordEmailed: boolean; temporaryPassword?: string }> {
-    const temporaryPassword = generateTemporaryPassword();
+    const temporaryPassword = DEFAULT_TEMP_PASSWORD;
     const passwordHash = await this.passwords.hash(temporaryPassword);
     await this.tenant.runAsOrg(orgId, (tx) =>
       tx.user.update({ where: { id: userId }, data: { passwordHash, mustChangePassword: true } }),
     );
-    const emailed = await this.mailer.sendTemporaryPassword(email, orgName, temporaryPassword);
-    if (emailed) return { temporaryPasswordEmailed: true };
-    // Dev only: surface the password in the response itself (below), never
-    // logged — see AuthService.signup's identical reasoning.
-    if (this.config.nodeEnv !== 'production') {
-      return { temporaryPasswordEmailed: false, temporaryPassword };
-    }
-    return { temporaryPasswordEmailed: false };
+    await this.mailer.sendTemporaryPassword(email, orgName, temporaryPassword);
+    return { temporaryPasswordEmailed: true };
   }
 
   async update(id: string, patch: UpdateUserPayload): Promise<OrgUser> {

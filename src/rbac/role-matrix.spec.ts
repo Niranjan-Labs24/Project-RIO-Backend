@@ -48,8 +48,17 @@ describe('ROLE_MATRIX', () => {
     expect(can('human_reviewer', 'reportsDashboards', 'read')).toBe(true);
     expect(can('human_reviewer', 'reportsDashboards', 'export')).toBe(true);
     expect(can('human_reviewer', 'reportsDashboards', 'approve')).toBe(true);
-    // Confirming a report (step 1) stays the Officer's `write`-gated action,
-    // not the Approver's — unchanged by this fix.
+    // Confirming a report (step 1) is the Officer's `write`-gated action,
+    // not the Approver's.
     expect(can('human_reviewer', 'reportsDashboards', 'write')).toBe(false);
+  });
+
+  it('research officer generates AND confirms their own report; approve stays Approver/NGO-Admin-exclusive', () => {
+    // Product decision: generate-then-confirm is one continuous step owned
+    // by the Officer, not split across a separate Data Analyst handoff (see
+    // role-matrix.ts's reportsDashboards comment on this role).
+    expect(can('ngo_research_officer', 'reportsDashboards', 'create')).toBe(true);
+    expect(can('ngo_research_officer', 'reportsDashboards', 'write')).toBe(true);
+    expect(can('ngo_research_officer', 'reportsDashboards', 'approve')).toBe(false);
   });
 });
