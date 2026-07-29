@@ -8,6 +8,8 @@ import {
   RejectSurveyDto,
   SetMethodologyVersionBody,
   SetMethodologyVersionDto,
+  SetSampleDescriptionBody,
+  SetSampleDescriptionDto,
   SubmitSurveyBody,
   SubmitSurveyDto,
   UpdateSurveyQuestionsBody,
@@ -99,6 +101,25 @@ export class SurveysController {
     return this.service.setMethodologyVersion(id, body.version);
   }
 
+  // Researcher-only, same editability window as setMethodologyVersion — a
+  // Survey Design step (Target Group / Expected Sample Size / Selection
+  // Approach / Geographic Coverage), shown read-only to the Approver during
+  // review via the same GET responses this controller already returns.
+  @Patch('surveys/:id/sample-description')
+  @RequirePermission('surveyBuilder', 'write')
+  setSampleDescription(
+    @Param('id', new UuidParamPipe()) id: string,
+    @Body(new TypeBoxValidationPipe(SetSampleDescriptionBody)) body: SetSampleDescriptionDto,
+  ) {
+    return this.service.setSampleDescription(
+      id,
+      body.targetGroup,
+      body.expectedSampleSize,
+      body.selectionApproach,
+      body.geographicCoverage,
+    );
+  }
+
   // Researcher: hand the current draft (or a fixed-up rejected one) to the
   // Approver. Content itself is saved separately, via updateQuestions above
   // — this route only ever moves status.
@@ -122,7 +143,7 @@ export class SurveysController {
     @Param('id', new UuidParamPipe()) id: string,
     @Body(new TypeBoxValidationPipe(RejectSurveyBody)) body: RejectSurveyDto,
   ) {
-    return this.service.rejectSurvey(id, body.comments);
+    return this.service.rejectSurvey(id, body.reasonCode, body.comments);
   }
 
   @Get('surveys/public/:id')

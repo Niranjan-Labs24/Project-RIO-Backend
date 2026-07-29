@@ -60,7 +60,7 @@ async function main(): Promise<void> {
     let survey = await tx.survey.findFirst({ where: { studyId: study.id }, orderBy: { createdAt: "desc" } });
     if (!survey) {
       survey = await tx.survey.create({
-        data: { orgId, needId: need.id, studyId: study.id, title: `${title} Survey`, status: "published", methodologyVersion: mv.version, publishedAt: new Date(), createdBy },
+        data: { orgId, needId: need.id, studyId: study.id, title: `${title} Survey`, status: "PUBLISHED", methodologyVersion: mv.version, publishedAt: new Date(), createdBy },
       });
     } else if (survey.methodologyVersion !== mv.version) {
       // Realign a placeholder/mismatched version so the dashboard & scoring

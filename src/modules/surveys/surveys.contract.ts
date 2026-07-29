@@ -33,12 +33,31 @@ export const UpdateSurveyQuestionsBody = registerSchema(
 );
 export type UpdateSurveyQuestionsDto = Static<typeof UpdateSurveyQuestionsBody>;
 
+// Matches the Prisma RejectionReasonCode enum's identifiers exactly (see
+// schema.prisma) — REJ_99 is "Other"; every other code is a specific,
+// closed-set reason.
+export const RejectionReasonCode = T.Union([
+  T.Literal('REJ_01'),
+  T.Literal('REJ_02'),
+  T.Literal('REJ_03'),
+  T.Literal('REJ_04'),
+  T.Literal('REJ_05'),
+  T.Literal('REJ_06'),
+  T.Literal('REJ_07'),
+  T.Literal('REJ_99'),
+]);
+
 export const RejectSurveyBody = registerSchema(
   'RejectSurveyBody',
   T.Object({
-    // The Approver's reason — required, since "reject with no explanation"
-    // gives the Researcher nothing to act on before resubmitting.
-    comments: T.String({ minLength: 1, maxLength: 2000 }),
+    // A structured reason is always required. Free-text comments are
+    // optional here at the schema level — comments become mandatory only
+    // when reasonCode is REJ_99 ("Other"), enforced in
+    // SurveysService.rejectSurvey since TypeBox's structural validation
+    // can't express "required only if X" (same reasoning as
+    // SurveyQuestionItem's domain/subDomain/kpi above).
+    reasonCode: RejectionReasonCode,
+    comments: T.Optional(T.String({ minLength: 1, maxLength: 2000 })),
   }),
 );
 export type RejectSurveyDto = Static<typeof RejectSurveyBody>;
@@ -50,6 +69,22 @@ export const SetMethodologyVersionBody = registerSchema(
   }),
 );
 export type SetMethodologyVersionDto = Static<typeof SetMethodologyVersionBody>;
+
+// All four fields are required together — this is a single Save action for
+// the whole Sample Description step, not four independent field updates
+// (matches the frontend's one Card / one Save button). Whether the step as
+// a whole is required before Submit for Approval is enforced separately in
+// SurveysService.submitForApproval, same split as methodologyVersion above.
+export const SetSampleDescriptionBody = registerSchema(
+  'SetSampleDescriptionBody',
+  T.Object({
+    targetGroup: T.String({ minLength: 1, maxLength: 500 }),
+    expectedSampleSize: T.Integer({ minimum: 1 }),
+    selectionApproach: T.String({ minLength: 1, maxLength: 1000 }),
+    geographicCoverage: T.String({ minLength: 1, maxLength: 500 }),
+  }),
+);
+export type SetSampleDescriptionDto = Static<typeof SetSampleDescriptionBody>;
 
 // Keyed by SurveyQuestion.id (a UUID) -> the respondent's free-text answer.
 // Bounded on both axes (question count, answer length) purely as a

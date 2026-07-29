@@ -89,7 +89,7 @@ async function main(): Promise<void> {
         needId: need.id,
         studyId: study.id,
         title: "Ad-Dilam Needs Survey",
-        status: "published",
+        status: "PUBLISHED",
         methodologyVersion: mv.version,
         publishedAt: new Date(),
         createdBy,

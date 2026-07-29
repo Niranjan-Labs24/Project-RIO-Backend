@@ -478,7 +478,11 @@ export class AiDecisionsService {
       return;
     }
     if (survey && survey.status === 'SUBMITTED') {
-      await this.surveys.rejectSurvey(survey.id, comments);
+      // This AI Review reject flow has no reason-code selector of its own
+      // (only free-text comments, always required here) — REJ_99 ("Other")
+      // is the structurally-correct code for a rejection whose reason is
+      // whatever's in `comments`, not one of the fixed Survey Approval codes.
+      await this.surveys.rejectSurvey(survey.id, 'REJ_99', comments);
     }
   }
 

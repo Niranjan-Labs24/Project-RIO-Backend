@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
-import { Prisma } from '../../generated/prisma';
+import { Prisma, RejectionReasonCode } from '../../generated/prisma';
 import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { roleByKey } from '../../rbac/role-matrix';
 import { AuditService } from '../audit/audit.service';
@@ -178,8 +178,13 @@ export class SurveysService {
   private async toSurveyDetailDto(row: {
     id: string; needId: string; studyId: string; title: string; status: string;
     methodologyVersion: string | null;
+    targetGroup: string | null;
+    expectedSampleSize: number | null;
+    selectionApproach: string | null;
+    geographicCoverage: string | null;
     submittedAt: Date | null;
     approverComments: string | null;
+    rejectionReasonCode: RejectionReasonCode | null;
     approvedAt: Date | null; approvedBy: string | null;
     rejectedAt: Date | null; rejectedBy: string | null;
     publishedAt: Date | null; publishedBy: string | null;
@@ -195,8 +200,13 @@ export class SurveysService {
       title: row.title,
       status: row.status,
       methodologyVersion: row.methodologyVersion,
+      targetGroup: row.targetGroup,
+      expectedSampleSize: row.expectedSampleSize,
+      selectionApproach: row.selectionApproach,
+      geographicCoverage: row.geographicCoverage,
       submittedAt: row.submittedAt ? row.submittedAt.toISOString() : null,
       approverComments: row.approverComments,
+      rejectionReasonCode: row.rejectionReasonCode,
       approvedAt: row.approvedAt ? row.approvedAt.toISOString() : null,
       approvedBy: row.approvedBy,
       approvedByName: row.approvedBy ? (names.get(row.approvedBy) ?? null) : null,
@@ -698,6 +708,42 @@ Eligible Questions: ${JSON.stringify(
     return this.getSurveyByNeedId(needId);
   }
 
+  // Researcher: the Sample Description step (Target Group / Expected Sample
+  // Size / Selection Approach / Geographic Coverage) — one Save action for
+  // all four fields together, mandatory before submitForApproval will allow
+  // SUBMITTED (see below). Shown read-only to the Approver during review
+  // via toSurveyDetailDto; approveAndPublish/rejectSurvey never touch it.
+  async setSampleDescription(
+    surveyId: string,
+    targetGroup: string,
+    expectedSampleSize: number,
+    selectionApproach: string,
+    geographicCoverage: string,
+  ) {
+    const needId = await this.tenant.runInOrgContext(async (tx) => {
+      const survey = await tx.survey.findUnique({ where: { id: surveyId } });
+      if (!survey) {
+        throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
+      }
+      this.assertEditable(survey.status);
+      await tx.survey.update({
+        where: { id: surveyId },
+        data: { targetGroup, expectedSampleSize, selectionApproach, geographicCoverage },
+      });
+      return survey.needId;
+    });
+
+    await this.audit.record({
+      action: 'edit',
+      entityType: 'survey',
+      entityId: surveyId,
+      entityLabel: 'Sample Description updated',
+      metadata: this.actorRoleMetadata(),
+    });
+
+    return this.getSurveyByNeedId(needId);
+  }
+
   // ──────── Survey Approval workflow ────────
   // Draft --[Researcher: submitForApproval]--> Submitted
   //   --[Approver: approveAndPublish]--> Published (terminal)
@@ -740,7 +786,6 @@ Eligible Questions: ${JSON.stringify(
         error: { code: 'SURVEY_NO_METHODOLOGY_VERSION', message: 'Select a Methodology Version before submitting this survey for approval.' },
       });
     }
-
     const updated = await this.tenant.runInOrgContext((tx) =>
       tx.survey.update({
         where: { id: surveyId },
@@ -751,6 +796,7 @@ Eligible Questions: ${JSON.stringify(
           // note no longer describes the current pending state. The audit
           // log still has the full history regardless.
           approverComments: null,
+          rejectionReasonCode: null,
           rejectedAt: null,
           rejectedBy: null,
         },
@@ -823,7 +869,7 @@ Eligible Questions: ${JSON.stringify(
   // Approver: sends the survey back to the Researcher with required
   // comments. Never touches surveyQuestions — any content change has to
   // come from the Researcher through updateQuestions after this.
-  async rejectSurvey(surveyId: string, comments: string) {
+  async rejectSurvey(surveyId: string, reasonCode: RejectionReasonCode, comments?: string) {
     const survey = await this.tenant.runInOrgContext((tx) => tx.survey.findUnique({ where: { id: surveyId } }));
     if (!survey) {
       throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
@@ -831,6 +877,16 @@ Eligible Questions: ${JSON.stringify(
     if (survey.status !== 'SUBMITTED') {
       throw new ConflictException({
         error: { code: 'SURVEY_NOT_PENDING_APPROVAL', message: 'This survey is not currently awaiting approval.' },
+      });
+    }
+    // REJ_99 ("Other") is the one code with no fixed meaning of its own —
+    // without comments there, the Researcher gets no explanation at all.
+    // Every other code is already a specific, self-explanatory reason, so
+    // comments stay optional there (enforced here, not in the TypeBox
+    // schema — see RejectSurveyBody's comment for why).
+    if (reasonCode === 'REJ_99' && !comments?.trim()) {
+      throw new BadRequestException({
+        error: { code: 'REJECTION_COMMENTS_REQUIRED', message: 'Comments are required when the rejection reason is "Other".' },
       });
     }
 
@@ -842,7 +898,8 @@ Eligible Questions: ${JSON.stringify(
           status: 'REJECTED',
           rejectedAt: new Date(),
           rejectedBy: actorId,
-          approverComments: comments,
+          rejectionReasonCode: reasonCode,
+          approverComments: comments ?? null,
         },
       }),
     );
@@ -852,7 +909,10 @@ Eligible Questions: ${JSON.stringify(
       entityType: 'survey',
       entityId: surveyId,
       entityLabel: 'Survey rejected',
-      changes: [{ field: 'Approver Comments', before: null, after: comments }],
+      changes: [
+        { field: 'Rejection Reason', before: null, after: reasonCode },
+        { field: 'Approver Comments', before: null, after: comments ?? null },
+      ],
       metadata: this.actorRoleMetadata(),
     });
 
