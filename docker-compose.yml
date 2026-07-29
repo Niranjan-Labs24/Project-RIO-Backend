@@ -78,16 +78,31 @@ services:
       # name instead, so it needs its own value. No hardcoded default: a
       # predictable connection string baked directly into a
       # production-labeled container is exactly the finding this fixes.
-      # NOTE: DATABASE_URL (cnap_owner, the migration/seed role) is
-      # intentionally NOT set here. The api container never runs migrations
-      # (see below) and the app schema no longer accepts/requires owner
-      # credentials — only APP_DATABASE_URL (cnap_app, NOBYPASSRLS).
+      # DATABASE_URL (cnap_owner) here is NOT for migrations — the api
+      # container still never runs those (see below) — it's read only by
+      # BackupService (src/modules/backup) for its pg_dump connection, which
+      # must bypass RLS to produce a complete backup; APP_DATABASE_URL/
+      # SUPERVISOR_DATABASE_URL are both NOBYPASSRLS and would silently
+      # back up an incomplete/empty database instead. See env.schema.ts's
+      # comment on DATABASE_URL for why this is a deliberate exception.
+      DATABASE_URL: ${DOCKER_DATABASE_URL:?DOCKER_DATABASE_URL must be set — see README}
       APP_DATABASE_URL: ${DOCKER_APP_DATABASE_URL:?DOCKER_APP_DATABASE_URL must be set — see README}
       SUPERVISOR_DATABASE_URL: ${DOCKER_SUPERVISOR_DATABASE_URL:?DOCKER_SUPERVISOR_DATABASE_URL must be set — see README}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
       REDIS_URL: redis://redis:6379
       TRUST_PROXY: loopback
       LOG_LEVEL: info
+      # See .env.example — weekly by default; override per-environment via
+      # BACKUP_CRON_SCHEDULE if a faster interval is needed while verifying
+      # a new environment's backup works.
+      BACKUP_DIR: /app/storage/backups
+      BACKUP_CRON_SCHEDULE: "${BACKUP_CRON_SCHEDULE:-0 3 * * 0}"
+    # A named volume, not just a container-local directory: the whole point
+    # of a backup is to survive the container being recreated (redeployed,
+    # crashed and restarted, ...) — an ephemeral path here would silently
+    # lose every dump the moment the container is replaced.
+    volumes:
+      - cnap-backups:/app/storage/backups
     # Migrations are NOT run automatically here: `prisma` (the CLI) and
     # prisma.config.ts are dev-only tooling and this runtime image is built
     # with `pnpm install --prod`, so the CLI isn't present. Apply schema
@@ -117,3 +132,4 @@ services:
 volumes:
   cnap-db-data:
   cnap-redis-data:
+  cnap-backups:

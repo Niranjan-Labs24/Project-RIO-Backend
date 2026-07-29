@@ -33,9 +33,11 @@ export const AiReviewApproveBody = registerSchema(
       domainOverride: T.Optional(
         T.Object({
           pairs: T.Array(DomainSubDomainPair, { minItems: 1 }),
-          // Optional, matching AiReviewOverrideDomainBody.reason below — a
-          // rationale is helpful but not something every override needs.
-          reason: T.Optional(T.String({ maxLength: 2000 })),
+          // Required — matches AiReviewOverrideDomainBody.reason below. By
+          // the time this reaches Approve, it's always sourced from
+          // Need.proposedReason (see overrideDomainPreview), which the same
+          // requirement already guaranteed is non-empty.
+          reason: T.String({ minLength: 1, maxLength: 2000 }),
         }),
       ),
     },
@@ -61,10 +63,10 @@ export const AiReviewOverrideDomainBody = registerSchema(
       // Persisted onto Need.proposedDomains/proposedReason (see
       // AiDecisionsService.overrideDomainPreview) so whoever reviews next —
       // any session, not just the browser tab that staged this — can see
-      // what was proposed and why. Optional only for backward compatibility
-      // with any in-flight client that predates this field; the UI always
-      // sends it.
-      reason: T.Optional(T.String({ minLength: 1, maxLength: 2000 })),
+      // what was proposed and why. Required: an override changes the AI's
+      // classification, so the rationale must be on record for whoever
+      // reviews next.
+      reason: T.String({ minLength: 1, maxLength: 2000 }),
     },
     { additionalProperties: false },
   ),
