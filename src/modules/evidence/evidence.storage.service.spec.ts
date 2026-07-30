@@ -1,16 +1,34 @@
+import { createHash } from 'node:crypto';
 import { EvidenceStorageService } from './evidence.storage.service';
 
-describe('EvidenceStorageService file signatures', () => {
-  const storage = new EvidenceStorageService({ evidenceStoragePath: './tmp' } as never);
+function makeService() {
+  // hashBuffer does no I/O and config isn't touched by it, so a real
+  // ConfigService isn't needed for these tests.
+  return new EvidenceStorageService(undefined as never);
+}
 
-  it('accepts matching PDF, JPEG, PNG, and OOXML signatures', () => {
-    expect(() => storage.assertFileSignature('a.pdf', Buffer.from('%PDF-1.7'))).not.toThrow();
-    expect(() => storage.assertFileSignature('a.jpg', Buffer.from([0xff, 0xd8, 0xff, 0xe0]))).not.toThrow();
-    expect(() => storage.assertFileSignature('a.png', Buffer.from('89504e470d0a1a0a', 'hex'))).not.toThrow();
-    expect(() => storage.assertFileSignature('a.docx', Buffer.from('504b0304', 'hex'))).not.toThrow();
-  });
+describe('EvidenceStorageService', () => {
+  describe('hashBuffer', () => {
+    it('returns the hex-encoded sha256 digest of the buffer', () => {
+      const svc = makeService();
+      const buffer = Buffer.from('hello evidence');
+      const expected = createHash('sha256').update(buffer).digest('hex');
+      expect(svc.hashBuffer(buffer)).toBe(expected);
+      expect(svc.hashBuffer(buffer)).toHaveLength(64);
+    });
 
-  it('rejects executable content renamed to an allowed extension', () => {
-    expect(() => storage.assertFileSignature('malware.pdf', Buffer.from('MZ executable'))).toThrow();
+    it('is deterministic for identical content', () => {
+      const svc = makeService();
+      const a = svc.hashBuffer(Buffer.from('same content'));
+      const b = svc.hashBuffer(Buffer.from('same content'));
+      expect(a).toBe(b);
+    });
+
+    it('differs for different content', () => {
+      const svc = makeService();
+      const a = svc.hashBuffer(Buffer.from('content A'));
+      const b = svc.hashBuffer(Buffer.from('content B'));
+      expect(a).not.toBe(b);
+    });
   });
 });

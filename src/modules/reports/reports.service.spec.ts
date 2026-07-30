@@ -7,6 +7,8 @@ import type { ReportRow, ReportStatus } from "./reports.types";
 // lifecycle state machine can be exercised without a database.
 function makeHarness() {
   const store = new Map<string, ReportRow>();
+  const auditCalls: Array<{ action: string; entityId: string; organizationId?: string; metadata?: unknown }> = [];
+  const userFindManyCalls: unknown[] = [];
   const tx = {
     report: {
       findUnique: async ({ where: { id } }: { where: { id: string } }) => store.get(id) ?? null,
@@ -23,16 +25,21 @@ function makeHarness() {
         return row;
       },
     },
-    user: { findMany: async () => [] as { id: string; name: string }[] },
+    user: {
+      findMany: async (args: unknown) => {
+        userFindManyCalls.push(args);
+        return [] as { id: string; name: string; roleId: string }[];
+      },
+    },
     study: { findUnique: async () => null },
   };
   const tenant = {
     runInOrgContext: <T>(fn: (t: typeof tx) => Promise<T>) => fn(tx),
     runAsSupervisor: <T>(fn: (t: typeof tx) => Promise<T>) => fn(tx),
   };
-  const audit = { record: async () => {} };
+  const audit = { record: async (input: (typeof auditCalls)[number]) => { auditCalls.push(input); } };
   const service = new ReportsService(tenant as never, audit as never, {} as never);
-  return { service, store };
+  return { service, store, auditCalls, userFindManyCalls };
 }
 
 function seed(store: Map<string, ReportRow>, over: Partial<ReportRow> = {}): ReportRow {
@@ -128,5 +135,149 @@ describe("ReportsService lifecycle (two-step approval)", () => {
     expect(viewer.map((x) => x.status).sort()).toEqual(["released"]);
     const admin = await asRole("ngo_admin", () => h.service.list({}));
     expect(admin.length).toBe(2);
+  });
+
+  it("a read-only user requesting a status they can't see gets an empty result, not an error", async () => {
+    seed(h.store, { status: "draft" });
+    const result = await asRole("read_only_viewer", () => h.service.list({ status: "draft" }));
+    expect(result).toEqual([]);
+  });
+
+  it("reject transitions a draft to rejected; only a draft can be rejected", async () => {
+    seed(h.store, { status: "released" });
+    await expect(asRole("ngo_admin", () => h.service.reject("rpt-1"))).rejects.toMatchObject({
+      response: { error: { code: "REPORT_NOT_DRAFT" } },
+    });
+    h.store.get("rpt-1")!.status = "draft";
+    const r = await asRole("ngo_admin", () => h.service.reject("rpt-1"));
+    expect(r.status).toBe("rejected");
+    expect(r.reviewedBy).toBe("actor-1");
+  });
+
+  it("namesFor short-circuits without a user lookup when the result set is empty", async () => {
+    // no reports seeded — list() returns [] and namesFor([]) must not call user.findMany
+    const result = await asRole("ngo_admin", () => h.service.list({}));
+    expect(result).toEqual([]);
+    expect(h.userFindManyCalls).toHaveLength(0);
+  });
+});
+
+describe("ReportsService.create — STUDY_ID_REQUIRED", () => {
+  let h: ReturnType<typeof makeHarness>;
+  beforeEach(() => { h = makeHarness(); });
+
+  it("rejects a study-scoped report type (RPT01) with no studyId, before any content generation", async () => {
+    await expect(
+      asRole("ngo_admin", () => h.service.create({ reportType: "RPT01" })),
+    ).rejects.toMatchObject({ response: { error: { code: "STUDY_ID_REQUIRED" } } });
+  });
+});
+
+describe("ReportsService.export — format support", () => {
+  let h: ReturnType<typeof makeHarness>;
+  beforeEach(() => { h = makeHarness(); });
+
+  it("EXPORT_FORMAT_NOT_SUPPORTED for an excel-only report type (RPT08) requested as pdf", async () => {
+    seed(h.store, { reportType: "RPT08", status: "released" });
+    await expect(
+      asRole("ngo_admin", () => h.service.export("rpt-1", "pdf")),
+    ).rejects.toMatchObject({ response: { error: { code: "EXPORT_FORMAT_NOT_SUPPORTED" } } });
+    // excel is supported for RPT08, so that should succeed
+    const file = await asRole("ngo_admin", () => h.service.export("rpt-1", "excel"));
+    expect(file.contentType).toContain("sheet");
+  });
+
+  it("EXPORT_FORMAT_NOT_SUPPORTED for a report type with no export formats at all (RPT11)", async () => {
+    seed(h.store, { reportType: "RPT11", status: "released" });
+    await expect(
+      asRole("ngo_admin", () => h.service.export("rpt-1", "pdf")),
+    ).rejects.toMatchObject({ response: { error: { code: "EXPORT_FORMAT_NOT_SUPPORTED" } } });
+    await expect(
+      asRole("ngo_admin", () => h.service.export("rpt-1", "excel")),
+    ).rejects.toMatchObject({ response: { error: { code: "EXPORT_FORMAT_NOT_SUPPORTED" } } });
+  });
+
+  it("succeeds when a report has no confirming/reviewing metadata at all (resolveExportAuditMeta nulls)", async () => {
+    seed(h.store, {
+      status: "released", studyId: null, officerConfirmedBy: null, officerConfirmedAt: null,
+      reviewedBy: null, reviewedAt: null,
+    });
+    const file = await asRole("ngo_admin", () => h.service.export("rpt-1", "pdf"));
+    expect(file.contentType).toBe("application/pdf");
+    expect(file.body.length).toBeGreaterThan(0);
+  });
+});
+
+describe("ReportsService — system_admin branches", () => {
+  let h: ReturnType<typeof makeHarness>;
+  beforeEach(() => { h = makeHarness(); });
+
+  it("getById as system_admin bypasses org RLS and records SYSTEM_ADMIN_VIEWED_REPORT", async () => {
+    seed(h.store, { status: "draft" });
+    const r = await asRole("system_admin", () => h.service.getById("rpt-1"));
+    expect(r.status).toBe("draft");
+    expect(h.auditCalls.some((c) => c.action === "SYSTEM_ADMIN_VIEWED_REPORT" && c.entityId === "rpt-1")).toBe(true);
+  });
+
+  it("getById as system_admin 404s for an unknown id", async () => {
+    await expect(
+      asRole("system_admin", () => h.service.getById("missing")),
+    ).rejects.toMatchObject({ response: { error: { code: "REPORT_NOT_FOUND" } } });
+  });
+
+  it("list as system_admin records SYSTEM_ADMIN_VIEWED_REPORT and sees drafts too", async () => {
+    seed(h.store, { status: "draft" });
+    const result = await asRole("system_admin", () => h.service.list({}));
+    expect(result).toHaveLength(1);
+    expect(h.auditCalls.some((c) => c.action === "SYSTEM_ADMIN_VIEWED_REPORT")).toBe(true);
+  });
+
+  it("export as system_admin records SYSTEM_ADMIN_DOWNLOADED_REPORT instead of 'share'", async () => {
+    seed(h.store, { status: "released" });
+    const file = await asRole("system_admin", () => h.service.export("rpt-1", "pdf"));
+    expect(file.body.length).toBeGreaterThan(0);
+    expect(h.auditCalls.some((c) => c.action === "SYSTEM_ADMIN_DOWNLOADED_REPORT")).toBe(true);
+    expect(h.auditCalls.some((c) => c.action === "share")).toBe(false);
+  });
+
+  it("export as system_admin 404s for an unknown id", async () => {
+    await expect(
+      asRole("system_admin", () => h.service.export("missing", "pdf")),
+    ).rejects.toMatchObject({ response: { error: { code: "REPORT_NOT_FOUND" } } });
+  });
+});
+
+describe("ReportsService.exportForApprovedSharingGrant", () => {
+  let h: ReturnType<typeof makeHarness>;
+  beforeEach(() => { h = makeHarness(); });
+
+  it("404s when the report doesn't exist", async () => {
+    await expect(h.service.exportForApprovedSharingGrant("missing", "pdf")).rejects.toMatchObject({
+      response: { error: { code: "REPORT_NOT_FOUND" } },
+    });
+  });
+
+  it("refuses a report that isn't released or archived yet", async () => {
+    seed(h.store, { status: "draft" });
+    await expect(h.service.exportForApprovedSharingGrant("rpt-1", "pdf")).rejects.toMatchObject({
+      response: { error: { code: "REPORT_NOT_RELEASED" } },
+    });
+  });
+
+  it("refuses an unsupported format for the report's type", async () => {
+    seed(h.store, { reportType: "RPT08", status: "released" });
+    await expect(h.service.exportForApprovedSharingGrant("rpt-1", "pdf")).rejects.toMatchObject({
+      response: { error: { code: "EXPORT_FORMAT_NOT_SUPPORTED" } },
+    });
+  });
+
+  it("succeeds and records a 'share' audit entry with crossOrg: true metadata", async () => {
+    seed(h.store, { status: "released" });
+    const file = await h.service.exportForApprovedSharingGrant("rpt-1", "pdf");
+    expect(file.contentType).toBe("application/pdf");
+    expect(file.body.length).toBeGreaterThan(0);
+    expect(h.auditCalls).toContainEqual(
+      expect.objectContaining({ action: "share", entityId: "rpt-1", metadata: expect.objectContaining({ crossOrg: true }) }),
+    );
   });
 });
