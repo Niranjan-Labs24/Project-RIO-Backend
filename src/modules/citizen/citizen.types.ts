@@ -78,10 +78,13 @@ export interface VerifyOtpResult {
 
 export type Gender = 'male' | 'female' | 'other' | 'prefer_not_to_say';
 
+export type AgeBracket = 'age_15_24' | 'age_25_34' | 'age_35_44' | 'age_45_54' | 'age_55_64' | 'age_65_plus' | 'prefer_not_to_say';
+
 export interface SubmitResponsePayload {
   challengeId: string;
   contactName?: string;
   gender?: Gender;
+  ageBracket: AgeBracket;
   answers: Record<string, unknown>;
 }
 

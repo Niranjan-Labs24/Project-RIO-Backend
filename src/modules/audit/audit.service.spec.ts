@@ -120,6 +120,34 @@ describe('AuditService', () => {
     expect(row.action).toBe('edit');
   });
 
+  it('record writes sourceRef as a first-class column, not buried in metadata', async () => {
+    const { rows, tenant } = fakeTenant();
+    const svc = new AuditService(tenant as never);
+    await orgContext.run(
+      { requestId: 'r', orgId: 'o1', actorId: 'u1', ip: '1.2.3.4', userAgent: 'jest' },
+      () =>
+        svc.record({
+          action: 'create',
+          entityType: 'need',
+          entityId: 'n1',
+          entityLabel: 'Water shortage',
+          sourceRef: 'FIELD-FORM-001',
+        }),
+    );
+    expect(rows[0]?.sourceRef).toBe('FIELD-FORM-001');
+    expect((rows[0]?.metadata as Record<string, unknown> | undefined)?.sourceRef).toBeUndefined();
+  });
+
+  it('record writes sourceRef: null when the entity has none, never omitting the column', async () => {
+    const { rows, tenant } = fakeTenant();
+    const svc = new AuditService(tenant as never);
+    await orgContext.run(
+      { requestId: 'r', orgId: 'o1', actorId: 'u1' },
+      () => svc.record({ action: 'create', entityType: 'need', entityId: 'n2', entityLabel: 'No reference' }),
+    );
+    expect(rows[0]?.sourceRef).toBeNull();
+  });
+
   it('getById redacts sensitive password fields in metadata and changes', async () => {
     const { tenant } = fakeTenant();
     const svc = new AuditService(tenant as never);

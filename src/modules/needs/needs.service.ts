@@ -90,7 +90,13 @@ export class NeedsService {
         needDomains: [],
       };
     });
-    await this.audit.record({ action: 'create', entityType: 'need', entityId: created.id, entityLabel: created.title.slice(0, 80) });
+    await this.audit.record({
+      action: 'create',
+      entityType: 'need',
+      entityId: created.id,
+      entityLabel: created.title.slice(0, 80),
+      sourceRef: created.referenceId,
+    });
 
     // Fire-and-forget: the client redirects to the Need workspace page
     // immediately and polls GET /needs/:id for the status to move past
@@ -219,7 +225,14 @@ export class NeedsService {
       return { updated: this.toNeedRow(updatedRaw), changes };
     });
     if (changes.length > 0) {
-      await this.audit.record({ action: 'edit', entityType: 'need', entityId: updated.id, entityLabel: updated.title.slice(0, 80), changes });
+      await this.audit.record({
+        action: 'edit',
+        entityType: 'need',
+        entityId: updated.id,
+        entityLabel: updated.title.slice(0, 80),
+        changes,
+        sourceRef: updated.referenceId,
+      });
     }
 
     // A Need only reaches this editable path in `pending_ai_classification`
@@ -254,7 +267,13 @@ export class NeedsService {
       await tx.need.delete({ where: { id: needId } });
       return existing;
     });
-    await this.audit.record({ action: 'delete', entityType: 'need', entityId: removed.id, entityLabel: removed.title.slice(0, 80) });
+    await this.audit.record({
+      action: 'delete',
+      entityType: 'need',
+      entityId: removed.id,
+      entityLabel: removed.title.slice(0, 80),
+      sourceRef: removed.referenceId,
+    });
   }
 
   private diff(

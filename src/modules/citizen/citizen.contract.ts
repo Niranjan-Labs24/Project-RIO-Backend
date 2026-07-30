@@ -52,6 +52,19 @@ const Gender = T.Union([
   T.Literal('prefer_not_to_say'),
 ]);
 
+// Self-reported age bracket, never exact age/DOB — see the AgeBracket enum
+// in schema.prisma. Mandatory (unlike Gender): "prefer_not_to_say" is the
+// respondent's opt-out, so there's always a value to submit.
+const AgeBracket = T.Union([
+  T.Literal('age_15_24'),
+  T.Literal('age_25_34'),
+  T.Literal('age_35_44'),
+  T.Literal('age_45_54'),
+  T.Literal('age_55_64'),
+  T.Literal('age_65_plus'),
+  T.Literal('prefer_not_to_say'),
+]);
+
 export const SubmitResponseBody = registerSchema(
   'SubmitResponseBody',
   T.Object(
@@ -59,6 +72,7 @@ export const SubmitResponseBody = registerSchema(
       challengeId: T.String({ format: 'uuid' }),
       contactName: T.Optional(T.String({ maxLength: 200 })),
       gender: T.Optional(Gender),
+      ageBracket: AgeBracket,
       answers: T.Record(T.String(), T.Unknown()),
     },
     { additionalProperties: false },

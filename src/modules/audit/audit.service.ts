@@ -20,6 +20,7 @@ interface AuditRow {
   entityId: string | null;
   entityLabel: string;
   metadata: Prisma.JsonValue | null;
+  sourceRef: string | null;
   ipAddress: string | null;
   userAgent: string | null;
   createdAt: Date;
@@ -62,6 +63,7 @@ export class AuditService {
               Object.keys(metadata).length > 0
                 ? (metadata as unknown as Prisma.InputJsonValue)
                 : undefined,
+            sourceRef: input.sourceRef ?? null,
             ipAddress: store?.ip ?? null,
             userAgent: store?.userAgent ?? null,
           },
@@ -121,6 +123,7 @@ export class AuditService {
     if (opts.entityId) filters.entityId = opts.entityId;
     if (opts.actorId) filters.actorUserId = opts.actorId;
     if (opts.action) filters.action = opts.action;
+    if (opts.sourceRef) filters.sourceRef = opts.sourceRef;
     if (opts.dateFrom || opts.dateTo) {
       filters.createdAt = {
         ...(opts.dateFrom ? { gte: new Date(opts.dateFrom) } : {}),
@@ -212,6 +215,7 @@ export class AuditService {
         entityLabel: l.entityLabel,
         changes: changes ? (maskSensitiveData(changes) as AuditChange[]) : undefined,
         metadata: Object.keys(meta).length > 0 ? (maskSensitiveData(meta) as Record<string, unknown>) : undefined,
+        sourceRef: l.sourceRef,
         ipAddress: l.ipAddress,
         userAgent: l.userAgent,
         createdAt: l.createdAt.toISOString(),

@@ -269,6 +269,7 @@ export class CitizenService {
           mobile: challenge.mobile,
           contactName: payload.contactName ?? null,
           gender: payload.gender ?? null,
+          ageBracket: payload.ageBracket,
           regionId: org?.regionId ?? null,
           governorateIds: need?.needGovernorates.map((g) => g.governorateId) ?? [],
           centerIds: need?.needCenters.map((c) => c.centerId) ?? [],
