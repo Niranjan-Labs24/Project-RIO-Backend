@@ -1329,10 +1329,21 @@ export function renderNcnpReportPdf(report: NcnpReport, generatedByName: string)
     pdf.text(pdf.rx, 28, true, surveyAnalytics.avgResponsesPerPublishedSurvey.toFixed(1), ACCENT);
     pdf.y += 34;
     pdf.text(pdf.rx, 8.5, false, 'Avg. Responses / Published Survey', GRAY);
-    pdf.y += 10;
-    renderSparkline(pdf, pdf.rx, pdf.y, 90, 18, responseAnalytics.monthlyTrend.map((p) => p.count));
-    pdf.text(pdf.rx + 96, 8.5, false, 'Last 12 months', GRAY);
-    pdf.y += 18;
+    pdf.y += 20;
+    // The label used to sit beside the sparkline, level with its endpoint —
+    // a trend that rises toward its own peak (the common case) puts the
+    // line's rising tail right at the label's height, reading as the line
+    // running into the text even with a clear horizontal gap. Putting the
+    // label below the sparkline instead, with its own vertical gap, keeps
+    // it clear of the line's trajectory no matter which way the trend goes.
+    const sparkTopY = pdf.y;
+    const sparkW = 90;
+    const sparkH = 18;
+    const sparkLabelSize = 7.5;
+    renderSparkline(pdf, pdf.rx, sparkTopY, sparkW, sparkH, responseAnalytics.monthlyTrend.map((p) => p.count));
+    pdf.y = sparkTopY + sparkH + 9;
+    pdf.text(pdf.rx, sparkLabelSize, false, 'Last 12 months', GRAY);
+    pdf.y += sparkLabelSize + 2;
   });
   pdf.y = Math.max(p4End1, p4End2) + 4;
 
