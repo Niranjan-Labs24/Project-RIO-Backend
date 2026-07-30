@@ -20,9 +20,9 @@ describe('GET /api/roles (e2e)', () => {
     await app.close();
   });
 
-  it('returns all 9 roles to a system_admin', async () => {
+  it('returns all 10 roles to a system_admin', async () => {
     const res = await request(app.getHttpServer()).get('/api/roles').set('x-org-id', ORG).set('x-role', 'system_admin').expect(200);
-    expect(res.body).toHaveLength(9);
+    expect(res.body).toHaveLength(10);
     const admin = res.body.find((r: { key: string }) => r.key === 'ngo_admin');
     expect(admin.id).toBe('role_ngo_admin');
     expect(admin.permissions).toHaveLength(13);

@@ -226,6 +226,13 @@ model AuditLog {
   entityType     String   @map("entity_type") @db.VarChar(64)
   entityId       String?  @map("entity_id") @db.Uuid
   entityLabel    String   @map("entity_label")
+  // The submitter's own external tracking id for the entity this event is
+  // about (e.g. Need.referenceId — a field form number or partner org's
+  // case id) — a first-class, queryable/indexable column rather than
+  // buried inside `metadata` JSON, since this is meant to be searched on
+  // directly (audit-trail lookups by external reference). Null for events
+  // whose entity has no such reference (or never had one set).
+  sourceRef      String?  @map("source_ref") @db.VarChar(200)
   metadata       Json?
   ipAddress      String?  @map("ip_address") @db.VarChar(64)
   userAgent      String?  @map("user_agent")
@@ -235,6 +242,7 @@ model AuditLog {
 
   @@index([organisationId])
   @@index([entityType, entityId])
+  @@index([sourceRef])
   @@map("audit_logs")
 }
 

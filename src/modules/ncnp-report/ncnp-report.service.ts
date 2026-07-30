@@ -2,23 +2,29 @@ import { ForbiddenException, Injectable } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore, requireActor } from '../../tenancy/org-context';
 import { roleByKey } from '../../rbac/role-matrix';
+import { AuditService } from '../audit/audit.service';
 import { renderReportExcel } from '../reports/excel-builder';
 import { buildNcnpReportDoc } from './ncnp-report-doc';
 import { renderNcnpReportPdf } from './ncnp-report-pdf';
 import type {
   NcnpAgeBracketBreakdown,
+  NcnpCriticalNeedsOverview,
+  NcnpDataQualityNotes,
   NcnpDomainBreakdown,
   NcnpDomainComparison,
+  NcnpDomainRegionIntersection,
   NcnpGenderBreakdown,
   NcnpGeographyOverview,
   NcnpMonthlyPoint,
   NcnpNamedBreakdown,
+  NcnpNeedsGeography,
   NcnpOrgHealth,
   NcnpOrgResponseStat,
   NcnpOrgSummary,
   NcnpOrgSummaryRow,
   NcnpPeriodStat,
   NcnpPriorityLevelBreakdown,
+  NcnpPriorityNeedRow,
   NcnpPublicLinkStatus,
   NcnpPriorityOverview,
   NcnpRegionBreakdown,
@@ -29,6 +35,7 @@ import type {
   NcnpResponseAnalytics,
   NcnpStudyOverview,
   NcnpStudyStatus,
+  NcnpSubDomainBreakdown,
   NcnpSurveyAnalytics,
   NcnpSurveyGeography,
   NcnpSurveyStatus,
@@ -42,6 +49,8 @@ const NEEDS_ATTENTION_LIMIT = 10;
 const TREND_MONTHS = 12;
 const TOP_ORGS_LIMIT = 5;
 const TOP_PRIORITY_VILLAGES_LIMIT = 10;
+const PRIORITY_NEEDS_LIST_LIMIT = 10;
+const DOMAIN_REGION_INTERSECTION_LIMIT = 15;
 // VillagePriorityAssessment.domainComponents is a JSON array — aggregating
 // it needs the rows in app memory (no raw SQL precedent anywhere in this
 // codebase to do it in Postgres via jsonb_array_elements). Capped to the
@@ -65,7 +74,10 @@ function periodStat(current: number, previous: number): NcnpPeriodStat {
 // single-org-scoped for every other role.
 @Injectable()
 export class NcnpReportService {
-  constructor(private readonly tenant: TenantPrismaService) {}
+  constructor(
+    private readonly tenant: TenantPrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   async getReport(
     periodDays: number = DEFAULT_PERIOD_DAYS,
@@ -276,7 +288,23 @@ export class NcnpReportService {
       regionIdByOrg,
     );
 
-    const [surveysByOrgGroups, surveyNeedIds, needGovernorateRows, needCenterRows, monthlyStudies] = await Promise.all([
+    const [
+      surveysByOrgGroups,
+      surveyNeedIds,
+      needGovernorateRows,
+      needCenterRows,
+      monthlyStudies,
+      needsByOrgGroups,
+      totalNeeds,
+      needsUnclassifiedCount,
+      needSubDomainGroups,
+      needDomainOrgRows,
+      needsForPriority,
+      evidenceByNeedGroups,
+      confidenceFlagGroups,
+      duplicateResponseCount,
+      surveyQuestionIndicators,
+    ] = await Promise.all([
       this.tenant.runAsSupervisor((tx) => tx.survey.groupBy({ by: ['orgId'], _count: true })),
       // Each survey's OWN Need's governorates/centers — NOT the org's
       // broader organisationGovernorate/organisationCenter links (an org
@@ -291,6 +319,45 @@ export class NcnpReportService {
       this.tenant.runAsSupervisor((tx) => tx.needCenter.findMany({ select: { needId: true, centerId: true } })),
       this.tenant.runAsSupervisor((tx) =>
         tx.study.findMany({ select: { createdAt: true }, where: { createdAt: { gte: trendStart } } }),
+      ),
+      // Kingdom-wide Needs rollup by region — Needs themselves, not
+      // Organizations/Surveys (see NcnpNeedsGeography).
+      this.tenant.runAsSupervisor((tx) => tx.need.groupBy({ by: ['orgId'], _count: true })),
+      this.tenant.runAsSupervisor((tx) => tx.need.count()),
+      // "Unclassified" = never assigned a Domain at all — Need.domain is
+      // the authoritative field (always mirrors needDomains[0], see the
+      // schema comment on Need.domain), so null here means literally no
+      // classification decision has ever been made for this Need.
+      this.tenant.runAsSupervisor((tx) => tx.need.count({ where: { domain: null } })),
+      this.tenant.runAsSupervisor((tx) => tx.needDomain.groupBy({ by: ['domain', 'subDomain'], _count: true })),
+      // orgId is denormalized directly onto NeedDomain (see schema comment),
+      // so this is a real (org's region, domain) pair per row without a
+      // second join back through Need.
+      this.tenant.runAsSupervisor((tx) => tx.needDomain.findMany({ select: { orgId: true, domain: true } })),
+      this.tenant.runAsSupervisor((tx) =>
+        tx.need.findMany({
+          select: { id: true, title: true, orgId: true, domain: true, subDomain: true, source: true, referenceId: true },
+        }),
+      ),
+      this.tenant.runAsSupervisor((tx) => tx.evidence.groupBy({ by: ['needId'], _count: true })),
+      this.tenant.runAsSupervisor((tx) => tx.responseQualityResult.groupBy({ by: ['confidenceFlag'], _count: true })),
+      this.tenant.runAsSupervisor((tx) => tx.responseQualityResult.count({ where: { isDuplicate: true } })),
+      // No dedicated Indicator model exists in this schema — Question Bank's
+      // own `indicator`/`kpi` free-text fields are the closest real,
+      // populated concept (see the Unified Need Record Schema gap analysis,
+      // docs/ncnp-unified-need-record-schema-analysis.md). Joined via
+      // Need -> Survey -> SurveyQuestion -> Question, one row per
+      // (survey, question) pair — a survey can touch several indicators
+      // across several domains (e.g. a village-conditions module bundling
+      // Infrastructure questions into an otherwise Health survey), so
+      // domain/subDomain are selected here too and used to pick only the
+      // question(s) matching the Need's own classified domain, not just
+      // "the first row found" regardless of topic.
+      this.tenant.runAsSupervisor((tx) =>
+        tx.surveyQuestion.findMany({
+          where: { question: { indicator: { not: null } } },
+          select: { surveyId: true, question: { select: { indicator: true, domain: true, subDomain: true } } },
+        }),
       ),
     ]);
 
@@ -311,6 +378,36 @@ export class NcnpReportService {
     );
     const regionSummary = this.buildRegionSummary(surveyGeography.byRegion, responseAnalytics.responsesByRegion);
 
+    const needsGeography = this.buildNeedsGeography(
+      needsByOrgGroups,
+      regionIdByOrg,
+      regionNameById,
+      needGovernorateRows,
+      governorateNameById,
+      needCenterRows,
+      centerNameById,
+    );
+    const needSubDomains = this.buildSubDomainBreakdown(needSubDomainGroups);
+    const criticalNeeds = this.buildCriticalNeeds(
+      needsForPriority,
+      orgById,
+      surveyNeedIds,
+      priorityAssessmentSample,
+      evidenceByNeedGroups,
+      regionIdByOrg,
+      regionNameById,
+      surveyQuestionIndicators,
+    );
+    const dataQualityNotes = this.buildDataQualityNotes(
+      totalResponses,
+      confidenceFlagGroups,
+      duplicateResponseCount,
+      totalNeeds,
+      evidenceByNeedGroups,
+      needsUnclassifiedCount,
+    );
+    const domainRegionIntersections = this.buildDomainRegionIntersections(needDomainOrgRows, regionIdByOrg, regionNameById);
+
     return {
       generatedAt: now.toISOString(),
       summary: {
@@ -319,6 +416,7 @@ export class NcnpReportService {
           studies: totalStudies,
           surveys: totalSurveys,
           responses: totalResponses,
+          needs: totalNeeds,
         },
         newThisPeriod: {
           periodDays,
@@ -331,6 +429,8 @@ export class NcnpReportService {
       orgHealth,
       orgSummary,
       needDomains,
+      needSubDomains,
+      needsGeography,
       studyStatus,
       publicLinkStatus,
       studyOverview,
@@ -340,6 +440,9 @@ export class NcnpReportService {
       regionSummary,
       responseAnalytics,
       priorityOverview,
+      criticalNeeds,
+      dataQualityNotes,
+      domainRegionIntersections,
     };
   }
 
@@ -360,19 +463,32 @@ export class NcnpReportService {
   ): Promise<{ filename: string; contentType: string; body: Buffer }> {
     const report = await this.getReport(periodDays, dormantDays);
     const dateStamp = report.generatedAt.slice(0, 10);
+    // Every export is audited with the actor's role (not just their user
+    // id) — this report has no per-record entityId of its own (it's a
+    // live, generated-on-request view, not a stored Report row), so
+    // entityId is the export itself, keyed by date + format.
+    const role = getOrgStore()?.role ?? null;
+    await this.audit.record({
+      action: 'export',
+      entityType: 'ncnp_report',
+      entityId: null,
+      entityLabel: `NCNP Compiled Report exported (${format})`,
+      metadata: { format, reviewerRole: role, generatedAt: report.generatedAt },
+    });
+    const actorId = requireActor();
+    const actor = await this.tenant.runAsSupervisor((tx) => tx.user.findUnique({ where: { id: actorId }, select: { name: true } }));
+    const generatedByName = actor?.name ?? '—';
     if (format === 'pdf') {
-      const actorId = requireActor();
-      const actor = await this.tenant.runAsSupervisor((tx) => tx.user.findUnique({ where: { id: actorId }, select: { name: true } }));
       return {
-        filename: `ncnp-consolidated-report-${dateStamp}.pdf`,
+        filename: `ncnp-compiled-report-${dateStamp}.pdf`,
         contentType: 'application/pdf',
-        body: renderNcnpReportPdf(report, actor?.name ?? '—'),
+        body: renderNcnpReportPdf(report, generatedByName),
       };
     }
     return {
-      filename: `ncnp-consolidated-report-${dateStamp}.xlsx`,
+      filename: `ncnp-compiled-report-${dateStamp}.xlsx`,
       contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      body: await renderReportExcel(buildNcnpReportDoc(report)),
+      body: await renderReportExcel(buildNcnpReportDoc(report, generatedByName)),
     };
   }
 
@@ -457,6 +573,20 @@ export class NcnpReportService {
       domainName: d.name,
       needCount: countByName.get(d.name) ?? 0,
     }));
+  }
+
+  // NeedDomain already stores both domain and sub-domain names directly
+  // (free text, not a code — see the model's own comment), so this is a
+  // straight passthrough of the groupBy, sorted by count — no master-data
+  // join needed the way buildDomainBreakdown needs one for zero-count
+  // domains, since a sub-domain with zero Needs simply isn't a combination
+  // that exists yet.
+  private buildSubDomainBreakdown(
+    groups: Array<{ domain: string; subDomain: string; _count: number }>,
+  ): NcnpSubDomainBreakdown[] {
+    return groups
+      .map((g) => ({ domainName: g.domain, subDomainName: g.subDomain, needCount: g._count }))
+      .sort((a, b) => b.needCount - a.needCount);
   }
 
   private toSurveyStatus(groups: Array<{ status: string; _count: number }>): NcnpSurveyStatus {
@@ -884,11 +1014,247 @@ export class NcnpReportService {
       .sort((a, b) => b.responseCount - a.responseCount);
   }
 
+  // Kingdom-wide rollup of Needs themselves (not orgs, not surveys) by
+  // region/governorate/center — same "fan out only across what this Need
+  // itself actually selected" shape as buildSurveyGeography, one level
+  // simpler since a Need's own governorate/center rows are already keyed by
+  // needId directly (no survey hop needed).
+  private buildNeedsGeography(
+    needsByOrgGroups: Array<{ orgId: string; _count: number }>,
+    regionIdByOrg: Map<string, string | null>,
+    regionNameById: Map<string, string>,
+    needGovernorateRows: Array<{ needId: string; governorateId: string }>,
+    governorateNameById: Map<string, string>,
+    needCenterRows: Array<{ needId: string; centerId: string }>,
+    centerNameById: Map<string, string>,
+  ): NcnpNeedsGeography {
+    const byRegionCount = new Map<string, number>();
+    for (const g of needsByOrgGroups) {
+      const regionId = regionIdByOrg.get(g.orgId);
+      if (!regionId) continue;
+      byRegionCount.set(regionId, (byRegionCount.get(regionId) ?? 0) + g._count);
+    }
+    const byGovernorateCount = new Map<string, number>();
+    for (const row of needGovernorateRows) {
+      byGovernorateCount.set(row.governorateId, (byGovernorateCount.get(row.governorateId) ?? 0) + 1);
+    }
+    const byCenterCount = new Map<string, number>();
+    for (const row of needCenterRows) {
+      byCenterCount.set(row.centerId, (byCenterCount.get(row.centerId) ?? 0) + 1);
+    }
+    const toBreakdown = (counts: Map<string, number>, nameById: Map<string, string>): NcnpNamedBreakdown[] =>
+      Array.from(counts.entries())
+        .map(([id, count]) => ({ id, name: nameById.get(id) ?? 'Unknown', count }))
+        .sort((a, b) => b.count - a.count);
+    return {
+      byRegion: toBreakdown(byRegionCount, regionNameById),
+      byGovernorate: toBreakdown(byGovernorateCount, governorateNameById),
+      byCenter: toBreakdown(byCenterCount, centerNameById),
+    };
+  }
+
+  // Ranks Needs by criticality using real, existing data only — there is no
+  // need-level severity_score/gap_type field in the schema today (see the
+  // NCNP spec gap-analysis). Each Need's own Survey's village-priority
+  // assessment (VillagePriorityAssessment — "low score = high priority") is
+  // reused here: the consolidated (villageId="") row when present, else the
+  // single named-village row, else the Need has no rankable score yet and is
+  // excluded (never padded with a fabricated score). `primaryGap` is
+  // derived from the assessment's own domainComponents JSON (the
+  // lowest-performing domain for that Need) — a real signal, not a stored
+  // "gap type" field, which doesn't exist at need-level anywhere yet.
+  private buildCriticalNeeds(
+    needs: Array<{
+      id: string;
+      title: string;
+      orgId: string;
+      domain: string | null;
+      subDomain: string | null;
+      source: string;
+      referenceId: string | null;
+    }>,
+    orgById: Map<string, { id: string; name: string }>,
+    surveyNeedIds: Array<{ id: string; needId: string }>,
+    priorityAssessmentSample: Array<{
+      surveyId: string;
+      villageId: string;
+      priorityScore: unknown;
+      priorityStatus: string;
+      domainComponents: unknown;
+    }>,
+    evidenceByNeedGroups: Array<{ needId: string; _count: number }>,
+    regionIdByOrg: Map<string, string | null>,
+    regionNameById: Map<string, string>,
+    surveyQuestionIndicators: Array<{
+      surveyId: string;
+      question: { indicator: string | null; domain: string; subDomain: string } | null;
+    }>,
+  ): NcnpCriticalNeedsOverview {
+    const needIdBySurveyId = new Map(surveyNeedIds.map((s) => [s.id, s.needId]));
+    const evidenceCountByNeed = new Map(evidenceByNeedGroups.map((g) => [g.needId, g._count]));
+
+    // Grouped by survey (not collapsed to "first found" yet) — a survey can
+    // touch several indicators across several domains (e.g. a
+    // village-conditions module bundling Infrastructure questions into an
+    // otherwise Health survey), so which one is "this Need's indicator" has
+    // to be resolved per-Need below, by matching against that Need's own
+    // classified domain — not by insertion order alone, which previously let
+    // an unrelated domain's question win.
+    const indicatorRowsBySurveyId = new Map<string, Array<{ indicator: string; domain: string; subDomain: string }>>();
+    for (const row of surveyQuestionIndicators) {
+      if (!row.question?.indicator) continue;
+      const list = indicatorRowsBySurveyId.get(row.surveyId) ?? [];
+      list.push({ indicator: row.question.indicator, domain: row.question.domain, subDomain: row.question.subDomain });
+      indicatorRowsBySurveyId.set(row.surveyId, list);
+    }
+    // Prefer a question matching the Need's own subDomain, then domain —
+    // null (not "first found") when nothing on the survey matches the
+    // Need's classification, so an unrelated domain's indicator is never
+    // surfaced just because it happened to be inserted first.
+    function indicatorFor(surveyId: string, needDomain: string | null, needSubDomain: string | null): string | null {
+      const rows = indicatorRowsBySurveyId.get(surveyId);
+      if (!rows || rows.length === 0) return null;
+      const bySubDomain = needSubDomain ? rows.find((r) => r.subDomain === needSubDomain) : undefined;
+      if (bySubDomain) return bySubDomain.indicator;
+      const byDomain = needDomain ? rows.find((r) => r.domain === needDomain) : undefined;
+      if (byDomain) return byDomain.indicator;
+      return null;
+    }
+
+    interface DomainComponent {
+      domainNameSnapshot?: unknown;
+      domainPerformanceScore?: unknown;
+      isCriticalDomain?: unknown;
+      triggeredOverride?: unknown;
+    }
+    function primaryGapFrom(domainComponents: unknown): string | null {
+      const components = Array.isArray(domainComponents) ? (domainComponents as DomainComponent[]) : [];
+      let worst: { name: string; score: number } | null = null;
+      for (const c of components) {
+        if (typeof c.domainNameSnapshot !== 'string' || typeof c.domainPerformanceScore !== 'number') continue;
+        if (!worst || c.domainPerformanceScore < worst.score) {
+          worst = { name: c.domainNameSnapshot, score: c.domainPerformanceScore };
+        }
+      }
+      return worst?.name ?? null;
+    }
+    // equity_flag has no stored column anywhere (see the gap analysis doc)
+    // — derived the same way as primaryGap, from this same assessment's own
+    // domainComponents: true when any component is both marked critical AND
+    // actually triggered an override, the closest real equity-style signal
+    // the v2 priority methodology already computes and stores (as JSON).
+    function equityFlagFrom(domainComponents: unknown): boolean {
+      const components = Array.isArray(domainComponents) ? (domainComponents as DomainComponent[]) : [];
+      return components.some((c) => c.isCriticalDomain === true && c.triggeredOverride === true);
+    }
+
+    // Consolidated (villageId="") row wins when a Need's survey has one;
+    // otherwise fall back to that survey's single named-village row. A
+    // survey can have several named-village rows — picks the first seen
+    // (sample is ordered calculatedAt desc, so effectively the latest).
+    const bestAssessmentByNeedId = new Map<string, (typeof priorityAssessmentSample)[number]>();
+    for (const row of priorityAssessmentSample) {
+      const needId = needIdBySurveyId.get(row.surveyId);
+      if (!needId) continue;
+      const existing = bestAssessmentByNeedId.get(needId);
+      if (!existing || (existing.villageId !== '' && row.villageId === '')) {
+        bestAssessmentByNeedId.set(needId, row);
+      }
+    }
+
+    const needById = new Map(needs.map((n) => [n.id, n]));
+    const rows: NcnpPriorityNeedRow[] = [];
+    for (const [needId, assessment] of bestAssessmentByNeedId) {
+      const need = needById.get(needId);
+      if (!need) continue;
+      const regionId = regionIdByOrg.get(need.orgId);
+      rows.push({
+        needId,
+        needTitle: need.title,
+        domain: need.domain,
+        subDomain: need.subDomain,
+        organizationName: orgById.get(need.orgId)?.name ?? 'Unknown',
+        priorityScore: Number(assessment.priorityScore),
+        priorityStatus: assessment.priorityStatus,
+        primaryGap: primaryGapFrom(assessment.domainComponents),
+        evidenceCount: evidenceCountByNeed.get(needId) ?? 0,
+        source: need.source,
+        equityFlag: equityFlagFrom(assessment.domainComponents),
+        indicatorId: indicatorFor(assessment.surveyId, need.domain, need.subDomain),
+        unitGeoRegion: regionId ? (regionNameById.get(regionId) ?? null) : null,
+        sourceRef: need.referenceId,
+      });
+    }
+    // Lower priorityScore = higher priority (same convention as
+    // buildPriorityOverview's village scorecard).
+    rows.sort((a, b) => a.priorityScore - b.priorityScore);
+
+    return {
+      topCriticalNeeds: rows.slice(0, 3),
+      priorityNeeds: rows.slice(0, PRIORITY_NEEDS_LIST_LIMIT),
+      totalRankableNeeds: rows.length,
+      totalNeeds: needs.length,
+    };
+  }
+
+  // Always present, every count real — including all-zero when nothing has
+  // happened yet (e.g. no quality assessments run), per the client's
+  // "mandatory section, even if empty" requirement. Nothing here is
+  // fabricated: an empty/zero result means exactly that, disclosed plainly
+  // rather than omitted.
+  private buildDataQualityNotes(
+    totalResponses: number,
+    confidenceFlagGroups: Array<{ confidenceFlag: string; _count: number }>,
+    duplicateResponseCount: number,
+    totalNeeds: number,
+    evidenceByNeedGroups: Array<{ needId: string; _count: number }>,
+    needsUnclassifiedCount: number,
+  ): NcnpDataQualityNotes {
+    const assessedResponses = confidenceFlagGroups.reduce((sum, g) => sum + g._count, 0);
+    const lowConfidenceCount = confidenceFlagGroups.find((g) => g.confidenceFlag === 'low')?._count ?? 0;
+    const needsWithEvidence = evidenceByNeedGroups.length;
+    return {
+      totalResponses,
+      assessedResponses,
+      lowConfidenceCount,
+      duplicateFlaggedCount: duplicateResponseCount,
+      totalNeeds,
+      needsWithEvidence,
+      needsWithoutEvidence: Math.max(0, totalNeeds - needsWithEvidence),
+      needsUnclassified: needsUnclassifiedCount,
+    };
+  }
+
+  // Which Domain shows up most in which Region — the strongest (region,
+  // domain) combinations, sparse (zero-count pairs omitted) and capped, not
+  // the full cross product. orgId->region is the same mapping every other
+  // geography breakdown in this report already uses.
+  private buildDomainRegionIntersections(
+    needDomainOrgRows: Array<{ orgId: string; domain: string }>,
+    regionIdByOrg: Map<string, string | null>,
+    regionNameById: Map<string, string>,
+  ): NcnpDomainRegionIntersection[] {
+    const counts = new Map<string, { regionName: string; domainName: string; count: number }>();
+    for (const row of needDomainOrgRows) {
+      const regionId = regionIdByOrg.get(row.orgId);
+      if (!regionId) continue;
+      const regionName = regionNameById.get(regionId) ?? 'Unknown region';
+      const key = `${regionId}::${row.domain}`;
+      const existing = counts.get(key) ?? { regionName, domainName: row.domain, count: 0 };
+      existing.count += 1;
+      counts.set(key, existing);
+    }
+    return Array.from(counts.values())
+      .map((c) => ({ regionName: c.regionName, domainName: c.domainName, needCount: c.count }))
+      .sort((a, b) => b.needCount - a.needCount)
+      .slice(0, DOMAIN_REGION_INTERSECTION_LIMIT);
+  }
+
   private assertCrossEntity(): void {
     const role = getOrgStore()?.role;
     if (!role || roleByKey(role)?.crossEntity !== true) {
       throw new ForbiddenException({
-        error: { code: 'FORBIDDEN', message: 'Only cross-entity roles can view the NCNP consolidated report.' },
+        error: { code: 'FORBIDDEN', message: 'Only NCNP users can view the NCNP Compiled Report.' },
       });
     }
   }

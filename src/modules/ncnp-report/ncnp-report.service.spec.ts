@@ -16,7 +16,19 @@ interface FakeStudy { id: string; orgId: string; status: string; createdAt: Date
 interface FakeSurvey { id: string; orgId: string; needId?: string; status: string; createdAt: Date; rejectionReasonCode?: string | null }
 interface FakeResponse { id: string; orgId: string; submittedAt: Date; regionId?: string | null; gender?: string | null; ageBracket?: string | null }
 interface FakeDomain { code: string; name: string; isActive: boolean; displayOrder: number }
-interface FakeNeedDomain { domain: string }
+interface FakeNeedDomain { domain: string; subDomain?: string; orgId?: string }
+interface FakeNeed {
+  id: string;
+  title: string;
+  orgId: string;
+  domain: string | null;
+  subDomain?: string | null;
+  source?: string;
+  referenceId?: string | null;
+}
+interface FakeEvidence { needId: string }
+interface FakeResponseQuality { confidenceFlag: string; isDuplicate?: boolean }
+interface FakeSurveyQuestion { surveyId: string; indicator?: string | null; domain?: string; subDomain?: string }
 interface FakeRegion { id: string; name: string }
 interface FakeGovernorate { id: string; name: string }
 interface FakeCenter { id: string; name: string }
@@ -53,6 +65,10 @@ interface FixtureOpts {
   // selected).
   needGovernorates?: Array<{ needId: string; governorateId: string }>;
   needCenters?: Array<{ needId: string; centerId: string }>;
+  needs?: FakeNeed[];
+  evidence?: FakeEvidence[];
+  responseQualityResults?: FakeResponseQuality[];
+  surveyQuestions?: FakeSurveyQuestion[];
   publicSurveyLinks?: Array<{ isActive: boolean }>;
   // rejectSurvey's audit trail — one row per rejection *event*, independent
   // of the survey's current status (see ncnp-report.service's
@@ -110,6 +126,10 @@ function fakeTenant(opts: FixtureOpts) {
   const orgCenters = opts.orgCenters ?? [];
   const needGovernorates = opts.needGovernorates ?? [];
   const needCenters = opts.needCenters ?? [];
+  const needs = opts.needs ?? [];
+  const evidence = opts.evidence ?? [];
+  const responseQualityResults = opts.responseQualityResults ?? [];
+  const surveyQuestions = opts.surveyQuestions ?? [];
   const publicSurveyLinks = opts.publicSurveyLinks ?? [];
   const rejectionAuditRows = opts.rejectionAuditRows ?? [];
 
@@ -176,7 +196,11 @@ function fakeTenant(opts: FixtureOpts) {
           findMany: async () => domains,
         },
         needDomain: {
-          groupBy: async () => groupCount(needDomains, 'domain'),
+          groupBy: async (args: { by: string[] }) =>
+            args.by.length === 2
+              ? groupCountByTwo(needDomains, 'domain', 'subDomain')
+              : groupCount(needDomains, 'domain'),
+          findMany: async () => needDomains.map((d) => ({ orgId: d.orgId, domain: d.domain })),
         },
         publicSurveyLink: {
           groupBy: async () => groupCount(publicSurveyLinks, 'isActive'),
@@ -203,6 +227,40 @@ function fakeTenant(opts: FixtureOpts) {
         },
         needCenter: {
           findMany: async () => needCenters,
+        },
+        need: {
+          groupBy: async (args: { by: string[] }) => groupCount(needs, args.by[0] as 'orgId'),
+          count: async (args?: { where?: { domain?: null } }) =>
+            args?.where && 'domain' in args.where
+              ? needs.filter((n) => n.domain === null).length
+              : needs.length,
+          findMany: async () =>
+            needs.map((n) => ({
+              id: n.id,
+              title: n.title,
+              orgId: n.orgId,
+              domain: n.domain,
+              subDomain: n.subDomain ?? null,
+              source: n.source ?? 'manual_entry',
+              referenceId: n.referenceId ?? null,
+            })),
+        },
+        evidence: {
+          groupBy: async () => groupCount(evidence, 'needId'),
+        },
+        surveyQuestion: {
+          findMany: async () =>
+            surveyQuestions
+              .filter((q) => q.indicator)
+              .map((q) => ({
+                surveyId: q.surveyId,
+                question: { indicator: q.indicator ?? null, domain: q.domain ?? '', subDomain: q.subDomain ?? '' },
+              })),
+        },
+        responseQualityResult: {
+          groupBy: async () => groupCount(responseQualityResults, 'confidenceFlag'),
+          count: async (args?: { where?: { isDuplicate?: boolean } }) =>
+            args?.where?.isDuplicate ? responseQualityResults.filter((r) => r.isDuplicate).length : responseQualityResults.length,
         },
         villagePriorityAssessment: {
           groupBy: async () => groupCount(priorityAssessments, 'priorityStatus'),
@@ -237,9 +295,11 @@ function runAs(role: string, fn: () => Promise<unknown>) {
   return orgContext.run({ requestId: 'r1', actorId: 'sys1', role }, fn);
 }
 
+const fakeAudit = { record: async () => undefined };
+
 describe('NcnpReportService', () => {
   it('rejects a non-cross-entity role', async () => {
-    const service = new NcnpReportService(fakeTenant({}) as never);
+    const service = new NcnpReportService(fakeTenant({}) as never, fakeAudit as never);
     await expect(runAs('ngo_admin', () => service.getReport())).rejects.toBeInstanceOf(ForbiddenException);
   });
 
@@ -255,6 +315,7 @@ describe('NcnpReportService', () => {
         ],
         needDomains: [{ domain: 'Health' }, { domain: 'Health' }],
       }) as never,
+      fakeAudit as never,
     );
 
     const report = await runAs('system_admin', () => service.getReport());
@@ -277,6 +338,7 @@ describe('NcnpReportService', () => {
           { id: 's2', orgId: 'o1', status: 'active', createdAt: twentyDaysAgo, updatedAt: twentyDaysAgo },
         ],
       }) as never,
+      fakeAudit as never,
     );
 
     const report = (await runAs('system_admin', () => service.getReport())) as {
@@ -297,6 +359,7 @@ describe('NcnpReportService', () => {
           { id: 'fresh', name: 'Fresh Org', isActive: true, createdAt: staleDate, updatedAt: new Date() },
         ],
       }) as never,
+      fakeAudit as never,
     );
 
     const report = (await runAs('system_admin', () => service.getReport())) as {
@@ -313,6 +376,7 @@ describe('NcnpReportService', () => {
       fakeTenant({
         organisations: [{ id: 'o1', name: 'Inactive Org', isActive: false, createdAt: staleDate, updatedAt: staleDate }],
       }) as never,
+      fakeAudit as never,
     );
 
     const report = (await runAs('system_admin', () => service.getReport())) as {
@@ -338,6 +402,7 @@ describe('NcnpReportService', () => {
           { id: 's3', orgId: 'o2', status: 'REJECTED', createdAt: new Date() },
         ],
       }) as never,
+      fakeAudit as never,
     );
 
     const report = (await runAs('system_admin', () => service.getReport())) as {
@@ -369,6 +434,7 @@ describe('NcnpReportService', () => {
           { id: 'r3', orgId: 'o2', submittedAt: new Date() },
         ],
       }) as never,
+      fakeAudit as never,
     );
 
     const report = (await runAs('system_admin', () => service.getReport())) as {
@@ -396,6 +462,7 @@ describe('NcnpReportService', () => {
           { id: 'r3', orgId: 'o1', submittedAt: new Date('2026-07-01'), regionId: null, gender: null },
         ],
       }) as never,
+      fakeAudit as never,
     );
 
     const report = (await runAs('system_admin', () => service.getReport())) as {
@@ -426,6 +493,7 @@ describe('NcnpReportService', () => {
           { id: 'r3', orgId: 'o1', submittedAt: new Date('2026-06-07'), ageBracket: null }, // pre-feature, no bracket
         ],
       }) as never,
+      fakeAudit as never,
     );
 
     const report = (await runAs('system_admin', () => service.getReport())) as {
@@ -444,6 +512,7 @@ describe('NcnpReportService', () => {
       fakeTenant({
         responses: [{ id: 'r1', orgId: 'o1', submittedAt: new Date('2026-06-05'), ageBracket: 'age_15_24' }],
       }) as never,
+      fakeAudit as never,
     );
     const report = (await runAs('system_admin', () => service.getReport())) as {
       responseAnalytics: { hasResponsesWithoutAgeBracket: boolean };
@@ -460,6 +529,7 @@ describe('NcnpReportService', () => {
           { reasonCode: null }, // legacy — rejected before the reason-code feature existed
         ],
       }) as never,
+      fakeAudit as never,
     );
 
     const report = (await runAs('system_admin', () => service.getReport())) as {
@@ -483,6 +553,7 @@ describe('NcnpReportService', () => {
         ],
         rejectionAuditRows: [{ reasonCode: 'REJ_06' }],
       }) as never,
+      fakeAudit as never,
     );
 
     const report = (await runAs('system_admin', () => service.getReport())) as {
@@ -512,6 +583,7 @@ describe('NcnpReportService', () => {
           },
         ],
       }) as never,
+      fakeAudit as never,
     );
 
     const report = (await runAs('system_admin', () => service.getReport())) as {
@@ -552,6 +624,7 @@ describe('NcnpReportService', () => {
           { id: 's2', orgId: 'o2', status: 'active', createdAt: new Date(), updatedAt: new Date() },
         ],
       }) as never,
+      fakeAudit as never,
     );
 
     const report = (await runAs('system_admin', () => service.getReport())) as {
@@ -577,6 +650,7 @@ describe('NcnpReportService', () => {
         ],
         domains: [{ code: 'H', name: 'Health', isActive: true, displayOrder: 1 }],
       }) as never,
+      fakeAudit as never,
     );
 
     const [pdf, excel] = (await runAs('system_admin', () =>
@@ -587,12 +661,12 @@ describe('NcnpReportService', () => {
     ];
 
     expect(pdf.contentType).toBe('application/pdf');
-    expect(pdf.filename).toMatch(/^ncnp-consolidated-report-\d{4}-\d{2}-\d{2}\.pdf$/);
+    expect(pdf.filename).toMatch(/^ncnp-compiled-report-\d{4}-\d{2}-\d{2}\.pdf$/);
     expect(pdf.body.byteLength).toBeGreaterThan(0);
     expect(pdf.body.subarray(0, 4).toString('ascii')).toBe('%PDF'); // real PDF magic bytes, not a stub
 
     expect(excel.contentType).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    expect(excel.filename).toMatch(/^ncnp-consolidated-report-\d{4}-\d{2}-\d{2}\.xlsx$/);
+    expect(excel.filename).toMatch(/^ncnp-compiled-report-\d{4}-\d{2}-\d{2}\.xlsx$/);
     expect(excel.body.byteLength).toBeGreaterThan(0);
     expect(excel.body.subarray(0, 2).toString('ascii')).toBe('PK'); // real xlsx (zip) magic bytes
   });
@@ -626,6 +700,7 @@ describe('NcnpReportService', () => {
         needCenters: [{ needId: 'n1', centerId: 'c1' }, { needId: 'n2', centerId: 'c1' }],
         responses: [{ id: 'r1', orgId: 'o1', submittedAt: staleDate, regionId: 'r1' }],
       }) as never,
+      fakeAudit as never,
     );
 
     const report = (await runAs('system_admin', () => service.getReport())) as {
@@ -680,6 +755,7 @@ describe('NcnpReportService', () => {
         needGovernorates: [{ needId: 'n1', governorateId: 'g1' }],
         needCenters: [{ needId: 'n1', centerId: 'c1' }],
       }) as never,
+      fakeAudit as never,
     );
 
     const report = (await runAs('system_admin', () => service.getReport())) as {
@@ -688,5 +764,187 @@ describe('NcnpReportService', () => {
 
     expect(report.surveyGeography.byGovernorate).toEqual([{ id: 'g1', name: 'Al-Kharj', count: 1 }]);
     expect(report.surveyGeography.byCenter).toEqual([{ id: 'c1', name: 'Al-Hayathim', count: 1 }]);
+  });
+
+  it('rolls up Needs (not orgs/surveys) by region/governorate/center, and breaks needs down by sub-domain', async () => {
+    const service = new NcnpReportService(
+      fakeTenant({
+        organisations: [{ id: 'o1', name: 'Org 1', isActive: true, createdAt: new Date(), updatedAt: new Date(), regionId: 'r1' }],
+        regions: [{ id: 'r1', name: 'Riyadh' }],
+        governorates: [{ id: 'g1', name: 'Al-Kharj' }],
+        centers: [{ id: 'c1', name: 'Al-Hayathim' }],
+        needs: [
+          { id: 'n1', title: 'Need 1', orgId: 'o1', domain: 'Health', subDomain: 'Access to Basic Healthcare' },
+          { id: 'n2', title: 'Need 2', orgId: 'o1', domain: 'Health', subDomain: 'Access to Basic Healthcare' },
+          { id: 'n3', title: 'Need 3', orgId: 'o1', domain: 'Education', subDomain: 'Access to Schools' },
+        ],
+        needDomains: [
+          { domain: 'Health', subDomain: 'Access to Basic Healthcare', orgId: 'o1' },
+          { domain: 'Health', subDomain: 'Access to Basic Healthcare', orgId: 'o1' },
+          { domain: 'Education', subDomain: 'Access to Schools', orgId: 'o1' },
+        ],
+        needGovernorates: [{ needId: 'n1', governorateId: 'g1' }, { needId: 'n2', governorateId: 'g1' }],
+        needCenters: [{ needId: 'n1', centerId: 'c1' }],
+      }) as never,
+      fakeAudit as never,
+    );
+
+    const report = (await runAs('system_admin', () => service.getReport())) as {
+      needsGeography: {
+        byRegion: Array<{ id: string; name: string; count: number }>;
+        byGovernorate: Array<{ id: string; name: string; count: number }>;
+        byCenter: Array<{ id: string; name: string; count: number }>;
+      };
+      needSubDomains: Array<{ domainName: string; subDomainName: string; needCount: number }>;
+      domainRegionIntersections: Array<{ regionName: string; domainName: string; needCount: number }>;
+    };
+
+    expect(report.needsGeography.byRegion).toEqual([{ id: 'r1', name: 'Riyadh', count: 3 }]);
+    expect(report.needsGeography.byGovernorate).toEqual([{ id: 'g1', name: 'Al-Kharj', count: 2 }]);
+    expect(report.needsGeography.byCenter).toEqual([{ id: 'c1', name: 'Al-Hayathim', count: 1 }]);
+    expect(report.needSubDomains).toEqual([
+      { domainName: 'Health', subDomainName: 'Access to Basic Healthcare', needCount: 2 },
+      { domainName: 'Education', subDomainName: 'Access to Schools', needCount: 1 },
+    ]);
+    expect(report.domainRegionIntersections).toEqual([
+      { regionName: 'Riyadh', domainName: 'Health', needCount: 2 },
+      { regionName: 'Riyadh', domainName: 'Education', needCount: 1 },
+    ]);
+  });
+
+  it('ranks Needs by their own survey\'s village-priority assessment for the Executive Summary/Priority Needs list — real data only, no fabricated score', async () => {
+    const service = new NcnpReportService(
+      fakeTenant({
+        organisations: [{ id: 'o1', name: 'Org 1', isActive: true, createdAt: new Date(), updatedAt: new Date(), regionId: 'r1' }],
+        regions: [{ id: 'r1', name: 'Riyadh' }],
+        needs: [
+          { id: 'n1', title: 'Water shortage in Village A', orgId: 'o1', domain: 'Water & Sanitation', subDomain: 'Drinking Water Access', source: 'manual_entry', referenceId: 'FIELD-FORM-001' },
+          { id: 'n2', title: 'School access in Village B', orgId: 'o1', domain: 'Education', subDomain: 'Access to Schools', source: 'file_upload' },
+          { id: 'n3', title: 'Unassessed need', orgId: 'o1', domain: 'Health', subDomain: 'Access to Basic Healthcare' },
+        ],
+        surveys: [
+          { id: 'sv1', orgId: 'o1', needId: 'n1', status: 'PUBLISHED', createdAt: new Date() },
+          { id: 'sv2', orgId: 'o1', needId: 'n2', status: 'PUBLISHED', createdAt: new Date() },
+          { id: 'sv3', orgId: 'o1', needId: 'n3', status: 'PUBLISHED', createdAt: new Date() },
+        ],
+        surveyQuestions: [
+          { surveyId: 'sv1', indicator: 'Access to Clean Water', domain: 'Water & Sanitation', subDomain: 'Drinking Water Access' },
+        ],
+        priorityAssessments: [
+          {
+            studyId: 'st1', surveyId: 'sv1', villageId: '', priorityScore: 20, priorityStatus: 'HIGH',
+            calculatedAt: new Date('2026-07-01'),
+            domainComponents: [{ domainKey: 'WATER_SANITATION', domainNameSnapshot: 'Water & Sanitation', domainPerformanceScore: 15, isCriticalDomain: true, triggeredOverride: true }],
+          },
+          {
+            studyId: 'st1', surveyId: 'sv2', villageId: 'Village B', priorityScore: 55, priorityStatus: 'MEDIUM',
+            calculatedAt: new Date('2026-07-01'),
+            domainComponents: [{ domainKey: 'EDUCATION', domainNameSnapshot: 'Education', domainPerformanceScore: 60, isCriticalDomain: false, triggeredOverride: false }],
+          },
+          // sv3 (n3) has no assessment at all — must be excluded, never padded.
+        ],
+        evidence: [{ needId: 'n1' }, { needId: 'n1' }, { needId: 'n2' }],
+      }) as never,
+      fakeAudit as never,
+    );
+
+    const report = (await runAs('system_admin', () => service.getReport())) as {
+      criticalNeeds: {
+        topCriticalNeeds: Array<{
+          needId: string; needTitle: string; priorityScore: number; priorityStatus: string; primaryGap: string | null;
+          evidenceCount: number; source: string; equityFlag: boolean; indicatorId: string | null; unitGeoRegion: string | null; sourceRef: string | null;
+        }>;
+        priorityNeeds: unknown[];
+        totalRankableNeeds: number;
+        totalNeeds: number;
+      };
+    };
+
+    // Lower priorityScore = more critical — n1 (20) ranks above n2 (55); n3 excluded (no assessment).
+    expect(report.criticalNeeds.topCriticalNeeds).toEqual([
+      {
+        needId: 'n1', needTitle: 'Water shortage in Village A', domain: 'Water & Sanitation', subDomain: 'Drinking Water Access',
+        organizationName: 'Org 1', priorityScore: 20, priorityStatus: 'HIGH', primaryGap: 'Water & Sanitation', evidenceCount: 2,
+        source: 'manual_entry', equityFlag: true, indicatorId: 'Access to Clean Water', unitGeoRegion: 'Riyadh', sourceRef: 'FIELD-FORM-001',
+      },
+      {
+        needId: 'n2', needTitle: 'School access in Village B', domain: 'Education', subDomain: 'Access to Schools',
+        organizationName: 'Org 1', priorityScore: 55, priorityStatus: 'MEDIUM', primaryGap: 'Education', evidenceCount: 1,
+        source: 'file_upload', equityFlag: false, indicatorId: null, unitGeoRegion: 'Riyadh', sourceRef: null,
+      },
+    ]);
+    expect(report.criticalNeeds.totalRankableNeeds).toBe(2);
+    expect(report.criticalNeeds.totalNeeds).toBe(3);
+  });
+
+  it('picks the indicator matching the Need\'s own domain, not just the first question inserted on the survey', async () => {
+    const service = new NcnpReportService(
+      fakeTenant({
+        organisations: [{ id: 'o1', name: 'Org 1', isActive: true, createdAt: new Date(), updatedAt: new Date(), regionId: 'r1' }],
+        regions: [{ id: 'r1', name: 'Riyadh' }],
+        needs: [{ id: 'n1', title: 'Maternal health need', orgId: 'o1', domain: 'Health', subDomain: 'Maternal & Child Health' }],
+        surveys: [{ id: 'sv1', orgId: 'o1', needId: 'n1', status: 'PUBLISHED', createdAt: new Date() }],
+        // Inserted in this order — Infrastructure questions come first, same
+        // as the real village-conditions-module survey that surfaced this
+        // bug — the Need is Health, so the Health-domain indicator must win
+        // even though it wasn't the first row.
+        surveyQuestions: [
+          { surveyId: 'sv1', indicator: 'Road Connectivity Quality', domain: 'Infrastructure', subDomain: 'Roads & Transport' },
+          { surveyId: 'sv1', indicator: 'Antenatal Care Coverage', domain: 'Health', subDomain: 'Maternal & Child Health' },
+          { surveyId: 'sv1', indicator: 'Public Transport Availability', domain: 'Infrastructure', subDomain: 'Roads & Transport' },
+        ],
+        priorityAssessments: [
+          {
+            studyId: 'st1', surveyId: 'sv1', villageId: '', priorityScore: 30, priorityStatus: 'HIGH',
+            calculatedAt: new Date('2026-07-01'), domainComponents: [],
+          },
+        ],
+        evidence: [],
+      }) as never,
+      fakeAudit as never,
+    );
+
+    const report = (await runAs('system_admin', () => service.getReport())) as {
+      criticalNeeds: { topCriticalNeeds: Array<{ indicatorId: string | null }> };
+    };
+    expect(report.criticalNeeds.topCriticalNeeds[0]?.indicatorId).toBe('Antenatal Care Coverage');
+  });
+
+  it('Data Quality Notes is always present with real counts, including all-zero when nothing has run yet', async () => {
+    const service = new NcnpReportService(
+      fakeTenant({
+        organisations: [{ id: 'o1', name: 'Org 1', isActive: true, createdAt: new Date(), updatedAt: new Date() }],
+        needs: [
+          { id: 'n1', title: 'Need 1', orgId: 'o1', domain: 'Health' },
+          { id: 'n2', title: 'Need 2', orgId: 'o1', domain: null },
+        ],
+        evidence: [{ needId: 'n1' }],
+      }) as never,
+      fakeAudit as never,
+    );
+
+    const report = (await runAs('system_admin', () => service.getReport())) as {
+      dataQualityNotes: {
+        totalResponses: number;
+        assessedResponses: number;
+        lowConfidenceCount: number;
+        duplicateFlaggedCount: number;
+        totalNeeds: number;
+        needsWithEvidence: number;
+        needsWithoutEvidence: number;
+        needsUnclassified: number;
+      };
+    };
+
+    expect(report.dataQualityNotes).toEqual({
+      totalResponses: 0,
+      assessedResponses: 0,
+      lowConfidenceCount: 0,
+      duplicateFlaggedCount: 0,
+      totalNeeds: 2,
+      needsWithEvidence: 1,
+      needsWithoutEvidence: 1,
+      needsUnclassified: 1,
+    });
   });
 });

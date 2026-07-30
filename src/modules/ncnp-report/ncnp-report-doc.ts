@@ -48,16 +48,29 @@ const GENDER_LABELS: Record<string, string> = {
 };
 const AGE_BRACKET_ORDER = ['age_15_24', 'age_25_34', 'age_35_44', 'age_45_54', 'age_55_64', 'age_65_plus', 'prefer_not_to_say'];
 
+// Matches the Prisma NeedSource enum's values, in the client's own Report
+// Type terminology — see ncnp-report-pdf.ts's copy of this same map for why
+// 'manual_entry' displays as "Survey" and why 'citizen_input'/'field_survey'
+// are kept even though nothing produces them yet.
+const NEED_SOURCE_LABELS: Record<string, string> = {
+  manual_entry: 'Survey',
+  file_upload: 'Uploaded Document',
+  citizen_input: 'Citizen Input',
+  field_survey: 'Field Survey',
+};
+
 // Maps the live NcnpReport payload into the same render-agnostic ReportDoc
 // model every other report export already uses (see report-doc.ts) — reuses
 // the existing renderReportPdf/renderReportExcel renderers unchanged rather
 // than building a second PDF/Excel pipeline for one report type.
-export function buildNcnpReportDoc(report: NcnpReport): ReportDoc {
+export function buildNcnpReportDoc(report: NcnpReport, generatedByName: string): ReportDoc {
   const {
     summary,
     orgHealth,
     orgSummary,
     needDomains,
+    needSubDomains,
+    needsGeography,
     studyStatus,
     studyOverview,
     geography,
@@ -66,6 +79,9 @@ export function buildNcnpReportDoc(report: NcnpReport): ReportDoc {
     regionSummary,
     responseAnalytics,
     priorityOverview,
+    criticalNeeds,
+    dataQualityNotes,
+    domainRegionIntersections,
   } = report;
 
   const sections: DocSection[] = [
@@ -77,8 +93,18 @@ export function buildNcnpReportDoc(report: NcnpReport): ReportDoc {
         { label: 'Studies', value: pct({ ...summary.newThisPeriod.studies, current: summary.totals.studies }) },
         { label: 'Surveys', value: pct({ ...summary.newThisPeriod.surveys, current: summary.totals.surveys }) },
         { label: 'Responses', value: pct({ ...summary.newThisPeriod.responses, current: summary.totals.responses }) },
+        { label: 'Total Needs', value: String(summary.totals.needs) },
       ],
     },
+    criticalNeeds.topCriticalNeeds.length === 0
+      ? { kind: 'note', heading: 'Top Critical Needs', text: 'No Needs have a village-priority assessment yet — nothing to rank.' }
+      : {
+          kind: 'list',
+          heading: 'Top Critical Needs',
+          items: criticalNeeds.topCriticalNeeds.map(
+            (n) => `${n.needTitle} (${n.organizationName} — ${n.domain ?? 'Unclassified'}) — ${n.priorityStatus}, score ${n.priorityScore.toFixed(1)}`,
+          ),
+        },
     {
       kind: 'keyvalue',
       heading: 'Organization Health',
@@ -119,6 +145,50 @@ export function buildNcnpReportDoc(report: NcnpReport): ReportDoc {
     max: Math.max(1, ...needDomains.map((d) => d.needCount)),
     bars: needDomains.map((d) => ({ label: d.domainName, value: d.needCount })),
   });
+
+  sections.push({
+    kind: 'bars',
+    heading: 'Needs by Sub-Domain',
+    max: Math.max(1, ...needSubDomains.map((d) => d.needCount)),
+    bars: needSubDomains.map((d) => ({ label: `${d.domainName} — ${d.subDomainName}`, value: d.needCount })),
+  });
+
+  // Kingdom-wide rollup of Needs themselves — distinct from the
+  // Organizations-by-Region/Governorate/Center breakdown below, which
+  // counts organizations, not individual Needs.
+  sections.push({
+    kind: 'columns',
+    children: [
+      {
+        kind: 'bars',
+        heading: 'Needs by Region',
+        max: Math.max(1, ...needsGeography.byRegion.map((g) => g.count)),
+        bars: needsGeography.byRegion.map((g) => ({ label: g.name, value: g.count })),
+      },
+      {
+        kind: 'bars',
+        heading: 'Needs by Governorate',
+        max: Math.max(1, ...needsGeography.byGovernorate.map((g) => g.count)),
+        bars: needsGeography.byGovernorate.map((g) => ({ label: g.name, value: g.count })),
+      },
+    ],
+  });
+
+  sections.push({
+    kind: 'bars',
+    heading: 'Needs by Center',
+    max: Math.max(1, ...needsGeography.byCenter.map((g) => g.count)),
+    bars: needsGeography.byCenter.map((g) => ({ label: g.name, value: g.count })),
+  });
+
+  if (domainRegionIntersections.length > 0) {
+    sections.push({
+      kind: 'table',
+      heading: 'Pattern & Intersection Analysis — Region x Domain',
+      columns: ['Region', 'Domain', 'Needs'],
+      rows: domainRegionIntersections.map((c) => [c.regionName, c.domainName, String(c.needCount)]),
+    });
+  }
 
   sections.push({
     kind: 'pie',
@@ -243,7 +313,7 @@ export function buildNcnpReportDoc(report: NcnpReport): ReportDoc {
       heading: 'Rejection Reason Breakdown',
       max: Math.max(1, ...surveyAnalytics.rejectionReasonBreakdown.map((r) => r.count)),
       bars: surveyAnalytics.rejectionReasonBreakdown.map((r) => ({
-        label: REJECTION_REASON_LABELS[r.reasonCode] ?? r.reasonCode,
+        label: `${r.reasonCode} — ${REJECTION_REASON_LABELS[r.reasonCode] ?? r.reasonCode}`,
         value: r.count,
       })),
     });
@@ -346,12 +416,56 @@ export function buildNcnpReportDoc(report: NcnpReport): ReportDoc {
     });
   }
 
+  // Need-level (not village-level) — score/evidence/gap/source per Need,
+  // ranked most critical first (see NcnpReportService.buildCriticalNeeds).
+  if (criticalNeeds.priorityNeeds.length === 0) {
+    sections.push({ kind: 'note', heading: 'Priority Needs', text: 'No Needs have a village-priority assessment yet.' });
+  } else {
+    sections.push({
+      kind: 'table',
+      heading: `Priority Needs (top ${criticalNeeds.priorityNeeds.length} of ${criticalNeeds.totalRankableNeeds} rankable)`,
+      // Excel has no page-width constraint the way the PDF does, so this
+      // carries the full Unified Need Record field set — Indicator, Region
+      // (unit_geo), and Source Ref included, unlike the PDF's leaner table.
+      columns: ['Need', 'Domain', 'Score', 'Status', 'Equity Flag', 'Primary Gap', 'Indicator', 'Region', 'Evidence', 'Source', 'Source Ref'],
+      rows: criticalNeeds.priorityNeeds.map((n) => [
+        n.needTitle,
+        n.domain ?? '—',
+        n.priorityScore.toFixed(1),
+        n.priorityStatus,
+        n.equityFlag ? 'Yes' : 'No',
+        n.primaryGap ?? '—',
+        n.indicatorId ?? '—',
+        n.unitGeoRegion ?? '—',
+        String(n.evidenceCount),
+        NEED_SOURCE_LABELS[n.source] ?? n.source,
+        n.sourceRef ?? '—',
+      ]),
+    });
+  }
+
+  // Mandatory — present even when every count is zero, never omitted just
+  // because nothing has happened yet (e.g. no quality assessments run).
+  sections.push({
+    kind: 'keyvalue',
+    heading: 'Data Quality Notes',
+    rows: [
+      { label: 'Responses Quality-Assessed', value: `${dataQualityNotes.assessedResponses} / ${dataQualityNotes.totalResponses}` },
+      { label: 'Low-Confidence Responses', value: String(dataQualityNotes.lowConfidenceCount) },
+      { label: 'Duplicate-Flagged Responses', value: String(dataQualityNotes.duplicateFlaggedCount) },
+      { label: 'Needs With Evidence', value: `${dataQualityNotes.needsWithEvidence} of ${dataQualityNotes.totalNeeds}` },
+      { label: 'Needs Without Evidence', value: String(dataQualityNotes.needsWithoutEvidence) },
+      { label: 'Needs Not Yet Classified', value: String(dataQualityNotes.needsUnclassified) },
+    ],
+  });
+
   return {
-    title: 'NCNP Consolidated Report',
+    title: 'NCNP Compiled Report',
     headerBand: [
       { label: 'Reporting Period', value: `Last ${summary.newThisPeriod.periodDays} days` },
       { label: 'Dormant Threshold', value: `${orgHealth.dormantDays}+ days inactive` },
       { label: 'Generated On', value: fmtDate(report.generatedAt) },
+      { label: 'Generated By', value: generatedByName },
     ],
     sections,
     audit: [{ label: 'Generated At', value: fmtDate(report.generatedAt) }],

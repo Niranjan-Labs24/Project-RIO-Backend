@@ -44,7 +44,7 @@ import type {
 // incrementing it — an accepted edge case, not a silent data loss.
 
 const TOTAL_PAGES = 6;
-const REPORT_NAME = 'NCNP Consolidated Report';
+const REPORT_NAME = 'NCNP Compiled Report';
 const DISCLAIMER = 'This report contains aggregated metrics only. Detailed records are available within the NCNP application.';
 
 // Top N by count, with a "Showing N of Total" disclosure below (same
@@ -110,6 +110,21 @@ const GENDER_LABELS: Record<string, string> = {
   prefer_not_to_say: 'Prefer not to say',
 };
 const AGE_BRACKET_ORDER = ['age_15_24', 'age_25_34', 'age_35_44', 'age_45_54', 'age_55_64', 'age_65_plus', 'prefer_not_to_say'];
+
+// Matches the Prisma NeedSource enum's values, in the client's own Report
+// Type terminology (Survey / Uploaded Document / ...) rather than the raw
+// enum identifiers — 'manual_entry' is a Need entered directly through a
+// form, i.e. the same "Survey" provenance the client's report-type naming
+// uses (see docs/ncnp-unified-need-record-schema-analysis.md's source_type
+// analysis). 'citizen_input'/'field_survey' have no producing code path yet
+// (see Need.source's own schema comment), kept here anyway so an unexpected
+// value never falls through to the raw enum identifier.
+const NEED_SOURCE_LABELS: Record<string, string> = {
+  manual_entry: 'Survey',
+  file_upload: 'Uploaded Document',
+  citizen_input: 'Citizen Input',
+  field_survey: 'Field Survey',
+};
 
 // Matches the Prisma RejectionReasonCode enum's identifiers — UNSPECIFIED
 // covers surveys rejected before this field existed (see
@@ -943,6 +958,8 @@ export function renderNcnpReportPdf(report: NcnpReport, generatedByName: string)
     orgHealth,
     orgSummary,
     needDomains,
+    needSubDomains,
+    needsGeography,
     studyStatus,
     publicLinkStatus,
     studyOverview,
@@ -952,6 +969,9 @@ export function renderNcnpReportPdf(report: NcnpReport, generatedByName: string)
     regionSummary,
     responseAnalytics,
     priorityOverview,
+    criticalNeeds,
+    dataQualityNotes,
+    domainRegionIntersections,
   } = report;
 
   const condensedScope = `Last ${summary.newThisPeriod.periodDays} days · All Regions`;
@@ -987,10 +1007,10 @@ export function renderNcnpReportPdf(report: NcnpReport, generatedByName: string)
   pdf.y += 24;
   pdf.text(LEFT, 24, true, REPORT_NAME, BLACK, 'serif');
   pdf.y += 34;
-  pdf.text(LEFT, 9.5, false, 'Executive summary — cross-organization needs assessment overview', GRAY);
+  pdf.text(LEFT, 9.5, false, 'Platform-level consolidation — kingdom-wide needs assessment overview', GRAY);
   pdf.y += 20;
   const descLines = wrap(
-    'This report provides a consolidated overview of organizations, studies, public surveys, and responses across the NCNP platform for the selected reporting period. It contains aggregated metrics only — for individual records, review the relevant section inside the application.',
+    'This report compiles a national, kingdom-wide overview of needs, organizations, studies, public surveys, and responses across the NCNP platform for the selected reporting period. It contains aggregated metrics only — for individual records, review the relevant section inside the application.',
     8.5,
     CONTENT_W,
   );
@@ -1020,6 +1040,7 @@ export function renderNcnpReportPdf(report: NcnpReport, generatedByName: string)
       { label: 'Studies', value: summary.totals.studies },
       { label: 'Public Surveys', value: summary.totals.surveys },
       { label: 'Total Responses', value: summary.totals.responses },
+      { label: 'Total Needs', value: summary.totals.needs },
       { label: 'Open Surveys', value: publicLinkStatus.open },
       { label: 'Closed Surveys', value: publicLinkStatus.closed },
       { label: 'Avg. Responses / Survey', value: avgResponsesPerSurvey.toFixed(1) },
@@ -1044,6 +1065,28 @@ export function renderNcnpReportPdf(report: NcnpReport, generatedByName: string)
     ],
     4,
   );
+  pdf.y += 12;
+
+  sectionHeading(pdf, 4, 'Top Critical Needs');
+  if (criticalNeeds.topCriticalNeeds.length === 0) {
+    renderCaption(pdf, 'No Needs have a village-priority assessment yet — nothing to rank.');
+  } else {
+    renderCaption(pdf, `Ranked by priority score — ${criticalNeeds.totalRankableNeeds} of ${criticalNeeds.totalNeeds} Needs have an assessment to rank by.`);
+    criticalNeeds.topCriticalNeeds.forEach((n, i) => {
+      pdf.ensure(28);
+      const rowTop = pdf.y;
+      pdf.text(pdf.rx, 9.5, true, `${i + 1}. ${n.needTitle}`, BLACK);
+      pdf.y = rowTop + 13;
+      const meta = [n.organizationName, n.domain, n.primaryGap ? `Primary gap: ${n.primaryGap}` : null]
+        .filter((v): v is string => Boolean(v))
+        .join(' · ');
+      pdf.text(pdf.rx, 8, false, meta, GRAY);
+      const statusLabel = `${n.priorityStatus} · ${n.priorityScore.toFixed(1)}`;
+      pdf.y = rowTop;
+      pdf.text(pdf.rx + pdf.rw - textWidth(statusLabel, 9), 9, true, statusLabel, n.priorityStatus === 'HIGH' ? DESTRUCTIVE : n.priorityStatus === 'MEDIUM' ? WARNING : CHART_4);
+      pdf.y = rowTop + 24;
+    });
+  }
   drawFooter(pdf, 1);
 
   // ---- Page 2 — Organization Overview ----
@@ -1169,29 +1212,105 @@ export function renderNcnpReportPdf(report: NcnpReport, generatedByName: string)
   renderTwoStateBar(pdf, 'Study Status', 'Active', studyStatus.active, 'Archived', studyStatus.archived);
   pdf.y += 16;
 
-  sectionHeading(pdf, 2, 'Studies by Region');
-  renderBarsChart(
-    pdf,
-    '',
-    Math.max(1, ...geography.studiesByRegion.map((g) => g.count)),
-    geography.studiesByRegion.map((g) => ({ label: g.name, value: g.count })),
-  );
-  pdf.y += 16;
-
-  sectionHeading(pdf, 3, 'Organizations with the Highest Number of Studies');
-  renderSection(pdf, {
-    kind: 'table',
-    heading: '',
-    columns: ['Organization', 'Studies'],
-    rows: studyOverview.topOrgsByStudyCount.map((o) => [o.organizationName, String(o.studyCount)]),
+  // Studies by Region + Organizations with the Highest Number of Studies
+  // side by side, not stacked full-width — both are short (a handful of
+  // regions/rows), and stacking them one after another left this page
+  // noticeably under-filled once the Needs geography/sub-domain/pattern
+  // sections (05-07 below) were added and pushed to a second physical page
+  // regardless — pairing these two reclaims roughly one section's worth of
+  // height for that content instead of leaving it as blank space here.
+  const p3aStart = pdf.y;
+  const p3aEnd1 = pdf.column(pdf.rx, pdf.rw / 2 - 8, p3aStart, () => {
+    sectionHeading(pdf, 2, 'Studies by Region');
+    renderBarsChart(
+      pdf,
+      '',
+      Math.max(1, ...geography.studiesByRegion.map((g) => g.count)),
+      geography.studiesByRegion.map((g) => ({ label: g.name, value: g.count })),
+    );
   });
-  if (studyOverview.topOrgsByStudyCount.length > 0) {
-    renderShowingOf(pdf, studyOverview.topOrgsByStudyCount.length, studyOverview.totalOrganizations);
-  }
-  pdf.y += 16;
+  const p3aEnd2 = pdf.column(pdf.rx + pdf.rw / 2 + 8, pdf.rw / 2 - 8, p3aStart, () => {
+    // Shortened from "Organizations with the Highest Number of Studies" —
+    // that full title truncates unreadably at this column's half-width
+    // (heading() truncates to the current column width, not just the full
+    // page width). Same section, same data; only the label changes here.
+    sectionHeading(pdf, 3, 'Top Orgs by Study Count');
+    renderSection(pdf, {
+      kind: 'table',
+      heading: '',
+      columns: ['Organization', 'Studies'],
+      rows: studyOverview.topOrgsByStudyCount.map((o) => [o.organizationName, String(o.studyCount)]),
+    });
+    if (studyOverview.topOrgsByStudyCount.length > 0) {
+      renderShowingOf(pdf, studyOverview.topOrgsByStudyCount.length, studyOverview.totalOrganizations);
+    }
+  });
+  pdf.y = Math.max(p3aEnd1, p3aEnd2) + 10;
 
   sectionHeading(pdf, 4, 'Studies Created — Last 12 Months');
   renderTrendLine(pdf, '', studyOverview.studiesCreatedTrend);
+  pdf.y += 10;
+
+  // Kingdom-wide rollup of Needs themselves — distinct from "Organizations
+  // by Region" (page 2) and "Survey Distribution by Region" (page 4),
+  // which count organizations/surveys, not individual Needs.
+  sectionHeading(pdf, 5, 'Needs — Kingdom-Wide Geographic Rollup');
+  const needsByRegion = capBreakdown(needsGeography.byRegion, REGION_CHART_LIMIT);
+  const needsByGovernorate = capBreakdown(needsGeography.byGovernorate);
+  const needsByCenter = capBreakdown(needsGeography.byCenter);
+  renderColumnChart(
+    pdf,
+    'Needs by Region',
+    Math.max(1, ...needsByRegion.shown.map((g) => g.count)),
+    needsByRegion.shown.map((g) => ({ label: g.name, value: g.count })),
+  );
+  if (needsByRegion.truncated) renderShowingOf(pdf, needsByRegion.shown.length, needsByRegion.total);
+  pdf.y += 4;
+  const p3bStart = pdf.y;
+  const p3bEnd1 = pdf.column(pdf.rx, pdf.rw / 2 - 8, p3bStart, () => {
+    renderBarsChart(
+      pdf,
+      'Needs by Governorate',
+      Math.max(1, ...needsByGovernorate.shown.map((g) => g.count)),
+      needsByGovernorate.shown.map((g) => ({ label: g.name, value: g.count })),
+      { graduated: true },
+    );
+    if (needsByGovernorate.truncated) renderShowingOf(pdf, needsByGovernorate.shown.length, needsByGovernorate.total);
+  });
+  const p3bEnd2 = pdf.column(pdf.rx + pdf.rw / 2 + 8, pdf.rw / 2 - 8, p3bStart, () => {
+    renderBarsChart(
+      pdf,
+      'Needs by Center',
+      Math.max(1, ...needsByCenter.shown.map((g) => g.count)),
+      needsByCenter.shown.map((g) => ({ label: g.name, value: g.count })),
+      { graduated: true },
+    );
+    if (needsByCenter.truncated) renderShowingOf(pdf, needsByCenter.shown.length, needsByCenter.total);
+  });
+  pdf.y = Math.max(p3bEnd1, p3bEnd2) + 4;
+
+  sectionHeading(pdf, 6, 'Needs by Sub-Domain');
+  const subDomainBars = capBreakdown(needSubDomains, GEO_CHART_LIMIT).shown.map((d) => ({
+    label: `${d.domainName} — ${d.subDomainName}`,
+    value: d.needCount,
+  }));
+  renderLabeledBarsChart(pdf, '', Math.max(1, ...subDomainBars.map((b) => b.value)), subDomainBars);
+  if (needSubDomains.length > GEO_CHART_LIMIT) renderShowingOf(pdf, subDomainBars.length, needSubDomains.length);
+  pdf.y += 4;
+
+  sectionHeading(pdf, 7, 'Pattern & Intersection Analysis');
+  renderCaption(pdf, 'Strongest Region x Domain combinations — where Needs concentrate by both dimensions at once.');
+  if (domainRegionIntersections.length === 0) {
+    pdf.text(pdf.rx + 2, 8.5, false, 'No classified Needs with an assigned region yet.', GRAY);
+    pdf.y += 14;
+  } else {
+    renderSection(pdf, {
+      kind: 'table',
+      heading: '',
+      columns: ['Region', 'Domain', 'Needs'],
+      rows: domainRegionIntersections.map((c) => [c.regionName, c.domainName, String(c.needCount)]),
+    });
+  }
   drawFooter(pdf, 3);
 
   // ---- Page 4 — Public Survey Overview ----
@@ -1227,7 +1346,7 @@ export function renderNcnpReportPdf(report: NcnpReport, generatedByName: string)
     pdf.y += 14;
   } else {
     const rejectionReasonBars = surveyAnalytics.rejectionReasonBreakdown.map((r) => ({
-      label: REJECTION_REASON_LABELS[r.reasonCode] ?? r.reasonCode,
+      label: `${r.reasonCode} — ${REJECTION_REASON_LABELS[r.reasonCode] ?? r.reasonCode}`,
       value: r.count,
     }));
     renderLabeledBarsChart(
@@ -1422,6 +1541,66 @@ export function renderNcnpReportPdf(report: NcnpReport, generatedByName: string)
     renderVillageTable(pdf, priorityOverview.topPriorityVillages);
   } else {
     renderSection(pdf, { kind: 'note', heading: '', text: 'No village-level priority assessments recorded yet.' });
+  }
+  pdf.y += 10;
+
+  // Need-level (not village-level) — score/evidence/gap/source per Need,
+  // ranked by the same village-priority assessment used for Page 1's Top
+  // Critical Needs (see NcnpReportService.buildCriticalNeeds for exactly
+  // how "gap" and "source" are derived from real, existing data).
+  sectionHeading(pdf, 4, 'Priority Needs');
+  renderCaption(pdf, 'Score, evidence, primary gap, equity flag, and source per Need — ranked most critical first.');
+  if (criticalNeeds.priorityNeeds.length === 0) {
+    renderSection(pdf, { kind: 'note', heading: '', text: 'No Needs have a village-priority assessment yet.' });
+  } else {
+    renderSection(pdf, {
+      kind: 'table',
+      heading: '',
+      // Full Unified Need Record column set, matching Excel/UI — renderTable
+      // auto-shrinks font size and column widths (and wraps cells up to 2
+      // lines) once past 6 columns, same mechanism already used for the
+      // 8-column By Region — Summary table on Page 4.
+      columns: ['Need', 'Domain', 'Score', 'Status', 'Equity', 'Primary Gap', 'Indicator', 'Region', 'Evidence', 'Source', 'Source Ref'],
+      rows: criticalNeeds.priorityNeeds.map((n) => [
+        n.needTitle,
+        n.domain ?? '—',
+        n.priorityScore.toFixed(1),
+        n.priorityStatus,
+        n.equityFlag ? 'Yes' : 'No',
+        n.primaryGap ?? '—',
+        n.indicatorId ?? '—',
+        n.unitGeoRegion ?? '—',
+        String(n.evidenceCount),
+        NEED_SOURCE_LABELS[n.source] ?? n.source,
+        n.sourceRef ?? '—',
+      ]),
+    });
+    if (criticalNeeds.totalRankableNeeds > criticalNeeds.priorityNeeds.length) {
+      renderShowingOf(pdf, criticalNeeds.priorityNeeds.length, criticalNeeds.totalRankableNeeds);
+    }
+  }
+  pdf.y += 10;
+
+  // Mandatory — present even when every count is zero (e.g. no quality
+  // assessments have been run yet), never omitted just because nothing has
+  // happened. Every number here is real; a zero means exactly that.
+  sectionHeading(pdf, 5, 'Data Quality Notes');
+  const assessedPct = dataQualityNotes.totalResponses === 0 ? 0 : (dataQualityNotes.assessedResponses / dataQualityNotes.totalResponses) * 100;
+  renderKpiTiles(
+    pdf,
+    [
+      { label: 'Responses Quality-Assessed', value: `${dataQualityNotes.assessedResponses} / ${dataQualityNotes.totalResponses} (${assessedPct.toFixed(0)}%)` },
+      { label: 'Low-Confidence Responses', value: dataQualityNotes.lowConfidenceCount },
+      { label: 'Duplicate-Flagged Responses', value: dataQualityNotes.duplicateFlaggedCount },
+      { label: 'Needs With Evidence', value: `${dataQualityNotes.needsWithEvidence} of ${dataQualityNotes.totalNeeds}` },
+      { label: 'Needs Without Evidence', value: dataQualityNotes.needsWithoutEvidence },
+      { label: 'Needs Not Yet Classified', value: dataQualityNotes.needsUnclassified },
+    ],
+    3,
+  );
+  if (dataQualityNotes.assessedResponses === 0) {
+    pdf.y += 4;
+    renderCaption(pdf, 'No response-quality assessments have been run yet for this period.');
   }
   pdf.y += 10;
 

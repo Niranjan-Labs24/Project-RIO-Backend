@@ -92,7 +92,7 @@ describe('NCNP Consolidated Report (e2e)', () => {
       .expect(200);
 
     expect(res.headers['content-type']).toBe('application/pdf');
-    expect(res.headers['content-disposition']).toMatch(/attachment; filename="ncnp-consolidated-report-\d{4}-\d{2}-\d{2}\.pdf"/);
+    expect(res.headers['content-disposition']).toMatch(/attachment; filename="ncnp-compiled-report-\d{4}-\d{2}-\d{2}\.pdf"/);
     const body = res.body as Buffer;
     expect(body.subarray(0, 4).toString('ascii')).toBe('%PDF');
   });

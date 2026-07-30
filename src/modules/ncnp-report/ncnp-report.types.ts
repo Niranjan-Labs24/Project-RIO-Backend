@@ -15,6 +15,7 @@ export interface NcnpReportSummary {
     studies: number;
     surveys: number;
     responses: number;
+    needs: number;
   };
   newThisPeriod: {
     periodDays: number;
@@ -175,6 +176,23 @@ export interface NcnpGeographyOverview {
   studiesByRegion: NcnpNamedBreakdown[];
 }
 
+// Kingdom-wide rollup of Needs themselves (not organizations, not surveys) —
+// by region/governorate/center. A Need can span more than one governorate/
+// center (multi-select), so a single Need can contribute to more than one
+// bar here — same fan-out-when-genuinely-multi-selected semantics as
+// NcnpSurveyGeography's governorate/center breakdown.
+export interface NcnpNeedsGeography {
+  byRegion: NcnpNamedBreakdown[];
+  byGovernorate: NcnpNamedBreakdown[];
+  byCenter: NcnpNamedBreakdown[];
+}
+
+export interface NcnpSubDomainBreakdown {
+  domainName: string;
+  subDomainName: string;
+  needCount: number;
+}
+
 export interface NcnpOrgSummaryRow {
   organizationId: string;
   organizationName: string;
@@ -222,12 +240,90 @@ export interface NcnpRegionSummaryRow {
   avgResponsesPerSurvey: number;
 }
 
+// A single Need, ranked by its own survey's village-priority assessment
+// (VillagePriorityAssessment — see NcnpReportService.buildPriorityNeeds for
+// exactly how "critical" is derived from real, existing data). `primaryGap`
+// is a derived label (the lowest-performing domain component for this
+// need's assessment), not a stored "gap type" field — there is no need-level
+// gap-type column in the schema today; this is the closest real signal
+// available without one.
+export interface NcnpPriorityNeedRow {
+  needId: string;
+  needTitle: string;
+  domain: string | null;
+  subDomain: string | null;
+  organizationName: string;
+  priorityScore: number;
+  priorityStatus: string;
+  primaryGap: string | null;
+  evidenceCount: number;
+  source: string;
+  // Unified Need Record Schema fields — all derived/joined from existing
+  // data, no new columns (see docs/ncnp-unified-need-record-schema-analysis.md):
+  // - equityFlag: derived from this assessment's own domain components
+  //   (a critical domain that triggered an override) — a per-assessment
+  //   classification, not a stored fact.
+  // - indicatorId: the Question Bank's own `indicator` field, joined via
+  //   this Need's Survey's questions — "the first indicator found," since a
+  //   survey can touch several and there is no single indicator_id anywhere
+  //   in the schema.
+  // - unitGeoRegion: this Need's org's single Region (Organisation.regionId)
+  //   — the one genuinely single-valued geography level; governorate/
+  //   center/village stay real multi-select relations elsewhere in this
+  //   report rather than being collapsed here.
+  // - sourceRef: Need.referenceId — the submitter's own external tracking
+  //   id, already on Need today under a different name.
+  equityFlag: boolean;
+  indicatorId: string | null;
+  unitGeoRegion: string | null;
+  sourceRef: string | null;
+}
+
+export interface NcnpCriticalNeedsOverview {
+  // Capped at exactly 3 — the client's "Executive Summary: top three
+  // critical needs" ask.
+  topCriticalNeeds: NcnpPriorityNeedRow[];
+  // A fuller ranked list for the "Priority Needs" section (score, evidence,
+  // gap type, source per need) — capped wider than the executive summary's 3.
+  priorityNeeds: NcnpPriorityNeedRow[];
+  // How many of the platform's Needs have at least one village-priority
+  // assessment behind them (i.e. actually rankable) — disclosed so the
+  // report never implies full coverage when most Needs have never been
+  // scored yet.
+  totalRankableNeeds: number;
+  totalNeeds: number;
+}
+
+// Always present, even when every count is zero — never omitted just
+// because nothing has happened yet (e.g. no quality assessments run).
+export interface NcnpDataQualityNotes {
+  totalResponses: number;
+  assessedResponses: number;
+  lowConfidenceCount: number;
+  duplicateFlaggedCount: number;
+  totalNeeds: number;
+  needsWithEvidence: number;
+  needsWithoutEvidence: number;
+  needsUnclassified: number;
+}
+
+// One (region, domain) cell — how many Needs in that region fall under that
+// domain. Sparse (zero-count combinations omitted) and capped to the
+// strongest intersections, not the full region x domain cross product.
+export interface NcnpDomainRegionIntersection {
+  regionName: string;
+  domainName: string;
+  needCount: number;
+}
+
 export interface NcnpReport {
   generatedAt: string;
   summary: NcnpReportSummary;
   orgHealth: NcnpOrgHealth;
   orgSummary: NcnpOrgSummary;
   needDomains: NcnpDomainBreakdown[];
+  needSubDomains: NcnpSubDomainBreakdown[];
+  needsGeography: NcnpNeedsGeography;
   studyStatus: NcnpStudyStatus;
   publicLinkStatus: NcnpPublicLinkStatus;
   studyOverview: NcnpStudyOverview;
@@ -237,4 +333,7 @@ export interface NcnpReport {
   regionSummary: NcnpRegionSummaryRow[];
   responseAnalytics: NcnpResponseAnalytics;
   priorityOverview: NcnpPriorityOverview;
+  criticalNeeds: NcnpCriticalNeedsOverview;
+  dataQualityNotes: NcnpDataQualityNotes;
+  domainRegionIntersections: NcnpDomainRegionIntersection[];
 }
