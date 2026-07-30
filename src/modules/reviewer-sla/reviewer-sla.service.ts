@@ -167,7 +167,9 @@ export class ReviewerSlaService {
         // No SLA clock applies to an already-resolved item — "pending" here
         // just means "unread" (see markReviewerSlaAlertsSeen on the frontend).
         status: "pending",
-        comments: isApproved ? undefined : survey.approverComments,
+        // Reviewer notes are now mandatory on approve too, not just reject —
+        // surface whichever decision's note is on the row either way.
+        comments: survey.approverComments,
       };
     });
 

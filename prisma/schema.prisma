@@ -1383,9 +1383,9 @@ model HumanDecision {
 }
 
 // Structured reason code for rejecting a submitted Survey — see
-// Survey.rejectionReasonCode. REJ_99 (Other) is the only code that requires
-// Survey.approverComments to be filled in as well; every other code leaves
-// comments optional. See SurveysService.rejectSurvey for the enforcement.
+// Survey.rejectionReasonCode. Survey.approverComments (reviewer notes) is
+// mandatory for every code now, not just REJ_99 — see
+// SurveysService.rejectSurvey for the enforcement.
 enum RejectionReasonCode {
   REJ_01 @map("REJ-01") // Incomplete survey design
   REJ_02 @map("REJ-02") // Methodology non-compliance
@@ -1443,11 +1443,17 @@ model Survey {
   // resolved by app code" convention as `createdBy` above, not a Prisma
   // relation.
   submittedAt      DateTime? @map("submitted_at") @db.Timestamptz(6)
-  // The Approver's reason for the most recent rejection — shown prominently
-  // to the Researcher when they reopen a REJECTED survey. Cleared on the
-  // next Submit for Approval, so it never lingers as stale feedback once a
-  // new round of review has started (the audit log keeps the full history
-  // regardless, this is only "the current outstanding note").
+  // The Approver's reviewer notes for the most recent decision — mandatory
+  // on both Approve & Publish and Reject (client requirement: reviewer
+  // notes must be captured before publishing). Shown prominently to the
+  // Researcher when they reopen a REJECTED survey; also set on PUBLISHED
+  // surveys now. Cleared on the next Submit for Approval (a Reject ->
+  // resubmit round), so it never lingers as stale feedback once a new round
+  // of review has started — never cleared once PUBLISHED, since that's a
+  // terminal state with no resubmit path. The audit log keeps the full
+  // history regardless; this column is only "the current outstanding note."
+  // Nullable only because surveys approved/rejected before this requirement
+  // existed have no value.
   approverComments String?   @map("approver_comments")
   // Structured reason for the most recent rejection, alongside the free-text
   // approverComments above — mandatory whenever a survey is rejected (see

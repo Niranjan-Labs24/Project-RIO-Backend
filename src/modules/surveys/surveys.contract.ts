@@ -50,17 +50,28 @@ export const RejectionReasonCode = T.Union([
 export const RejectSurveyBody = registerSchema(
   'RejectSurveyBody',
   T.Object({
-    // A structured reason is always required. Free-text comments are
-    // optional here at the schema level — comments become mandatory only
-    // when reasonCode is REJ_99 ("Other"), enforced in
-    // SurveysService.rejectSurvey since TypeBox's structural validation
-    // can't express "required only if X" (same reasoning as
-    // SurveyQuestionItem's domain/subDomain/kpi above).
+    // A structured reason is always required. Reviewer notes (comments) are
+    // now unconditionally required too, regardless of reasonCode — client
+    // requirement: reviewer notes must be mandatory before publishing, for
+    // both Approve and Reject. Whitespace-only strings pass minLength:1 (it
+    // counts raw characters), so SurveysService.rejectSurvey also runs its
+    // own trim-check — not expressible in TypeBox alone.
     reasonCode: RejectionReasonCode,
-    comments: T.Optional(T.String({ minLength: 1, maxLength: 2000 })),
+    comments: T.String({ minLength: 1, maxLength: 2000 }),
   }),
 );
 export type RejectSurveyDto = Static<typeof RejectSurveyBody>;
+
+// Reviewer notes are mandatory on approve too — see RejectSurveyBody's
+// comment for why this is required rather than optional, and why
+// SurveysService.approveAndPublish still runs its own trim-check.
+export const ApproveSurveyBody = registerSchema(
+  'ApproveSurveyBody',
+  T.Object({
+    comments: T.String({ minLength: 1, maxLength: 2000 }),
+  }),
+);
+export type ApproveSurveyDto = Static<typeof ApproveSurveyBody>;
 
 export const SetMethodologyVersionBody = registerSchema(
   'SetMethodologyVersionBody',

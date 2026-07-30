@@ -105,6 +105,12 @@ async function main(): Promise<void> {
         status: "PUBLISHED",
         methodologyVersion: mv.version,
         publishedAt: new Date(),
+        // Reviewer notes are mandatory for every real approve/publish
+        // (SurveysService.approveAndPublish) — this seed script bypasses
+        // that service entirely, so it sets the same column directly to
+        // keep seeded data consistent with the live business rule rather
+        // than leaving it null.
+        approverComments: "System-generated seed data",
         createdBy,
       },
     });

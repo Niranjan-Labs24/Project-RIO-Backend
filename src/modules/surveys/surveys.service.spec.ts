@@ -39,6 +39,12 @@ function fakeTenant(survey: FakeSurvey | null, questionCount = 1) {
     user: {
       findMany: async () => [],
     },
+    // approveAndPublish also moves the owning Need to survey_published —
+    // this file's tests don't assert on Need state, just need the call to
+    // resolve.
+    need: {
+      update: async () => undefined,
+    },
   };
   return {
     runInOrgContext: async (fn: (tx: unknown) => unknown) => fn(tx),
@@ -61,12 +67,12 @@ function runAsApprover<T>(fn: () => Promise<T>): Promise<T> {
 describe('SurveysService.rejectSurvey', () => {
   const submittedSurvey: FakeSurvey = { id: 'sv1', status: 'SUBMITTED' };
 
-  it('REJ_99 ("Other") requires comments — rejects with no comments', async () => {
+  it('requires comments regardless of reason code — rejects with empty comments', async () => {
     const service = makeService(submittedSurvey);
-    await expect(runAsApprover(() => service.rejectSurvey('sv1', 'REJ_99'))).rejects.toBeInstanceOf(BadRequestException);
+    await expect(runAsApprover(() => service.rejectSurvey('sv1', 'REJ_03', ''))).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('REJ_99 ("Other") with blank/whitespace-only comments still fails', async () => {
+  it('blank/whitespace-only comments still fail, for any reason code', async () => {
     const service = makeService(submittedSurvey);
     await expect(runAsApprover(() => service.rejectSurvey('sv1', 'REJ_99', '   '))).rejects.toBeInstanceOf(BadRequestException);
   });
@@ -79,15 +85,7 @@ describe('SurveysService.rejectSurvey', () => {
     expect(result.approverComments).toBe('Explanation here');
   });
 
-  it('a specific reason code (not REJ_99) succeeds with no comments at all', async () => {
-    const service = makeService(submittedSurvey);
-    const result = (await runAsApprover(() => service.rejectSurvey('sv1', 'REJ_03'))) as FakeSurvey;
-    expect(result.status).toBe('REJECTED');
-    expect(result.rejectionReasonCode).toBe('REJ_03');
-    expect(result.approverComments).toBeNull();
-  });
-
-  it('a specific reason code (not REJ_99) also accepts optional comments', async () => {
+  it('a specific reason code (not REJ_99) also requires real comments', async () => {
     const service = makeService(submittedSurvey);
     const result = (await runAsApprover(() => service.rejectSurvey('sv1', 'REJ_06', 'Extra context'))) as FakeSurvey;
     expect(result.rejectionReasonCode).toBe('REJ_06');
@@ -96,7 +94,41 @@ describe('SurveysService.rejectSurvey', () => {
 
   it('rejects a survey that is not currently SUBMITTED', async () => {
     const service = makeService({ id: 'sv1', status: 'DRAFT' });
-    await expect(runAsApprover(() => service.rejectSurvey('sv1', 'REJ_01'))).rejects.toBeInstanceOf(ConflictException);
+    await expect(runAsApprover(() => service.rejectSurvey('sv1', 'REJ_01', 'Some notes'))).rejects.toBeInstanceOf(ConflictException);
+  });
+});
+
+describe('SurveysService.approveAndPublish', () => {
+  const submittedSurvey: FakeSurvey = { id: 'sv1', needId: 'n1', status: 'SUBMITTED' };
+  const draftSurvey: FakeSurvey = { id: 'sv1', needId: 'n1', status: 'DRAFT' };
+
+  it('requires reviewer notes — rejects with empty comments', async () => {
+    const service = makeService(submittedSurvey);
+    await expect(runAsApprover(() => service.approveAndPublish('sv1', ''))).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('blank/whitespace-only reviewer notes still fail', async () => {
+    const service = makeService(submittedSurvey);
+    await expect(runAsApprover(() => service.approveAndPublish('sv1', '   '))).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('succeeds with real reviewer notes — persists approverComments and publishes', async () => {
+    const service = makeService(submittedSurvey);
+    const result = (await runAsApprover(() => service.approveAndPublish('sv1', 'Looks good, publishing.'))) as FakeSurvey;
+    expect(result.status).toBe('PUBLISHED');
+    expect(result.approverComments).toBe('Looks good, publishing.');
+  });
+
+  it('also succeeds from DRAFT (the AI Review flow, no separate submit step)', async () => {
+    const service = makeService(draftSurvey);
+    const result = (await runAsApprover(() => service.approveAndPublish('sv1', 'Approved via AI Review.'))) as FakeSurvey;
+    expect(result.status).toBe('PUBLISHED');
+    expect(result.approverComments).toBe('Approved via AI Review.');
+  });
+
+  it('rejects a survey that is not currently SUBMITTED or DRAFT', async () => {
+    const service = makeService({ id: 'sv1', needId: 'n1', status: 'REJECTED' });
+    await expect(runAsApprover(() => service.approveAndPublish('sv1', 'Notes'))).rejects.toBeInstanceOf(ConflictException);
   });
 });
 
@@ -142,5 +174,56 @@ describe('SurveysService.setSampleDescription', () => {
     await expect(
       runAsApprover(() => service.setSampleDescription('sv1', 'Group', 100, 'Approach', 'Coverage')),
     ).rejects.toBeInstanceOf(ConflictException);
+  });
+});
+
+describe('SurveysService.listReusableCustomQuestions', () => {
+  interface FakeSurveyQuestionRow {
+    id: string;
+    customText: string | null;
+    customAnswerType: string | null;
+    customOptions: unknown;
+    domain: string | null;
+    subDomain: string | null;
+    kpi: string | null;
+    survey: { title: string };
+  }
+
+  function makeQuestionService(rows: FakeSurveyQuestionRow[]) {
+    const tenant = {
+      runInOrgContext: async (fn: (tx: unknown) => unknown) =>
+        fn({
+          surveyQuestion: {
+            findMany: async ({ where }: { where: Record<string, unknown> }) =>
+              rows.filter((r) => (where.domain ? r.domain === where.domain && r.subDomain === where.subDomain : true)),
+          },
+        }),
+    };
+    const audit = { record: async () => undefined };
+    return new SurveysService(tenant as never, audit as never, undefined as never, undefined as never);
+  }
+
+  const rows: FakeSurveyQuestionRow[] = [
+    {
+      id: 'q1', customText: 'Any water source issues?', customAnswerType: 'long_text', customOptions: null,
+      domain: 'Water & Sanitation', subDomain: 'Drinking Water Access', kpi: null, survey: { title: 'Survey A' },
+    },
+    {
+      id: 'q2', customText: 'Describe school access.', customAnswerType: 'long_text', customOptions: null,
+      domain: 'Education', subDomain: 'Access to Basic Education', kpi: null, survey: { title: 'Survey B' },
+    },
+  ];
+
+  it('filters to the given domain/subDomain when both are provided', async () => {
+    const service = makeQuestionService(rows);
+    const result = await runAsApprover(() => service.listReusableCustomQuestions('Water & Sanitation', 'Drinking Water Access'));
+    expect(result).toHaveLength(1);
+    expect(result[0]?.questionText).toBe('Any water source issues?');
+  });
+
+  it('returns every reusable custom question when called with no domain/subDomain (allDomainsSelected)', async () => {
+    const service = makeQuestionService(rows);
+    const result = await runAsApprover(() => service.listReusableCustomQuestions());
+    expect(result).toHaveLength(2);
   });
 });

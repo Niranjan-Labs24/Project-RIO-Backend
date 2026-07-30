@@ -277,17 +277,20 @@ export class SurveysService {
   // from scratch on some OTHER survey, for this exact Domain/Sub-domain —
   // lets a later survey targeting the same Domain/Sub-domain reuse one
   // instead of recreating it. Deliberately org-wide (not scoped to one
-  // Need/Survey) and deliberately filtered to the current Need's own
-  // Domain/Sub-domain — showing every custom question ever created,
-  // unfiltered, would defeat the point (see the product discussion this
-  // was requested from). Deduped by question text (case/whitespace-
-  // insensitive) since the same wording can easily have been reused across
-  // several surveys already; the most recently created copy wins the dedupe
-  // so answerType/options reflect its latest form.
-  async listReusableCustomQuestions(domain: string, subDomain: string) {
+  // Need/Survey) and filtered to the current Need's own Domain/Sub-domain
+  // when one is known. `domain`/`subDomain` both omitted means "AI couldn't
+  // classify this Need at all" (allDomainsSelected) — the same "match
+  // every eligible question" convention getQuestions([]) already uses for
+  // the Question Bank tab, so the Custom Questions tab isn't left empty
+  // just because there's no single domain to filter by. Deduped by question
+  // text (case/whitespace-insensitive) since the same wording can easily
+  // have been reused across several surveys already; the most recently
+  // created copy wins the dedupe so answerType/options reflect its latest
+  // form.
+  async listReusableCustomQuestions(domain?: string, subDomain?: string) {
     const rows = await this.tenant.runInOrgContext((tx) =>
       tx.surveyQuestion.findMany({
-        where: { customText: { not: null }, domain, subDomain },
+        where: domain && subDomain ? { customText: { not: null }, domain, subDomain } : { customText: { not: null } },
         orderBy: { id: 'desc' },
         include: { survey: { select: { title: true } } },
       }),
@@ -814,10 +817,23 @@ Eligible Questions: ${JSON.stringify(
     return updated;
   }
 
+  // Reviewer notes are mandatory on both Approve and Reject (client
+  // requirement) — TypeBox's minLength:1 alone would still let a
+  // whitespace-only string through, so both call sites share this check
+  // rather than duplicating the same trim-and-throw.
+  private requireReviewerNotes(comments: string): void {
+    if (!comments.trim()) {
+      throw new BadRequestException({
+        error: { code: 'REVIEWER_NOTES_REQUIRED', message: 'Reviewer notes are required.' },
+      });
+    }
+  }
+
   // Approver: the only path to PUBLISHED. Combines "approve" and "publish"
   // into one action per the product decision — there's no intermediate
   // "approved but not yet published" state.
-  async approveAndPublish(surveyId: string) {
+  async approveAndPublish(surveyId: string, comments: string) {
+    this.requireReviewerNotes(comments);
     const survey = await this.tenant.runInOrgContext((tx) => tx.survey.findUnique({ where: { id: surveyId } }));
     if (!survey) {
       throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
@@ -849,6 +865,10 @@ Eligible Questions: ${JSON.stringify(
           approvedBy: actorId,
           publishedAt: now,
           publishedBy: actorId,
+          // Reused from the reject path — this column now holds the
+          // reviewer's notes for whichever decision was made most recently,
+          // approve or reject (see the field's own schema comment).
+          approverComments: comments,
         },
       });
       await tx.need.update({ where: { id: survey.needId }, data: { status: 'survey_published' } });
@@ -860,6 +880,7 @@ Eligible Questions: ${JSON.stringify(
       entityType: 'survey',
       entityId: surveyId,
       entityLabel: 'Survey approved and published',
+      changes: [{ field: 'Approver Comments', before: null, after: comments }],
       metadata: this.actorRoleMetadata(),
     });
 
@@ -869,7 +890,8 @@ Eligible Questions: ${JSON.stringify(
   // Approver: sends the survey back to the Researcher with required
   // comments. Never touches surveyQuestions — any content change has to
   // come from the Researcher through updateQuestions after this.
-  async rejectSurvey(surveyId: string, reasonCode: RejectionReasonCode, comments?: string) {
+  async rejectSurvey(surveyId: string, reasonCode: RejectionReasonCode, comments: string) {
+    this.requireReviewerNotes(comments);
     const survey = await this.tenant.runInOrgContext((tx) => tx.survey.findUnique({ where: { id: surveyId } }));
     if (!survey) {
       throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
@@ -877,16 +899,6 @@ Eligible Questions: ${JSON.stringify(
     if (survey.status !== 'SUBMITTED') {
       throw new ConflictException({
         error: { code: 'SURVEY_NOT_PENDING_APPROVAL', message: 'This survey is not currently awaiting approval.' },
-      });
-    }
-    // REJ_99 ("Other") is the one code with no fixed meaning of its own —
-    // without comments there, the Researcher gets no explanation at all.
-    // Every other code is already a specific, self-explanatory reason, so
-    // comments stay optional there (enforced here, not in the TypeBox
-    // schema — see RejectSurveyBody's comment for why).
-    if (reasonCode === 'REJ_99' && !comments?.trim()) {
-      throw new BadRequestException({
-        error: { code: 'REJECTION_COMMENTS_REQUIRED', message: 'Comments are required when the rejection reason is "Other".' },
       });
     }
 
@@ -899,7 +911,7 @@ Eligible Questions: ${JSON.stringify(
           rejectedAt: new Date(),
           rejectedBy: actorId,
           rejectionReasonCode: reasonCode,
-          approverComments: comments ?? null,
+          approverComments: comments,
         },
       }),
     );
@@ -911,7 +923,7 @@ Eligible Questions: ${JSON.stringify(
       entityLabel: 'Survey rejected',
       changes: [
         { field: 'Rejection Reason', before: null, after: reasonCode },
-        { field: 'Approver Comments', before: null, after: comments ?? null },
+        { field: 'Approver Comments', before: null, after: comments },
       ],
       metadata: this.actorRoleMetadata(),
     });
