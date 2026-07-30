@@ -11,17 +11,39 @@ function makeRow(overrides: Partial<NeedRow> = {}): NeedRow {
     title: 'Old title',
     statement: 'Old statement',
     village: ['A'],
+    governorateIds: [],
+    centerIds: [],
     source: 'manual_entry',
     referenceId: null,
     status: 'draft',
     domain: 'Water',
     subDomain: 'Access',
+    allDomainsSelected: false,
+    needDomains: [{ domain: 'Water', subDomain: 'Access' }],
     aiSuggestedDomain: null,
     aiSuggestedSubDomain: null,
+    classifiedAt: null,
+    classificationError: null,
+    proposedDomains: null,
+    proposedReason: null,
     createdBy: 'me',
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),
     ...overrides,
+  };
+}
+
+// Prisma returns needGovernorates/needCenters as join-row arrays once
+// GEO_INCLUDE is applied — NeedsService.toNeedRow() flattens that back down
+// to governorateIds/centerIds. Mirrors that raw shape here so the service's
+// own flattening logic is exercised the same way it is in production.
+function withGeo(row: NeedRow) {
+  const { governorateIds, centerIds, ...rest } = row;
+  return {
+    ...rest,
+    needGovernorates: governorateIds.map((governorateId) => ({ governorateId })),
+    needCenters: centerIds.map((centerId) => ({ centerId })),
+    needDomains: row.needDomains,
   };
 }
 
@@ -39,19 +61,30 @@ function fakeTenant(opts: {
       findUnique: async () => opts.study ?? null,
     },
     need: {
-      findUnique: async () => opts.need ?? null,
-      findMany: async () => opts.needs ?? [],
+      // Reads opts.need fresh each call (rather than a snapshot) so that
+      // update()'s own tx.need.update -> re-findUnique sequence sees
+      // whatever onNeedUpdate mutated it to, same as a real transaction.
+      findUnique: async () => (opts.need ? withGeo(opts.need) : null),
+      findMany: async () => (opts.needs ?? []).map(withGeo),
       create: async ({ data }: { data: Record<string, unknown> }) => {
         opts.onNeedCreate?.(data);
         return { id: 'need-new', createdAt: new Date('2026-01-01T00:00:00Z'), updatedAt: new Date('2026-01-01T00:00:00Z'), ...data };
       },
       update: async ({ data }: { data: Record<string, unknown> }) => {
         opts.onNeedUpdate?.(data);
-        return { ...(opts.need as object), ...data, updatedAt: new Date('2026-01-02T00:00:00Z') };
+        if (opts.need) Object.assign(opts.need, data);
       },
       delete: async ({ where }: { where: unknown }) => {
         opts.onNeedDelete?.(where);
       },
+    },
+    needGovernorate: {
+      deleteMany: async () => {},
+      createMany: async () => {},
+    },
+    needCenter: {
+      deleteMany: async () => {},
+      createMany: async () => {},
     },
     user: {
       findMany: async () => opts.users ?? [],
@@ -60,8 +93,23 @@ function fakeTenant(opts: {
   return { runInOrgContext: async (fn: (tx: unknown) => unknown) => fn(tx) };
 }
 
-function makeService(tenant: ReturnType<typeof fakeTenant>, audit: unknown = { record: async () => {} }) {
-  return new NeedsService(tenant as never, audit as never);
+function fakeAiDecisions(onClassify?: (needId: string) => void) {
+  return {
+    classifyAutomatically: async (needId: string) => {
+      onClassify?.(needId);
+    },
+  };
+}
+
+function makeService(
+  tenant: ReturnType<typeof fakeTenant>,
+  audit: unknown = { record: async () => {} },
+  aiDecisions: unknown = fakeAiDecisions(),
+) {
+  // geography is only consulted when a payload carries governorateIds/
+  // centerIds (see assertGeographyInStudyScope's early return) — none of
+  // these tests do, so an empty stub is enough.
+  return new NeedsService(tenant as never, audit as never, {} as never, aiDecisions as never);
 }
 
 const ctx = { requestId: 'r', orgId: 'o1', actorId: 'me' };
@@ -71,21 +119,19 @@ describe('NeedsService', () => {
     it('404s when the study does not exist', async () => {
       const svc = makeService(fakeTenant({ study: null }));
       await expect(
-        orgContext.run(ctx, () =>
-          svc.create('study-1', { title: 'T', statement: 'S', village: ['V'], domain: 'Water', subDomain: 'Access' }),
-        ),
+        orgContext.run(ctx, () => svc.create('study-1', { title: 'T', statement: 'S', village: ['V'] })),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('allows a second Need under the same Study (no more one-per-study conflict)', async () => {
       const svc = makeService(fakeTenant({ study: { id: 'study-1' } }));
       const need = await orgContext.run(ctx, () =>
-        svc.create('study-1', { title: 'Second need', statement: 'S', village: ['V'], domain: 'Water', subDomain: 'Access' }),
+        svc.create('study-1', { title: 'Second need', statement: 'S', village: ['V'] }),
       );
       expect(need.title).toBe('Second need');
     });
 
-    it('sets source to manual_entry (never from the request), stores domain/subDomain, defaults referenceId to null, and records an audit event keyed off title', async () => {
+    it('sets source to manual_entry (never from the request), starts pending_ai_classification, defaults referenceId to null, and records an audit event keyed off title', async () => {
       let createdData: Record<string, unknown> | undefined;
       const recorded: unknown[] = [];
       const audit = { record: async (i: unknown) => { recorded.push(i); } };
@@ -99,25 +145,36 @@ describe('NeedsService', () => {
           title: 'Irregular water supply',
           statement: 'Households...',
           village: ['Kadapa', 'Thimmapuram'],
-          domain: 'Water & Sanitation',
-          subDomain: 'Access',
         }),
       );
 
       expect(createdData?.source).toBe('manual_entry');
-      expect(createdData?.domain).toBe('Water & Sanitation');
-      expect(createdData?.subDomain).toBe('Access');
+      expect(createdData?.status).toBe('pending_ai_classification');
       expect(createdData?.referenceId).toBeNull();
       expect(need.source).toBe('manual_entry');
+      expect(need.status).toBe('pending_ai_classification');
       expect(need.createdByName).toBe('Me');
       expect(recorded[0]).toMatchObject({ action: 'create', entityType: 'need', entityLabel: 'Irregular water supply' });
+    });
+
+    it('kicks off automatic AI classification for the new Need (fire-and-forget)', async () => {
+      const classified: string[] = [];
+      const svc = makeService(
+        fakeTenant({ study: { id: 'study-1' } }),
+        { record: async () => {} },
+        fakeAiDecisions((id) => classified.push(id)),
+      );
+      const need = await orgContext.run(ctx, () =>
+        svc.create('study-1', { title: 'T', statement: 'S', village: ['V'] }),
+      );
+      expect(classified).toEqual([need.id]);
     });
 
     it('stores referenceId when provided', async () => {
       let createdData: Record<string, unknown> | undefined;
       const svc = makeService(fakeTenant({ study: { id: 'study-1' }, onNeedCreate: (d) => { createdData = d; } }));
       await orgContext.run(ctx, () =>
-        svc.create('study-1', { title: 'T', statement: 'S', village: ['V'], domain: 'Water', subDomain: 'Access', referenceId: 'FIELD-42' }),
+        svc.create('study-1', { title: 'T', statement: 'S', village: ['V'], referenceId: 'FIELD-42' }),
       );
       expect(createdData?.referenceId).toBe('FIELD-42');
     });
@@ -162,7 +219,7 @@ describe('NeedsService', () => {
       },
     );
 
-    it('patches title/village/domain/subDomain while still draft, and records only the changed fields under their display labels', async () => {
+    it('patches title/statement/village while still draft, and records only the changed fields under their display labels', async () => {
       let updateData: Record<string, unknown> | undefined;
       const recorded: { changes?: { field: string; before: unknown; after: unknown }[] }[] = [];
       const audit = { record: async (i: unknown) => { recorded.push(i as never); } };
@@ -170,19 +227,18 @@ describe('NeedsService', () => {
       const svc = makeService(fakeTenant({ need: current, onNeedUpdate: (d) => { updateData = d; }, users: [{ id: 'me', name: 'Me' }] }), audit);
 
       const updated = await orgContext.run(ctx, () =>
-        svc.update('need-1', { title: 'New title', village: ['A', 'B'], domain: 'Health' }),
+        svc.update('need-1', { title: 'New title', village: ['A', 'B'] }),
       );
 
-      expect(updateData).toEqual({ title: 'New title', village: ['A', 'B'], domain: 'Health' });
+      expect(updateData).toEqual({ title: 'New title', village: ['A', 'B'] });
       expect(updated.title).toBe('New title');
       expect(recorded[0].changes).toEqual(
         expect.arrayContaining([
           { field: 'Title', before: 'Old title', after: 'New title' },
-          { field: 'Governorate', before: ['A'], after: ['A', 'B'] },
-          { field: 'Domain', before: 'Water', after: 'Health' },
+          { field: 'Village', before: ['A'], after: ['A', 'B'] },
         ]),
       );
-      expect(recorded[0].changes).toHaveLength(3);
+      expect(recorded[0].changes).toHaveLength(2);
     });
 
     it('allows clearing referenceId to null explicitly', async () => {
@@ -201,6 +257,21 @@ describe('NeedsService', () => {
       await orgContext.run(ctx, () => svc.update('need-1', { title: current.title }));
       expect(recorded).toHaveLength(0);
     });
+
+    it.each(['pending_ai_classification', 'ai_classification_failed'])(
+      're-triggers automatic AI classification when a change is made while status is %s',
+      async (status) => {
+        const classified: string[] = [];
+        const current = makeRow({ status: status as NeedRow['status'] });
+        const svc = makeService(
+          fakeTenant({ need: current, users: [{ id: 'me', name: 'Me' }] }),
+          { record: async () => {} },
+          fakeAiDecisions((id) => classified.push(id)),
+        );
+        await orgContext.run(ctx, () => svc.update('need-1', { title: 'New title' }));
+        expect(classified).toEqual(['need-1']);
+      },
+    );
   });
 
   describe('remove', () => {

@@ -66,7 +66,11 @@ describe('ConfigService', () => {
   });
 
   function makeConfig(overrides: Record<string, string> = {}): ConfigService {
-    process.env = { ...process.env, ...valid, ...overrides };
+    // Deliberately NOT spread over the inherited process.env: this file's
+    // "safe defaults" assertions must hold in isolation from whatever the
+    // developer's own .env happens to set (e.g. a real MAIL_FROM), otherwise
+    // this test's outcome depends on the machine running it.
+    process.env = { ...valid, ...overrides };
     return new ConfigService();
   }
 

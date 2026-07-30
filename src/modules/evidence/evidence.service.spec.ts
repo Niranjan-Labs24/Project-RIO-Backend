@@ -17,6 +17,7 @@ function fakeStorage(opts: { onSave?: (name: string, buffer: Buffer) => void; on
   return {
     assertAllowedExtension: () => {},
     assertAllowedSize: () => {},
+    assertFileSignature: () => {},
     hashBuffer: (buffer: Buffer) => buffer.toString('utf8'),
     save: async (name: string, buffer: Buffer) => {
       opts.onSave?.(name, buffer);
@@ -85,7 +86,7 @@ describe('EvidenceService', () => {
     });
 
     it('409s when the upload would exceed the per-need file limit', async () => {
-      const svc = makeService(fakeTenant({ need: { studyId: 'study-1' }, existingEvidenceCount: MAX_EVIDENCE_FILES_PER_STUDY }));
+      const svc = makeService(fakeTenant({ need: { studyId: 'study-1', status: 'draft' }, existingEvidenceCount: MAX_EVIDENCE_FILES_PER_STUDY }));
       await expect(
         orgContext.run(ctx, () => svc.upload('need-1', [file('a.pdf', 'content-a')])),
       ).rejects.toBeInstanceOf(ConflictException);
@@ -94,7 +95,7 @@ describe('EvidenceService', () => {
     it('computes and persists fileHash from the in-memory buffer, stamping both needId and the parent studyId', async () => {
       let created: Record<string, unknown> | undefined;
       const svc = makeService(
-        fakeTenant({ need: { studyId: 'study-1' }, onEvidenceCreate: (d) => { created = d; } }),
+        fakeTenant({ need: { studyId: 'study-1', status: 'draft' }, onEvidenceCreate: (d) => { created = d; } }),
       );
       await orgContext.run(ctx, () => svc.upload('need-1', [file('a.pdf', 'content-a')]));
       expect(created?.fileHash).toBe('content-a');
@@ -103,25 +104,25 @@ describe('EvidenceService', () => {
     });
 
     it('flags isDuplicate=false for the first upload of a new hash', async () => {
-      const svc = makeService(fakeTenant({ need: { studyId: 'study-1' } }));
+      const svc = makeService(fakeTenant({ need: { studyId: 'study-1', status: 'draft' } }));
       const [evidence] = await orgContext.run(ctx, () => svc.upload('need-1', [file('a.pdf', 'content-a')]));
       expect(evidence?.isDuplicate).toBe(false);
     });
 
     it('flags isDuplicate=true when the hash already exists for this need', async () => {
-      const svc = makeService(fakeTenant({ need: { studyId: 'study-1' }, existingHashes: ['content-a'] }));
+      const svc = makeService(fakeTenant({ need: { studyId: 'study-1', status: 'draft' }, existingHashes: ['content-a'] }));
       const [evidence] = await orgContext.run(ctx, () => svc.upload('need-1', [file('a.pdf', 'content-a')]));
       expect(evidence?.isDuplicate).toBe(true);
     });
 
     it('ignores null fileHash rows (pre-existing evidence from before the column existed) when checking for duplicates', async () => {
-      const svc = makeService(fakeTenant({ need: { studyId: 'study-1' }, existingHashes: [null] }));
+      const svc = makeService(fakeTenant({ need: { studyId: 'study-1', status: 'draft' }, existingHashes: [null] }));
       const [evidence] = await orgContext.run(ctx, () => svc.upload('need-1', [file('a.pdf', 'content-a')]));
       expect(evidence?.isDuplicate).toBe(false);
     });
 
     it('flags the second copy of the same file within one batch, but not the first', async () => {
-      const svc = makeService(fakeTenant({ need: { studyId: 'study-1' } }));
+      const svc = makeService(fakeTenant({ need: { studyId: 'study-1', status: 'draft' } }));
       const [first, second] = await orgContext.run(ctx, () =>
         svc.upload('need-1', [file('a.pdf', 'same-content'), file('b.pdf', 'same-content')]),
       );
@@ -130,7 +131,7 @@ describe('EvidenceService', () => {
     });
 
     it('does not flag two different files as duplicates of each other', async () => {
-      const svc = makeService(fakeTenant({ need: { studyId: 'study-1' } }));
+      const svc = makeService(fakeTenant({ need: { studyId: 'study-1', status: 'draft' } }));
       const [first, second] = await orgContext.run(ctx, () =>
         svc.upload('need-1', [file('a.pdf', 'content-a'), file('b.pdf', 'content-b')]),
       );
@@ -163,7 +164,10 @@ describe('EvidenceService', () => {
       expect(removedKey).toBe('key-a');
     });
 
-    it.each(['evidence_submitted', 'ai_classified', 'reviewer_approved', 'survey_created', 'survey_published'])(
+    it.each(['evidence_submitted', 'reviewer_approved', 'survey_created', 'survey_published'])(
+      // ai_classified deliberately excluded — evidence stays deletable
+      // through that stage (see EVIDENCE_EDITABLE_STATUSES's comment); it
+      // only locks once an Approver has actually acted (reviewer_approved+).
       '409s once the parent Need is past draft (%s) and never deletes',
       async (status) => {
         let deleted = false;
