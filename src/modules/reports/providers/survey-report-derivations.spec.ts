@@ -34,7 +34,9 @@ function coverage(over: Partial<CoverageBlock> = {}): CoverageBlock {
     evidenceFilesTotal: 5,
     evidenceIncludedInReport: 4,
     domainsScored: 5,
+    kpisAttempted: 20,
     kpisScored: 20,
+    kpisNotMeasurable: 0,
     assessmentPeriod: "01 July 2026 - 15 July 2026",
     ...over,
   };
@@ -122,15 +124,16 @@ describe("buildResponseFunnel", () => {
 });
 
 describe("buildQuestionCoverage", () => {
-  it("sorts by weight, biggest first, and drops unscored domains", () => {
+  // Plots the questions THIS survey asked — not the KPIs the methodology
+  // defines under each domain, which is what it used to chart under a
+  // "Questions per Domain" label while the coverage tile said something else.
+  it("keeps the snapshot's ordering and drops domains with no questions", () => {
     const snapshot = {
-      severity: {
-        domainSeverityScores: [
-          { domainName: "Education", kpiCount: 5 },
-          { domainName: "Health", kpiCount: 9 },
-          { domainName: "Empty", kpiCount: 0 },
-        ],
-      },
+      questionsAskedByDomain: [
+        { domain: "Health", domainKey: "HEALTH", count: 9 },
+        { domain: "Education", domainKey: "EDUCATION", count: 5 },
+        { domain: "Empty", domainKey: "EMPTY", count: 0 },
+      ],
     } as never;
     expect(buildQuestionCoverage(snapshot)).toEqual([
       { domain: "Health", count: 9 },

@@ -8,6 +8,8 @@
 // been removed now that the real provider is in place. "Body changes,
 // contract doesn't."
 
+import type { UnifiedRpt01Sections } from "./unified-report.types";
+
 /** Confidence banding carried through from ScoreRollup.confidenceLevel. */
 export type ConfidenceLevel = "LOW" | "STANDARD";
 
@@ -46,11 +48,19 @@ export interface ResponseQuality {
   submittedResponses: number;
   validResponses: number;
   overallConfidence: ConfidenceLevel;
-  // Quantitative companion to overallConfidence — valid-response ratio
-  // (validResponses / submittedResponses × 100), rounded. Rendered alongside
-  // the qualitative band, e.g. "STANDARD (90%)".
-  confidencePct: number;
+  // Why the confidence band is what it is — names the condition that actually
+  // fired (sample size vs don't-know rate), never both when only one did.
+  confidenceReason: string;
+  // The valid-response ratio (validResponses / submittedResponses × 100),
+  // rounded. This is a DATA COMPLETENESS figure, not a confidence percentage:
+  // rendering it as "STANDARD (90%)" implied the band was 90% certain, which is
+  // a different claim and the source of the client's confidence objection. The
+  // two are now separate fields and are rendered as separate rows.
+  validResponseRatePct: number;
   dontKnowRate: number; // percentage, e.g. 12.4
+  // Backend-decided adjective for the don't-know rate. The prompt must use it
+  // verbatim rather than characterising the number itself.
+  dontKnowBand: "negligible" | "moderate" | "elevated" | "high";
 }
 
 /** One row of severity.domains[] — sourced from VillagePriorityAssessment
@@ -61,15 +71,17 @@ export interface DomainComponent {
   // the row back to the methodology's indicators. Sourced from ScoreRollup
   // .entityId / Domain.code.
   domainCode: string;
-  severityScore: number;
-  performanceScore: number;
-  weight: number;
-  weightedContribution: number;
+  // NULL when this domain was not measurable — never 0 as a stand-in. A 0 here
+  // reads as "assessed, no problem found", the opposite of the truth.
+  severityScore: number | null;
+  performanceScore: number | null;
+  weight: number | null;
+  weightedContribution: number | null;
   confidence: ConfidenceLevel;
-  // Quantitative companion to the qualitative `confidence` band — the valid-
-  // response ratio (validResponses / submittedResponses × 100), rounded. The
-  // Confidence column renders both, e.g. "STANDARD (82%)".
-  confidencePct: number;
+  // Why the band is what it is — see ResponseQuality.confidenceReason.
+  confidenceReason: string;
+  // Data completeness, kept distinct from the confidence band (see above).
+  validResponseRatePct: number;
   // Number of methodology KPIs defined under this domain (i.e. the KPIs that
   // contribute to its severity). Counted from the methodology's Question set.
   kpiCount: number;
@@ -83,14 +95,20 @@ export interface DomainComponent {
 }
 
 export interface SeverityBlock {
-  overallVillageNeedsIndex: number;
-  label: string; // "Low" | "Medium" | "High" (display banding)
+  // NULL when nothing could be scored. Renderers print "—", never 0.
+  overallVillageNeedsIndex: number | null;
+  label: string; // "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" | "UNSCORED"
   domains: DomainComponent[];
 }
 
 export interface PriorityBlock {
-  villagePriorityScore: number;
-  priorityStatus: PriorityStatus;
+  // NULL when no priority assessment is stored. The old `0` + `'LOW'` fallback
+  // contradicted the banding itself (≤40 → HIGH), so an unscored village was
+  // reported as the lowest-priority one.
+  villagePriorityScore: number | null;
+  priorityStatus: PriorityStatus | null;
+  /** Required whenever villagePriorityScore is null. */
+  notCalculableReason: string | null;
   overrideApplied: boolean;
   overrideReason: string | null;
 }
@@ -99,9 +117,11 @@ export interface TopKpi {
   rank: number;
   kpi: string;
   domain: string;
-  severityScore: number;
+  severityScore: number | null;
   confidence: ConfidenceLevel;
   validResponseCount: number;
+  /** Present when severityScore is null — why it could not be measured. */
+  notMeasuredReason?: string | null;
 }
 
 export interface QualitativeEvidenceItem {
@@ -165,7 +185,12 @@ export interface CoverageBlock {
   evidenceFilesTotal: number;
   evidenceIncludedInReport: number;
   domainsScored: number;
+  /** KPI rollups that exist for this survey — i.e. KPIs it asked about. */
+  kpisAttempted: number;
+  /** KPI rollups that produced an actual severity. Always ≤ kpisAttempted. */
   kpisScored: number;
+  /** kpisAttempted − kpisScored. Counted and shown, never folded into "scored". */
+  kpisNotMeasurable: number;
   assessmentPeriod: string;
 }
 
@@ -246,14 +271,14 @@ export interface VillageReportContent {
   filters: Record<string, unknown>;
 }
 
-/** RPT01 Individual Survey Report — one survey, end to end.
+/** The blocks RPT01 and RPT15 share, built from ONE ReportDataSnapshot.
  *
  *  Deliberately carries `header` + `severity` so it satisfies the `isCore`
  *  predicate in report-doc.ts and report-content-view.tsx, and therefore
  *  inherits the existing gauge / radar / severity-bars / demographics-donut
  *  rendering for free. `coverage`, `responseFunnel` and `questionCoverage` are
- *  the new blocks this report adds on top. */
-export interface IndividualSurveyReportContent {
+ *  the blocks the survey-scoped reports add on top. */
+export interface SurveyReportBase {
   header: ReportHeader;
   survey: SurveyIdentity;
   coverage: CoverageBlock;
@@ -271,6 +296,14 @@ export interface IndividualSurveyReportContent {
   demographics: Demographics | null;
   filters: Record<string, unknown>;
 }
+
+/** RPT01 Individual Survey Report — one survey, end to end.
+ *
+ *  The shared survey blocks PLUS the six fixed sections of the Unified
+ *  Narrative Report Structure and the flat `needRecords` payload the Merged and
+ *  NCNP reports will consume. RPT15 takes only the shared half, which is why
+ *  the two are split. */
+export interface IndividualSurveyReportContent extends SurveyReportBase, UnifiedRpt01Sections {}
 
 /** RPT15 Survey & Dashboard Report — one survey's results merged with
  *  the organisation's dashboard outputs, plus the band that reconciles them.
@@ -355,10 +388,10 @@ export interface RegionReportContent {
     // Number of valid survey responses that contributed to this region's score.
     responseCount: number;
     // Severity (Needs Index, 0–100) shown alongside the priority score so the
-    // two are legible side by side.
-    severityScore: number;
-    priorityScore: number;
-    priorityStatus: PriorityStatus;
+    // two are legible side by side. Null when nothing was scored.
+    severityScore: number | null;
+    priorityScore: number | null;
+    priorityStatus: PriorityStatus | null;
   }>;
   aiSummary: AiSummaryBlock;
   // Data Quality and Trend notes are promoted to first-class report fields for

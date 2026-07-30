@@ -33,7 +33,8 @@ function snapshot(): ReportDataSnapshot {
       validResponseCount: 38,
       dontKnowRate: 12.4,
       confidenceLevel: "STANDARD",
-      confidenceReason: "",
+      confidenceReason: "High response completeness.",
+      dontKnowBand: "moderate",
     },
     severity: {
       overallVillageNeedsIndex: 63.8,
@@ -46,6 +47,9 @@ function snapshot(): ReportDataSnapshot {
         { rank: 1, kpiName: "Daily Clean Water Access", indicatorName: "IND-1", domainName: "Water & Sanitation", severityScore: 88, confidenceLevel: "LOW", validResponseCount: 8 },
         { rank: 2, kpiName: "Availability of Essential Medicines", indicatorName: "IND-2", domainName: "Health", severityScore: 78, confidenceLevel: "STANDARD", validResponseCount: 35 },
       ],
+      subDomainSeverityScores: [],
+      indicatorSeverityScores: [],
+      kpiSeverityScores: [],
     },
     priority: {
       villagePriorityScore: 37.45,
@@ -58,6 +62,11 @@ function snapshot(): ReportDataSnapshot {
       overrideReason: "Critical Domain Override: Water & Sanitation performance score is 19, below the threshold of 30.",
       calculatedAt: "2026-07-22T09:00:00Z",
     },
+    questionsAskedByDomain: [
+      { domain: "Health", domainKey: "HEALTH", count: 12 },
+      { domain: "Water & Sanitation", domainKey: "WATER_SANITATION", count: 8 },
+    ],
+    unitGeo: null,
     evidence: [
       { id: "ev-1", evidenceTitle: "Water shortage", type: "note", sourceReferenceId: "REF-1", linkedDomainOrKpi: "Water & Sanitation", description: "Irregular water supply reported.", collectedDate: "2026-07-10" },
     ],
@@ -103,8 +112,10 @@ describe("snapshot-to-content mappers", () => {
     // % (valid-response ratio = 8 / (8 + 12) = 40%), and per-domain trend note.
     expect(water.domainCode).toBe("WATER_SANITATION");
     expect(water.kpiCount).toBe(5);
-    expect(water.confidencePct).toBe(40);
-    expect(water.trendNote).toBe(SINGLE_CYCLE_TREND_NOTE);
+    expect(water.validResponseRatePct).toBe(40);
+    // Cycle-aware: cycle 1 says "baseline", never the old blanket
+    // "trends cannot be assessed" that also appeared on cycle-2 reports.
+    expect(water.trendNote).toContain("Cycle 1 baseline");
 
     expect(c.priority.villagePriorityScore).toBe(37.45);
     expect(c.priority.priorityStatus).toBe("HIGH");
@@ -177,6 +188,6 @@ describe("snapshot-to-content mappers", () => {
     expect(exec.scope.villages).toBe("Ad-Dilam");
     expect(exec.scope.governorate).toBe("Riyadh");
     // 38 valid / 42 submitted = 90%.
-    expect(exec.responseQuality.confidencePct).toBe(90);
+    expect(exec.responseQuality.validResponseRatePct).toBe(90);
   });
 });

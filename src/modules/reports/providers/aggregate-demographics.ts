@@ -14,13 +14,18 @@ const SETTLEMENT_LABEL: Record<string, string> = { rural: "Rural", urban: "Urban
 // (empty) when not, so the demographic charts degrade gracefully. Shared by the
 // real provider and saveReportFromSummary so both agree. Returns null only when
 // neither series has any data.
+// Scope: RPT01 describes ONE survey, and a Survey belongs to exactly one Need,
+// so its respondents are the Need's respondents. Filtering by studyId pulled
+// every sibling survey's respondents into this report's gender breakdown — the
+// same leak already fixed for evidence. Study-wide scopes (SECTOR / REGION /
+// EXECUTIVE) legitimately span the study and pass `{ studyId }`.
 export async function aggregateDemographics(
   tenant: TenantPrismaService,
-  studyId: string,
+  scope: { needId: string } | { studyId: string },
   villageId: string,
 ): Promise<Demographics | null> {
   return tenant.runInOrgContext(async (tx) => {
-    const where: { studyId: string; village?: { has: string } } = { studyId };
+    const where: Record<string, unknown> = { ...scope };
     if (villageId) where.village = { has: villageId };
 
     const [genderRows, settlementRows] = await Promise.all([
