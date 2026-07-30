@@ -5,7 +5,7 @@ import { AuditService } from './audit.service';
 function fakeTenant() {
   const rows: Record<string, unknown>[] = [];
   const tenant = {
-    runInOrgContext: async (fn: (tx: any) => any) =>
+    runInOrgContext: async (fn: (tx: unknown) => unknown) =>
       fn({
         auditLog: {
           create: async ({ data }: { data: Record<string, unknown> }) => {
@@ -45,7 +45,7 @@ function fakeTenant() {
           findMany: async () => [{ id: 'u1', name: 'Admin User', email: 'admin@demo.org' }],
         },
       }),
-    runAsOrg: async (_orgId: string, fn: (tx: any) => any) =>
+    runAsOrg: async (_orgId: string, fn: (tx: unknown) => unknown) =>
       fn({
         auditLog: {
           create: async ({ data }: { data: Record<string, unknown> }) => {
@@ -54,7 +54,7 @@ function fakeTenant() {
           },
         },
       }),
-    runAsSupervisor: async (fn: (tx: any) => any) =>
+    runAsSupervisor: async (fn: (tx: unknown) => unknown) =>
       fn({
         auditLog: {
           create: async ({ data }: { data: Record<string, unknown> }) => {
@@ -101,7 +101,7 @@ function fakeTenant() {
 describe('AuditService', () => {
   it('record writes an append-only row with actor/org/ip/ua', async () => {
     const { rows, tenant } = fakeTenant();
-    const svc = new AuditService(tenant as any);
+    const svc = new AuditService(tenant as never);
     await orgContext.run(
       { requestId: 'r', orgId: 'o1', actorId: 'u1', ip: '1.2.3.4', userAgent: 'jest' },
       () =>
@@ -122,7 +122,7 @@ describe('AuditService', () => {
 
   it('getById redacts sensitive password fields in metadata and changes', async () => {
     const { tenant } = fakeTenant();
-    const svc = new AuditService(tenant as any);
+    const svc = new AuditService(tenant as never);
     const detail = await orgContext.run(
       { requestId: 'r', actorId: 'u1', role: 'system_admin' },
       () => svc.getById('a1'),
@@ -136,7 +136,7 @@ describe('AuditService', () => {
 
   it('getSummary aggregates governance metrics', async () => {
     const { tenant } = fakeTenant();
-    const svc = new AuditService(tenant as any);
+    const svc = new AuditService(tenant as never);
     const summary = await orgContext.run(
       { requestId: 'r', actorId: 'u1', role: 'system_admin' },
       () => svc.getSummary(),

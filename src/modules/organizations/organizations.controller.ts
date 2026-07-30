@@ -1,3 +1,4 @@
+import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
@@ -40,7 +41,7 @@ export class OrganizationsController {
 
   @Get(':id')
   @RequirePermission('entityTeam', 'read')
-  getById(@Param('id') id: string): Promise<OrganizationSummary> {
+  getById(@Param('id', new UuidParamPipe()) id: string): Promise<OrganizationSummary> {
     return this.orgs.getById(id);
   }
 

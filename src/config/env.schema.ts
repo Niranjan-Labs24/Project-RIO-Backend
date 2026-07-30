@@ -12,10 +12,15 @@ export const EnvSchema = Type.Object({
     { default: 'production' },
   ),
   PORT: Type.Number({ default: 3000 }),
-  // NOTE: DATABASE_URL (cnap_owner) is intentionally NOT part of the app's
-  // schema. It's CLI-only (prisma.config.ts, seed, tests) and the running
-  // app must never require or hold owner-role credentials. Extra env keys
-  // (like DATABASE_URL) are ignored by ajv, so .env can still define it.
+  // Owner role (cnap_owner) — historically CLI-only (prisma.config.ts,
+  // seed, tests). Now also read at runtime by BackupService: pg_dump needs
+  // a connection that bypasses RLS to produce a complete backup, and
+  // APP_DATABASE_URL/SUPERVISOR_DATABASE_URL below are both NOBYPASSRLS —
+  // using either would silently dump an incomplete (or empty) database
+  // instead of failing loudly. This is a deliberate, confirmed exception to
+  // "the app never holds owner creds," made specifically for the backup
+  // job rather than introducing a separate backup-only DB role.
+  DATABASE_URL: Type.String({ minLength: 1 }),
   APP_DATABASE_URL: Type.String({ minLength: 1 }),
   // Cross-org read-only connection (cnap_supervisor, NOBYPASSRLS). The running
   // app legitimately holds this at runtime for crossEntity roles' read path
@@ -51,20 +56,23 @@ export const EnvSchema = Type.Object({
   // CORS_ORIGIN so existing dev/staging setups keep working without a new
   // env var, but should be set explicitly in any real environment.
   PUBLIC_APP_URL: Type.Optional(Type.String()),
-  // SMTP (nodemailer). When SMTP_HOST is unset the mailer is "not configured"
-  // and signup falls back to the dev-only temp-password reveal.
-  SMTP_HOST: Type.Optional(Type.String()),
-  SMTP_PORT: Type.Number({ default: 587 }),
-  SMTP_SECURE: Type.Boolean({ default: false }),
-  SMTP_USER: Type.Optional(Type.String()),
-  SMTP_PASS: Type.Optional(Type.String()),
+  // Resend (email API — see MailerService). When RESEND_API_KEY is unset the
+  // mailer is "not configured" and signup falls back to the dev-only
+  // temp-password reveal.
+  RESEND_API_KEY: Type.Optional(Type.String()),
   MAIL_FROM: Type.String({ default: 'RIO <no-reply@rio.local>' }),
-  // Unifonic (SMS OTP delivery for the citizen public survey flow — see
-  // SmsService). When UNIFONIC_APP_SID is unset the SMS channel is "not
-  // configured", same not-configured/soft-fail convention as SMTP above —
+  // Twilio (SMS OTP delivery for the citizen public survey flow — see
+  // SmsService). When TWILIO_ACCOUNT_SID is unset the SMS channel is "not
+  // configured", same not-configured/soft-fail convention as Resend above —
   // a mobile number just won't get a text until these are set.
-  UNIFONIC_APP_SID: Type.Optional(Type.String()),
-  UNIFONIC_SENDER_ID: Type.Optional(Type.String()),
+  TWILIO_ACCOUNT_SID: Type.Optional(Type.String()),
+  TWILIO_AUTH_TOKEN: Type.Optional(Type.String()),
+  TWILIO_FROM_NUMBER: Type.Optional(Type.String()),
+  // Bounds every outbound Twilio API call (SmsService) — the Twilio SDK's
+  // own default is 30s, which is too long to leave a citizen's OTP request
+  // hanging on a slow/unresponsive provider. 10s is a conservative default;
+  // override per environment if Twilio's own latency profile warrants it.
+  SMS_TIMEOUT_MS: Type.Number({ default: 10_000, minimum: 1000, maximum: 60_000 }),
   // Double-submit CSRF enforcement for cookie-authenticated mutations. Default
   // on; bearer and anonymous requests do not carry ambient session authority.
   CSRF_ENFORCE: Type.Boolean({ default: true }),
@@ -78,6 +86,19 @@ export const EnvSchema = Type.Object({
   REVIEWER_SLA_HOURS: Type.Number({ default: 48 }),
   REVIEWER_SLA_POLL_INTERVAL_MS: Type.Number({ default: 60_000 }),
   GEMINI_API_KEY: Type.Optional(Type.String()),
+  // Periodic pg_dump backup (BackupService). BACKUP_DIR is where dump files
+  // are written (created if missing, relative paths resolved from the
+  // process cwd). BACKUP_CRON_SCHEDULE is a standard 5-field cron
+  // expression — defaults to weekly (Sundays at 03:00), confirmed working
+  // end-to-end during testing at a faster interval first.
+  BACKUP_DIR: Type.String({ default: './storage/backups' }),
+  BACKUP_CRON_SCHEDULE: Type.String({ default: '0 3 * * 0' }),
+  // Optional override for the pg_dump binary — the bare command name is
+  // resolved via PATH by default, which is correct in Docker (see
+  // Dockerfile) but can silently pick the wrong installed major version on
+  // a host machine with multiple Postgres versions (e.g. Homebrew, where
+  // `pg_dump` on PATH tracks whichever version is currently linked).
+  PG_DUMP_PATH: Type.Optional(Type.String()),
   LOG_LEVEL: Type.Union(
     [
       Type.Literal('fatal'),

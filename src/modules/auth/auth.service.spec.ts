@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 import { JwtService } from '@nestjs/jwt';
-import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Logger, UnauthorizedException } from '@nestjs/common';
 import { orgContext } from '../../tenancy/org-context';
 import { AuthService } from './auth.service';
 import { PasswordService } from '../../auth/password.service';
@@ -168,6 +168,26 @@ describe('AuthService.signup', () => {
 
     expect(res.temporaryPasswordEmailed).toBe(false);
     expect(res.temporaryPassword).toBeUndefined();
+  });
+
+  it('signup: never logs the temporary password, even when revealing it in the response (Task 10)', async () => {
+    repo.findByRegistrationNumber.mockResolvedValue(null);
+    repo.findUserByEmail.mockResolvedValue(null);
+    repo.createOrganisationAndAdmin.mockResolvedValue({
+      org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: 'RN1', logoUrl: null, region: [], email: null, sector: null, villages: [], isActive: true, createdAt: new Date() },
+      user: { id: 'u1', name: 'Org Admin', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h', consentedAt: null, consentedPolicyVersion: null, failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: true },
+    });
+    mailer.sendTemporaryPassword.mockResolvedValue(false);
+    const logSpy = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const errorSpy = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+
+    const res = await service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'] });
+
+    expect(typeof res.temporaryPassword).toBe('string');
+    const allLoggedArgs = [...logSpy.mock.calls, ...errorSpy.mock.calls].flat().map(String);
+    expect(allLoggedArgs.some((arg) => arg.includes(res.temporaryPassword as string))).toBe(false);
+    logSpy.mockRestore();
+    errorSpy.mockRestore();
   });
 });
 

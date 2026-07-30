@@ -1,6 +1,7 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
+import { Prisma } from '../../generated/prisma';
 import { requireOrgId, getOrgStore } from '../../tenancy/org-context';
 import { AiService } from '../ai/ai.service';
 import {
@@ -22,7 +23,7 @@ import {
   EXECUTIVE_REPORT_SUMMARY_PROMPT_VERSION,
   EXECUTIVE_REPORT_SUMMARY_SYSTEM_PROMPT,
 } from '../ai/prompts/executive-report-summary.system';
-import { normalizeDomainKey } from '../priority/priority-v2.service';
+import { normalizeDomainKey, type DomainPriorityComponent } from '../priority/priority-v2.service';
 import { aggregateDemographics } from './providers/aggregate-demographics';
 import {
   snapshotToExecutiveContent,
@@ -301,7 +302,8 @@ export class ReportSummaryService {
       const overallNeedsIndex = overallRollup?.severityScore ? Number(overallRollup.severityScore) : null;
       const severityBand = overallNeedsIndex === null ? 'UNSCORED' : overallNeedsIndex >= 70 ? 'CRITICAL' : overallNeedsIndex >= 50 ? 'HIGH' : overallNeedsIndex >= 30 ? 'MEDIUM' : 'LOW';
 
-      const domainComponents: any[] = (priorityAssessment?.domainComponents as any[]) || [];
+      const domainComponents =
+        (priorityAssessment?.domainComponents as unknown as DomainPriorityComponent[] | null) || [];
 
       const snapshot: ReportDataSnapshot = {
         snapshotId: `snap-${Date.now()}`,
@@ -439,7 +441,7 @@ export class ReportSummaryService {
 ${JSON.stringify(snapshot, null, 2)}
 `;
 
-    const { response: aiOutputJson } = await this.aiService.generateJson<any>(
+    const { response: aiOutputJson } = await this.aiService.generateJson<Record<string, unknown>>(
       promptText,
       systemPrompt,
       PRIORITY_DASHBOARD_SUMMARY_RESPONSE_SCHEMA,
@@ -467,14 +469,14 @@ ${JSON.stringify(snapshot, null, 2)}
           reportDataSnapshotId: snapshot.snapshotId,
           status: 'DRAFT',
           summaryScope: scope,
-          scopeFilters: scopeFilters as any,
+          scopeFilters: scopeFilters as Prisma.InputJsonValue,
           promptVersion,
           promptHash,
           modelName: 'gemini-2.5-flash',
           modelVersion: 'v1',
           inputReportDataHash: reportDataHash,
           inputEvidenceSnapshotHash: evidenceHash,
-          aiOutputJson,
+          aiOutputJson: aiOutputJson as Prisma.InputJsonValue,
           generatedBy: actorId,
         },
       });
@@ -534,7 +536,7 @@ ${JSON.stringify(snapshot, null, 2)}
       return tx.aiPrioritySummary.update({
         where: { id: summaryId },
         data: {
-          officerEditedOutputJson: editedOutputJson as any,
+          officerEditedOutputJson: editedOutputJson as Prisma.InputJsonValue,
           updatedAt: new Date(),
         },
       });
@@ -685,8 +687,8 @@ ${JSON.stringify(snapshot, null, 2)}
           reportType,
           title,
           studyId: summary.studyId,
-          filters: scopeFilters as any,
-          content: content as any,
+          filters: scopeFilters as Prisma.InputJsonValue,
+          content: content as unknown as Prisma.InputJsonValue,
           generatedBy,
         },
       }),
@@ -711,7 +713,7 @@ ${JSON.stringify(snapshot, null, 2)}
         where: { id: summaryId },
         data: {
           status: 'SAVED',
-          ...(editedOutputJson ? { officerEditedOutputJson: editedOutputJson as any } : {}),
+          ...(editedOutputJson ? { officerEditedOutputJson: editedOutputJson as Prisma.InputJsonValue } : {}),
           officerConfirmedBy: actorId,
           officerConfirmedAt: new Date(),
           updatedAt: new Date(),

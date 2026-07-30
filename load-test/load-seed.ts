@@ -3,7 +3,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as argon2 from 'argon2';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient, Sector, UserStatus } from '../src/generated/prisma';
+import { PrismaClient, UserStatus } from '../src/generated/prisma';
 import { pgSslFromEnv } from '../src/prisma/pg-ssl';
 
 /**
@@ -45,9 +45,9 @@ async function main(): Promise<void> {
         data: {
           id: orgId,
           name: `Load Org ${o}`,
-          region: 'LoadRegion',
+          region: ['LoadRegion'],
           email: `load-o${o}@load.test`,
-          sector: Sector.other,
+          sector: 'other',
           villages: ['V1', 'V2', 'V3'],
           isActive: true,
         },

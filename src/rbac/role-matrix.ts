@@ -52,12 +52,16 @@ export const ROLE_MATRIX: RoleDef[] = [
     // same as Admin; they still can't approve a priority score elsewhere in
     // the app (no such action exists on this role's other screens anyway).
     perm('priorityScoring', { read: true, create: true }),
-    // `create` (not `write`/`approve`) — lets the Researcher generate a
-    // report draft from their own study's data, same "kick it off, Approver
-    // reviews/releases it" pattern as priorityScoring above. They still
-    // can't confirm/approve/release/archive it themselves (no `write`/
-    // `approve` here) — that stays the Reviewer/Approver's job.
-    perm('reportsDashboards', { read: true, create: true, export: true }),
+    // `create` + `write` (not `approve`) — product decision: the Researcher
+    // generates a report draft from their own study's data AND confirms it
+    // themselves (ReportsController's :id/confirm, gated on `write`) before
+    // it reaches the Approver — generate-then-confirm is one continuous step
+    // owned by the Officer, not split across a separate Data Analyst
+    // handoff. They still can't approve/reject/archive it themselves (no
+    // `approve` here) — that stays the Reviewer/Approver's (and NGO Admin's)
+    // job, and they're notified via the Reviewer SLA alert once confirmed
+    // (see ReviewerSlaService).
+    perm('reportsDashboards', { read: true, write: true, create: true, export: true }),
     // Read-only Archive + able to request cross-org Sharing access (the
     // owning org's admin still has to approve — see SharingService.decide).
     perm('archiveSharingAudit', { read: true, create: true }),
@@ -102,8 +106,13 @@ export const ROLE_MATRIX: RoleDef[] = [
     // once a study's classification/review work is done. `export` —
     // product decision: the Approver can export a report's PDF/Excel
     // themselves, same as the Research Officer (reportsDashboards.export
-    // above) — not just read it on-screen.
-    perm('reportsDashboards', { read: true, export: true }), perm('archiveSharingAudit', RO),
+    // above) — not just read it on-screen. `approve` — this is the actual
+    // Approve/Reject/Archive step of the Report workflow (see
+    // ReportsController's :id/approve, :id/reject, :id/archive, all gated
+    // on this exact action) — without it the Approver could only read and
+    // export a report, never release or reject one, which defeats the
+    // Officer-confirms/Approver-approves two-step workflow entirely.
+    perm('reportsDashboards', { read: true, approve: true, export: true }), perm('archiveSharingAudit', RO),
     // `write` — curating the suggested question list (add from Question
     // Bank/add custom/remove/reorder) is shared with the Researcher now
     // (see role_ngo_research_officer above), alongside `approve` (which

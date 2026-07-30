@@ -512,7 +512,7 @@ export class AiDecisionsService {
         where: { id: needId },
         data: {
           proposedDomains: body.pairs as unknown as Prisma.InputJsonValue,
-          proposedReason: body.reason ?? null,
+          proposedReason: body.reason,
         },
       }),
     );

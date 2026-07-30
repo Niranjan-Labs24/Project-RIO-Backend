@@ -38,6 +38,9 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: pnpm }
+      - name: Assert Node major version is 24
+        run: |
+          node -e "if (process.versions.node.split('.')[0] !== '24') { console.error('Expected Node 24, got ' + process.version); process.exit(1); }"
       - run: pnpm install --frozen-lockfile
       - name: Provision roles and database
         run: |
@@ -62,6 +65,8 @@ jobs:
       - run: pnpm import:geography
       - run: pnpm grant:access
       - run: pnpm seed:scored
+      - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm build
       - run: pnpm test
+      - run: pnpm audit --prod --audit-level high

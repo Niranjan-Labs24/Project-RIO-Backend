@@ -13,6 +13,11 @@ export class ConfigService {
     return this.config[key];
   }
 
+  // Owner-role connection — see env.schema.ts's comment on DATABASE_URL for
+  // why BackupService (and only BackupService) reads this at runtime.
+  get databaseUrl(): string {
+    return this.config.DATABASE_URL;
+  }
   get appDatabaseUrl(): string {
     return this.config.APP_DATABASE_URL;
   }
@@ -63,20 +68,8 @@ export class ConfigService {
   get publicAppUrl(): string {
     return this.config.PUBLIC_APP_URL ?? this.config.CORS_ORIGIN;
   }
-  get smtpHost(): string | undefined {
-    return this.config.SMTP_HOST;
-  }
-  get smtpPort(): number {
-    return this.config.SMTP_PORT;
-  }
-  get smtpSecure(): boolean {
-    return this.config.SMTP_SECURE;
-  }
-  get smtpUser(): string | undefined {
-    return this.config.SMTP_USER;
-  }
-  get smtpPass(): string | undefined {
-    return this.config.SMTP_PASS;
+  get resendApiKey(): string | undefined {
+    return this.config.RESEND_API_KEY;
   }
   get mailFrom(): string {
     return this.config.MAIL_FROM;
@@ -96,10 +89,25 @@ export class ConfigService {
   get geminiApiKey(): string | undefined {
     return this.config.GEMINI_API_KEY;
   }
-  get unifonicAppSid(): string | undefined {
-    return this.config.UNIFONIC_APP_SID;
+  get twilioAccountSid(): string | undefined {
+    return this.config.TWILIO_ACCOUNT_SID;
   }
-  get unifonicSenderId(): string | undefined {
-    return this.config.UNIFONIC_SENDER_ID;
+  get twilioAuthToken(): string | undefined {
+    return this.config.TWILIO_AUTH_TOKEN;
+  }
+  get twilioFromNumber(): string | undefined {
+    return this.config.TWILIO_FROM_NUMBER;
+  }
+  get smsTimeoutMs(): number {
+    return this.config.SMS_TIMEOUT_MS;
+  }
+  get backupDir(): string {
+    return this.config.BACKUP_DIR;
+  }
+  get backupCronSchedule(): string {
+    return this.config.BACKUP_CRON_SCHEDULE;
+  }
+  get pgDumpPath(): string | undefined {
+    return this.config.PG_DUMP_PATH;
   }
 }

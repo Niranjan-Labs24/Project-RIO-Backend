@@ -50,3 +50,20 @@ export const SetMethodologyVersionBody = registerSchema(
   }),
 );
 export type SetMethodologyVersionDto = Static<typeof SetMethodologyVersionBody>;
+
+// Keyed by SurveyQuestion.id (a UUID) -> the respondent's free-text answer.
+// Bounded on both axes (question count, answer length) purely as a
+// payload-size/DoS guard — SurveysService.submitSurvey doesn't itself cap
+// either today.
+export const SubmitSurveyBody = registerSchema(
+  'SubmitSurveyBody',
+  T.Object(
+    {
+      answers: T.Record(T.String({ minLength: 1, maxLength: 100 }), T.String({ maxLength: 5000 }), {
+        maxProperties: 500,
+      }),
+    },
+    { additionalProperties: false },
+  ),
+);
+export type SubmitSurveyDto = Static<typeof SubmitSurveyBody>;

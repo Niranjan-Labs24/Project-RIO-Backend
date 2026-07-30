@@ -16,6 +16,19 @@ export interface CreateOrgAdminInput {
   centerIds: string[];
 }
 
+// TEMPORARY: the email provider's free-trial plan can only deliver to one
+// pre-verified address, so a randomly generated temporary password is
+// useless to anyone else — it can never reach the new user's inbox. Using
+// this fixed, known password instead means every new account's first login
+// works regardless of email delivery. The mandatory first-login password
+// change still applies, so this is never a long-term credential. Every
+// caller that provisions a temporary password (signup, user invite,
+// resend-invite) shares this one constant so there's a single place to
+// revert once a verified sending domain/paid plan is configured (see Known
+// Limitations in the Functional Handover Guide) — at that point, switch
+// back to generateTemporaryPassword() below.
+export const DEFAULT_TEMP_PASSWORD = 'Welcome@123';
+
 export function generateTemporaryPassword(): string {
   return randomBytes(9).toString('base64url');
 }

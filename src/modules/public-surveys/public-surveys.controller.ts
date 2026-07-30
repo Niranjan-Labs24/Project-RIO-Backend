@@ -1,3 +1,4 @@
+import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { RequirePermission } from '../../common/guards/permission.guard';
@@ -27,14 +28,14 @@ export class PublicSurveysController {
 
   @Get('survey-links')
   @RequirePermission('studySurvey', 'read')
-  listLinks(@Param('needId') needId: string): Promise<PublicSurveyLink[]> {
+  listLinks(@Param('needId', new UuidParamPipe()) needId: string): Promise<PublicSurveyLink[]> {
     return this.surveys.listLinks(needId);
   }
 
   @Post('survey-links')
   @RequirePermission('studySurvey', 'create')
   createLink(
-    @Param('needId') needId: string,
+    @Param('needId', new UuidParamPipe()) needId: string,
     @Body(new TypeBoxValidationPipe(CreateSurveyLinkBody)) body: CreateSurveyLinkPayload,
   ): Promise<PublicSurveyLink> {
     return this.surveys.createLink(needId, body ?? {});
@@ -42,7 +43,7 @@ export class PublicSurveysController {
 
   @Patch('survey-links/:linkId/deactivate')
   @RequirePermission('studySurvey', 'write')
-  deactivateLink(@Param('needId') needId: string, @Param('linkId') linkId: string): Promise<PublicSurveyLink> {
+  deactivateLink(@Param('needId', new UuidParamPipe()) needId: string, @Param('linkId', new UuidParamPipe()) linkId: string): Promise<PublicSurveyLink> {
     return this.surveys.deactivateLink(needId, linkId);
   }
 
@@ -53,8 +54,8 @@ export class PublicSurveysController {
   @HttpCode(204)
   @RequirePermission('studySurvey', 'read')
   shareLinkByEmail(
-    @Param('needId') needId: string,
-    @Param('linkId') linkId: string,
+    @Param('needId', new UuidParamPipe()) needId: string,
+    @Param('linkId', new UuidParamPipe()) linkId: string,
     @Body(new TypeBoxValidationPipe(ShareSurveyLinkEmailBody)) body: ShareSurveyLinkEmailDto,
   ): Promise<void> {
     return this.surveys.shareLinkByEmail(needId, linkId, body.email);
@@ -63,7 +64,7 @@ export class PublicSurveysController {
   @Get('survey-responses')
   @RequirePermission('studySurvey', 'read')
   listResponses(
-    @Param('needId') needId: string,
+    @Param('needId', new UuidParamPipe()) needId: string,
     @Query('surveyLinkId') surveyLinkId?: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
@@ -82,7 +83,7 @@ export class PublicSurveysController {
   @Get('survey-responses-full')
   @RequirePermission('studySurvey', 'read')
   listResponsesWithAnswers(
-    @Param('needId') needId: string,
+    @Param('needId', new UuidParamPipe()) needId: string,
     @Query('surveyLinkId') surveyLinkId?: string,
   ): Promise<SurveyResponseDetail[]> {
     return this.surveys.listResponsesWithAnswers(needId, surveyLinkId || undefined);
@@ -96,7 +97,7 @@ export class PublicSurveysController {
   @RequirePermission('studySurvey', 'export')
   async exportResponses(
     @Res() res: Response,
-    @Param('needId') needId: string,
+    @Param('needId', new UuidParamPipe()) needId: string,
     @Query('format') format: 'csv' | 'excel' = 'csv',
     @Query('surveyLinkId') surveyLinkId?: string,
   ): Promise<void> {
@@ -126,8 +127,8 @@ export class PublicSurveysController {
   @Get('survey-responses/questions/:questionId')
   @RequirePermission('studySurvey', 'read')
   listQuestionResponses(
-    @Param('needId') needId: string,
-    @Param('questionId') questionId: string,
+    @Param('needId', new UuidParamPipe()) needId: string,
+    @Param('questionId', new UuidParamPipe()) questionId: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
     @Query('search') search?: string,
@@ -145,8 +146,8 @@ export class PublicSurveysController {
   @Get('survey-responses/:responseId')
   @RequirePermission('studySurvey', 'read')
   getResponse(
-    @Param('needId') needId: string,
-    @Param('responseId') responseId: string,
+    @Param('needId', new UuidParamPipe()) needId: string,
+    @Param('responseId', new UuidParamPipe()) responseId: string,
   ): Promise<SurveyResponseDetail> {
     return this.surveys.getResponse(needId, responseId);
   }

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { BadRequestException, Body, Controller, Get, HttpCode, Post, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ConfigService } from '../../config/config.service';
 import { Public } from '../../auth/public.decorator';
@@ -8,16 +8,11 @@ import { CSRF_COOKIE_NAME, csrfCookieOptions, SESSION_COOKIE_NAME, sessionCookie
 import { CsrfExempt } from '../../common/guards/csrf.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import {
-  ChangePasswordBody, ForgotPasswordBody, ResetPasswordBody, SignupBody,
-  type ChangePasswordDto, type ForgotPasswordDto, type ResetPasswordDto, type SignupDto,
+  ChangePasswordBody, ForgotPasswordBody, LoginBody, ResetPasswordBody, SignupBody,
+  type ChangePasswordDto, type ForgotPasswordDto, type LoginDto, type ResetPasswordDto, type SignupDto,
 } from './auth.contract';
 import { AuthService } from './auth.service';
 import type { SessionContext, SignupResponseView } from './session.types';
-
-interface LoginBody {
-  email?: unknown;
-  password?: unknown;
-}
 
 @Controller('auth')
 export class AuthController {
@@ -34,12 +29,12 @@ export class AuthController {
   @RateLimit(5, 60)
   @HttpCode(200)
   @CsrfExempt()
-  async login(@Body() body: LoginBody, @Res({ passthrough: true }) res: Response): Promise<SessionContext> {
-    const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
-    const password = typeof body?.password === 'string' ? body.password : '';
-    if (!email || !password) {
-      throw new BadRequestException({ error: { code: 'VALIDATION_ERROR', message: 'email and password are required' } });
-    }
+  async login(
+    @Body(new TypeBoxValidationPipe(LoginBody)) body: LoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<SessionContext> {
+    const email = body.email.trim().toLowerCase();
+    const password = body.password;
     const session = await this.auth.login(email, password);
     res.cookie(SESSION_COOKIE_NAME, session.token, sessionCookieOptions(this.config.nodeEnv === 'production'));
     res.cookie(CSRF_COOKIE_NAME, randomBytes(18).toString('base64url'), csrfCookieOptions(this.config.nodeEnv === 'production'));

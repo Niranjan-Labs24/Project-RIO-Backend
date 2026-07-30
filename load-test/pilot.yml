@@ -2,7 +2,7 @@
 #
 # Proves the scalability claim (row-per-entity multitenancy + per-request RLS +
 # bounded pagination hold up at pilot volume) by driving realistic
-# login -> read traffic against a running API seeded with ~50 orgs / ~500 users.
+# login -> read/write traffic against a running API seeded with ~50 orgs / ~500 users.
 #
 # Run:  pnpm load:seed          # seed pilot volume + write users.csv
 #       PORT=4100 node dist/main.js   # start the API (built) on :4100
@@ -13,6 +13,24 @@
 # under concurrency. Login (argon2id verify) runs once per virtual user, then
 # the token is reused across the read loop so the fixed auth cost does not
 # dominate the measurement.
+#
+# Two scenarios share the same phases (Artillery samples by `weight`):
+#   - auth-then-reads (weight 80): unchanged read-only loop.
+#   - auth-then-write (weight 20): same reads, plus one idempotent write per
+#     iteration (PATCH own user record's `name` back to its already-seeded
+#     value) — exercises the write path's per-request RLS + permission-guard
+#     cost under concurrency, without mutating data in a way that would need
+#     cleanup between runs.
+#
+# NOT covered here (documented as a known gap, not simulated): a bounded
+# CSV/Excel survey-response export under load. That would require seeding a
+# published survey with response volume approaching MAX_EXPORTABLE_RESPONSES
+# (50_000, see public-surveys.service.ts) — a materially bigger seed script
+# than load-seed.ts's org/user fixtures. The 50k cap itself, and the
+# formula-injection sanitization applied to every exported cell, are covered
+# by real (non-load) tests in public-surveys.service.spec.ts; this file only
+# proves request-path scalability, not export-specific memory/latency
+# behavior at that volume.
 config:
   target: "http://127.0.0.1:4100"
   http:
@@ -38,6 +56,7 @@ config:
 
 scenarios:
   - name: auth-then-reads
+    weight: 80
     flow:
       - post:
           url: "/api/auth/login"
@@ -72,6 +91,51 @@ scenarios:
               url: "/api/audit?limit=20"
               headers:
                 Authorization: "Bearer {{ token }}"
+              expect:
+                - statusCode: 200
+          - think: 0.3
+        count: 2
+
+  - name: auth-then-write
+    weight: 20
+    flow:
+      - post:
+          url: "/api/auth/login"
+          json:
+            email: "{{ email }}"
+            password: "{{ password }}"
+          capture:
+            - json: "$.token"
+              as: "token"
+            - json: "$.user.id"
+              as: "userId"
+            - json: "$.user.name"
+              as: "userName"
+          expect:
+            - statusCode: 200
+      - loop:
+          - get:
+              url: "/api/auth/me"
+              headers:
+                Authorization: "Bearer {{ token }}"
+              expect:
+                - statusCode: 200
+          - get:
+              url: "/api/users?limit=20"
+              headers:
+                Authorization: "Bearer {{ token }}"
+              expect:
+                - statusCode: 200
+          # Idempotent write: PATCHes the caller's own name back to its
+          # already-seeded value, so repeated iterations never drift the
+          # fixture data — but still exercises the write path's
+          # RequirePermission guard + per-request RLS transaction.
+          - patch:
+              url: "/api/users/{{ userId }}"
+              headers:
+                Authorization: "Bearer {{ token }}"
+              json:
+                name: "{{ userName }}"
               expect:
                 - statusCode: 200
           - think: 0.3

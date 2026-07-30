@@ -1,3 +1,4 @@
+import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { parseIntParam } from '../../common/http/query.util';
@@ -7,6 +8,8 @@ import {
   RejectSurveyDto,
   SetMethodologyVersionBody,
   SetMethodologyVersionDto,
+  SubmitSurveyBody,
+  SubmitSurveyDto,
   UpdateSurveyQuestionsBody,
   UpdateSurveyQuestionsDto,
 } from './surveys.contract';
@@ -44,19 +47,19 @@ export class SurveysController {
 
   @Get('needs/:needId/survey')
   @RequirePermission('surveyBuilder', 'read')
-  getSurveyByNeedId(@Param('needId') needId: string) {
+  getSurveyByNeedId(@Param('needId', new UuidParamPipe()) needId: string) {
     return this.service.getSurveyByNeedId(needId);
   }
 
   @Post('needs/:needId/survey')
   @RequirePermission('surveyBuilder', 'write')
-  createEmptySurvey(@Param('needId') needId: string) {
+  createEmptySurvey(@Param('needId', new UuidParamPipe()) needId: string) {
     return this.service.createEmptySurvey(needId);
   }
 
   @Post('needs/:needId/recommend-questions')
   @RequirePermission('surveyBuilder', 'write')
-  recommendQuestions(@Param('needId') needId: string) {
+  recommendQuestions(@Param('needId', new UuidParamPipe()) needId: string) {
     return this.service.recommendQuestions(needId);
   }
 
@@ -79,7 +82,7 @@ export class SurveysController {
   @Patch('surveys/:id/questions')
   @RequirePermission('surveyBuilder', 'write')
   updateQuestions(
-    @Param('id') id: string,
+    @Param('id', new UuidParamPipe()) id: string,
     @Body(new TypeBoxValidationPipe(UpdateSurveyQuestionsBody)) body: UpdateSurveyQuestionsDto,
   ) {
     return this.service.updateQuestions(id, body.questions);
@@ -90,7 +93,7 @@ export class SurveysController {
   @Patch('surveys/:id/methodology-version')
   @RequirePermission('surveyBuilder', 'write')
   setMethodologyVersion(
-    @Param('id') id: string,
+    @Param('id', new UuidParamPipe()) id: string,
     @Body(new TypeBoxValidationPipe(SetMethodologyVersionBody)) body: SetMethodologyVersionDto,
   ) {
     return this.service.setMethodologyVersion(id, body.version);
@@ -101,7 +104,7 @@ export class SurveysController {
   // — this route only ever moves status.
   @Post('surveys/:id/submit')
   @RequirePermission('surveyBuilder', 'write')
-  submitForApproval(@Param('id') id: string) {
+  submitForApproval(@Param('id', new UuidParamPipe()) id: string) {
     return this.service.submitForApproval(id);
   }
 
@@ -109,35 +112,35 @@ export class SurveysController {
   // grant lets a role reach these; only `approve` does (see role-matrix.ts).
   @Post('surveys/:id/approve')
   @RequirePermission('surveyBuilder', 'approve')
-  approveAndPublish(@Param('id') id: string) {
+  approveAndPublish(@Param('id', new UuidParamPipe()) id: string) {
     return this.service.approveAndPublish(id);
   }
 
   @Post('surveys/:id/reject')
   @RequirePermission('surveyBuilder', 'approve')
   rejectSurvey(
-    @Param('id') id: string,
+    @Param('id', new UuidParamPipe()) id: string,
     @Body(new TypeBoxValidationPipe(RejectSurveyBody)) body: RejectSurveyDto,
   ) {
     return this.service.rejectSurvey(id, body.comments);
   }
 
   @Get('surveys/public/:id')
-  getPublicSurvey(@Param('id') id: string) {
+  getPublicSurvey(@Param('id', new UuidParamPipe()) id: string) {
     return this.service.getPublicSurvey(id);
   }
 
   @Post('surveys/public/:id/submit')
   submitSurvey(
-    @Param('id') id: string,
-    @Body() body: { answers: Record<string, string> },
+    @Param('id', new UuidParamPipe()) id: string,
+    @Body(new TypeBoxValidationPipe(SubmitSurveyBody)) body: SubmitSurveyDto,
   ) {
     return this.service.submitSurvey(id, body.answers);
   }
 
   @Get('surveys/:id/responses')
   @RequirePermission('surveyBuilder', 'read')
-  getSurveyResponses(@Param('id') id: string) {
+  getSurveyResponses(@Param('id', new UuidParamPipe()) id: string) {
     return this.service.getSurveyResponses(id);
   }
 }

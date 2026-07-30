@@ -6,12 +6,15 @@ one worked example module (`notes`).
 
 ## Prerequisites
 - Node 24 LTS, pnpm 10, Docker Desktop
+- `pg_dump` on `PATH`, matching Postgres 18 (`postgresql-client-18`) — only needed if running the
+  app directly on the host (`pnpm dev`/`pnpm start`); the Docker image installs it already. Without
+  it, `BackupService`'s scheduled backup logs an error every tick but does not crash the app.
 
 ## Quick start (local dev, app runs on the host)
 ```bash
 pnpm install
 cp .env.example .env
-docker compose up -d db          # postgres:18 + provisions cnap_owner / cnap_app roles
+pnpm db:up                       # postgres:18 + provisions cnap_owner / cnap_app roles
 pnpm prisma migrate deploy       # apply schema + RLS
 pnpm prisma:seed                 # optional demo data (Org A / Org B)
 pnpm dev                         # http://localhost:3000  (docs at /docs, spec at /openapi.json)
@@ -25,13 +28,48 @@ If your host already has PostgreSQL bound to port 5432 (e.g. a native Windows se
 `DB_HOST_PORT=<free port>` in `.env` and update the two `*_URL` values to match — docker compose
 auto-reads `.env` for the `${DB_HOST_PORT:-5432}` substitution in `docker-compose.yml`.
 
+### Local development vs. production Compose
+`docker-compose.yml` on its own is the production-safe definition: it has no default database
+password and no default `db`/`api` connection strings, and does not publish the database to a host
+port at all — `docker compose config` fails closed (`POSTGRES_PASSWORD must be set`, etc.) unless
+those are actually provided. `docker-compose.dev.yml` is a small override that only re-adds the
+database's host port publish for local tooling (psql, a GUI client). `pnpm db:up`/`pnpm db:down`
+already apply both files (`docker compose -f docker-compose.yml -f docker-compose.dev.yml ...`), so
+local development needs no extra commands.
+
+The actual dev-only credentials (`POSTGRES_PASSWORD`, `DOCKER_APP_DATABASE_URL`,
+`DOCKER_SUPERVISOR_DATABASE_URL`) come from `.env` — which docker compose auto-loads for variable
+substitution — not from `docker-compose.dev.yml` itself; see `.env.example`'s comments. A real
+deployment simply doesn't ship that `.env` file and supplies its own values through whatever
+secret-injection mechanism it uses (the same pattern `JWT_SECRET` already used before this).
+
+**Credential rotation for a real deployment:** `db/init/00-init.sql` and the
+`20260713031212_rls_domain` migration hardcode the initial `cnap_owner`/`cnap_app`/`cnap_supervisor`
+role passwords (`*_dev_pw`) — this is unavoidable for a from-scratch `prisma migrate deploy` against
+an empty database, since Prisma migrations are immutable history and can't read a runtime secret.
+Any real deployment must rotate these immediately after the first `prisma migrate deploy`:
+```sql
+ALTER ROLE cnap_owner WITH PASSWORD '<new-random-secret>';
+ALTER ROLE cnap_app WITH PASSWORD '<new-random-secret>';
+ALTER ROLE cnap_supervisor WITH PASSWORD '<new-random-secret>';
+```
+then update `DATABASE_URL`/`APP_DATABASE_URL`/`SUPERVISOR_DATABASE_URL` (and
+`DOCKER_DATABASE_URL`/`DOCKER_APP_DATABASE_URL`/`DOCKER_SUPERVISOR_DATABASE_URL` if using Compose)
+to match before starting the app against that database. Also grant `cnap_owner` the `BYPASSRLS`
+attribute at this point — see "Database backup — required role prerequisite" below; it's a separate
+grant from anything above and easy to miss during provisioning.
+
 ### Env vars (see `.env.example` for full defaults/comments)
 - `CORS_ORIGIN` — single frontend origin allowed to send credentialed (cookie) requests. Defaults to
   `http://localhost:3000`; credentials mode forbids a wildcard, so this must be an exact origin.
-- `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` / `SMTP_USER` / `SMTP_PASS` — nodemailer transport for the
-  signup temporary-password email. Leave `SMTP_HOST` unset to disable email entirely: signup then
-  falls back to returning/logging the temp password, but **only** outside production (`NODE_ENV`
-  defaults to `production` when unset, so this fallback fails closed by default).
+- `RESEND_API_KEY` — Resend API key for the signup temporary-password/password-reset/survey-link
+  emails. Leave unset to disable email entirely: signup then falls back to returning/logging the
+  temp password, but **only** outside production (`NODE_ENV` defaults to `production` when unset,
+  so this fallback fails closed by default).
+- `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM_NUMBER` — Twilio SMS for the citizen
+  survey's mobile OTP. `TWILIO_FROM_NUMBER` must be a number actually provisioned on that Twilio
+  account, in E.164 format. Leave `TWILIO_ACCOUNT_SID` unset to disable SMS entirely — same
+  dev-only fallback as email.
 - `MAIL_FROM` — the `From:` address/display name used for that email (default `RIO <no-reply@rio.local>`).
 - `CSRF_ENFORCE` — double-submit CSRF check for cookie-authenticated mutations (`CsrfGuard`). **Default `true`**; the
   frontend must first read the `rio_csrf` cookie and echo it as `X-CSRF-Token` on unsafe methods
@@ -39,16 +77,49 @@ auto-reads `.env` for the `${DB_HOST_PORT:-5432}` substitution in `docker-compos
   with this on, cross-site (different-site frontend/API) deployments additionally need
   `sameSite: 'none'` on the session/CSRF cookies (`session-cookie.ts`) — that is a separate,
   not-yet-automated deploy-config step, out of scope for the guard itself.
+- `BACKUP_DIR` — directory `BackupService`'s periodic `pg_dump` writes into (created if missing;
+  default `./storage/backups`). `BACKUP_CRON_SCHEDULE` — standard 5-field cron expression for how
+  often it runs (default weekly, `0 3 * * 0`, Sundays at 03:00 — use a faster interval like
+  `*/1 * * * *` to verify a new environment's backup works, then leave it at the weekly default).
+  `PG_DUMP_PATH` — optional override when the bare `pg_dump` on `PATH` doesn't match the server's
+  major version (common with Homebrew's "linked version" model on a dev machine; not needed in
+  Docker, which only ever has one matching version installed). Requires `pg_dump` on `PATH`
+  (see "Prerequisites" above) and
+  reads `DATABASE_URL` (not `APP_DATABASE_URL`) for a connection that bypasses RLS — see
+  `env.schema.ts`'s comment on `DATABASE_URL` for why.
+
+### Database backup — required role prerequisite (`cnap_owner` BYPASSRLS)
+`BackupService`'s `pg_dump` connects as `cnap_owner` (via `DATABASE_URL`) rather than the app's own
+`NOBYPASSRLS` roles, since a complete backup can't be RLS-filtered — see the "Backup DB role"
+decision above. That alone is **not sufficient**, though: this schema applies
+`FORCE ROW LEVEL SECURITY` on most tables (`ai_decisions`, `surveys`, `village_priority_assessments`,
+`response_answers`, and ~20 others — see the `FORCE ROW LEVEL SECURITY` migrations), which strips
+even a table's own owner of the usual RLS bypass. Without one more grant, `pg_dump` fails partway
+through with `ERROR: query would be affected by row-level security policy for table "..."` the
+moment it reaches the first FORCE-RLS table — confirmed by actually running it, not just inferred.
+
+**This is a one-time database role/permission prerequisite, not an application or schema change** —
+no migration, no table DDL, nothing Prisma tracks. It must be applied once per environment (as the
+Postgres superuser, not as `cnap_owner` itself — `cnap_owner`'s own `CREATEROLE` doesn't extend to
+altering its own attributes) during database provisioning, before backups can succeed there:
+```sql
+ALTER ROLE cnap_owner BYPASSRLS;
+```
+Treat this the same way as the `cnap_owner`/`cnap_app`/`cnap_supervisor` password rotation step
+above — a manual provisioning step for whoever sets up each environment's database, tracked here
+rather than in a migration file. Confirmed working end-to-end locally: `pg_dump` against a
+`cnap` database with this grant applied produces a valid, restorable custom-format archive; without
+it, the same command fails on the first FORCE-RLS table it reaches.
 
 ## Running the whole stack in Docker (db + api)
 ```bash
-docker compose up -d db          # start Postgres first
+pnpm db:up                       # start Postgres first
 pnpm prisma migrate deploy       # apply schema + RLS from the host — see "Migrations in Docker" below
 docker compose up -d --build     # builds and starts the api image (db is already up)
-curl http://localhost:3000/health
-curl http://localhost:3000/health/db
-curl http://localhost:3000/openapi.json
-docker compose down              # add -v to also drop the db volume
+curl http://localhost:4000/health
+curl http://localhost:4000/health/db
+curl http://localhost:4000/openapi.json
+pnpm db:down                     # add -- -v to also drop the db volume
 ```
 Applying migrations before the `api` container starts (or at least before hitting any non-health
 endpoint) matters: `/health` responds without touching the database, but `/health/db` and every
@@ -117,6 +188,27 @@ built-in `Logger` (e.g. inside `AllExceptionsFilter`) are routed through it. Eve
 enriched with the request's correlation id and, once tenant context is established, the org id
 (`requestId` / `orgId`, sourced from the async-local-storage-backed org context) — never request
 bodies or the `authorization`/`cookie`/`x-org-id` headers, which are redacted.
+
+## Operational runbook
+- **Database unavailable**: `/api/health/db` returns 503 without leaking the driver error/hostname
+  to the client (logged server-side only, Task 6 of the backend remediation pass). Recovery: check
+  `docker compose ps db` / the managed Postgres instance's own health; the app retries per-request,
+  no restart needed once the DB is back.
+- **Redis unavailable**: `/api/health/redis` returns 503; `RateLimitGuard` silently no-ops (fails
+  open, not closed) rather than blocking all traffic — see `src/redis/redis.service.ts`. Recovery:
+  restart/restore Redis; no app restart needed, it reconnects.
+- **SMS/Gemini provider timeout**: bounded by `SMS_TIMEOUT_MS`/`GEMINI_TIMEOUT_MS` (Task 7) — a
+  timeout surfaces as a normal error response to the caller, logged server-side with the phone
+  number/prompt redacted, never blocking the event loop indefinitely.
+- **Connection-pool exhaustion**: see `load-test/README.md`'s 2026-07-27 result — a real,
+  reproduced failure mode under concurrent load in this environment
+  (`PrismaClientKnownRequestError: Transaction API error: Unable to start a transaction in the
+  given time.`), not yet fixed (tracked there as a follow-up, consistent with the pre-existing
+  "connection-pool sizing" note in that file).
+- **Load-test acceptance thresholds and alert-worthy events**: documented in
+  `load-test/README.md` (p95/p99, error rate, heap, DB/Redis connection budgets). No metrics/
+  tracing platform is wired into this codebase yet — that file's Notes section is the honest status
+  of that gap, not a claim that it's done.
 
 ## Error envelope
 Uncaught exceptions and thrown `HttpException`s are normalized by a global `AllExceptionsFilter`

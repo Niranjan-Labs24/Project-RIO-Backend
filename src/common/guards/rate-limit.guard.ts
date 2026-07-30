@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto';
 import { CanActivate, ExecutionContext, HttpException, HttpStatus, Injectable, SetMetadata } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { Request, Response } from 'express';
-import Redis from 'ioredis';
 import { ConfigService } from '../../config/config.service';
+import { RedisService } from '../../redis/redis.service';
 
 const RATE_LIMIT_KEY = 'rateLimit';
 interface RateLimitPolicy { limit: number; windowSeconds: number; }
@@ -13,16 +13,15 @@ export const RateLimit = (limit: number, windowSeconds: number): MethodDecorator
 
 @Injectable()
 export class RateLimitGuard implements CanActivate {
-  private readonly redis?: Redis;
   private readonly distributedRequired: boolean;
   private readonly local = new Map<string, { count: number; resetAt: number }>();
 
-  constructor(private readonly reflector: Reflector, config: ConfigService) {
+  constructor(
+    private readonly reflector: Reflector,
+    config: ConfigService,
+    private readonly redisService: RedisService,
+  ) {
     this.distributedRequired = config.nodeEnv === 'production';
-    if (config.redisUrl) {
-      this.redis = new Redis(config.redisUrl, { lazyConnect: true, maxRetriesPerRequest: 1, enableOfflineQueue: false });
-      this.redis.on('error', () => undefined);
-    }
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -53,10 +52,11 @@ export class RateLimitGuard implements CanActivate {
   }
 
   private async increment(key: string, windowSeconds: number): Promise<{ count: number; ttl: number }> {
-    if (this.redis) {
+    const redis = this.redisService.client;
+    if (redis) {
       try {
-        if (this.redis.status === 'wait') await this.redis.connect();
-        const result = await this.redis.multi().incr(key).expire(key, windowSeconds, 'NX').ttl(key).exec();
+        if (redis.status === 'wait') await redis.connect();
+        const result = await redis.multi().incr(key).expire(key, windowSeconds, 'NX').ttl(key).exec();
         return {
           count: Number(result?.[0]?.[1] ?? 1),
           ttl: Math.max(1, Number(result?.[2]?.[1] ?? windowSeconds)),

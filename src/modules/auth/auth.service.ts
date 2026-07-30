@@ -11,7 +11,7 @@ import { ROLE_MATRIX, type RoleDef } from '../../rbac/role-matrix';
 import { AuditService } from '../audit/audit.service';
 import { ConfigService } from '../../config/config.service';
 import { MailerService } from '../../mailer/mailer.service';
-import { AuthRepository, conflictFor, generateTemporaryPassword } from './auth.repository';
+import { AuthRepository, conflictFor, DEFAULT_TEMP_PASSWORD } from './auth.repository';
 import type { SessionContext, SessionOrg, SessionUser, SignupResponseView } from './session.types';
 import type { ChangePasswordDto, ForgotPasswordDto, ResetPasswordDto, SignupDto } from './auth.contract';
 
@@ -223,7 +223,7 @@ export class AuthService {
       centerIds: dto.centerIds,
     });
 
-    const temporaryPassword = generateTemporaryPassword();
+    const temporaryPassword = DEFAULT_TEMP_PASSWORD;
     const passwordHash = await this.passwords.hash(temporaryPassword);
 
     const { org, user } = await this.repo.createOrganisationAndAdmin({
@@ -254,8 +254,10 @@ export class AuthService {
     if (emailed) {
       return { ...session, temporaryPasswordEmailed: true };
     }
+    // Dev only: surface the password in the response itself (below), never
+    // logged — it's already the sole reveal channel when email delivery
+    // fails, and a log line would be a second, redundant disclosure path.
     if (this.config.nodeEnv !== 'production') {
-      this.logger.log(`[dev-only] Temporary password for ${user.email}: ${temporaryPassword}`);
       return { ...session, temporaryPasswordEmailed: false, temporaryPassword };
     }
     return { ...session, temporaryPasswordEmailed: false };
@@ -342,14 +344,14 @@ export class AuthService {
     });
 
     const resetUrl = `${this.config.corsOrigin}/reset-password?token=${rawToken}`;
-    const emailed = await this.mailer.sendPasswordResetEmail(found.email, resetUrl);
-    if (!emailed && this.config.nodeEnv !== 'production') {
-      // Dev-only fallback so a local run without SMTP configured can still
-      // exercise the flow — never returned in the HTTP response itself,
-      // since that would be exactly the existence leak this endpoint
-      // otherwise avoids.
-      this.logger.log(`[dev-only] Password reset link for ${found.email}: ${resetUrl}`);
-    }
+    // Never logged and never returned in the HTTP response — a reset token
+    // is a bearer credential (unlike a temp password, no separate email
+    // needs to also be known to use it), so unlike this file's other
+    // dev-only reveals there is no lower-sensitivity fallback channel for
+    // it. Exercise this flow locally either with a real (or Resend
+    // sandbox) mailer configured, or in a test by mocking
+    // MailerService.sendPasswordResetEmail and reading its call args.
+    await this.mailer.sendPasswordResetEmail(found.email, resetUrl);
     return genericResult;
   }
 

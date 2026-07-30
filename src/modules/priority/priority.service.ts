@@ -195,7 +195,7 @@ export class PriorityService {
 
   // --- Severity Scoring v1 Endpoints ---
 
-  async listMethodologyVersions(): Promise<any[]> {
+  async listMethodologyVersions() {
     return this.tenant.runAsSupervisor((tx) =>
       tx.methodologyVersion.findMany({
         orderBy: { createdAt: "desc" },
@@ -203,7 +203,7 @@ export class PriorityService {
     );
   }
 
-  async createMethodologyVersion(payload: { name: string; version: string; description?: string }): Promise<any> {
+  async createMethodologyVersion(payload: { name: string; version: string; description?: string }) {
     const actorId = requireActor();
     return this.tenant.runAsSupervisor((tx) =>
       tx.methodologyVersion.create({
@@ -217,7 +217,7 @@ export class PriorityService {
     );
   }
 
-  async uploadLookups(versionId: string, csvContent: string): Promise<any> {
+  async uploadLookups(versionId: string, csvContent: string) {
     const lines = csvContent.split(/\r?\n/);
     let imported = 0;
     
@@ -327,7 +327,7 @@ export class PriorityService {
     return result;
   }
 
-  async getDashboard(studyId: string, surveyId: string, villageId: string | null): Promise<any> {
+  async getDashboard(studyId: string, surveyId: string, villageId: string | null) {
     const vId = villageId || '';
     return this.tenant.runInOrgContext(async (tx) => {
       // Find overall index
@@ -393,7 +393,7 @@ export class PriorityService {
     });
   }
 
-  async getKpiRanking(studyId: string, surveyId: string, villageId: string | null): Promise<any[]> {
+  async getKpiRanking(studyId: string, surveyId: string, villageId: string | null) {
     const vId = villageId || '';
     return this.tenant.runInOrgContext(async (tx) => {
       const rollups = await tx.scoreRollup.findMany({
@@ -403,7 +403,7 @@ export class PriorityService {
 
       // Get mappings of KPI -> domain, sub-domain, indicator
       const questions = await tx.question.findMany({ where: { usedInMvp: true } });
-      const qMap = new Map<string, any>();
+      const qMap = new Map<string, (typeof questions)[number]>();
       for (const q of questions) {
         if (q.kpi && !qMap.has(q.kpi)) {
           qMap.set(q.kpi, q);
@@ -427,7 +427,7 @@ export class PriorityService {
     });
   }
 
-  async getQuestionDetail(studyId: string, surveyId: string, questionId: string, villageId: string | null): Promise<any> {
+  async getQuestionDetail(studyId: string, surveyId: string, questionId: string, villageId: string | null) {
     const vId = villageId || '';
     return this.tenant.runInOrgContext(async (tx) => {
       // Find question — supports both direct questionId (e.g. "H01") and

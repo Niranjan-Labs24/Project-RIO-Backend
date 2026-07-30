@@ -1,6 +1,9 @@
+import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { Controller, Get, Param, Patch, Post, Query, Body, UseInterceptors, UploadedFile, BadRequestException } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { RequirePermission } from "../../common/guards/permission.guard";
+import { TypeBoxValidationPipe } from "../../contract/validation.pipe";
+import { CreateMethodologyVersionBody, type CreateMethodologyVersionDto } from "./priority.contract";
 import { PriorityService } from "./priority.service";
 import { ScoreRollupService } from "./rollup.service";
 import { PriorityV2Service } from "./priority-v2.service";
@@ -16,21 +19,21 @@ export class PriorityController {
 
   @Post("needs/:needId/priority-score")
   @RequirePermission("priorityScoring", "create")
-  score(@Param("needId") needId: string, @Query("surveyLinkId") surveyLinkId?: string): Promise<PriorityScore> {
+  score(@Param("needId", new UuidParamPipe()) needId: string, @Query("surveyLinkId") surveyLinkId?: string): Promise<PriorityScore> {
     return this.priority.score(needId, surveyLinkId);
   }
 
   @Get("needs/:needId/priority-score")
   @RequirePermission("priorityScoring", "read")
-  getLatest(@Param("needId") needId: string, @Query("surveyLinkId") surveyLinkId?: string): Promise<PriorityScore | null> {
+  getLatest(@Param("needId", new UuidParamPipe()) needId: string, @Query("surveyLinkId") surveyLinkId?: string): Promise<PriorityScore | null> {
     return this.priority.getLatest(needId, surveyLinkId);
   }
 
   @Get("studies/:studyId/surveys/:surveyId/severity-dashboard")
   @RequirePermission("priorityScoring", "read")
   async getSeverityDashboard(
-    @Param("studyId") studyId: string,
-    @Param("surveyId") surveyId: string,
+    @Param("studyId", new UuidParamPipe()) studyId: string,
+    @Param("surveyId", new UuidParamPipe()) surveyId: string,
     @Query("villageId") villageId?: string
   ) {
     return this.priority.getDashboard(studyId, surveyId, villageId || null);
@@ -39,8 +42,8 @@ export class PriorityController {
   @Get("studies/:studyId/surveys/:surveyId/severity-kpis")
   @RequirePermission("priorityScoring", "read")
   async getSeverityKpis(
-    @Param("studyId") studyId: string,
-    @Param("surveyId") surveyId: string,
+    @Param("studyId", new UuidParamPipe()) studyId: string,
+    @Param("surveyId", new UuidParamPipe()) surveyId: string,
     @Query("villageId") villageId?: string
   ) {
     return this.priority.getKpiRanking(studyId, surveyId, villageId || null);
@@ -49,9 +52,9 @@ export class PriorityController {
   @Get("studies/:studyId/surveys/:surveyId/questions/:questionId")
   @RequirePermission("priorityScoring", "read")
   async getQuestionDetail(
-    @Param("studyId") studyId: string,
-    @Param("surveyId") surveyId: string,
-    @Param("questionId") questionId: string,
+    @Param("studyId", new UuidParamPipe()) studyId: string,
+    @Param("surveyId", new UuidParamPipe()) surveyId: string,
+    @Param("questionId", new UuidParamPipe()) questionId: string,
     @Query("villageId") villageId?: string
   ) {
     return this.priority.getQuestionDetail(studyId, surveyId, questionId, villageId || null);
@@ -60,8 +63,8 @@ export class PriorityController {
   @Post("studies/:studyId/surveys/:surveyId/recalculate")
   @RequirePermission("priorityScoring", "create")
   async recalculate(
-    @Param("studyId") studyId: string,
-    @Param("surveyId") surveyId: string
+    @Param("studyId", new UuidParamPipe()) studyId: string,
+    @Param("surveyId", new UuidParamPipe()) surveyId: string
   ) {
     await this.rollupService.recalculateStudyScores(studyId, surveyId);
     return { success: true };
@@ -70,8 +73,8 @@ export class PriorityController {
   @Get("studies/:studyId/surveys/:surveyId/village-priority")
   @RequirePermission("priorityScoring", "read")
   async getVillagePriority(
-    @Param("studyId") studyId: string,
-    @Param("surveyId") surveyId: string,
+    @Param("studyId", new UuidParamPipe()) studyId: string,
+    @Param("surveyId", new UuidParamPipe()) surveyId: string,
     @Query("villageId") villageId?: string
   ) {
     return this.priorityV2.getVillagePriority(studyId, surveyId, villageId || null);
@@ -85,7 +88,9 @@ export class PriorityController {
 
   @Post("methodology-versions")
   @RequirePermission("methodologyQuestionBank", "create")
-  async createMethodologyVersion(@Body() body: { name: string; version: string; description?: string }) {
+  async createMethodologyVersion(
+    @Body(new TypeBoxValidationPipe(CreateMethodologyVersionBody)) body: CreateMethodologyVersionDto,
+  ) {
     return this.priority.createMethodologyVersion(body);
   }
 
@@ -93,7 +98,7 @@ export class PriorityController {
   @RequirePermission("methodologyQuestionBank", "create")
   @UseInterceptors(FileInterceptor("file"))
   async uploadLookups(
-    @Param("id") versionId: string,
+    @Param("id", new UuidParamPipe()) versionId: string,
     @UploadedFile() file: Express.Multer.File
   ) {
     if (!file) {
@@ -119,7 +124,7 @@ export class PriorityDashboardController {
 
   @Patch(":id/approve")
   @RequirePermission("priorityScoring", "approve")
-  approve(@Param("id") id: string): Promise<PriorityScore> {
+  approve(@Param("id", new UuidParamPipe()) id: string): Promise<PriorityScore> {
     return this.priority.approve(id);
   }
 }

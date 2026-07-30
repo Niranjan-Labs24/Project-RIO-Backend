@@ -17,6 +17,18 @@ import type {
 
 const DIFF_FIELDS = ['title', 'villages', 'methodologyVersionId'] as const;
 
+// Matches the `include` shape of the two (system-admin/tenant) `need.findMany`
+// calls in getById below — both queries request the same fields, just via
+// different tenant-context roles, so one type covers both.
+type NeedWithSurveyMeta = Prisma.NeedGetPayload<{
+  include: {
+    surveys: { include: { _count: { select: { surveyQuestions: true } } } };
+    surveyResponses: { select: { id: true } };
+    _count: { select: { evidence: true } };
+    priorityScores: true;
+  };
+}>;
+
 // Raw shape Prisma returns once `studyGovernorates`/`studyCenters` are
 // included — reduced to plain id arrays before anything else in this file
 // touches it, same pattern as OrganizationsService's RawOrgWithGeo/toOrgRow.
@@ -228,7 +240,7 @@ export class StudiesService {
     let row: (RawStudyWithGeo & { org?: { name: string } | null }) | null = null;
     let evidenceCount = 0;
     let needCount = 0;
-    let needsList: any[] = [];
+    let needsList: NeedWithSurveyMeta[] = [];
 
     if (isSysAdmin) {
       const result = await this.tenant.runAsSupervisor((tx) =>
@@ -300,7 +312,7 @@ export class StudiesService {
 
     if (!row) throw new NotFoundException({ error: { code: 'STUDY_NOT_FOUND', message: 'Study not found' } });
 
-    const needs = needsList.map((n: any) => {
+    const needs = needsList.map((n) => {
       const survey = n.surveys?.[0];
       return {
         id: n.id,
@@ -480,8 +492,8 @@ export class StudiesService {
     const needs = raw.needs ?? [];
     const reports = raw.reports ?? [];
     const hasNeeds = needs.length > 0;
-    const allNeedsCompleted = hasNeeds && needs.every((n: any) => n.status === 'survey_published');
-    const hasReleasedReport = reports.some((r: any) => r.status === 'released' || r.status === 'archived');
+    const allNeedsCompleted = hasNeeds && needs.every((n) => n.status === 'survey_published');
+    const hasReleasedReport = reports.some((r) => r.status === 'released' || r.status === 'archived');
 
     if (!hasNeeds || !allNeedsCompleted || !hasReleasedReport) {
       throw new BadRequestException({

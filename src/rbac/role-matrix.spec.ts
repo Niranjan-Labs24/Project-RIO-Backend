@@ -37,4 +37,28 @@ describe('ROLE_MATRIX', () => {
     expect(LOGIN_ROLE_KEYS).not.toContain('citizen_guest');
     expect(LOGIN_ROLE_KEYS).toHaveLength(8);
   });
+
+  it('approver can approve/reject/archive a report, not just read/export it', () => {
+    // Regression: this role previously had only { read, export } on
+    // reportsDashboards, which silently blocked ReportsController's
+    // :id/approve, :id/reject, and :id/archive (all gated on `approve`) —
+    // the Approver could view and export a report but never actually
+    // release, reject, or archive one, defeating the two-step
+    // Officer-confirms/Approver-approves workflow entirely.
+    expect(can('human_reviewer', 'reportsDashboards', 'read')).toBe(true);
+    expect(can('human_reviewer', 'reportsDashboards', 'export')).toBe(true);
+    expect(can('human_reviewer', 'reportsDashboards', 'approve')).toBe(true);
+    // Confirming a report (step 1) is the Officer's `write`-gated action,
+    // not the Approver's.
+    expect(can('human_reviewer', 'reportsDashboards', 'write')).toBe(false);
+  });
+
+  it('research officer generates AND confirms their own report; approve stays Approver/NGO-Admin-exclusive', () => {
+    // Product decision: generate-then-confirm is one continuous step owned
+    // by the Officer, not split across a separate Data Analyst handoff (see
+    // role-matrix.ts's reportsDashboards comment on this role).
+    expect(can('ngo_research_officer', 'reportsDashboards', 'create')).toBe(true);
+    expect(can('ngo_research_officer', 'reportsDashboards', 'write')).toBe(true);
+    expect(can('ngo_research_officer', 'reportsDashboards', 'approve')).toBe(false);
+  });
 });
