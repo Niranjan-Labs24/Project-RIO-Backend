@@ -3,10 +3,15 @@ import { TenantPrismaService } from "../../../tenancy/tenant-prisma.service";
 import type {
   CollectiveDashboardData,
   CollectiveReportContent,
+  CombinedReportContent,
+  CoverageBlock,
+  Demographics,
   ExecutiveReportContent,
+  IndividualSurveyReportContent,
   RegionReportContent,
   SectorReportContent,
   SharingStatusContent,
+  SurveyIdentity,
   VillageReportContent,
 } from "../report-content.types";
 import {
@@ -23,14 +28,19 @@ import { aggregateDemographics } from "./aggregate-demographics";
 import {
   ReportDataProvider,
   type ScopedReportQuery,
+  type SurveyReportQuery,
   type VillageReportQuery,
 } from "./report-data.provider";
 import {
+  snapshotToCombinedContent,
   snapshotToExecutiveContent,
+  snapshotToIndividualSurveyContent,
   snapshotToRegionContent,
   snapshotToSectorContent,
   snapshotToVillageContent,
 } from "./snapshot-to-content";
+import { buildCoverageBlock } from "./coverage-counts";
+import { buildPortfolioBlock } from "./portfolio-counts";
 
 // Real report data provider — every method reads real data. There is no mock
 // fallback: a study with no scores yet raises STUDY_NOT_SCORED (409) so the
@@ -91,6 +101,123 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
     } catch (err) {
       this.rethrow("Village", err);
     }
+  }
+
+  // RPT01 Individual Survey Report. Scoped to the caller's named survey — never
+  // resolveSurveyId's "most recent survey in the study" guess, which is fine for
+  // a study-wide aggregate but would silently report on the wrong survey here.
+  async getIndividualSurveyReport(query: SurveyReportQuery): Promise<IndividualSurveyReportContent> {
+    try {
+      const { snapshot, aiOutput, survey, coverage, demographics } = await this.surveyHalf(query, "INDIVIDUAL");
+      return snapshotToIndividualSurveyContent({
+        snapshot,
+        aiOutput,
+        survey,
+        coverage,
+        demographics,
+        assessmentPeriod: coverage.assessmentPeriod,
+        filters: query.filters,
+      });
+    } catch (err) {
+      this.rethrow("Individual survey", err);
+    }
+  }
+
+  // RPT15 Survey & Dashboard Report.
+  //
+  // Reconciliation: the survey half comes from ONE surveyHalf() call (the same
+  // one getIndividualSurveyReport makes) and the dashboard half from ONE
+  // getCollectiveDashboard() + ONE listAlerts() call. Nothing is computed twice,
+  // which is what stops the two halves drifting apart. See the reconciliation
+  // spec — it asserts this equality directly.
+  async getCombinedReport(query: SurveyReportQuery): Promise<CombinedReportContent> {
+    try {
+      const [half, dashboard, alerts] = await Promise.all([
+        this.surveyHalf(query, "COMBINED"),
+        this.getCollectiveDashboard({ studyId: query.studyId, orgId: query.orgId, filters: query.filters }),
+        this.sla.listAlerts(),
+      ]);
+      const { slaCompliancePct, breached, atRisk } = slaComplianceFromAlerts(alerts);
+      const portfolio = await buildPortfolioBlock(this.tenant, half.coverage.responsesSubmitted);
+
+      return snapshotToCombinedContent({
+        snapshot: half.snapshot,
+        aiOutput: half.aiOutput,
+        survey: half.survey,
+        coverage: half.coverage,
+        demographics: half.demographics,
+        assessmentPeriod: half.coverage.assessmentPeriod,
+        portfolio,
+        dashboard,
+        sla: { slaCompliancePct, breached, atRisk },
+        // The survey half is frozen at snapshot time; this half is live. Both
+        // stamps are rendered so a reader knows what each is as-of.
+        dashboardCapturedAt: new Date().toISOString(),
+        filters: query.filters,
+      });
+    } catch (err) {
+      this.rethrow("Combined survey + dashboard", err);
+    }
+  }
+
+  // The shared survey half of RPT01 and RPT15 — one snapshot, one AI narrative,
+  // one coverage-count pass, one demographics aggregate. Both reports consume
+  // exactly this, which is what makes them reconcile by construction.
+  private async surveyHalf(
+    query: SurveyReportQuery,
+    scope: SummaryScopeType,
+  ): Promise<{
+    snapshot: ReportDataSnapshot;
+    aiOutput: Record<string, unknown> | null;
+    survey: SurveyIdentity;
+    coverage: CoverageBlock;
+    demographics: Demographics | null;
+  }> {
+    const villageId = typeof query.filters.villageId === "string" ? query.filters.villageId : "";
+
+    const survey = await this.tenant.runInOrgContext((tx) =>
+      tx.survey.findUnique({
+        where: { id: query.surveyId },
+        include: { need: { select: { statement: true, status: true, village: true } } },
+      }),
+    );
+    if (!survey) throw new Error(`survey ${query.surveyId} not found`);
+
+    const { snapshot, aiOutput } = await this.realData(query.studyId, query.surveyId, scope, { villageId });
+
+    const coverage = await buildCoverageBlock(this.tenant, {
+      studyId: query.studyId,
+      surveyId: query.surveyId,
+      needId: survey.needId,
+      villageId: villageId || undefined,
+      validResponseCount: snapshot.responseQuality.validResponseCount,
+      // The snapshot reports valid + submitted; excluded is the difference. The
+      // rollup is the authority on both, so this can't disagree with severity.
+      excludedResponseCount: Math.max(
+        0,
+        snapshot.responseQuality.submittedResponseCount - snapshot.responseQuality.validResponseCount,
+      ),
+      // Snapshot carries the rate as a 0-1 fraction; the report shows a percent.
+      dontKnowRatePct: Math.round(snapshot.responseQuality.dontKnowRate * 100),
+      assessmentPeriod: query.assessmentPeriod,
+    });
+
+    const demographics = await aggregateDemographics(this.tenant, query.studyId, villageId);
+
+    const identity: SurveyIdentity = {
+      surveyId: survey.id,
+      surveyTitle: survey.title,
+      surveyStatus: survey.status,
+      needStatement: survey.need.statement,
+      needStatus: survey.need.status,
+      villageName: snapshot.study.villageName,
+      assessmentCycle: snapshot.study.assessmentCycle,
+      assessmentPeriod: coverage.assessmentPeriod,
+      methodologyVersion: survey.methodologyVersion,
+      publishedAt: survey.publishedAt ? survey.publishedAt.toISOString() : null,
+    };
+
+    return { snapshot, aiOutput, survey: identity, coverage, demographics };
   }
 
   async getSectorReport(query: ScopedReportQuery): Promise<SectorReportContent> {

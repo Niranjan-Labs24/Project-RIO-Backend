@@ -1,7 +1,9 @@
 import type {
   CollectiveDashboardData,
   CollectiveReportContent,
+  CombinedReportContent,
   ExecutiveReportContent,
+  IndividualSurveyReportContent,
   RegionReportContent,
   SectorReportContent,
   SharingStatusContent,
@@ -32,8 +34,25 @@ export interface ScopedReportQuery {
   filters: Record<string, unknown>;
 }
 
+/** RPT01 / RPT15 — the caller names the survey; it is never inferred. */
+export interface SurveyReportQuery {
+  studyId: string;
+  surveyId: string;
+  studyTitle?: string;
+  assessmentPeriod?: string;
+  orgId: string;
+  filters: Record<string, unknown>;
+}
+
 export abstract class ReportDataProvider {
   abstract getVillageReport(query: VillageReportQuery): Promise<VillageReportContent>;
+
+  // RPT01 Individual Survey Report — one survey, with its coverage counts.
+  abstract getIndividualSurveyReport(query: SurveyReportQuery): Promise<IndividualSurveyReportContent>;
+
+  // RPT15 Survey & Dashboard Report — the same survey half as RPT01
+  // (same snapshot, by construction) merged with the org dashboard aggregate.
+  abstract getCombinedReport(query: SurveyReportQuery): Promise<CombinedReportContent>;
   abstract getSectorReport(query: ScopedReportQuery): Promise<SectorReportContent>;
   abstract getRegionReport(query: ScopedReportQuery): Promise<RegionReportContent>;
   abstract getExecutiveReport(query: ScopedReportQuery): Promise<ExecutiveReportContent>;

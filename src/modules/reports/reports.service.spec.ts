@@ -43,6 +43,7 @@ function seed(store: Map<string, ReportRow>, over: Partial<ReportRow> = {}): Rep
     status: "draft",
     title: "Village Report — Sample Village",
     studyId: "study-1",
+    surveyId: null,
     filters: {},
     content: {},
     generatedBy: "officer-1",

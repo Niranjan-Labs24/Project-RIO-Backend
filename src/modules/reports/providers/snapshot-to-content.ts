@@ -10,18 +10,29 @@ import {
   SINGLE_CYCLE_TREND_NOTE,
   type AiSummaryBlock,
   type ApprovalBlock,
+  type CollectiveDashboardData,
+  type CombinedReportContent,
   type ConfidenceLevel,
+  type CoverageBlock,
   type Demographics,
   type DomainComponent,
   type ExecutiveReportContent,
+  type IndividualSurveyReportContent,
+  type PortfolioBlock,
   type PriorityStatus,
   type RegionReportContent,
   type ReportHeader,
   type ResponseQuality,
   type SectorReportContent,
+  type SurveyIdentity,
   type TopKpi,
   type VillageReportContent,
 } from "../report-content.types";
+import {
+  buildComparisonBand,
+  buildQuestionCoverage,
+  buildResponseFunnel,
+} from "./survey-report-derivations";
 
 export const EMPTY_APPROVAL: ApprovalBlock = {
   officerConfirmedBy: null,
@@ -188,6 +199,115 @@ export function aiOutputToSummaryBlock(ai: Record<string, unknown> | null | unde
     dataQualityNote: str(a.dataQualityNote),
     trendNote: str(a.trendNote),
     recommendations: recommendationsRaw.map((r) => String(r)),
+  };
+}
+
+// ── Survey-scoped mappers (RPT01 / RPT15) ──
+
+/** Everything the two survey-scoped mappers need beyond the base MapperInput. */
+export interface SurveyMapperInput extends MapperInput {
+  survey: SurveyIdentity;
+  coverage: CoverageBlock;
+}
+
+export interface CombinedMapperInput extends SurveyMapperInput {
+  portfolio: PortfolioBlock;
+  dashboard: CollectiveDashboardData;
+  /** Live reviewer-SLA figures, overlaid the same way the dashboard screen does. */
+  sla: { slaCompliancePct: number | null; breached: number; atRisk: number };
+  /** When the (live) dashboard half was read, distinct from the snapshot stamp. */
+  dashboardCapturedAt: string;
+}
+
+/**
+ * RPT01 Individual Survey Report. Shares `header` + `severity` + `priority` +
+ * `topKpis` with the village mapper on purpose — that's what makes the existing
+ * gauge/radar/bars/donut renderers pick it up with no changes.
+ */
+export function snapshotToIndividualSurveyContent(
+  input: SurveyMapperInput,
+): IndividualSurveyReportContent {
+  const { snapshot, coverage } = input;
+  const notes = promoteNotes(aiOutputToSummaryBlock(input.aiOutput));
+  return {
+    header: buildHeader(snapshot, input.methodologyVersion),
+    survey: input.survey,
+    coverage,
+    responseQuality: mapResponseQuality(snapshot),
+    severity: {
+      overallVillageNeedsIndex: snapshot.severity.overallVillageNeedsIndex ?? 0,
+      label: snapshot.severity.severityBand,
+      domains: mapDomains(snapshot),
+    },
+    priority: {
+      villagePriorityScore: snapshot.priority.villagePriorityScore,
+      priorityStatus: snapshot.priority.priorityStatus as PriorityStatus,
+      overrideApplied: snapshot.priority.overrideApplied,
+      overrideReason: snapshot.priority.overrideReason,
+    },
+    topKpis: mapTopKpis(snapshot),
+    responseFunnel: buildResponseFunnel(coverage),
+    questionCoverage: buildQuestionCoverage(snapshot),
+    qualitativeEvidence: snapshot.evidence.map((e) => ({ theme: e.evidenceTitle, summary: e.description })),
+    aiSummary: notes.aiSummary,
+    dataQualityNote: notes.dataQualityNote,
+    trendNote: notes.trendNote,
+    approval: input.approval ?? EMPTY_APPROVAL,
+    demographics: input.demographics ?? null,
+    filters: input.filters ?? {},
+  };
+}
+
+/**
+ * RPT15 Survey & Dashboard Report.
+ *
+ * The survey half is built from the SAME snapshot the individual mapper above
+ * consumes — deliberately by calling it, not by re-deriving the blocks, so the
+ * two reports cannot drift apart. The reconciliation spec asserts exactly this.
+ */
+export function snapshotToCombinedContent(input: CombinedMapperInput): CombinedReportContent {
+  const individual = snapshotToIndividualSurveyContent(input);
+  const { dashboard, sla } = input;
+
+  return {
+    header: individual.header,
+    survey: individual.survey,
+    coverage: individual.coverage,
+    portfolio: input.portfolio,
+
+    // Survey half — taken wholesale from the individual report's own blocks.
+    responseQuality: individual.responseQuality,
+    severity: individual.severity,
+    priority: individual.priority,
+    topKpis: individual.topKpis,
+    responseFunnel: individual.responseFunnel,
+    questionCoverage: individual.questionCoverage,
+    demographics: individual.demographics,
+
+    dashboard: {
+      capturedAt: input.dashboardCapturedAt,
+      kpis: {
+        needCount: dashboard.needCount,
+        slaCompliancePct: sla.slaCompliancePct,
+        slaBreaches: sla.breached,
+        slaAtRisk: sla.atRisk,
+      },
+      scoringDistribution: dashboard.scoringDistribution,
+      topPriorities: dashboard.topPriorities,
+      trends: dashboard.trends,
+      // Flattened to strings — the renderers already have an "Anomalies
+      // Flagged" list section, and severity is carried in the wording.
+      anomalies: dashboard.anomalies.map((a) => `[${a.severity.toUpperCase()}] ${a.note}`),
+      reviewerNotes: dashboard.reviewerNotes,
+    },
+
+    comparison: buildComparisonBand(input.snapshot, dashboard, input.coverage),
+
+    aiSummary: individual.aiSummary,
+    dataQualityNote: individual.dataQualityNote,
+    trendNote: individual.trendNote,
+    approval: individual.approval,
+    filters: individual.filters,
   };
 }
 

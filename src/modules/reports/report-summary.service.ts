@@ -23,8 +23,19 @@ import {
   EXECUTIVE_REPORT_SUMMARY_PROMPT_VERSION,
   EXECUTIVE_REPORT_SUMMARY_SYSTEM_PROMPT,
 } from '../ai/prompts/executive-report-summary.system';
+import {
+  INDIVIDUAL_SURVEY_SUMMARY_PROMPT_VERSION,
+  INDIVIDUAL_SURVEY_SUMMARY_RESPONSE_SCHEMA,
+  INDIVIDUAL_SURVEY_SUMMARY_SYSTEM_PROMPT,
+} from '../ai/prompts/individual-survey-summary.system';
+import {
+  COMBINED_REPORT_SUMMARY_PROMPT_VERSION,
+  COMBINED_REPORT_SUMMARY_RESPONSE_SCHEMA,
+  COMBINED_REPORT_SUMMARY_SYSTEM_PROMPT,
+} from '../ai/prompts/combined-report-summary.system';
 import { normalizeDomainKey, type DomainPriorityComponent } from '../priority/priority-v2.service';
 import { aggregateDemographics } from './providers/aggregate-demographics';
+import { resolveKpiDomain } from './providers/survey-report-derivations';
 import {
   snapshotToExecutiveContent,
   snapshotToRegionContent,
@@ -32,7 +43,22 @@ import {
   snapshotToVillageContent,
 } from './providers/snapshot-to-content';
 
-export type SummaryScopeType = 'VILLAGE' | 'SECTOR' | 'REGION' | 'EXECUTIVE';
+// VILLAGE/SECTOR/REGION/EXECUTIVE are the Insights-page scopes. INDIVIDUAL and
+// COMBINED are the survey-scoped report scopes (RPT01 / RPT15) — same snapshot
+// shape and the same survey-level rollup query as VILLAGE, but each gets its own
+// system prompt and response schema so the narrative matches what the report
+// actually shows. Stored in AiPrioritySummary.summaryScope (VarChar(50)), so
+// adding values needs no migration.
+export type SummaryScopeType =
+  | 'VILLAGE'
+  | 'SECTOR'
+  | 'REGION'
+  | 'EXECUTIVE'
+  | 'INDIVIDUAL'
+  | 'COMBINED';
+
+/** Scopes that describe ONE survey — evidence and rollups scope to its Need. */
+export const SURVEY_LEVEL_SCOPES: SummaryScopeType[] = ['VILLAGE', 'INDIVIDUAL', 'COMBINED'];
 
 export interface ScopeFilters {
   villageId?: string;
@@ -137,28 +163,51 @@ export class ReportSummaryService {
     private readonly aiService: AiService,
   ) {}
 
-  private getPromptForScope(scope: SummaryScopeType): { promptVersion: string; systemPrompt: string } {
+  // Each scope carries its own system prompt AND response schema — a narrative
+  // that promises "coverage" or "positioning" fields the schema doesn't declare
+  // would be silently dropped by the structured-output call.
+  private getPromptForScope(scope: SummaryScopeType): {
+    promptVersion: string;
+    systemPrompt: string;
+    responseSchema: Record<string, unknown>;
+  } {
     switch (scope) {
+      case 'INDIVIDUAL':
+        return {
+          promptVersion: INDIVIDUAL_SURVEY_SUMMARY_PROMPT_VERSION,
+          systemPrompt: INDIVIDUAL_SURVEY_SUMMARY_SYSTEM_PROMPT,
+          responseSchema: INDIVIDUAL_SURVEY_SUMMARY_RESPONSE_SCHEMA,
+        };
+      case 'COMBINED':
+        return {
+          promptVersion: COMBINED_REPORT_SUMMARY_PROMPT_VERSION,
+          systemPrompt: COMBINED_REPORT_SUMMARY_SYSTEM_PROMPT,
+          responseSchema: COMBINED_REPORT_SUMMARY_RESPONSE_SCHEMA,
+        };
       case 'SECTOR':
         return {
           promptVersion: SECTOR_REPORT_SUMMARY_PROMPT_VERSION,
           systemPrompt: SECTOR_REPORT_SUMMARY_SYSTEM_PROMPT,
+          responseSchema: PRIORITY_DASHBOARD_SUMMARY_RESPONSE_SCHEMA,
         };
       case 'REGION':
         return {
           promptVersion: REGION_REPORT_SUMMARY_PROMPT_VERSION,
           systemPrompt: REGION_REPORT_SUMMARY_SYSTEM_PROMPT,
+          responseSchema: PRIORITY_DASHBOARD_SUMMARY_RESPONSE_SCHEMA,
         };
       case 'EXECUTIVE':
         return {
           promptVersion: EXECUTIVE_REPORT_SUMMARY_PROMPT_VERSION,
           systemPrompt: EXECUTIVE_REPORT_SUMMARY_SYSTEM_PROMPT,
+          responseSchema: PRIORITY_DASHBOARD_SUMMARY_RESPONSE_SCHEMA,
         };
       case 'VILLAGE':
       default:
         return {
           promptVersion: VILLAGE_REPORT_SUMMARY_PROMPT_VERSION,
           systemPrompt: VILLAGE_REPORT_SUMMARY_SYSTEM_PROMPT,
+          responseSchema: PRIORITY_DASHBOARD_SUMMARY_RESPONSE_SCHEMA,
         };
     }
   }
@@ -215,13 +264,26 @@ export class ReportSummaryService {
       });
       if (!mv) throw new BadRequestException('No methodology version configured');
 
+      // ScoreRollup is unique per villageId, and RollupService writes BOTH a
+      // study-wide row (villageId '' — Prisma can't put null in a unique
+      // constraint, see its upsert comment) and one row per village. Omitting
+      // the filter when no village is selected therefore matched the
+      // consolidated row *and* every per-village row, so each domain appeared
+      // once per village in the table, the bars, the radar and the trend notes.
+      //
+      // Always filter, using '' for the consolidated case — the exact
+      // convention PriorityService.getDashboard uses (`const vId = villageId
+      // || ''`), which is also what makes these reports reconcile with the
+      // Priority Dashboard rather than double-counting against it.
+      const rollupVillageId = villageId || '';
+
       const overallRollup = await tx.scoreRollup.findFirst({
         where: {
           studyId,
           surveyId,
           methodologyVersionId: mv.id,
           rollupLevel: 'OVERALL',
-          ...(villageId ? { villageId } : {}),
+          villageId: rollupVillageId,
         },
       });
 
@@ -231,7 +293,7 @@ export class ReportSummaryService {
           surveyId,
           methodologyVersionId: mv.id,
           rollupLevel: 'DOMAIN',
-          ...(villageId ? { villageId } : {}),
+          villageId: rollupVillageId,
         },
       });
 
@@ -249,15 +311,23 @@ export class ReportSummaryService {
       // to join onto the domain rollups (whose entityId is the domain name).
       const methodologyQuestions = await tx.question.findMany({
         where: { usedInMvp: true, kpi: { not: null } },
-        select: { domain: true, kpi: true },
+        select: { domain: true, kpi: true, indicator: true },
       });
       const kpiCountByDomainKey = new Map<string, Set<string>>();
+      // KPI rollups store entityId = entityNameSnapshot = the KPI name (see
+      // RollupService's KPI upsert), and carry no parent domain/indicator of
+      // their own. Same Question set, same pass — so the Top KPIs table can
+      // name a real domain and indicator instead of a hard-coded placeholder.
+      const domainByKpi = new Map<string, string>();
+      const indicatorByKpi = new Map<string, string>();
       for (const q of methodologyQuestions) {
         if (!q.kpi) continue;
         const key = normalizeDomainKey(q.domain);
         const set = kpiCountByDomainKey.get(key) ?? new Set<string>();
         set.add(q.kpi);
         kpiCountByDomainKey.set(key, set);
+        if (!domainByKpi.has(q.kpi)) domainByKpi.set(q.kpi, q.domain);
+        if (q.indicator && !indicatorByKpi.has(q.kpi)) indicatorByKpi.set(q.kpi, q.indicator);
       }
 
       const kpiRollups = await tx.scoreRollup.findMany({
@@ -266,7 +336,9 @@ export class ReportSummaryService {
           surveyId,
           methodologyVersionId: mv.id,
           rollupLevel: 'KPI',
-          ...(villageId ? { villageId } : {}),
+          // Same per-village duplication as the DOMAIN query above — without
+          // this the Top KPIs table listed each KPI once per village.
+          villageId: rollupVillageId,
         },
         // Postgres defaults DESC to NULLS FIRST — without an explicit
         // `nulls: 'last'`, every unscored (severityScore: null) KPI rollup
@@ -282,13 +354,26 @@ export class ReportSummaryService {
           studyId,
           surveyId,
           methodologyVersionId: mv.id,
-          ...(villageId ? { villageId } : {}),
+          // Unique per villageId too (see its @@unique) — unfiltered, findFirst
+          // returned an arbitrary village's assessment rather than the
+          // consolidated one, so the headline Priority Score could belong to a
+          // single village while the report claimed to cover them all.
+          villageId: rollupVillageId,
         },
       });
 
+      // Evidence is scoped to the Survey's own Need, not the whole Study. Each
+      // Need under a Study runs an independent workflow with its own documents
+      // (see the Need model comment), so a study-wide filter put a sibling
+      // Need's files into this survey's report. The aggregate scopes
+      // (SECTOR/REGION/EXECUTIVE) legitimately span the study, so they keep the
+      // wider set.
+      const evidenceScope = SURVEY_LEVEL_SCOPES.includes(scope)
+        ? { needId: survey.needId }
+        : { studyId };
       const evidenceRows = await tx.evidence.findMany({
         where: {
-          studyId,
+          ...evidenceScope,
           reviewStatus: 'APPROVED',
           isIncludedInReport: true,
         },
@@ -306,7 +391,11 @@ export class ReportSummaryService {
         (priorityAssessment?.domainComponents as unknown as DomainPriorityComponent[] | null) || [];
 
       const snapshot: ReportDataSnapshot = {
-        snapshotId: `snap-${Date.now()}`,
+        // Deterministic id assigned below, once the content hashes exist — a
+        // wall-clock id meant two snapshots of identical data looked different,
+        // so nothing downstream could tell "regenerated, same numbers" apart
+        // from "regenerated, numbers moved".
+        snapshotId: '',
         generatedAt: new Date().toISOString(),
         scope,
         scopeFilters,
@@ -349,8 +438,9 @@ export class ReportSummaryService {
           topKpis: kpiRollups.map((k, index) => ({
             rank: index + 1,
             kpiName: k.entityNameSnapshot,
-            indicatorName: k.entityId,
-            domainName: 'Core Methodology Domain',
+            // Join semantics live in resolveKpiDomain (pure, unit-tested) —
+            // see its comment for why the join is by KPI name, not id.
+            ...resolveKpiDomain(k, domainByKpi, indicatorByKpi),
             severityScore: k.severityScore ? Number(k.severityScore) : null,
             confidenceLevel: k.confidenceLevel,
             validResponseCount: k.validResponseCount,
@@ -387,6 +477,14 @@ export class ReportSummaryService {
       const reportDataHash = createHash('sha256').update(JSON.stringify(snapshot.severity) + JSON.stringify(snapshot.priority)).digest('hex');
       const evidenceHash = createHash('sha256').update(JSON.stringify(snapshot.evidence)).digest('hex');
 
+      // Identity + content, so the same survey scored the same way always
+      // yields the same snapshotId. Truncated to 16 hex chars — enough to be
+      // collision-free at pilot volume and short enough to print in a report.
+      snapshot.snapshotId = `snap-${createHash('sha256')
+        .update([studyId, surveyId, scope, JSON.stringify(scopeFilters), reportDataHash, evidenceHash].join('|'))
+        .digest('hex')
+        .slice(0, 16)}`;
+
       return { snapshot, reportDataHash, evidenceHash };
     });
   }
@@ -411,6 +509,8 @@ export class ReportSummaryService {
     surveyId: string,
     scope: SummaryScopeType = 'VILLAGE',
     scopeFilters: ScopeFilters = {},
+    /** Extra JSON the scope's prompt is written against — see `extra` below. */
+    aiContext?: Record<string, unknown>,
   ) {
     const orgId = requireOrgId();
     const store = getOrgStore();
@@ -434,17 +534,22 @@ export class ReportSummaryService {
       );
     }
 
-    const { promptVersion, systemPrompt } = this.getPromptForScope(scope);
+    const { promptVersion, systemPrompt, responseSchema } = this.getPromptForScope(scope);
     const promptHash = createHash('sha256').update(systemPrompt).digest('hex');
 
+    // Survey-scoped scopes get the extra context their prompts are written
+    // against (coverage counts, and for COMBINED the org portfolio/dashboard/
+    // comparison). Passed through by the caller rather than re-queried here, so
+    // the narrative can only ever describe the same numbers the report renders.
+    const extra = aiContext ? `\n\nAdditional context JSON:\n${JSON.stringify(aiContext, null, 2)}\n` : '';
     const promptText = `Generate the ${scope} SUMMARY narrative strictly using this ReportData JSON:
 ${JSON.stringify(snapshot, null, 2)}
-`;
+${extra}`;
 
     const { response: aiOutputJson } = await this.aiService.generateJson<Record<string, unknown>>(
       promptText,
       systemPrompt,
-      PRIORITY_DASHBOARD_SUMMARY_RESPONSE_SCHEMA,
+      responseSchema,
     );
 
     return this.tenant.runInOrgContext(async (tx) => {
@@ -664,6 +769,16 @@ ${JSON.stringify(snapshot, null, 2)}
     // which aggregateDemographics already treats as "whole study").
     const demographics = await aggregateDemographics(this.tenant, summary.studyId, villageId);
 
+    // INDIVIDUAL/COMBINED summaries belong to the survey-scoped reports, which
+    // are generated through POST /reports (they need coverage/portfolio counts
+    // this path doesn't build). Falling through here would have saved them as a
+    // Village report — wrong type, wrong content shape.
+    if (scope === 'INDIVIDUAL' || scope === 'COMBINED') {
+      throw new BadRequestException(
+        `${scope} summaries are saved via the Reports screen (POST /reports), not from the Insights page.`,
+      );
+    }
+
     const mapperArgs = { snapshot, aiOutput, demographics, filters: scopeFilters as Record<string, unknown> };
     const content =
       scope === 'SECTOR'
@@ -687,6 +802,10 @@ ${JSON.stringify(snapshot, null, 2)}
           reportType,
           title,
           studyId: summary.studyId,
+          // The summary is already survey-scoped (AiPrioritySummary.surveyId);
+          // dropping it here was what made two surveys under one study produce
+          // two indistinguishable, untraceable report rows.
+          surveyId: summary.surveyId,
           filters: scopeFilters as Prisma.InputJsonValue,
           content: content as unknown as Prisma.InputJsonValue,
           generatedBy,
