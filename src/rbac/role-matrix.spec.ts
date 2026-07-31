@@ -1,10 +1,17 @@
 import { ROLE_MATRIX, LOGIN_ROLE_KEYS, can } from './role-matrix';
 
 describe('ROLE_MATRIX', () => {
-  it('has the 9 roles with FE-matching ids/keys', () => {
-    expect(ROLE_MATRIX).toHaveLength(9);
+  it('has the 10 roles with FE-matching ids/keys', () => {
+    expect(ROLE_MATRIX).toHaveLength(10);
     expect(ROLE_MATRIX.find((r) => r.key === 'ngo_admin')?.id).toBe('role_ngo_admin');
     expect(ROLE_MATRIX.find((r) => r.key === 'system_admin')?.crossEntity).toBe(true);
+  });
+
+  it('ncnp_user is cross-entity but has no permission on any other module', () => {
+    const role = ROLE_MATRIX.find((r) => r.key === 'ncnp_user');
+    expect(role?.id).toBe('role_ncnp_user');
+    expect(role?.crossEntity).toBe(true);
+    expect(role?.permissions.every((p) => !p.read && !p.write && !p.create && !p.approve && !p.export && !p.share)).toBe(true);
   });
 
   it('ngo_admin has full access; can() reflects the matrix', () => {
@@ -35,7 +42,7 @@ describe('ROLE_MATRIX', () => {
 
   it('excludes citizen_guest from login-capable roles', () => {
     expect(LOGIN_ROLE_KEYS).not.toContain('citizen_guest');
-    expect(LOGIN_ROLE_KEYS).toHaveLength(8);
+    expect(LOGIN_ROLE_KEYS).toHaveLength(9);
   });
 
   it('approver can approve/reject/archive a report, not just read/export it', () => {

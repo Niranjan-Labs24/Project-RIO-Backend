@@ -16,19 +16,44 @@ interface FakeOrg {
   name: string;
 }
 
-function fakeTenant(reports: FakeReport[], orgs: FakeOrg[], users: Array<{ id: string; name: string }> = []) {
+interface ReportFindManyArgs {
+  where?: { id?: { in: string[] }; orgId?: string; status?: { in: string[] } };
+  orderBy?: unknown;
+}
+interface OrgFindManyArgs {
+  where?: { id?: { in?: string[]; not?: string }; isActive?: boolean; name?: { contains: string; mode?: string } };
+  orderBy?: unknown;
+  take?: number;
+}
+
+function fakeTenant(reports: FakeReport[], orgs: (FakeOrg & { isActive?: boolean })[], users: Array<{ id: string; name: string }> = []) {
   const tx = {
     report: {
       findUnique: async ({ where }: { where: { id: string } }) =>
         reports.find((r) => r.id === where.id) ?? null,
-      findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
-        reports.filter((r) => where.id.in.includes(r.id)),
+      findMany: async ({ where }: ReportFindManyArgs) => {
+        let result = reports;
+        if (where?.id?.in) result = result.filter((r) => where.id!.in.includes(r.id));
+        if (where?.orgId) result = result.filter((r) => r.orgId === where.orgId);
+        if (where?.status?.in) result = result.filter((r) => where.status!.in.includes(r.status));
+        return result;
+      },
     },
     organisation: {
       findUnique: async ({ where }: { where: { id: string } }) =>
         orgs.find((o) => o.id === where.id) ?? null,
-      findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
-        orgs.filter((o) => where.id.in.includes(o.id)),
+      findMany: async ({ where, take }: OrgFindManyArgs) => {
+        let result = orgs;
+        if (where?.id?.in) result = result.filter((o) => where.id!.in!.includes(o.id));
+        if (where?.id?.not) result = result.filter((o) => o.id !== where.id!.not);
+        if (where?.isActive !== undefined) result = result.filter((o) => (o.isActive ?? true) === where.isActive);
+        if (where?.name?.contains) {
+          const needle = where.name.contains.toLowerCase();
+          result = result.filter((o) => o.name.toLowerCase().includes(needle));
+        }
+        result = [...result].sort((a, b) => a.name.localeCompare(b.name));
+        return take ? result.slice(0, take) : result;
+      },
     },
     user: {
       findUnique: async ({ where }: { where: { id: string } }) =>
@@ -86,7 +111,21 @@ function fakePrisma(initial: FakeRow[] = []) {
         rows[idx] = { ...rows[idx], ...data } as FakeRow;
         return rows[idx];
       },
-      findMany: async () => rows,
+      findMany: async (
+        args?: { where?: { OR?: Array<{ ownerOrgId?: string; requestingOrgId?: string }> } },
+      ) => {
+        const where = args?.where;
+        const filtered = where?.OR
+          ? rows.filter((r) =>
+              where.OR!.some(
+                (cond) =>
+                  (cond.ownerOrgId !== undefined && cond.ownerOrgId === r.ownerOrgId) ||
+                  (cond.requestingOrgId !== undefined && cond.requestingOrgId === r.requestingOrgId),
+              ),
+            )
+          : rows;
+        return [...filtered].sort((a, b) => b.requestedAt.getTime() - a.requestedAt.getTime());
+      },
     },
   };
 }
@@ -118,6 +157,12 @@ const ORGS = [
 
 function runAsOrg<T>(orgId: string, actorId: string, fn: () => Promise<T>): Promise<T> {
   return orgContext.run({ requestId: "r", orgId, actorId }, fn);
+}
+
+// center_supervisor is a cross-entity role (role-matrix.ts) — used to exercise
+// the ReportSharingService branches that bypass per-org scoping.
+function runAsCrossEntity<T>(orgId: string, actorId: string, fn: () => Promise<T>): Promise<T> {
+  return orgContext.run({ requestId: "r", orgId, actorId, role: "center_supervisor" }, fn);
 }
 
 describe("ReportSharingService.create", () => {
@@ -281,5 +326,253 @@ describe("ReportSharingService.getSharedSnapshot", () => {
     expect(snapshot.title).toBe(APPROVED_REPORT.title);
     expect(snapshot.ownerOrgName).toBe("Owner NGO");
     expect(snapshot.generatedByName).toBe("Owner Staffer");
+  });
+});
+
+const THIRD_ORG = { id: "org-third", name: "Unrelated NGO" };
+const ORGS_WITH_THIRD = [...ORGS, THIRD_ORG];
+
+function seedRow(overrides: Partial<FakeRow> & Pick<FakeRow, "id" | "ownerOrgId" | "requestingOrgId">): FakeRow {
+  return {
+    reportId: APPROVED_REPORT.id, status: "pending", requestedBy: "user-1", requestedAt: new Date(),
+    decidedBy: null, decidedAt: null, note: null, decisionNote: null,
+    ...overrides,
+  };
+}
+
+describe("ReportSharingService.list", () => {
+  it("a plain-org actor only sees requests where their org is owner or requester", async () => {
+    const rows = [
+      seedRow({ id: "rsr-1", ownerOrgId: "org-owner", requestingOrgId: "org-requester" }),
+      seedRow({ id: "rsr-2", ownerOrgId: "org-owner", requestingOrgId: "org-third" }),
+      seedRow({ id: "rsr-3", ownerOrgId: "org-third", requestingOrgId: "org-requester" }),
+    ];
+    const svc = new ReportSharingService(
+      fakePrisma(rows) as never, fakeTenant([APPROVED_REPORT], ORGS_WITH_THIRD) as never, fakeAudit() as never,
+      fakeReportsService([APPROVED_REPORT]) as never,
+    );
+    const result = await runAsOrg("org-owner", "user-1", () => svc.list());
+    expect(result.map((r) => r.id).sort()).toEqual(["rsr-1", "rsr-2"]);
+  });
+
+  it("a cross-entity actor (e.g. Center Supervisor) sees requests across all orgs", async () => {
+    const rows = [
+      seedRow({ id: "rsr-1", ownerOrgId: "org-owner", requestingOrgId: "org-requester" }),
+      seedRow({ id: "rsr-2", ownerOrgId: "org-third", requestingOrgId: "org-requester" }),
+    ];
+    const svc = new ReportSharingService(
+      fakePrisma(rows) as never, fakeTenant([APPROVED_REPORT], ORGS_WITH_THIRD) as never, fakeAudit() as never,
+      fakeReportsService([APPROVED_REPORT]) as never,
+    );
+    const result = await runAsCrossEntity("org-supervisor", "user-sup", () => svc.list());
+    expect(result.map((r) => r.id).sort()).toEqual(["rsr-1", "rsr-2"]);
+  });
+});
+
+describe("ReportSharingService.getById", () => {
+  it("returns a request visible to the caller's org", async () => {
+    const row = seedRow({ id: "rsr-1", ownerOrgId: "org-owner", requestingOrgId: "org-requester" });
+    const svc = new ReportSharingService(
+      fakePrisma([row]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
+      fakeReportsService([APPROVED_REPORT]) as never,
+    );
+    const result = await runAsOrg("org-owner", "user-1", () => svc.getById("rsr-1"));
+    expect(result.id).toBe("rsr-1");
+  });
+
+  it("404s (not 403) for a request outside the caller's org, to avoid leaking existence", async () => {
+    const row = seedRow({ id: "rsr-1", ownerOrgId: "org-owner", requestingOrgId: "org-requester" });
+    const svc = new ReportSharingService(
+      fakePrisma([row]) as never, fakeTenant([APPROVED_REPORT], ORGS_WITH_THIRD) as never, fakeAudit() as never,
+      fakeReportsService([APPROVED_REPORT]) as never,
+    );
+    await expect(
+      runAsOrg("org-third", "user-1", () => svc.getById("rsr-1")),
+    ).rejects.toMatchObject({ response: { error: { code: "REPORT_SHARING_REQUEST_NOT_FOUND" } } });
+  });
+
+  it("a cross-entity actor can view a request belonging to neither of their orgs", async () => {
+    const row = seedRow({ id: "rsr-1", ownerOrgId: "org-owner", requestingOrgId: "org-requester" });
+    const svc = new ReportSharingService(
+      fakePrisma([row]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
+      fakeReportsService([APPROVED_REPORT]) as never,
+    );
+    const result = await runAsCrossEntity("org-supervisor", "user-sup", () => svc.getById("rsr-1"));
+    expect(result.id).toBe("rsr-1");
+  });
+
+  it("unknown id 404s", async () => {
+    const svc = new ReportSharingService(
+      fakePrisma([]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
+      fakeReportsService([APPROVED_REPORT]) as never,
+    );
+    await expect(
+      runAsOrg("org-owner", "user-1", () => svc.getById("missing")),
+    ).rejects.toMatchObject({ response: { error: { code: "REPORT_SHARING_REQUEST_NOT_FOUND" } } });
+  });
+});
+
+describe("ReportSharingService.create — not-found branches", () => {
+  it("REPORT_NOT_FOUND when the reportId doesn't exist", async () => {
+    const svc = new ReportSharingService(
+      fakePrisma() as never, fakeTenant([], ORGS) as never, fakeAudit() as never,
+      fakeReportsService([]) as never,
+    );
+    await expect(
+      runAsOrg("org-requester", "user-1", () =>
+        svc.create({ ownerOrgId: "org-owner", reportId: "no-such-report", note: "why" }),
+      ),
+    ).rejects.toMatchObject({ response: { error: { code: "REPORT_NOT_FOUND" } } });
+  });
+
+  it("REPORT_NOT_FOUND when the report belongs to a different org than payload.ownerOrgId", async () => {
+    const svc = new ReportSharingService(
+      fakePrisma() as never, fakeTenant([APPROVED_REPORT], ORGS_WITH_THIRD) as never, fakeAudit() as never,
+      fakeReportsService([APPROVED_REPORT]) as never,
+    );
+    await expect(
+      runAsOrg("org-requester", "user-1", () =>
+        // APPROVED_REPORT.orgId is "org-owner", not "org-third" — a spoofed ownerOrgId must not resolve.
+        svc.create({ ownerOrgId: "org-third", reportId: APPROVED_REPORT.id, note: "why" }),
+      ),
+    ).rejects.toMatchObject({ response: { error: { code: "REPORT_NOT_FOUND" } } });
+  });
+});
+
+describe("ReportSharingService.decide — already-decided / not-found", () => {
+  it("REPORT_SHARING_REQUEST_ALREADY_DECIDED when re-deciding an approved request", async () => {
+    const row = seedRow({ id: "rsr-1", ownerOrgId: "org-owner", requestingOrgId: "org-requester", status: "approved", decidedBy: "user-2", decidedAt: new Date() });
+    const svc = new ReportSharingService(
+      fakePrisma([row]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
+      fakeReportsService([APPROVED_REPORT]) as never,
+    );
+    await expect(
+      runAsOrg("org-owner", "user-2", () => svc.approve("rsr-1")),
+    ).rejects.toMatchObject({ response: { error: { code: "REPORT_SHARING_REQUEST_ALREADY_DECIDED" } } });
+  });
+
+  it("REPORT_SHARING_REQUEST_ALREADY_DECIDED when re-deciding a rejected request", async () => {
+    const row = seedRow({ id: "rsr-1", ownerOrgId: "org-owner", requestingOrgId: "org-requester", status: "rejected", decidedBy: "user-2", decidedAt: new Date(), decisionNote: "no" });
+    const svc = new ReportSharingService(
+      fakePrisma([row]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
+      fakeReportsService([APPROVED_REPORT]) as never,
+    );
+    await expect(
+      runAsOrg("org-owner", "user-2", () => svc.reject("rsr-1", { note: "still no" })),
+    ).rejects.toMatchObject({ response: { error: { code: "REPORT_SHARING_REQUEST_ALREADY_DECIDED" } } });
+  });
+
+  it("unknown id 404s on decide", async () => {
+    const svc = new ReportSharingService(
+      fakePrisma([]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
+      fakeReportsService([APPROVED_REPORT]) as never,
+    );
+    await expect(
+      runAsOrg("org-owner", "user-2", () => svc.approve("missing")),
+    ).rejects.toMatchObject({ response: { error: { code: "REPORT_SHARING_REQUEST_NOT_FOUND" } } });
+  });
+});
+
+describe("ReportSharingService.lookupOrganizations", () => {
+  it("excludes the caller's own org and inactive orgs, and filters by name substring (case-insensitive)", async () => {
+    const orgs = [
+      { id: "org-owner", name: "Owner NGO", isActive: true },
+      { id: "org-requester", name: "Requester NGO", isActive: true },
+      { id: "org-inactive", name: "Inactive NGO", isActive: false },
+    ];
+    const svc = new ReportSharingService(
+      fakePrisma() as never, fakeTenant([], orgs) as never, fakeAudit() as never,
+      fakeReportsService([]) as never,
+    );
+    // "ngo" (lowercase) matches all three by name, but org-owner is excluded as the
+    // caller's own org and org-inactive is excluded as inactive — only org-requester survives.
+    const result = await runAsOrg("org-owner", "user-1", () => svc.lookupOrganizations("ngo"));
+    expect(result).toEqual([{ id: "org-requester", name: "Requester NGO" }]);
+  });
+
+  it("caps results at 20 and matches active orgs other than the caller's own", async () => {
+    const orgs = [
+      { id: "org-owner", name: "Owner NGO", isActive: true },
+      ...Array.from({ length: 25 }, (_, i) => ({ id: `org-${i}`, name: `Partner NGO ${i}`, isActive: true })),
+    ];
+    const svc = new ReportSharingService(
+      fakePrisma() as never, fakeTenant([], orgs) as never, fakeAudit() as never,
+      fakeReportsService([]) as never,
+    );
+    const result = await runAsOrg("org-owner", "user-1", () => svc.lookupOrganizations(undefined));
+    expect(result.length).toBe(20);
+    expect(result.every((o) => o.id !== "org-owner")).toBe(true);
+  });
+});
+
+describe("ReportSharingService.lookupReportsForOrg", () => {
+  it("only returns released/archived reports, excluding draft", async () => {
+    const reports: FakeReport[] = [
+      { ...APPROVED_REPORT, id: "r-released", status: "released" },
+      { ...APPROVED_REPORT, id: "r-archived", status: "archived" },
+      { ...APPROVED_REPORT, id: "r-draft", status: "draft" },
+    ];
+    const svc = new ReportSharingService(
+      fakePrisma() as never, fakeTenant(reports, ORGS) as never, fakeAudit() as never,
+      fakeReportsService(reports) as never,
+    );
+    const result = await runAsOrg("org-owner", "user-1", () => svc.lookupReportsForOrg("org-owner"));
+    expect(result.map((r) => r.id).sort()).toEqual(["r-archived", "r-released"]);
+  });
+});
+
+describe("ReportSharingService.enrichMany", () => {
+  it("falls back to the raw id when the org or report was since deleted", async () => {
+    const row = seedRow({ id: "rsr-1", ownerOrgId: "org-owner", requestingOrgId: "org-gone", reportId: "report-gone" });
+    const svc = new ReportSharingService(
+      fakePrisma([row]) as never, fakeTenant([], [{ id: "org-owner", name: "Owner NGO" }]) as never, fakeAudit() as never,
+      fakeReportsService([]) as never,
+    );
+    const result = await runAsOrg("org-owner", "user-1", () => svc.getById("rsr-1"));
+    expect(result.requestingOrgName).toBe("org-gone");
+    expect(result.reportTitle).toBe("report-gone");
+  });
+
+  it("dedupes repeated org/report ids across a batch before looking them up", async () => {
+    const rows = [
+      seedRow({ id: "rsr-1", ownerOrgId: "org-owner", requestingOrgId: "org-requester" }),
+      seedRow({ id: "rsr-2", ownerOrgId: "org-owner", requestingOrgId: "org-requester" }),
+    ];
+    const reportFindManyArgs: ReportFindManyArgs[] = [];
+    const orgFindManyArgs: OrgFindManyArgs[] = [];
+    const base = fakeTenant([APPROVED_REPORT], ORGS);
+    const tenant = {
+      ...base,
+      runAsSupervisor: async (fn: (tx: unknown) => unknown) =>
+        base.runAsSupervisor((tx) => {
+          const wrapped = tx as {
+            report: { findMany: (args: ReportFindManyArgs) => unknown };
+            organisation: { findMany: (args: OrgFindManyArgs) => unknown };
+          };
+          return fn({
+            ...wrapped,
+            report: {
+              ...wrapped.report,
+              findMany: (args: ReportFindManyArgs) => { reportFindManyArgs.push(args); return wrapped.report.findMany(args); },
+            },
+            organisation: {
+              ...wrapped.organisation,
+              findMany: (args: OrgFindManyArgs) => { orgFindManyArgs.push(args); return wrapped.organisation.findMany(args); },
+            },
+          });
+        }),
+    };
+    const svc = new ReportSharingService(
+      fakePrisma(rows) as never, tenant as never, fakeAudit() as never,
+      fakeReportsService([APPROVED_REPORT]) as never,
+    );
+    const result = await runAsOrg("org-owner", "user-1", () => svc.list());
+    expect(result).toHaveLength(2);
+    // one batched report.findMany + one batched organisation.findMany for the whole list, not per-row,
+    // and each is called with only the distinct ids (one report id, two org ids: owner + requester).
+    expect(reportFindManyArgs).toHaveLength(1);
+    expect(reportFindManyArgs[0]?.where?.id?.in).toEqual([APPROVED_REPORT.id]);
+    expect(orgFindManyArgs).toHaveLength(1);
+    expect(orgFindManyArgs[0]?.where?.id?.in).toEqual(["org-owner", "org-requester"]);
   });
 });

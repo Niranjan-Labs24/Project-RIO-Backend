@@ -49,6 +49,10 @@ async function main(): Promise<void> {
   if (!admin) throw new Error("Run `pnpm prisma:seed` first (admin@demo-ngo.org not found).");
   const orgId = admin.orgId;
   const createdBy = admin.id;
+  // Snapshot the org's region the same way the real citizen-submission path
+  // does (CitizenService.submitResponse) — every SurveyResponse row below
+  // needs this, and the Need's own NeedDomain row needs orgId regardless.
+  const org = await supervisor.organisation.findUnique({ where: { id: orgId }, select: { regionId: true } });
 
   // MethodologyVersion is global reference data (no RLS).
   const mv = await prisma.methodologyVersion.findFirst({ orderBy: { createdAt: "asc" } });
@@ -79,8 +83,17 @@ async function main(): Promise<void> {
         source: "field_survey",
         village: [VILLAGE],
         domain: "Water & Sanitation",
+        subDomain: "Drinking Water Access",
         createdBy,
       },
+    });
+    // Need.domain/subDomain must always have a matching NeedDomain row (see
+    // AiDecisionsService.review, the real classification path, which always
+    // writes both together) — omitting this made the Need invisible on every
+    // domain-breakdown/pattern-analysis chart in the NCNP report despite
+    // being fully classified.
+    await tx.needDomain.create({
+      data: { needId: need.id, orgId, domain: "Water & Sanitation", subDomain: "Drinking Water Access" },
     });
 
     const survey = await tx.survey.create({
@@ -89,9 +102,15 @@ async function main(): Promise<void> {
         needId: need.id,
         studyId: study.id,
         title: "Ad-Dilam Needs Survey",
-        status: "published",
+        status: "PUBLISHED",
         methodologyVersion: mv.version,
         publishedAt: new Date(),
+        // Reviewer notes are mandatory for every real approve/publish
+        // (SurveysService.approveAndPublish) — this seed script bypasses
+        // that service entirely, so it sets the same column directly to
+        // keep seeded data consistent with the live business rule rather
+        // than leaving it null.
+        approverComments: "System-generated seed data",
         createdBy,
       },
     });
@@ -111,6 +130,11 @@ async function main(): Promise<void> {
         gender: (i < 21 ? "female" : "male") as "female" | "male",
         settlementType: (i < 26 ? "rural" : "urban") as "rural" | "urban",
         village: [VILLAGE],
+        // Snapshotted from the org, same as the real citizen-submission path
+        // (CitizenService.submitResponse) — omitting this left every seeded
+        // response with no region, silently missing from every region-based
+        // breakdown in the NCNP report despite the org having a real region.
+        regionId: org?.regionId ?? null,
         answers: {},
       })),
     });

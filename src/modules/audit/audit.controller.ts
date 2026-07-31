@@ -22,6 +22,7 @@ export class AuditController {
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
     @Query('search') search?: string,
+    @Query('sourceRef') sourceRef?: string,
   ): Promise<AuditListResult> {
     return this.audit.list({
       limit: parseIntParam(limit),
@@ -34,6 +35,7 @@ export class AuditController {
       dateFrom: dateFrom || undefined,
       dateTo: dateTo || undefined,
       search: search || undefined,
+      sourceRef: sourceRef || undefined,
     });
   }
 
@@ -52,6 +54,7 @@ export class AuditController {
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
     @Query('search') search?: string,
+    @Query('sourceRef') sourceRef?: string,
   ): Promise<string> {
     const csv = await this.audit.exportCsv({
       organizationId: organizationId || undefined,
@@ -62,6 +65,7 @@ export class AuditController {
       dateFrom: dateFrom || undefined,
       dateTo: dateTo || undefined,
       search: search || undefined,
+      sourceRef: sourceRef || undefined,
     });
     res.set({
       'Content-Type': 'text/csv',

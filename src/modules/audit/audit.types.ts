@@ -27,7 +27,8 @@ export type AuditAction =
   | 'STUDY_ARCHIVED'
   | 'STUDY_RESTORED'
   | 'SYSTEM_ADMIN_VIEWED_ARCHIVE'
-  | 'SYSTEM_ADMIN_VIEWED_ARCHIVED_REPORT';
+  | 'SYSTEM_ADMIN_VIEWED_ARCHIVED_REPORT'
+  | 'export';
 export type AuditEntityType =
   | 'organization'
   | 'user'
@@ -39,7 +40,8 @@ export type AuditEntityType =
   | 'report'
   | 'sharing_request'
   | 'report_sharing_request'
-  | 'survey_response';
+  | 'survey_response'
+  | 'ncnp_report';
 
 export interface AuditChange {
   field: string;
@@ -59,6 +61,11 @@ export interface RecordAuditInput {
   // the AFFECTED org rather than the acting admin's own org. When omitted the
   // event is filed under the caller's ambient org context.
   organizationId?: string;
+  // The submitter's own external tracking id for the entity this event is
+  // about (e.g. Need.referenceId) — a first-class, indexed column, not
+  // another metadata key. Omit (or null) when the entity has no such
+  // reference.
+  sourceRef?: string | null;
 }
 
 export interface AuditActor {
@@ -78,6 +85,7 @@ export interface AuditEvent {
   entityLabel: string;
   changes?: AuditChange[];
   metadata?: Record<string, unknown>;
+  sourceRef: string | null;
   ipAddress: string | null;
   userAgent: string | null;
   createdAt: string;
@@ -96,6 +104,9 @@ export interface AuditQuery {
   dateTo?: string;
   /** Free text matched against the entity label and the actor's name/email. */
   search?: string;
+  /** Exact match against the entity's own external tracking id (e.g. a
+   * Need's reference_id) — the reason this column is indexed. */
+  sourceRef?: string;
 }
 
 /**

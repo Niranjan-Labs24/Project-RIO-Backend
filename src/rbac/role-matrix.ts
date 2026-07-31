@@ -152,6 +152,16 @@ export const ROLE_MATRIX: RoleDef[] = [
   ] },
   { id: 'role_citizen_guest', key: 'citizen_guest', name: 'Citizen / Beneficiary Guest', description: 'Submits a need as a data source via OTP; not added before human review.', crossEntity: false,
     permissions: PERMISSION_MODULES.map((m) => (m === 'citizenChannel' ? perm(m, { create: true }) : perm(m))) },
+  // National Council for NGO Partnerships viewer — deliberately the
+  // narrowest cross-entity role: `crossEntity: true` alone is what unlocks
+  // the NCNP Compiled Report (its access check is `assertCrossEntity()`,
+  // not a `reportsDashboards` permission — see NcnpReportService), and every
+  // other module is left with no access at all, unlike System Admin/Center
+  // Supervisor which are broader operational roles that happen to also
+  // qualify. This role sees the NCNP Compiled Report only, nothing else —
+  // no RPT01-14 report list, no org/study/survey management.
+  { id: 'role_ncnp_user', key: 'ncnp_user', name: 'NCNP User', description: 'Views the national, kingdom-wide NCNP Compiled Report. No access to any other module.', crossEntity: true,
+    permissions: PERMISSION_MODULES.map((m) => perm(m)) },
 ];
 
 // citizen_guest is a public data source, not a login-capable account — excluded from user assignment.

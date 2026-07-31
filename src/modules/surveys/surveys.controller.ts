@@ -4,10 +4,14 @@ import { RequirePermission } from '../../common/guards/permission.guard';
 import { parseIntParam } from '../../common/http/query.util';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import {
+  ApproveSurveyBody,
+  ApproveSurveyDto,
   RejectSurveyBody,
   RejectSurveyDto,
   SetMethodologyVersionBody,
   SetMethodologyVersionDto,
+  SetSampleDescriptionBody,
+  SetSampleDescriptionDto,
   SubmitSurveyBody,
   SubmitSurveyDto,
   UpdateSurveyQuestionsBody,
@@ -68,15 +72,21 @@ export class SurveysController {
   // Domain/Sub-domain, so they can be reused instead of retyped. Org-wide
   // (not scoped to :needId — a reusable question can have come from any
   // survey), which is why it lives at its own path instead of nested under
-  // needs/:needId like the rest of this controller.
+  // needs/:needId like the rest of this controller. Both query params
+  // omitted means allDomainsSelected (AI couldn't classify) — every
+  // reusable custom question is in scope then, same convention as
+  // getQuestions([]) for the Question Bank tab. A partial pair (only one of
+  // the two provided) is treated the same as neither — there's no such
+  // thing as "match on domain alone" for this feature.
   @Get('custom-questions')
   @RequirePermission('surveyBuilder', 'read')
   listReusableCustomQuestions(
     @Query('domain') domain?: string,
     @Query('subDomain') subDomain?: string,
   ) {
-    if (!domain || !subDomain) return [];
-    return this.service.listReusableCustomQuestions(domain, subDomain);
+    if (domain && subDomain) return this.service.listReusableCustomQuestions(domain, subDomain);
+    if (!domain && !subDomain) return this.service.listReusableCustomQuestions();
+    return [];
   }
 
   @Patch('surveys/:id/questions')
@@ -99,6 +109,25 @@ export class SurveysController {
     return this.service.setMethodologyVersion(id, body.version);
   }
 
+  // Researcher-only, same editability window as setMethodologyVersion — a
+  // Survey Design step (Target Group / Expected Sample Size / Selection
+  // Approach / Geographic Coverage), shown read-only to the Approver during
+  // review via the same GET responses this controller already returns.
+  @Patch('surveys/:id/sample-description')
+  @RequirePermission('surveyBuilder', 'write')
+  setSampleDescription(
+    @Param('id', new UuidParamPipe()) id: string,
+    @Body(new TypeBoxValidationPipe(SetSampleDescriptionBody)) body: SetSampleDescriptionDto,
+  ) {
+    return this.service.setSampleDescription(
+      id,
+      body.targetGroup,
+      body.expectedSampleSize,
+      body.selectionApproach,
+      body.geographicCoverage,
+    );
+  }
+
   // Researcher: hand the current draft (or a fixed-up rejected one) to the
   // Approver. Content itself is saved separately, via updateQuestions above
   // — this route only ever moves status.
@@ -112,8 +141,11 @@ export class SurveysController {
   // grant lets a role reach these; only `approve` does (see role-matrix.ts).
   @Post('surveys/:id/approve')
   @RequirePermission('surveyBuilder', 'approve')
-  approveAndPublish(@Param('id', new UuidParamPipe()) id: string) {
-    return this.service.approveAndPublish(id);
+  approveAndPublish(
+    @Param('id', new UuidParamPipe()) id: string,
+    @Body(new TypeBoxValidationPipe(ApproveSurveyBody)) body: ApproveSurveyDto,
+  ) {
+    return this.service.approveAndPublish(id, body.comments);
   }
 
   @Post('surveys/:id/reject')
@@ -122,7 +154,7 @@ export class SurveysController {
     @Param('id', new UuidParamPipe()) id: string,
     @Body(new TypeBoxValidationPipe(RejectSurveyBody)) body: RejectSurveyDto,
   ) {
-    return this.service.rejectSurvey(id, body.comments);
+    return this.service.rejectSurvey(id, body.reasonCode, body.comments);
   }
 
   @Get('surveys/public/:id')

@@ -226,6 +226,13 @@ model AuditLog {
   entityType     String   @map("entity_type") @db.VarChar(64)
   entityId       String?  @map("entity_id") @db.Uuid
   entityLabel    String   @map("entity_label")
+  // The submitter's own external tracking id for the entity this event is
+  // about (e.g. Need.referenceId — a field form number or partner org's
+  // case id) — a first-class, queryable/indexable column rather than
+  // buried inside `metadata` JSON, since this is meant to be searched on
+  // directly (audit-trail lookups by external reference). Null for events
+  // whose entity has no such reference (or never had one set).
+  sourceRef      String?  @map("source_ref") @db.VarChar(200)
   metadata       Json?
   ipAddress      String?  @map("ip_address") @db.VarChar(64)
   userAgent      String?  @map("user_agent")
@@ -235,6 +242,7 @@ model AuditLog {
 
   @@index([organisationId])
   @@index([entityType, entityId])
+  @@index([sourceRef])
   @@map("audit_logs")
 }
 
@@ -885,6 +893,23 @@ enum SettlementType {
   urban
 }
 
+// Self-reported age bracket — a fixed vocabulary (like Gender), never exact
+// age or date of birth, so age-wise reporting can group on it directly
+// without ever storing individually-identifying birth data. Mandatory on
+// new submissions (see citizen.contract.ts's SubmitResponseBody), but
+// nullable here: responses collected before this field existed have no
+// value, and that absence must never be treated as zero or backfilled — see
+// NcnpReportService's age-bracket aggregation for the historical-data note.
+enum AgeBracket {
+  age_15_24   @map("15-24")
+  age_25_34   @map("25-34")
+  age_35_44   @map("35-44")
+  age_45_54   @map("45-54")
+  age_55_64   @map("55-64")
+  age_65_plus @map("65+")
+  prefer_not_to_say
+}
+
 // Generic response row — Response Quality, AI Summary, and Priority
 // Dashboard all read from this same table, seeded or real alike.
 model SurveyResponse {
@@ -910,6 +935,7 @@ model SurveyResponse {
   mobile       String?  @db.VarChar(32)
   gender       Gender?
   settlementType SettlementType? @map("settlement_type")
+  ageBracket     AgeBracket?     @map("age_bracket")
   // Geography snapshot — copied from the Need (its own multi-select
   // Governorates/Centers, village) and the Organization (regionId) at
   // submission time, not asked of the citizen directly. A pure denormalized
@@ -1366,6 +1392,21 @@ model HumanDecision {
   @@map("human_decisions")
 }
 
+// Structured reason code for rejecting a submitted Survey — see
+// Survey.rejectionReasonCode. Survey.approverComments (reviewer notes) is
+// mandatory for every code now, not just REJ_99 — see
+// SurveysService.rejectSurvey for the enforcement.
+enum RejectionReasonCode {
+  REJ_01 @map("REJ-01") // Incomplete survey design
+  REJ_02 @map("REJ-02") // Methodology non-compliance
+  REJ_03 @map("REJ-03") // Duplicate of an existing survey
+  REJ_04 @map("REJ-04") // Incorrect need or study linkage
+  REJ_05 @map("REJ-05") // Out-of-scope geography or target population
+  REJ_06 @map("REJ-06") // Data quality concerns
+  REJ_07 @map("REJ-07") // Missing required attachments or approvals
+  REJ_99 @map("REJ-99") // Other
+}
+
 // The Survey Builder's own per-Study survey — a curated ordered subset of
 // Questions, distinct from the Publish Survey/Citizen flow's PublicSurveyLink
 // (that flow is the placeholder fixed-question-set QR flow; this is the
@@ -1390,6 +1431,19 @@ model Survey {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  // ──────── Sample Description ────────
+  // A Survey Design step, completed by the Researcher before Submit for
+  // Approval (see SurveysService.submitForApproval's gate — mandatory
+  // together, same "all or nothing" gate as methodologyVersion above), and
+  // shown to the Approver during review for context on who's being
+  // surveyed and how. All four nullable because a DRAFT survey created
+  // before this step is filled (or before this feature existed) has none
+  // yet.
+  targetGroup         String? @map("target_group") @db.VarChar(500)
+  expectedSampleSize  Int?    @map("expected_sample_size")
+  selectionApproach   String? @map("selection_approach") @db.VarChar(1000)
+  geographicCoverage  String? @map("geographic_coverage") @db.VarChar(500)
+
   // ──────── Survey Approval workflow ────────
   // status also takes SUBMITTED and REJECTED now, alongside the existing
   // DRAFT/PUBLISHED — see SurveysService for the state machine. The
@@ -1399,12 +1453,26 @@ model Survey {
   // resolved by app code" convention as `createdBy` above, not a Prisma
   // relation.
   submittedAt      DateTime? @map("submitted_at") @db.Timestamptz(6)
-  // The Approver's reason for the most recent rejection — shown prominently
-  // to the Researcher when they reopen a REJECTED survey. Cleared on the
-  // next Submit for Approval, so it never lingers as stale feedback once a
-  // new round of review has started (the audit log keeps the full history
-  // regardless, this is only "the current outstanding note").
+  // The Approver's reviewer notes for the most recent decision — mandatory
+  // on both Approve & Publish and Reject (client requirement: reviewer
+  // notes must be captured before publishing). Shown prominently to the
+  // Researcher when they reopen a REJECTED survey; also set on PUBLISHED
+  // surveys now. Cleared on the next Submit for Approval (a Reject ->
+  // resubmit round), so it never lingers as stale feedback once a new round
+  // of review has started — never cleared once PUBLISHED, since that's a
+  // terminal state with no resubmit path. The audit log keeps the full
+  // history regardless; this column is only "the current outstanding note."
+  // Nullable only because surveys approved/rejected before this requirement
+  // existed have no value.
   approverComments String?   @map("approver_comments")
+  // Structured reason for the most recent rejection, alongside the free-text
+  // approverComments above — mandatory whenever a survey is rejected (see
+  // SurveysService.rejectSurvey), required so "Rejected Surveys — Reason
+  // Breakdown" on the NCNP Consolidated Report can group on a real code
+  // instead of an illustrative placeholder split. Cleared on the next Submit
+  // for Approval, same lifecycle as approverComments. Nullable here only
+  // because surveys rejected before this field existed have no value.
+  rejectionReasonCode RejectionReasonCode? @map("rejection_reason_code")
   approvedAt       DateTime? @map("approved_at") @db.Timestamptz(6)
   approvedBy       String?   @map("approved_by") @db.Uuid
   rejectedAt       DateTime? @map("rejected_at") @db.Timestamptz(6)

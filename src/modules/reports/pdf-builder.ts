@@ -9,21 +9,21 @@ import type { DocSection, ReportDoc } from "./report-doc";
 // punctuation is folded to ASCII first. Arabic RTL (RIO-NFR-007) is a later step
 // (embedded font + shaping); this renderer is swapped then.
 
-const PAGE_W = 612;
-const PAGE_H = 792;
-const LEFT = 46;
-const RIGHT = 46;
-const TOP = 50;
-const BOTTOM = 42;
-const CONTENT_W = PAGE_W - LEFT - RIGHT;
+export const PAGE_W = 612;
+export const PAGE_H = 792;
+export const LEFT = 46;
+export const RIGHT = 46;
+export const TOP = 50;
+export const BOTTOM = 42;
+export const CONTENT_W = PAGE_W - LEFT - RIGHT;
 
 // Palette (r g b, 0–1) — a single accent + neutral grays.
-const ACCENT = "0.12 0.35 0.60";
-const GRAY = "0.45 0.45 0.45";
-const LIGHT = "0.90 0.93 0.97";
-const BAR = "0.20 0.50 0.75";
-const BLACK = "0 0 0";
-const PIE_COLORS = ["0.16 0.47 0.84", "0.92 0.41 0.20", "0.10 0.69 0.48", "0.93 0.63 0.00", "0.91 0.48 0.64"];
+export const ACCENT = "0.12 0.35 0.60";
+export const GRAY = "0.45 0.45 0.45";
+export const LIGHT = "0.90 0.93 0.97";
+export const BAR = "0.20 0.50 0.75";
+export const BLACK = "0 0 0";
+export const PIE_COLORS = ["0.16 0.47 0.84", "0.92 0.41 0.20", "0.10 0.69 0.48", "0.93 0.63 0.00", "0.91 0.48 0.64"];
 
 function normalizeAscii(s: string): string {
   return s
@@ -53,24 +53,16 @@ function esc(raw: string): string {
 function fits(str: string, size: number, width: number): boolean {
   return str.length * size * 0.52 <= width;
 }
-function truncate(str: string, size: number, width: number): string {
+export function truncate(str: string, size: number, width: number): string {
   if (fits(str, size, width)) return str;
   let s = str;
   while (s.length > 1 && !fits(s + "..", size, width)) s = s.slice(0, -1);
   return s + "..";
 }
-function textWidth(str: string, size: number): number {
+export function textWidth(str: string, size: number): number {
   return str.length * size * 0.52;
 }
 function wrap(str: string, size: number, width: number): string[] {
-  // Leading whitespace is meaningful: the needs hierarchy indents sub-domains
-  // and indicators under their domain. Splitting on /\s+/ threw it away, so a
-  // four-level tree printed as a flat list. Hold it aside and re-apply it.
-  const indent = /^\s+/.exec(str)?.[0] ?? "";
-  if (indent) {
-    const inner = wrap(str.slice(indent.length), size, Math.max(20, width - textWidth(indent, size)));
-    return inner.map((ln) => indent + ln);
-  }
   const words = str.split(/\s+/);
   const lines: string[] = [];
   let cur = "";
@@ -90,7 +82,7 @@ function isNumericColumn(rows: string[][], i: number): boolean {
   return vals.length > 0 && vals.every((v) => /^-?\d[\d,.\s%]*$/.test(v.trim()));
 }
 
-class Pdf {
+export class Pdf {
   private pages: string[][] = [];
   private ops: string[] = [];
   y = TOP;
@@ -106,24 +98,36 @@ class Pdf {
     this.pages.push(this.ops);
     this.y = TOP;
   }
-  /** Returns true when a page break happened — callers that own a repeating
-   *  element (a table's header row) redraw it on the new page. */
-  ensure(space: number): boolean {
-    if (this.y + space > PAGE_H - BOTTOM) {
-      this.addPage();
-      return true;
-    }
-    return false;
+  ensure(space: number): void {
+    if (this.y + space > PAGE_H - BOTTOM) this.addPage();
   }
   private py(fromTop: number): number {
     return PAGE_H - fromTop;
   }
-  text(x: number, size: number, bold: boolean, str: string, color = BLACK): void {
+  text(x: number, size: number, bold: boolean, str: string, color = BLACK, family: "sans" | "serif" = "sans"): void {
     // `y` is the TOP of the text line — put the baseline ~0.76em below it so
     // text and rects/rules share one top-down origin (otherwise divider rules
     // strike through the following row's glyphs).
     const baseline = this.y + size * 0.76;
-    this.ops.push(`${color} rg BT /${bold ? "F1" : "F2"} ${size} Tf 1 0 0 1 ${x} ${this.py(baseline)} Tm (${esc(str)}) Tj ET`);
+    const font = family === "serif" ? (bold ? "F3" : "F4") : bold ? "F1" : "F2";
+    this.ops.push(`${color} rg BT /${font} ${size} Tf 1 0 0 1 ${x} ${this.py(baseline)} Tm (${esc(str)}) Tj ET`);
+  }
+  // An unfilled rectangle border — used for card-style framing (e.g. KPI
+  // stat tiles, a bordered page-content frame) where rect()'s solid fill
+  // would be too heavy.
+  strokeRect(x: number, w: number, h: number, color: string, thickness = 1): void {
+    const top = this.y;
+    this.strokePath(
+      [
+        [x, top],
+        [x + w, top],
+        [x + w, top + h],
+        [x, top + h],
+        [x, top],
+      ],
+      color,
+      thickness,
+    );
   }
   rect(x: number, w: number, h: number, color: string): void {
     this.ops.push(`${color} rg ${x} ${this.py(this.y + h)} ${w} ${h} re f`);
@@ -183,6 +187,20 @@ class Pdf {
     parts.push("S");
     this.ops.push(parts.join(" "));
   }
+  // A filled, closed polygon — same path-building as strokePath but ending
+  // in a fill ("f") rather than a stroke ("S"). Used for the kingdom map's
+  // country-outline fill.
+  fillPolygon(points: Array<[number, number]>, color: string): void {
+    if (points.length === 0) return;
+    const [x0, y0] = points[0]!;
+    const parts = [`${color} rg ${x0.toFixed(2)} ${this.py(y0).toFixed(2)} m`];
+    for (let i = 1; i < points.length; i++) {
+      const [x, y] = points[i]!;
+      parts.push(`${x.toFixed(2)} ${this.py(y).toFixed(2)} l`);
+    }
+    parts.push("h f");
+    this.ops.push(parts.join(" "));
+  }
   swatch(x: number, colorIndex: number): void {
     this.rect(x, 7, 7, PIE_COLORS[colorIndex % PIE_COLORS.length]!);
   }
@@ -239,13 +257,11 @@ function renderHeader(pdf: Pdf, doc: ReportDoc): void {
   }
 }
 
-// `keepWith` reserves room for the start of the section's body too, so a heading
-// never sits alone at the foot of a page with its table on the next one.
-function heading(pdf: Pdf, text: string, keepWith = 0): void {
-  pdf.ensure(22 + keepWith);
+function heading(pdf: Pdf, text: string): void {
+  pdf.ensure(22);
   pdf.y += 4;
-  pdf.text(pdf.rx, 10.5, true, truncate(text, 10.5, pdf.rw), ACCENT);
-  pdf.y += 13;
+  pdf.text(pdf.rx, 11.5, true, truncate(text, 11.5, pdf.rw), ACCENT);
+  pdf.y += 14;
   pdf.rule(GRAY, 0.5);
   pdf.y += 5;
 }
@@ -603,8 +619,8 @@ function keepWithHeading(s: DocSection): number {
 }
 
 function renderSection(pdf: Pdf, s: DocSection): void {
-  if (s.kind === "columns") return renderColumns(pdf, s.children, 14, s.weights);
-  heading(pdf, s.heading, keepWithHeading(s));
+  if (s.kind === "columns") return renderColumns(pdf, s.children);
+  heading(pdf, s.heading);
   switch (s.kind) {
     case "keyvalue": return renderKeyValue(pdf, s.rows);
     case "table": return renderTable(pdf, s.columns, s.rows);
@@ -636,18 +652,26 @@ function assemble(pageStreams: string[]): Buffer {
   const pageObjNums = pageStreams.map((_, i) => 3 + i);
   const fontBold = 3 + pageCount;
   const fontReg = fontBold + 1;
-  const firstContent = fontReg + 1;
+  // Times-Bold/Times-Roman are standard base-14 fonts (no embedding needed,
+  // same as Helvetica above) — used for the serif display title on reports
+  // that want one (e.g. the NCNP Consolidated Report's masthead), unused
+  // resource entries otherwise cost nothing.
+  const fontSerifBold = fontReg + 1;
+  const fontSerifReg = fontSerifBold + 1;
+  const firstContent = fontSerifReg + 1;
 
   const objects: string[] = [];
   objects.push(`<< /Type /Catalog /Pages 2 0 R >>`);
   objects.push(`<< /Type /Pages /Kids [${pageObjNums.map((n) => `${n} 0 R`).join(" ")}] /Count ${pageCount} >>`);
   pageStreams.forEach((_, i) => {
     objects.push(
-      `<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 ${fontBold} 0 R /F2 ${fontReg} 0 R >> >> /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] /Contents ${firstContent + i} 0 R >>`,
+      `<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 ${fontBold} 0 R /F2 ${fontReg} 0 R /F3 ${fontSerifBold} 0 R /F4 ${fontSerifReg} 0 R >> >> /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] /Contents ${firstContent + i} 0 R >>`,
     );
   });
   objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
   objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Times-Bold >>");
+  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman >>");
   for (const stream of pageStreams) {
     objects.push(`<< /Length ${Buffer.byteLength(stream, "latin1")} >>\nstream\n${stream}\nendstream`);
   }
