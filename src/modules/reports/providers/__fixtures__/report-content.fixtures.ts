@@ -202,7 +202,11 @@ export class StubReportDataProvider extends ReportDataProvider {
       topKpis: village.topKpis,
       responseFunnel: buildResponseFunnel(coverage),
       questionCoverage: village.severity.domains.map((d) => ({ domain: d.name, count: d.kpiCount })),
-      qualitativeEvidence: village.qualitativeEvidence,
+      // RPT01 is SURVEY_ONLY — it must not borrow the village report's document
+      // evidence, or the mock contradicts the Report Basis line the real
+      // provider prints. The real path supplies no evidence for this scope
+      // either (see report-summary.service.ts).
+      qualitativeEvidence: [],
       aiSummary: village.aiSummary,
       dataQualityNote: village.dataQualityNote,
       trendNote: village.trendNote,

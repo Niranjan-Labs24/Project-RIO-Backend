@@ -105,12 +105,34 @@ interface EquityDetailCommon {
   dimensionsMissing: EquityDimension[];
 }
 
+/**
+ * A group comparison that was computed but did NOT clear the minimum group
+ * size. The numbers are real measurements, kept so a small-sample report can
+ * show what was actually observed instead of printing nothing at all. They are
+ * never asserted as an equity finding — `equityFlag` stays false.
+ *
+ * Groups of a single respondent are excluded: a one-person "group" severity is
+ * that person's own answer, and printing it beside a named settlement or gender
+ * would identify them.
+ */
+export interface ObservedComparison {
+  dimension: EquityDimension;
+  /** Only groups with n ≥ 2, worst severity first. */
+  groups: Array<{ label: string; severityScore: number; n: number }>;
+  /** max − min across `groups` (the shown groups, so the arithmetic checks out). */
+  spread: number;
+  /** How many groups were withheld as single-respondent — stated, not hidden. */
+  singleRespondentGroupsOmitted: number;
+}
+
 /** No dimension cleared the minimum group size. `equityFlag` is false, but the
  *  reason says the sample was too small — a false must never read as
  *  "no inequity found". */
 export interface EquityNotEvaluable extends EquityDetailCommon {
   evaluable: false;
   reason: string;
+  /** What the comparison would have shown, at sub-threshold sample sizes. */
+  observedComparisons: ObservedComparison[];
 }
 
 export interface EquityEvaluated extends EquityDetailCommon {

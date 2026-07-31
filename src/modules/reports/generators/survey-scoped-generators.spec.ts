@@ -70,6 +70,46 @@ describe("RPT01 individualSurveyGenerator", () => {
       expect(kinds).toContain("pie"); // demographics
     });
   });
+
+  it("rests on survey responses alone — no document evidence anywhere in it", async () => {
+    const { title, content } = await individualSurveyGenerator(ctx());
+
+    // The declared basis, and the three places a document could enter.
+    expect((content.reportMeta as Record<string, unknown>).sourceBasis).toBe("SURVEY_ONLY");
+    expect(content.qualitativeEvidence).toEqual([]);
+    expect((content.executiveSummary as Record<string, unknown>).qualitativeCount).toBe(0);
+    for (const r of content.needRecords as Array<Record<string, unknown>>) {
+      expect(r.sourceType).toBe("survey");
+      expect(r.supportingText).toBeNull();
+      expect((r.sourceRef as Record<string, unknown>).kind).toBe("survey_rollup");
+    }
+
+    // A "Documents attached · N in this report" tile directly contradicts the
+    // Report Basis line, so a SURVEY_ONLY report must not render one.
+    const doc = buildReportDoc(title, content, []);
+    const tiles = doc.sections
+      .flatMap((s) => (s.kind === "columns" ? s.children : [s]))
+      .flatMap((s) => (s.kind === "stats" ? s.tiles : []));
+    expect(tiles.map((t) => t.label)).not.toContain("Documents attached");
+  });
+
+  it("prints the survey-level trend note in Section 6", async () => {
+    // deriveTrendNote composes it and composeDataQualityNotes carries it, but
+    // for two content versions nothing rendered it — it reached the payload and
+    // stopped there. This pins the last hop.
+    const { title, content } = await individualSurveyGenerator(ctx());
+    const dq = content.dataQualityNotes as Record<string, unknown>;
+    expect(dq?.trendNote).toBeTruthy();
+
+    const doc = buildReportDoc(title, content, []);
+    const flat = doc.sections.flatMap((s) => (s.kind === "columns" ? s.children : [s]));
+    const trend = flat.find((s) => "heading" in s && s.heading === "Trend");
+    expect(trend).toBeDefined();
+    expect(trend && "text" in trend ? trend.text : "").toBe(dq.trendNote);
+    // Never twice — the standalone "Trend Note" section is for reports that
+    // have no structured Section 6.
+    expect(flat.filter((s) => "heading" in s && s.heading === "Trend Note")).toHaveLength(0);
+  });
 });
 
 describe("RPT15 combinedGenerator", () => {

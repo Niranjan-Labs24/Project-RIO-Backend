@@ -212,7 +212,9 @@ function needNotes(o: Record<string, unknown>): string {
 }
 
 // One row per Unified Need Record. Severity is ALWAYS shown; when null it is a
-// dash plus the reason, so "not measured" can never be read as "no problem".
+// dash, and the reason is carried by the Not Measured table and Section 6 —
+// these tables no longer print a Notes column, which repeated the same
+// suppression sentence on every row.
 //
 // Compact set, for tables already nested under a named domain — the fixed-width
 // PDF truncates a wide table's cells ("Livelih..", "structu.."), which is worse
@@ -224,7 +226,6 @@ const NEED_RECORD_COLS: Col[] = [
   { key: "confidence", label: "Confidence" },
   { key: "equityFlag", label: "Equity" },
   { key: "validResponseCount", label: "Responses" },
-  { key: "notMeasuredReason", label: "Notes", format: needNotes },
 ];
 
 /** Full classification — used only where the rows span several domains. */
@@ -232,6 +233,14 @@ const NEED_RECORD_COLS_FULL: Col[] = [
   { key: "domain", label: "Domain" },
   { key: "subDomain", label: "Sub-domain" },
   ...NEED_RECORD_COLS,
+];
+
+// The Not Measured table exists to state WHY a row carries no severity, so it
+// keeps the reason column the measured-need tables drop. Without it the table
+// would be a list of indicators with no explanation attached.
+const NOT_MEASURED_NEED_COLS: Col[] = [
+  ...NEED_RECORD_COLS_FULL,
+  { key: "notMeasuredReason", label: "Why not measured", format: needNotes },
 ];
 
 function barsSection(
@@ -287,7 +296,7 @@ const n = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ?
 // Coverage tiles — the "how much data is this built on?" band that opens every
 // survey-scoped report. Ordered so the reader gets scope (what was assessed)
 // before volume (how much came back) before depth (what was scored).
-function coverageStats(c: Record<string, unknown>): DocSection {
+function coverageStats(c: Record<string, unknown>, surveyOnly: boolean): DocSection {
   const submitted = n(c.responsesSubmitted);
   const valid = n(c.responsesValid);
   const validPct = submitted > 0 ? Math.round((valid / submitted) * 100) : 0;
@@ -308,11 +317,19 @@ function coverageStats(c: Record<string, unknown>): DocSection {
       { label: "Responses submitted", value: String(submitted), sub: scalar(c.assessmentPeriod) },
       { label: "Valid responses", value: String(valid), sub: `${validPct}% of submitted` },
       { label: "Excluded responses", value: String(n(c.responsesExcluded)), sub: `${n(c.dontKnowRatePct)}% don't-know` },
-      {
-        label: "Documents attached",
-        value: String(n(c.evidenceFilesTotal)),
-        sub: `${n(c.evidenceIncludedInReport)} in this report`,
-      },
+      // A SURVEY-ONLY report contributes no document evidence to any figure in
+      // it, so a tile reading "12 documents · 3 in this report" directly
+      // contradicts the Report Basis line three inches above it. The count is
+      // still in the payload; it is simply not this report's evidence.
+      ...(surveyOnly
+        ? []
+        : [
+            {
+              label: "Documents attached",
+              value: String(n(c.evidenceFilesTotal)),
+              sub: `${n(c.evidenceIncludedInReport)} in this report`,
+            },
+          ]),
       { label: "Domains scored", value: String(n(c.domainsScored)) },
       {
         label: "KPIs scored",
@@ -492,21 +509,18 @@ function needsByDomainSection(domains: Array<Record<string, unknown>>): DocSecti
 
 function patternAnalysisSections(pa: Record<string, unknown>): DocSection[] {
   const out: DocSection[] = [];
-  if (pa.status === "insufficient_data") {
-    out.push({
-      kind: "note",
-      heading: "Pattern & Intersection Analysis",
-      // Stating the threshold is the point: a suppressed section must be
-      // checkable, not a silent omission.
-      text: String(pa.suppressionReason ?? "Insufficient data for pattern analysis."),
-    });
+  // The caveat leads, then the findings follow — it qualifies the numbers below
+  // rather than replacing them. A section that prints only this sentence reads
+  // as "no analysis was run", which was never what it meant.
+  if (typeof pa.evidenceNote === "string" && pa.evidenceNote) {
+    out.push({ kind: "note", heading: "Pattern & Intersection Analysis", text: pa.evidenceNote });
   }
-  if (isObjectArray(pa.crossDomainPatterns)) {
+  if (isObjectArray(pa.patterns)) {
     out.push(
-      pickTableSection("Cross-domain Patterns", pa.crossDomainPatterns, [
+      pickTableSection("Observed Patterns", pa.patterns, [
         { key: "pattern", label: "Pattern" },
+        { key: "scopeLabel", label: "Scope" },
         { key: "strength", label: "Strength" },
-        { key: "domains", label: "Domains", format: (o) => (o.domains as string[]).join(", ") },
       ]),
     );
   }
@@ -519,13 +533,10 @@ function patternAnalysisSections(pa: Record<string, unknown>): DocSection[] {
       ]),
     );
   }
-  if (Array.isArray(pa.observedBelowThreshold) && pa.observedBelowThreshold.length) {
-    out.push({
-      kind: "list",
-      heading: "Observed, Not Asserted",
-      items: pa.observedBelowThreshold.map(String),
-    });
-  }
+  // `observedIntersections` and `gaps` are still computed and still travel in
+  // the JSON payload — they are deliberately not rendered in the document. The
+  // sub-threshold group severities were too easy to quote as an equity finding,
+  // and the coverage gaps repeat the domain coverage table in Section 2.
   return out;
 }
 
@@ -562,7 +573,7 @@ function priorityNeedsSections(pn: Record<string, unknown>): DocSection[] {
   // Ranked out, but never dropped — an indicator nobody could answer is a
   // finding about the assessment, not an absence of need.
   if (isObjectArray(pn.notMeasured)) {
-    out.push(pickTableSection("Not Measured (excluded from ranking)", pn.notMeasured, NEED_RECORD_COLS_FULL));
+    out.push(pickTableSection("Not Measured (excluded from ranking)", pn.notMeasured, NOT_MEASURED_NEED_COLS));
   }
   return out;
 }
@@ -588,6 +599,13 @@ function dataQualitySections(dq: Record<string, unknown>): DocSection[] {
   });
   if (typeof dq.narrative === "string" && dq.narrative) {
     out.push({ kind: "note", heading: "Data Quality Summary", text: dq.narrative });
+  }
+  // The survey-level cycle-over-cycle sentence (deriveTrendNote, scope "this
+  // survey"). Kept as its own note rather than folded into the narrative above,
+  // matching how the two are composed — so a cycle claim and a data-quality
+  // claim can never be edited into contradicting each other.
+  if (typeof dq.trendNote === "string" && dq.trendNote) {
+    out.push({ kind: "note", heading: "Trend", text: dq.trendNote });
   }
   if (isObjectArray(dq.exclusionBreakdown)) {
     out.push(
@@ -664,7 +682,9 @@ export function buildReportDoc(
 
     // Coverage / portfolio count bands — the volume context for everything
     // that follows.
-    if (isPlainObject(content.coverage)) sections.push(coverageStats(content.coverage));
+    const surveyOnly =
+      isPlainObject(content.reportMeta) && content.reportMeta.sourceBasis === "SURVEY_ONLY";
+    if (isPlainObject(content.coverage)) sections.push(coverageStats(content.coverage, surveyOnly));
     if (isPlainObject(content.unitGeo)) {
       const g = content.unitGeo as Record<string, unknown>;
       sections.push({
@@ -891,7 +911,13 @@ export function buildReportDoc(
     ) {
       sections.push({ kind: "note", heading: "Data Quality Note", text: content.dataQualityNote });
     }
-    if (typeof content.trendNote === "string" && content.trendNote) {
+    // Suppressed only when Section 6 actually printed a trend note — a report
+    // that carries `dataQualityNotes` without one must still show this.
+    const section6Trend =
+      isPlainObject(content.dataQualityNotes) &&
+      typeof content.dataQualityNotes.trendNote === "string" &&
+      content.dataQualityNotes.trendNote;
+    if (!section6Trend && typeof content.trendNote === "string" && content.trendNote) {
       sections.push({ kind: "note", heading: "Trend Note", text: content.trendNote });
     }
     if (Array.isArray(content.anomalies) && content.anomalies.length) {

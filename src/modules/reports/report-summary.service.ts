@@ -535,13 +535,21 @@ export class ReportSummaryService {
       const evidenceScope = SURVEY_LEVEL_SCOPES.includes(scope)
         ? { needId: survey.needId }
         : { studyId };
-      const evidenceRows = await tx.evidence.findMany({
-        where: {
-          ...evidenceScope,
-          reviewStatus: 'APPROVED',
-          isIncludedInReport: true,
-        },
-      });
+      // RPT01 declares sourceBasis SURVEY_ONLY and prints "derived from survey
+      // responses, no document evidence" on its first page. Handing the model
+      // document evidence for that scope let the narrative cite a source the
+      // report says it does not use — so INDIVIDUAL gets none. Every other
+      // scope, RPT15 included, is not survey-only and keeps its evidence.
+      const evidenceRows =
+        scope === 'INDIVIDUAL'
+          ? []
+          : await tx.evidence.findMany({
+              where: {
+                ...evidenceScope,
+                reviewStatus: 'APPROVED',
+                isIncludedInReport: true,
+              },
+            });
 
       const submittedResponseCount = responses.length;
       const validResponseCount = overallRollup?.validResponseCount ?? submittedResponseCount;

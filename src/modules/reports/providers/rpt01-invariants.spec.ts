@@ -192,7 +192,7 @@ describe("Section self-consistency", () => {
     expect(es.noCriticalBandReached).toBe(true);
   });
 
-  it("suppresses pattern analysis below threshold, stating the threshold", () => {
+  it("marks pattern analysis provisional below threshold but still reports observations", () => {
     const pa = composePatternAnalysis({
       needRecords: records(),
       validResponseCount: 4,
@@ -200,13 +200,31 @@ describe("Section self-consistency", () => {
       domainsNotAssessed: ["Health"],
       thresholds: T,
     });
-    expect(pa.status).toBe("insufficient_data");
-    expect(pa.suppressionReason).toContain("at least 30 valid responses");
-    expect(pa.suppressionReason).toContain("at least 3 assessed domains");
-    expect(pa.crossDomainPatterns).toHaveLength(0);
-    // Sub-threshold signals are still surfaced, marked as not asserted.
-    expect(pa.observedBelowThreshold.every((s) => s.startsWith("Observed, not asserted"))).toBe(true);
+    expect(pa.status).toBe("provisional");
+    // The caveat must state the trip points it fell short of — a provisional
+    // block has to be checkable, not just hedged.
+    expect(pa.evidenceNote).toContain("30 responses");
+    expect(pa.evidenceNote).toContain("3 domains");
+    // A thin sample suppresses the CLAIM, never the measurements.
+    expect(pa.patterns.length).toBeGreaterThan(0);
+    // Nothing on a 4-response sample may be asserted above "weak".
+    expect(pa.patterns.every((p) => p.strength === "weak")).toBe(true);
     expect(pa.gaps.map((g) => g.domain)).toEqual(["Health"]);
+  });
+
+  it("reports observations from a single assessed domain", () => {
+    // The regression that motivated this: co-occurrence was only looked for
+    // ACROSS domains, so a single-domain survey rendered an empty section.
+    const single = records().filter((r) => r.domain === records()[0]!.domain);
+    const pa = composePatternAnalysis({
+      needRecords: single,
+      validResponseCount: 10,
+      domainsAssessed: 1,
+      domainsNotAssessed: [],
+      thresholds: T,
+    });
+    expect(pa.patterns.length).toBeGreaterThan(0);
+    expect(pa.patterns.every((p) => p.scope !== "cross_domain")).toBe(true);
   });
 
   it("data quality notes are present even when nothing is flagged", () => {

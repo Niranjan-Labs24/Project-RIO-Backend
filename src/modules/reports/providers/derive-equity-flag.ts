@@ -1,4 +1,9 @@
-import type { EquityDetail, EquityDimension, Thresholds } from "../need-record.types";
+import type {
+  EquityDetail,
+  EquityDimension,
+  ObservedComparison,
+  Thresholds,
+} from "../need-record.types";
 
 export type { EquityDimension };
 
@@ -64,6 +69,12 @@ export function deriveEquityFlag(segments: SegmentRow[], t: Thresholds): EquityR
         reason: `Largest comparison group has n=${largestGroupN}; minimum group size is ${t.equityMinGroupN}.`,
         dimensionsAvailable: rejected.map((r) => r.dimension),
         dimensionsMissing: [...dimensionsMissing],
+        // The measurements exist — the sample is just too thin to ASSERT on. A
+        // report that prints nothing here is hiding real numbers; one that
+        // prints them as a finding is overstating them. Carry them, labelled.
+        observedComparisons: rejected
+          .map(({ dimension }) => observedComparison(dimension, byDimension.get(dimension) ?? []))
+          .filter((c): c is ObservedComparison => c !== null),
       },
     };
   }
@@ -91,5 +102,35 @@ export function deriveEquityFlag(segments: SegmentRow[], t: Thresholds): EquityR
       dimensionsAvailable: [...byDimension.keys()],
       dimensionsMissing: [...dimensionsMissing],
     },
+  };
+}
+
+/**
+ * The sub-threshold view of one dimension: real group severities, minus any
+ * single-respondent group, which is that respondent's own answer rather than a
+ * group aggregate. Returns null when fewer than two groups survive that rule —
+ * one group is not a comparison.
+ */
+function observedComparison(
+  dimension: EquityDimension,
+  groups: SegmentRow[],
+): ObservedComparison | null {
+  const shown = groups
+    .filter((g) => g.validResponseCount >= 2)
+    .map((g) => ({
+      label: g.value,
+      severityScore: g.severityScore as number,
+      n: g.validResponseCount,
+    }))
+    .sort((a, b) => b.severityScore - a.severityScore);
+
+  if (shown.length < 2) return null;
+
+  const scores = shown.map((g) => g.severityScore);
+  return {
+    dimension,
+    groups: shown,
+    spread: Number((Math.max(...scores) - Math.min(...scores)).toFixed(2)),
+    singleRespondentGroupsOmitted: groups.length - shown.length,
   };
 }

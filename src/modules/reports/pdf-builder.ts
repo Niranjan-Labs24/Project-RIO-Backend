@@ -62,7 +62,7 @@ export function truncate(str: string, size: number, width: number): string {
 export function textWidth(str: string, size: number): number {
   return str.length * size * 0.52;
 }
-function wrap(str: string, size: number, width: number): string[] {
+export function wrap(str: string, size: number, width: number): string[] {
   const words = str.split(/\s+/);
   const lines: string[] = [];
   let cur = "";
@@ -98,8 +98,20 @@ export class Pdf {
     this.pages.push(this.ops);
     this.y = TOP;
   }
-  ensure(space: number): void {
-    if (this.y + space > PAGE_H - BOTTOM) this.addPage();
+  // Start a fresh page unconditionally. Reports with a fixed physical page
+  // structure (e.g. the NCNP consolidated report) drive their own page loop
+  // rather than letting content flow, so they need an explicit break.
+  newPage(): void {
+    this.addPage();
+  }
+  // Returns true when a page break actually happened, so callers that draw
+  // repeating chrome (a table's column header) can redraw it on the new page.
+  ensure(space: number): boolean {
+    if (this.y + space > PAGE_H - BOTTOM) {
+      this.addPage();
+      return true;
+    }
+    return false;
   }
   private py(fromTop: number): number {
     return PAGE_H - fromTop;
@@ -257,7 +269,7 @@ function renderHeader(pdf: Pdf, doc: ReportDoc): void {
   }
 }
 
-function heading(pdf: Pdf, text: string): void {
+export function heading(pdf: Pdf, text: string): void {
   pdf.ensure(22);
   pdf.y += 4;
   pdf.text(pdf.rx, 11.5, true, truncate(text, 11.5, pdf.rw), ACCENT);
@@ -618,7 +630,7 @@ function keepWithHeading(s: DocSection): number {
   }
 }
 
-function renderSection(pdf: Pdf, s: DocSection): void {
+export function renderSection(pdf: Pdf, s: DocSection): void {
   if (s.kind === "columns") return renderColumns(pdf, s.children);
   heading(pdf, s.heading);
   switch (s.kind) {
