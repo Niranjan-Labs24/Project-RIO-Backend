@@ -1211,7 +1211,31 @@ function renderPages(
   const orgSummaryStart = pdf.y;
   const orgSummaryColGap = 12;
   const orgSummaryColW = (pdf.rw - orgSummaryColGap * 2) / 3;
-  const orgSummaryHeight = 15 + Math.max(orgSummary.byStudies.length, orgSummary.bySurveys.length, orgSummary.byResponses.length, 1) * 27 + 14 + 8;
+  // Must measure real wrapped-label heights (via the same `wrap()` call
+  // renderLabeledBarsChart itself makes), not a flat per-row estimate — a
+  // flat guess under-reserves whenever an org name wraps to 2+ lines in this
+  // ~1/3-width column (e.g. "Riverside Community Trust"), which lets
+  // pdf.ensure() below think there's room when there isn't. The mid-column
+  // pdf.ensure() calls inside renderLabeledBarsChart's own loop then fire a
+  // page break themselves — landing on a page with no frame/header (only
+  // the explicit per-page code draws those) and, worse, every later column's
+  // `pdf.column(..., orgSummaryStart, ...)` blindly reapplies this stale
+  // page-2 y-coordinate to whatever page is active by then, scattering each
+  // title near the bottom of an otherwise blank page with its bars stranded
+  // on the next one. Reserving the true height upfront keeps all three
+  // columns on one page, so no internal break — and no stale-y bug — fires.
+  const orgSummaryListHeight = (rows: { organizationName: string }[]): number =>
+    rows.reduce((h, r) => h + wrap(r.organizationName, 9, orgSummaryColW).length * 11 + 16, 0);
+  const orgSummaryHeight =
+    15 +
+    Math.max(
+      orgSummaryListHeight(orgSummary.byStudies),
+      orgSummaryListHeight(orgSummary.bySurveys),
+      orgSummaryListHeight(orgSummary.byResponses),
+      27,
+    ) +
+    14 +
+    8;
   pdf.ensure(orgSummaryHeight);
   const os1 = pdf.column(pdf.rx, orgSummaryColW, orgSummaryStart, () => {
     renderLabeledBarsChart(
