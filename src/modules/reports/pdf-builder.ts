@@ -85,6 +85,13 @@ export class Pdf {
   constructor() {
     this.pages.push(this.ops);
   }
+  // The true physical page number reached so far (1-indexed) — used by
+  // renderers that need an accurate "Page K of N" footer rather than a
+  // fixed conceptual page count, since real data volume can push content
+  // across more physical pages than a document's nominal page count.
+  get pageCount(): number {
+    return this.pages.length;
+  }
   private addPage(): void {
     this.ops = [];
     this.pages.push(this.ops);
@@ -302,6 +309,17 @@ function renderTable(pdf: Pdf, columns: string[], rows: string[][]): void {
   // just hinted at — single-line truncation was cutting real column values
   // (Domain, KPI text) off entirely even once headers themselves fit.
   const MAX_LINES = 2;
+  const rowHeight = (cells: string[], wrapCells: boolean): number => {
+    const cellLines = cells.map((c, i) => {
+      const w = widths[i] ?? 40;
+      if (!wrapCells) return [truncate(c, size, w - 6)];
+      const lines = wrap(c, size, w - 6);
+      if (lines.length <= MAX_LINES) return lines;
+      return [...lines.slice(0, MAX_LINES - 1), truncate(lines.slice(MAX_LINES - 1).join(" "), size, w - 6)];
+    });
+    const lineCount = Math.max(1, ...cellLines.map((l) => l.length));
+    return size + 5 + (lineCount - 1) * (size + 1);
+  };
   const drawRow = (cells: string[], bold: boolean, wrapCells: boolean) => {
     const cellLines = cells.map((c, i) => {
       const w = widths[i] ?? 40;
@@ -312,7 +330,6 @@ function renderTable(pdf: Pdf, columns: string[], rows: string[][]): void {
     });
     const lineCount = Math.max(1, ...cellLines.map((l) => l.length));
     const h = size + 5 + (lineCount - 1) * (size + 1);
-    pdf.ensure(h + 2);
     const top = pdf.y;
     cellLines.forEach((lines, i) => {
       const w = widths[i] ?? 40;
@@ -324,11 +341,36 @@ function renderTable(pdf: Pdf, columns: string[], rows: string[][]): void {
     });
     pdf.y = top + h;
   };
+  const headerH = rowHeight(columns, false);
+  // Small tables (the "top N" / "Showing N of Total" summary tables this
+  // report is built from — see this file's own header comment) are placed
+  // as one atomic block: header + every row reserved together upfront,
+  // exactly like `renderVillageTable` already does. Without this, a table
+  // that's short but not quite short enough can still trigger two distinct
+  // orphan patterns: the header separated from its body (only the first
+  // row was ever checked), or — just as visibly — the table's *last* row
+  // spilling alone onto an otherwise-blank next page while the rest fit
+  // fine on the previous one. Reserving the whole thing at once avoids
+  // both. Large/unbounded tables (rare, but not capped by this report's
+  // "top N" convention) fall back to per-row breaks — atomically reserving
+  // a 200-row table would just force the entire thing onto a fresh page
+  // for no benefit.
+  const SMALL_TABLE_MAX_ROWS = 20;
+  if (rows.length <= SMALL_TABLE_MAX_ROWS) {
+    const totalH = rows.reduce((sum, row) => sum + rowHeight(row, true), headerH);
+    pdf.ensure(totalH + 4);
+  } else {
+    const firstRowH = rows.length > 0 ? rowHeight(rows[0]!, true) : 0;
+    pdf.ensure(headerH + firstRowH + 4);
+  }
   pdf.rect(pdf.rx, pdf.rw, rowH, LIGHT);
   drawRow(columns, true, false);
   pdf.rule(GRAY, 0.5);
   pdf.y += 2;
-  for (const row of rows) drawRow(row, false, true);
+  for (const row of rows) {
+    pdf.ensure(rowHeight(row, true) + 2);
+    drawRow(row, false, true);
+  }
 }
 
 function renderBars(pdf: Pdf, max: number, bars: Array<{ label: string; value: number }>): void {

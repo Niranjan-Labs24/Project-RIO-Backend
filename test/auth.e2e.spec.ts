@@ -3,6 +3,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AllExceptionsFilter } from '../src/common/filters/http-exception.filter';
+import { PERMISSION_MODULES } from '../src/rbac/role-matrix';
 
 // Requires a running, migrated, seeded DB (dev password Passw0rd! on the admins).
 describe('Auth (e2e)', () => {
@@ -29,7 +30,7 @@ describe('Auth (e2e)', () => {
     expect(res.body.user.email).toBe('admin@demo-ngo.org');
     expect(res.body.organization.name).toBe('Demo NGO');
     expect(res.body.role.key).toBe('ngo_admin');
-    expect(res.body.role.permissions).toHaveLength(13);
+    expect(res.body.role.permissions).toHaveLength(PERMISSION_MODULES.length);
     token = res.body.token;
   });
 

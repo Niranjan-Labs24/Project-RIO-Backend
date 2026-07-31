@@ -37,13 +37,15 @@ import type {
 // a second full renderer.
 //
 // Content is capped to the same "top 5 / Showing N of Total" lists the UI
-// uses, so each page's content is expected to fit one physical Letter page.
-// If a given dataset ever produces more content than that (Pdf.ensure()
-// auto-inserts an extra physical page when something overflows), the footer
-// on that forced extra page repeats the same page label rather than
-// incrementing it — an accepted edge case, not a silent data loss.
+// uses, so each page's content is expected to fit one physical Letter page,
+// but real data volume can still push a section across more than one
+// physical page (Pdf.ensure() auto-inserts an extra one when something
+// overflows). The header/footer "Page K of N" badges always reflect the
+// true final physical page count — via a two-pass render in
+// renderNcnpReportPdf, since that total isn't known until everything has
+// been laid out once — rather than repeating a fixed conceptual page
+// number across every physical page a section happens to spill onto.
 
-const TOTAL_PAGES = 6;
 const REPORT_NAME = 'NCNP Compiled Report';
 const DISCLAIMER = 'This report contains aggregated metrics only. Detailed records are available within the NCNP application.';
 
@@ -147,7 +149,7 @@ const GREEN_BG = '0.87 0.95 0.90';
 const RED_BG = '0.98 0.90 0.90';
 const AMBER_BG = '0.99 0.94 0.83';
 
-function fmtDate(iso: string): string {
+export function fmtDate(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
@@ -158,18 +160,25 @@ function reportId(generatedAt: string): string {
   return `NCNP-${stamp}`;
 }
 
-function pageLabel(page: number): string {
-  return `Page ${page} of ${TOTAL_PAGES}`;
+// True physical "Page K of N" — both the header badge and the footer use
+// this same pair now. They used to disagree (header showed a fixed
+// conceptual 1-6 section number, footer showed the real physical page),
+// which read as a genuine inconsistency once flipping through the actual
+// PDF — real data volume can push this report past 6 physical pages (see
+// this file's header comment), so there's only one true page count to show.
+function pageLabel(page: number, total: number): string {
+  return `Page ${page} of ${total}`;
 }
 
-// Running header repeated at the top of pages 2-6 — report name + condensed
-// scope on the left, the page badge on the right (mirrors ReportPageShell's
-// default runhead in the live UI; page 1 gets the fuller masthead instead).
-function drawRunhead(pdf: Pdf, condensedScope: string, page: number): void {
+// Running header repeated at the top of every logical page (2 onward) —
+// report name + condensed scope on the left, the page badge on the right
+// (mirrors ReportPageShell's default runhead in the live UI; page 1 gets
+// the fuller masthead instead).
+function drawRunhead(pdf: Pdf, condensedScope: string, totalPages: number): void {
   pdf.y = TOP - 10;
   const label = `${REPORT_NAME.toUpperCase()} — ${condensedScope.toUpperCase()}`;
   pdf.text(LEFT, 8, false, truncate(label, 8, CONTENT_W - 90), GRAY);
-  const b = pageLabel(page);
+  const b = pageLabel(pdf.pageCount, totalPages);
   pdf.text(LEFT + CONTENT_W - textWidth(b, 8), 8, true, b, ACCENT);
   pdf.y += 13;
   pdf.rule(GRAY, 0.5);
@@ -179,11 +188,21 @@ function drawRunhead(pdf: Pdf, condensedScope: string, page: number): void {
 // Footer disclaimer + page badge, pinned to the bottom margin band on every
 // page (mirrors ReportPageShell's footer). Drawn last so it always lands at
 // a fixed position regardless of how much content preceded it on the page.
-function drawFooter(pdf: Pdf, page: number): void {
+//
+// Uses `pdf.pageCount` (the *true*, physical page reached so far) rather
+// than the conceptual 1-6 section number the running header at the top of
+// each logical page uses — real data volume can push a single logical
+// section across several physical pages (see this file's own header
+// comment), and the old behavior of repeating e.g. "Page 3 of 6" on all 3 of
+// those physical pages read as broken/inconsistent once flipping through
+// the actual PDF. `totalPages` is the true final physical page count,
+// known only after a first, discarded render pass — see
+// `renderNcnpReportPdf`.
+function drawFooter(pdf: Pdf, totalPages: number): void {
   pdf.y = PAGE_H - BOTTOM + 8;
   pdf.rule(GRAY, 0.4);
   pdf.y += 7;
-  const label = pageLabel(page);
+  const label = pageLabel(pdf.pageCount, totalPages);
   pdf.text(LEFT, 7.5, false, truncate(DISCLAIMER, 7.5, CONTENT_W - 70), GRAY);
   pdf.text(LEFT + CONTENT_W - textWidth(label, 7.5), 7.5, false, label, GRAY);
 }
@@ -267,15 +286,22 @@ function renderBarsChart(
   const labelW = Math.min(140, pdf.rw * 0.4);
   const trackX = pdf.rx + labelW;
   const trackW = pdf.rw - labelW - 36;
+  // Tightened from a bar height of 13 and 18pt row spacing — this list is
+  // reused across nearly every geography/breakdown section in the report
+  // (Organizations, Surveys, Needs — by Governorate/Center, Domain
+  // Comparison, ...), so a small per-row density gain here compounds into
+  // real space savings report-wide, reducing how often a page's content
+  // spills onto an otherwise near-empty extra physical page. Still legible
+  // at 9.5pt text with an 11pt bar.
   bars.forEach(({ label, value }, i) => {
-    pdf.ensure(22);
+    pdf.ensure(17);
     const frac = max > 0 ? Math.max(0, Math.min(1, value / max)) : 0;
     const color = graduated ? barShade(i, bars.length) : flatColor;
     pdf.text(pdf.rx + 2, 9.5, false, truncate(label, 9.5, labelW - 8));
-    pdf.rect(trackX, trackW, 13, LIGHT);
-    if (frac > 0) pdf.rect(trackX, Math.max(1, trackW * frac), 13, color);
+    pdf.rect(trackX, trackW, 11, LIGHT);
+    if (frac > 0) pdf.rect(trackX, Math.max(1, trackW * frac), 11, color);
     pdf.text(trackX + trackW + 6, 9.5, true, String(value));
-    pdf.y += 18;
+    pdf.y += 14;
   });
 }
 
@@ -952,7 +978,29 @@ function renderKingdomMap(pdf: Pdf, regionCounts: Array<{ name: string; count: n
   pdf.y = top + h + 8;
 }
 
-export function renderNcnpReportPdf(report: NcnpReport, generatedByName: string): Buffer {
+export function renderNcnpReportPdf(
+  report: NcnpReport,
+  generatedByName: string,
+  auditRows?: Array<{ label: string; value: string }>,
+): Buffer {
+  // Pass 1: render once purely to learn the true final physical page count
+  // — real data volume can push content across more physical pages than
+  // this report's nominal 6 (see this file's header comment) — then throw
+  // the output away. Pass 2 re-renders with that now-known total so every
+  // footer's "Page K of N" is accurate throughout, not a fixed guess
+  // repeated across every physical page a section happens to overflow
+  // onto. Safe to run twice: this is a pure function of its inputs, and
+  // the footer text's own length never feeds back into body layout.
+  const totalPages = renderPages(report, generatedByName, auditRows, 1).pageCount;
+  return renderPages(report, generatedByName, auditRows, totalPages).build();
+}
+
+function renderPages(
+  report: NcnpReport,
+  generatedByName: string,
+  auditRows: Array<{ label: string; value: string }> | undefined,
+  totalPages: number,
+): Pdf {
   const {
     summary,
     orgHealth,
@@ -997,7 +1045,7 @@ export function renderNcnpReportPdf(report: NcnpReport, generatedByName: string)
   // line's y rather than the left column's flow below — text() positions
   // off pdf.y, not an offset argument, so each line needs its own y.
   const topRightY = pdf.y;
-  const badge1 = pageLabel(1);
+  const badge1 = pageLabel(pdf.pageCount, totalPages);
   pdf.text(LEFT + CONTENT_W - textWidth(badge1, 8), 8, true, badge1, ACCENT);
   pdf.y = topRightY + 13;
   const ridLabel = `Report ID: ${reportId(report.generatedAt)}`;
@@ -1087,12 +1135,12 @@ export function renderNcnpReportPdf(report: NcnpReport, generatedByName: string)
       pdf.y = rowTop + 24;
     });
   }
-  drawFooter(pdf, 1);
+  drawFooter(pdf, totalPages);
 
   // ---- Page 2 — Organization Overview ----
   pdf.newPage();
   drawPageFrame(pdf);
-  drawRunhead(pdf, condensedScope, 2);
+  drawRunhead(pdf, condensedScope, totalPages);
   pageTitle(pdf, 'Organization Overview');
 
   sectionHeading(pdf, 1, 'Geographic Distribution');
@@ -1193,12 +1241,12 @@ export function renderNcnpReportPdf(report: NcnpReport, generatedByName: string)
     if (orgSummary.byResponses.length > 0) renderShowingOf(pdf, orgSummary.byResponses.length, orgSummary.totalOrganizations);
   });
   pdf.y = Math.max(os1, os2, os3);
-  drawFooter(pdf, 2);
+  drawFooter(pdf, totalPages);
 
   // ---- Page 3 — Study Overview ----
   pdf.newPage();
   drawPageFrame(pdf);
-  drawRunhead(pdf, condensedScope, 3);
+  drawRunhead(pdf, condensedScope, totalPages);
   pageTitle(pdf, 'Study Overview');
 
   sectionHeading(pdf, 1, 'Need Categories & Study Status');
@@ -1266,6 +1314,15 @@ export function renderNcnpReportPdf(report: NcnpReport, generatedByName: string)
   );
   if (needsByRegion.truncated) renderShowingOf(pdf, needsByRegion.shown.length, needsByRegion.total);
   pdf.y += 4;
+  // `pdf.column()` re-anchors each sibling column to the same fixed startY
+  // it's given — if the first column's own content overflows the page,
+  // that overflow triggers a real page break, but the second column still
+  // gets told to start at the *original* (now stale) Y on what is by then
+  // a different physical page, so it immediately overflows too. Net effect:
+  // two columns meant to sit side by side end up stranded on two separate
+  // pages instead. Reserving room for the taller of the two lists upfront
+  // guarantees neither column has to break mid-render.
+  pdf.ensure(20 + Math.max(needsByGovernorate.shown.length, needsByCenter.shown.length) * 14 + 10);
   const p3bStart = pdf.y;
   const p3bEnd1 = pdf.column(pdf.rx, pdf.rw / 2 - 8, p3bStart, () => {
     renderBarsChart(
@@ -1298,6 +1355,11 @@ export function renderNcnpReportPdf(report: NcnpReport, generatedByName: string)
   if (needSubDomains.length > GEO_CHART_LIMIT) renderShowingOf(pdf, subDomainBars.length, needSubDomains.length);
   pdf.y += 4;
 
+  // Same reasoning as "By Region — Summary" below: reserve heading + caption
+  // + the table together, otherwise the heading can print with the table
+  // itself jumping to the next page on its own (renderTable's own atomic
+  // reservation has no knowledge of what was already drawn above it).
+  pdf.ensure(23 + 16 + 16 + domainRegionIntersections.length * 13 + 12);
   sectionHeading(pdf, 7, 'Pattern & Intersection Analysis');
   renderCaption(pdf, 'Strongest Region x Domain combinations — where Needs concentrate by both dimensions at once.');
   if (domainRegionIntersections.length === 0) {
@@ -1311,12 +1373,12 @@ export function renderNcnpReportPdf(report: NcnpReport, generatedByName: string)
       rows: domainRegionIntersections.map((c) => [c.regionName, c.domainName, String(c.needCount)]),
     });
   }
-  drawFooter(pdf, 3);
+  drawFooter(pdf, totalPages);
 
   // ---- Page 4 — Public Survey Overview ----
   pdf.newPage();
   drawPageFrame(pdf);
-  drawRunhead(pdf, condensedScope, 4);
+  drawRunhead(pdf, condensedScope, totalPages);
   pageTitle(pdf, 'Public Survey Overview');
 
   sectionHeading(pdf, 1, 'Survey Approval Status & Average Yield');
@@ -1381,6 +1443,10 @@ export function renderNcnpReportPdf(report: NcnpReport, generatedByName: string)
   );
   if (survByRegion.truncated) renderShowingOf(pdf, survByRegion.shown.length, survByRegion.total);
   pdf.y += 4;
+  // Same guard as "Needs by Governorate/Center" above — reserve room for
+  // the taller sibling column upfront so neither one can independently
+  // overflow onto its own separate page (see that comment for why).
+  pdf.ensure(20 + Math.max(survByGovernorate.shown.length, survByCenter.shown.length) * 14 + 10);
   const p4bStart = pdf.y;
   const p4bEnd1 = pdf.column(pdf.rx, pdf.rw / 2 - 8, p4bStart, () => {
     renderBarsChart(
@@ -1434,12 +1500,12 @@ export function renderNcnpReportPdf(report: NcnpReport, generatedByName: string)
       ];
     }),
   });
-  drawFooter(pdf, 4);
+  drawFooter(pdf, totalPages);
 
   // ---- Page 5 — Response Analytics ----
   pdf.newPage();
   drawPageFrame(pdf);
-  drawRunhead(pdf, condensedScope, 5);
+  drawRunhead(pdf, condensedScope, totalPages);
   pageTitle(pdf, 'Response Analytics');
 
   sectionHeading(pdf, 1, 'Response Trend');
@@ -1517,12 +1583,12 @@ export function renderNcnpReportPdf(report: NcnpReport, generatedByName: string)
     }));
     renderPieChart(pdf, 'Age Distribution', ageBracketSlices);
   }
-  drawFooter(pdf, 5);
+  drawFooter(pdf, totalPages);
 
   // ---- Page 6 — Priority & Scoring Overview ----
   pdf.newPage();
   drawPageFrame(pdf);
-  drawRunhead(pdf, condensedScope, 6);
+  drawRunhead(pdf, condensedScope, totalPages);
   pageTitle(pdf, 'Priority & Scoring Overview');
 
   renderDonut(
@@ -1559,6 +1625,10 @@ export function renderNcnpReportPdf(report: NcnpReport, generatedByName: string)
   // ranked by the same village-priority assessment used for Page 1's Top
   // Critical Needs (see NcnpReportService.buildCriticalNeeds for exactly
   // how "gap" and "source" are derived from real, existing data).
+  // Same heading/table pairing guard as Pattern & Intersection and By
+  // Region — Summary — without it, this heading can print separately from
+  // its own table jumping to the next page.
+  pdf.ensure(23 + 16 + 16 + criticalNeeds.priorityNeeds.length * 13 + 12);
   sectionHeading(pdf, 4, 'Priority Needs');
   renderCaption(pdf, 'Score, evidence, primary gap, equity flag, and source per Need — ranked most critical first.');
   if (criticalNeeds.priorityNeeds.length === 0) {
@@ -1640,7 +1710,26 @@ export function renderNcnpReportPdf(report: NcnpReport, generatedByName: string)
     pdf.text(x, 6.5, false, 'vs previous period', GRAY);
   });
   pdf.y = colophonTop + 34;
-  drawFooter(pdf, 6);
 
-  return pdf.build();
+  // Audit Trail — who generated this report, who reviewed it and when
+  // (with their notes), and who published it. Only present when this PDF
+  // is exported for a specific reviewed/published NcnpReportReview row
+  // (the standalone live "current data" export has no review linkage, so
+  // nothing to show here) — same `doc.audit` keyvalue-section convention
+  // the generic RPT01-14 report renderer already uses.
+  if (auditRows && auditRows.length > 0) {
+    pdf.y += 10;
+    // Reserve the heading together with the keyvalue rows below it —
+    // otherwise "Audit Trail" can print at the bottom of one page while
+    // renderKeyValue's own per-row ensure() pushes every row onto the next,
+    // the same heading-orphan pattern fixed above for Pattern & Intersection.
+    // Reviewer Notes is the one row that can wrap onto 2-3 lines; the rest
+    // are always one line, so this stays a generous but bounded estimate.
+    pdf.ensure(23 + auditRows.length * 13 + 24);
+    renderSection(pdf, { kind: 'keyvalue', heading: 'Audit Trail', rows: auditRows });
+  }
+
+  drawFooter(pdf, totalPages);
+
+  return pdf;
 }

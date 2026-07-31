@@ -314,11 +314,31 @@ async function main(): Promise<void> {
     });
   });
 
+  // Platform-wide System Reviewer — the NCNP Compiled Report's approve/
+  // reject counterpart to System Admin above, same "not scoped to either
+  // org" shape.
+  await prisma.$transaction(async (tx) => {
+    await setOrg(tx as never, demoOrgId);
+    await tx.user.upsert({
+      where: { email: 'sysreviewer@platform.local' },
+      update: {
+        name: 'System Reviewer', roleId: 'role_system_reviewer', status: UserStatus.active,
+        passwordHash, consentedAt: new Date(),
+      },
+      create: {
+        orgId: demoOrgId, roleId: 'role_system_reviewer', name: 'System Reviewer',
+        email: 'sysreviewer@platform.local', status: UserStatus.active, passwordHash,
+        consentedAt: new Date(),
+      },
+    });
+  });
+
   console.log(`Seeded ${ROLE_MATRIX.length} roles, consent v1, 9 domains from question-bank-v1.json.`);
   console.log(`Seeded Demo NGO: ${demoOrgId} (admin@demo-ngo.org, officer@demo-ngo.org)`);
   console.log(`Seeded Riverside Community Trust: ${riversideOrgId} (admin@riverside-ngo.org)`);
   console.log(`Dev login password for all seeded accounts: ${DEV_PASSWORD}`);
   console.log('Also seeded: sysadmin@platform.local (system_admin, platform-wide)');
+  console.log('Also seeded: sysreviewer@platform.local (system_reviewer, platform-wide)');
 }
 
 async function disconnectAll(): Promise<void> {

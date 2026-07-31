@@ -7,6 +7,14 @@ export const PERMISSION_MODULES = [
   // its own module rather than reusing studySurvey. Publish Survey/QR and
   // the Citizen public flow are unrelated and keep their existing modules.
   'surveyBuilder',
+  // The NCNP Compiled Report's own review workflow — deliberately not a
+  // reuse of reportsDashboards (see NcnpReportReview's schema comment):
+  // granting reportsDashboards:approve to System Reviewer would also grant
+  // approve rights over the unrelated RPT01-14 Reports feature, since that
+  // controller has no crossEntity guard of its own. `approve` = System
+  // Reviewer's approve/reject decision; `write` = System Admin's
+  // generate/publish actions.
+  'ncnpReport',
 ] as const;
 export type PermissionModule = (typeof PERMISSION_MODULES)[number];
 export type PermissionAction = 'read' | 'write' | 'create' | 'approve' | 'export' | 'share';
@@ -24,8 +32,21 @@ interface Grant { read?: boolean; write?: boolean; create?: boolean; approve?: b
 function perm(module: PermissionModule, g: Grant = {}): ModulePermission {
   return { module, read: g.read ?? false, write: g.write ?? false, create: g.create ?? false, approve: g.approve ?? false, export: g.export ?? false, share: g.share ?? false };
 }
+// "Full access to every module within its own entity" — `ncnpReport` is
+// explicitly excluded (left at no access) since it's the one module that
+// isn't entity-scoped at all: it's the cross-org, kingdom-wide NCNP
+// Compiled Report, gated to System Admin/System Reviewer only. Without
+// this exclusion, NGO Admin (the only role using this helper) silently
+// inherited full read/write/approve/export on it the moment `ncnpReport`
+// was added to `PERMISSION_MODULES` — a real bug: the backend's own
+// `assertCrossEntity()` check would still block NGO Admin from actually
+// using those endpoints, but the frontend's permission-based UI has no
+// such check, so it showed NCNP-only controls (Generate, the Consolidated
+// category filter/column) to a role that could never act on them.
 function fullAccess(): ModulePermission[] {
-  return PERMISSION_MODULES.map((m) => perm(m, { read: true, write: true, create: true, approve: true, export: true, share: true }));
+  return PERMISSION_MODULES.map((m) =>
+    m === 'ncnpReport' ? perm(m) : perm(m, { read: true, write: true, create: true, approve: true, export: true, share: true }),
+  );
 }
 const RO: Grant = { read: true };
 
@@ -72,13 +93,14 @@ export const ROLE_MATRIX: RoleDef[] = [
     // `approve` (see role_human_reviewer below) — publishing the finished
     // survey stays exclusively the Approver's `approve` action.
     perm('surveyBuilder', { read: true, write: true }),
+    perm('ncnpReport'),
   ] },
   { id: 'role_field_researcher', key: 'field_researcher', name: 'Field Researcher', description: 'Enters needs and documents the source and field notes.', crossEntity: false, permissions: [
     perm('entityTeam'), perm('rolesPermissions'), perm('onboardingConsent'),
     perm('methodologyQuestionBank', RO), perm('studySurvey', RO),
     perm('dataCollection', { read: true, write: true, create: true }),
     perm('dataImport'), perm('citizenChannel'), perm('aiReview'), perm('priorityScoring'),
-    perm('reportsDashboards'), perm('archiveSharingAudit'), perm('surveyBuilder'),
+    perm('reportsDashboards'), perm('archiveSharingAudit'), perm('surveyBuilder'), perm('ncnpReport'),
   ] },
   { id: 'role_human_reviewer', key: 'human_reviewer', name: 'Reviewer/Approver', description: 'Approves or rejects (with comments) a finalized Survey before it publishes.', crossEntity: false, permissions: [
     perm('entityTeam'), perm('rolesPermissions'), perm('onboardingConsent'),
@@ -121,6 +143,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     // Survey approve/reject/publish via SurveysService), which stays
     // exclusive to this role.
     perm('surveyBuilder', { read: true, write: true, approve: true }),
+    perm('ncnpReport'),
   ] },
   { id: 'role_data_analyst', key: 'data_analyst', name: 'Data Analyst', description: 'Processes data, reviews quality, and prepares reports and dashboards.', crossEntity: false, permissions: [
     perm('entityTeam'), perm('rolesPermissions'), perm('onboardingConsent'),
@@ -129,7 +152,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('aiReview', RO),
     perm('priorityScoring', { read: true, write: true, create: true, approve: true, export: true }),
     perm('reportsDashboards', { read: true, write: true, create: true, export: true }),
-    perm('archiveSharingAudit', RO), perm('surveyBuilder'),
+    perm('archiveSharingAudit', RO), perm('surveyBuilder'), perm('ncnpReport'),
   ] },
   { id: 'role_system_admin', key: 'system_admin', name: 'System Admin', description: 'Manages accounts, roles, permissions, audit log, and configuration settings.', crossEntity: true, permissions: [
     perm('entityTeam', { read: true, write: true, create: true, export: true }),
@@ -137,18 +160,23 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('studySurvey', RO), perm('dataCollection', RO), perm('dataImport', RO), perm('citizenChannel', RO),
     perm('aiReview', RO), perm('priorityScoring', RO), perm('reportsDashboards', RO), perm('archiveSharingAudit', RO),
     perm('surveyBuilder'),
+    // Generate a new NCNP Compiled Report snapshot for review, and publish
+    // one a System Reviewer has already approved — `write` covers both
+    // (this role never Approves/Rejects itself; that's exclusively
+    // system_reviewer's `approve` bit below).
+    perm('ncnpReport', { read: true, write: true }),
   ] },
   { id: 'role_read_only_viewer', key: 'read_only_viewer', name: 'Read-only Viewer', description: 'Views authorized outputs without editing.', crossEntity: false, permissions: [
     perm('entityTeam'), perm('rolesPermissions'), perm('onboardingConsent'),
     perm('methodologyQuestionBank', RO), perm('studySurvey', RO), perm('dataCollection', RO),
     perm('dataImport', RO), perm('citizenChannel'), perm('aiReview', RO), perm('priorityScoring', RO),
-    perm('reportsDashboards', { read: true, export: true }), perm('archiveSharingAudit', RO), perm('surveyBuilder'),
+    perm('reportsDashboards', { read: true, export: true }), perm('archiveSharingAudit', RO), perm('surveyBuilder'), perm('ncnpReport'),
   ] },
   { id: 'role_center_supervisor', key: 'center_supervisor', name: 'Center Supervisor', description: 'Cross-entity supervisory authority to follow studies, data, and reports for quality.', crossEntity: true, permissions: [
     perm('entityTeam', RO), perm('rolesPermissions'), perm('onboardingConsent'),
     perm('methodologyQuestionBank', RO), perm('studySurvey', RO), perm('dataCollection', RO),
     perm('dataImport', RO), perm('citizenChannel'), perm('aiReview', RO), perm('priorityScoring', RO),
-    perm('reportsDashboards', { read: true, export: true }), perm('archiveSharingAudit', RO), perm('surveyBuilder'),
+    perm('reportsDashboards', { read: true, export: true }), perm('archiveSharingAudit', RO), perm('surveyBuilder'), perm('ncnpReport'),
   ] },
   { id: 'role_citizen_guest', key: 'citizen_guest', name: 'Citizen / Beneficiary Guest', description: 'Submits a need as a data source via OTP; not added before human review.', crossEntity: false,
     permissions: PERMISSION_MODULES.map((m) => (m === 'citizenChannel' ? perm(m, { create: true }) : perm(m))) },
@@ -162,6 +190,30 @@ export const ROLE_MATRIX: RoleDef[] = [
   // no RPT01-14 report list, no org/study/survey management.
   { id: 'role_ncnp_user', key: 'ncnp_user', name: 'NCNP User', description: 'Views the national, kingdom-wide NCNP Compiled Report. No access to any other module.', crossEntity: true,
     permissions: PERMISSION_MODULES.map((m) => perm(m)) },
+  // System Reviewer — reviews the NCNP Compiled Report before it publishes
+  // (System Admin generates -> System Reviewer approves/rejects with
+  // mandatory notes -> System Admin does the final publish; see
+  // NcnpReportReviewService). Read-only everywhere else it's granted at
+  // all (Needs/Surveys/Uploaded Documents/AI classification data) — no
+  // create/write/approve on any of those, and no grant whatsoever on
+  // entityTeam/rolesPermissions/onboardingConsent/archiveSharingAudit, so
+  // Administration and the Audit Log stay exclusively System Admin's.
+  // `aiReview` is read-only here specifically so this role can see
+  // classification/duplicate data if a future merge-suggestion feature
+  // needs it — no merge-confirm/reject action exists anywhere yet (see the
+  // NCNP Report Review implementation plan), so nothing beyond `read` is
+  // granted for it today.
+  { id: 'role_system_reviewer', key: 'system_reviewer', name: 'System Reviewer', description: 'Reviews the NCNP Compiled Report — approves or rejects (with mandatory notes) before System Admin publishes it. Read-only everywhere else.', crossEntity: true, permissions: [
+    perm('entityTeam'), perm('rolesPermissions'), perm('onboardingConsent'), perm('methodologyQuestionBank', RO),
+    perm('studySurvey', RO), perm('dataCollection', RO), perm('dataImport', RO), perm('citizenChannel'),
+    // reportsDashboards read + export — "View and download NGO Reports"
+    // (the client's "Documents" menu reuses this existing module/page); no
+    // approve/write, so RPT01-14 confirm/approve/reject/archive stay out of
+    // reach (those need `write`/`approve`, neither granted here).
+    perm('aiReview', RO), perm('priorityScoring', RO), perm('reportsDashboards', { read: true, export: true }), perm('archiveSharingAudit'),
+    perm('surveyBuilder', RO),
+    perm('ncnpReport', { read: true, approve: true }),
+  ] },
 ];
 
 // citizen_guest is a public data source, not a login-capable account — excluded from user assignment.

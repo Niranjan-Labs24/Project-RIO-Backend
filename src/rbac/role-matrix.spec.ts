@@ -1,10 +1,43 @@
 import { ROLE_MATRIX, LOGIN_ROLE_KEYS, can } from './role-matrix';
 
 describe('ROLE_MATRIX', () => {
-  it('has the 10 roles with FE-matching ids/keys', () => {
-    expect(ROLE_MATRIX).toHaveLength(10);
+  // Relationship assertions rather than a hardcoded total — adding another
+  // role later shouldn't break this test just because the count moved.
+  it('has FE-matching ids/keys for the roles it does contain', () => {
     expect(ROLE_MATRIX.find((r) => r.key === 'ngo_admin')?.id).toBe('role_ngo_admin');
     expect(ROLE_MATRIX.find((r) => r.key === 'system_admin')?.crossEntity).toBe(true);
+  });
+
+  it('system_reviewer reviews the NCNP Compiled Report only — cross-entity, read-only everywhere else', () => {
+    const role = ROLE_MATRIX.find((r) => r.key === 'system_reviewer');
+    expect(role?.id).toBe('role_system_reviewer');
+    expect(role?.crossEntity).toBe(true);
+    expect(can('system_reviewer', 'ncnpReport', 'read')).toBe(true);
+    expect(can('system_reviewer', 'ncnpReport', 'approve')).toBe(true);
+    // Cannot generate/publish (that's System Admin's `write`, not held here).
+    expect(can('system_reviewer', 'ncnpReport', 'write')).toBe(false);
+    // Read-only on Needs/Surveys/Documents; no approve/write/create anywhere.
+    expect(can('system_reviewer', 'studySurvey', 'read')).toBe(true);
+    expect(can('system_reviewer', 'dataCollection', 'read')).toBe(true);
+    expect(can('system_reviewer', 'dataImport', 'read')).toBe(true);
+    expect(can('system_reviewer', 'surveyBuilder', 'approve')).toBe(false);
+    expect(can('system_reviewer', 'surveyBuilder', 'write')).toBe(false);
+    // Documents (the client's "Documents" menu, reusing the RPT01-14
+    // Reports module): view + download, no approve/write.
+    expect(can('system_reviewer', 'reportsDashboards', 'read')).toBe(true);
+    expect(can('system_reviewer', 'reportsDashboards', 'export')).toBe(true);
+    expect(can('system_reviewer', 'reportsDashboards', 'write')).toBe(false);
+    expect(can('system_reviewer', 'reportsDashboards', 'approve')).toBe(false);
+    // No Administration/Audit access at all.
+    expect(can('system_reviewer', 'entityTeam', 'read')).toBe(false);
+    expect(can('system_reviewer', 'rolesPermissions', 'read')).toBe(false);
+    expect(can('system_reviewer', 'archiveSharingAudit', 'read')).toBe(false);
+  });
+
+  it('system_admin can generate and publish the NCNP Compiled Report, not approve/reject it', () => {
+    expect(can('system_admin', 'ncnpReport', 'read')).toBe(true);
+    expect(can('system_admin', 'ncnpReport', 'write')).toBe(true);
+    expect(can('system_admin', 'ncnpReport', 'approve')).toBe(false);
   });
 
   it('ncnp_user is cross-entity but has no permission on any other module', () => {
@@ -42,7 +75,9 @@ describe('ROLE_MATRIX', () => {
 
   it('excludes citizen_guest from login-capable roles', () => {
     expect(LOGIN_ROLE_KEYS).not.toContain('citizen_guest');
-    expect(LOGIN_ROLE_KEYS).toHaveLength(9);
+    // Derived from the exclusion rule itself, not a hardcoded number — every
+    // role except citizen_guest is login-capable, whatever the total is.
+    expect(LOGIN_ROLE_KEYS).toHaveLength(ROLE_MATRIX.length - 1);
   });
 
   it('approver can approve/reject/archive a report, not just read/export it', () => {

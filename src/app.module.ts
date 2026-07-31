@@ -32,6 +32,7 @@ import { GeographyModule } from './modules/geography/geography.module';
 import { MethodologyConfigModule } from './modules/methodology-config/methodology-config.module';
 import { SupervisorOverviewModule } from './modules/supervisor-overview/supervisor-overview.module';
 import { NcnpReportModule } from './modules/ncnp-report/ncnp-report.module';
+import { NcnpReportReviewModule } from './modules/ncnp-report-review/ncnp-report-review.module';
 import { PublicSurveysModule } from './modules/public-surveys/public-surveys.module';
 import { CitizenModule } from './modules/citizen/citizen.module';
 import { ResponseQualityModule } from './modules/response-quality/response-quality.module';
@@ -91,6 +92,7 @@ import { AppController } from './app.controller';
     MethodologyConfigModule,
     SupervisorOverviewModule,
     NcnpReportModule,
+    NcnpReportReviewModule,
     PublicSurveysModule,
     CitizenModule,
     ResponseQualityModule,
