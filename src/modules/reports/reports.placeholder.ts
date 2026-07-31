@@ -4,16 +4,23 @@ import { buildReportDoc } from "./report-doc";
 import type { ReportTypeCode } from "./reports.types";
 
 // Real generators (see reports.service.ts#generateContent + generators/):
-//   RPT01 Individual Study · RPT02 Collective · RPT04 Sector · RPT06 Region ·
-//   RPT12 Sharing Status · RPT13 Executive · RPT14 Village
+//   RPT01 Individual Survey · RPT02 Collective · RPT04 Sector · RPT06 Region ·
+//   RPT12 Sharing Status · RPT13 Executive · RPT14 Village ·
+//   RPT15 Survey & Dashboard Report
 // Everything else is still placeholder.
 export type PlaceholderReportType = Exclude<
   ReportTypeCode,
-  "RPT01" | "RPT02" | "RPT04" | "RPT06" | "RPT12" | "RPT13" | "RPT14"
+  "RPT01" | "RPT02" | "RPT04" | "RPT06" | "RPT12" | "RPT13" | "RPT14" | "RPT15"
 >;
 export const PLACEHOLDER_REPORT_TYPES: PlaceholderReportType[] = [
   "RPT03", "RPT05", "RPT07", "RPT08", "RPT09", "RPT10", "RPT11",
 ];
+
+/** Narrows a ReportTypeCode to the still-placeholder set — lets the caller tell
+ *  "no generator yet, by design" apart from "generator route is missing". */
+export function isPlaceholderReportType(code: ReportTypeCode): code is PlaceholderReportType {
+  return (PLACEHOLDER_REPORT_TYPES as ReportTypeCode[]).includes(code);
+}
 
 // Audit/metadata header (RIO-NFR-008) — every field renders conditionally
 // since reviewedBy/reviewedAt are null on any report not yet reviewed, and

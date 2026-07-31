@@ -15,6 +15,20 @@ export type DocSection =
   | { kind: "radar"; heading: string; max: number; axes: string[]; series: Array<{ name: string; values: number[] }> }
   | { kind: "list"; heading: string; items: string[] }
   | { kind: "note"; heading: string; text: string }
+  // A strip of headline counts (studies / needs / responses / …). Used for the
+  // coverage and portfolio bands, where the point is the magnitude of each
+  // figure rather than any relationship between them — a bar chart of unrelated
+  // counts on different scales would mislead.
+  | { kind: "stats"; heading: string; tiles: Array<{ label: string; value: string; sub?: string }> }
+  // Paired bars for the same categories across two series (e.g. this survey vs
+  // the organisation average), so the gap is the visual, not the numbers.
+  | {
+      kind: "groupedBars";
+      heading: string;
+      max: number;
+      groups: string[];
+      series: Array<{ name: string; values: number[] }>;
+    }
   // Renders its children side by side (used to keep the report to 1–2 pages).
   | { kind: "columns"; children: DocSection[] };
 
@@ -202,6 +216,87 @@ function aiSummarySections(ai: Record<string, unknown>): DocSection[] {
   return out;
 }
 
+const n = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+
+// Coverage tiles — the "how much data is this built on?" band that opens every
+// survey-scoped report. Ordered so the reader gets scope (what was assessed)
+// before volume (how much came back) before depth (what was scored).
+function coverageStats(c: Record<string, unknown>): DocSection {
+  const submitted = n(c.responsesSubmitted);
+  const valid = n(c.responsesValid);
+  const validPct = submitted > 0 ? Math.round((valid / submitted) * 100) : 0;
+
+  return {
+    kind: "stats",
+    heading: "Assessment Coverage",
+    tiles: [
+      { label: "Needs in study", value: String(n(c.needsInStudy)), sub: `${n(c.needsCoveredByThisSurvey)} covered here` },
+      { label: "Surveys in study", value: String(n(c.surveysInStudy)) },
+      { label: "Villages covered", value: String(n(c.villagesCovered)), sub: `${n(c.governoratesCovered)} governorate(s)` },
+      {
+        label: "Questions asked",
+        value: String(n(c.surveyQuestionsTotal)),
+        sub: `${n(c.surveyQuestionsFromBank)} bank / ${n(c.surveyQuestionsCustom)} custom`,
+      },
+      { label: "Survey links", value: String(n(c.publicSurveyLinks)), sub: `${n(c.activeSurveyLinks)} active` },
+      { label: "Responses submitted", value: String(submitted), sub: scalar(c.assessmentPeriod) },
+      { label: "Valid responses", value: String(valid), sub: `${validPct}% of submitted` },
+      { label: "Excluded responses", value: String(n(c.responsesExcluded)), sub: `${n(c.dontKnowRatePct)}% don't-know` },
+      {
+        label: "Documents attached",
+        value: String(n(c.evidenceFilesTotal)),
+        sub: `${n(c.evidenceIncludedInReport)} in this report`,
+      },
+      { label: "Domains scored", value: String(n(c.domainsScored)) },
+      { label: "KPIs scored", value: String(n(c.kpisScored)) },
+      {
+        label: "Flagged responses",
+        value: String(n(c.duplicateResponses) + n(c.lowConfidenceResponses)),
+        sub: `${n(c.duplicateResponses)} dup / ${n(c.lowConfidenceResponses)} low-conf`,
+      },
+    ],
+  };
+}
+
+// Organisation-wide volumes (RPT15). Counts only — deliberately no severity or
+// priority figures here, so a reader can't mistake volume for performance.
+function portfolioStats(p: Record<string, unknown>): DocSection {
+  return {
+    kind: "stats",
+    heading: "Organisation Portfolio",
+    tiles: [
+      { label: "Studies", value: String(n(p.studiesTotal)) },
+      { label: "Needs", value: String(n(p.needsTotal)) },
+      { label: "Surveys", value: String(n(p.surveysTotal)) },
+      { label: "Survey links", value: String(n(p.publicLinksTotal)) },
+      {
+        label: "Responses (all studies)",
+        value: String(n(p.responsesTotal)),
+        sub: `this survey = ${n(p.thisSurveyShareOfResponsesPct)}%`,
+      },
+      { label: "Documents", value: String(n(p.evidenceFilesTotal)) },
+      { label: "Reports", value: String(n(p.reportsTotal)) },
+      { label: "Sharing requests", value: String(n(p.sharingRequestsTotal)) },
+      { label: "Villages covered", value: String(n(p.villagesCovered)), sub: `${n(p.governoratesCovered)} governorate(s)` },
+    ],
+  };
+}
+
+// Survey vs organisation, as paired bars. Every metric is already on a 0-100
+// scale, so one shared max keeps the comparison honest.
+function comparisonSection(rows: Array<Record<string, unknown>>): DocSection {
+  return {
+    kind: "groupedBars",
+    heading: "This Survey vs. Organisation",
+    max: 100,
+    groups: rows.map((r) => scalar(r.metric)),
+    series: [
+      { name: "This survey", values: rows.map((r) => n(r.surveyValue)) },
+      { name: "Organisation", values: rows.map((r) => n(r.orgAverage)) },
+    ],
+  };
+}
+
 // Demographic (gender/rural) capture is pending — every core report degrades
 // this chart gracefully rather than omitting it silently (see getDemographics).
 const DEMOGRAPHICS_NOTE: DocSection = {
@@ -216,9 +311,17 @@ export function buildReportDoc(
   audit: Array<{ label: string; value: string }>,
 ): ReportDoc {
   const headerBand = isPlainObject(content.header) ? kvRows(content.header) : [];
+  // KEEP IN SYNC with the identical predicate in the frontend viewer
+  // (Project-RIO-Frontend/src/components/features/reports/report-content-view.tsx).
+  // If the two drift, a report renders rich in one place and as a flat key/value
+  // dump in the other. `coverage`/`dashboard` are the survey-scoped reports
+  // (RPT01/RPT15) — they always carry `severity` too, but listing them here
+  // makes the intent explicit rather than incidental.
   const isCore =
     headerBand.length > 0 &&
     (isPlainObject(content.severity) ||
+      isPlainObject(content.coverage) ||
+      isPlainObject(content.dashboard) ||
       isObjectArray(content.domains) ||
       isObjectArray(content.regions) ||
       isObjectArray(content.topPriorities) ||
@@ -229,6 +332,30 @@ export function buildReportDoc(
   const sections: DocSection[] = [];
 
   if (isCore) {
+    // Survey identity first (RPT01/RPT15) — which survey, under which need.
+    // Without it a survey-scoped report is indistinguishable from its sibling.
+    if (isPlainObject(content.survey)) {
+      const sv = content.survey as Record<string, unknown>;
+      sections.push({
+        kind: "keyvalue",
+        heading: "Survey",
+        rows: [
+          { label: "Survey", value: scalar(sv.surveyTitle) },
+          { label: "Status", value: scalar(sv.surveyStatus) },
+          { label: "Need", value: scalar(sv.needStatement) },
+          { label: "Village", value: scalar(sv.villageName) },
+          { label: "Assessment Cycle", value: scalar(sv.assessmentCycle) },
+          { label: "Assessment Period", value: scalar(sv.assessmentPeriod) },
+          { label: "Methodology Version", value: scalar(sv.methodologyVersion) },
+        ],
+      });
+    }
+
+    // Coverage / portfolio count bands — the volume context for everything
+    // that follows.
+    if (isPlainObject(content.coverage)) sections.push(coverageStats(content.coverage));
+    if (isPlainObject(content.portfolio)) sections.push(portfolioStats(content.portfolio));
+
     // Structured scope (Executive report) — Region / Governorate coverage,
     // shown up front rather than only mentioned in the narrative.
     if (isPlainObject(content.scope)) {
@@ -294,6 +421,79 @@ export function buildReportDoc(
 
     if (isPlainObject(content.priority)) {
       sections.push({ kind: "keyvalue", heading: "Priority", rows: kvRows(content.priority) });
+    }
+
+    // Data-collection funnel + questionnaire weighting, side by side — both are
+    // "how was this built" context, and pairing them keeps the page count down.
+    const funnel: DocSection | null = isObjectArray(content.responseFunnel)
+      ? barsSection(
+          "Response Funnel",
+          content.responseFunnel,
+          "stage",
+          "count",
+          Math.max(1, ...content.responseFunnel.map((r) => Number(r.count) || 0)),
+        )
+      : null;
+    const questionCoverage: DocSection | null = isObjectArray(content.questionCoverage)
+      ? barsSection(
+          "Questions per Domain",
+          content.questionCoverage,
+          "domain",
+          "count",
+          Math.max(1, ...content.questionCoverage.map((r) => Number(r.count) || 0)),
+        )
+      : null;
+    if (funnel && questionCoverage) sections.push({ kind: "columns", children: [funnel, questionCoverage] });
+    else if (funnel) sections.push(funnel);
+    else if (questionCoverage) sections.push(questionCoverage);
+
+    // ── RPT15's dashboard half ──
+    if (isPlainObject(content.dashboard)) {
+      const d = content.dashboard as Record<string, unknown>;
+      const kpis = isPlainObject(d.kpis) ? d.kpis : null;
+
+      // Provenance line: the two halves were captured at different moments and
+      // must never read as simultaneous.
+      sections.push({
+        kind: "note",
+        heading: "Organisation Dashboard",
+        text: `Dashboard figures captured ${scalar(d.capturedAt)}. Survey figures are a frozen snapshot taken at generation time.`,
+      });
+
+      if (kpis) {
+        const slaPct = kpis.slaCompliancePct;
+        const slaGauge: DocSection | null =
+          typeof slaPct === "number"
+            ? { kind: "gauge", heading: "Reviewer SLA Compliance", value: Math.round(slaPct), max: 100, sub: "%" }
+            : null;
+        const kpiRows: DocSection = {
+          kind: "keyvalue",
+          heading: "Dashboard KPIs",
+          rows: kvRows(kpis),
+        };
+        if (slaGauge) sections.push({ kind: "columns", children: [slaGauge, kpiRows] });
+        else sections.push(kpiRows);
+      }
+
+      if (isObjectArray(d.scoringDistribution)) {
+        const maxCount = Math.max(1, ...d.scoringDistribution.map((r) => Number(r.count) || 0));
+        sections.push(barsSection("Organisation Scoring Distribution", d.scoringDistribution, "band", "count", maxCount));
+      }
+      if (isObjectArray(d.topPriorities)) {
+        sections.push(tableSection("Organisation Top Priorities", d.topPriorities));
+      }
+      if (Array.isArray(d.anomalies) && d.anomalies.length) {
+        sections.push({ kind: "list", heading: "Dashboard Anomalies", items: d.anomalies.map(String) });
+      }
+      if (isObjectArray(d.reviewerNotes)) {
+        sections.push(tableSection("Reviewer Notes", d.reviewerNotes));
+      }
+    }
+
+    // The reconciliation band — paired bars, then the exact figures beneath.
+    if (isObjectArray(content.comparison)) {
+      sections.push(comparisonSection(content.comparison));
+      sections.push(tableSection("Comparison Detail", content.comparison));
     }
     // RPT02 Collective Dashboard.
     if (isPlainObject(content.kpis)) {

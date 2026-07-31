@@ -217,8 +217,24 @@ export class Pdf {
 }
 
 function renderHeader(pdf: Pdf, doc: ReportDoc): void {
-  pdf.text(LEFT, 16, true, truncate(doc.title, 16, CONTENT_W), ACCENT);
+  // Generators name a report "<Report type> — <subject>" (survey / village /
+  // study). One 16pt line only fits ~55 characters, so a long subject used to
+  // be swallowed by the ellipsis — losing the very field that tells two
+  // sibling reports apart. Split at the dash: report type on the masthead
+  // line, subject wrapped beneath it at a smaller size.
+  const [typeName, ...subjectParts] = doc.title.split("—");
+  const heading = (typeName ?? doc.title).trim();
+  const subject = subjectParts.join("—").trim();
+
+  pdf.text(LEFT, 16, true, truncate(heading, 16, CONTENT_W), ACCENT);
   pdf.y += 21;
+  if (subject) {
+    for (const line of wrap(subject, 12, CONTENT_W)) {
+      pdf.text(LEFT, 12, true, line, ACCENT);
+      pdf.y += 15;
+    }
+    pdf.y += 2;
+  }
   pdf.rule(ACCENT, 1.4);
   pdf.y += 6;
   if (doc.headerBand.length) {
@@ -461,6 +477,87 @@ function renderRadar(pdf: Pdf, axes: string[], max: number, series: Array<{ name
   }
 }
 
+// Headline-count tiles, laid out in a grid: big value, small label under it,
+// optional sub-line. Three per row at full width, two inside a `columns` child
+// (which halves rw), so the value never has to shrink to fit.
+function renderStats(pdf: Pdf, tiles: Array<{ label: string; value: string; sub?: string }>): void {
+  const perRow = pdf.rw > 300 ? 3 : 2;
+  const gap = 8;
+  const tileW = (pdf.rw - gap * (perRow - 1)) / perRow;
+
+  for (let i = 0; i < tiles.length; i += perRow) {
+    const row = tiles.slice(i, i + perRow);
+    const hasSub = row.some((t) => t.sub);
+    const tileH = hasSub ? 44 : 36;
+    pdf.ensure(tileH + 6);
+    const top = pdf.y;
+
+    row.forEach((tile, c) => {
+      const x = pdf.rx + c * (tileW + gap);
+      pdf.y = top;
+      pdf.rect(x, tileW, tileH, LIGHT);
+
+      pdf.y = top + 15;
+      pdf.text(x + 7, 15, true, truncate(tile.value, 15, tileW - 14), ACCENT);
+
+      pdf.y = top + 26;
+      pdf.text(x + 7, 7, false, truncate(tile.label, 7, tileW - 14), GRAY);
+
+      if (tile.sub) {
+        pdf.y = top + 36;
+        pdf.text(x + 7, 6.5, false, truncate(tile.sub, 6.5, tileW - 14), GRAY);
+      }
+    });
+
+    pdf.y = top + tileH + 6;
+  }
+}
+
+// Paired bars: one track per group, each series drawn as a thinner bar stacked
+// within the group's slot. The gap between the two bars IS the finding, so they
+// share one scale and sit adjacent rather than on separate charts.
+function renderGroupedBars(
+  pdf: Pdf,
+  max: number,
+  groups: string[],
+  series: Array<{ name: string; values: number[] }>,
+): void {
+  const labelW = Math.min(140, pdf.rw * 0.4);
+  const trackX = pdf.rx + labelW;
+  const trackW = pdf.rw - labelW - 34;
+  const barH = 7;
+  const rowH = series.length * (barH + 2) + 8;
+
+  groups.forEach((group, gi) => {
+    pdf.ensure(rowH);
+    const top = pdf.y;
+    pdf.y = top + barH;
+    pdf.text(pdf.rx + 2, 8, false, truncate(group, 8, labelW - 6));
+
+    series.forEach((s, si) => {
+      const value = s.values[gi] ?? 0;
+      const frac = max > 0 ? Math.max(0, Math.min(1, value / max)) : 0;
+      pdf.y = top + si * (barH + 2);
+      pdf.rect(trackX, trackW, barH, LIGHT);
+      if (frac > 0) pdf.rect(trackX, Math.max(1, trackW * frac), barH, PIE_COLORS[si % PIE_COLORS.length]!);
+      pdf.y = top + si * (barH + 2) + barH - 0.5;
+      pdf.text(trackX + trackW + 5, 7, false, String(Math.round(value)));
+    });
+
+    pdf.y = top + rowH;
+  });
+
+  // Legend — without it the two colours are unattributable.
+  pdf.ensure(14);
+  let lx = pdf.rx;
+  series.forEach((s, si) => {
+    pdf.swatch(lx, si);
+    pdf.text(lx + 11, 8, false, s.name);
+    lx += 11 + textWidth(s.name, 8) + 16;
+  });
+  pdf.y += 13;
+}
+
 function renderList(pdf: Pdf, items: string[]): void {
   const textW = pdf.rw - 12;
   for (const item of items) {
@@ -513,6 +610,8 @@ export function renderSection(pdf: Pdf, s: DocSection): void {
     case "radar": return renderRadar(pdf, s.axes, s.max, s.series);
     case "list": return renderList(pdf, s.items);
     case "note": return renderNote(pdf, s.text);
+    case "stats": return renderStats(pdf, s.tiles);
+    case "groupedBars": return renderGroupedBars(pdf, s.max, s.groups, s.series);
   }
 }
 

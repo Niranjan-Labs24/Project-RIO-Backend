@@ -1196,6 +1196,7 @@ enum ReportType {
   RPT12
   RPT13
   RPT14
+  RPT15
 }
 
 enum ReportStatus {
@@ -1211,9 +1212,16 @@ model Report {
   reportType  ReportType   @map("report_type")
   status      ReportStatus @default(draft)
   title       String       @db.VarChar(300)
-  // Only set for study-scoped types (e.g. RPT-01 Individual Study Report);
+  // Only set for study-scoped types (e.g. RPT-04 Domain-wise Needs);
   // null for org-wide aggregate types (e.g. RPT-02 Collective Dashboard).
   studyId      String?      @map("study_id") @db.Uuid
+  // Only set for survey-scoped types — RPT-01 (Individual Survey Report) and
+  // RPT-15 (Combined Survey + Dashboard Report) are generated from ONE survey,
+  // so without this two surveys under the same study produce two reports that
+  // can't be told apart. Null for study-scoped and org-wide types.
+  // onDelete: SetNull — a released report is an archival record and outlives
+  // the survey it was generated from.
+  surveyId     String?      @map("survey_id") @db.Uuid
   filters      Json
   content      Json
   generatedBy  String       @map("generated_by") @db.Uuid
@@ -1227,12 +1235,14 @@ model Report {
   reviewedAt   DateTime?    @map("reviewed_at") @db.Timestamptz(6)
   archivedAt   DateTime?    @map("archived_at") @db.Timestamptz(6)
 
-  org   Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  study Study?       @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  org    Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  study  Study?       @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  survey Survey?      @relation(fields: [surveyId], references: [id], onDelete: SetNull)
   sharingRequests ReportSharingRequest[]
 
   @@index([orgId])
   @@index([reportType])
+  @@index([surveyId])
   @@map("reports")
 }
 
@@ -1536,6 +1546,8 @@ model Survey {
   scoreRollups               ScoreRollup[]
   villagePriorityAssessments VillagePriorityAssessment[]
   aiPrioritySummaries        AiPrioritySummary[]
+  // Survey-scoped reports (RPT01 / RPT15) — see Report.surveyId.
+  reports                    Report[]
 
   @@index([orgId])
   @@index([needId])

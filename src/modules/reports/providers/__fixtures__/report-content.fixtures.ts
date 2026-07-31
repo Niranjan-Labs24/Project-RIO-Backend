@@ -2,17 +2,23 @@ import { SINGLE_CYCLE_TREND_NOTE } from "../../report-content.types";
 import type {
   CollectiveDashboardData,
   CollectiveReportContent,
+  CombinedReportContent,
+  CoverageBlock,
   ExecutiveReportContent,
+  IndividualSurveyReportContent,
   RegionReportContent,
   SectorReportContent,
   SharingStatusContent,
+  SurveyIdentity,
   VillageReportContent,
 } from "../../report-content.types";
 import {
   ReportDataProvider,
   type ScopedReportQuery,
+  type SurveyReportQuery,
   type VillageReportQuery,
 } from "../report-data.provider";
+import { buildComparisonBand, buildResponseFunnel } from "../survey-report-derivations";
 
 // TEST-ONLY report content, shaped like RPT-2026-001. This is a test double,
 // NOT a provider the app can use: it is deliberately not @Injectable and lives
@@ -108,6 +114,160 @@ export class StubReportDataProvider extends ReportDataProvider {
           { label: "Urban", count: 12 },
         ],
       },
+      filters: query.filters,
+    };
+  }
+
+  // Coverage counts for the survey-scoped fixtures. Internally consistent with
+  // the village fixture's response quality (42 submitted / 38 valid) so a spec
+  // asserting "the funnel agrees with the response-quality tile" is meaningful.
+  private stubCoverage(): CoverageBlock {
+    return {
+      studyTitle: "Village Community Needs Assessment",
+      studyCycleNumber: 1,
+      needsInStudy: 3,
+      needsCoveredByThisSurvey: 1,
+      surveysInStudy: 2,
+      villagesCovered: 2,
+      villageNames: ["Sample Village", "Riverside Village"],
+      governoratesCovered: 1,
+      centersCovered: 2,
+      surveyQuestionsTotal: 28,
+      surveyQuestionsFromBank: 25,
+      surveyQuestionsCustom: 3,
+      publicSurveyLinks: 2,
+      activeSurveyLinks: 1,
+      responsesSubmitted: 42,
+      responsesValid: 38,
+      responsesExcluded: 4,
+      dontKnowRatePct: 12,
+      duplicateResponses: 1,
+      lowConfidenceResponses: 5,
+      evidenceFilesTotal: 6,
+      evidenceIncludedInReport: 4,
+      domainsScored: 5,
+      kpisScored: 24,
+      assessmentPeriod: "01 July 2026 - 15 July 2026",
+    };
+  }
+
+  private stubSurveyIdentity(query: SurveyReportQuery): SurveyIdentity {
+    return {
+      surveyId: query.surveyId,
+      surveyTitle: "Baseline Household Survey",
+      surveyStatus: "PUBLISHED",
+      needStatement: "Households report irregular access to safe drinking water.",
+      needStatus: "survey_published",
+      villageName: "Sample Village",
+      assessmentCycle: 1,
+      assessmentPeriod: query.assessmentPeriod ?? "01 July 2026 - 15 July 2026",
+      methodologyVersion: "v1.0",
+      publishedAt: "2026-07-01T08:00:00Z",
+    };
+  }
+
+  async getIndividualSurveyReport(query: SurveyReportQuery): Promise<IndividualSurveyReportContent> {
+    // Built from the village fixture so the two share identical severity /
+    // priority / topKpis blocks — the same relationship the real provider
+    // guarantees through a single shared snapshot.
+    const village = await this.getVillageReport({
+      studyId: query.studyId,
+      villageId: "Sample Village",
+      orgId: query.orgId,
+      studyTitle: query.studyTitle,
+      filters: query.filters,
+    });
+    const coverage = this.stubCoverage();
+    return {
+      header: village.header,
+      survey: this.stubSurveyIdentity(query),
+      coverage,
+      responseQuality: village.responseQuality,
+      severity: village.severity,
+      priority: village.priority,
+      topKpis: village.topKpis,
+      responseFunnel: buildResponseFunnel(coverage),
+      questionCoverage: village.severity.domains.map((d) => ({ domain: d.name, count: d.kpiCount })),
+      qualitativeEvidence: village.qualitativeEvidence,
+      aiSummary: village.aiSummary,
+      dataQualityNote: village.dataQualityNote,
+      trendNote: village.trendNote,
+      approval: village.approval,
+      demographics: village.demographics,
+      filters: query.filters,
+    };
+  }
+
+  async getCombinedReport(query: SurveyReportQuery): Promise<CombinedReportContent> {
+    const individual = await this.getIndividualSurveyReport(query);
+    const dashboard = await this.getCollectiveDashboard({ orgId: query.orgId, filters: query.filters });
+    return {
+      header: individual.header,
+      survey: individual.survey,
+      coverage: individual.coverage,
+      portfolio: {
+        studiesTotal: 4,
+        needsTotal: 24,
+        needsByStatus: [
+          { label: "survey_published", count: 14 },
+          { label: "reviewer_approved", count: 7 },
+          { label: "draft", count: 3 },
+        ],
+        surveysTotal: 9,
+        surveysByStatus: [
+          { label: "PUBLISHED", count: 6 },
+          { label: "DRAFT", count: 2 },
+          { label: "SUBMITTED", count: 1 },
+        ],
+        publicLinksTotal: 11,
+        responsesTotal: 210,
+        evidenceFilesTotal: 31,
+        reportsTotal: 12,
+        reportsByStatus: [
+          { label: "released", count: 7 },
+          { label: "draft", count: 4 },
+          { label: "archived", count: 1 },
+        ],
+        sharingRequestsTotal: 10,
+        sharingRequestsByStatus: [
+          { label: "approved", count: 8 },
+          { label: "pending", count: 2 },
+        ],
+        villagesCovered: 9,
+        governoratesCovered: 3,
+        thisSurveyShareOfResponsesPct: 20,
+      },
+      responseQuality: individual.responseQuality,
+      severity: individual.severity,
+      priority: individual.priority,
+      topKpis: individual.topKpis,
+      responseFunnel: individual.responseFunnel,
+      questionCoverage: individual.questionCoverage,
+      demographics: individual.demographics,
+      dashboard: {
+        capturedAt: "2026-07-22T10:30:00Z",
+        kpis: { needCount: dashboard.needCount, slaCompliancePct: 92, slaBreaches: 1, slaAtRisk: 2 },
+        scoringDistribution: dashboard.scoringDistribution,
+        topPriorities: dashboard.topPriorities,
+        trends: dashboard.trends,
+        anomalies: dashboard.anomalies.map((a) => `[${a.severity.toUpperCase()}] ${a.note}`),
+        reviewerNotes: dashboard.reviewerNotes,
+      },
+      comparison: buildComparisonBand(
+        // The real provider passes its snapshot; the fixture reconstructs the
+        // two fields buildComparisonBand actually reads, so the band under test
+        // is the real function, not a hand-written stand-in.
+        {
+          severity: { overallVillageNeedsIndex: individual.severity.overallVillageNeedsIndex },
+          priority: { villagePriorityScore: individual.priority.villagePriorityScore },
+        } as never,
+        dashboard,
+        individual.coverage,
+      ),
+      aiSummary: individual.aiSummary,
+      dataQualityNote: individual.dataQualityNote,
+      trendNote: individual.trendNote,
+      approval: individual.approval,
       filters: query.filters,
     };
   }

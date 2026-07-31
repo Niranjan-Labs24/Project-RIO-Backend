@@ -7,6 +7,9 @@ export interface GeneratorCtx {
   provider: ReportDataProvider;
   orgId: string;
   studyId?: string;
+  // Set only for survey-scoped types (RPT01/RPT15). ReportsService.create has
+  // already validated that it exists and belongs to studyId.
+  surveyId?: string;
   // Resolved study details (when studyId is set) so reports show real study
   // metadata, not generic labels — passed through to the provider query.
   studyTitle?: string;

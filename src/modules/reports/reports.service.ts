@@ -4,7 +4,14 @@ import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { getOrgStore, requireActor, requireOrgId } from "../../tenancy/org-context";
 import { can, ROLE_MATRIX } from "../../rbac/role-matrix";
 import { AuditService } from "../audit/audit.service";
-import { buildPlaceholderReport, buildExportStub, type ExportAuditMeta } from "./reports.placeholder";
+import {
+  buildPlaceholderReport,
+  buildExportStub,
+  isPlaceholderReportType,
+  type ExportAuditMeta,
+} from "./reports.placeholder";
+import { individualSurveyGenerator } from "./generators/individual-survey.generator";
+import { combinedGenerator } from "./generators/combined.generator";
 import { villageGenerator } from "./generators/village.generator";
 import { sectorGenerator } from "./generators/sector.generator";
 import { regionGenerator } from "./generators/region.generator";
@@ -62,11 +69,25 @@ export class ReportsService {
         error: { code: "STUDY_ID_REQUIRED", message: `${payload.reportType} requires a studyId.` },
       });
     }
+    if (meta.requiresSurveyId && !payload.surveyId) {
+      throw new BadRequestException({
+        error: { code: "SURVEY_ID_REQUIRED", message: `${payload.reportType} requires a surveyId.` },
+      });
+    }
+    // A surveyId that belongs to a different study would silently produce a
+    // report whose header says one study and whose numbers come from another.
+    if (payload.surveyId) await this.assertSurveyInStudy(payload.surveyId, payload.studyId);
+
     const orgId = requireOrgId();
     const generatedBy = requireActor();
     const filters = payload.filters ?? {};
 
-    const { title, content } = await this.generateContent(payload.reportType, payload.studyId, filters);
+    const { title, content } = await this.generateContent(
+      payload.reportType,
+      payload.studyId,
+      filters,
+      payload.surveyId,
+    );
 
     const row = await this.tenant.runInOrgContext((tx) =>
       tx.report.create({
@@ -75,6 +96,9 @@ export class ReportsService {
           reportType: payload.reportType,
           title,
           studyId: payload.studyId ?? null,
+          // Only persisted for survey-scoped types — a stray surveyId on a
+          // study-scoped type would make the list column lie.
+          surveyId: meta.requiresSurveyId ? (payload.surveyId ?? null) : null,
           filters: filters as unknown as Prisma.InputJsonValue,
           content: content as unknown as Prisma.InputJsonValue,
           generatedBy,
@@ -82,7 +106,7 @@ export class ReportsService {
       }),
     );
     await this.audit.record({ action: "create", entityType: "report", entityId: row.id, entityLabel: title });
-    return this.toReport(row as unknown as ReportRow, await this.namesFor([row as unknown as ReportRow]));
+    return this.hydrateOne(row as unknown as ReportRow);
   }
 
   async list(params: ListReportsParams): Promise<Report[]> {
@@ -98,6 +122,7 @@ export class ReportsService {
         ...(params.reportType ? { reportType: params.reportType } : {}),
         ...(params.status ? { status: params.status } : {}),
         ...(params.studyId ? { studyId: params.studyId } : {}),
+        ...(params.surveyId ? { surveyId: params.surveyId } : {}),
       };
       const rows = await this.tenant.runAsSupervisor((tx) =>
         tx.report.findMany({
@@ -114,20 +139,23 @@ export class ReportsService {
         entityLabel: params.organizationId ? "Organization Reports" : "All Platform Reports",
         organizationId: params.organizationId,
       });
-      return (rows as unknown as ReportRow[]).map((r) => this.toReport(r));
+      return this.hydrate(rows as unknown as ReportRow[], true);
     }
 
     const rows = await this.tenant.runInOrgContext((tx) =>
       tx.report.findMany({
-        where: { reportType: params.reportType, status: this.visibleStatusWhere(params.status), studyId: params.studyId },
+        where: {
+          reportType: params.reportType,
+          status: this.visibleStatusWhere(params.status),
+          studyId: params.studyId,
+          surveyId: params.surveyId,
+        },
         orderBy: { generatedAt: "desc" },
         take,
         skip,
       }),
     );
-    const typedRows = rows as unknown as ReportRow[];
-    const nameById = await this.namesFor(typedRows);
-    return typedRows.map((r) => this.toReport(r, nameById));
+    return this.hydrate(rows as unknown as ReportRow[]);
   }
 
   async getById(id: string): Promise<Report> {
@@ -146,7 +174,7 @@ export class ReportsService {
         entityLabel: row.title,
         organizationId: row.orgId,
       });
-      return this.toReport(row);
+      return this.hydrateOne(row, true);
     }
 
     const row = await this.findOrThrow(id);
@@ -154,7 +182,7 @@ export class ReportsService {
     if (!this.canSeeAllStatuses() && !EXPORTABLE_STATUSES.includes(row.status)) {
       throw new NotFoundException({ error: { code: "REPORT_NOT_FOUND", message: "Report not found" } });
     }
-    return this.toReport(row, await this.namesFor([row]));
+    return this.hydrateOne(row);
   }
 
   // Officers/reviewers/analysts (anyone who can create/write/approve reports)
@@ -192,7 +220,7 @@ export class ReportsService {
       tx.report.update({ where: { id }, data: { officerConfirmedBy: officer, officerConfirmedAt: new Date() } }),
     );
     await this.audit.record({ action: "approve", entityType: "report", entityId: row.id, entityLabel: row.title, metadata: { step: "confirm" } });
-    return this.toReport(row as unknown as ReportRow, await this.namesFor([row as unknown as ReportRow]));
+    return this.hydrateOne(row as unknown as ReportRow);
   }
 
   // Reviewer approves → released. Requires a prior officer confirm (two-step).
@@ -213,7 +241,7 @@ export class ReportsService {
       tx.report.update({ where: { id }, data: { status: "released", reviewedBy: reviewer, reviewedAt: new Date() } }),
     );
     await this.audit.record({ action: "approve", entityType: "report", entityId: row.id, entityLabel: row.title, metadata: { status: "released" } });
-    return this.toReport(row as unknown as ReportRow, await this.namesFor([row as unknown as ReportRow]));
+    return this.hydrateOne(row as unknown as ReportRow);
   }
 
   async reject(id: string): Promise<Report> {
@@ -228,7 +256,7 @@ export class ReportsService {
       tx.report.update({ where: { id }, data: { status: "rejected", reviewedBy: reviewer, reviewedAt: new Date() } }),
     );
     await this.audit.record({ action: "approve", entityType: "report", entityId: row.id, entityLabel: row.title, metadata: { status: "rejected" } });
-    return this.toReport(row as unknown as ReportRow, await this.namesFor([row as unknown as ReportRow]));
+    return this.hydrateOne(row as unknown as ReportRow);
   }
 
   // Post-study archival — released → archived. Archived reports stay searchable
@@ -245,7 +273,7 @@ export class ReportsService {
       tx.report.update({ where: { id }, data: { status: "archived", archivedAt: new Date() } }),
     );
     await this.audit.record({ action: "edit", entityType: "report", entityId: row.id, entityLabel: row.title, metadata: { status: "archived" } });
-    return this.toReport(row as unknown as ReportRow, await this.namesFor([row as unknown as ReportRow]));
+    return this.hydrateOne(row as unknown as ReportRow);
   }
 
   async export(id: string, format: ExportFormat): Promise<{ filename: string; contentType: string; body: Buffer }> {
@@ -379,7 +407,7 @@ export class ReportsService {
       tx.report.findUnique({ where: { id } }),
     )) as unknown as ReportRow | null;
     if (!row) throw new NotFoundException({ error: { code: "REPORT_NOT_FOUND", message: "Report not found" } });
-    return this.toReport(row, await this.namesFor([row], true));
+    return this.hydrateOne(row, true);
   }
 
   // RPT-01 and RPT-14 have real generators. RPT-14 (Village Report) reads
@@ -390,9 +418,8 @@ export class ReportsService {
     reportType: ReportTypeCode,
     studyId: string | undefined,
     filters: Record<string, unknown>,
+    surveyId?: string,
   ): Promise<{ title: string; content: Record<string, unknown> }> {
-    const meta = REPORT_TYPE_META[reportType];
-
     // Real generators reading through the ReportDataProvider seam. Resolve real
     // study metadata up front — title, cycle number, and the actual data-
     // collection window (min/max survey-response date) — so reports carry real
@@ -418,11 +445,14 @@ export class ReportsService {
       provider: this.reportData,
       orgId: requireOrgId(),
       studyId,
+      surveyId,
       studyTitle,
       assessmentCycle,
       assessmentPeriod,
       filters,
     };
+    if (reportType === "RPT01") return individualSurveyGenerator(providerCtx);
+    if (reportType === "RPT15") return combinedGenerator(providerCtx);
     if (reportType === "RPT14") return villageGenerator(providerCtx);
     if (reportType === "RPT04") return sectorGenerator(providerCtx);
     if (reportType === "RPT06") return regionGenerator(providerCtx);
@@ -430,71 +460,42 @@ export class ReportsService {
     if (reportType === "RPT02") return collectiveGenerator(providerCtx);
     if (reportType === "RPT12") return sharingStatusGenerator(providerCtx);
 
-    if (reportType === "RPT01") {
-      return this.tenant
-        .runInOrgContext(async (tx) => {
-          const study = await tx.study.findUnique({ where: { id: studyId } });
-          if (!study) throw new NotFoundException({ error: { code: "STUDY_NOT_FOUND", message: "Study not found" } });
-          // A Study can hold many Needs now — the report covers all of them,
-          // each with its own evidence count/priority score/AI summary.
-          const needs = await tx.need.findMany({ where: { studyId }, orderBy: { createdAt: "asc" } });
-          const needIds = needs.map((n) => n.id);
-          // Batched (RIO-NFR-005) instead of 3 queries per Need — a Study
-          // with dozens of Needs would otherwise fire 3xN concurrent
-          // queries just to build this one report.
-          const [evidenceCounts, priorities, summaries] = await Promise.all([
-            needIds.length === 0
-              ? Promise.resolve([])
-              : tx.evidence.groupBy({ by: ["needId"], where: { needId: { in: needIds } }, _count: { _all: true } }),
-            needIds.length === 0
-              ? Promise.resolve([])
-              : tx.priorityScore.findMany({
-                  where: { needId: { in: needIds }, approvedAt: { not: null } },
-                  orderBy: { scoredAt: "desc" },
-                }),
-            needIds.length === 0
-              ? Promise.resolve([])
-              : tx.aiSummary.findMany({ where: { needId: { in: needIds } }, orderBy: { generatedAt: "desc" } }),
-          ]);
-          const evidenceCountByNeedId = new Map(evidenceCounts.map((e) => [e.needId, e._count._all]));
-          // findMany results are ordered desc, so the first entry seen per
-          // needId is the latest — same "first wins" semantics as the
-          // previous per-need findFirst calls.
-          const priorityByNeedId = new Map<string, (typeof priorities)[number]>();
-          for (const p of priorities) if (!priorityByNeedId.has(p.needId)) priorityByNeedId.set(p.needId, p);
-          const summaryByNeedId = new Map<string, (typeof summaries)[number]>();
-          for (const s of summaries) if (!summaryByNeedId.has(s.needId)) summaryByNeedId.set(s.needId, s);
-
-          const needSections = needs.map((need) => {
-            const priority = priorityByNeedId.get(need.id);
-            const summary = summaryByNeedId.get(need.id);
-            return {
-              needId: need.id,
-              statement: need.statement,
-              villages: need.village,
-              status: need.status,
-              evidenceCount: evidenceCountByNeedId.get(need.id) ?? 0,
-              priorityScore: priority ? { level: priority.level, overallScore: priority.overallScore } : null,
-              aiSummary: summary?.summaryText ?? null,
-            };
-          });
-          return {
-            title: `Individual Study Report — ${study.title}`,
-            content: {
-              study: { id: study.id, title: study.title },
-              needs: needSections,
-            },
-          };
-        })
-        .then((result) => ({ ...result, content: { ...result.content, filters, reportKind: meta.kind } }));
+    // Exhaustiveness guard: PlaceholderReportType deliberately excludes every
+    // type that has a real generator, so if a real type ever reaches here it
+    // means its route above is missing. Fail loudly instead of silently
+    // emitting placeholder copy under a real report's name.
+    if (!isPlaceholderReportType(reportType)) {
+      throw new BadRequestException({
+        error: {
+          code: "REPORT_GENERATOR_MISSING",
+          message: `${reportType} has no generator wired.`,
+        },
+      });
     }
-
     return buildPlaceholderReport(reportType);
+  }
+
+  // Resolve every display field a Report row needs (user names/roles + the
+  // survey title) in one batched pass, for one row or many. Call sites used to
+  // do `toReport(row, await this.namesFor([row]))` by hand, which meant each new
+  // lookup had to be threaded through nine places.
+  private async hydrate(rows: ReportRow[], crossOrg = false): Promise<Report[]> {
+    const [nameById, surveyTitleById] = await Promise.all([
+      this.namesFor(rows, crossOrg),
+      this.surveyTitlesFor(rows, crossOrg),
+    ]);
+    return rows.map((r) => this.toReport(r, nameById, surveyTitleById));
+  }
+
+  private async hydrateOne(row: ReportRow, crossOrg = false): Promise<Report> {
+    const reports = await this.hydrate([row], crossOrg);
+    return reports[0]!;
   }
 
   private toReport(
     row: ReportRow,
     nameById: Map<string, { name: string; role: string | null }> = new Map(),
+    surveyTitleById: Map<string, string> = new Map(),
   ): Report {
     const meta = REPORT_TYPE_META[row.reportType];
     return {
@@ -503,6 +504,8 @@ export class ReportsService {
       status: row.status,
       title: row.title,
       studyId: row.studyId,
+      surveyId: row.surveyId,
+      surveyTitle: row.surveyId ? (surveyTitleById.get(row.surveyId) ?? null) : null,
       filters: row.filters as Record<string, unknown>,
       content: row.content as Record<string, unknown>,
       generatedBy: row.generatedBy,
@@ -537,5 +540,39 @@ export class ReportsService {
     // Role name resolved in-memory from ROLE_MATRIX (the RBAC source of truth,
     // seeded into `roles`) — no extra join needed.
     return new Map(users.map((u) => [u.id, { name: u.name, role: roleNameById.get(u.roleId) ?? null }]));
+  }
+
+  // Survey titles for survey-scoped rows (RPT01/RPT15), so the reports list can
+  // show WHICH survey a report came from. Same batching + cross-org convention
+  // as namesFor above; rows with no surveyId cost nothing.
+  private async surveyTitlesFor(rows: ReportRow[], crossOrg = false): Promise<Map<string, string>> {
+    const surveyIds = [...new Set(rows.map((r) => r.surveyId).filter((id): id is string => id !== null))];
+    if (surveyIds.length === 0) return new Map();
+    const surveys = crossOrg
+      ? await this.tenant.runAsSupervisor((tx) =>
+          tx.survey.findMany({ where: { id: { in: surveyIds } }, select: { id: true, title: true } }),
+        )
+      : await this.tenant.runInOrgContext((tx) =>
+          tx.survey.findMany({ where: { id: { in: surveyIds } }, select: { id: true, title: true } }),
+        );
+    return new Map(surveys.map((s) => [s.id, s.title]));
+  }
+
+  // A survey-scoped report must be generated from a survey that actually sits
+  // under the named study — otherwise the header claims one study while the
+  // scores come from another. RLS already confines the lookup to the caller's
+  // own org, so a cross-org surveyId 404s here rather than leaking.
+  private async assertSurveyInStudy(surveyId: string, studyId: string | undefined): Promise<void> {
+    const survey = await this.tenant.runInOrgContext((tx) =>
+      tx.survey.findUnique({ where: { id: surveyId }, select: { id: true, studyId: true } }),
+    );
+    if (!survey) {
+      throw new NotFoundException({ error: { code: "SURVEY_NOT_FOUND", message: "Survey not found" } });
+    }
+    if (studyId && survey.studyId !== studyId) {
+      throw new BadRequestException({
+        error: { code: "SURVEY_NOT_IN_STUDY", message: "That survey does not belong to the selected study." },
+      });
+    }
   }
 }
