@@ -19,7 +19,9 @@ export interface CoverageQuery {
   /** From ScoreRollup(OVERALL); the rollup is the authority on valid vs excluded. */
   validResponseCount?: number;
   excludedResponseCount?: number;
-  dontKnowRatePct?: number;
+  /** Required, not defaulted: an absent rate is unknown, and defaulting it to 0
+   *  would claim nobody answered "don't know". The rollup is the authority. */
+  dontKnowRatePct: number;
   /** Human-readable collection window, e.g. "01 July 2026 - 15 July 2026". */
   assessmentPeriod?: string;
 }
@@ -58,6 +60,7 @@ export async function buildCoverageBlock(
       centers,
       domainRollups,
       kpiRollups,
+      kpiRollupsWithScore,
     ] = await Promise.all([
       tx.study.findUnique({ where: { id: studyId }, select: { title: true, cycleNumber: true, villages: true } }),
       tx.need.findUnique({ where: { id: needId }, select: { village: true } }),
@@ -83,11 +86,30 @@ export async function buildCoverageBlock(
       tx.evidence.count({ where: { needId, isIncludedInReport: true } }),
       tx.needGovernorate.count({ where: { needId } }),
       tx.needCenter.count({ where: { needId } }),
+      // ScoreRollup stores the consolidated scope as villageId '' (Prisma can't
+      // put null in a unique constraint) AND one row per village. Omitting the
+      // filter counted both, so 2 domains reported as 4 and 9 KPIs as 18 — the
+      // tiles then contradicted the table directly beneath them. Same convention
+      // as report-summary.service.ts's `rollupVillageId`: always filter, using
+      // '' for consolidated.
       tx.scoreRollup.count({
-        where: { studyId, surveyId, rollupLevel: "DOMAIN", ...(villageId ? { villageId } : {}) },
+        where: { studyId, surveyId, rollupLevel: "DOMAIN", villageId: villageId || "" },
       }),
       tx.scoreRollup.count({
-        where: { studyId, surveyId, rollupLevel: "KPI", ...(villageId ? { villageId } : {}) },
+        where: { studyId, surveyId, rollupLevel: "KPI", villageId: villageId || "" },
+      }),
+      // Attempted vs actually scored: a KPI rollup exists for every KPI the
+      // survey asked about, but severityScore is null when nothing could be
+      // scored. The tile reads "8 scored · 1 not measurable" instead of
+      // silently counting the unmeasurable one as a result.
+      tx.scoreRollup.count({
+        where: {
+          studyId,
+          surveyId,
+          rollupLevel: "KPI",
+          villageId: villageId || "",
+          severityScore: { not: null },
+        },
       }),
     ]);
 
@@ -120,13 +142,15 @@ export async function buildCoverageBlock(
       responsesSubmitted: submitted,
       responsesValid: valid,
       responsesExcluded: excluded,
-      dontKnowRatePct: query.dontKnowRatePct ?? 0,
+      dontKnowRatePct: query.dontKnowRatePct,
       duplicateResponses: quality.filter((q) => q.isDuplicate).length,
       lowConfidenceResponses: quality.filter((q) => q.confidenceFlag === "low").length,
       evidenceFilesTotal: evidenceTotal,
       evidenceIncludedInReport: evidenceIncluded,
       domainsScored: domainRollups,
-      kpisScored: kpiRollups,
+      kpisAttempted: kpiRollups,
+      kpisScored: kpiRollupsWithScore,
+      kpisNotMeasurable: kpiRollups - kpiRollupsWithScore,
       assessmentPeriod:
         query.assessmentPeriod ??
         formatPeriod(responseWindow._min.submittedAt, responseWindow._max.submittedAt) ??

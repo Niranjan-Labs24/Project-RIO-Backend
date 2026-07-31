@@ -38,10 +38,13 @@ export function buildResponseFunnel(coverage: CoverageBlock): FunnelStage[] {
  * severity table beside it.
  */
 export function buildQuestionCoverage(snapshot: ReportDataSnapshot): DomainCount[] {
-  return snapshot.severity.domainSeverityScores
-    .map((d) => ({ domain: d.domainName, count: d.kpiCount }))
+  // The questions THIS survey asked. It used to plot `kpiCount` — the number of
+  // KPIs the METHODOLOGY defines under each domain — under a "Questions per
+  // Domain" label, so a 5-question survey charted 16 questions in one domain
+  // while the coverage tile beside it said 5.
+  return snapshot.questionsAskedByDomain
     .filter((d) => d.count > 0)
-    .sort((a, b) => b.count - a.count || a.domain.localeCompare(b.domain));
+    .map((d) => ({ domain: d.domain, count: d.count }));
 }
 
 /** Fallbacks shown when a scored KPI has no matching methodology question. */
@@ -137,9 +140,12 @@ export function buildComparisonBand(
   const bandMidpoint: Record<string, number> = { High: 80, Medium: 50, Low: 20 };
   const banded = dashboard.scoringDistribution.filter((b) => bandMidpoint[b.band] !== undefined && b.count > 0);
   const bandedTotal = banded.reduce((a, b) => a + b.count, 0);
-  if (bandedTotal > 0 && snapshot.priority.villagePriorityScore > 0) {
+  // A null priority score means "not calculable", so the row is omitted rather
+  // than compared against the org as a zero.
+  const surveyPriority = snapshot.priority.villagePriorityScore;
+  if (bandedTotal > 0 && surveyPriority !== null && surveyPriority > 0) {
     const orgMean = banded.reduce((a, b) => a + bandMidpoint[b.band]! * b.count, 0) / bandedTotal;
-    rows.push(row("Priority score (0-100)", snapshot.priority.villagePriorityScore, orgMean));
+    rows.push(row("Priority score (0-100)", surveyPriority, orgMean));
   }
 
   return rows;

@@ -30,7 +30,9 @@ export type DocSection =
       series: Array<{ name: string; values: number[] }>;
     }
   // Renders its children side by side (used to keep the report to 1–2 pages).
-  | { kind: "columns"; children: DocSection[] };
+  // `weights` is an optional width ratio — a chart beside a long key/value block
+  // wants the narrower half, not an even split.
+  | { kind: "columns"; children: DocSection[]; weights?: number[] };
 
 export interface ReportDoc {
   title: string;
@@ -92,19 +94,34 @@ function kvRows(obj: Record<string, unknown>): Array<{ label: string; value: str
   return rows;
 }
 
-// Response Quality rows, but the qualitative confidence band and its numeric %
-// are folded into one row ("Overall Confidence: STANDARD (90%)") so the two read
-// together and the raw confidencePct isn't shown as a separate line.
+// Response Quality rows. The confidence BAND, the REASON it was assigned, and
+// the valid-response RATE are three separate rows — folding them into
+// "STANDARD (90%)" read as "90% confident", which is a claim none of the three
+// numbers makes.
+const RESPONSE_QUALITY_ROWS: Array<{ key: string; label: string; format?: (v: unknown) => string }> = [
+  { key: "overallConfidence", label: "Overall confidence" },
+  { key: "confidenceReason", label: "Why this band" },
+  { key: "submittedResponses", label: "Responses submitted" },
+  { key: "validResponses", label: "Valid responses" },
+  { key: "validResponseRatePct", label: "Valid-response rate", format: (v) => `${scalar(v)}%` },
+  {
+    key: "dontKnowRate",
+    label: "Don't-know rate",
+    format: (v) => (typeof v === "number" ? `${v.toFixed(2)}%` : scalar(v)),
+  },
+  { key: "dontKnowBand", label: "Don't-know band" },
+];
+
 function responseQualityRows(obj: Record<string, unknown>): Array<{ label: string; value: string }> {
-  const rows: Array<{ label: string; value: string }> = [];
+  const known = new Set(RESPONSE_QUALITY_ROWS.map((r) => r.key));
+  const rows = RESPONSE_QUALITY_ROWS.filter((r) => obj[r.key] !== undefined).map((r) => ({
+    label: r.label,
+    value: r.format ? r.format(obj[r.key]) : scalar(obj[r.key], r.key),
+  }));
+  // Anything a future field adds still shows, rather than silently vanishing.
   for (const [k, v] of Object.entries(obj)) {
-    if (k === "confidencePct") continue; // folded into the confidence row below
-    if (isPlainObject(v) || Array.isArray(v)) continue;
-    if (k === "overallConfidence" && typeof obj.confidencePct === "number") {
-      rows.push({ label: titleCase(k), value: `${scalar(v, k)} (${obj.confidencePct}%)` });
-    } else {
-      rows.push({ label: titleCase(k), value: scalar(v, k) });
-    }
+    if (known.has(k) || isPlainObject(v) || Array.isArray(v)) continue;
+    rows.push({ label: titleCase(k), value: scalar(v, k) });
   }
   return rows;
 }
@@ -143,19 +160,22 @@ const DOMAIN_TABLE_COLS: Col[] = [
   { key: "name", label: "Domain" },
   // Methodology domain code — maps the row back to the methodology indicators.
   { key: "domainCode", label: "Code" },
-  { key: "severityScore", label: "Severity" },
-  { key: "performanceScore", label: "Performance" },
-  { key: "weight", label: "Weight" },
-  // KPIs contributing to this domain's severity.
-  { key: "kpiCount", label: "KPIs" },
-  // Confidence shows both the qualitative band and the quantitative % (e.g.
-  // "STANDARD (82%)"). confidencePct is folded in here rather than a column.
+  // 2 decimals, matching the Calculation Basis working line for the same domain.
+  { key: "severityScore", label: "Severity", format: severityCell },
   {
-    key: "confidence",
-    label: "Confidence",
+    key: "performanceScore",
+    label: "Performance",
     format: (o) =>
-      typeof o.confidencePct === "number" ? `${scalar(o.confidence)} (${o.confidencePct}%)` : scalar(o.confidence),
+      typeof o.performanceScore === "number" ? o.performanceScore.toFixed(2) : scalar(o.performanceScore),
   },
+  { key: "weight", label: "Weight" },
+  // KPIs the METHODOLOGY defines under this domain — not the number this survey
+  // measured, which the hierarchy section states per domain. Labelled so the two
+  // figures cannot be read as the same thing.
+  { key: "kpiCount", label: "KPIs defined" },
+  // Band and rate are separate columns — see responseQualityRows.
+  { key: "confidence", label: "Confidence" },
+  { key: "validResponseRatePct", label: "Valid %" },
   { key: "isCriticalDomain", label: "Critical" },
 ];
 
@@ -163,9 +183,64 @@ const TOP_KPI_COLS: Col[] = [
   { key: "rank", label: "#" },
   { key: "kpi", label: "KPI" },
   { key: "domain", label: "Domain" },
-  { key: "severityScore", label: "Severity" },
+  // The severity column is ALWAYS present. An unmeasured KPI shows "—" plus the
+  // reason, never a 0 and never a hidden row.
+  { key: "severityScore", label: "Severity", format: severityCell },
   { key: "confidence", label: "Confidence" },
   { key: "validResponseCount", label: "Responses" },
+  { key: "notMeasuredReason", label: "Why not measured" },
+];
+
+// Severity is printed to 2 decimals in every need table, matching the
+// Calculation Basis working exactly — a table reading 51 beside a working line
+// reading 51.04 invites the reader to wonder which is the real figure.
+function severityCell(o: Record<string, unknown>): string {
+  const v = o.severityScore;
+  if (v === null || v === undefined) return "—";
+  return typeof v === "number" ? v.toFixed(2) : scalar(v);
+}
+
+// Why this row carries no severity, or why its equity check could not run.
+// Without it a blank Equity "No" reads as "checked, no inequity found".
+function needNotes(o: Record<string, unknown>): string {
+  if (typeof o.notMeasuredReason === "string" && o.notMeasuredReason) return o.notMeasuredReason;
+  const eq = o.equityDetail;
+  if (isPlainObject(eq) && eq.evaluable === false && typeof eq.reason === "string") {
+    return `Equity not evaluable: ${eq.reason}`;
+  }
+  return "";
+}
+
+// One row per Unified Need Record. Severity is ALWAYS shown; when null it is a
+// dash, and the reason is carried by the Not Measured table and Section 6 —
+// these tables no longer print a Notes column, which repeated the same
+// suppression sentence on every row.
+//
+// Compact set, for tables already nested under a named domain — the fixed-width
+// PDF truncates a wide table's cells ("Livelih..", "structu.."), which is worse
+// than omitting a column the surrounding heading already states.
+const NEED_RECORD_COLS: Col[] = [
+  { key: "indicatorName", label: "Indicator" },
+  { key: "severityScore", label: "Severity", format: severityCell },
+  { key: "severityBand", label: "Band" },
+  { key: "confidence", label: "Confidence" },
+  { key: "equityFlag", label: "Equity" },
+  { key: "validResponseCount", label: "Responses" },
+];
+
+/** Full classification — used only where the rows span several domains. */
+const NEED_RECORD_COLS_FULL: Col[] = [
+  { key: "domain", label: "Domain" },
+  { key: "subDomain", label: "Sub-domain" },
+  ...NEED_RECORD_COLS,
+];
+
+// The Not Measured table exists to state WHY a row carries no severity, so it
+// keeps the reason column the measured-need tables drop. Without it the table
+// would be a list of indicators with no explanation attached.
+const NOT_MEASURED_NEED_COLS: Col[] = [
+  ...NEED_RECORD_COLS_FULL,
+  { key: "notMeasuredReason", label: "Why not measured", format: needNotes },
 ];
 
 function barsSection(
@@ -221,7 +296,7 @@ const n = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ?
 // Coverage tiles — the "how much data is this built on?" band that opens every
 // survey-scoped report. Ordered so the reader gets scope (what was assessed)
 // before volume (how much came back) before depth (what was scored).
-function coverageStats(c: Record<string, unknown>): DocSection {
+function coverageStats(c: Record<string, unknown>, surveyOnly: boolean): DocSection {
   const submitted = n(c.responsesSubmitted);
   const valid = n(c.responsesValid);
   const validPct = submitted > 0 ? Math.round((valid / submitted) * 100) : 0;
@@ -242,13 +317,27 @@ function coverageStats(c: Record<string, unknown>): DocSection {
       { label: "Responses submitted", value: String(submitted), sub: scalar(c.assessmentPeriod) },
       { label: "Valid responses", value: String(valid), sub: `${validPct}% of submitted` },
       { label: "Excluded responses", value: String(n(c.responsesExcluded)), sub: `${n(c.dontKnowRatePct)}% don't-know` },
-      {
-        label: "Documents attached",
-        value: String(n(c.evidenceFilesTotal)),
-        sub: `${n(c.evidenceIncludedInReport)} in this report`,
-      },
+      // A SURVEY-ONLY report contributes no document evidence to any figure in
+      // it, so a tile reading "12 documents · 3 in this report" directly
+      // contradicts the Report Basis line three inches above it. The count is
+      // still in the payload; it is simply not this report's evidence.
+      ...(surveyOnly
+        ? []
+        : [
+            {
+              label: "Documents attached",
+              value: String(n(c.evidenceFilesTotal)),
+              sub: `${n(c.evidenceIncludedInReport)} in this report`,
+            },
+          ]),
       { label: "Domains scored", value: String(n(c.domainsScored)) },
-      { label: "KPIs scored", value: String(n(c.kpisScored)) },
+      {
+        label: "KPIs scored",
+        value: String(n(c.kpisScored)),
+        // Attempted-but-unmeasurable KPIs are counted separately: folding them
+        // into "scored" is what let 9 KPIs report as 8 results with no trace.
+        sub: `${n(c.kpisAttempted)} asked · ${n(c.kpisNotMeasurable)} not measurable`,
+      },
       {
         label: "Flagged responses",
         value: String(n(c.duplicateResponses) + n(c.lowConfidenceResponses)),
@@ -305,6 +394,243 @@ const DEMOGRAPHICS_NOTE: DocSection = {
   text: "Not available — demographic (gender / rural) capture is pending. This chart will populate once demographic data is collected.",
 };
 
+// ── The six Unified Narrative sections (RPT01) ──
+//
+// Rendered only when the content actually carries them, so v1 reports already
+// released keep rendering exactly as before — no backfill, no re-render of
+// archival records.
+
+function reportBasisSection(meta: Record<string, unknown>): DocSection {
+  return {
+    kind: "keyvalue",
+    heading: "Report Basis",
+    rows: [
+      { label: "Report type", value: `${scalar(meta.reportType)} — ${scalar(meta.reportTypeName)}` },
+      // The client's "clearly marked quantitative" requirement: a reader must
+      // never have to infer what this report rests on.
+      { label: "Source basis", value: "SURVEY-ONLY — derived from survey responses, no document evidence" },
+      { label: "Evidence type", value: "QUANTITATIVE — every finding carries a measured severity score or an explicit reason it has none" },
+    ],
+  };
+}
+
+function executiveSummarySections(es: Record<string, unknown>): DocSection[] {
+  const out: DocSection[] = [];
+  out.push({
+    kind: "stats",
+    heading: "Executive Summary",
+    tiles: [
+      { label: "Needs extracted", value: String(n(es.totalNeedsExtracted)), sub: `${n(es.measuredCount)} measured · ${n(es.notMeasurableCount)} not measurable` },
+      { label: "Quantitative", value: String(n(es.quantitativeCount)) },
+      { label: "Qualitative", value: String(n(es.qualitativeCount)), sub: "survey-only report" },
+      {
+        label: "Domains assessed",
+        value: String(n(es.domainsAssessed)),
+        sub: `of ${n(es.domainsInMethodology)} in the methodology`,
+      },
+    ],
+  });
+  if (typeof es.coverageStatement === "string" && es.coverageStatement) {
+    out.push({ kind: "note", heading: "Coverage", text: es.coverageStatement });
+  }
+  // EVERY methodology domain, assessed or not. Listing only the covered ones
+  // let a reader infer full coverage of a nine-domain methodology.
+  if (isObjectArray(es.domainDistribution)) {
+    out.push(
+      pickTableSection("Domain Coverage (all methodology domains)", es.domainDistribution, [
+        { key: "domain", label: "Domain" },
+        { key: "assessed", label: "Assessed" },
+        {
+          key: "severityScore",
+          label: "Severity",
+          format: severityCell,
+        },
+        { key: "severityBand", label: "Band" },
+        { key: "needCount", label: "Indicators" },
+        {
+          key: "subDomainsAssessed",
+          label: "Sub-domains",
+          format: (o) => `${scalar(o.subDomainsAssessed)} / ${scalar(o.subDomainsDefined)}`,
+        },
+      ]),
+    );
+  }
+  if (isObjectArray(es.topThreeCriticalNeeds)) {
+    const heading = es.noCriticalBandReached === true ? "Top 3 Highest-Severity Needs" : "Top 3 Critical Needs";
+    out.push(pickTableSection(heading, es.topThreeCriticalNeeds, NEED_RECORD_COLS_FULL));
+  }
+  if (typeof es.topNeedsShortfallReason === "string" && es.topNeedsShortfallReason) {
+    out.push({ kind: "note", heading: "Why fewer than three", text: es.topNeedsShortfallReason });
+  }
+  return out;
+}
+
+// Domain → sub-domain → indicator, flattened into an indented table. The PDF
+// renderer has no tree primitive, so nesting is carried by the label prefix —
+// but every level is present, which is the client's actual requirement.
+function needsByDomainSection(domains: Array<Record<string, unknown>>): DocSection {
+  const rows: string[][] = [];
+  for (const d of domains) {
+    rows.push([
+      String(d.domain),
+      "DOMAIN",
+      severityCell(d),
+      scalar(d.confidence),
+      `${n(d.kpisScored)} of ${n(d.kpisAsked)} indicators measured · ${n(d.questionsAsked)} questions asked`,
+    ]);
+    for (const s of (d.subDomains as Array<Record<string, unknown>>) ?? []) {
+      rows.push([
+        `  ${String(s.subDomain)}`,
+        "SUB-DOMAIN",
+        severityCell(s),
+        scalar(s.confidence),
+        "",
+      ]);
+      for (const i of (s.indicators as Array<Record<string, unknown>>) ?? []) {
+        const needs = (i.needs as Array<Record<string, unknown>>) ?? [];
+        const unmeasured = needs.find((x) => x.severityScore === null);
+        rows.push([
+          `    ${String(i.indicatorName)}`,
+          "INDICATOR",
+          severityCell(i),
+          scalar(i.confidence),
+          unmeasured ? String(unmeasured.notMeasuredReason ?? "") : `${needs.length} KPI(s)`,
+        ]);
+      }
+    }
+  }
+  return {
+    kind: "table",
+    heading: "Needs by Domain, Sub-domain and Indicator",
+    columns: ["Classification", "Level", "Severity", "Confidence", "Notes"],
+    rows,
+  };
+}
+
+function patternAnalysisSections(pa: Record<string, unknown>): DocSection[] {
+  const out: DocSection[] = [];
+  // The caveat leads, then the findings follow — it qualifies the numbers below
+  // rather than replacing them. A section that prints only this sentence reads
+  // as "no analysis was run", which was never what it meant.
+  if (typeof pa.evidenceNote === "string" && pa.evidenceNote) {
+    out.push({ kind: "note", heading: "Pattern & Intersection Analysis", text: pa.evidenceNote });
+  }
+  if (isObjectArray(pa.patterns)) {
+    out.push(
+      pickTableSection("Observed Patterns", pa.patterns, [
+        { key: "pattern", label: "Pattern" },
+        { key: "scopeLabel", label: "Scope" },
+        { key: "strength", label: "Strength" },
+      ]),
+    );
+  }
+  if (isObjectArray(pa.intersections)) {
+    out.push(
+      pickTableSection("Intersections (equity)", pa.intersections, [
+        { key: "finding", label: "Finding" },
+        { key: "affectedGroup", label: "Most disadvantaged" },
+        { key: "equityFlag", label: "Equity flag" },
+      ]),
+    );
+  }
+  // `observedIntersections` and `gaps` are still computed and still travel in
+  // the JSON payload — they are deliberately not rendered in the document. The
+  // sub-threshold group severities were too easy to quote as an equity finding,
+  // and the coverage gaps repeat the domain coverage table in Section 2.
+  return out;
+}
+
+function priorityNeedsSections(pn: Record<string, unknown>): DocSection[] {
+  const out: DocSection[] = [];
+  const vp = isPlainObject(pn.villagePriority) ? pn.villagePriority : null;
+
+  if (vp) {
+    out.push({
+      kind: "keyvalue",
+      heading: "Village Priority",
+      rows: [
+        {
+          label: "Priority Score",
+          value: vp.priorityScore === null ? "— (not calculable)" : scalar(vp.priorityScore, "priorityScore"),
+        },
+        { label: "Priority Status", value: scalar(vp.priorityStatus) },
+        ...(vp.notCalculableReason ? [{ label: "Why", value: String(vp.notCalculableReason) }] : []),
+        { label: "Score direction", value: String(vp.scoreDirectionNote ?? "") },
+        { label: "Coverage basis", value: String(vp.coverageBasis ?? "") },
+        ...(vp.overrideApplied ? [{ label: "Override", value: String(vp.overrideReason ?? "") }] : []),
+      ],
+    });
+  }
+  if (isObjectArray(pn.needs)) {
+    out.push(
+      pickTableSection("Priority Needs", pn.needs, [
+        { key: "rank", label: "#" },
+        ...NEED_RECORD_COLS_FULL,
+        { key: "relevanceScore", label: "Relevance" },
+      ]),
+    );
+  }
+  // Ranked out, but never dropped — an indicator nobody could answer is a
+  // finding about the assessment, not an absence of need.
+  if (isObjectArray(pn.notMeasured)) {
+    out.push(pickTableSection("Not Measured (excluded from ranking)", pn.notMeasured, NOT_MEASURED_NEED_COLS));
+  }
+  return out;
+}
+
+function dataQualitySections(dq: Record<string, unknown>): DocSection[] {
+  const out: DocSection[] = [];
+  const rq = isPlainObject(dq.responseQuality) ? dq.responseQuality : {};
+  const conf = isPlainObject(dq.confidence) ? dq.confidence : {};
+
+  out.push({
+    kind: "stats",
+    heading: "Data Quality Notes",
+    tiles: [
+      { label: "Submitted", value: String(n(rq.submitted)) },
+      { label: "Valid", value: String(n(rq.valid)), sub: `${n(rq.validResponseRatePct)}% of submitted` },
+      { label: "Excluded", value: String(n(rq.excluded)) },
+      { label: "Don't-know rate", value: `${n(rq.dontKnowRatePct)}%`, sub: scalar(rq.dontKnowBand) },
+      { label: "Confidence", value: scalar(conf.flag), sub: `sample ${n(conf.sampleSize)} / ${n(conf.sampleThreshold)}` },
+      { label: "Not measured", value: String(n(dq.notMeasuredCount)) },
+      { label: "Duplicates flagged", value: String(n(rq.duplicatesFlagged)) },
+      { label: "Low-confidence responses", value: String(n(rq.lowConfidenceFlagged)) },
+    ],
+  });
+  if (typeof dq.narrative === "string" && dq.narrative) {
+    out.push({ kind: "note", heading: "Data Quality Summary", text: dq.narrative });
+  }
+  // The survey-level cycle-over-cycle sentence (deriveTrendNote, scope "this
+  // survey"). Kept as its own note rather than folded into the narrative above,
+  // matching how the two are composed — so a cycle claim and a data-quality
+  // claim can never be edited into contradicting each other.
+  if (typeof dq.trendNote === "string" && dq.trendNote) {
+    out.push({ kind: "note", heading: "Trend", text: dq.trendNote });
+  }
+  if (isObjectArray(dq.exclusionBreakdown)) {
+    out.push(
+      pickTableSection("Answer Status Breakdown", dq.exclusionBreakdown, [
+        { key: "status", label: "Status" },
+        { key: "count", label: "Answers" },
+        { key: "sharePct", label: "% of answers" },
+      ]),
+    );
+  }
+  if (isObjectArray(dq.notMeasured)) {
+    out.push(
+      pickTableSection("Indicators With No Measurable Response", dq.notMeasured, [
+        { key: "indicatorName", label: "Indicator" },
+        { key: "domain", label: "Domain" },
+        { key: "reason", label: "Reason" },
+      ]),
+    );
+  }
+  if (Array.isArray(dq.domainsNotAssessed) && dq.domainsNotAssessed.length) {
+    out.push({ kind: "list", heading: "Domains Not Assessed", items: dq.domainsNotAssessed.map(String) });
+  }
+  return out;
+}
+
 export function buildReportDoc(
   title: string,
   content: Record<string, unknown>,
@@ -332,6 +658,10 @@ export function buildReportDoc(
   const sections: DocSection[] = [];
 
   if (isCore) {
+    // Section 0 — what this report rests on. Renders first so the SURVEY-ONLY /
+    // QUANTITATIVE basis is established before any number is read.
+    if (isPlainObject(content.reportMeta)) sections.push(reportBasisSection(content.reportMeta));
+
     // Survey identity first (RPT01/RPT15) — which survey, under which need.
     // Without it a survey-scoped report is indistinguishable from its sibling.
     if (isPlainObject(content.survey)) {
@@ -343,7 +673,6 @@ export function buildReportDoc(
           { label: "Survey", value: scalar(sv.surveyTitle) },
           { label: "Status", value: scalar(sv.surveyStatus) },
           { label: "Need", value: scalar(sv.needStatement) },
-          { label: "Village", value: scalar(sv.villageName) },
           { label: "Assessment Cycle", value: scalar(sv.assessmentCycle) },
           { label: "Assessment Period", value: scalar(sv.assessmentPeriod) },
           { label: "Methodology Version", value: scalar(sv.methodologyVersion) },
@@ -353,8 +682,28 @@ export function buildReportDoc(
 
     // Coverage / portfolio count bands — the volume context for everything
     // that follows.
-    if (isPlainObject(content.coverage)) sections.push(coverageStats(content.coverage));
+    const surveyOnly =
+      isPlainObject(content.reportMeta) && content.reportMeta.sourceBasis === "SURVEY_ONLY";
+    if (isPlainObject(content.coverage)) sections.push(coverageStats(content.coverage, surveyOnly));
+    if (isPlainObject(content.unitGeo)) {
+      const g = content.unitGeo as Record<string, unknown>;
+      sections.push({
+        kind: "keyvalue",
+        heading: "Geographic Scope",
+        rows: [
+          { label: "Scope", value: scalar(g.scopeLabel) },
+          { label: "Region", value: scalar(g.regionName) },
+          { label: "Governorate(s)", value: (g.governorateNames as string[])?.join(", ") || "—" },
+          { label: "Village(s)", value: (g.villages as string[])?.join(", ") || "—" },
+        ],
+      });
+    }
     if (isPlainObject(content.portfolio)) sections.push(portfolioStats(content.portfolio));
+
+    // ── Section 2 — Executive Summary ──
+    if (isPlainObject(content.executiveSummary)) {
+      sections.push(...executiveSummarySections(content.executiveSummary));
+    }
 
     // Structured scope (Executive report) — Region / Governorate coverage,
     // shown up front rather than only mentioned in the narrative.
@@ -398,7 +747,10 @@ export function buildReportDoc(
     }
 
     // Row 1: gauge + response quality (or whichever exists).
-    if (gauge && rq) sections.push({ kind: "columns", children: [gauge, rq] });
+    // The dial needs ~a third; Response Quality carries a full sentence
+    // ("Why this band") and needs the rest, or it wraps four lines deep beside
+    // an empty half-page.
+    if (gauge && rq) sections.push({ kind: "columns", children: [gauge, rq], weights: [1, 2] });
     else if (gauge) sections.push(gauge);
     else if (rq) sections.push(rq);
 
@@ -407,19 +759,22 @@ export function buildReportDoc(
     else if (bars) sections.push(bars);
     if (domainsTable) sections.push(domainsTable);
 
-    // Per-domain trend notes — surfaced consistently for every domain (not just
-    // one global note). One line per domain: "<Domain>: <trendNote>".
-    if (domains && domains.some((d) => typeof d.trendNote === "string" && d.trendNote)) {
-      sections.push({
-        kind: "keyvalue",
-        heading: "Domain Trend Notes",
-        rows: domains
-          .filter((d) => typeof d.trendNote === "string" && d.trendNote)
-          .map((d) => ({ label: scalar(d.name), value: String(d.trendNote) })),
-      });
+
+    // ── Section 3 — the full methodology hierarchy ──
+    if (isObjectArray(content.needsByDomain)) {
+      sections.push(needsByDomainSection(content.needsByDomain));
     }
 
-    if (isPlainObject(content.priority)) {
+    // ── Section 4 — Pattern & Intersection Analysis ──
+    if (isPlainObject(content.patternAnalysis)) {
+      sections.push(...patternAnalysisSections(content.patternAnalysis));
+    }
+
+    // ── Section 5 — Priority Needs. Supersedes the flat Priority block below
+    // when present, so the two never render the same figure twice. ──
+    if (isPlainObject(content.priorityNeeds)) {
+      sections.push(...priorityNeedsSections(content.priorityNeeds));
+    } else if (isPlainObject(content.priority)) {
       sections.push({ kind: "keyvalue", heading: "Priority", rows: kvRows(content.priority) });
     }
 
@@ -471,7 +826,7 @@ export function buildReportDoc(
           heading: "Dashboard KPIs",
           rows: kvRows(kpis),
         };
-        if (slaGauge) sections.push({ kind: "columns", children: [slaGauge, kpiRows] });
+        if (slaGauge) sections.push({ kind: "columns", children: [slaGauge, kpiRows], weights: [1, 2] });
         else sections.push(kpiRows);
       }
 
@@ -533,16 +888,36 @@ export function buildReportDoc(
     else if (ruralPie) sections.push(ruralPie);
     else if (isNeedsReport) sections.push(DEMOGRAPHICS_NOTE);
 
-    if (isObjectArray(content.qualitativeEvidence)) {
-      sections.push(tableSection("Qualitative Evidence", content.qualitativeEvidence));
-    }
     if (isPlainObject(content.aiSummary)) sections.push(...aiSummarySections(content.aiSummary));
+
+    // ── Section 6 — Data Quality Notes. MANDATORY: rendered whenever the block
+    // exists, even when every sub-field is empty. ──
+    if (isPlainObject(content.dataQualityNotes)) {
+      sections.push(...dataQualitySections(content.dataQualityNotes));
+    }
+    // Every need record, flat — the machine-readable payload, also readable.
+    if (isObjectArray(content.needRecords)) {
+      sections.push(pickTableSection("All Need Records", content.needRecords, NEED_RECORD_COLS_FULL));
+    }
+
     // First-class Data Quality and Trend notes (promoted out of the AI Summary,
     // currently the region report) — rendered as their own labeled sections.
-    if (typeof content.dataQualityNote === "string" && content.dataQualityNote) {
+    // Suppressed when the structured Section 6 above is present, so the same
+    // note never appears twice.
+    if (
+      !isPlainObject(content.dataQualityNotes) &&
+      typeof content.dataQualityNote === "string" &&
+      content.dataQualityNote
+    ) {
       sections.push({ kind: "note", heading: "Data Quality Note", text: content.dataQualityNote });
     }
-    if (typeof content.trendNote === "string" && content.trendNote) {
+    // Suppressed only when Section 6 actually printed a trend note — a report
+    // that carries `dataQualityNotes` without one must still show this.
+    const section6Trend =
+      isPlainObject(content.dataQualityNotes) &&
+      typeof content.dataQualityNotes.trendNote === "string" &&
+      content.dataQualityNotes.trendNote;
+    if (!section6Trend && typeof content.trendNote === "string" && content.trendNote) {
       sections.push({ kind: "note", heading: "Trend Note", text: content.trendNote });
     }
     if (Array.isArray(content.anomalies) && content.anomalies.length) {

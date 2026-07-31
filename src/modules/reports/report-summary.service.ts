@@ -37,6 +37,13 @@ import { normalizeDomainKey, type DomainPriorityComponent } from '../priority/pr
 import { aggregateDemographics } from './providers/aggregate-demographics';
 import { resolveKpiDomain } from './providers/survey-report-derivations';
 import {
+  composeConfidenceReason,
+  dontKnowBandOf,
+  type DontKnowBand,
+} from './providers/severity-bands';
+import { DEFAULT_THRESHOLDS, type UnitGeo } from './need-record.types';
+import { buildUnitGeo } from './providers/resolve-geography';
+import {
   snapshotToExecutiveContent,
   snapshotToRegionContent,
   snapshotToSectorContent,
@@ -65,6 +72,23 @@ export interface ScopeFilters {
   domainKey?: string;
   regionId?: string;
   villageIds?: string[];
+}
+
+/** A SUB_DOMAIN or INDICATOR ScoreRollup row, narrowed to what a report needs. */
+export interface RollupLevelRow {
+  entityId: string;
+  entityName: string;
+  severityScore: number | null;
+  confidenceLevel: string;
+  validResponseCount: number;
+  dontKnowRate: number;
+}
+
+/** A KPI ScoreRollup row — the atom every Unified Need Record is built from. */
+export interface KpiRollupSnapshotRow extends RollupLevelRow {
+  excludedResponseCount: number;
+  dontKnowCount: number;
+  notApplicableCount: number;
 }
 
 export interface ReportDataSnapshot {
@@ -97,7 +121,14 @@ export interface ReportDataSnapshot {
     validResponseCount: number;
     dontKnowRate: number;
     confidenceLevel: string;
+    // Names ONLY the condition that actually fired (sample size vs don't-know
+    // rate). This used to be a fixed string asserting a high don't-know rate
+    // whenever confidence was LOW — false whenever LOW came from sample size,
+    // which is the common case. The snapshot handed that false premise to
+    // Gemini, which faithfully wrote a self-contradicting sentence.
     confidenceReason: string;
+    /** Backend-decided adjective — the prompt must use it verbatim. */
+    dontKnowBand: DontKnowBand;
   };
   severity: {
     overallVillageNeedsIndex: number | null;
@@ -125,10 +156,24 @@ export interface ReportDataSnapshot {
       confidenceLevel: string;
       validResponseCount: number;
     }>;
+    // The two rollup levels between KPI and DOMAIN. RollupService has always
+    // computed and persisted them (question → KPI → indicator → sub-domain →
+    // domain); the snapshot simply never read them, which is why the report
+    // flattened a four-level methodology into one list of domains. Reading them
+    // is what delivers the client's "classification by domain, sub-domain and
+    // indicator" — no pipeline change, the rows already exist.
+    subDomainSeverityScores: RollupLevelRow[];
+    indicatorSeverityScores: RollupLevelRow[];
+    /** EVERY KPI rollup for this scope, not just the top ten. One Unified Need
+     *  Record is derived per row. */
+    kpiSeverityScores: KpiRollupSnapshotRow[];
   };
   priority: {
-    villagePriorityScore: number;
-    priorityStatus: 'HIGH' | 'MEDIUM' | 'LOW';
+    // NULL when no assessment is stored. The old `0` + `'LOW'` fallback
+    // contradicted the banding itself (≤40 → HIGH), so an unscored village was
+    // reported as the least urgent one in the study.
+    villagePriorityScore: number | null;
+    priorityStatus: 'HIGH' | 'MEDIUM' | 'LOW' | null;
     domainPerformanceScores: Array<{
       domainKey: string;
       domainName: string;
@@ -143,6 +188,15 @@ export interface ReportDataSnapshot {
     overrideReason: string | null;
     calculatedAt: string;
   };
+  /** Questions THIS survey actually asked, per methodology domain. Distinct
+   *  from the number of KPIs the methodology defines under that domain — the
+   *  "Questions per Domain" chart used to plot the latter under the former's
+   *  label, so a 5-question survey reported 16 questions in one domain. */
+  questionsAskedByDomain: Array<{ domain: string; domainKey: string; count: number }>;
+  /** Canonical geography — ONE resolver feeds the header, this AI snapshot and
+   *  the coverage block, so the narrative cannot name a different set of
+   *  governorates than the report header does. Survey-level scopes only. */
+  unitGeo: UnitGeo | null;
   evidence: Array<{
     id: string;
     evidenceTitle: string;
@@ -152,6 +206,26 @@ export interface ReportDataSnapshot {
     description: string;
     collectedDate: string;
   }>;
+}
+
+/** ScoreRollup row → the narrow shape the snapshot carries. Same `!= null`
+ *  severity rule as everywhere else — a measured 0.00 survives as 0. */
+function toRollupLevelRow(r: {
+  entityId: string;
+  entityNameSnapshot: string;
+  severityScore: Prisma.Decimal | null;
+  confidenceLevel: string;
+  validResponseCount: number;
+  dontKnowRate: Prisma.Decimal;
+}): RollupLevelRow {
+  return {
+    entityId: r.entityId,
+    entityName: r.entityNameSnapshot,
+    severityScore: r.severityScore != null ? Number(r.severityScore) : null,
+    confidenceLevel: r.confidenceLevel,
+    validResponseCount: r.validResponseCount,
+    dontKnowRate: Number(r.dontKnowRate),
+  };
 }
 
 @Injectable()
@@ -210,6 +284,14 @@ export class ReportSummaryService {
           responseSchema: PRIORITY_DASHBOARD_SUMMARY_RESPONSE_SCHEMA,
         };
     }
+  }
+
+  /** The prompt version a scope currently generates against. Callers compare it
+   *  against a stored summary's `promptVersion` to decide whether that summary
+   *  is still reusable — a narrative written by an older prompt can contradict
+   *  the corrected snapshot it is printed beside. */
+  promptVersionFor(scope: SummaryScopeType): string {
+    return this.getPromptForScope(scope).promptVersion;
   }
 
   /**
@@ -313,6 +395,51 @@ export class ReportSummaryService {
         where: { usedInMvp: true, kpi: { not: null } },
         select: { domain: true, kpi: true, indicator: true },
       });
+
+      // Questions THIS survey asked, by domain. SurveyQuestion.questionId is the
+      // Question ROW id (uuid), not the bank's `questionId` code — joining on the
+      // wrong one silently produced zero for every domain. Custom questions carry
+      // their own domain on the SurveyQuestion row.
+      // Canonical geography, read inside this same transaction so nothing opens
+      // a nested one. Survey-level scopes only: an aggregate scope spans many
+      // needs and has no single unit geography.
+      let unitGeo: UnitGeo | null = null;
+      if (SURVEY_LEVEL_SCOPES.includes(scope)) {
+        const [need, governorateLinks, centerLinks] = await Promise.all([
+          tx.need.findUnique({ where: { id: survey.needId }, select: { village: true } }),
+          tx.needGovernorate.findMany({
+            where: { needId: survey.needId },
+            include: { governorate: { include: { region: true } } },
+          }),
+          tx.needCenter.findMany({ where: { needId: survey.needId }, include: { center: true } }),
+        ]);
+        unitGeo = buildUnitGeo({
+          needVillages: need?.village ?? [],
+          studyVillages: study.villages ?? [],
+          governorates: governorateLinks.map((g) => ({
+            id: g.governorateId,
+            name: g.governorate.name,
+            regionId: g.governorate.regionId,
+            regionName: g.governorate.region.name,
+          })),
+          centers: centerLinks.map((c) => ({ id: c.centerId, name: c.center.name })),
+          villageId: villageId || undefined,
+        });
+      }
+
+      const surveyQuestionRows = await tx.surveyQuestion.findMany({
+        where: { surveyId },
+        select: { domain: true, question: { select: { domain: true } } },
+      });
+      const askedByDomainKey = new Map<string, { domain: string; count: number }>();
+      for (const sq of surveyQuestionRows) {
+        const domain = sq.question?.domain ?? sq.domain;
+        if (!domain) continue;
+        const key = normalizeDomainKey(domain);
+        const cell = askedByDomainKey.get(key) ?? { domain, count: 0 };
+        cell.count += 1;
+        askedByDomainKey.set(key, cell);
+      }
       const kpiCountByDomainKey = new Map<string, Set<string>>();
       // KPI rollups store entityId = entityNameSnapshot = the KPI name (see
       // RollupService's KPI upsert), and carry no parent domain/indicator of
@@ -329,6 +456,43 @@ export class ReportSummaryService {
         if (!domainByKpi.has(q.kpi)) domainByKpi.set(q.kpi, q.domain);
         if (q.indicator && !indicatorByKpi.has(q.kpi)) indicatorByKpi.set(q.kpi, q.indicator);
       }
+
+      // The two intermediate rollup levels. Mirrors the DOMAIN query exactly —
+      // same villageId filter, or these duplicate per village the way the KPI
+      // query used to.
+      const [subDomainRollups, indicatorRollups, allKpiRollups] = await Promise.all([
+        tx.scoreRollup.findMany({
+          where: {
+            studyId,
+            surveyId,
+            methodologyVersionId: mv.id,
+            rollupLevel: 'SUB_DOMAIN',
+            villageId: rollupVillageId,
+          },
+        }),
+        tx.scoreRollup.findMany({
+          where: {
+            studyId,
+            surveyId,
+            methodologyVersionId: mv.id,
+            rollupLevel: 'INDICATOR',
+            villageId: rollupVillageId,
+          },
+        }),
+        // EVERY KPI rollup, ordered deterministically — one need record per row.
+        // Distinct from the `take: 10` query below, which only feeds the Top
+        // KPIs table.
+        tx.scoreRollup.findMany({
+          where: {
+            studyId,
+            surveyId,
+            methodologyVersionId: mv.id,
+            rollupLevel: 'KPI',
+            villageId: rollupVillageId,
+          },
+          orderBy: { entityId: 'asc' },
+        }),
+      ]);
 
       const kpiRollups = await tx.scoreRollup.findMany({
         where: {
@@ -371,20 +535,31 @@ export class ReportSummaryService {
       const evidenceScope = SURVEY_LEVEL_SCOPES.includes(scope)
         ? { needId: survey.needId }
         : { studyId };
-      const evidenceRows = await tx.evidence.findMany({
-        where: {
-          ...evidenceScope,
-          reviewStatus: 'APPROVED',
-          isIncludedInReport: true,
-        },
-      });
+      // RPT01 declares sourceBasis SURVEY_ONLY and prints "derived from survey
+      // responses, no document evidence" on its first page. Handing the model
+      // document evidence for that scope let the narrative cite a source the
+      // report says it does not use — so INDIVIDUAL gets none. Every other
+      // scope, RPT15 included, is not survey-only and keeps its evidence.
+      const evidenceRows =
+        scope === 'INDIVIDUAL'
+          ? []
+          : await tx.evidence.findMany({
+              where: {
+                ...evidenceScope,
+                reviewStatus: 'APPROVED',
+                isIncludedInReport: true,
+              },
+            });
 
       const submittedResponseCount = responses.length;
       const validResponseCount = overallRollup?.validResponseCount ?? submittedResponseCount;
       const dontKnowRate = overallRollup ? Number(overallRollup.dontKnowRate) : 0;
       const confidenceLevel = overallRollup?.confidenceLevel ?? 'STANDARD';
 
-      const overallNeedsIndex = overallRollup?.severityScore ? Number(overallRollup.severityScore) : null;
+      // `!= null`, not truthiness: a genuine severity of 0.00 is a real, and
+      // very good, result — the truthiness check turned it into "not measured".
+      const overallNeedsIndex =
+        overallRollup?.severityScore != null ? Number(overallRollup.severityScore) : null;
       const severityBand = overallNeedsIndex === null ? 'UNSCORED' : overallNeedsIndex >= 70 ? 'CRITICAL' : overallNeedsIndex >= 50 ? 'HIGH' : overallNeedsIndex >= 30 ? 'MEDIUM' : 'LOW';
 
       const domainComponents =
@@ -412,23 +587,44 @@ export class ReportSummaryService {
           organizationName: study.org.name,
           methodologyVersionId: mv.id,
           methodologyVersionLabel: mv.version,
-          governorateName,
-          regionName,
+          // For a survey-scoped report these are the NEED's governorates, not
+          // the whole study's. Handing the study's wider list to Gemini is how
+          // the narrative came to name "Abha, Ahad Rufaydah" while the header
+          // beside it named only Abha. Aggregate scopes keep the study's list.
+          governorateName: unitGeo ? unitGeo.governorateNames.join(', ') || null : governorateName,
+          regionName: unitGeo ? unitGeo.regionName : regionName,
         },
         responseQuality: {
           submittedResponseCount,
           validResponseCount,
           dontKnowRate,
           confidenceLevel,
-          confidenceReason: confidenceLevel === 'LOW' ? 'High rate of Don’t Know or excluded answers.' : 'High response completeness.',
+          // Was a fixed string asserting a high don't-know rate whenever
+          // confidence was LOW — but LOW usually fires on sample size. The
+          // snapshot handed that false premise to Gemini, which combined it
+          // with the real 3.13% and produced a self-contradicting sentence.
+          // Fixing the prompt could not have helped: the premise was wrong
+          // before the prompt saw it.
+          confidenceReason: composeConfidenceReason({
+            validResponseCount,
+            dontKnowRate,
+            thresholds: DEFAULT_THRESHOLDS,
+          }),
+          dontKnowBand: dontKnowBandOf(dontKnowRate),
         },
         severity: {
           overallVillageNeedsIndex: overallNeedsIndex,
           severityBand,
           domainSeverityScores: domainRollups.map((d) => ({
-            domainKey: d.entityId,
+            // NORMALIZED. ScoreRollup stores the domain NAME in entityId, while
+            // VillagePriorityAssessment.domainComponents stores the normalized
+            // key ("LIVELIHOOD"). Publishing the raw name here meant the two
+            // never joined: the Domains table showed Confidence STANDARD over a
+            // set of indicators that were all LOW, and a KPI count of 0.
+            domainKey: normalizeDomainKey(d.entityId),
             domainName: d.entityNameSnapshot,
-            severityScore: d.severityScore ? Number(d.severityScore) : null,
+            // `!= null`, not truthiness — see overallNeedsIndex above.
+            severityScore: d.severityScore != null ? Number(d.severityScore) : null,
             confidenceLevel: d.confidenceLevel,
             validResponseCount: d.validResponseCount,
             excludedResponseCount: d.excludedResponseCount,
@@ -441,14 +637,26 @@ export class ReportSummaryService {
             // Join semantics live in resolveKpiDomain (pure, unit-tested) —
             // see its comment for why the join is by KPI name, not id.
             ...resolveKpiDomain(k, domainByKpi, indicatorByKpi),
-            severityScore: k.severityScore ? Number(k.severityScore) : null,
+            severityScore: k.severityScore != null ? Number(k.severityScore) : null,
             confidenceLevel: k.confidenceLevel,
             validResponseCount: k.validResponseCount,
           })),
+          subDomainSeverityScores: subDomainRollups.map(toRollupLevelRow),
+          indicatorSeverityScores: indicatorRollups.map(toRollupLevelRow),
+          kpiSeverityScores: allKpiRollups.map((k) => ({
+            ...toRollupLevelRow(k),
+            excludedResponseCount: k.excludedResponseCount,
+            dontKnowCount: k.dontKnowCount,
+            notApplicableCount: k.notApplicableCount,
+          })),
         },
         priority: {
-          villagePriorityScore: priorityAssessment ? Number(priorityAssessment.priorityScore) : 0,
-          priorityStatus: (priorityAssessment?.priorityStatus as 'HIGH' | 'MEDIUM' | 'LOW') || 'LOW',
+          // No assessment → null, never 0. A 0 priority score banded as 'LOW'
+          // said the opposite of the truth twice over: the banding is
+          // ≤ 40 → HIGH, and no score at all is not a low-urgency finding.
+          villagePriorityScore: priorityAssessment ? Number(priorityAssessment.priorityScore) : null,
+          priorityStatus:
+            (priorityAssessment?.priorityStatus as 'HIGH' | 'MEDIUM' | 'LOW' | undefined) ?? null,
           domainPerformanceScores: domainComponents.map((dc) => ({
             domainKey: dc.domainKey,
             domainName: dc.domainNameSnapshot,
@@ -463,6 +671,10 @@ export class ReportSummaryService {
           overrideReason: priorityAssessment?.overrideReason ?? null,
           calculatedAt: priorityAssessment?.calculatedAt?.toISOString() ?? new Date().toISOString(),
         },
+        questionsAskedByDomain: [...askedByDomainKey.entries()]
+          .map(([domainKey, v]) => ({ domain: v.domain, domainKey, count: v.count }))
+          .sort((a, b) => b.count - a.count || a.domain.localeCompare(b.domain)),
+        unitGeo,
         evidence: evidenceRows.map((e) => ({
           id: e.id,
           evidenceTitle: e.title || e.fileName,
@@ -474,7 +686,20 @@ export class ReportSummaryService {
         })),
       };
 
-      const reportDataHash = createHash('sha256').update(JSON.stringify(snapshot.severity) + JSON.stringify(snapshot.priority)).digest('hex');
+      // Hashes the DESCRIPTIVE facts too (study identity, geography, response
+      // quality), not just the scores. A narrative is written against all of
+      // them: when the geography was corrected but the hash ignored it, the
+      // cached summary kept naming the old governorates beside a corrected
+      // header. Any change to what the narrative was told now invalidates it.
+      const reportDataHash = createHash('sha256')
+        .update(
+          JSON.stringify(snapshot.study) +
+            JSON.stringify(snapshot.unitGeo) +
+            JSON.stringify(snapshot.responseQuality) +
+            JSON.stringify(snapshot.severity) +
+            JSON.stringify(snapshot.priority),
+        )
+        .digest('hex');
       const evidenceHash = createHash('sha256').update(JSON.stringify(snapshot.evidence)).digest('hex');
 
       // Identity + content, so the same survey scored the same way always
@@ -524,10 +749,14 @@ export class ReportSummaryService {
       scopeFilters,
     );
 
+    // Severity is the gate, not priority. A survey can be fully scored while no
+    // VillagePriorityAssessment exists (priority scoring not run, or no domain
+    // weights configured) — that is a "not calculable" priority section, not a
+    // reason to refuse the whole narrative. The old check only passed because
+    // an absent assessment was coerced to 0.
     if (
       snapshot.responseQuality.submittedResponseCount === 0 ||
-      snapshot.severity.overallVillageNeedsIndex === null ||
-      snapshot.priority.villagePriorityScore === null
+      snapshot.severity.overallVillageNeedsIndex === null
     ) {
       throw new BadRequestException(
         `Cannot generate AI Summary: No valid survey responses or scoring data available for the selected village/scope (${snapshot.study.villageName}). Please collect survey responses and calculate priority scores first.`,
@@ -767,7 +996,7 @@ ${extra}`;
     // `villageId` is still whatever the scope's own filters resolved to
     // (empty for SECTOR/EXECUTIVE unless a village sub-filter was picked,
     // which aggregateDemographics already treats as "whole study").
-    const demographics = await aggregateDemographics(this.tenant, summary.studyId, villageId);
+    const demographics = await aggregateDemographics(this.tenant, { studyId: summary.studyId }, villageId);
 
     // INDIVIDUAL/COMBINED summaries belong to the survey-scoped reports, which
     // are generated through POST /reports (they need coverage/portfolio counts
