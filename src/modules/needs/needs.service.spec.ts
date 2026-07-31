@@ -232,13 +232,14 @@ describe('NeedsService', () => {
 
       expect(updateData).toEqual({ title: 'New title', village: ['A', 'B'] });
       expect(updated.title).toBe('New title');
-      expect(recorded[0].changes).toEqual(
+      const changes = recorded[0]?.changes ?? [];
+      expect(changes).toEqual(
         expect.arrayContaining([
           { field: 'Title', before: 'Old title', after: 'New title' },
           { field: 'Village', before: ['A'], after: ['A', 'B'] },
         ]),
       );
-      expect(recorded[0].changes).toHaveLength(2);
+      expect(changes).toHaveLength(2);
     });
 
     it('allows clearing referenceId to null explicitly', async () => {
