@@ -17,7 +17,6 @@ import {
   type Demographics,
   type DomainComponent,
   type ExecutiveReportContent,
-  type IndividualSurveyReportContent,
   type PortfolioBlock,
   type PriorityStatus,
   type RegionReportContent,
@@ -25,6 +24,7 @@ import {
   type ResponseQuality,
   type SectorReportContent,
   type SurveyIdentity,
+  type SurveyReportBase,
   type TopKpi,
   type VillageReportContent,
 } from "../report-content.types";
@@ -33,6 +33,9 @@ import {
   buildQuestionCoverage,
   buildResponseFunnel,
 } from "./survey-report-derivations";
+import { composeConfidenceReason, dontKnowBandOf, priorityStatusOf } from "./severity-bands";
+import { DEFAULT_THRESHOLDS } from "../need-record.types";
+import { deriveTrendNote } from "./derive-trend-note";
 
 export const EMPTY_APPROVAL: ApprovalBlock = {
   officerConfirmedBy: null,
@@ -78,22 +81,38 @@ function mapResponseQuality(snapshot: ReportDataSnapshot): ResponseQuality {
     submittedResponses: submitted,
     validResponses: rq.validResponseCount,
     overallConfidence: normConfidence(rq.confidenceLevel),
-    // Valid-response ratio as a quantitative confidence %. No submissions → 100
-    // (nothing was dropped), same convention as the domain confidence %.
-    confidencePct: submitted > 0 ? Math.round((rq.validResponseCount / submitted) * 100) : 100,
+    // Three distinct fields, deliberately. Folding the band and the ratio into
+    // one string ("STANDARD (90%)") read as "90% confident", which is not what
+    // either number means — and the reason was a canned sentence that asserted
+    // a high don't-know rate whenever the band was LOW.
+    confidenceReason: rq.confidenceReason,
+    // Data completeness. No submissions → 100 (nothing was dropped).
+    validResponseRatePct: submitted > 0 ? Math.round((rq.validResponseCount / submitted) * 100) : 100,
     dontKnowRate: rq.dontKnowRate,
+    dontKnowBand: dontKnowBandOf(rq.dontKnowRate),
   };
 }
 
 type DomainSeverityScore = ReportDataSnapshot["severity"]["domainSeverityScores"][number];
 
-// Quantitative confidence % = valid-response ratio (valid / submitted × 100),
-// rounded. submitted = valid + excluded. No responses at all → 100 (nothing was
-// dropped) rather than a misleading 0.
+// Valid-response ratio (valid / submitted × 100), rounded. submitted = valid +
+// excluded. No responses at all → 100 (nothing was dropped) rather than a
+// misleading 0. This is data completeness, NOT a confidence percentage.
 function validResponseRatioPct(ds: DomainSeverityScore | undefined): number {
   if (!ds) return 100;
   const submitted = ds.validResponseCount + ds.excludedResponseCount;
   return submitted > 0 ? Math.round((ds.validResponseCount / submitted) * 100) : 100;
+}
+
+// Per-domain confidence reason, from the same rule the flag itself uses. A
+// domain flagged LOW on sample size no longer claims a high don't-know rate.
+function domainConfidenceReason(ds: DomainSeverityScore | undefined): string {
+  if (!ds) return "";
+  return composeConfidenceReason({
+    validResponseCount: ds.validResponseCount,
+    dontKnowRate: ds.dontKnowRate,
+    thresholds: DEFAULT_THRESHOLDS,
+  });
 }
 
 // Domains carry both severity (from severity.domainSeverityScores) and the
@@ -103,22 +122,40 @@ function validResponseRatioPct(ds: DomainSeverityScore | undefined): number {
 function mapDomains(snapshot: ReportDataSnapshot): DomainComponent[] {
   const byKey = new Map(snapshot.severity.domainSeverityScores.map((d) => [d.domainKey, d]));
   const perf = snapshot.priority.domainPerformanceScores;
+  const cycle = snapshot.study.assessmentCycle;
+
+  // Cycle-aware. The old blanket SINGLE_CYCLE_TREND_NOTE asserted "trends cannot
+  // be assessed from a single assessment cycle" on a Cycle 2 report, directly
+  // contradicting its own header.
+  const trendFor = (severity: number | null): string =>
+    deriveTrendNote({
+      assessmentCycle: cycle,
+      currentSeverity: severity,
+      // Prior-cycle rollups are not stored per cycle yet; the note says so
+      // rather than implying a comparison was made.
+      priorCycleSeverity: null,
+      scopeLabel: "this domain",
+    });
 
   if (perf.length > 0) {
     return perf.map((dp) => {
       const ds = byKey.get(dp.domainKey);
       const confidence = normConfidence(ds?.confidenceLevel);
+      // The performance-score block carries its own severity copy; prefer the
+      // severity rollup, which is the authority on "not measured".
+      const severityScore = ds ? ds.severityScore : dp.severityScore;
       const base: DomainComponent = {
         name: dp.domainName,
         domainCode: dp.domainKey,
-        severityScore: dp.severityScore,
+        severityScore,
         performanceScore: dp.performanceScore,
         weight: dp.weight,
         weightedContribution: dp.weightedContribution,
         confidence,
-        confidencePct: validResponseRatioPct(ds),
+        confidenceReason: domainConfidenceReason(ds),
+        validResponseRatePct: validResponseRatioPct(ds),
         kpiCount: ds?.kpiCount ?? 0,
-        trendNote: SINGLE_CYCLE_TREND_NOTE,
+        trendNote: trendFor(severityScore),
         isCriticalDomain: dp.isCriticalDomain,
       };
       // Low-confidence domains surface their sample size (drives the data-quality note).
@@ -132,14 +169,18 @@ function mapDomains(snapshot: ReportDataSnapshot): DomainComponent[] {
     const base: DomainComponent = {
       name: ds.domainName,
       domainCode: ds.domainKey,
-      severityScore: ds.severityScore ?? 0,
-      performanceScore: 0,
-      weight: 0,
-      weightedContribution: 0,
+      // No `?? 0`: an unmeasured domain stays null and renders "—".
+      severityScore: ds.severityScore,
+      // Null, not 0 — no priority assessment exists in this fallback, and a 0
+      // performance score is a real and very bad result.
+      performanceScore: null,
+      weight: null,
+      weightedContribution: null,
       confidence,
-      confidencePct: validResponseRatioPct(ds),
+      confidenceReason: domainConfidenceReason(ds),
+      validResponseRatePct: validResponseRatioPct(ds),
       kpiCount: ds.kpiCount,
-      trendNote: SINGLE_CYCLE_TREND_NOTE,
+      trendNote: trendFor(ds.severityScore),
       isCriticalDomain: false,
     };
     return confidence === "LOW" ? { ...base, validResponseCount: ds.validResponseCount } : base;
@@ -151,9 +192,15 @@ function mapTopKpis(snapshot: ReportDataSnapshot): TopKpi[] {
     rank: k.rank,
     kpi: k.kpiName,
     domain: k.domainName,
-    severityScore: k.severityScore ?? 0,
+    // No `?? 0`: an unmeasured KPI shown as 0 sorted to the bottom of the
+    // severity table as though it were the mildest finding.
+    severityScore: k.severityScore,
     confidence: normConfidence(k.confidenceLevel),
     validResponseCount: k.validResponseCount,
+    notMeasuredReason:
+      k.severityScore === null
+        ? `Not measured — ${k.validResponseCount} valid response(s) could be scored for this KPI.`
+        : null,
   }));
 }
 
@@ -163,7 +210,14 @@ function mapTopKpis(snapshot: ReportDataSnapshot): TopKpi[] {
  * consistently (never blank). Returns the aiSummary with its note copies blanked
  * (so renderers don't show them twice) plus the two promoted values.
  */
-export function promoteNotes(ai: AiSummaryBlock): {
+export function promoteNotes(
+  ai: AiSummaryBlock,
+  /** Deterministic, cycle-aware fallback. Callers that know the assessment cycle
+   *  pass one; SINGLE_CYCLE_TREND_NOTE remains only for callers that don't, and
+   *  is no longer asserted over a cycle-2 report by a mapper that could have
+   *  known better. */
+  trendFallback: string = SINGLE_CYCLE_TREND_NOTE,
+): {
   aiSummary: AiSummaryBlock;
   dataQualityNote: string;
   trendNote: string;
@@ -171,8 +225,18 @@ export function promoteNotes(ai: AiSummaryBlock): {
   return {
     aiSummary: { ...ai, dataQualityNote: "", trendNote: "" },
     dataQualityNote: ai.dataQualityNote || DATA_QUALITY_NOTE_UNAVAILABLE,
-    trendNote: ai.trendNote || SINGLE_CYCLE_TREND_NOTE,
+    trendNote: ai.trendNote || trendFallback,
   };
+}
+
+/** The report-level trend note for a snapshot, from its own cycle number. */
+export function snapshotTrendNote(snapshot: ReportDataSnapshot): string {
+  return deriveTrendNote({
+    assessmentCycle: snapshot.study.assessmentCycle,
+    currentSeverity: snapshot.severity.overallVillageNeedsIndex,
+    priorCycleSeverity: null,
+    scopeLabel: "this survey",
+  });
 }
 
 /** Gemini `aiOutputJson` → our AI summary block (tolerant of missing fields). */
@@ -220,41 +284,61 @@ export interface CombinedMapperInput extends SurveyMapperInput {
 }
 
 /**
- * RPT01 Individual Survey Report. Shares `header` + `severity` + `priority` +
- * `topKpis` with the village mapper on purpose — that's what makes the existing
- * gauge/radar/bars/donut renderers pick it up with no changes.
+ * The shared survey half of RPT01 and RPT15. Shares `header` + `severity` +
+ * `priority` + `topKpis` with the village mapper on purpose — that's what makes
+ * the existing gauge/radar/bars/donut renderers pick it up with no changes.
+ *
+ * RPT01 adds the six Unified Narrative sections on top (see
+ * ReportSummaryDataProvider.getIndividualSurveyReport); RPT15 takes this alone.
  */
-export function snapshotToIndividualSurveyContent(
-  input: SurveyMapperInput,
-): IndividualSurveyReportContent {
+export function snapshotToSurveyBase(input: SurveyMapperInput): SurveyReportBase {
   const { snapshot, coverage } = input;
-  const notes = promoteNotes(aiOutputToSummaryBlock(input.aiOutput));
+  const notes = promoteNotes(aiOutputToSummaryBlock(input.aiOutput), snapshotTrendNote(snapshot));
+  // The trend note is a factual statement about which cycles have stored
+  // rollups — a backend fact, not a narrative. The AI's version said trends
+  // "could be established with comparative data" while the per-domain note on
+  // the same page said no Cycle 2 rollup exists. Backend wins.
+  const trendNote = snapshotTrendNote(snapshot);
   return {
     header: buildHeader(snapshot, input.methodologyVersion),
     survey: input.survey,
     coverage,
     responseQuality: mapResponseQuality(snapshot),
     severity: {
-      overallVillageNeedsIndex: snapshot.severity.overallVillageNeedsIndex ?? 0,
+      // No `?? 0`: an unscored survey renders "—", not a Needs Index of zero
+      // (which reads as "assessed, no needs found").
+      overallVillageNeedsIndex: snapshot.severity.overallVillageNeedsIndex,
       label: snapshot.severity.severityBand,
       domains: mapDomains(snapshot),
     },
-    priority: {
-      villagePriorityScore: snapshot.priority.villagePriorityScore,
-      priorityStatus: snapshot.priority.priorityStatus as PriorityStatus,
-      overrideApplied: snapshot.priority.overrideApplied,
-      overrideReason: snapshot.priority.overrideReason,
-    },
+    priority: mapPriority(snapshot),
     topKpis: mapTopKpis(snapshot),
     responseFunnel: buildResponseFunnel(coverage),
     questionCoverage: buildQuestionCoverage(snapshot),
     qualitativeEvidence: snapshot.evidence.map((e) => ({ theme: e.evidenceTitle, summary: e.description })),
     aiSummary: notes.aiSummary,
     dataQualityNote: notes.dataQualityNote,
-    trendNote: notes.trendNote,
+    trendNote,
     approval: input.approval ?? EMPTY_APPROVAL,
     demographics: input.demographics ?? null,
     filters: input.filters ?? {},
+  };
+}
+
+// A missing priority assessment is "not calculable", not a score of 0 with a
+// 'LOW' status — which contradicted the banding itself (≤40 → HIGH) and told a
+// reader the village was the least urgent one in the study.
+function mapPriority(snapshot: ReportDataSnapshot) {
+  const score = snapshot.priority.villagePriorityScore;
+  return {
+    villagePriorityScore: score,
+    priorityStatus: priorityStatusOf(score) as PriorityStatus | null,
+    notCalculableReason:
+      score === null
+        ? "No village priority assessment is stored for this survey and scope — priority scoring has not been run, or no domain weights are configured."
+        : null,
+    overrideApplied: snapshot.priority.overrideApplied,
+    overrideReason: snapshot.priority.overrideReason,
   };
 }
 
@@ -266,7 +350,7 @@ export function snapshotToIndividualSurveyContent(
  * two reports cannot drift apart. The reconciliation spec asserts exactly this.
  */
 export function snapshotToCombinedContent(input: CombinedMapperInput): CombinedReportContent {
-  const individual = snapshotToIndividualSurveyContent(input);
+  const individual = snapshotToSurveyBase(input);
   const { dashboard, sla } = input;
 
   return {
@@ -326,16 +410,11 @@ export function snapshotToVillageContent(input: MapperInput): VillageReportConte
     },
     responseQuality: mapResponseQuality(snapshot),
     severity: {
-      overallVillageNeedsIndex: snapshot.severity.overallVillageNeedsIndex ?? 0,
+      overallVillageNeedsIndex: snapshot.severity.overallVillageNeedsIndex,
       label: snapshot.severity.severityBand,
       domains: mapDomains(snapshot),
     },
-    priority: {
-      villagePriorityScore: snapshot.priority.villagePriorityScore,
-      priorityStatus: snapshot.priority.priorityStatus as PriorityStatus,
-      overrideApplied: snapshot.priority.overrideApplied,
-      overrideReason: snapshot.priority.overrideReason,
-    },
+    priority: mapPriority(snapshot),
     topKpis: mapTopKpis(snapshot),
     qualitativeEvidence: snapshot.evidence.map((e) => ({ theme: e.evidenceTitle, summary: e.description })),
     aiSummary: notes.aiSummary,
@@ -356,7 +435,7 @@ export function snapshotToSectorContent(input: MapperInput): SectorReportContent
     header: buildHeader(snapshot, input.methodologyVersion),
     domains: mapDomains(snapshot),
     overall: {
-      overallVillageNeedsIndex: snapshot.severity.overallVillageNeedsIndex ?? 0,
+      overallVillageNeedsIndex: snapshot.severity.overallVillageNeedsIndex,
       label: snapshot.severity.severityBand,
       domains: [],
     },
@@ -390,9 +469,9 @@ export function snapshotToRegionContent(input: MapperInput): RegionReportContent
         regionName: snapshot.study.regionName || snapshot.study.studyName,
         governorate: snapshot.study.governorateName ?? null,
         responseCount: snapshot.responseQuality.validResponseCount,
-        severityScore: snapshot.severity.overallVillageNeedsIndex ?? 0,
+        severityScore: snapshot.severity.overallVillageNeedsIndex,
         priorityScore: snapshot.priority.villagePriorityScore,
-        priorityStatus: snapshot.priority.priorityStatus as PriorityStatus,
+        priorityStatus: priorityStatusOf(snapshot.priority.villagePriorityScore),
       },
     ],
     aiSummary: notes.aiSummary,

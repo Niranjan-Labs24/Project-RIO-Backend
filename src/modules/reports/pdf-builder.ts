@@ -33,8 +33,16 @@ function normalizeAscii(s: string): string {
     .replace(/…/g, "...")
     .replace(/[•·]/g, "-")
     .replace(/×/g, "x")
-    .replace(/→/g, "->")
-    .replace(/←/g, "<-")
+    // Base Helvetica is WinAnsi — anything outside it becomes "?", which is how
+    // "Domain → Sub-domain → Indicator" printed as "Domain ??? Sub-domain".
+    // Fold the symbols our own copy actually uses to ASCII equivalents.
+    .replace(/[→⇒]/g, "->")
+    .replace(/[←⇐]/g, "<-")
+    .replace(/≥/g, ">=")
+    .replace(/≤/g, "<=")
+    .replace(/≠/g, "!=")
+    .replace(/[Σ∑]/g, "Sum")
+    .replace(/[⚑✓✗]/g, "")
     .replace(/[   ]/g, " ");
 }
 function esc(raw: string): string {
@@ -85,20 +93,32 @@ export class Pdf {
   constructor() {
     this.pages.push(this.ops);
   }
+  // The true physical page number reached so far (1-indexed) — used by
+  // renderers that need an accurate "Page K of N" footer rather than a
+  // fixed conceptual page count, since real data volume can push content
+  // across more physical pages than a document's nominal page count.
+  get pageCount(): number {
+    return this.pages.length;
+  }
   private addPage(): void {
     this.ops = [];
     this.pages.push(this.ops);
     this.y = TOP;
   }
-  // Force a new physical page regardless of remaining space on the current
-  // one — used by renderers that lay out fixed conceptual pages (e.g. the
-  // NCNP Consolidated Report's 6-page structure) rather than letting content
-  // auto-flow across page boundaries wherever it happens to overflow.
+  // Start a fresh page unconditionally. Reports with a fixed physical page
+  // structure (e.g. the NCNP consolidated report) drive their own page loop
+  // rather than letting content flow, so they need an explicit break.
   newPage(): void {
     this.addPage();
   }
-  ensure(space: number): void {
-    if (this.y + space > PAGE_H - BOTTOM) this.addPage();
+  // Returns true when a page break actually happened, so callers that draw
+  // repeating chrome (a table's column header) can redraw it on the new page.
+  ensure(space: number): boolean {
+    if (this.y + space > PAGE_H - BOTTOM) {
+      this.addPage();
+      return true;
+    }
+    return false;
   }
   private py(fromTop: number): number {
     return PAGE_H - fromTop;
@@ -257,7 +277,7 @@ function renderHeader(pdf: Pdf, doc: ReportDoc): void {
 }
 
 export function heading(pdf: Pdf, text: string): void {
-  pdf.ensure(23);
+  pdf.ensure(22);
   pdf.y += 4;
   pdf.text(pdf.rx, 11.5, true, truncate(text, 11.5, pdf.rw), ACCENT);
   pdf.y += 14;
@@ -280,32 +300,52 @@ function renderKeyValue(pdf: Pdf, rows: Array<{ label: string; value: string }>)
   }
 }
 
+/** The widest single word in a cell — text that cannot be wrapped, so a column
+ *  narrower than this must truncate mid-word ("Livelihood" → "Livel.."). */
+function widestWord(str: string, size: number): number {
+  // The hierarchy's indent is part of the first word's unbreakable width.
+  const indent = /^\s+/.exec(str)?.[0] ?? "";
+  return str
+    .trim()
+    .split(/\s+/)
+    .reduce((max, w, i) => Math.max(max, textWidth((i === 0 ? indent : "") + w, size)), 0);
+}
+
 function renderTable(pdf: Pdf, columns: string[], rows: string[][]): void {
   const n = columns.length || 1;
   const size = n > 6 ? 7 : n > 4 ? 7.5 : 8.5;
   const rowH = size + 5;
-  // Guarantee every column at least enough room for its own header text first
-  // — a purely character-count-proportional split (the old approach) let one
-  // long-text column (e.g. "KPI") starve the others below even their own
-  // header's width, truncating "Severity"/"Confidence"/"Responses" headers
-  // themselves. Only after every header fits do we hand out the remaining
-  // space, proportional to how much each column's content actually overflows
-  // its header width (so the long-text column still gets most of it).
-  const headerMin = columns.map((c) => textWidth(c, size) + 10);
-  const headerMinSum = headerMin.reduce((a, b) => a + b, 0) || 1;
+
+  // Minimum width per column = whatever CANNOT be broken: its own header, and
+  // the widest unbreakable word in its cells. Sizing on the header alone left
+  // "Domain" 32pt wide, so every "Livelihood" printed as "Livel.." — the column
+  // was legally full while its only value was unreadable.
+  const minW = columns.map((c, i) => {
+    const header = textWidth(c, size);
+    const word = Math.max(0, ...rows.map((r) => widestWord(r[i] ?? "", size)));
+    return Math.max(header, word) + 10;
+  });
+  const minSum = minW.reduce((a, b) => a + b, 0) || 1;
   const chars = columns.map((c, i) => Math.max(c.length, ...rows.map((r) => (r[i] ?? "").length), 3));
+
   let widths: number[];
-  if (headerMinSum <= pdf.rw) {
-    const extra = pdf.rw - headerMinSum;
-    const overflow = chars.map((ch, i) => Math.max(0, ch * size * 0.52 - headerMin[i]!));
+  if (minSum <= pdf.rw) {
+    // Everything unbreakable fits. Hand out the slack proportional to how much
+    // each column's full content still overflows, so a long prose column (Notes)
+    // takes most of it without starving the short ones.
+    const extra = pdf.rw - minSum;
+    const overflow = chars.map((ch, i) => Math.max(0, ch * size * 0.52 - minW[i]!));
     const totalOverflow = overflow.reduce((a, b) => a + b, 0);
-    widths = headerMin.map((hw, i) => hw + (totalOverflow > 0 ? (overflow[i]! / totalOverflow) * extra : extra / n));
+    widths = minW.map((w, i) => w + (totalOverflow > 0 ? (overflow[i]! / totalOverflow) * extra : extra / n));
   } else {
-    // Not even every header fits — best effort, proportional to header width.
-    widths = headerMin.map((hw) => Math.max(26, (hw / headerMinSum) * pdf.rw));
+    // Too many columns for the page. Scale the minimums down together — some
+    // mid-word truncation is then unavoidable, and the right fix is a narrower
+    // column set (see report-doc's compact vs full need-record columns).
+    widths = minW.map((w) => Math.max(26, (w / minSum) * pdf.rw));
   }
   const sum = widths.reduce((a, b) => a + b, 0);
   if (sum > pdf.rw) widths = widths.map((w) => (w / sum) * pdf.rw);
+
   const xs: number[] = [];
   let cursor = pdf.rx;
   for (const w of widths) {
@@ -313,11 +353,20 @@ function renderTable(pdf: Pdf, columns: string[], rows: string[][]): void {
     cursor += w;
   }
   const numeric = columns.map((_, i) => isNumericColumn(rows, i));
-  // Data cells wrap onto up to 2 lines instead of truncating with "..": a
-  // value like "Core Methodology Domain" needs to actually be readable, not
-  // just hinted at — single-line truncation was cutting real column values
-  // (Domain, KPI text) off entirely even once headers themselves fit.
-  const MAX_LINES = 2;
+  // Prose cells (a Notes column) wrap over several lines rather than being cut
+  // off — a reason a reader cannot finish reading is no reason at all.
+  const MAX_LINES = 4;
+  const rowHeight = (cells: string[], wrapCells: boolean): number => {
+    const cellLines = cells.map((c, i) => {
+      const w = widths[i] ?? 40;
+      if (!wrapCells) return [truncate(c, size, w - 6)];
+      const lines = wrap(c, size, w - 6);
+      if (lines.length <= MAX_LINES) return lines;
+      return [...lines.slice(0, MAX_LINES - 1), truncate(lines.slice(MAX_LINES - 1).join(" "), size, w - 6)];
+    });
+    const lineCount = Math.max(1, ...cellLines.map((l) => l.length));
+    return size + 5 + (lineCount - 1) * (size + 1);
+  };
   const drawRow = (cells: string[], bold: boolean, wrapCells: boolean) => {
     const cellLines = cells.map((c, i) => {
       const w = widths[i] ?? 40;
@@ -328,7 +377,6 @@ function renderTable(pdf: Pdf, columns: string[], rows: string[][]): void {
     });
     const lineCount = Math.max(1, ...cellLines.map((l) => l.length));
     const h = size + 5 + (lineCount - 1) * (size + 1);
-    pdf.ensure(h + 2);
     const top = pdf.y;
     cellLines.forEach((lines, i) => {
       const w = widths[i] ?? 40;
@@ -340,11 +388,39 @@ function renderTable(pdf: Pdf, columns: string[], rows: string[][]): void {
     });
     pdf.y = top + h;
   };
-  pdf.rect(pdf.rx, pdf.rw, rowH, LIGHT);
-  drawRow(columns, true, false);
-  pdf.rule(GRAY, 0.5);
-  pdf.y += 2;
-  for (const row of rows) drawRow(row, false, true);
+  const drawHeader = () => {
+    pdf.rect(pdf.rx, pdf.rw, rowH, LIGHT);
+    drawRow(columns, true, false);
+    pdf.rule(GRAY, 0.5);
+    pdf.y += 2;
+  };
+  const headerH = rowHeight(columns, false);
+  // Small tables (the "top N" / "Showing N of Total" summary tables this
+  // report is built from — see this file's own header comment) are placed
+  // as one atomic block: header + every row reserved together upfront. Without
+  // this, a table that's short but not quite short enough can still trigger
+  // two distinct orphan patterns: the header separated from its body (only
+  // the first row was ever checked), or — just as visibly — the table's
+  // *last* row spilling alone onto an otherwise-blank next page while the
+  // rest fit fine on the previous one. Reserving the whole thing at once
+  // avoids both. Large/unbounded tables (rare, but not capped by this
+  // report's "top N" convention) fall back to per-row breaks — atomically
+  // reserving a 200-row table would just force the entire thing onto a fresh
+  // page for no benefit — and repeat the header on whichever row's break
+  // actually lands, so a continuation page is never headerless.
+  const SMALL_TABLE_MAX_ROWS = 20;
+  if (rows.length <= SMALL_TABLE_MAX_ROWS) {
+    const totalH = rows.reduce((sum, row) => sum + rowHeight(row, true), headerH);
+    pdf.ensure(totalH + 4);
+  } else {
+    const firstRowH = rows.length > 0 ? rowHeight(rows[0]!, true) : 0;
+    pdf.ensure(headerH + firstRowH + 4);
+  }
+  drawHeader();
+  for (const row of rows) {
+    if (pdf.ensure(rowHeight(row, true) + 2)) drawHeader();
+    drawRow(row, false, true);
+  }
 }
 
 function renderBars(pdf: Pdf, max: number, bars: Array<{ label: string; value: number }>): void {
@@ -380,22 +456,35 @@ function renderPie(pdf: Pdf, slices: Array<{ label: string; value: number }>): v
 }
 
 function renderGauge(pdf: Pdf, value: number, max: number, sub?: string): void {
-  const r = 30;
-  pdf.ensure(2 * r + 6);
+  // Sized to the column it sits in rather than a fixed 30pt radius, and centred
+  // in it — the dial used to hug the left edge of a half-width column with the
+  // rest of the space empty, which read as a rendering fault.
+  const r = Math.max(30, Math.min(46, pdf.rw / 2 - 14));
+  const scaleH = 12;
+  pdf.ensure(2 * r + scaleH + 10);
   const top = pdf.y;
-  const cx = pdf.rx + r;
+  const cx = pdf.rx + pdf.rw / 2;
   const cyc = top + r;
   const frac = max > 0 ? Math.max(0, Math.min(1, value / max)) : 0;
-  pdf.pie(pdf.rx, r, frac >= 1 ? [1] : [frac, 1 - frac], [BAR, LIGHT]);
-  pdf.disc(cx, cyc, r * 0.62, "1 1 1");
+
+  pdf.pie(cx - r, r, frac >= 1 ? [1] : [frac, 1 - frac], [BAR, LIGHT]);
+  pdf.disc(cx, cyc, r * 0.64, "1 1 1");
+
   const valStr = String(value);
-  pdf.y = cyc - 11;
-  pdf.text(cx - textWidth(valStr, 14) / 2, 14, true, valStr);
+  const valSize = r >= 40 ? 18 : 15;
+  pdf.y = cyc - valSize * 0.78;
+  pdf.text(cx - textWidth(valStr, valSize) / 2, valSize, true, valStr, ACCENT);
   if (sub) {
-    pdf.y = cyc + 3;
-    pdf.text(cx - textWidth(sub, 7.5) / 2, 7.5, false, sub, GRAY);
+    pdf.y = cyc + 4;
+    pdf.text(cx - textWidth(sub, 8) / 2, 8, true, sub, GRAY);
   }
+
+  // States the scale the dial is on. A ring with a bare number in it does not
+  // say whether 51 is good or bad, or out of what.
   pdf.y = top + 2 * r + 5;
+  const scale = `0-${max} - higher = worse`;
+  pdf.text(cx - textWidth(scale, 7) / 2, 7, false, scale, GRAY);
+  pdf.y += scaleH;
 }
 
 function renderRadar(pdf: Pdf, axes: string[], max: number, series: Array<{ name: string; values: number[] }>): void {
@@ -538,15 +627,22 @@ function renderNote(pdf: Pdf, text: string): void {
   pdf.y += 2;
 }
 
-function renderColumns(pdf: Pdf, children: DocSection[], gap = 14): void {
+function renderColumns(pdf: Pdf, children: DocSection[], gap = 14, weights?: number[]): void {
   pdf.ensure(158);
   const startY = pdf.y;
   const n = children.length || 1;
-  const colW = (pdf.rw - gap * (n - 1)) / n;
+  // Equal split unless the caller states a ratio. A chart beside a long
+  // key/value block wants the narrower half — an even split left the gauge in a
+  // sea of white space while the block's values wrapped four lines deep.
+  const w = weights?.length === n ? weights : children.map(() => 1);
+  const total = w.reduce((a, b) => a + b, 0) || 1;
+  const usable = pdf.rw - gap * (n - 1);
+  const colW = w.map((f) => (f / total) * usable);
   let maxEnd = startY;
+  let x = pdf.rx;
   children.forEach((child, i) => {
-    const x = pdf.rx + i * (colW + gap);
-    const end = pdf.column(x, colW, startY, () => renderSection(pdf, child));
+    const end = pdf.column(x, colW[i]!, startY, () => renderSection(pdf, child));
+    x += colW[i]! + gap;
     maxEnd = Math.max(maxEnd, end);
   });
   pdf.y = maxEnd;

@@ -19,6 +19,10 @@ import {
   type VillageReportQuery,
 } from "../report-data.provider";
 import { buildComparisonBand, buildResponseFunnel } from "../survey-report-derivations";
+import { buildUnifiedRpt01, type UnifiedRpt01Input } from "../build-unified-rpt01";
+import type { ClassificationRow, KpiRollupRow } from "../build-need-records";
+import type { DomainMeta, RollupLevelValue } from "../build-need-hierarchy";
+import { DEFAULT_THRESHOLDS } from "../../need-record.types";
 
 // TEST-ONLY report content, shaped like RPT-2026-001. This is a test double,
 // NOT a provider the app can use: it is deliberately not @Injectable and lives
@@ -49,23 +53,26 @@ export class StubReportDataProvider extends ReportDataProvider {
         submittedResponses: 42,
         validResponses: 38,
         overallConfidence: "STANDARD",
-        confidencePct: 90,
+        confidenceReason: "High response completeness.",
+        validResponseRatePct: 90,
         dontKnowRate: 12.4,
+        dontKnowBand: "moderate",
       },
       severity: {
         overallVillageNeedsIndex: 63.8,
         label: "Medium",
         domains: [
-          { name: "Health", domainCode: "HEALTH", severityScore: 72, performanceScore: 28, weight: 0.3, weightedContribution: 8.4, confidence: "STANDARD", confidencePct: 92, kpiCount: 6, trendNote: SINGLE_CYCLE_TREND_NOTE, isCriticalDomain: true },
-          { name: "Education", domainCode: "EDUCATION", severityScore: 48, performanceScore: 52, weight: 0.25, weightedContribution: 13, confidence: "STANDARD", confidencePct: 88, kpiCount: 5, trendNote: SINGLE_CYCLE_TREND_NOTE, isCriticalDomain: false },
-          { name: "Infrastructure", domainCode: "INFRASTRUCTURE", severityScore: 63, performanceScore: 37, weight: 0.2, weightedContribution: 7.4, confidence: "STANDARD", confidencePct: 90, kpiCount: 4, trendNote: SINGLE_CYCLE_TREND_NOTE, isCriticalDomain: false },
-          { name: "Livelihood", domainCode: "LIVELIHOOD", severityScore: 55, performanceScore: 45, weight: 0.15, weightedContribution: 6.75, confidence: "STANDARD", confidencePct: 85, kpiCount: 4, trendNote: SINGLE_CYCLE_TREND_NOTE, isCriticalDomain: false },
-          { name: "Water & Sanitation", domainCode: "WATER_SANITATION", severityScore: 81, performanceScore: 19, weight: 0.1, weightedContribution: 1.9, confidence: "LOW", confidencePct: 62, kpiCount: 5, trendNote: SINGLE_CYCLE_TREND_NOTE, validResponseCount: 8, dontKnowRate: 25, isCriticalDomain: true },
+          { name: "Health", domainCode: "HEALTH", severityScore: 72, performanceScore: 28, weight: 0.3, weightedContribution: 8.4, confidence: "STANDARD", confidenceReason: "High response completeness.", validResponseRatePct: 92, kpiCount: 6, trendNote: SINGLE_CYCLE_TREND_NOTE, isCriticalDomain: true },
+          { name: "Education", domainCode: "EDUCATION", severityScore: 48, performanceScore: 52, weight: 0.25, weightedContribution: 13, confidence: "STANDARD", confidenceReason: "High response completeness.", validResponseRatePct: 88, kpiCount: 5, trendNote: SINGLE_CYCLE_TREND_NOTE, isCriticalDomain: false },
+          { name: "Infrastructure", domainCode: "INFRASTRUCTURE", severityScore: 63, performanceScore: 37, weight: 0.2, weightedContribution: 7.4, confidence: "STANDARD", confidenceReason: "High response completeness.", validResponseRatePct: 90, kpiCount: 4, trendNote: SINGLE_CYCLE_TREND_NOTE, isCriticalDomain: false },
+          { name: "Livelihood", domainCode: "LIVELIHOOD", severityScore: 55, performanceScore: 45, weight: 0.15, weightedContribution: 6.75, confidence: "STANDARD", confidenceReason: "High response completeness.", validResponseRatePct: 85, kpiCount: 4, trendNote: SINGLE_CYCLE_TREND_NOTE, isCriticalDomain: false },
+          { name: "Water & Sanitation", domainCode: "WATER_SANITATION", severityScore: 81, performanceScore: 19, weight: 0.1, weightedContribution: 1.9, confidence: "LOW", confidenceReason: "Small sample: 8 valid response(s), below the 10 required for STANDARD confidence.", validResponseRatePct: 62, kpiCount: 5, trendNote: SINGLE_CYCLE_TREND_NOTE, validResponseCount: 8, dontKnowRate: 25, isCriticalDomain: true },
         ],
       },
       priority: {
         villagePriorityScore: 37.45,
         priorityStatus: "HIGH",
+        notCalculableReason: null,
         overrideApplied: true,
         overrideReason:
           "Critical Domain Override: Water & Sanitation performance score is 19, below the threshold of 30.",
@@ -146,7 +153,9 @@ export class StubReportDataProvider extends ReportDataProvider {
       evidenceFilesTotal: 6,
       evidenceIncludedInReport: 4,
       domainsScored: 5,
+      kpisAttempted: 24,
       kpisScored: 24,
+      kpisNotMeasurable: 0,
       assessmentPeriod: "01 July 2026 - 15 July 2026",
     };
   }
@@ -178,7 +187,12 @@ export class StubReportDataProvider extends ReportDataProvider {
       filters: query.filters,
     });
     const coverage = this.stubCoverage();
+    // The six Unified Narrative sections are produced by the REAL pure builder,
+    // not hand-written — a fixture that hand-rolls them would let the builder
+    // regress while the export specs stayed green.
+    const unified = buildUnifiedRpt01(stubUnifiedInput(village, coverage));
     return {
+      ...unified,
       header: village.header,
       survey: this.stubSurveyIdentity(query),
       coverage,
@@ -188,7 +202,11 @@ export class StubReportDataProvider extends ReportDataProvider {
       topKpis: village.topKpis,
       responseFunnel: buildResponseFunnel(coverage),
       questionCoverage: village.severity.domains.map((d) => ({ domain: d.name, count: d.kpiCount })),
-      qualitativeEvidence: village.qualitativeEvidence,
+      // RPT01 is SURVEY_ONLY — it must not borrow the village report's document
+      // evidence, or the mock contradicts the Report Basis line the real
+      // provider prints. The real path supplies no evidence for this scope
+      // either (see report-summary.service.ts).
+      qualitativeEvidence: [],
       aiSummary: village.aiSummary,
       dataQualityNote: village.dataQualityNote,
       trendNote: village.trendNote,
@@ -281,8 +299,8 @@ export class StubReportDataProvider extends ReportDataProvider {
         reportGeneratedAt: "2026-07-22T10:30:00Z",
       },
       domains: [
-        { name: "Health", domainCode: "HEALTH", severityScore: 72, performanceScore: 28, weight: 0.3, weightedContribution: 8.4, confidence: "STANDARD", confidencePct: 92, kpiCount: 6, trendNote: SINGLE_CYCLE_TREND_NOTE, isCriticalDomain: true },
-        { name: "Water & Sanitation", domainCode: "WATER_SANITATION", severityScore: 81, performanceScore: 19, weight: 0.1, weightedContribution: 1.9, confidence: "LOW", confidencePct: 62, kpiCount: 5, trendNote: SINGLE_CYCLE_TREND_NOTE, validResponseCount: 8, dontKnowRate: 25, isCriticalDomain: true },
+        { name: "Health", domainCode: "HEALTH", severityScore: 72, performanceScore: 28, weight: 0.3, weightedContribution: 8.4, confidence: "STANDARD", confidenceReason: "High response completeness.", validResponseRatePct: 92, kpiCount: 6, trendNote: SINGLE_CYCLE_TREND_NOTE, isCriticalDomain: true },
+        { name: "Water & Sanitation", domainCode: "WATER_SANITATION", severityScore: 81, performanceScore: 19, weight: 0.1, weightedContribution: 1.9, confidence: "LOW", confidenceReason: "Small sample: 8 valid response(s), below the 10 required for STANDARD confidence.", validResponseRatePct: 62, kpiCount: 5, trendNote: SINGLE_CYCLE_TREND_NOTE, validResponseCount: 8, dontKnowRate: 25, isCriticalDomain: true },
       ],
       overall: {
         overallVillageNeedsIndex: 63.8,
@@ -347,8 +365,10 @@ export class StubReportDataProvider extends ReportDataProvider {
         submittedResponses: 42,
         validResponses: 38,
         overallConfidence: "STANDARD",
-        confidencePct: 90,
+        confidenceReason: "High response completeness.",
+        validResponseRatePct: 90,
         dontKnowRate: 12.4,
+        dontKnowBand: "moderate",
       },
       aiSummary: {
         executiveSummary: "Water and health are the dominant strategic priorities across all entities.",
@@ -446,4 +466,126 @@ export class StubReportDataProvider extends ReportDataProvider {
       ],
     };
   }
+}
+
+// Fixture inputs for the real RPT01 section builder. Derived from the village
+// fixture's own domains so the sections cannot disagree with the severity table
+// they sit beside — which is exactly what the self-consistency invariants check.
+function stubUnifiedInput(
+  village: VillageReportContent,
+  coverage: CoverageBlock,
+): UnifiedRpt01Input {
+  const kpiRollups: KpiRollupRow[] = [];
+  const classificationByIndicator = new Map<string, ClassificationRow>();
+  const domainMetaByKey = new Map<string, DomainMeta>();
+  const subDomainByKey = new Map<string, RollupLevelValue>();
+  const indicatorByKey = new Map<string, RollupLevelValue>();
+  const domainWeightByKey = new Map<string, number | null>();
+
+  for (const d of village.severity.domains) {
+    const subDomain = `${d.name} Services`;
+    subDomainByKey.set(subDomain, { severityScore: d.severityScore, confidence: d.confidence });
+    domainWeightByKey.set(d.domainCode, d.weight);
+    domainMetaByKey.set(d.domainCode, {
+      domain: d.name,
+      domainKey: d.domainCode,
+      severityScore: d.severityScore,
+      performanceScore: d.performanceScore,
+      weight: d.weight,
+      weightedContribution: d.weightedContribution,
+      confidence: d.confidence,
+      confidenceReason: d.confidenceReason,
+      isCriticalDomain: d.isCriticalDomain,
+      kpisDefined: d.kpiCount,
+      questionsAsked: d.kpiCount,
+      priorCycleSeverity: null,
+    });
+
+    for (let i = 1; i <= d.kpiCount; i += 1) {
+      const kpi = `${d.domainCode}-K${i}`;
+      const indicator = `${d.name} Indicator ${i}`;
+      indicatorByKey.set(indicator, { severityScore: d.severityScore, confidence: d.confidence });
+      classificationByIndicator.set(kpi, {
+        domain: d.name,
+        domainKey: d.domainCode,
+        subDomain,
+        subDomainKey: `${d.domainCode}_SERVICES`,
+        indicatorId: indicator,
+        indicatorName: indicator,
+        gapTypeHint: null,
+      });
+      kpiRollups.push({
+        entityId: kpi,
+        entityNameSnapshot: `${d.name} KPI ${i}`,
+        severityScore: d.severityScore,
+        confidenceLevel: d.confidence,
+        validResponseCount: 38,
+        excludedResponseCount: 4,
+        dontKnowCount: 2,
+        notApplicableCount: 0,
+        dontKnowRate: 0.124,
+      });
+    }
+  }
+
+  return {
+    generatedAt: "2026-07-22T10:30:00Z",
+    surveyId: "stub-survey",
+    surveyTitle: "Baseline Household Survey",
+    studyId: "stub-study",
+    snapshotId: "snap-stub",
+    methodologyVersionId: "stub-mv",
+    methodologyVersionLabel: "v1.0",
+    assessmentCycle: 1,
+    calculatedAt: "2026-07-22T09:00:00Z",
+    villageScope: "",
+    unitGeo: {
+      regionId: null,
+      regionName: "Al-Qassim",
+      governorateIds: [],
+      governorateNames: ["Al-Badai"],
+      centerIds: [],
+      centerNames: [],
+      villages: coverage.villageNames,
+      scopeLabel: "Al-Badai, Al-Qassim — all 2 village(s) (consolidated)",
+    },
+    kpiRollups,
+    classificationByIndicator,
+    segmentsByIndicator: new Map(),
+    priorCycleByIndicator: new Map(),
+    subDomainByKey,
+    indicatorByKey,
+    domainMetaByKey,
+    allDomains: village.severity.domains.map((d) => ({
+      domain: d.name,
+      domainKey: d.domainCode,
+      subDomainCount: 1,
+    })),
+    domainWeightByKey,
+    overallNeedsIndex: village.severity.overallVillageNeedsIndex,
+    overallConfidence: village.responseQuality.overallConfidence,
+    overallConfidenceReason: village.responseQuality.confidenceReason,
+    priorCycleOverallSeverity: null,
+    responseQuality: {
+      submitted: coverage.responsesSubmitted,
+      valid: coverage.responsesValid,
+      excluded: coverage.responsesExcluded,
+      dontKnowRate: 0.124,
+      duplicatesFlagged: coverage.duplicateResponses,
+      lowConfidenceFlagged: coverage.lowConfidenceResponses,
+    },
+    dontKnowRateByDomain: village.severity.domains.map((d) => ({ domain: d.name, rate: 0.124 })),
+    exclusionBreakdown: [
+      { status: "SCORED", count: 38 },
+      { status: "EXCLUDED", count: 4 },
+    ],
+    totalAnswers: 42,
+    villagePriority: {
+      priorityScore: village.priority.villagePriorityScore,
+      overrideApplied: village.priority.overrideApplied,
+      overrideReason: village.priority.overrideReason,
+      assessedWeightSum: 1,
+    },
+    thresholds: DEFAULT_THRESHOLDS,
+  };
 }

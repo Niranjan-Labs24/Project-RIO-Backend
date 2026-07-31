@@ -36,6 +36,16 @@ enum PermissionModule {
   // not folded into studySurvey. Publish Survey/QR and the Citizen public
   // flow are unrelated and keep using their own existing modules.
   surveyBuilder
+  // The NCNP Compiled Report's own review workflow (System Reviewer
+  // approve/reject, System Admin generate/publish) — deliberately NOT
+  // reusing reportsDashboards (the unrelated RPT01-14 Reports feature):
+  // granting reportsDashboards:approve to System Reviewer would also let
+  // them approve/reject ordinary org reports through the existing Reports
+  // controller, which has no crossEntity guard of its own. `approve` here
+  // gates System Reviewer's decision; `write` gates System Admin's
+  // generate+publish actions — two distinct bits so neither role can do
+  // the other's job even if both hold this module.
+  ncnpReport
 }
 
 // ──────── Reference (global, seeded, read-only to cnap_app) ────────
@@ -1234,6 +1244,52 @@ model Report {
   @@index([reportType])
   @@index([surveyId])
   @@map("reports")
+}
+
+// The NCNP Compiled Report's own approval workflow — deliberately NOT a
+// `Report` row: `Report.orgId` is required with cascading-delete org
+// ownership (RLS-scoped throughout ReportsService), but the NCNP Compiled
+// Report is kingdom-wide/cross-org (see NcnpReportService, which uses
+// runAsSupervisor, no org context at all). Forcing it into `Report` would
+// mean inventing a fake owning org. Instead: global reference-style data,
+// no org_id, no RLS — same pattern as Domain/MethodologyVersion/Role.
+// Field names/meaning are copied from Report's own approval columns
+// (generatedBy/At, reviewedBy/At, archivedAt-equivalent) so the service
+// logic mirrors ReportsService.confirm/approve/reject/archive closely,
+// just on this table and with a genuine 3-step split (System Admin
+// generates -> System Reviewer approves/rejects with mandatory notes ->
+// System Admin publishes) instead of Report's 2-step officer-confirm ->
+// reviewer-approves-straight-to-released flow.
+enum NcnpReportReviewStatus {
+  draft // generated, awaiting System Reviewer decision
+  approved // Reviewer approved, awaiting System Admin publish
+  rejected // Reviewer rejected — terminal
+  released // System Admin published — terminal, matches Report's "released" meaning
+}
+
+model NcnpReportReview {
+  id            String                 @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  status        NcnpReportReviewStatus @default(draft)
+  // Snapshot of NcnpReportService.getReport()'s return value at generation
+  // time — frozen, never regenerated, same "content: Json" convention as
+  // Report.content.
+  content       Json
+  // periodDays/dormantDays the snapshot was generated with, for display.
+  filters       Json
+  generatedBy   String                 @map("generated_by") @db.Uuid
+  generatedAt   DateTime               @default(now()) @map("generated_at") @db.Timestamptz(6)
+  reviewedBy    String?                @map("reviewed_by") @db.Uuid
+  reviewedAt    DateTime?              @map("reviewed_at") @db.Timestamptz(6)
+  // Mandatory reviewer notes — required by the service on both approve and
+  // reject (client requirement), same pattern as Survey.approverComments.
+  // Nullable here only because the column must allow a not-yet-decided
+  // (draft) row to have none yet.
+  reviewerNotes String?                @map("reviewer_notes") @db.VarChar(2000)
+  publishedBy   String?                @map("published_by") @db.Uuid
+  publishedAt   DateTime?              @map("published_at") @db.Timestamptz(6)
+
+  @@index([status])
+  @@map("ncnp_report_reviews")
 }
 
 // ──────── Methodology Configuration ────────

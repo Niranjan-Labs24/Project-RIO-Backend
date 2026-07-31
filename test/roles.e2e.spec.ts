@@ -3,6 +3,7 @@ import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AllExceptionsFilter } from '../src/common/filters/http-exception.filter';
+import { ROLE_MATRIX, PERMISSION_MODULES } from '../src/rbac/role-matrix';
 
 // Requires a running, migrated, seeded DB. Uses the dev x-org-id + x-role seam (non-prod).
 describe('GET /api/roles (e2e)', () => {
@@ -20,12 +21,14 @@ describe('GET /api/roles (e2e)', () => {
     await app.close();
   });
 
-  it('returns all 10 roles to a system_admin', async () => {
+  it('returns every seeded role to a system_admin', async () => {
     const res = await request(app.getHttpServer()).get('/api/roles').set('x-org-id', ORG).set('x-role', 'system_admin').expect(200);
-    expect(res.body).toHaveLength(10);
+    // Derived from ROLE_MATRIX/PERMISSION_MODULES rather than hardcoded —
+    // adding a role or module later shouldn't break this test.
+    expect(res.body).toHaveLength(ROLE_MATRIX.length);
     const admin = res.body.find((r: { key: string }) => r.key === 'ngo_admin');
     expect(admin.id).toBe('role_ngo_admin');
-    expect(admin.permissions).toHaveLength(13);
+    expect(admin.permissions).toHaveLength(PERMISSION_MODULES.length);
   });
 
   it('forbids a role without rolesPermissions:read', async () => {

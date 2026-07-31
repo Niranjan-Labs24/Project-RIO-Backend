@@ -2,6 +2,7 @@ import { vi } from 'vitest';
 import { JwtService } from '@nestjs/jwt';
 import { ForbiddenException, Logger, UnauthorizedException } from '@nestjs/common';
 import { orgContext } from '../../tenancy/org-context';
+import { PERMISSION_MODULES } from '../../rbac/role-matrix';
 import { AuthService } from './auth.service';
 import { PasswordService } from '../../auth/password.service';
 import { TokenService } from '../../auth/token.service';
@@ -56,7 +57,7 @@ describe('AuthService.login', () => {
     expect(session.user.email).toBe('admin@demo-ngo.org');
     expect(session.organization.name).toBe('Demo NGO');
     expect(session.role.key).toBe('ngo_admin');
-    expect(session.role.permissions).toHaveLength(13);
+    expect(session.role.permissions).toHaveLength(PERMISSION_MODULES.length);
     expect(session.mustChangePassword).toBe(false);
     expect(session.organization.purpose).toBe('Water access');
     expect(session.organization.registrationNumber).toBe('RN-001');

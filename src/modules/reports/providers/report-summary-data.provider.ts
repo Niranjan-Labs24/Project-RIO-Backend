@@ -12,6 +12,7 @@ import type {
   SectorReportContent,
   SharingStatusContent,
   SurveyIdentity,
+  SurveyReportBase,
   VillageReportContent,
 } from "../report-content.types";
 import {
@@ -34,13 +35,24 @@ import {
 import {
   snapshotToCombinedContent,
   snapshotToExecutiveContent,
-  snapshotToIndividualSurveyContent,
   snapshotToRegionContent,
   snapshotToSectorContent,
+  snapshotToSurveyBase,
   snapshotToVillageContent,
 } from "./snapshot-to-content";
 import { buildCoverageBlock } from "./coverage-counts";
 import { buildPortfolioBlock } from "./portfolio-counts";
+import { assertRpt01SelfConsistent } from "./assert-rpt01-self-consistent";
+import {
+  buildUnifiedRpt01,
+  composeDeterministicNarrative,
+  type UnifiedRpt01Input,
+} from "./build-unified-rpt01";
+import { loadRpt01ReferenceData, type Rpt01ReferenceData } from "./load-rpt01-inputs";
+import { loadSegmentSeverities } from "./load-segment-severities";
+import type { DomainMeta, RollupLevelValue } from "./build-need-hierarchy";
+import type { SegmentRow } from "./derive-equity-flag";
+import { DEFAULT_THRESHOLDS, type ConfidenceFlag, type UnitGeo } from "../need-record.types";
 
 // Real report data provider — every method reads real data. There is no mock
 // fallback: a study with no scores yet raises STUDY_NOT_SCORED (409) so the
@@ -90,7 +102,7 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
       const { snapshot, aiOutput } = await this.realData(query.studyId, surveyId, "VILLAGE", {
         villageId: query.villageId,
       });
-      const demographics = await aggregateDemographics(this.tenant, query.studyId, query.villageId);
+      const demographics = await aggregateDemographics(this.tenant, { studyId: query.studyId }, query.villageId);
       return snapshotToVillageContent({
         snapshot,
         aiOutput,
@@ -108,8 +120,10 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
   // a study-wide aggregate but would silently report on the wrong survey here.
   async getIndividualSurveyReport(query: SurveyReportQuery): Promise<IndividualSurveyReportContent> {
     try {
-      const { snapshot, aiOutput, survey, coverage, demographics } = await this.surveyHalf(query, "INDIVIDUAL");
-      return snapshotToIndividualSurveyContent({
+      const half = await this.surveyHalf(query, "INDIVIDUAL");
+      const { snapshot, aiOutput, survey, coverage, demographics } = half;
+
+      const base = snapshotToSurveyBase({
         snapshot,
         aiOutput,
         survey,
@@ -118,6 +132,47 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
         assessmentPeriod: coverage.assessmentPeriod,
         filters: query.filters,
       });
+
+      const villageId = typeof query.filters.villageId === "string" ? query.filters.villageId : "";
+      const [reference, segmentsByIndicator] = await Promise.all([
+        loadRpt01ReferenceData(this.tenant, {
+          studyId: query.studyId,
+          surveyId: query.surveyId,
+          methodologyVersionId: snapshot.study.methodologyVersionId,
+          villageId: villageId || undefined,
+        }),
+        loadSegmentSeverities(this.tenant, {
+          studyId: query.studyId,
+          surveyId: query.surveyId,
+          methodologyVersionId: snapshot.study.methodologyVersionId,
+          villageId: villageId || undefined,
+        }),
+      ]);
+      // The SAME geography the AI snapshot was written against — resolving it a
+      // second time here is exactly how the header and the narrative came to
+      // name different governorates.
+      const unitGeo = snapshot.unitGeo ?? EMPTY_UNIT_GEO;
+
+      const unified = buildUnifiedRpt01(
+        assembleUnifiedInput({ snapshot, coverage, base, reference, segmentsByIndicator, unitGeo, villageId }),
+      );
+
+      // No narrative (AI unavailable, or its cached output was written against a
+      // superseded prompt and was rejected above) → compose one from the figures
+      // rather than ship an empty summary or a stale, contradicting one.
+      const fallback = composeDeterministicNarrative(unified);
+      const aiSummary = {
+        ...base.aiSummary,
+        executiveSummary: base.aiSummary.executiveSummary || fallback.executiveSummary,
+        keyFindings: base.aiSummary.keyFindings || fallback.keyFindings,
+      };
+
+      // Coverage counts and the sections beneath them must agree — the tiles
+      // once said 4 domains over a table of 2. Assert it here so an inconsistent
+      // report cannot be persisted, rather than at the client's desk.
+      const content: IndividualSurveyReportContent = { ...base, aiSummary, ...unified };
+      assertRpt01SelfConsistent(content);
+      return content;
     } catch (err) {
       this.rethrow("Individual survey", err);
     }
@@ -172,6 +227,7 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
     survey: SurveyIdentity;
     coverage: CoverageBlock;
     demographics: Demographics | null;
+    needId: string;
   }> {
     const villageId = typeof query.filters.villageId === "string" ? query.filters.villageId : "";
 
@@ -202,7 +258,9 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
       assessmentPeriod: query.assessmentPeriod,
     });
 
-    const demographics = await aggregateDemographics(this.tenant, query.studyId, villageId);
+    // Scoped to the Survey's own Need. A study-wide filter pulled sibling
+    // surveys' respondents into this survey's gender breakdown.
+    const demographics = await aggregateDemographics(this.tenant, { needId: survey.needId }, villageId);
 
     const identity: SurveyIdentity = {
       surveyId: survey.id,
@@ -217,7 +275,7 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
       publishedAt: survey.publishedAt ? survey.publishedAt.toISOString() : null,
     };
 
-    return { snapshot, aiOutput, survey: identity, coverage, demographics };
+    return { snapshot, aiOutput, survey: identity, coverage, demographics, needId: survey.needId };
   }
 
   async getSectorReport(query: ScopedReportQuery): Promise<SectorReportContent> {
@@ -230,7 +288,7 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
       // study-wide (or village-scoped, if a village context was also picked)
       // aggregate as every other scope, not silently skipped.
       const villageId = typeof query.filters.villageId === "string" ? query.filters.villageId : "";
-      const demographics = await aggregateDemographics(this.tenant, query.studyId, villageId);
+      const demographics = await aggregateDemographics(this.tenant, { studyId: query.studyId }, villageId);
       return snapshotToSectorContent({ snapshot, aiOutput, filters: query.filters, demographics });
     } catch (err) {
       this.rethrow("Sector", err);
@@ -249,7 +307,7 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
       // this pipeline yet. Still real, non-null data rather than the
       // previous hard-coded "unavailable".
       const villageId = typeof query.filters.villageId === "string" ? query.filters.villageId : "";
-      const demographics = await aggregateDemographics(this.tenant, query.studyId, villageId);
+      const demographics = await aggregateDemographics(this.tenant, { studyId: query.studyId }, villageId);
       return snapshotToRegionContent({ snapshot, aiOutput, filters: query.filters, demographics });
     } catch (err) {
       this.rethrow("Region", err);
@@ -263,7 +321,7 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
       const { snapshot, aiOutput } = await this.realData(query.studyId, surveyId, "EXECUTIVE", {});
       // Consolidated across every village in the study — same "no villageId
       // filter" convention aggregateDemographics already uses.
-      const demographics = await aggregateDemographics(this.tenant, query.studyId, "");
+      const demographics = await aggregateDemographics(this.tenant, { studyId: query.studyId }, "");
       return snapshotToExecutiveContent({ snapshot, aiOutput, filters: query.filters, demographics });
     } catch (err) {
       this.rethrow("Executive", err);
@@ -465,11 +523,25 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
     scopeFilters: ScopeFilters,
   ): Promise<{ snapshot: ReportDataSnapshot; aiOutput: Record<string, unknown> | null }> {
     const existing = await this.summary.getSummary(studyId, surveyId, scope, scopeFilters.villageId ?? "");
-    if (existing && this.hasData(existing.snapshot)) {
-      const s = existing.summary as { officerEditedOutputJson?: unknown; aiOutputJson?: unknown };
+    // A summary written by an OLDER prompt is not reusable. The 28 Jul narrative
+    // repeated a canned "high rate of Don't Know" premise that the snapshot no
+    // longer supplies; reusing it would keep printing the corrected report with
+    // the uncorrected sentence on top. Regenerate when the prompt has moved on.
+    // A summary is reusable only when BOTH the prompt and the data it was
+    // written against are still current. `snapshotId` is a content hash, so a
+    // corrected figure — or a corrected place name — changes it and forces a
+    // regeneration instead of printing last week's sentence over this week's
+    // numbers.
+    const s = existing?.summary as { promptVersion?: string; reportDataSnapshotId?: string } | undefined;
+    const reusable =
+      existing !== null &&
+      s?.promptVersion === this.summary.promptVersionFor(scope) &&
+      s?.reportDataSnapshotId === existing.snapshot.snapshotId;
+    if (existing && reusable && this.hasData(existing.snapshot)) {
+      const out = existing.summary as { officerEditedOutputJson?: unknown; aiOutputJson?: unknown };
       return {
         snapshot: existing.snapshot,
-        aiOutput: (s.officerEditedOutputJson ?? s.aiOutputJson ?? null) as Record<string, unknown> | null,
+        aiOutput: (out.officerEditedOutputJson ?? out.aiOutputJson ?? null) as Record<string, unknown> | null,
       };
     }
 
@@ -494,6 +566,132 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
       (s.priority.villagePriorityScore as number | null) !== null
     );
   }
+}
+
+// Shown when a Need has no geography linked at all. Every field is honestly
+// empty rather than a plausible-looking default.
+const EMPTY_UNIT_GEO: UnitGeo = {
+  regionId: null,
+  regionName: null,
+  governorateIds: [],
+  governorateNames: [],
+  centerIds: [],
+  centerNames: [],
+  villages: [],
+  scopeLabel: "No governorate or village is linked to this need.",
+};
+
+// Marshals the scoring snapshot + reference data into the pure builder's input.
+// Deliberately does no arithmetic of its own — every derived figure is computed
+// inside buildUnifiedRpt01, which is unit-testable without a database.
+function assembleUnifiedInput(input: {
+  snapshot: ReportDataSnapshot;
+  coverage: CoverageBlock;
+  base: SurveyReportBase;
+  reference: Rpt01ReferenceData;
+  segmentsByIndicator: Map<string, SegmentRow[]>;
+  unitGeo: UnitGeo;
+  villageId: string;
+}): UnifiedRpt01Input {
+  const { snapshot, coverage, base, reference, segmentsByIndicator, unitGeo, villageId } = input;
+  const sev = snapshot.severity;
+
+  const toLevel = (r: { severityScore: number | null; confidenceLevel: string }): RollupLevelValue => ({
+    severityScore: r.severityScore,
+    confidence: r.confidenceLevel.toUpperCase() === "LOW" ? "LOW" : "STANDARD",
+  });
+
+  const domainMetaByKey = new Map<string, DomainMeta>();
+  for (const d of base.severity.domains) {
+    domainMetaByKey.set(d.domainCode, {
+      domain: d.name,
+      domainKey: d.domainCode,
+      severityScore: d.severityScore,
+      performanceScore: d.performanceScore,
+      weight: d.weight,
+      weightedContribution: d.weightedContribution,
+      confidence: d.confidence,
+      confidenceReason: d.confidenceReason,
+      isCriticalDomain: d.isCriticalDomain,
+      kpisDefined: reference.kpisDefinedByDomainKey.get(d.domainCode) ?? d.kpiCount,
+      questionsAsked: reference.questionsAskedByDomainKey.get(d.domainCode) ?? 0,
+      // Cycle-over-cycle comparison needs prior-cycle rollups, which are not
+      // stored per cycle today. Left null so the trend note says exactly that
+      // instead of implying a comparison was made.
+      priorCycleSeverity: null,
+    });
+  }
+
+  const assessedWeights = base.severity.domains
+    .map((d) => reference.domainWeightByKey.get(d.domainCode) ?? null)
+    .filter((w): w is number => w !== null);
+
+  return {
+    generatedAt: snapshot.generatedAt,
+    surveyId: snapshot.study.surveyId,
+    surveyTitle: base.survey.surveyTitle,
+    studyId: snapshot.study.studyId,
+    snapshotId: snapshot.snapshotId,
+    methodologyVersionId: snapshot.study.methodologyVersionId,
+    methodologyVersionLabel: snapshot.study.methodologyVersionLabel ?? snapshot.study.methodologyVersionId,
+    assessmentCycle: snapshot.study.assessmentCycle,
+    calculatedAt: snapshot.priority.calculatedAt,
+    villageScope: villageId || "",
+    unitGeo,
+
+    kpiRollups: sev.kpiSeverityScores.map((k) => ({
+      entityId: k.entityId,
+      entityNameSnapshot: k.entityName,
+      severityScore: k.severityScore,
+      confidenceLevel: k.confidenceLevel,
+      validResponseCount: k.validResponseCount,
+      excludedResponseCount: k.excludedResponseCount,
+      dontKnowCount: k.dontKnowCount,
+      notApplicableCount: k.notApplicableCount,
+      dontKnowRate: k.dontKnowRate,
+    })),
+    classificationByIndicator: reference.classificationByIndicator,
+    segmentsByIndicator,
+    // No prior-cycle rollups are stored, so `chronic` cannot be established and
+    // is never claimed. See the gap-type precedence note.
+    priorCycleByIndicator: new Map<string, number>(),
+    subDomainByKey: new Map(sev.subDomainSeverityScores.map((r) => [r.entityId, toLevel(r)])),
+    indicatorByKey: new Map(sev.indicatorSeverityScores.map((r) => [r.entityId, toLevel(r)])),
+    domainMetaByKey,
+    allDomains: reference.allDomains,
+    domainWeightByKey: reference.domainWeightByKey,
+
+    overallNeedsIndex: sev.overallVillageNeedsIndex,
+    overallConfidence: base.responseQuality.overallConfidence as ConfidenceFlag,
+    overallConfidenceReason: base.responseQuality.confidenceReason,
+    priorCycleOverallSeverity: null,
+
+    responseQuality: {
+      submitted: coverage.responsesSubmitted,
+      valid: coverage.responsesValid,
+      excluded: coverage.responsesExcluded,
+      dontKnowRate: snapshot.responseQuality.dontKnowRate,
+      duplicatesFlagged: coverage.duplicateResponses,
+      lowConfidenceFlagged: coverage.lowConfidenceResponses,
+    },
+    dontKnowRateByDomain: sev.domainSeverityScores.map((d) => ({
+      domain: d.domainName,
+      rate: d.dontKnowRate,
+    })),
+    exclusionBreakdown: reference.exclusionBreakdown,
+    totalAnswers: reference.totalAnswers,
+
+    villagePriority: {
+      priorityScore: snapshot.priority.villagePriorityScore,
+      overrideApplied: snapshot.priority.overrideApplied,
+      overrideReason: snapshot.priority.overrideReason,
+      assessedWeightSum: assessedWeights.length
+        ? assessedWeights.reduce((a, b) => a + b, 0)
+        : null,
+    },
+
+    thresholds: DEFAULT_THRESHOLDS,
+  };
 }
 
 // RPT02's narrative, stated from the real aggregate only. Every sentence is

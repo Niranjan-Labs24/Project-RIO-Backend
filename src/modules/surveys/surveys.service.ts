@@ -6,6 +6,7 @@ import { roleByKey } from '../../rbac/role-matrix';
 import { AuditService } from '../audit/audit.service';
 import { AiService } from '../ai/ai.service';
 import { MethodologyConfigService } from '../methodology-config/methodology-config.service';
+import { requireNonBlank } from '../../common/validation/require-non-blank';
 
 @Injectable()
 export class SurveysService {
@@ -817,23 +818,11 @@ Eligible Questions: ${JSON.stringify(
     return updated;
   }
 
-  // Reviewer notes are mandatory on both Approve and Reject (client
-  // requirement) — TypeBox's minLength:1 alone would still let a
-  // whitespace-only string through, so both call sites share this check
-  // rather than duplicating the same trim-and-throw.
-  private requireReviewerNotes(comments: string): void {
-    if (!comments.trim()) {
-      throw new BadRequestException({
-        error: { code: 'REVIEWER_NOTES_REQUIRED', message: 'Reviewer notes are required.' },
-      });
-    }
-  }
-
   // Approver: the only path to PUBLISHED. Combines "approve" and "publish"
   // into one action per the product decision — there's no intermediate
   // "approved but not yet published" state.
   async approveAndPublish(surveyId: string, comments: string) {
-    this.requireReviewerNotes(comments);
+    requireNonBlank(comments, 'REVIEWER_NOTES_REQUIRED', 'Reviewer notes are required.');
     const survey = await this.tenant.runInOrgContext((tx) => tx.survey.findUnique({ where: { id: surveyId } }));
     if (!survey) {
       throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
@@ -891,7 +880,7 @@ Eligible Questions: ${JSON.stringify(
   // comments. Never touches surveyQuestions — any content change has to
   // come from the Researcher through updateQuestions after this.
   async rejectSurvey(surveyId: string, reasonCode: RejectionReasonCode, comments: string) {
-    this.requireReviewerNotes(comments);
+    requireNonBlank(comments, 'REVIEWER_NOTES_REQUIRED', 'Reviewer notes are required.');
     const survey = await this.tenant.runInOrgContext((tx) => tx.survey.findUnique({ where: { id: surveyId } }));
     if (!survey) {
       throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });

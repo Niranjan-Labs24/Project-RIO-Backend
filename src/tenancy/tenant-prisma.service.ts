@@ -35,4 +35,14 @@ export class TenantPrismaService {
   async runAsSupervisor<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
     return this.supervisor.$transaction(async (tx) => fn(tx));
   }
+
+  /**
+   * Cross-org WRITE path for crossEntity roles, for tables with no orgId/RLS
+   * (global reference data, e.g. NcnpReportReview). Uses the read-write
+   * cnap_app client with no org GUC set — safe only because the target
+   * table has no row-level security policy to bypass.
+   */
+  async runAsSupervisorWrite<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    return this.prisma.$transaction(async (tx) => fn(tx));
+  }
 }
