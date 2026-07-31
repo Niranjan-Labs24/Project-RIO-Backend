@@ -617,19 +617,6 @@ function renderColumns(pdf: Pdf, children: DocSection[], gap = 14, weights?: num
   pdf.y = maxEnd;
 }
 
-// How much of each body kind must stay with its own heading. A table needs its
-// header row plus one data row; a chart needs to be whole or it means nothing.
-function keepWithHeading(s: DocSection): number {
-  switch (s.kind) {
-    case "table": return 46;
-    case "gauge": return 100;
-    case "pie": return 70;
-    case "radar": return 120;
-    case "stats": return 46;
-    default: return 24;
-  }
-}
-
 export function renderSection(pdf: Pdf, s: DocSection): void {
   if (s.kind === "columns") return renderColumns(pdf, s.children);
   heading(pdf, s.heading);
