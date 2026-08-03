@@ -28,6 +28,13 @@ export type AuditAction =
   | 'STUDY_RESTORED'
   | 'SYSTEM_ADMIN_VIEWED_ARCHIVE'
   | 'SYSTEM_ADMIN_VIEWED_ARCHIVED_REPORT'
+  | 'upload_evidence_document'
+  | 'download_evidence_document'
+  | 'delete_evidence_document'
+  | 'generate_document_summary'
+  | 'confirm_document_summary'
+  | 'generate_combined_summary'
+  | 'confirm_combined_summary'
   | 'export';
 export type AuditEntityType =
   | 'organization'
@@ -41,6 +48,9 @@ export type AuditEntityType =
   | 'sharing_request'
   | 'report_sharing_request'
   | 'survey_response'
+  | 'evidence_document'
+  | 'evidence_document_summary'
+  | 'combined_report_summary'
   | 'ncnp_report';
 
 export interface AuditChange {

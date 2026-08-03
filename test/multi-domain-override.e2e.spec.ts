@@ -41,7 +41,7 @@ describe("Need -> multi-pair Override Domain -> Approve (e2e)", () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(AiService)
       .useValue({
-        generateJson: async () => ({
+        run: async () => ({
           response: {
             classified: true,
             domain: "Health",

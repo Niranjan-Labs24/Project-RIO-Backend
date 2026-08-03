@@ -38,7 +38,12 @@ function makeHarness() {
     runAsSupervisor: <T>(fn: (t: typeof tx) => Promise<T>) => fn(tx),
   };
   const audit = { record: async (input: (typeof auditCalls)[number]) => { auditCalls.push(input); } };
-  const service = new ReportsService(tenant as never, audit as never, {} as never);
+  const service = new ReportsService(
+    tenant as never,
+    audit as never,
+    {} as never,
+    {} as never,
+  );
   return { service, store, auditCalls, userFindManyCalls };
 }
 

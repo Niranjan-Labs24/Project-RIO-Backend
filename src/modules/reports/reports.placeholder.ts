@@ -10,7 +10,7 @@ import type { ReportTypeCode } from "./reports.types";
 // Everything else is still placeholder.
 export type PlaceholderReportType = Exclude<
   ReportTypeCode,
-  "RPT01" | "RPT02" | "RPT04" | "RPT06" | "RPT12" | "RPT13" | "RPT14" | "RPT15"
+  "RPT01" | "RPT02" | "RPT04" | "RPT06" | "RPT12" | "RPT13" | "RPT14" | "RPT15" | "RPT16" | "RPT17"
 >;
 export const PLACEHOLDER_REPORT_TYPES: PlaceholderReportType[] = [
   "RPT03", "RPT05", "RPT07", "RPT08", "RPT09", "RPT10", "RPT11",

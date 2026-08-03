@@ -1,4 +1,5 @@
 import { AiService } from '../ai/ai.service';
+import { NEED_CLASSIFICATION_TASK } from '../ai/prompts/need-classification.task';
 import type { ClassificationCandidate, ClassificationResult, ClassificationSubject } from './classification.placeholder';
 
 // Thrown only when the AI genuinely ran and declined/couldn't decide (a
@@ -22,40 +23,12 @@ export async function classifyNeedWithAi(
   redactedStatement: string,
   candidates: ClassificationCandidate[],
 ): Promise<ClassificationResult> {
-  const systemInstruction =
-    'You are an NGO community-needs classification assistant. Given a need statement and a fixed list of ' +
-    'available domains (each with its own sub-domains), decide whether the statement describes a real ' +
-    'community need that clearly relates to one of those domains. ' +
-    'If it does, set classified to true and pick exactly one domain and one sub-domain from the list by their ' +
-    'exact "name" — never invent one that is not in the list. ' +
-    'If the statement is gibberish, empty of real content, too vague, or does not clearly relate to any listed ' +
-    'domain, set classified to false and leave domain/subDomain out — do not guess or pick the closest-sounding ' +
-    'domain just to fill the field. Return valid JSON only.';
-
   const prompt = `Need statement: "${redactedStatement}"
 Villages: ${subject.village.join(', ') || 'not specified'}
 Available domains (pick domain/subDomain by their exact "name"):
 ${JSON.stringify(candidates)}`;
 
-  const responseSchema = {
-    type: 'object',
-    properties: {
-      classified: { type: 'boolean' },
-      domain: { type: 'string' },
-      subDomain: { type: 'string' },
-      confidence: { type: 'number' },
-      rationale: { type: 'string' },
-    },
-    required: ['classified', 'rationale'],
-  };
-
-  const { response } = await ai.generateJson<{
-    classified: boolean;
-    domain?: string;
-    subDomain?: string;
-    confidence?: number;
-    rationale: string;
-  }>(prompt, systemInstruction, responseSchema);
+  const { response } = await ai.run(NEED_CLASSIFICATION_TASK, prompt);
 
   // Treated as a failed classification by the caller (AiDecisionsService —
   // no fallback tier, lands on ai_classification_failed) — this is the
@@ -69,8 +42,10 @@ ${JSON.stringify(candidates)}`;
   }
 
   return {
-    modelName: 'gemini-2.5-flash',
-    modelVersion: '1.0.0',
+    // Recorded from the task itself so the stored decision always names the
+    // model that actually ran.
+    modelName: NEED_CLASSIFICATION_TASK.model,
+    modelVersion: NEED_CLASSIFICATION_TASK.modelVersion,
     suggestion: {
       domains: [response.domain],
       subDomains: [response.subDomain],

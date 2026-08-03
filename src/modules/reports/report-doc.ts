@@ -388,6 +388,313 @@ function comparisonSection(rows: Array<Record<string, unknown>>): DocSection {
 
 // Demographic (gender/rural) capture is pending — every core report degrades
 // this chart gracefully rather than omitting it silently (see getDemographics).
+/**
+ * Uploaded evidence documents plus each document's AI summary.
+ *
+ * Metadata first (file/type/reference/date/summary status) so the export carries
+ * the provenance of every document, then one narrative block per document.
+ */
+function evidenceSections(evidence: Record<string, unknown>): DocSection[] {
+  const out: DocSection[] = [];
+  const docs = isObjectArray(evidence.documents) ? evidence.documents : [];
+
+  // Mirrors the "Evidence Base" tile row in the viewer. A PDF cannot show the
+  // status donut or the bar lists, so the same figures are carried as stats and
+  // tables — the information parity is what matters, not the mark.
+  const withSummary = docs.filter((d) => isPlainObject(d.aiSummary)).length;
+  const confirmed = docs.filter((d) => scalar(d.summaryStatus) === "OFFICER_CONFIRMED").length;
+  out.push({
+    kind: "stats",
+    heading: "Evidence Documents",
+    tiles: [
+      { label: "Total Documents", value: String(evidence.totalDocuments ?? docs.length) },
+      { label: "With AI summary", value: String(withSummary) },
+      { label: "Officer confirmed", value: String(confirmed) },
+    ],
+  });
+
+  // Counts behind the viewer's status donut and the two bar lists.
+  const tally = (pick: (d: Record<string, unknown>) => string) => {
+    const m = new Map<string, number>();
+    for (const d of docs) {
+      const k = pick(d);
+      if (!k || k === "—") continue;
+      m.set(k, (m.get(k) ?? 0) + 1);
+    }
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  };
+
+  const byStatus = tally((d) => scalar(d.summaryStatus) || "NO_SUMMARY");
+  if (byStatus.length) {
+    out.push(
+      tableSection(
+        "Summary Status Breakdown",
+        byStatus.map(([status, count]) => ({
+          Status: status.replace(/_/g, " "),
+          Documents: count,
+          "% of documents": docs.length ? `${Math.round((count / docs.length) * 100)}%` : "0%",
+        })),
+      ),
+    );
+  }
+
+  const byType = tally((d) => scalar(d.documentType));
+  if (byType.length) {
+    out.push(
+      tableSection(
+        "Documents by Type",
+        byType.map(([type, count]) => ({ Type: type, Documents: count })),
+      ),
+    );
+  }
+
+  // Themes counted ACROSS documents, same as the viewer's theme bars, so a
+  // theme several documents raise outranks a one-off.
+  const themeCounts = new Map<string, number>();
+  for (const d of docs) {
+    const ai = isPlainObject(d.aiSummary) ? (d.aiSummary as Record<string, unknown>) : null;
+    if (!ai || !Array.isArray(ai.themes)) continue;
+    for (const th of ai.themes) {
+      const name = isPlainObject(th) ? scalar((th as Record<string, unknown>).theme) : String(th);
+      if (!name || name === "—") continue;
+      themeCounts.set(name, (themeCounts.get(name) ?? 0) + 1);
+    }
+  }
+  if (themeCounts.size) {
+    out.push(
+      tableSection(
+        "Themes Across Documents",
+        [...themeCounts.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .map(([theme, count]) => ({ Theme: theme, Documents: count })),
+      ),
+    );
+  }
+
+  if (docs.length) {
+    out.push(
+      tableSection(
+        "Evidence Document Register",
+        docs.map((d) => ({
+          Title: scalar(d.title),
+          Type: scalar(d.documentType),
+          Reference: scalar(d.sourceReferenceId),
+          Collected: scalar(d.collectedDate),
+          "Summary Status": scalar(d.summaryStatus),
+        })),
+      ),
+    );
+  }
+
+  for (const doc of docs) {
+    const ai = isPlainObject(doc.aiSummary) ? (doc.aiSummary as Record<string, unknown>) : null;
+    if (!ai) continue;
+    const heading = `Evidence Summary — ${scalar(doc.title)}`;
+
+    // The qualitative guardrail note the viewer shows above each summary.
+    if (typeof ai.evidenceNote === "string" && ai.evidenceNote) {
+      out.push({ kind: "note", heading: `${heading} — Basis`, text: ai.evidenceNote });
+    }
+    if (typeof ai.summary === "string" && ai.summary) {
+      out.push({ kind: "note", heading, text: ai.summary });
+    }
+
+    const findings = Array.isArray(ai.keyFindings) ? ai.keyFindings : [];
+    if (findings.length) {
+      out.push({
+        kind: "list",
+        heading: `${heading} — Key Findings`,
+        items: findings.map((f) =>
+          isPlainObject(f) ? scalar((f as Record<string, unknown>).finding) : String(f),
+        ),
+      });
+    }
+
+    // Themes, supporting statements, risks and limitations all render in the
+    // viewer but were dropped from every export — the reader of the PDF saw a
+    // strictly smaller report than the reader of the screen.
+    if (Array.isArray(ai.themes) && ai.themes.length) {
+      out.push(
+        tableSection(
+          `${heading} — Themes`,
+          ai.themes.map((th) => {
+            const t = isPlainObject(th) ? (th as Record<string, unknown>) : null;
+            return {
+              Theme: t ? scalar(t.theme) : String(th),
+              Description: t ? scalar(t.description) : "",
+              Reference: t ? scalar(t.sourceReferenceId) : "",
+            };
+          }),
+        ),
+      );
+    }
+
+    if (Array.isArray(ai.supportingStatements) && ai.supportingStatements.length) {
+      out.push({
+        kind: "list",
+        heading: `${heading} — Supporting Statements`,
+        items: ai.supportingStatements.map((st) => {
+          const s = isPlainObject(st) ? (st as Record<string, unknown>) : null;
+          if (!s) return String(st);
+          const ref = scalar(s.sourceReferenceId);
+          const loc = scalar(s.pageOrSection ?? s.sectionOrPageRef);
+          const cite = [ref, loc].filter((x) => x && x !== "—").join(", ");
+          return cite ? `"${scalar(s.statement)}" (${cite})` : `"${scalar(s.statement)}"`;
+        }),
+      });
+    }
+
+    if (Array.isArray(ai.risksOrConcerns) && ai.risksOrConcerns.length) {
+      out.push({
+        kind: "list",
+        heading: `${heading} — Risks / Concerns`,
+        items: ai.risksOrConcerns.map((r) =>
+          isPlainObject(r) ? scalar((r as Record<string, unknown>).concern) : String(r),
+        ),
+      });
+    }
+
+    if (Array.isArray(ai.documentLimitations) && ai.documentLimitations.length) {
+      out.push({
+        kind: "list",
+        heading: `${heading} — Document Limitations`,
+        items: ai.documentLimitations.map((l) => String(l)),
+      });
+    }
+  }
+
+  return out;
+}
+
+/**
+ * The score-based AI narrative (RPT16). The combined report is the union of the
+ * score report and the evidence report, so the exported document carries this
+ * in full alongside the combined narrative. No `recommendations` block here —
+ * both summaries' lists are hoisted into one de-duplicated top-level section.
+ */
+function scoreSummarySections(score: Record<string, unknown>): DocSection[] {
+  const out: DocSection[] = [];
+
+  if (typeof score.executiveSummary === "string" && score.executiveSummary) {
+    out.push({ kind: "note", heading: "Score-Based Executive Summary", text: score.executiveSummary });
+  }
+
+  if (typeof score.priorityExplanation === "string" && score.priorityExplanation) {
+    out.push({ kind: "note", heading: "Priority Explanation", text: score.priorityExplanation });
+  }
+
+  if (isObjectArray(score.keyFindings)) {
+    out.push(
+      tableSection(
+        "Score-Based Key Findings",
+        score.keyFindings.map((f) => ({
+          Finding: scalar(f.title),
+          Domain: scalar(f.domain),
+          KPI: scalar(f.kpi),
+          Severity: scalar(f.severityScore),
+          Confidence: scalar(f.confidence),
+          Summary: scalar(f.summary),
+        })),
+      ),
+    );
+  }
+
+  if (isObjectArray(score.domainInsights)) {
+    out.push(
+      tableSection(
+        "Domain Insights",
+        score.domainInsights.map((d) => ({
+          Domain: scalar(d.domain),
+          Severity: scalar(d.severityScore),
+          Performance: scalar(d.performanceScore),
+          "Priority Contribution": scalar(d.priorityContribution),
+          Confidence: scalar(d.confidence),
+          Summary: scalar(d.summary),
+        })),
+      ),
+    );
+  }
+
+  if (typeof score.criticalOverrideNote === "string" && score.criticalOverrideNote) {
+    out.push({ kind: "note", heading: "Critical Override", text: score.criticalOverrideNote });
+  }
+
+  if (typeof score.dataQualityNote === "string" && score.dataQualityNote) {
+    out.push({ kind: "note", heading: "Data Quality", text: score.dataQualityNote });
+  }
+
+  return out;
+}
+
+/**
+ * The combined AI narrative (RPT16). Quantitative and qualitative halves stay in
+ * separate blocks, mirroring the rule the generating prompt enforces.
+ */
+function combinedSummarySections(combined: Record<string, unknown>): DocSection[] {
+  const out: DocSection[] = [];
+
+  if (typeof combined.executiveSummary === "string" && combined.executiveSummary) {
+    out.push({
+      kind: "note",
+      heading: "Combined Executive Summary",
+      text: combined.executiveSummary,
+    });
+  }
+
+  if (isPlainObject(combined.scoreBasedFindings)) {
+    const s = combined.scoreBasedFindings as Record<string, unknown>;
+    out.push({
+      kind: "keyvalue",
+      heading: "Score-Based Findings",
+      rows: [
+        { label: "Overall Severity Score", value: scalar(s.overallSeverityScore) },
+        { label: "Priority Score", value: scalar(s.priorityScore) },
+        { label: "Priority Status", value: scalar(s.priorityStatus) },
+        { label: "Confidence / Data Quality", value: scalar(s.confidenceDataQualityNote) },
+      ],
+    });
+    if (isObjectArray(s.topDomainsOrKpis)) {
+      out.push(
+        tableSection(
+          "Top Domains / KPIs",
+          s.topDomainsOrKpis.map((d) => ({ Name: scalar(d.name), Score: scalar(d.score) })),
+        ),
+      );
+    }
+  }
+
+  if (isObjectArray(combined.documentBasedEvidence)) {
+    out.push(
+      tableSection(
+        "Document-Based Evidence",
+        combined.documentBasedEvidence.map((e) => ({
+          Document: scalar(e.documentTitle),
+          Reference: scalar(e.sourceReferenceId),
+          "Linked Need / Domain": scalar(e.linkedNeedOrDomain),
+          Finding: scalar(e.keyEvidenceFinding),
+        })),
+      ),
+    );
+  }
+
+  if (isObjectArray(combined.domainKpiResults)) {
+    out.push(
+      tableSection(
+        "Domain / KPI Results",
+        combined.domainKpiResults.map((d) => ({
+          Domain: scalar(d.domainName),
+          Severity: scalar(d.severity),
+          Performance: scalar(d.performance),
+          Weight: scalar(d.weight),
+          Confidence: scalar(d.confidence),
+        })),
+      ),
+    );
+  }
+
+  return out;
+}
+
 const DEMOGRAPHICS_NOTE: DocSection = {
   kind: "note",
   heading: "Demographic Breakdown",
@@ -643,6 +950,14 @@ export function buildReportDoc(
   // dump in the other. `coverage`/`dashboard` are the survey-scoped reports
   // (RPT01/RPT15) — they always carry `severity` too, but listing them here
   // makes the intent explicit rather than incidental.
+  // Must stay in step with the `isCore` predicate in report-content-view.tsx —
+  // when the two disagree, a report renders as a structured document on screen
+  // and as the flat key-value fallback in the export.
+  //
+  // `evidenceSection` / `geography` are why RPT17 exported as a single "Summary"
+  // blob: an evidence-only report has no severity, coverage, dashboard, domains
+  // or topPriorities, so it failed every arm of this test and skipped the whole
+  // core branch — geography, the documents and Response Quality included.
   const isCore =
     headerBand.length > 0 &&
     (isPlainObject(content.severity) ||
@@ -653,7 +968,9 @@ export function buildReportDoc(
       isObjectArray(content.topPriorities) ||
       isPlainObject(content.kpis) ||
       isObjectArray(content.scoringDistribution) ||
-      isObjectArray(content.requests));
+      isObjectArray(content.requests) ||
+      isPlainObject(content.evidenceSection) ||
+      isPlainObject(content.geography));
 
   const sections: DocSection[] = [];
 
@@ -717,6 +1034,34 @@ export function buildReportDoc(
           { label: "Governorate", value: scalar(scope.governorate) },
         ],
       });
+    }
+
+    // The evidence (RPT15) and combined (RPT16) reports carry structured
+    // `geography` rather than the executive report's `scope`. Without this the
+    // required Region → Governorate section was silently absent from every
+    // exported PDF and spreadsheet.
+    if (isPlainObject(content.geography)) {
+      const geo = content.geography as Record<string, unknown>;
+      // The viewer plots `geo.regions` on the Kingdom map; a PDF has no map, so
+      // the same figures are carried as a row rather than being lost with it.
+      const plotted = isObjectArray(geo.regions) ? geo.regions : [];
+      const unit = Array.isArray(geo.mapUnitLabel) ? scalar(geo.mapUnitLabel[1]) : "records";
+      const rows = [
+        { label: "Region", value: scalar(geo.region) },
+        { label: "Governorate", value: scalar(geo.governorate) },
+        ...(geo.center !== undefined ? [{ label: "Center", value: scalar(geo.center) }] : []),
+        ...(plotted.length
+          ? [
+              {
+                label: "Mapped coverage",
+                value: plotted
+                  .map((r) => `${scalar(r.name)} (${scalar(r.count)} ${unit})`)
+                  .join("; "),
+              },
+            ]
+          : []),
+      ];
+      sections.push({ kind: "keyvalue", heading: "Region / Governorate", rows });
     }
 
     const rq: DocSection | null = isPlainObject(content.responseQuality)
@@ -925,6 +1270,33 @@ export function buildReportDoc(
     }
     if (content.reviewerNotes) {
       sections.push({ kind: "note", heading: "Reviewer Notes", text: String(content.reviewerNotes) });
+    }
+
+    // ── Evidence and combined-summary sections (RPT15 / RPT16) ──
+    // These were previously absent from every export: the core branch never
+    // looked at them, so the uploaded documents, their AI summaries and the
+    // whole combined narrative existed in the stored report but not in the PDF
+    // or spreadsheet a reviewer actually receives.
+    if (isPlainObject(content.evidenceSection)) {
+      sections.push(...evidenceSections(content.evidenceSection));
+    }
+    if (isPlainObject(content.scoreSummarySection)) {
+      sections.push(...scoreSummarySections(content.scoreSummarySection));
+    }
+    if (isPlainObject(content.combinedSummarySection)) {
+      sections.push(...combinedSummarySections(content.combinedSummarySection));
+    }
+
+    // Top-level recommendations. `aiSummarySections` handles the nested
+    // `aiSummary.recommendations`, which is a different field.
+    if (Array.isArray(content.recommendations) && content.recommendations.length) {
+      sections.push({
+        kind: "list",
+        heading: "Recommendations",
+        items: content.recommendations.map((r) =>
+          isPlainObject(r) ? scalar((r as Record<string, unknown>).intervention) : String(r),
+        ),
+      });
     }
   } else {
     // Placeholder / unknown shape — generic flatten.

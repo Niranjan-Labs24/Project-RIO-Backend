@@ -46,7 +46,7 @@ describe("Need -> AI classification unclear -> allDomainsSelected (e2e)", () => 
         // The AI genuinely ran here — it just declined, exactly the shape
         // classification.ai.ts's classifyNeedWithAi expects for a decline
         // (classified: false, no domain/subDomain), not an exception.
-        generateJson: async () => ({
+        run: async () => ({
           response: {
             classified: false,
             rationale: "The statement is too vague to classify into any listed domain.",
@@ -166,7 +166,7 @@ describe("Need -> AI service failure -> ai_classification_failed + Retry (e2e)",
         // Simulates a genuine technical failure (timeout, upstream outage,
         // rate limit) — the AI never actually produced a classified/
         // declined response at all.
-        generateJson: async () => {
+        run: async () => {
           throw new Error("simulated AI service outage for this test");
         },
       })

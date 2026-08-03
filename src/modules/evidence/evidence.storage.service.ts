@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '../../config/config.service';
 
 // RIO-FR-Add-01: only these evidence file types are accepted; everything
@@ -18,6 +18,11 @@ const ALLOWED_EXTENSIONS = new Set([
   '.jpeg',
   '.png',
 ]);
+
+// Mirrors what save() writes: a UUID plus one allowed extension, nothing else.
+// Anything with a separator or traversal segment fails this outright.
+const STORAGE_KEY_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[a-z]{3,4}$/;
 
 // Business rule: 10MB per file, 10 files per study (so 100MB per study max).
 export const MAX_EVIDENCE_FILE_SIZE_BYTES = 10 * 1024 * 1024;
@@ -83,6 +88,34 @@ export class EvidenceStorageService {
     const storageKey = `${randomUUID()}${ext}`;
     await writeFile(join(dir, storageKey), buffer);
     return storageKey;
+  }
+
+  // Reads a stored evidence file back off disk so it can be streamed to an
+  // authorised caller. storageKey comes out of the database rather than from
+  // the request, but it is still validated here: a malformed or tampered row
+  // must not be able to escape the evidence directory.
+  async read(storageKey: string): Promise<Buffer> {
+    if (!STORAGE_KEY_PATTERN.test(storageKey)) {
+      throw new BadRequestException({
+        error: { code: 'INVALID_STORAGE_KEY', message: 'Stored file reference is not valid.' },
+      });
+    }
+    const dir = resolve(this.config.evidenceStoragePath);
+    const filePath = resolve(join(dir, storageKey));
+    // Defence in depth: even with the pattern check above, refuse anything
+    // that does not land inside the evidence directory.
+    if (filePath !== join(dir, storageKey)) {
+      throw new BadRequestException({
+        error: { code: 'INVALID_STORAGE_KEY', message: 'Stored file reference is not valid.' },
+      });
+    }
+    try {
+      return await readFile(filePath);
+    } catch {
+      throw new NotFoundException({
+        error: { code: 'FILE_NOT_FOUND', message: 'The stored evidence file is no longer available.' },
+      });
+    }
   }
 
   async remove(storageKey: string): Promise<void> {
