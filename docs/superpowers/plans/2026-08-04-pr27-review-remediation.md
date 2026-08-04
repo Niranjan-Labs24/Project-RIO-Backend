@@ -1,4 +1,4 @@
-# PR 27 Review Remediation Implementation Plan
+﻿# PR 27 Review Remediation Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -22,19 +22,19 @@
 
 **Files:**
 - Modify: `prisma/migrations/20260803120000_add_rpt16_rpt17_evidence_reports/migration.sql`
-- Create: `test/pr27-migration.spec.ts`
+- Create: `test/pr27-migration.integration.spec.ts`
 
 **Interfaces:**
 - Consumes: the five model/table mappings in `prisma/schema.prisma`.
 - Produces: deployable DDL for all five tables and partial unique indexes named `evidence_document_one_confirmed` and `combined_report_one_confirmed`.
 
-- [ ] **Step 1: Write a failing migration contract test**
+- [ ] **Step 1: Write a failing migration integration test**
 
-Read the migration text and assert it contains `CREATE TABLE` for all five mapped table names, `ENABLE ROW LEVEL SECURITY` for each, foreign keys, and the two partial indexes with `WHERE status = 'OFFICER_CONFIRMED'`.
+Start an isolated PostgreSQL test database, apply the repository migrations, and query `pg_class`, `pg_constraint`, `pg_indexes`, and `pg_policies`. Assert all five mapped tables exist with their foreign keys, RLS is enabled with tenant policies, and the two partial confirmed-summary indexes enforce expected uniqueness through duplicate confirmed inserts.
 
 - [ ] **Step 2: Run the contract test and verify failure**
 
-Run: `pnpm.cmd test -- test/pr27-migration.spec.ts`
+Run: `pnpm.cmd test -- test/pr27-migration.integration.spec.ts`
 Expected: FAIL because the migration currently contains only two `ALTER TYPE` statements.
 
 - [ ] **Step 3: Add exact PostgreSQL DDL**
@@ -43,7 +43,7 @@ Add columns matching the Prisma mappings and types, UUID defaults using `uuidv7(
 
 - [ ] **Step 4: Run migration and schema checks**
 
-Run: `pnpm.cmd test -- test/pr27-migration.spec.ts`
+Run: `pnpm.cmd test -- test/pr27-migration.integration.spec.ts`
 Expected: PASS.
 
 Run with a placeholder URL: `$env:DATABASE_URL='postgresql://review:review@localhost:5432/review'; pnpm.cmd exec prisma validate`
@@ -52,7 +52,7 @@ Expected: schema valid.
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add prisma/migrations/20260803120000_add_rpt16_rpt17_evidence_reports/migration.sql test/pr27-migration.spec.ts
+git add prisma/migrations/20260803120000_add_rpt16_rpt17_evidence_reports/migration.sql test/pr27-migration.integration.spec.ts
 git commit -m "fix(db): create evidence report persistence"
 ```
 
@@ -95,6 +95,8 @@ git commit -m "fix(reports): validate confirmed summary inputs"
 
 **Files:**
 - Modify: `src/modules/evidence/evidence-documents.controller.ts`
+- Modify: `prisma/schema.prisma`
+- Modify: `prisma/migrations/20260803120000_add_rpt16_rpt17_evidence_reports/migration.sql`
 - Modify: `src/modules/evidence/evidence-documents.service.ts`
 - Modify: `src/modules/evidence/document-summary.service.ts`
 - Modify: `src/modules/evidence/evidence-documents.service.spec.ts`
@@ -139,13 +141,15 @@ git commit -m "fix(authz): scope evidence mutations to study routes"
 - Modify: `src/modules/evidence/evidence-documents.service.ts`
 - Modify: `src/modules/evidence/evidence-documents.service.spec.ts`
 - Modify: `src/modules/evidence/evidence-documents.controller.ts`
+- Modify: `prisma/schema.prisma`
+- Modify: `prisma/migrations/20260803120000_add_rpt16_rpt17_evidence_reports/migration.sql`
 
 **Interfaces:**
-- Produces: exported `EVIDENCE_FILE_TYPES: Readonly<Record<string, string>>`, including `.txt: 'text/plain'` and canonical MIME types for every supported extension.
+- Produces: exported `EVIDENCE_FILE_TYPES: Readonly<Record<string, string>>`, including `.txt: 'text/plain'`, plus a tenant-scoped `EvidenceFileCleanup` outbox row for retryable deletion.
 
 - [ ] **Step 1: Add failing lifecycle and MIME tests**
 
-Test `.txt` storage acceptance; persisted `fileType` equals a MIME type; upload calls `storage.remove(storageKey)` if parsing or DB creation throws; deletion calls `storage.remove`; controller download sends `application/pdf` rather than `.pdf`.
+Test `.txt` storage acceptance; persisted `fileType` equals a MIME type; upload calls `storage.remove(storageKey)` if parsing or DB creation throws; deletion atomically creates an outbox row and removes the document row; successful cleanup removes the outbox row; failed cleanup retains it with attempt/error metadata; controller download sends `application/pdf` rather than `.pdf`.
 
 - [ ] **Step 2: Verify tests fail**
 
@@ -154,7 +158,7 @@ Expected: FAIL on `.txt`, MIME persistence, and cleanup assertions.
 
 - [ ] **Step 3: Implement canonical metadata and cleanup**
 
-Replace duplicate allowlists with `EVIDENCE_FILE_TYPES`. Validate study/link relations before saving. Wrap post-save parse/persist work in `try/catch`, remove the key on failure, and rethrow. On deletion, retain the storage key, delete the database row, then call `storage.remove`; propagate cleanup failures so they can be retried rather than silently ignored.
+Replace duplicate allowlists with `EVIDENCE_FILE_TYPES`. Validate study/link relations before saving. Wrap post-save parse/persist work in `try/catch`, remove the key on failure, and rethrow. Add `EvidenceFileCleanup` with `orgId`, `storageKey`, attempt count, last error, and timestamps plus RLS/indexes. In one tenant transaction, create the cleanup row and delete the document. Attempt storage removal immediately; delete the outbox row on success, otherwise update retry metadata and return a retryable service error without losing the cleanup key.
 
 - [ ] **Step 4: Run evidence tests**
 
@@ -226,7 +230,7 @@ Run: `$env:DATABASE_URL='postgresql://review:review@localhost:5432/review'; npm 
 
 - [ ] **Step 3: Run the affected tests**
 
-Run: `pnpm.cmd test -- test/pr27-migration.spec.ts src/modules/ai/ai.task.spec.ts src/modules/evidence/evidence.storage.service.spec.ts src/modules/evidence/evidence-documents.service.spec.ts src/modules/evidence/document-summary.service.spec.ts src/modules/reports/combined-report-summary.service.spec.ts src/modules/reports/report-doc.rpt16.spec.ts src/modules/reports/report-doc.rpt17.spec.ts src/modules/reports/reports.service.spec.ts`
+Run: `pnpm.cmd test -- test/pr27-migration.integration.spec.ts src/modules/ai/ai.task.spec.ts src/modules/evidence/evidence.storage.service.spec.ts src/modules/evidence/evidence-documents.service.spec.ts src/modules/evidence/document-summary.service.spec.ts src/modules/reports/combined-report-summary.service.spec.ts src/modules/reports/report-doc.rpt16.spec.ts src/modules/reports/report-doc.rpt17.spec.ts src/modules/reports/reports.service.spec.ts`
 Expected: all pass.
 
 - [ ] **Step 4: Run static verification**
@@ -253,3 +257,4 @@ git commit -m "chore: remove committed diagnostic output"
 - [ ] **Step 6: Re-review the resulting branch**
 
 Review `origin/main...HEAD` for the original nine findings and report exact verification results. Do not push until the user explicitly requests it.
+
