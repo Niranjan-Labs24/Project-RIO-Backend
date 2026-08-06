@@ -5,6 +5,7 @@ import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-conte
 import { roleByKey } from '../../rbac/role-matrix';
 import { AuditService } from '../audit/audit.service';
 import { AiService } from '../ai/ai.service';
+import { SURVEY_QUESTION_RECOMMENDATION_TASK } from '../ai/prompts/survey-question-recommendation.task';
 import { MethodologyConfigService } from '../methodology-config/methodology-config.service';
 import { requireNonBlank } from '../../common/validation/require-non-blank';
 
@@ -445,8 +446,6 @@ export class SurveysService {
       reason =
         `No Question Bank questions match ${domainLabel} — this survey was created with no recommended questions. Add questions from the Question Bank or as custom questions.`;
     } else {
-      const systemInstruction = `You are a survey question recommendation assistant. You must recommend only question IDs from the provided eligible questions list. Do not create new question text. Do not edit question text. Return valid JSON only.`;
-
       const prompt = `Need Statement: "${need.statement}"
 Domain(s): "${domainLabel}"
 Eligible Questions: ${JSON.stringify(
@@ -460,25 +459,8 @@ Eligible Questions: ${JSON.stringify(
         })),
       )}`;
 
-      const responseSchema = {
-        type: 'object',
-        properties: {
-          recommendedQuestionIds: {
-            type: 'array',
-            items: { type: 'string' },
-          },
-          confidence: { type: 'number' },
-          reason: { type: 'string' },
-        },
-        required: ['recommendedQuestionIds', 'confidence', 'reason'],
-      };
-
       try {
-        const result = await this.ai.generateJson<{
-          recommendedQuestionIds?: string[];
-          confidence?: number;
-          reason?: string;
-        }>(prompt, systemInstruction, responseSchema);
+        const result = await this.ai.run(SURVEY_QUESTION_RECOMMENDATION_TASK, prompt);
         recommendedQuestionIds = result.response.recommendedQuestionIds || [];
         confidence = result.response.confidence || 0;
         reason = result.response.reason || '';

@@ -1,0 +1,49 @@
+survey 019fa83d: 5 DOMAIN rows | 1 village(s) [Ad-Dilam] | 5 distinct domain(s)
+survey 019fb4df: 2 DOMAIN rows | 2 village(s) [avg, ] | 1 distinct domain(s)
+    village="avg" domain="Water & Sanitation" sev=7.92 valid=4
+    village="" domain="Water & Sanitation" sev=7.92 valid=4
+survey 019fba0f: 2 DOMAIN rows | 2 village(s) [village 1, ] | 1 distinct domain(s)
+    village="village 1" domain="Water & Sanitation" sev=30.76 valid=11
+    village="" domain="Water & Sanitation" sev=30.76 valid=11
+survey 019fa83d: 5 DOMAIN rows | 1 village(s) [Ad-Dilam] | 5 distinct domain(s)
+survey 019fb4df: 2 DOMAIN rows | 2 village(s) [avg, ] | 1 distinct domain(s)
+    village="avg" domain="Water & Sanitation" sev=7.92 valid=4
+    village="" domain="Water & Sanitation" sev=7.92 valid=4
+survey 019fba0f: 2 DOMAIN rows | 2 village(s) [village 1, ] | 1 distinct domain(s)
+    village="village 1" domain="Water & Sanitation" sev=30.76 valid=11
+    village="" domain="Water & Sanitation" sev=30.76 valid=11
+survey 019fa83d: 5 DOMAIN rows | 1 village(s) [Ad-Dilam] | 5 distinct domain(s)
+survey 019fb4df: 2 DOMAIN rows | 2 village(s) [avg, ] | 1 distinct domain(s)
+    village="avg" domain="Water & Sanitation" sev=7.92 valid=4
+    village="" domain="Water & Sanitation" sev=7.92 valid=4
+survey 019fba0f: 2 DOMAIN rows | 2 village(s) [village 1, ] | 1 distinct domain(s)
+    village="village 1" domain="Water & Sanitation" sev=30.76 valid=11
+    village="" domain="Water & Sanitation" sev=30.76 valid=11
+survey 019fa83d: 5 DOMAIN rows | 1 village(s) [Ad-Dilam] | 5 distinct domain(s)
+survey 019fb4df: 2 DOMAIN rows | 2 village(s) [avg, ] | 1 distinct domain(s)
+    village="avg" domain="Water & Sanitation" sev=7.92 valid=4
+    village="" domain="Water & Sanitation" sev=7.92 valid=4
+survey 019fba0f: 2 DOMAIN rows | 2 village(s) [village 1, ] | 1 distinct domain(s)
+    village="village 1" domain="Water & Sanitation" sev=30.76 valid=11
+    village="" domain="Water & Sanitation" sev=30.76 valid=11
+survey 019fa83d: 5 DOMAIN rows | 1 village(s) [Ad-Dilam] | 5 distinct domain(s)
+survey 019fb4df: 2 DOMAIN rows | 2 village(s) [avg, ] | 1 distinct domain(s)
+    village="avg" domain="Water & Sanitation" sev=7.92 valid=4
+    village="" domain="Water & Sanitation" sev=7.92 valid=4
+survey 019fba0f: 2 DOMAIN rows | 2 village(s) [village 1, ] | 1 distinct domain(s)
+    village="village 1" domain="Water & Sanitation" sev=30.76 valid=11
+    village="" domain="Water & Sanitation" sev=30.76 valid=11
+survey 019fa83d: 5 DOMAIN rows | 1 village(s) [Ad-Dilam] | 5 distinct domain(s)
+survey 019fb4df: 2 DOMAIN rows | 2 village(s) [avg, ] | 1 distinct domain(s)
+    village="avg" domain="Water & Sanitation" sev=7.92 valid=4
+    village="" domain="Water & Sanitation" sev=7.92 valid=4
+survey 019fba0f: 2 DOMAIN rows | 2 village(s) [village 1, ] | 1 distinct domain(s)
+    village="village 1" domain="Water & Sanitation" sev=30.76 valid=11
+    village="" domain="Water & Sanitation" sev=30.76 valid=11
+survey 019fa83d: 5 DOMAIN rows | 1 village(s) [Ad-Dilam] | 5 distinct domain(s)
+survey 019fb4df: 2 DOMAIN rows | 2 village(s) [avg, ] | 1 distinct domain(s)
+    village="avg" domain="Water & Sanitation" sev=7.92 valid=4
+    village="" domain="Water & Sanitation" sev=7.92 valid=4
+survey 019fba0f: 2 DOMAIN rows | 2 village(s) [village 1, ] | 1 distinct domain(s)
+    village="village 1" domain="Water & Sanitation" sev=30.76 valid=11
+    village="" domain="Water & Sanitation" sev=30.76 valid=11

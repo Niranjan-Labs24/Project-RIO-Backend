@@ -4,6 +4,7 @@ import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { Prisma } from '../../generated/prisma';
 import { requireOrgId, getOrgStore } from '../../tenancy/org-context';
 import { AiService } from '../ai/ai.service';
+import type { AiTask } from '../ai/ai.task';
 import {
   PRIORITY_DASHBOARD_SUMMARY_RESPONSE_SCHEMA,
 } from '../ai/prompts/priority-dashboard-summary.system';
@@ -775,11 +776,22 @@ export class ReportSummaryService {
 ${JSON.stringify(snapshot, null, 2)}
 ${extra}`;
 
-    const { response: aiOutputJson } = await this.aiService.generateJson<Record<string, unknown>>(
-      promptText,
+    // main's per-scope prompt data, wrapped as an AiTask so it goes through the
+    // task-based AiService.run this branch uses (retries, timeout, schema
+    // enforcement) instead of the removed generateJson.
+    const task: AiTask<Record<string, unknown>> = {
+      name: `report-summary:${scope}`,
+      promptVersion,
       systemPrompt,
       responseSchema,
-    );
+      model: 'gemini-2.5-flash',
+      modelVersion: 'v1',
+      temperature: 0.2,
+      timeoutMs: 90_000,
+      maxRetries: 1,
+    };
+
+    const { response: aiOutputJson } = await this.aiService.run(task, promptText);
 
     return this.tenant.runInOrgContext(async (tx) => {
       await tx.aiPrioritySummary.updateMany({
@@ -806,8 +818,8 @@ ${extra}`;
           scopeFilters: scopeFilters as Prisma.InputJsonValue,
           promptVersion,
           promptHash,
-          modelName: 'gemini-2.5-flash',
-          modelVersion: 'v1',
+          modelName: task.model,
+          modelVersion: task.modelVersion,
           inputReportDataHash: reportDataHash,
           inputEvidenceSnapshotHash: evidenceHash,
           aiOutputJson: aiOutputJson as Prisma.InputJsonValue,

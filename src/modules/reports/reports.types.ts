@@ -1,6 +1,7 @@
 export const REPORT_TYPES = [
   "RPT01", "RPT02", "RPT03", "RPT04", "RPT05", "RPT06",
   "RPT07", "RPT08", "RPT09", "RPT10", "RPT11", "RPT12", "RPT13", "RPT14", "RPT15",
+  "RPT16", "RPT17",
 ] as const;
 export type ReportTypeCode = (typeof REPORT_TYPES)[number];
 
@@ -40,6 +41,12 @@ export const REPORT_TYPE_META: Record<
   RPT13: { name: "Executive Summary", kind: "report", exportFormats: ["pdf", "excel"], requiresStudyId: true, requiresSurveyId: false },
   RPT14: { name: "Village Report", kind: "report", exportFormats: ["pdf", "excel"], requiresStudyId: true, requiresSurveyId: false },
   RPT15: { name: "Survey & Dashboard Report", kind: "report", exportFormats: ["pdf", "excel"], requiresStudyId: true, requiresSurveyId: true },
+  // Study-scoped evidence reports. Both are built from the study's uploaded
+  // evidence documents and their officer-confirmed AI summaries, so neither
+  // names a survey. RPT17 carries the documents alone; RPT16 adds the
+  // quantitative severity/priority half on top of the same evidence.
+  RPT16: { name: "Combined Evidence & Score Report", kind: "report", exportFormats: ["pdf", "excel"], requiresStudyId: true, requiresSurveyId: false },
+  RPT17: { name: "Evidence Document-Based Report", kind: "report", exportFormats: ["pdf", "excel"], requiresStudyId: true, requiresSurveyId: false },
 };
 
 export interface ReportRow {

@@ -5,28 +5,22 @@ import { ReportSummaryDataProvider } from "./providers/report-summary-data.provi
 import { ReportDataProvider } from "./providers/report-data.provider";
 import { PrioritySummaryController } from "./priority-summary.controller";
 import { ReportSummaryService } from "./report-summary.service";
+import { CombinedReportSummaryService } from "./combined-report-summary.service";
+import { CombinedReportSummaryController } from "./combined-report-summary.controller";
 import { AiModule } from "../ai/ai.module";
 import { PriorityModule } from "../priority/priority.module";
 import { ReportSharingModule } from "../report-sharing/report-sharing.module";
 import { ReviewerSlaModule } from "../reviewer-sla/reviewer-sla.module";
 
 @Module({
-  // PriorityModule exports PriorityV2Service — the authoritative org-wide
-  // priority rows the collective dashboard aggregates (reconciles with the
-  // Priority Dashboard).
-  // ReportSharingModule (RPT12 rows) imports this module back, hence the
-  // forwardRef on both sides. ReviewerSlaModule (RPT02's SLA figure) has no
-  // imports, so it needs none.
   imports: [AiModule, PriorityModule, forwardRef(() => ReportSharingModule), ReviewerSlaModule],
-  controllers: [ReportsController, PrioritySummaryController],
+  controllers: [ReportsController, PrioritySummaryController, CombinedReportSummaryController],
   providers: [
-    ReportsService, ReportSummaryService,
-    // The provider seam is bound to REAL data throughout: DB snapshot + Gemini
-    // summary + survey demographics per scope, real priority/sharing/SLA rows
-    // for the cross-study reports. There is no mock fallback — an un-scored
-    // study raises STUDY_NOT_SCORED (409) rather than returning fixtures.
+    ReportsService,
+    ReportSummaryService,
+    CombinedReportSummaryService,
     { provide: ReportDataProvider, useClass: ReportSummaryDataProvider },
   ],
-  exports: [ReportsService, ReportSummaryService, ReportDataProvider],
+  exports: [ReportsService, ReportSummaryService, CombinedReportSummaryService, ReportDataProvider],
 })
 export class ReportsModule {}

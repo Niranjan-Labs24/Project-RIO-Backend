@@ -153,6 +153,8 @@ model Organisation {
   scoreRollups               ScoreRollup[]
   villagePriorityAssessments VillagePriorityAssessment[]
   aiPrioritySummaries        AiPrioritySummary[]
+  evidenceDocuments          EvidenceDocument[]
+  combinedReportSummaries    CombinedReportSummary[]
 
   @@index([regionId])
   @@map("organisations")
@@ -326,6 +328,9 @@ model Study {
   scoreRollups               ScoreRollup[]
   villagePriorityAssessments VillagePriorityAssessment[]
   aiPrioritySummaries        AiPrioritySummary[]
+  evidenceDocuments          EvidenceDocument[]
+  evidenceDocumentSummaries  EvidenceDocumentSummary[]
+  combinedReportSummaries    CombinedReportSummary[]
 
   @@unique([orgId, cycleNumber])
   @@index([orgId])
@@ -463,6 +468,7 @@ model Need {
   aiSummaries AiSummary[]
   priorityScores PriorityScore[]
   aiSuggestions AiSuggestion[]
+  evidenceDocuments EvidenceDocument[]
 
   @@index([orgId])
   @@index([studyId])
@@ -1197,6 +1203,8 @@ enum ReportType {
   RPT13
   RPT14
   RPT15
+  RPT16
+  RPT17
 }
 
 enum ReportStatus {
@@ -1863,11 +1871,142 @@ model AiPrioritySummary {
   org   Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
   study Study        @relation(fields: [studyId], references: [id], onDelete: Cascade)
   survey Survey       @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  combinedReportSummaries CombinedReportSummary[]
 
   @@index([orgId])
   @@index([studyId])
   @@index([surveyId])
   @@index([studyId, surveyId, villageId, status])
   @@map("ai_priority_summaries")
+}
+
+model EvidenceDocument {
+  id                         String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId                      String   @map("org_id") @db.Uuid
+  studyId                    String   @map("study_id") @db.Uuid
+  uploadedBy                 String   @map("uploaded_by") @db.Uuid
+  title                      String   @db.VarChar(200)
+  fileName                   String   @map("file_name") @db.VarChar(255)
+  fileType                   String   @map("file_type") @db.VarChar(100)
+  storageKey                 String   @map("storage_key") @db.VarChar(500)
+  documentType               String   @map("document_type") @db.VarChar(100)
+  sourceReferenceId          String   @map("source_reference_id") @db.VarChar(100)
+  collectedDate              DateTime @map("collected_date") @db.Timestamptz(6)
+  description                String?  @db.VarChar(1000)
+  linkedNeedId               String?  @map("linked_need_id") @db.Uuid
+  linkedDomainId             String?  @map("linked_domain_id") @db.VarChar(120)
+  linkedKpiId                String?  @map("linked_kpi_id") @db.VarChar(200)
+  parsingStatus              String   @default("UPLOADED") @map("parsing_status") @db.VarChar(50)
+  extractedText              String?  @map("extracted_text") @db.Text
+  parsedAt                   DateTime? @map("parsed_at") @db.Timestamptz(6)
+  parseError                 String?  @map("parse_error") @db.Text
+  isIncludedInCombinedReport Boolean  @default(true) @map("is_included_in_combined_report")
+  createdAt                  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org                Organisation              @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  study              Study                     @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  need               Need?                     @relation(fields: [linkedNeedId], references: [id], onDelete: SetNull)
+  chunks             EvidenceDocumentChunk[]
+  summaries          EvidenceDocumentSummary[]
+  combinedSources    CombinedReportEvidenceSource[]
+
+  @@index([orgId])
+  @@index([studyId])
+  @@index([linkedNeedId])
+  @@map("evidence_documents")
+}
+
+model EvidenceDocumentChunk {
+  id               String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  documentId       String   @map("document_id") @db.Uuid
+  chunkIndex       Int      @map("chunk_index")
+  pageNumber       Int?     @map("page_number")
+  sectionReference String?  @map("section_reference") @db.VarChar(200)
+  chunkText        String   @map("chunk_text") @db.Text
+  chunkSummary     String?  @map("chunk_summary") @db.Text
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  document EvidenceDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@map("evidence_document_chunks")
+}
+
+model EvidenceDocumentSummary {
+  id                      String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  documentId              String    @map("document_id") @db.Uuid
+  studyId                 String    @map("study_id") @db.Uuid
+  status                  String    @default("DRAFT") @db.VarChar(50)
+  promptVersion           String    @default("evidence-doc-summary-v1") @map("prompt_version") @db.VarChar(100)
+  modelName               String    @default("gemini-2.5-flash") @map("model_name") @db.VarChar(100)
+  modelVersion            String    @default("v1") @map("model_version") @db.VarChar(50)
+  inputTextHash           String    @map("input_text_hash") @db.VarChar(64)
+  aiOutputJson            Json      @map("ai_output_json")
+  officerEditedOutputJson Json?     @map("officer_edited_output_json")
+  generatedBy             String    @map("generated_by") @db.Uuid
+  generatedAt             DateTime  @default(now()) @map("generated_at") @db.Timestamptz(6)
+  confirmedBy             String?   @map("confirmed_by") @db.Uuid
+  confirmedAt             DateTime? @map("confirmed_at") @db.Timestamptz(6)
+  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  document        EvidenceDocument               @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  study           Study                          @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  combinedSources CombinedReportEvidenceSource[]
+
+  @@index([documentId])
+  @@index([studyId])
+  @@map("evidence_document_summaries")
+}
+
+model CombinedReportSummary {
+  id                      String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  studyId                 String    @map("study_id") @db.Uuid
+  orgId                   String    @map("org_id") @db.Uuid
+  reportDataSnapshotId    String    @map("report_data_snapshot_id") @db.VarChar(100)
+  scoreSummaryId          String    @map("score_summary_id") @db.Uuid
+  status                  String    @default("DRAFT") @db.VarChar(50)
+  promptVersion           String    @default("combined-report-summary-v1") @map("prompt_version") @db.VarChar(100)
+  modelName               String    @default("gemini-2.5-flash") @map("model_name") @db.VarChar(100)
+  modelVersion            String    @default("v1") @map("model_version") @db.VarChar(50)
+  inputHash               String    @map("input_hash") @db.VarChar(64)
+  aiOutputJson            Json      @map("ai_output_json")
+  officerEditedOutputJson Json?     @map("officer_edited_output_json")
+  generatedBy             String    @map("generated_by") @db.Uuid
+  generatedAt             DateTime  @default(now()) @map("generated_at") @db.Timestamptz(6)
+  confirmedBy             String?   @map("confirmed_by") @db.Uuid
+  confirmedAt             DateTime? @map("confirmed_at") @db.Timestamptz(6)
+  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  study        Study                          @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  org          Organisation                   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  scoreSummary AiPrioritySummary              @relation(fields: [scoreSummaryId], references: [id], onDelete: Cascade)
+  sources      CombinedReportEvidenceSource[]
+
+  @@index([studyId])
+  @@index([orgId])
+  @@index([scoreSummaryId])
+  @@map("combined_report_summaries")
+}
+
+model CombinedReportEvidenceSource {
+  id                      String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  combinedReportSummaryId String   @map("combined_report_summary_id") @db.Uuid
+  documentId              String   @map("document_id") @db.Uuid
+  documentSummaryId       String   @map("document_summary_id") @db.Uuid
+  includedAt              DateTime @default(now()) @map("included_at") @db.Timestamptz(6)
+  includedBy              String   @map("included_by") @db.Uuid
+
+  combinedSummary CombinedReportSummary   @relation(fields: [combinedReportSummaryId], references: [id], onDelete: Cascade)
+  document        EvidenceDocument        @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentSummary EvidenceDocumentSummary @relation(fields: [documentSummaryId], references: [id], onDelete: Cascade)
+
+  @@index([combinedReportSummaryId])
+  @@index([documentId])
+  @@index([documentSummaryId])
+  @@map("combined_report_evidence_sources")
 }
 
