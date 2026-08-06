@@ -158,7 +158,15 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('entityTeam', { read: true, write: true, create: true, export: true }),
     perm('rolesPermissions', RO), perm('onboardingConsent', RO), perm('methodologyQuestionBank', RO),
     perm('studySurvey', RO), perm('dataCollection', RO), perm('dataImport', RO), perm('citizenChannel', RO),
-    perm('aiReview', RO), perm('priorityScoring', RO), perm('reportsDashboards', RO), perm('archiveSharingAudit', RO),
+    perm('aiReview', RO), perm('priorityScoring', RO), perm('reportsDashboards', RO),
+    // `export` (on top of `read`) — RIO-FR-007: the BRD names System Admin as
+    // the role that "manages ... the audit log", but this grant was read-only,
+    // so the one role responsible for the audit log couldn't download it. The
+    // audit CSV export (AuditController's GET /audit/export) is gated on
+    // exactly `archiveSharingAudit:export`, and that action gates nothing else
+    // in this module — Archive is read-only and Sharing uses create/approve —
+    // so this widens audit export only, not Archive or Sharing.
+    perm('archiveSharingAudit', { read: true, export: true }),
     perm('surveyBuilder'),
     // Generate a new NCNP Compiled Report snapshot for review, and publish
     // one a System Reviewer has already approved — `write` covers both

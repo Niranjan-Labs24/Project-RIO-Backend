@@ -165,10 +165,18 @@ async function main(): Promise<void> {
     }
   }
 
+  // RIO-DATA-001 — two separately-versioned consents, both active. Signup
+  // validates the submitted version against the active policy of each kind,
+  // so BOTH must exist or every registration fails its consent check.
   await prisma.consentPolicy.upsert({
-    where: { version: 'v1' },
+    where: { kind_version: { kind: 'use_policy', version: 'v1' } },
     update: { active: true },
-    create: { version: 'v1', active: true, text: 'Buyer-supplied data-use & consent policy — placeholder text seeded until the real copy is provided.' },
+    create: { kind: 'use_policy', version: 'v1', active: true, text: 'Buyer-supplied data-use & consent policy — placeholder text seeded until the real copy is provided.' },
+  });
+  await prisma.consentPolicy.upsert({
+    where: { kind_version: { kind: 'data_sharing', version: 'v1' } },
+    update: { active: true },
+    create: { kind: 'data_sharing', version: 'v1', active: true, text: 'Buyer-supplied data-sharing consent — placeholder text seeded until the real copy is provided.' },
   });
 
   await seedDomainsAndSubdomains();

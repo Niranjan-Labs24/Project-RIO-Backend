@@ -40,6 +40,32 @@ describe('ROLE_MATRIX', () => {
     expect(can('system_admin', 'ncnpReport', 'approve')).toBe(false);
   });
 
+  // RIO-FR-007 — the BRD names System Admin as the role that "manages ... the
+  // audit log", so read-alone was a gap: it could open the log but never
+  // download it. `export` is the exact action GET /audit/export is gated on.
+  it('system_admin can read AND export the audit log, without gaining Archive/Sharing writes', () => {
+    expect(can('system_admin', 'archiveSharingAudit', 'read')).toBe(true);
+    expect(can('system_admin', 'archiveSharingAudit', 'export')).toBe(true);
+    // Same module, but export must not have widened anything else: Sharing's
+    // request/decide actions and Archive writes stay out of reach.
+    expect(can('system_admin', 'archiveSharingAudit', 'create')).toBe(false);
+    expect(can('system_admin', 'archiveSharingAudit', 'write')).toBe(false);
+    expect(can('system_admin', 'archiveSharingAudit', 'approve')).toBe(false);
+    expect(can('system_admin', 'archiveSharingAudit', 'share')).toBe(false);
+  });
+
+  // Roles the status review lists as audit-log read-only must stay read-only —
+  // the FR-007 export grant is System Admin's alone (plus ngo_admin's blanket
+  // full access, asserted separately below).
+  it('audit-log export stays exclusive to system_admin and ngo_admin', () => {
+    for (const key of ['human_reviewer', 'data_analyst', 'read_only_viewer', 'center_supervisor', 'ngo_research_officer']) {
+      expect(can(key, 'archiveSharingAudit', 'export')).toBe(false);
+    }
+    // No audit access whatsoever for these two.
+    expect(can('field_researcher', 'archiveSharingAudit', 'read')).toBe(false);
+    expect(can('system_reviewer', 'archiveSharingAudit', 'read')).toBe(false);
+  });
+
   it('ncnp_user is cross-entity but has no permission on any other module', () => {
     const role = ROLE_MATRIX.find((r) => r.key === 'ncnp_user');
     expect(role?.id).toBe('role_ncnp_user');

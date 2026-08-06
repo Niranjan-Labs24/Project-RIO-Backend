@@ -79,13 +79,34 @@ model RolePermission {
   @@map("role_permissions")
 }
 
+// RIO-DATA-001 — the Requirements Register calls for two separate,
+// separately-versioned consents, not one combined policy: the acceptance of
+// the platform's use policy, and a distinct data-sharing consent. They are
+// separate `kind`s of the same table (rather than two tables) precisely
+// because they version, activate and get accepted through identical
+// machinery — only the text and the audit meaning differ.
+enum ConsentPolicyKind {
+  use_policy
+  data_sharing
+}
+
 model ConsentPolicy {
-  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  version   String   @unique @db.VarChar(64)
+  id   String            @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  kind ConsentPolicyKind @default(use_policy)
+  // Versions are per-kind, so `v1` of the use policy and `v1` of the
+  // data-sharing consent are two different rows — hence the compound unique
+  // below rather than the global `@unique` this column carried when only one
+  // policy kind existed.
+  version   String   @db.VarChar(64)
   text      String
   active    Boolean  @default(false)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
+  @@unique([kind, version])
+  // Exactly one row per kind is expected to be active at a time; this index
+  // serves the `where: { kind, active: true }` lookup both signup and the
+  // public policy endpoint make on every call.
+  @@index([kind, active])
   @@map("consent_policies")
 }
 
@@ -175,6 +196,13 @@ model User {
   // detected on every login/me() without an extra join. The full acceptance
   // history still lives in ConsentAcceptance; this is just "what's current."
   consentedPolicyVersion String?    @map("consented_policy_version") @db.VarChar(64)
+  // RIO-DATA-001's second consent, denormalized for exactly the same reason
+  // as the pair above: the session needs to know whether BOTH consents are
+  // current on every login/me() without joining ConsentAcceptance twice. The
+  // two pairs move independently — each policy kind versions on its own
+  // schedule, so an org can be current on one and stale on the other.
+  sharingConsentedAt            DateTime? @map("sharing_consented_at") @db.Timestamptz(6)
+  sharingConsentedPolicyVersion String?   @map("sharing_consented_policy_version") @db.VarChar(64)
   failedLoginAttempts    Int        @default(0) @map("failed_login_attempts")
   sessionVersion         Int        @default(0) @map("session_version")
   lockedUntil            DateTime?  @map("locked_until") @db.Timestamptz(6)
@@ -216,17 +244,24 @@ model PasswordResetToken {
 }
 
 model ConsentAcceptance {
-  id            String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  orgId         String   @map("org_id") @db.Uuid
-  userId        String   @map("user_id") @db.Uuid
-  policyVersion String   @map("policy_version") @db.VarChar(64)
-  policyText    String   @map("policy_text")
-  acceptedAt    DateTime @default(now()) @map("accepted_at") @db.Timestamptz(6)
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  // Which of the two RIO-DATA-001 consents this row records. Every
+  // acceptance predating that split was the use policy, so `use_policy` is
+  // the backfill default — see the accompanying migration.
+  kind          ConsentPolicyKind @default(use_policy)
+  orgId         String            @map("org_id") @db.Uuid
+  userId        String            @map("user_id") @db.Uuid
+  policyVersion String            @map("policy_version") @db.VarChar(64)
+  policyText    String            @map("policy_text")
+  acceptedAt    DateTime          @default(now()) @map("accepted_at") @db.Timestamptz(6)
 
   org  Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
+  // Drives the per-user, per-kind "has this been accepted, and at which
+  // version" lookup the consent gate makes.
+  @@index([userId, kind])
   @@map("consent_acceptances")
 }
 

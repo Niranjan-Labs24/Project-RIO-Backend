@@ -28,13 +28,31 @@ export type LoginDto = Static<typeof LoginBody>;
 const SectorValue = T.String({ minLength: 1, maxLength: 200 });
 
 /**
+ * RIO-DATA-001 — the two consents the registrant must accept, submitted as
+ * the exact policy version each checkbox was shown for, not as a bare
+ * boolean. A boolean would record "they ticked something" without pinning
+ * *what*; the version makes the acceptance verifiable and lets the server
+ * reject a form that was left open across a policy update (see
+ * AuthService.signup's active-version check). Both are required: registration
+ * cannot complete without accepting both.
+ */
+const ConsentAcceptanceBody = T.Object(
+  {
+    usePolicyVersion: T.String({ minLength: 1, maxLength: 64 }),
+    dataSharingVersion: T.String({ minLength: 1, maxLength: 64 }),
+  },
+  { additionalProperties: false },
+);
+
+/**
  * Public signup — no password/adminName fields: the email IS the NGO Admin
  * account and the server issues a temporary password (see AuthService.signup).
  *
- * Consent is NOT collected here — it happens after first login, once the
- * temp password has been replaced (see AuthService.consent() /
- * ConsentGuard on the frontend). Signup only creates the org + its first
- * NGO Admin.
+ * Consent IS collected here (RIO-DATA-001): both the use policy and the
+ * data-sharing consent are accepted as part of registration itself, in the
+ * same transaction that creates the org — registration cannot complete
+ * without them. AuthService.consent() still exists, but now only serves
+ * accounts predating this change and re-prompts after a policy version bump.
  *
  * `sector` replaces the old free-text "area of work" field on this form —
  * `purpose` is now only used to carry the reviewer's own text when
@@ -50,6 +68,9 @@ export const SignupBody = registerSchema(
       purpose: T.Optional(T.String({ maxLength: 500 })),
       registrationNumber: T.String({ minLength: 1, maxLength: 100 }),
       email: T.String({ format: 'email' }),
+      // Required, not optional — a signup payload without it is a 400 from
+      // the validation pipe before any org row is created.
+      consent: ConsentAcceptanceBody,
       // KSA Geographic Reference hierarchy — mandatory at signup so every
       // self-service org starts with its scope already configured (see
       // AuthService.signup for the existence/hierarchy checks TypeBox can't

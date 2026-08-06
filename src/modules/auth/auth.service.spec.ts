@@ -23,6 +23,20 @@ const domainsStub = {
 };
 const geographyStub = { validateHierarchy: vi.fn().mockResolvedValue(undefined) };
 
+// RIO-DATA-001 — the two separately-versioned consents AuthService resolves
+// during signup and the post-login re-prompt. Both are seeded at 'v1' here so
+// a signup fixture that submits 'v1' for each passes the active-version check.
+const USE_POLICY = { kind: 'use_policy' as const, version: 'v1', text: 'policy text' };
+const SHARING_POLICY = { kind: 'data_sharing' as const, version: 'v1', text: 'sharing text' };
+const consentStub = {
+  getActivePolicy: vi.fn(async (kind: 'use_policy' | 'data_sharing') =>
+    kind === 'use_policy' ? USE_POLICY : SHARING_POLICY,
+  ),
+  getActivePolicies: vi.fn(async () => ({ usePolicy: USE_POLICY, dataSharing: SHARING_POLICY })),
+};
+/** Both consents accepted at their active versions — the happy-path signup body. */
+const VALID_CONSENT = { usePolicyVersion: 'v1', dataSharingVersion: 'v1' };
+
 const orgFixture = {
   id: 'o1', name: 'Demo NGO', logoUrl: null, region: ['North'], email: 'admin@demo-ngo.org',
   sector: 'wash', villages: ['A'], isActive: true, createdAt: new Date('2026-01-01T00:00:00Z'),
@@ -50,7 +64,7 @@ describe('AuthService.login', () => {
   });
 
   it('returns a SessionContext with token, user, org and role on valid credentials', async () => {
-    const svc = new AuthService(fakeTenant(user) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never);
+    const svc = new AuthService(fakeTenant(user) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, consentStub as never);
     const session = await svc.login('admin@demo-ngo.org', 'Passw0rd!');
     expect(session.token).toBeTruthy();
     expect(tokens.verify(session.token).sub).toBe('u1');
@@ -64,40 +78,78 @@ describe('AuthService.login', () => {
   });
 
   it('throws 401 on a wrong password', async () => {
-    const svc = new AuthService(fakeTenant(user) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never);
+    const svc = new AuthService(fakeTenant(user) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, consentStub as never);
     await expect(svc.login('admin@demo-ngo.org', 'wrong')).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('throws 401 when the user does not exist', async () => {
-    const svc = new AuthService(fakeTenant(null) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never);
+    const svc = new AuthService(fakeTenant(null) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, consentStub as never);
     await expect(svc.login('nobody@x.org', 'whatever')).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('refuses valid credentials when the org is deactivated (403 ORG_INACTIVE)', async () => {
     const inactive = { ...user, org: { ...orgFixture, isActive: false } };
-    const svc = new AuthService(fakeTenant(inactive) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never);
+    const svc = new AuthService(fakeTenant(inactive) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, consentStub as never);
     await expect(svc.login('admin@demo-ngo.org', 'Passw0rd!')).rejects.toBeInstanceOf(ForbiddenException);
   });
 });
 
 describe('AuthService.consent', () => {
-  it('sets consentedAt + consentedPolicyVersion and writes a versioned consent_acceptances snapshot', async () => {
+  // RIO-DATA-001 — the post-login re-prompt now accepts BOTH consents in one
+  // call and writes one immutable snapshot per kind, so the two remain
+  // independently auditable.
+  function consentTenant() {
     const created: Record<string, unknown>[] = [];
     const userUpdates: Record<string, unknown>[] = [];
     const tenant = {
       runInOrgContext: async (fn: (tx: unknown) => unknown) =>
         fn({
-          consentPolicy: { findFirst: async () => ({ version: 'v1', text: 'policy text' }) },
           user: { update: async ({ data }: { data: Record<string, unknown> }) => { userUpdates.push(data); return {}; } },
-          consentAcceptance: { create: async ({ data }: { data: Record<string, unknown> }) => { created.push(data); return data; } },
+          consentAcceptance: {
+            createMany: async ({ data }: { data: Record<string, unknown>[] }) => { created.push(...data); return { count: data.length }; },
+          },
         }),
     };
-    const svc = new AuthService(tenant as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never);
+    return { tenant, created, userUpdates };
+  }
+
+  it('stamps both consent pairs on the user and snapshots each policy separately', async () => {
+    const { tenant, created, userUpdates } = consentTenant();
+    const svc = new AuthService(tenant as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, consentStub as never);
     const res = await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'u1' }, () => svc.consent());
+
     expect(res.policyVersion).toBe('v1');
-    expect(created).toHaveLength(1);
-    expect(created[0]).toMatchObject({ orgId: 'o1', userId: 'u1', policyVersion: 'v1', policyText: 'policy text' });
-    expect(userUpdates[0]).toMatchObject({ consentedPolicyVersion: 'v1' });
+    expect(res.sharingPolicyVersion).toBe('v1');
+    // One row per kind — not one combined acceptance.
+    expect(created).toHaveLength(2);
+    expect(created).toContainEqual(
+      expect.objectContaining({ orgId: 'o1', userId: 'u1', kind: 'use_policy', policyVersion: 'v1', policyText: 'policy text' }),
+    );
+    expect(created).toContainEqual(
+      expect.objectContaining({ orgId: 'o1', userId: 'u1', kind: 'data_sharing', policyVersion: 'v1', policyText: 'sharing text' }),
+    );
+    // Both denormalized pairs move together on this path.
+    expect(userUpdates[0]).toMatchObject({
+      consentedPolicyVersion: 'v1',
+      sharingConsentedPolicyVersion: 'v1',
+    });
+    expect(userUpdates[0]?.consentedAt).toBeInstanceOf(Date);
+    expect(userUpdates[0]?.sharingConsentedAt).toBeInstanceOf(Date);
+  });
+
+  it('records a separate audit event per consent kind', async () => {
+    const { tenant } = consentTenant();
+    const audit = { record: vi.fn() };
+    const svc = new AuthService(tenant as never, passwords, tokens, audit as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, consentStub as never);
+    await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'u1' }, () => svc.consent());
+
+    expect(audit.record).toHaveBeenCalledTimes(2);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'consent', entityLabel: 'Accepted use policy v1' }),
+    );
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'consent', entityLabel: 'Accepted data-sharing consent v1' }),
+    );
   });
 });
 
@@ -112,7 +164,7 @@ describe('AuthService.signup', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    service = new AuthService(tenant as never, passwords as never, tokens as never, audit as never, repo as never, mailer as never, config, domainsStub as never, geographyStub as never);
+    service = new AuthService(tenant as never, passwords as never, tokens as never, audit as never, repo as never, mailer as never, config, domainsStub as never, geographyStub as never, consentStub as never);
   });
 
   it('signup: creates org+admin, records audit, returns emailed=true when mailer succeeds', async () => {
@@ -124,7 +176,7 @@ describe('AuthService.signup', () => {
     });
     mailer.sendTemporaryPassword.mockResolvedValue(true);
 
-    const res = await service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'] });
+    const res = await service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'], consent: VALID_CONSENT });
 
     expect(res.temporaryPasswordEmailed).toBe(true);
     expect(res.temporaryPassword).toBeUndefined();
@@ -135,7 +187,7 @@ describe('AuthService.signup', () => {
 
   it('signup: rejects a duplicate registration number before creating', async () => {
     repo.findByRegistrationNumber.mockResolvedValue({ id: 'existing' });
-    await expect(service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'] }))
+    await expect(service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'], consent: VALID_CONSENT }))
       .rejects.toMatchObject({ response: { error: { code: 'ORGANIZATION_ALREADY_REGISTERED' } } });
     expect(repo.createOrganisationAndAdmin).not.toHaveBeenCalled();
   });
@@ -149,7 +201,7 @@ describe('AuthService.signup', () => {
     });
     mailer.sendTemporaryPassword.mockResolvedValue(false);
     // config mock nodeEnv = 'development'
-    const res = await service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'] });
+    const res = await service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'], consent: VALID_CONSENT });
     expect(res.temporaryPasswordEmailed).toBe(false);
     expect(typeof res.temporaryPassword).toBe('string');
   });
@@ -163,9 +215,9 @@ describe('AuthService.signup', () => {
     });
     mailer.sendTemporaryPassword.mockResolvedValue(false);
     const prodConfig = { nodeEnv: 'production' } as unknown as ConfigService;
-    const prodService = new AuthService(tenant as never, passwords as never, tokens as never, audit as never, repo as never, mailer as never, prodConfig, domainsStub as never, geographyStub as never);
+    const prodService = new AuthService(tenant as never, passwords as never, tokens as never, audit as never, repo as never, mailer as never, prodConfig, domainsStub as never, geographyStub as never, consentStub as never);
 
-    const res = await prodService.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'] });
+    const res = await prodService.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'], consent: VALID_CONSENT });
 
     expect(res.temporaryPasswordEmailed).toBe(false);
     expect(res.temporaryPassword).toBeUndefined();
@@ -182,13 +234,74 @@ describe('AuthService.signup', () => {
     const logSpy = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
     const errorSpy = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
 
-    const res = await service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'] });
+    const res = await service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'], consent: VALID_CONSENT });
 
     expect(typeof res.temporaryPassword).toBe('string');
     const allLoggedArgs = [...logSpy.mock.calls, ...errorSpy.mock.calls].flat().map(String);
     expect(allLoggedArgs.some((arg) => arg.includes(res.temporaryPassword as string))).toBe(false);
     logSpy.mockRestore();
     errorSpy.mockRestore();
+  });
+
+  // ── RIO-DATA-001: consent is part of registration ──────────────────────
+  //
+  // The point of moving consent into signup is that an organisation can
+  // never exist without both acceptances on record. These pin that: the
+  // versions reach the repository resolved (with policy text), and anything
+  // that doesn't match the active version stops the registration before a
+  // single row is written.
+
+  function stubSuccessfulCreate() {
+    repo.findByRegistrationNumber.mockResolvedValue(null);
+    repo.findUserByEmail.mockResolvedValue(null);
+    repo.createOrganisationAndAdmin.mockResolvedValue({
+      org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: 'RN1', logoUrl: null, region: [], email: null, sector: null, villages: [], isActive: true, createdAt: new Date() },
+      user: { id: 'u1', name: 'Org Admin', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h', consentedAt: new Date(), consentedPolicyVersion: 'v1', sharingConsentedAt: new Date(), sharingConsentedPolicyVersion: 'v1', failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: true },
+    });
+    mailer.sendTemporaryPassword.mockResolvedValue(true);
+  }
+
+  const signupBody = {
+    organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test',
+    regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'],
+  };
+
+  it('passes both consents to the repository resolved with their server-side policy text', async () => {
+    stubSuccessfulCreate();
+
+    await service.signup({ ...signupBody, consent: VALID_CONSENT });
+
+    const passed = repo.createOrganisationAndAdmin.mock.calls[0]?.[0]?.consents;
+    expect(passed).toHaveLength(2);
+    // Text comes from the server's own policy row, never from the client.
+    expect(passed).toContainEqual({ kind: 'use_policy', version: 'v1', text: 'policy text' });
+    expect(passed).toContainEqual({ kind: 'data_sharing', version: 'v1', text: 'sharing text' });
+  });
+
+  it('audits each consent as its own event at registration', async () => {
+    stubSuccessfulCreate();
+
+    await service.signup({ ...signupBody, consent: VALID_CONSENT });
+
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'consent', entityLabel: 'Accepted use policy v1 at registration' }),
+    );
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'consent', entityLabel: 'Accepted data-sharing consent v1 at registration' }),
+    );
+  });
+
+  it.each([
+    ['use policy', { usePolicyVersion: 'v0', dataSharingVersion: 'v1' }],
+    ['data-sharing consent', { usePolicyVersion: 'v1', dataSharingVersion: 'v0' }],
+  ])('rejects a stale %s version and creates nothing', async (_label, consent) => {
+    stubSuccessfulCreate();
+
+    await expect(service.signup({ ...signupBody, consent })).rejects.toMatchObject({
+      response: { error: { code: 'CONSENT_VERSION_STALE' } },
+    });
+    // The whole point: no org exists without both consents.
+    expect(repo.createOrganisationAndAdmin).not.toHaveBeenCalled();
   });
 });
 
@@ -207,7 +320,7 @@ describe('AuthService.changePassword', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    service = new AuthService(tenant as never, passwords as never, tokens, audit as never, repo as never, mailer as never, config, domainsStub as never, geographyStub as never);
+    service = new AuthService(tenant as never, passwords as never, tokens, audit as never, repo as never, mailer as never, config, domainsStub as never, geographyStub as never, consentStub as never);
   });
 
   it('changePassword: rejects a wrong current password with 401 INVALID_CURRENT_PASSWORD', async () => {

@@ -9,6 +9,13 @@ export interface SessionUser {
   // currently-active policy's version (GET /consent-policy/active) to decide
   // whether ConsentGuard should re-prompt (e.g. after a policy version bump).
   consentedPolicyVersion: string | null;
+  // RIO-DATA-001's second, separately-versioned consent. Tracked as its own
+  // pair rather than folded into the two above because the two policies
+  // version independently: an account can be current on the use policy and
+  // stale (or never asked) on the data-sharing consent, which is exactly the
+  // state every account created before that consent existed is in.
+  sharingConsentedAt: string | null;
+  sharingConsentedPolicyVersion: string | null;
 }
 
 export interface SessionOrg {
