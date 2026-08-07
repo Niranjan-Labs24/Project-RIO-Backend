@@ -260,7 +260,17 @@ export class AiDecisionsService {
       });
       return row;
     });
-    await this.audit.record({ action: 'create', entityType: 'ai_decision', entityId: created.id, entityLabel: `AI classification for need "${need.title}"` });
+    await this.audit.record({
+      action: 'create', entityType: 'ai_decision', entityId: created.id,
+      entityLabel: `AI classification for need "${need.title}"`,
+      // The AI's own prediction, recorded at the moment it was made. The
+      // matching human decision is written by review() below, so the two can
+      // be read as a pair (RIO-AI-004).
+      changes: [
+        { field: 'AI suggested classification', before: null, after: result.suggestion.domains[0] && result.suggestion.subDomains[0] ? `${result.suggestion.domains[0]} / ${result.suggestion.subDomains[0]}` : null },
+        { field: 'Decision status', before: null, after: 'awaiting human review' },
+      ],
+    });
 
     // "Never leave the Need without AI suggestions" covers questions too —
     // generate them off whatever domain/subDomain this classification landed
@@ -323,6 +333,9 @@ export class AiDecisionsService {
 
   async review(id: string, payload: ReviewDecisionPayload): Promise<AiDecision> {
     const decidedBy = requireActor();
+    // Filled inside the transaction, read by the audit record after it commits.
+    let aiSuggestionLabel: string | null = null;
+    let decidedLabel: string | null = null;
     const { updated, needTitle } = await this.tenant.runInOrgContext(async (tx) => {
       const existing = (await tx.aiDecision.findUnique({ where: { id } })) as unknown as AiDecisionRow | null;
       if (!existing) throw new NotFoundException({ error: { code: 'AI_DECISION_NOT_FOUND', message: 'AI decision not found' } });
@@ -357,6 +370,16 @@ export class AiDecisionsService {
           decidedAt: new Date(),
         },
       })) as unknown as AiDecisionRow;
+
+      // Captured for the audit entry below: the AI's original prediction and
+      // the human's final call, as a pair. RIO-AI-004 (Sprint 3) needs exactly
+      // this shape for merge decisions, so the convention is established here
+      // rather than invented separately later.
+      const aiSuggested = existing.suggestion as { domains?: string[]; subDomains?: string[] } | null;
+      aiSuggestionLabel =
+        aiSuggested?.domains?.[0] && aiSuggested?.subDomains?.[0]
+          ? `${aiSuggested.domains[0]} / ${aiSuggested.subDomains[0]}`
+          : null;
 
       if (payload.decision === 'approved' || payload.decision === 'modified') {
         // Approved (as-is) or modified (overridden) both produce a final
@@ -394,6 +417,8 @@ export class AiDecisionsService {
           (suggestion?.domains?.[0] && suggestion?.subDomains?.[0]
             ? [{ domain: suggestion.domains[0], subDomain: suggestion.subDomains[0] }]
             : []);
+
+        decidedLabel = pairs.length > 0 ? pairs.map((p) => `${p.domain} / ${p.subDomain}`).join('; ') : null;
 
         if (pairs.length > 0) {
           // Full replace, not append — a Researcher/Approver's multi-select
@@ -435,11 +460,22 @@ export class AiDecisionsService {
     // 'approved' surfaces as the 'approve' audit action (so an Audit Log
     // filter on Approved actually finds it) — 'modified'/'rejected' are
     // still an edit to the AI decision record, not a fresh approval.
+    //
+    // The change list is an AI-suggestion -> human-decision pair, not a plain
+    // field diff: `before` is what the model proposed, `after` is what the
+    // reviewer actually decided. On a plain Approve the two match, which is
+    // itself the useful signal ("the human agreed"); on a Modify they differ
+    // and the override is visible; on a Reject `after` is null.
     await this.audit.record({
       action: payload.decision === 'approved' ? 'approve' : 'edit',
       entityType: 'ai_decision',
       entityId: updated.id,
       entityLabel: `Classification review for need "${needTitle}"`,
+      changes: [
+        { field: 'Classification (AI suggested -> decided)', before: aiSuggestionLabel, after: decidedLabel },
+        { field: 'Decision', before: null, after: payload.decision },
+        { field: 'Reviewer notes', before: null, after: payload.notes ?? null },
+      ],
     });
     return this.toAiDecision(updated);
   }

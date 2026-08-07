@@ -194,6 +194,25 @@ export class AuthService {
     // kinds up front keeps the write below to a single round of statements.
     const { usePolicy, dataSharing } = await this.consentPolicies.getActivePolicies();
 
+    // Prior acceptance state, read before the update overwrites it — this is
+    // the "before" half of the audit entry's before/after pair. Null on a
+    // first acceptance; the superseded version on a re-acceptance.
+    const prior = await this.tenant.runInOrgContext((tx) =>
+      tx.user.findUnique({
+        where: { id: actorId },
+        select: {
+          consentedAt: true,
+          consentedPolicyVersion: true,
+          sharingConsentedAt: true,
+          sharingConsentedPolicyVersion: true,
+        },
+      }),
+    );
+    const previousUseVersion = prior?.consentedPolicyVersion ?? null;
+    const previousUseAt = prior?.consentedAt?.toISOString() ?? null;
+    const previousSharingVersion = prior?.sharingConsentedPolicyVersion ?? null;
+    const previousSharingAt = prior?.sharingConsentedAt?.toISOString() ?? null;
+
     await this.tenant.runInOrgContext(async (tx) => {
       // Accepting consent is the signal that an invited user has completed
       // onboarding (temp password already replaced by this point — consent
@@ -238,17 +257,28 @@ export class AuthService {
     // RIO-FR-Add-02 governance: each consent acceptance is itself an
     // auditable event, not just a stored timestamp — same append-only trail
     // as login/signup/password changes.
+    // `changes` carries the version each consent moved from/to so the audit
+    // detail view can show a real before/after pair: null -> v1 for a first
+    // acceptance, v1 -> v2 for a re-acceptance after a policy bump.
     await this.audit.record({
       action: 'consent',
       entityType: 'user',
       entityId: actorId,
       entityLabel: `Accepted use policy ${usePolicy.version}`,
+      changes: [
+        { field: 'Use policy version', before: previousUseVersion, after: usePolicy.version },
+        { field: 'Accepted at', before: previousUseAt, after: now.toISOString() },
+      ],
     });
     await this.audit.record({
       action: 'consent',
       entityType: 'user',
       entityId: actorId,
       entityLabel: `Accepted data-sharing consent ${dataSharing.version}`,
+      changes: [
+        { field: 'Data-sharing consent version', before: previousSharingVersion, after: dataSharing.version },
+        { field: 'Accepted at', before: previousSharingAt, after: now.toISOString() },
+      ],
     });
     return {
       consentedAt: now.toISOString(),
@@ -347,7 +377,23 @@ export class AuthService {
       store.actorId = user.id;
       store.role = role.key;
     }
-    await this.audit.record({ action: 'create', entityType: 'organization', entityId: org.id, entityLabel: org.name, organizationId: org.id });
+    // before is null throughout: a create has no prior state, and recording
+    // the pair explicitly is what lets the audit detail view render the
+    // created values rather than an empty "no changes" panel.
+    await this.audit.record({
+      action: 'create',
+      entityType: 'organization',
+      entityId: org.id,
+      entityLabel: org.name,
+      organizationId: org.id,
+      changes: [
+        { field: 'Organization name', before: null, after: org.name },
+        { field: 'Registration number', before: null, after: org.registrationNumber },
+        { field: 'Sector', before: null, after: org.sector },
+        { field: 'Email', before: null, after: org.email },
+        { field: 'Admin account', before: null, after: user.email },
+      ],
+    });
     // RIO-DATA-001 governance: each consent is its own auditable event, same
     // append-only trail as the post-login consent() path below. Recorded per
     // kind rather than as one combined line so the audit log can answer
@@ -360,6 +406,16 @@ export class AuthService {
         entityId: user.id,
         entityLabel: `Accepted ${c.kind === ConsentPolicyKind.data_sharing ? 'data-sharing consent' : 'use policy'} ${c.version} at registration`,
         organizationId: org.id,
+        // Always null -> version here: registration is by definition a first
+        // acceptance, so there is no prior version to move from.
+        changes: [
+          {
+            field: c.kind === ConsentPolicyKind.data_sharing ? 'Data-sharing consent version' : 'Use policy version',
+            before: null,
+            after: c.version,
+          },
+          { field: 'Accepted by', before: null, after: user.email },
+        ],
       });
     }
 

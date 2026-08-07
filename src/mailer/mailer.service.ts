@@ -1,14 +1,21 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Resend } from 'resend';
 import { ConfigService } from '../config/config.service';
 import { redactEmail } from '../common/security/redact';
+import { SystemLogsService } from '../modules/system-logs/system-logs.service';
 
 @Injectable()
 export class MailerService {
   private readonly logger = new Logger(MailerService.name);
   private readonly client?: Resend;
 
-  constructor(private readonly config: ConfigService) {
+  constructor(
+    private readonly config: ConfigService,
+    // RIO-NFR-016 — @Optional so the service still constructs in the unit
+    // tests (and anywhere the global SystemLogsModule isn't loaded); a
+    // missing recorder degrades to stdout-only, never to a crash.
+    @Optional() private readonly systemLogs?: SystemLogsService,
+  ) {
     const apiKey = this.config.resendApiKey;
     if (!apiKey) return; // not configured — sendTemporaryPassword returns false
     this.client = new Resend(apiKey);
@@ -39,7 +46,10 @@ export class MailerService {
       } catch (err) {
         this.logger.error(`Failed to email temporary password to ${redactEmail(email)} (attempt ${attempt}/2)`, err as Error);
       }
-      if (attempt === 2) return false;
+      if (attempt === 2) {
+        this.recordSendFailure('temporary_password', redactEmail(email), { attempts: 2 });
+        return false;
+      }
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
     return false;
@@ -63,11 +73,13 @@ export class MailerService {
       });
       if (error) {
         this.logger.error(`Failed to email password reset link to ${redactEmail(email)}: ${error.name} ${error.message}`);
+        this.recordSendFailure('password_reset', redactEmail(email), { providerError: `${error.name}: ${error.message}` });
         return false;
       }
       return true;
     } catch (err) {
       this.logger.error(`Failed to email password reset link to ${redactEmail(email)}`, err as Error);
+      this.recordSendFailure('password_reset', redactEmail(email), {}, err);
       return false;
     }
   }
@@ -98,11 +110,13 @@ export class MailerService {
       });
       if (error) {
         this.logger.error(`Failed to email contact enquiry for ${enquiry.orgName}: ${error.name} ${error.message}`);
+        this.recordSendFailure('contact_enquiry', enquiry.orgName, { providerError: `${error.name}: ${error.message}` });
         return false;
       }
       return true;
     } catch (err) {
       this.logger.error(`Failed to email contact enquiry for ${enquiry.orgName}`, err as Error);
+      this.recordSendFailure('contact_enquiry', enquiry.orgName, {}, err);
       return false;
     }
   }
@@ -134,13 +148,39 @@ export class MailerService {
       });
       if (error) {
         this.logger.error(`Failed to email survey link to ${redactEmail(email)}: ${error.name} ${error.message}`);
+        this.recordSendFailure('survey_link', redactEmail(email), { providerError: `${error.name}: ${error.message}` });
         return false;
       }
       return true;
     } catch (err) {
       this.logger.error(`Failed to email survey link to ${redactEmail(email)}`, err as Error);
+      this.recordSendFailure('survey_link', redactEmail(email), {}, err);
       return false;
     }
+  }
+
+  /**
+   * RIO-NFR-016 — one persisted row per *give-up*, not per attempt: the
+   * retry inside sendTemporaryPassword is normal transient behaviour, and
+   * logging both tries would double every failure on the System Logs
+   * summary. Recipients are redacted (redactEmail) before they reach the
+   * table — an operational log is not a place to accumulate PII.
+   */
+  private recordSendFailure(
+    kind: string,
+    recipient: string,
+    context: Record<string, unknown>,
+    error?: unknown,
+  ): void {
+    this.systemLogs?.record({
+      level: 'error',
+      category: 'integration',
+      source: MailerService.name,
+      eventCode: 'MAILER_SEND_FAILED',
+      message: `Failed to send ${kind} email to ${recipient}`,
+      error,
+      context: { ...context, provider: 'resend', kind, recipient },
+    });
   }
 }
 
@@ -452,4 +492,5 @@ function temporaryPasswordHtml({ orgName, email, tempPassword, signInUrl }: Temp
     </table>
   </body>
 </html>`;
+
 }

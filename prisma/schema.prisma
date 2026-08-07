@@ -46,6 +46,13 @@ enum PermissionModule {
   // generate+publish actions — two distinct bits so neither role can do
   // the other's job even if both hold this module.
   ncnpReport
+  // RIO-NFR-016 — the persisted operational log (system_logs). Deliberately
+  // NOT folded into archiveSharingAudit: that module is held read-only by
+  // ngo_admin, center_supervisor, data_analyst and others, and operational
+  // rows carry stack traces, internal paths and integration detail that
+  // belong to platform operations, not to tenant governance. Granted to
+  // system_admin alone.
+  systemLogs
 }
 
 // ──────── Reference (global, seeded, read-only to cnap_app) ────────
@@ -291,6 +298,82 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([sourceRef])
   @@map("audit_logs")
+}
+
+// ──────── RIO-NFR-016: Operational logging ────────
+
+enum SystemLogLevel {
+  fatal
+  error
+  warn
+  info
+}
+
+// Broad bucket for "which part of the system produced this" — an enum, not
+// free text, so the System Logs screen can offer a fixed filter list and a
+// typo at a call site can't invent a phantom category.
+enum SystemLogCategory {
+  http // request/response lifecycle, 4xx/5xx
+  database // Prisma/Postgres errors, constraint violations, timeouts
+  auth // login failures, token/OTP rejection, permission denials
+  integration // outbound: mailer, SMS, AI provider, object storage
+  job // scheduled/background work — imports, scoring, report builds
+  startup // boot, migration, config validation, shutdown
+  security // rate limits, suspicious input, RLS/tenancy violations
+  application // catch-all for service-level operational events
+}
+
+// RIO-NFR-016 — persisted operational telemetry. Deliberately NOT AuditLog:
+// that table is the immutable business-event record (RIO-FR-007) whose own
+// acceptance criterion is "cannot be deleted", so it must never carry a
+// purge path; this one is diagnostic and time-boxed by a retention window.
+// Different volume, different audience, different lifetime.
+//
+// No `org` relation on purpose: organisationId here is a loose correlation
+// key, not ownership. A row about a *failed* org lookup may legitimately
+// reference an id that no longer resolves, and deleting an org must never
+// cascade away the diagnostic history of what it did.
+model SystemLog {
+  id             String            @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  level          SystemLogLevel
+  category       SystemLogCategory
+  // Emitting module/service, e.g. "MailerService", "AllExceptionsFilter".
+  source         String            @db.VarChar(120)
+  // Stable machine code for grouping identical failures over time — e.g.
+  // "MAILER_SEND_FAILED", "HTTP_500", "P2002". Indexed: the first question
+  // asked on this screen is always "how often is X happening".
+  eventCode      String?           @map("event_code") @db.VarChar(80)
+  message        String            @db.VarChar(2000)
+  // Correlation — mirrors the pino `mixin` fields (see logger.config.ts) so
+  // a persisted row and a stdout line for the same request join on
+  // request_id.
+  requestId      String?           @map("request_id") @db.VarChar(64)
+  organisationId String?           @map("organisation_id") @db.Uuid
+  actorUserId    String?           @map("actor_user_id") @db.Uuid
+  // HTTP shape — null for non-http categories.
+  httpMethod     String?           @map("http_method") @db.VarChar(10)
+  httpPath       String?           @map("http_path") @db.VarChar(500)
+  statusCode     Int?              @map("status_code")
+  durationMs     Int?              @map("duration_ms")
+  ipAddress      String?           @map("ip_address") @db.VarChar(64)
+  userAgent      String?           @map("user_agent")
+  // Truncated at write time (SystemLogsService) — a runaway error object
+  // must not be able to bloat the table.
+  stack          String?
+  // Free-form structured detail, redacted and size-capped at write time.
+  context        Json?
+  // Which API instance emitted the row — matters the moment more than one
+  // container is running.
+  instanceId     String?           @map("instance_id") @db.VarChar(120)
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([createdAt])
+  @@index([level, createdAt])
+  @@index([category, createdAt])
+  @@index([eventCode])
+  @@index([requestId])
+  @@index([organisationId])
+  @@map("system_logs")
 }
 
 // ──────── Week 2: Data Capture (RIO-FR-001, RIO-FR-Add-01, RIO-FR-003) ────────

@@ -157,7 +157,14 @@ export class ReportsService {
         },
       }),
     );
-    await this.audit.record({ action: "create", entityType: "report", entityId: row.id, entityLabel: title });
+    await this.audit.record({
+      action: "create", entityType: "report", entityId: row.id, entityLabel: title,
+      changes: [
+        { field: "Title", before: null, after: title },
+        { field: "Report type", before: null, after: row.reportType },
+        { field: "Status", before: null, after: row.status },
+      ],
+    });
     return this.hydrateOne(row as unknown as ReportRow);
   }
 
@@ -271,7 +278,16 @@ export class ReportsService {
     const row = await this.tenant.runInOrgContext((tx) =>
       tx.report.update({ where: { id }, data: { officerConfirmedBy: officer, officerConfirmedAt: new Date() } }),
     );
-    await this.audit.record({ action: "approve", entityType: "report", entityId: row.id, entityLabel: row.title, metadata: { step: "confirm" } });
+    await this.audit.record({
+      action: "approve", entityType: "report", entityId: row.id, entityLabel: row.title,
+      metadata: { step: "confirm" },
+      // Officer confirm does not move `status` — it stamps the confirmation.
+      // The before/after pair is therefore on the confirmation itself, so the
+      // audit trail shows who confirmed and when it went from unconfirmed.
+      changes: [
+        { field: "Officer confirmed", before: existing.officerConfirmedAt?.toISOString() ?? null, after: row.officerConfirmedAt?.toISOString() ?? null },
+      ],
+    });
     return this.hydrateOne(row as unknown as ReportRow);
   }
 
@@ -292,7 +308,13 @@ export class ReportsService {
     const row = await this.tenant.runInOrgContext((tx) =>
       tx.report.update({ where: { id }, data: { status: "released", reviewedBy: reviewer, reviewedAt: new Date() } }),
     );
-    await this.audit.record({ action: "approve", entityType: "report", entityId: row.id, entityLabel: row.title, metadata: { status: "released" } });
+    await this.audit.record({
+      action: "approve", entityType: "report", entityId: row.id, entityLabel: row.title,
+      metadata: { status: "released" },
+      changes: [
+        { field: "Status", before: existing.status, after: row.status },
+      ],
+    });
     return this.hydrateOne(row as unknown as ReportRow);
   }
 
@@ -307,7 +329,13 @@ export class ReportsService {
     const row = await this.tenant.runInOrgContext((tx) =>
       tx.report.update({ where: { id }, data: { status: "rejected", reviewedBy: reviewer, reviewedAt: new Date() } }),
     );
-    await this.audit.record({ action: "approve", entityType: "report", entityId: row.id, entityLabel: row.title, metadata: { status: "rejected" } });
+    await this.audit.record({
+      action: "approve", entityType: "report", entityId: row.id, entityLabel: row.title,
+      metadata: { status: "rejected" },
+      changes: [
+        { field: "Status", before: existing.status, after: row.status },
+      ],
+    });
     return this.hydrateOne(row as unknown as ReportRow);
   }
 
@@ -324,7 +352,11 @@ export class ReportsService {
     const row = await this.tenant.runInOrgContext((tx) =>
       tx.report.update({ where: { id }, data: { status: "archived", archivedAt: new Date() } }),
     );
-    await this.audit.record({ action: "edit", entityType: "report", entityId: row.id, entityLabel: row.title, metadata: { status: "archived" } });
+    await this.audit.record({
+      action: "edit", entityType: "report", entityId: row.id, entityLabel: row.title,
+      metadata: { status: "archived" },
+      changes: [{ field: "Status", before: existing.status, after: row.status }],
+    });
     return this.hydrateOne(row as unknown as ReportRow);
   }
 
@@ -371,7 +403,19 @@ export class ReportsService {
       );
     }
 
-    await this.audit.record({ action: "share", entityType: "report", entityId: row.id, entityLabel: row.title, metadata: { format } });
+    await this.audit.record({
+      action: "share", entityType: "report", entityId: row.id, entityLabel: row.title,
+      metadata: { format },
+      // A share does not mutate the report, so there is no field that moved.
+      // The pair records what was released and in what form — before: null
+      // reads as "not previously exported in this action", which is what the
+      // detail view needs to show something meaningful instead of nothing.
+      changes: [
+        { field: "Exported format", before: null, after: format },
+        { field: "Report status at export", before: null, after: row.status },
+        { field: "Scope", before: null, after: "own organization" },
+      ],
+    });
     const auditMeta = await this.tenant.runInOrgContext((tx) => this.resolveExportAuditMeta(row!, tx));
     return buildExportStub(
       format,
@@ -439,7 +483,15 @@ export class ReportsService {
         error: { code: "EXPORT_FORMAT_NOT_SUPPORTED", message: `${row.reportType} doesn't support ${format} export.` },
       });
     }
-    await this.audit.record({ action: "share", entityType: "report", entityId: row.id, entityLabel: row.title, metadata: { format, crossOrg: true } });
+    await this.audit.record({
+      action: "share", entityType: "report", entityId: row.id, entityLabel: row.title,
+      metadata: { format, crossOrg: true },
+      changes: [
+        { field: "Exported format", before: null, after: format },
+        { field: "Report status at export", before: null, after: row.status },
+        { field: "Scope", before: null, after: "cross-organization (approved sharing grant)" },
+      ],
+    });
     const auditMeta = await this.tenant.runAsSupervisor((tx) => this.resolveExportAuditMeta(row, tx));
     return buildExportStub(
       format,

@@ -156,6 +156,13 @@ export class NeedsImportService {
         entityType: 'need',
         entityId: studyId,
         entityLabel: `Bulk-imported ${imported} need(s) into "${studyTitle}"`,
+        // A bulk import creates many rows at once, so the meaningful pair is
+        // the count of Needs on the study before and after the import.
+        changes: [
+          { field: 'Needs imported', before: null, after: imported },
+          { field: 'Rows skipped', before: null, after: errors.length },
+          { field: 'Target study', before: null, after: studyTitle },
+        ],
       });
     }
 

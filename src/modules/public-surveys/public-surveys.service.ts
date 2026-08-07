@@ -92,7 +92,14 @@ export class PublicSurveysService {
       }
       throw err;
     }
-    await this.audit.record({ action: 'create', entityType: 'survey', entityId: row.id, entityLabel: label });
+    await this.audit.record({
+      action: 'create', entityType: 'survey', entityId: row.id, entityLabel: label,
+      changes: [
+        { field: 'Link label', before: null, after: label },
+        { field: 'Linked need', before: null, after: need.title },
+        { field: 'Active', before: null, after: row.isActive },
+      ],
+    });
     return this.toPublicLink(row);
   }
 
@@ -146,6 +153,13 @@ export class PublicSurveysService {
       entityId: link.id,
       entityLabel: link.label,
       metadata: { channel: 'email' },
+      // A share mutates nothing on the link, so the pair records what was
+      // sent and to whom rather than a field transition.
+      changes: [
+        { field: 'Shared via', before: null, after: 'email' },
+        { field: 'Recipient', before: null, after: email },
+        { field: 'Survey link', before: null, after: link.label },
+      ],
     });
   }
 

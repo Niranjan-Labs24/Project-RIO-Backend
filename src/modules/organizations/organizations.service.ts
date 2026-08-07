@@ -144,7 +144,17 @@ export class OrganizationsService {
 
     // File under the newly-created org (not the acting system_admin's org) so
     // the creation event is traceable from the new entity's audit trail.
-    await this.audit.record({ action: 'ORGANIZATION_CREATED', entityType: 'organization', entityId: org.id, entityLabel: org.name, organizationId: org.id });
+    await this.audit.record({
+      action: 'ORGANIZATION_CREATED', entityType: 'organization', entityId: org.id, entityLabel: org.name, organizationId: org.id,
+      // before: null on a create — the org's opening state, which later
+      // ORGANIZATION_DEACTIVATED / edit events are read against.
+      changes: [
+        { field: 'Organization name', before: null, after: org.name },
+        { field: 'Registration number', before: null, after: org.registrationNumber },
+        { field: 'Sector', before: null, after: org.sector },
+        { field: 'Active', before: null, after: org.isActive },
+      ],
+    });
     return this.toOrganization(org);
   }
 

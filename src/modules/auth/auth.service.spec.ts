@@ -98,13 +98,27 @@ describe('AuthService.consent', () => {
   // RIO-DATA-001 — the post-login re-prompt now accepts BOTH consents in one
   // call and writes one immutable snapshot per kind, so the two remain
   // independently auditable.
-  function consentTenant() {
+  /**
+   * `prior` is the user's consent state as it was *before* this call — read
+   * by consent() so the audit entry can record a real before/after pair
+   * (null -> v1 on a first acceptance, v1 -> v2 after a policy bump). Defaults
+   * to a never-consented user, which is the common case for this path.
+   */
+  function consentTenant(prior: Record<string, unknown> | null = {
+    consentedAt: null,
+    consentedPolicyVersion: null,
+    sharingConsentedAt: null,
+    sharingConsentedPolicyVersion: null,
+  }) {
     const created: Record<string, unknown>[] = [];
     const userUpdates: Record<string, unknown>[] = [];
     const tenant = {
       runInOrgContext: async (fn: (tx: unknown) => unknown) =>
         fn({
-          user: { update: async ({ data }: { data: Record<string, unknown> }) => { userUpdates.push(data); return {}; } },
+          user: {
+            findUnique: async () => prior,
+            update: async ({ data }: { data: Record<string, unknown> }) => { userUpdates.push(data); return {}; },
+          },
           consentAcceptance: {
             createMany: async ({ data }: { data: Record<string, unknown>[] }) => { created.push(...data); return { count: data.length }; },
           },
