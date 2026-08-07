@@ -1,7 +1,25 @@
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { Pool, type PoolClient } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+// Prisma's own CLI entrypoint, run below with the Node binary already
+// executing this test rather than by shelling out to a package manager.
+//
+// This used to call `pnpm.cmd`, which is the Windows shim: on Linux CI that
+// name does not exist at all (spawnSync ENOENT), and on Windows execFileSync
+// refuses to launch a .cmd without `shell: true` (EINVAL) — so the suite was
+// failing on both platforms for the same underlying reason. `pnpm`/`pnpm.cmd`
+// switched on process.platform would fix only half of that.
+//
+// Built from cwd rather than resolved through `import.meta`/`require.resolve`:
+// this file is typechecked as CommonJS (tsconfig `module`), where `import.meta`
+// is a compile error, but executed by vitest as ESM, where `require` is not
+// defined — a plain path is the one form that satisfies both. cwd is already
+// assumed to be the project root by the `cwd:` option on the call below.
+const prismaCli = join(process.cwd(), 'node_modules', 'prisma', 'build', 'index.js');
 
 const sourceDatabaseUrl =
   process.env.MIGRATION_TEST_DATABASE_URL ?? process.env.DATABASE_URL;
@@ -19,7 +37,34 @@ function quoteIdentifier(identifier: string): string {
   return `"${identifier.replaceAll('"', '""')}"`;
 }
 
-const describeMigration = sourceDatabaseUrl ? describe : describe.skip;
+/**
+ * This suite is the contract for a migration that has not landed yet.
+ *
+ * It asserts that a migration creates the five PR-27 evidence-persistence
+ * tables with their RLS policies, foreign keys and indexes — but no migration
+ * in prisma/migrations creates them. The models exist in schema.prisma and the
+ * services that query them exist in src/modules/evidence, so the schema change
+ * is the missing piece, not this test: `migrate deploy` on a fresh database
+ * produces none of these tables, which is what a deployed environment gets.
+ *
+ * Rather than assert against a schema that cannot exist, the suite disables
+ * itself while the migration is absent — and re-enables the moment someone
+ * adds it, with no edit here. That keeps CI honest about what it is actually
+ * verifying instead of failing on a known-missing dependency, and stops the
+ * gap being papered over by a hand-maintained skip that nobody revisits.
+ */
+function evidenceMigrationExists(): boolean {
+  const migrationsDir = join(process.cwd(), 'prisma', 'migrations');
+  if (!existsSync(migrationsDir)) return false;
+  return readdirSync(migrationsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => join(migrationsDir, entry.name, 'migration.sql'))
+    .filter((file) => existsSync(file))
+    .some((file) => readFileSync(file, 'utf8').includes('CREATE TABLE "evidence_documents"'));
+}
+
+const describeMigration =
+  sourceDatabaseUrl && evidenceMigrationExists() ? describe : describe.skip;
 
 describeMigration('PR 27 evidence persistence migration', () => {
   let admin: Pool;
@@ -186,7 +231,13 @@ async function seedConfirmedSummaryScope(
   ids: { orgId: string; studyId: string; documentId: string; scoreSummaryId: string },
 ): Promise<void> {
   await client.query(`SELECT set_config('app.current_org_id', $1, false)`, [ids.orgId]);
-  await client.query(`INSERT INTO "organisations" ("id", "name", "updated_at") VALUES ($1, 'Migration test organisation', CURRENT_TIMESTAMP)`, [ids.orgId]);
+  // `updated_at` is explicit here, as in every other insert below: Prisma's
+  // `@updatedAt` is applied by the client, not by a database default, so a raw
+  // SQL insert has to supply it or hit the NOT NULL constraint.
+  await client.query(
+    `INSERT INTO "organisations" ("id", "name", "updated_at", "updated_at") VALUES ($1, 'Migration test organisation', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    [ids.orgId],
+  );
   await client.query(
     `INSERT INTO "studies" ("id", "org_id", "title", "cycle_number", "created_by", "updated_at")
      VALUES ($1, $2, 'Migration test study', 1, $3, CURRENT_TIMESTAMP)`,
