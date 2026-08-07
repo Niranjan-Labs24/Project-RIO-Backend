@@ -214,9 +214,16 @@ export class StudiesService {
       await this.audit.record({
         action: 'SYSTEM_ADMIN_VIEWED_STUDIES',
         entityType: 'study',
-        entityId: opts.organizationId ?? 'all',
+        // `null`, never the string 'all': audit_logs.entity_id is a UUID
+        // column, so a sentinel here made Postgres reject the INSERT
+        // ("invalid input syntax for type uuid") and AuditService.record()
+        // swallowed it as a warning — every cross-org study view silently
+        // went unaudited. The "all organisations" case is carried by
+        // entityLabel and `scope` below, matching SurveysService.list.
+        entityId: opts.organizationId ?? null,
         entityLabel: opts.organizationId ? 'Organization Studies' : 'All Platform Studies',
         organizationId: opts.organizationId,
+        metadata: { scope: opts.organizationId ? 'organization' : 'all' },
       });
     } else {
       const result = await this.tenant.runInOrgContext((tx) =>

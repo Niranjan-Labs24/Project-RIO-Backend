@@ -228,10 +228,15 @@ describe('AuditService before/after values (RIO-FR-007)', () => {
 
   it('writes no metadata column at all when there is nothing to record', async () => {
     // An empty `{}` would make every event look like it carried context.
+    // The entityId here is a real UUID on purpose: entity_id is a uuid
+    // column, and record() now parks a non-UUID id in metadata rather than
+    // letting Postgres reject the whole row (see the invalid-entityId tests
+    // below), which would otherwise populate the very metadata this asserts
+    // is absent.
     const { rows, tenant } = fakeTenant();
     const svc = new AuditService(tenant as never);
     await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'u1' }, () =>
-      svc.record({ action: 'login', entityType: 'user', entityId: 'u1', entityLabel: 'Demo Admin', changes: [] }),
+      svc.record({ action: 'login', entityType: 'user', entityId: '019fb681-12e8-7421-ad6a-c440aa998d8f', entityLabel: 'Demo Admin', changes: [] }),
     );
 
     expect(rows[0]?.metadata).toBeUndefined();
@@ -524,5 +529,57 @@ describe('AuditService.exportCsv (RIO-FR-007 — System Admin download)', () => 
     );
 
     expect(csv).toBe('"Timestamp","Actor","Action","Entity Type","Entity","IP Address"');
+  });
+
+  // RIO-FR-007 AC1 regression — audit_logs.entity_id is a uuid column, so a
+  // sentinel like 'all' made Postgres reject the INSERT and record()'s catch
+  // swallowed it: every cross-org "System Admin viewed X" event was silently
+  // going unrecorded in production while the request itself returned 200.
+  it('parks a non-UUID entityId in metadata instead of losing the whole event', async () => {
+    const { rows, tenant } = fakeTenant();
+    const svc = new AuditService(tenant as never);
+    await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'u1' }, () =>
+      svc.record({
+        action: 'SYSTEM_ADMIN_VIEWED_STUDIES',
+        entityType: 'study',
+        entityId: 'all',
+        entityLabel: 'All Platform Studies',
+      }),
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.entityId).toBeNull();
+    expect(rows[0]?.metadata).toMatchObject({ invalidEntityId: 'all' });
+    // The event itself survives — that is the whole point.
+    expect(rows[0]?.action).toBe('SYSTEM_ADMIN_VIEWED_STUDIES');
+    expect(rows[0]?.entityLabel).toBe('All Platform Studies');
+  });
+
+  it('passes a real UUID entityId through untouched', async () => {
+    const { rows, tenant } = fakeTenant();
+    const svc = new AuditService(tenant as never);
+    const id = '019fb681-12e8-7421-ad6a-c440aa998d8f';
+    await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'u1' }, () =>
+      svc.record({ action: 'edit', entityType: 'study', entityId: id, entityLabel: 'A Study' }),
+    );
+
+    expect(rows[0]?.entityId).toBe(id);
+    expect(rows[0]?.metadata).toBeUndefined();
+  });
+
+  it('keeps a null entityId null, with no metadata noise', async () => {
+    const { rows, tenant } = fakeTenant();
+    const svc = new AuditService(tenant as never);
+    await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'u1' }, () =>
+      svc.record({
+        action: 'SYSTEM_ADMIN_VIEWED_SURVEY',
+        entityType: 'survey',
+        entityId: null,
+        entityLabel: 'All Platform Surveys',
+      }),
+    );
+
+    expect(rows[0]?.entityId).toBeNull();
+    expect(rows[0]?.metadata).toBeUndefined();
   });
 });

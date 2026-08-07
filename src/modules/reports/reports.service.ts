@@ -194,9 +194,14 @@ export class ReportsService {
       await this.audit.record({
         action: "SYSTEM_ADMIN_VIEWED_REPORT",
         entityType: "report",
-        entityId: params.organizationId ?? "all",
+        // `null`, never the string "all" — audit_logs.entity_id is a UUID
+        // column, so the sentinel made Postgres reject the INSERT and
+        // AuditService.record() swallowed it as a warning, silently losing
+        // every cross-org report view. Same shape as SurveysService.list.
+        entityId: params.organizationId ?? null,
         entityLabel: params.organizationId ? "Organization Reports" : "All Platform Reports",
         organizationId: params.organizationId,
+        metadata: { scope: params.organizationId ? "organization" : "all" },
       });
       return this.hydrate(rows as unknown as ReportRow[], true);
     }

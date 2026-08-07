@@ -46,6 +46,17 @@ export class AuditService {
       if (input.changes && input.changes.length > 0) {
         metadata.changes = input.changes;
       }
+      // audit_logs.entity_id is a UUID column, and a non-UUID value makes
+      // Postgres reject the whole INSERT — which the catch below then
+      // swallows as a warning, losing the audit event entirely. Callers have
+      // twice passed a sentinel here ('all', for cross-org list views), so
+      // this degrades a bad id to NULL and keeps the raw value in metadata
+      // rather than dropping the record. Losing one field beats losing the
+      // event: RIO-FR-007 AC1 is that every material action IS logged.
+      const entityId = isUuid(input.entityId) ? input.entityId : null;
+      if (input.entityId !== null && input.entityId !== undefined && entityId === null) {
+        metadata.invalidEntityId = input.entityId;
+      }
       const rawOrgId = input.organizationId ?? store?.orgId ?? null;
       const isVirtualOrg = !rawOrgId || rawOrgId === '00000000-0000-0000-0000-000000000001';
       const targetOrgId = isVirtualOrg ? null : rawOrgId;
@@ -57,7 +68,7 @@ export class AuditService {
             actorUserId: store?.actorId ?? null,
             action: input.action,
             entityType: input.entityType,
-            entityId: input.entityId,
+            entityId,
             entityLabel: input.entityLabel,
             metadata:
               Object.keys(metadata).length > 0
@@ -286,6 +297,14 @@ export class AuditService {
     }
     return this.tenant.runInOrgContext(runSummary);
   }
+}
+
+/** audit_logs.entity_id is `uuid`; anything else must not reach Postgres. */
+function isUuid(value: string | null | undefined): value is string {
+  return (
+    typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+  );
 }
 
 const SENSITIVE_KEYS = new Set(['password', 'passwordhash', 'token', 'secret', 'otp', 'authorization', 'secretkey', 'access_token']);
