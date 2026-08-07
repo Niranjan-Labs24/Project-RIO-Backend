@@ -1,11 +1,11 @@
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { createRequire } from 'node:module';
+import { join } from 'node:path';
 import { Pool, type PoolClient } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-// Resolve Prisma's own CLI entrypoint and run it with the Node binary already
-// executing this test, rather than shelling out to a package manager.
+// Prisma's own CLI entrypoint, run below with the Node binary already
+// executing this test rather than by shelling out to a package manager.
 //
 // This used to call `pnpm.cmd`, which is the Windows shim: on Linux CI that
 // name does not exist at all (spawnSync ENOENT), and on Windows execFileSync
@@ -13,10 +13,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 // failing on both platforms for the same underlying reason. `pnpm`/`pnpm.cmd`
 // switched on process.platform would fix only half of that.
 //
-// Going straight to the resolved JS file avoids the shim question entirely,
-// costs one less process, and does not care which package manager (or none)
-// installed the dependency.
-const prismaCli = createRequire(import.meta.url).resolve('prisma/build/index.js');
+// Built from cwd rather than resolved through `import.meta`/`require.resolve`:
+// this file is typechecked as CommonJS (tsconfig `module`), where `import.meta`
+// is a compile error, but executed by vitest as ESM, where `require` is not
+// defined — a plain path is the one form that satisfies both. cwd is already
+// assumed to be the project root by the `cwd:` option on the call below.
+const prismaCli = join(process.cwd(), 'node_modules', 'prisma', 'build', 'index.js');
 
 const sourceDatabaseUrl =
   process.env.MIGRATION_TEST_DATABASE_URL ?? process.env.DATABASE_URL;
