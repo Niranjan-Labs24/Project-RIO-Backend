@@ -27,6 +27,9 @@ function snapshot(): ReportDataSnapshot {
       methodologyVersionId: "mv-uuid",
       governorateName: "Riyadh",
       regionName: "Riyadh Region",
+      population: 5000,
+      requiredSampleSize: 94,
+      minimumDetectableEffect: 14.4,
     },
     responseQuality: {
       submittedResponseCount: 42,

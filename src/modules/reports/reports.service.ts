@@ -716,6 +716,9 @@ export class ReportsService {
                       : 0,
                   dontKnowRate: facts.responseQuality.dontKnowRate * 100,
                   dontKnowBand: facts.responseQuality.dontKnowBand,
+                  population: facts.study.population,
+                  requiredSampleSize: facts.study.requiredSampleSize,
+                  minimumDetectableEffect: facts.study.minimumDetectableEffect,
                 }
               : { note: NOT_AVAILABLE },
             // ── Scoring half: RPT16 only ──

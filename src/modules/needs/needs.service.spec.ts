@@ -15,6 +15,7 @@ function makeRow(overrides: Partial<NeedRow> = {}): NeedRow {
     centerIds: [],
     source: 'manual_entry',
     referenceId: null,
+    internalRefSeq: 1,
     status: 'draft',
     domain: 'Water',
     subDomain: 'Access',

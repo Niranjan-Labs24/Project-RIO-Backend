@@ -61,14 +61,28 @@ export function composeConfidenceReason(input: {
   validResponseCount: number;
   dontKnowRate: number;
   thresholds: Thresholds;
+  /** RIO-FR-024: the Study's own computed sample-size target (Cochran +
+   *  finite population correction), if one was captured at study creation. */
+  requiredSampleSize?: number | null;
 }): string {
-  const { validResponseCount: n, dontKnowRate, thresholds: t } = input;
+  const { validResponseCount: n, dontKnowRate, thresholds: t, requiredSampleSize } = input;
   const reasons: string[] = [];
+  let sampleReasonFired = false;
 
   if (n < t.confidenceMinSample) {
     reasons.push(
       `Small sample: ${n} valid response(s), below the ${t.confidenceMinSample} required for STANDARD confidence.`,
     );
+    sampleReasonFired = true;
+  } else if (requiredSampleSize != null && n < requiredSampleSize) {
+    // RIO-FR-024 dual confidence criterion: below the absolute floor above,
+    // OR below the study's own population-based required sample — checked
+    // as `else if` since both conditions describe the same "too few
+    // responses" fact and would otherwise duplicate the reason.
+    reasons.push(
+      `Below coverage target: ${n} valid response(s), below the ${requiredSampleSize} required for this study's population at the configured confidence level and margin of error.`,
+    );
+    sampleReasonFired = true;
   }
   if (dontKnowRate > t.dontKnowLowThreshold) {
     reasons.push(
@@ -78,8 +92,8 @@ export function composeConfidenceReason(input: {
 
   if (reasons.length === 0) return "High response completeness.";
 
-  // When only sample size fired, say so — and say the DK rate did NOT contribute.
-  if (reasons.length === 1 && n < t.confidenceMinSample) {
+  // When only the sample-size condition fired, say so — and say the DK rate did NOT contribute.
+  if (reasons.length === 1 && sampleReasonFired) {
     reasons.push(
       `The don't-know rate of ${(dontKnowRate * 100).toFixed(2)}% is ${dontKnowBandOf(dontKnowRate)} and did not contribute to this rating.`,
     );
@@ -87,13 +101,22 @@ export function composeConfidenceReason(input: {
   return reasons.join(" ");
 }
 
-/** The flag itself, from the same two conditions the reason describes. Keeping
- *  flag and reason derived from one function is what stops them disagreeing. */
+/** The flag itself, from the same conditions the reason describes. Keeping
+ *  flag and reason derived from the same inputs is what stops them disagreeing.
+ *
+ *  RIO-FR-024 dual confidence criterion (Sample Size Reference sheet, signed
+ *  off by Dr. Zulfiqar): LOW if below the absolute floor (confidenceMinSample)
+ *  OR below the study's own population-based required sample — whichever is
+ *  known. `requiredSampleSize` is omitted/null for studies created before
+ *  this field existed, in which case only the absolute floor applies. */
 export function confidenceFlagOf(input: {
   validResponseCount: number;
   dontKnowRate: number;
   thresholds: Thresholds;
+  requiredSampleSize?: number | null;
 }): "LOW" | "STANDARD" {
-  const { validResponseCount: n, dontKnowRate, thresholds: t } = input;
-  return n < t.confidenceMinSample || dontKnowRate > t.dontKnowLowThreshold ? "LOW" : "STANDARD";
+  const { validResponseCount: n, dontKnowRate, thresholds: t, requiredSampleSize } = input;
+  const belowAbsoluteFloor = n < t.confidenceMinSample;
+  const belowCoverageTarget = requiredSampleSize != null && n < requiredSampleSize;
+  return belowAbsoluteFloor || belowCoverageTarget || dontKnowRate > t.dontKnowLowThreshold ? "LOW" : "STANDARD";
 }

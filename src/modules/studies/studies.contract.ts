@@ -16,6 +16,13 @@ const CenterIds = T.Array(T.String({ format: 'uuid' }), { minItems: 1, maxItems:
 // (checked in StudiesService, not enforceable by TypeBox).
 const MethodologyVersionId = T.Union([T.String({ format: 'uuid' }), T.Null()]);
 
+// RIO-FR-024: "What is the population of your area?" — asked at study
+// creation so the required sample size and MDE can be computed and stored
+// immediately (see StudiesService/sample-size.ts). marginOfError defaults
+// to ±10% (the signed-off default) but is configurable per study.
+const Population = T.Integer({ minimum: 1 });
+const MarginOfError = T.Number({ exclusiveMinimum: 0, exclusiveMaximum: 1 });
+
 export const CreateStudyBody = registerSchema(
   'CreateStudyBody',
   T.Object(
@@ -25,6 +32,8 @@ export const CreateStudyBody = registerSchema(
       governorateIds: GovernorateIds,
       centerIds: CenterIds,
       methodologyVersionId: T.Optional(MethodologyVersionId),
+      population: Population,
+      marginOfError: T.Optional(MarginOfError),
     },
     { additionalProperties: false },
   ),

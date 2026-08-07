@@ -59,15 +59,13 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('dataCollection', { read: true, write: true, create: true }),
     perm('dataImport', { read: true, write: true, create: true }),
     perm('citizenChannel'),
-    // Product decision: full parity with the Reviewer/Approver on
-    // classification decisions — the Researcher can trigger/retry
-    // classification (`write`, as before) AND now also Approve/Override/
-    // Reject an AI classification themselves (`approve`), same as
-    // role_human_reviewer below. This does remove the Approver as a
-    // mandatory second reviewer for classification specifically — that's
-    // intentional here, not an oversight. The Approver still exclusively
-    // owns the separate Survey Approve & Publish step (surveyBuilder:approve).
-    perm('aiReview', { read: true, write: true, approve: true }),
+    // Researcher can trigger/retry classification (`write`) but does not
+    // Approve/Override/Reject it — that stays exclusively role_human_reviewer's
+    // `approve` below, per the client's Roles & Permissions sheet (Entity
+    // research officer: no Approve grant; Human reviewer: Approve =
+    // Classification/priority). The Approver also exclusively owns the
+    // separate Survey Approve & Publish step (surveyBuilder:approve).
+    perm('aiReview', { read: true, write: true }),
     // `create` (not full write/approve) — lets them trigger
     // Recalculate/Run Priority Scoring on their own studies' Insights page,
     // same as Admin; they still can't approve a priority score elsewhere in

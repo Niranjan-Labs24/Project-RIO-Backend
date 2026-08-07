@@ -24,6 +24,10 @@ export interface NeedRow {
   centerIds: string[];
   source: NeedSource;
   referenceId: string | null;
+  // RIO-DATA-003: autoincrement backing the system-generated internal
+  // reference — see NeedsService.formatInternalReferenceId for the
+  // human-legible "NEED-000123" form exposed on `Need` below.
+  internalRefSeq: number;
   status: NeedStatus;
   domain: string | null;
   subDomain: string | null;
@@ -66,6 +70,9 @@ export interface Need {
   centerIds: string[];
   source: NeedSource;
   referenceId: string | null;
+  // RIO-DATA-003: system-generated, never user-supplied or user-editable —
+  // "NEED-000123" form, see NeedsService.formatInternalReferenceId.
+  internalReferenceId: string;
   status: NeedStatus;
   // No longer set at creation — AI Classification runs automatically right
   // after a Need is saved (see NeedsService.create /

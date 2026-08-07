@@ -10,6 +10,13 @@ import { NEED_EDITABLE_STATUSES, type CreateNeedPayload, type Need, type NeedRow
 
 const DIFF_FIELDS = ['title', 'statement', 'village', 'referenceId'] as const;
 
+// RIO-DATA-003: system-generated internal reference, derived from the
+// `internalRefSeq` autoincrement column so there's a single source of
+// truth for the number — never stored as a formatted string.
+export function formatInternalReferenceId(seq: number): string {
+  return `NEED-${String(seq).padStart(6, '0')}`;
+}
+
 // The audit dialog renders `change.field` verbatim, so these are display
 // labels, not column names.
 const DIFF_FIELD_LABELS: Record<(typeof DIFF_FIELDS)[number], string> = {
@@ -352,6 +359,7 @@ export class NeedsService {
       centerIds: row.centerIds,
       source: row.source,
       referenceId: row.referenceId,
+      internalReferenceId: formatInternalReferenceId(row.internalRefSeq),
       status: row.status,
       domain: row.domain,
       subDomain: row.subDomain,
