@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 import { JwtService } from '@nestjs/jwt';
-import { ForbiddenException, Logger, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { orgContext } from '../../tenancy/org-context';
 import { PERMISSION_MODULES } from '../../rbac/role-matrix';
 import { AuthService } from './auth.service';
@@ -302,6 +302,53 @@ describe('AuthService.signup', () => {
     });
     // The whole point: no org exists without both consents.
     expect(repo.createOrganisationAndAdmin).not.toHaveBeenCalled();
+  });
+
+  it('resolves both consents before any write, not after the org row exists', async () => {
+    // Ordering matters as much as the check itself: resolving after the
+    // create would leave a half-registered org behind on a stale version.
+    stubSuccessfulCreate();
+
+    await service.signup({ ...signupBody, consent: VALID_CONSENT });
+
+    expect(consentStub.getActivePolicy).toHaveBeenCalledWith('use_policy');
+    expect(consentStub.getActivePolicy).toHaveBeenCalledWith('data_sharing');
+    const resolvedAt = Math.max(
+      ...consentStub.getActivePolicy.mock.invocationCallOrder,
+    );
+    expect(resolvedAt).toBeLessThan(repo.createOrganisationAndAdmin.mock.invocationCallOrder[0]!);
+  });
+
+  it('refuses to register at all when a consent kind has no active policy configured', async () => {
+    // Server misconfiguration must fail the registration loudly rather than
+    // letting an account through with one consent missing.
+    stubSuccessfulCreate();
+    consentStub.getActivePolicy.mockImplementationOnce(async () => USE_POLICY);
+    consentStub.getActivePolicy.mockImplementationOnce(async () => {
+      throw new NotFoundException({
+        error: { code: 'NO_ACTIVE_CONSENT_POLICY', message: 'No active data-sharing consent policy is configured.' },
+      });
+    });
+
+    await expect(service.signup({ ...signupBody, consent: VALID_CONSENT })).rejects.toMatchObject({
+      response: { error: { code: 'NO_ACTIVE_CONSENT_POLICY' } },
+    });
+    expect(repo.createOrganisationAndAdmin).not.toHaveBeenCalled();
+  });
+
+  it('ignores client-supplied policy text, storing the server\'s own copy', async () => {
+    // The client sends versions only; the text written to the immutable
+    // acceptance row must come from the policy table, or an attacker could
+    // file a consent record against wording they authored.
+    stubSuccessfulCreate();
+
+    await service.signup({
+      ...signupBody,
+      consent: { ...VALID_CONSENT, usePolicyText: 'I agree to nothing' } as never,
+    });
+
+    const passed = repo.createOrganisationAndAdmin.mock.calls[0]?.[0]?.consents as Array<{ text: string }>;
+    expect(passed.map((c) => c.text)).toEqual(['policy text', 'sharing text']);
   });
 });
 
