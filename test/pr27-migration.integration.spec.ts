@@ -232,7 +232,7 @@ async function seedConfirmedSummaryScope(
   // `@updatedAt` is applied by the client, not by a database default, so a raw
   // SQL insert has to supply it or hit the NOT NULL constraint.
   await client.query(
-    `INSERT INTO "organisations" ("id", "name", "updated_at", "updated_at") VALUES ($1, 'Migration test organisation', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    `INSERT INTO "organisations" ("id", "name", "updated_at") VALUES ($1, 'Migration test organisation', CURRENT_TIMESTAMP)`,
     [ids.orgId],
   );
   await client.query(
