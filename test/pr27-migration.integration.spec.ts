@@ -75,10 +75,7 @@ describeMigration('PR 27 evidence persistence migration', () => {
     await admin.query(`CREATE DATABASE ${quoteIdentifier(migrationDatabase!)}`);
 
     const isolatedUrl = databaseUrlFor(migrationDatabase!);
-    // 'pnpm.cmd' only exists on Windows — macOS/Linux need the plain binary
-    // name, or execFileSync throws ENOENT before ever reaching migrate deploy.
-    const pnpmBin = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
-    execFileSync(pnpmBin, ['exec', 'prisma', 'migrate', 'deploy'], {
+    execFileSync(process.execPath, [prismaCli, 'migrate', 'deploy'], {
       cwd: process.cwd(),
       env: { ...process.env, DATABASE_URL: isolatedUrl },
       stdio: 'pipe',
