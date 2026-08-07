@@ -57,10 +57,6 @@ export class ScoreRollupService {
       });
       if (!survey) return;
 
-      // RIO-FR-024 dual confidence criterion: see isLowConfidence below.
-      const study1 = await tx.study.findUnique({ where: { id: studyId }, select: { requiredSampleSize: true } });
-      const requiredSampleSize = study1?.requiredSampleSize ?? null;
-
       const responses = await tx.surveyResponse.findMany({
         where: { needId: survey.needId },
         include: { need: true }
