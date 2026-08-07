@@ -186,20 +186,35 @@ async function seedConfirmedSummaryScope(
   ids: { orgId: string; studyId: string; documentId: string; scoreSummaryId: string },
 ): Promise<void> {
   await client.query(`SELECT set_config('app.current_org_id', $1, false)`, [ids.orgId]);
-  await client.query(`INSERT INTO "organisations" ("id", "name") VALUES ($1, 'Migration test organisation')`, [ids.orgId]);
+  await client.query(`INSERT INTO "organisations" ("id", "name", "updated_at") VALUES ($1, 'Migration test organisation', CURRENT_TIMESTAMP)`, [ids.orgId]);
   await client.query(
     `INSERT INTO "studies" ("id", "org_id", "title", "cycle_number", "created_by", "updated_at")
      VALUES ($1, $2, 'Migration test study', 1, $3, CURRENT_TIMESTAMP)`,
     [ids.studyId, ids.orgId, randomUUID()],
   );
-  await client.query(`ALTER TABLE "ai_priority_summaries" DISABLE TRIGGER ALL`);
+  // ai_priority_summaries.survey_id is a required FK to surveys, which itself
+  // requires a need — "DISABLE TRIGGER ALL" was the previous approach to skip
+  // that chain, but disabling a foreign-key's internal RI trigger needs actual
+  // Postgres superuser, which cnap_owner doesn't have (see db/init/00-init.sql:
+  // CREATEROLE CREATEDB only). Creating real minimal rows avoids that entirely.
+  const needId = randomUUID();
+  await client.query(
+    `INSERT INTO "needs" ("id", "study_id", "org_id", "title", "statement", "source", "created_by", "updated_at")
+     VALUES ($1, $2, $3, 'Migration test need', 'Migration test statement', 'manual_entry', $4, CURRENT_TIMESTAMP)`,
+    [needId, ids.studyId, ids.orgId, randomUUID()],
+  );
+  const surveyId = randomUUID();
+  await client.query(
+    `INSERT INTO "surveys" ("id", "org_id", "need_id", "study_id", "title", "status", "created_by", "updated_at")
+     VALUES ($1, $2, $3, $4, 'Migration test survey', 'DRAFT', $5, CURRENT_TIMESTAMP)`,
+    [surveyId, ids.orgId, needId, ids.studyId, randomUUID()],
+  );
   await client.query(
     `INSERT INTO "ai_priority_summaries"
       ("id", "org_id", "study_id", "survey_id", "report_data_snapshot_id", "prompt_hash", "input_report_data_hash", "input_evidence_snapshot_hash", "ai_output_json", "generated_by", "updated_at")
      VALUES ($1, $2, $3, $4, 'snapshot-1', 'prompt-hash', 'report-hash', 'evidence-hash', '{}'::jsonb, $5, CURRENT_TIMESTAMP)`,
-    [ids.scoreSummaryId, ids.orgId, ids.studyId, randomUUID(), randomUUID()],
+    [ids.scoreSummaryId, ids.orgId, ids.studyId, surveyId, randomUUID()],
   );
-  await client.query(`ALTER TABLE "ai_priority_summaries" ENABLE TRIGGER ALL`);
   await client.query(
     `INSERT INTO "evidence_documents"
       ("id", "org_id", "study_id", "uploaded_by", "title", "file_name", "file_type", "storage_key", "document_type", "source_reference_id", "collected_date", "updated_at")
