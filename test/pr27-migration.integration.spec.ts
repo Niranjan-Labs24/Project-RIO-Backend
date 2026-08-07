@@ -1,7 +1,22 @@
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { Pool, type PoolClient } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+// Resolve Prisma's own CLI entrypoint and run it with the Node binary already
+// executing this test, rather than shelling out to a package manager.
+//
+// This used to call `pnpm.cmd`, which is the Windows shim: on Linux CI that
+// name does not exist at all (spawnSync ENOENT), and on Windows execFileSync
+// refuses to launch a .cmd without `shell: true` (EINVAL) — so the suite was
+// failing on both platforms for the same underlying reason. `pnpm`/`pnpm.cmd`
+// switched on process.platform would fix only half of that.
+//
+// Going straight to the resolved JS file avoids the shim question entirely,
+// costs one less process, and does not care which package manager (or none)
+// installed the dependency.
+const prismaCli = createRequire(import.meta.url).resolve('prisma/build/index.js');
 
 const sourceDatabaseUrl =
   process.env.MIGRATION_TEST_DATABASE_URL ?? process.env.DATABASE_URL;
@@ -30,7 +45,7 @@ describeMigration('PR 27 evidence persistence migration', () => {
     await admin.query(`CREATE DATABASE ${quoteIdentifier(migrationDatabase!)}`);
 
     const isolatedUrl = databaseUrlFor(migrationDatabase!);
-    execFileSync('pnpm.cmd', ['exec', 'prisma', 'migrate', 'deploy'], {
+    execFileSync(process.execPath, [prismaCli, 'migrate', 'deploy'], {
       cwd: process.cwd(),
       env: { ...process.env, DATABASE_URL: isolatedUrl },
       stdio: 'pipe',
@@ -183,7 +198,13 @@ async function seedConfirmedSummaryScope(
   ids: { orgId: string; studyId: string; documentId: string; scoreSummaryId: string },
 ): Promise<void> {
   await client.query(`SELECT set_config('app.current_org_id', $1, false)`, [ids.orgId]);
-  await client.query(`INSERT INTO "organisations" ("id", "name") VALUES ($1, 'Migration test organisation')`, [ids.orgId]);
+  // `updated_at` is explicit here, as in every other insert below: Prisma's
+  // `@updatedAt` is applied by the client, not by a database default, so a raw
+  // SQL insert has to supply it or hit the NOT NULL constraint.
+  await client.query(
+    `INSERT INTO "organisations" ("id", "name", "updated_at") VALUES ($1, 'Migration test organisation', CURRENT_TIMESTAMP)`,
+    [ids.orgId],
+  );
   await client.query(
     `INSERT INTO "studies" ("id", "org_id", "title", "cycle_number", "created_by", "updated_at")
      VALUES ($1, $2, 'Migration test study', 1, $3, CURRENT_TIMESTAMP)`,
