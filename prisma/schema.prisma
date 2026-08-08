@@ -295,6 +295,18 @@ model Study {
   // version may be selected (checked in StudiesService, not enforceable by
   // the FK itself). Nullable: can be set later, not required at creation.
   methodologyVersionId String? @map("methodology_version_id") @db.Uuid
+  // RIO-FR-024: Sample Size Calculator — signed-off mechanism (Methodology
+  // workbook's Sample Size Reference sheet). Entered by the association at
+  // creation ("What is the population of your area?"); requiredSampleSize
+  // and minimumDetectableEffect are computed and stored at that moment
+  // (see StudiesService/sample-size.ts) — never recomputed later, so a
+  // report always shows the figures that applied when the study was set up.
+  // Nullable: studies created before this feature shipped have none of the
+  // four; the coverage confidence criterion below simply doesn't apply to them.
+  population Int? @map("population")
+  marginOfError Float? @default(0.10) @map("margin_of_error")
+  requiredSampleSize Int? @map("required_sample_size")
+  minimumDetectableEffect Float? @map("minimum_detectable_effect")
   status String @default("active") @db.VarChar(50)
   archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
   archivedBy String? @map("archived_by") @db.Uuid
@@ -396,6 +408,17 @@ model Need {
   // form number or a partner org's case id) — free text, never validated
   // against anything, purely a cross-reference back to their own records.
   referenceId String?  @map("reference_id") @db.VarChar(200)
+  // System-generated internal reference, assigned to every Need on
+  // creation regardless of entry method (manual or bulk import) — never
+  // user-supplied, never edited. Distinct from `referenceId` above, which
+  // is the submitter's own external id. Used internally for dedup/merge
+  // (RIO-FR-020) and traceability (RIO-NFR-015); not surfaced to citizens.
+  // A separate autoincrementing column rather than reusing `id` (a uuidv7)
+  // because this needs to stay stable and human-legible in reports/dedup
+  // UI — format as "NEED-<internalRefSeq zero-padded to 6 digits>" at the
+  // application layer, not stored as a string, so there's one source of
+  // truth for the number.
+  internalRefSeq Int @default(autoincrement()) @map("internal_ref_seq")
   status    NeedStatus @default(draft)
   // The AUTHORITATIVE ("Approved") Domain + Sub-Domain for this Need —
   // ALWAYS mirrors the first row of `needDomains` below (the real,

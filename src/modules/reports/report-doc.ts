@@ -110,6 +110,16 @@ const RESPONSE_QUALITY_ROWS: Array<{ key: string; label: string; format?: (v: un
     format: (v) => (typeof v === "number" ? `${v.toFixed(2)}%` : scalar(v)),
   },
   { key: "dontKnowBand", label: "Don't-know band" },
+  // RIO-FR-024: the study's own signed-off sample-size target — renders "—"
+  // (via scalar()'s null handling) for studies created before this field
+  // existed, same as every other nullable figure in this report.
+  { key: "population", label: "Population (area)" },
+  { key: "requiredSampleSize", label: "Required sample size" },
+  {
+    key: "minimumDetectableEffect",
+    label: "Minimum detectable effect",
+    format: (v) => (typeof v === "number" ? `±${v.toFixed(1)} pts` : scalar(v)),
+  },
 ];
 
 function responseQualityRows(obj: Record<string, unknown>): Array<{ label: string; value: string }> {

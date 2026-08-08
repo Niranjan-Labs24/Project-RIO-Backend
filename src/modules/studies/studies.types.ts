@@ -6,6 +6,13 @@ export interface StudyRow {
   governorateIds: string[];
   centerIds: string[];
   methodologyVersionId: string | null;
+  // RIO-FR-024: computed and stored once, at creation — see
+  // StudiesService.create/sample-size.ts. Null for studies created before
+  // this feature shipped.
+  population: number | null;
+  marginOfError: number | null;
+  requiredSampleSize: number | null;
+  minimumDetectableEffect: number | null;
   cycleNumber: number;
   createdBy: string;
   createdAt: Date;
@@ -36,6 +43,10 @@ export interface Study {
   governorateIds: string[];
   centerIds: string[];
   methodologyVersionId: string | null;
+  population: number | null;
+  marginOfError: number | null;
+  requiredSampleSize: number | null;
+  minimumDetectableEffect: number | null;
   cycleNumber: number;
   createdBy: string;
   createdAt: string;
@@ -50,6 +61,8 @@ export interface CreateStudyPayload {
   governorateIds: string[];
   centerIds: string[];
   methodologyVersionId?: string | null;
+  population: number;
+  marginOfError?: number;
 }
 
 export interface UpdateStudyPayload {

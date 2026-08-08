@@ -5,6 +5,7 @@ import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-conte
 import { AuditService } from '../audit/audit.service';
 import type { AuditChange } from '../audit/audit.types';
 import { GeographyService } from '../geography/geography.service';
+import { calculateSampleSize, DEFAULT_MARGIN_OF_ERROR } from './sample-size';
 import type {
   CreateStudyPayload,
   ListStudiesQuery,
@@ -66,6 +67,11 @@ export class StudiesService {
     createdBy: string,
     payload: CreateStudyPayload,
   ): Promise<StudyRow> {
+    // RIO-FR-024: computed once, here, and stored — never recomputed later,
+    // so a report always reflects the sample-size target that applied when
+    // the study was set up, even if the org's default margin changes.
+    const marginOfError = payload.marginOfError ?? DEFAULT_MARGIN_OF_ERROR;
+    const sampleSize = calculateSampleSize(payload.population, marginOfError);
     try {
       const maxRow = await tx.study.findFirst({
         where: { orgId },
@@ -79,6 +85,10 @@ export class StudiesService {
           title: payload.title,
           villages: payload.villages ?? [],
           methodologyVersionId: payload.methodologyVersionId ?? null,
+          population: payload.population,
+          marginOfError,
+          requiredSampleSize: sampleSize.requiredSampleSize,
+          minimumDetectableEffect: sampleSize.minimumDetectableEffect,
           cycleNumber,
           createdBy,
           studyGovernorates: { createMany: { data: payload.governorateIds.map((governorateId) => ({ orgId, governorateId })) } },
@@ -101,6 +111,10 @@ export class StudiesService {
             title: payload.title,
             villages: payload.villages ?? [],
             methodologyVersionId: payload.methodologyVersionId ?? null,
+            population: payload.population,
+            marginOfError,
+            requiredSampleSize: sampleSize.requiredSampleSize,
+            minimumDetectableEffect: sampleSize.minimumDetectableEffect,
             cycleNumber,
             createdBy,
             studyGovernorates: { createMany: { data: payload.governorateIds.map((governorateId) => ({ orgId, governorateId })) } },
@@ -465,6 +479,10 @@ export class StudiesService {
       governorateIds: row.governorateIds,
       centerIds: row.centerIds,
       methodologyVersionId: row.methodologyVersionId,
+      population: row.population,
+      marginOfError: row.marginOfError,
+      requiredSampleSize: row.requiredSampleSize,
+      minimumDetectableEffect: row.minimumDetectableEffect,
       cycleNumber: row.cycleNumber,
       createdBy: row.createdBy,
       createdAt: row.createdAt.toISOString(),

@@ -6,7 +6,7 @@ import { ReportSummaryDataProvider } from "./report-summary-data.provider";
 function snapshot(overrides: Partial<ReportDataSnapshot["severity"] & ReportDataSnapshot["priority"]> = {}): ReportDataSnapshot {
   return {
     snapshotId: "s", generatedAt: "2026-07-22T10:30:00Z", scope: "VILLAGE", scopeFilters: {},
-    study: { studyId: "study-1", studyName: "Water Assessment", surveyId: "srv-1", villageId: "VIL-1", villageName: "Ad-Dilam", assessmentCycle: 1, organizationName: "Demo NGO", methodologyVersionId: "mv", governorateName: "Riyadh", regionName: "Riyadh Region" },
+    study: { studyId: "study-1", studyName: "Water Assessment", surveyId: "srv-1", villageId: "VIL-1", villageName: "Ad-Dilam", assessmentCycle: 1, organizationName: "Demo NGO", methodologyVersionId: "mv", governorateName: "Riyadh", regionName: "Riyadh Region", population: 5000, requiredSampleSize: 94, minimumDetectableEffect: 14.4 },
     responseQuality: { submittedResponseCount: 42, validResponseCount: 38, dontKnowRate: 12.4, confidenceLevel: "STANDARD", confidenceReason: "High response completeness.", dontKnowBand: "moderate" },
     severity: {
       overallVillageNeedsIndex: 63.8, severityBand: "Medium",

@@ -584,7 +584,7 @@ export class ReportsService {
           };
         });
 
-        const parseOutput = (raw: unknown): any => {
+        const parseOutput = (raw: unknown): unknown => {
           if (typeof raw === "string") {
             try { return JSON.parse(raw); } catch { return null; }
           }
@@ -622,13 +622,15 @@ export class ReportsService {
         // `recommendations`, the score narrative uses `draftNextSteps` (a
         // required string[] in its response schema). Both are the same domain —
         // interventions / next steps — so both feed the one list.
-        const readRecommendations = (parsed: any): string[] =>
-          [
-            ...(Array.isArray(parsed?.recommendations) ? parsed.recommendations : []),
-            ...(Array.isArray(parsed?.draftNextSteps) ? parsed.draftNextSteps : []),
+        const readRecommendations = (parsed: unknown): string[] => {
+          const shape = (parsed ?? {}) as { recommendations?: unknown; draftNextSteps?: unknown };
+          return [
+            ...(Array.isArray(shape.recommendations) ? shape.recommendations : []),
+            ...(Array.isArray(shape.draftNextSteps) ? shape.draftNextSteps : []),
           ]
             .map(asRecommendationText)
             .filter(Boolean);
+        };
 
         const recommendations: string[] = [];
         const seenRecommendations = new Set<string>();
@@ -645,9 +647,9 @@ export class ReportsService {
         // The nested narratives keep everything except their own
         // `recommendations` array — that content is hoisted to the single
         // top-level list above, so it renders once rather than in three places.
-        const stripRecommendations = (parsed: any) => {
+        const stripRecommendations = (parsed: unknown): unknown => {
           if (!parsed || typeof parsed !== "object") return parsed;
-          const { recommendations: _dropped, draftNextSteps: _alsoDropped, ...rest } = parsed;
+          const { recommendations: _dropped, draftNextSteps: _alsoDropped, ...rest } = parsed as Record<string, unknown>;
           return rest;
         };
 
@@ -716,6 +718,9 @@ export class ReportsService {
                       : 0,
                   dontKnowRate: facts.responseQuality.dontKnowRate * 100,
                   dontKnowBand: facts.responseQuality.dontKnowBand,
+                  population: facts.study.population,
+                  requiredSampleSize: facts.study.requiredSampleSize,
+                  minimumDetectableEffect: facts.study.minimumDetectableEffect,
                 }
               : { note: NOT_AVAILABLE },
             // ── Scoring half: RPT16 only ──

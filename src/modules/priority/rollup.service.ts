@@ -25,6 +25,19 @@ export class ScoreRollupService {
   ) {}
 
   /**
+   * RIO-FR-024 dual confidence criterion (Sample Size Reference sheet,
+   * signed off by Dr. Zulfiqar): LOW if below the absolute floor (10 valid
+   * responses) OR below the study's own population-based required sample
+   * (Cochran + finite population correction, computed once at study
+   * creation — see StudiesService/sample-size.ts). `requiredSampleSize` is
+   * null for studies created before this field existed, in which case only
+   * the absolute floor and the don't-know rate apply.
+   */
+  private isLowConfidence(validCount: number, dontKnowRate: number, requiredSampleSize: number | null): boolean {
+    return validCount < 10 || (requiredSampleSize != null && validCount < requiredSampleSize) || dontKnowRate > 0.20;
+  }
+
+  /**
    * Run a complete recalculation for all responses under a given study/survey.
    */
   async recalculateStudyScores(studyId: string, surveyId: string): Promise<void> {
@@ -294,6 +307,10 @@ export class ScoreRollupService {
 
       const methodologyVersionId = methodologyVersion.id;
 
+      // RIO-FR-024 dual confidence criterion: see isLowConfidence below.
+      const study2 = await tx.study.findUnique({ where: { id: studyId }, select: { requiredSampleSize: true } });
+      const requiredSampleSize = study2?.requiredSampleSize ?? null;
+
       // 1. Fetch all response severity scores for this scope
       const responseScores = await tx.responseSeverityScore.findMany({
         where: {
@@ -353,7 +370,7 @@ export class ScoreRollupService {
 
         const totalForDkRate = validCount + dontKnowCount;
         const dontKnowRate = totalForDkRate > 0 ? (dontKnowCount / totalForDkRate) : 0;
-        const confidenceLevel = (validCount < 10 || dontKnowRate > 0.20) ? 'LOW' : 'STANDARD';
+        const confidenceLevel = this.isLowConfidence(validCount, dontKnowRate, requiredSampleSize) ? 'LOW' : 'STANDARD';
 
         questionRollups.set(qId, {
           severityScore: avgScore,
@@ -412,7 +429,7 @@ export class ScoreRollupService {
         const avgDkCount = Math.round(childRollups.reduce((acc, curr) => acc + curr!.dontKnowCount, 0) / childRollups.length);
         const avgDkRate = childRollups.reduce((acc, curr) => acc + curr!.dontKnowRate, 0) / childRollups.length;
         const avgNaCount = Math.round(childRollups.reduce((acc, curr) => acc + curr!.notApplicableCount, 0) / childRollups.length);
-        const confidenceLevel = (avgValidCount < 10 || avgDkRate > 0.20) ? 'LOW' : 'STANDARD';
+        const confidenceLevel = this.isLowConfidence(avgValidCount, avgDkRate, requiredSampleSize) ? 'LOW' : 'STANDARD';
 
         kpiRollups.set(kpiName, { severityScore: kpiScore, confidenceLevel, validResponseCount: avgValidCount, dontKnowRate: avgDkRate });
 
@@ -460,7 +477,7 @@ export class ScoreRollupService {
 
         const avgValidCount = Math.round(childRollups.reduce((acc, curr) => acc + curr!.validResponseCount, 0) / childRollups.length);
         const avgDkRate = childRollups.reduce((acc, curr) => acc + curr!.dontKnowRate, 0) / childRollups.length;
-        const confidenceLevel = (avgValidCount < 10 || avgDkRate > 0.20) ? 'LOW' : 'STANDARD';
+        const confidenceLevel = this.isLowConfidence(avgValidCount, avgDkRate, requiredSampleSize) ? 'LOW' : 'STANDARD';
 
         indicatorRollups.set(indName, { severityScore: indScore, confidenceLevel, validResponseCount: avgValidCount, dontKnowRate: avgDkRate });
 
@@ -508,7 +525,7 @@ export class ScoreRollupService {
 
         const avgValidCount = Math.round(childRollups.reduce((acc, curr) => acc + curr!.validResponseCount, 0) / childRollups.length);
         const avgDkRate = childRollups.reduce((acc, curr) => acc + curr!.dontKnowRate, 0) / childRollups.length;
-        const confidenceLevel = (avgValidCount < 10 || avgDkRate > 0.20) ? 'LOW' : 'STANDARD';
+        const confidenceLevel = this.isLowConfidence(avgValidCount, avgDkRate, requiredSampleSize) ? 'LOW' : 'STANDARD';
 
         subDomainRollups.set(subName, { severityScore: subScore, confidenceLevel, validResponseCount: avgValidCount, dontKnowRate: avgDkRate });
 
@@ -556,7 +573,7 @@ export class ScoreRollupService {
 
         const avgValidCount = Math.round(childRollups.reduce((acc, curr) => acc + curr!.validResponseCount, 0) / childRollups.length);
         const avgDkRate = childRollups.reduce((acc, curr) => acc + curr!.dontKnowRate, 0) / childRollups.length;
-        const confidenceLevel = (avgValidCount < 10 || avgDkRate > 0.20) ? 'LOW' : 'STANDARD';
+        const confidenceLevel = this.isLowConfidence(avgValidCount, avgDkRate, requiredSampleSize) ? 'LOW' : 'STANDARD';
 
         domainRollups.set(domName, { severityScore: domScore, confidenceLevel, validResponseCount: avgValidCount, dontKnowRate: avgDkRate });
 
@@ -590,7 +607,7 @@ export class ScoreRollupService {
 
         const avgValidCount = Math.round(childRollups.reduce((acc, curr) => acc + curr.validResponseCount, 0) / childRollups.length);
         const avgDkRate = childRollups.reduce((acc, curr) => acc + curr.dontKnowRate, 0) / childRollups.length;
-        const confidenceLevel = (avgValidCount < 10 || avgDkRate > 0.20) ? 'LOW' : 'STANDARD';
+        const confidenceLevel = this.isLowConfidence(avgValidCount, avgDkRate, requiredSampleSize) ? 'LOW' : 'STANDARD';
 
         await this.upsertRollup(tx, {
           orgId: survey.orgId,

@@ -61,6 +61,14 @@ export interface ResponseQuality {
   // Backend-decided adjective for the don't-know rate. The prompt must use it
   // verbatim rather than characterising the number itself.
   dontKnowBand: "negligible" | "moderate" | "elevated" | "high";
+  // RIO-FR-024: the study's own signed-off sample-size target (Cochran +
+  // finite population correction), computed once at study creation — see
+  // StudiesService/sample-size.ts. Null for studies created before this
+  // field existed, in which case the dual confidence criterion falls back
+  // to the absolute floor alone (see severity-bands.ts's confidenceFlagOf).
+  population: number | null;
+  requiredSampleSize: number | null;
+  minimumDetectableEffect: number | null;
 }
 
 /** One row of severity.domains[] — sourced from VillagePriorityAssessment

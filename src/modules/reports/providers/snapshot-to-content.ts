@@ -90,6 +90,9 @@ function mapResponseQuality(snapshot: ReportDataSnapshot): ResponseQuality {
     validResponseRatePct: submitted > 0 ? Math.round((rq.validResponseCount / submitted) * 100) : 100,
     dontKnowRate: rq.dontKnowRate,
     dontKnowBand: dontKnowBandOf(rq.dontKnowRate),
+    population: snapshot.study.population,
+    requiredSampleSize: snapshot.study.requiredSampleSize,
+    minimumDetectableEffect: snapshot.study.minimumDetectableEffect,
   };
 }
 

@@ -116,6 +116,11 @@ export interface ReportDataSnapshot {
     // governorates); null when none selected. Feeds the region report's Region
     // Name column.
     regionName: string | null;
+    // RIO-FR-024: computed once at study creation (StudiesService/sample-size.ts)
+    // — null for studies created before this field existed.
+    population: number | null;
+    requiredSampleSize: number | null;
+    minimumDetectableEffect: number | null;
   };
   responseQuality: {
     submittedResponseCount: number;
@@ -594,6 +599,9 @@ export class ReportSummaryService {
           // beside it named only Abha. Aggregate scopes keep the study's list.
           governorateName: unitGeo ? unitGeo.governorateNames.join(', ') || null : governorateName,
           regionName: unitGeo ? unitGeo.regionName : regionName,
+          population: study.population,
+          requiredSampleSize: study.requiredSampleSize,
+          minimumDetectableEffect: study.minimumDetectableEffect,
         },
         responseQuality: {
           submittedResponseCount,
@@ -610,6 +618,7 @@ export class ReportSummaryService {
             validResponseCount,
             dontKnowRate,
             thresholds: DEFAULT_THRESHOLDS,
+            requiredSampleSize: study.requiredSampleSize,
           }),
           dontKnowBand: dontKnowBandOf(dontKnowRate),
         },
