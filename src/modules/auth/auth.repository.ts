@@ -84,6 +84,12 @@ export class AuthRepository {
             sector: input.sector ?? null,
             registrationNumber: input.registrationNumber, email: input.email,
             regionId: input.regionId,
+            // RIO-FR-010 (client-confirmed): self-registration requires
+            // Center (System Admin) approval before activation —
+            // approvedAt/approvedBy stay null until OrganizationsService.approve
+            // is called; login() already rejects any user whose org isActive
+            // is false (ORG_INACTIVE).
+            isActive: false,
             // Nested under the parent create — orgId is implied by the
             // relation, not a field Prisma accepts here (unlike the
             // standalone tx.organisationGovernorate.createMany() calls

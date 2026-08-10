@@ -100,7 +100,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('dataImport'), perm('citizenChannel'), perm('aiReview'), perm('priorityScoring'),
     perm('reportsDashboards'), perm('archiveSharingAudit'), perm('surveyBuilder'), perm('ncnpReport'),
   ] },
-  { id: 'role_human_reviewer', key: 'human_reviewer', name: 'Reviewer/Approver', description: 'Approves or rejects (with comments) a finalized Survey before it publishes.', crossEntity: false, permissions: [
+  { id: 'role_human_reviewer', key: 'human_reviewer', name: 'Human Reviewer', description: 'Approves or rejects (with comments) a finalized Survey before it publishes.', crossEntity: false, permissions: [
     perm('entityTeam'), perm('rolesPermissions'), perm('onboardingConsent'),
     perm('methodologyQuestionBank', RO),
     // `create` (not full `write`) — once a survey is published, the
@@ -145,7 +145,12 @@ export const ROLE_MATRIX: RoleDef[] = [
   ] },
   { id: 'role_data_analyst', key: 'data_analyst', name: 'Data Analyst', description: 'Processes data, reviews quality, and prepares reports and dashboards.', crossEntity: false, permissions: [
     perm('entityTeam'), perm('rolesPermissions'), perm('onboardingConsent'),
-    perm('methodologyQuestionBank', RO), perm('studySurvey', RO), perm('dataCollection', RO),
+    perm('methodologyQuestionBank', RO), perm('studySurvey', RO),
+    // RIO-DATA-003 (client-requested widening): Data Analyst can create
+    // Needs directly, alongside NGO Research Officer/Field Researcher — a
+    // temporary widening ("we will change that later" per the request),
+    // not a permanent role-scope decision.
+    perm('dataCollection', { read: true, write: true, create: true }),
     perm('dataImport', { read: true, write: true, create: true }), perm('citizenChannel'),
     perm('aiReview', RO),
     perm('priorityScoring', { read: true, write: true, create: true, approve: true, export: true }),
@@ -170,24 +175,27 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('dataImport', RO), perm('citizenChannel'), perm('aiReview', RO), perm('priorityScoring', RO),
     perm('reportsDashboards', { read: true, export: true }), perm('archiveSharingAudit', RO), perm('surveyBuilder'), perm('ncnpReport'),
   ] },
-  { id: 'role_center_supervisor', key: 'center_supervisor', name: 'Center Supervisor', description: 'Cross-entity supervisory authority to follow studies, data, and reports for quality.', crossEntity: true, permissions: [
+  // RIO-RBAC-001 (client-confirmed): "Center supervisor / NCNP supervisor"
+  // is one combined role in the client's own Roles & Permissions sheet, not
+  // two — "Program Supervisor" and "NCNP User" were built as separate roles
+  // without that confirmation. The client's answer: one combined role,
+  // cross-entity view/follow authority only, no edit rights on entity data.
+  // `role_ncnp_user` (previously a separate role here) is retired — no
+  // seeded or real user was ever assigned it (checked before removing), and
+  // its own access was actually broken: the NCNP Compiled Report controller
+  // gates on `archiveSharingAudit:read`, which the old ncnp_user grant
+  // didn't hold (every module was `perm(m)` with no grant) — this role's
+  // read access, including crossEntity: true here, already covers exactly
+  // what NCNP viewing needs (assertCrossEntity() is the report's own
+  // additional check — see NcnpReportService).
+  { id: 'role_center_supervisor', key: 'center_supervisor', name: 'Center Supervisor (NCNP Supervisor)', description: 'Cross-entity view/follow authority to monitor studies, data, reports and the NCNP Compiled Report — no edit rights on entity data.', crossEntity: true, permissions: [
     perm('entityTeam', RO), perm('rolesPermissions'), perm('onboardingConsent'),
     perm('methodologyQuestionBank', RO), perm('studySurvey', RO), perm('dataCollection', RO),
     perm('dataImport', RO), perm('citizenChannel'), perm('aiReview', RO), perm('priorityScoring', RO),
     perm('reportsDashboards', { read: true, export: true }), perm('archiveSharingAudit', RO), perm('surveyBuilder'), perm('ncnpReport'),
   ] },
-  { id: 'role_citizen_guest', key: 'citizen_guest', name: 'Citizen / Beneficiary Guest', description: 'Submits a need as a data source via OTP; not added before human review.', crossEntity: false,
+  { id: 'role_citizen_guest', key: 'citizen_guest', name: 'Citizen / Beneficiary Guest', description: 'Responds to surveys through OTP verification; no internal application access.', crossEntity: false,
     permissions: PERMISSION_MODULES.map((m) => (m === 'citizenChannel' ? perm(m, { create: true }) : perm(m))) },
-  // National Council for NGO Partnerships viewer — deliberately the
-  // narrowest cross-entity role: `crossEntity: true` alone is what unlocks
-  // the NCNP Compiled Report (its access check is `assertCrossEntity()`,
-  // not a `reportsDashboards` permission — see NcnpReportService), and every
-  // other module is left with no access at all, unlike System Admin/Center
-  // Supervisor which are broader operational roles that happen to also
-  // qualify. This role sees the NCNP Compiled Report only, nothing else —
-  // no RPT01-14 report list, no org/study/survey management.
-  { id: 'role_ncnp_user', key: 'ncnp_user', name: 'NCNP User', description: 'Views the national, kingdom-wide NCNP Compiled Report. No access to any other module.', crossEntity: true,
-    permissions: PERMISSION_MODULES.map((m) => perm(m)) },
   // System Reviewer — reviews the NCNP Compiled Report before it publishes
   // (System Admin generates -> System Reviewer approves/rejects with
   // mandatory notes -> System Admin does the final publish; see

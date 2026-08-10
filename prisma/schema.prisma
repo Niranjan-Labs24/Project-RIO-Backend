@@ -118,6 +118,16 @@ model Organisation {
   // OrganisationCenter below.
   regionId           String?  @map("region_id") @db.Uuid
   isActive           Boolean  @default(true) @map("is_active")
+  // RIO-FR-010 (client-confirmed): self-registered entities require Center
+  // approval before activation. Separate from `isActive` deliberately —
+  // `isActive` alone can't distinguish "never yet approved" (pending, first
+  // signup) from "was approved, later suspended" (System Admin deactivated
+  // an already-running entity) — those are different situations with
+  // different UI/actions. Null = never approved yet. Always non-null for an
+  // org created directly by System Admin (OrganizationsService.createWithAdmin),
+  // which is inherently pre-approved and skips this gate entirely.
+  approvedAt         DateTime? @map("approved_at") @db.Timestamptz(6)
+  approvedBy         String?   @map("approved_by") @db.Uuid
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -1514,6 +1524,17 @@ model Survey {
   // that has never been published, or one published before this column
   // existed.
   methodologyVersion String? @map("methodology_version") @db.VarChar(100)
+  // RIO-FR-011 (client-confirmed): once PUBLISHED with responses collected,
+  // a survey is never edited in place — SurveysService.createNewVersion
+  // creates a new DRAFT row instead, incrementing `version` and pointing
+  // `previousVersionId` at this one. This (the old) row, and every response
+  // already attached to it (SurveyResponse.surveyId), never changes —
+  // "existing responses stay attached to the version they were collected
+  // under" is true by construction, not by any special-case logic.
+  // `@unique` on previousVersionId: a given version can be superseded by at
+  // most one newer version, never branched.
+  version            Int     @default(1)
+  previousVersionId  String? @unique @map("previous_version_id") @db.Uuid
   createdBy String   @map("created_by") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -1570,6 +1591,12 @@ model Survey {
   org             Organisation           @relation(fields: [orgId], references: [id], onDelete: Cascade)
   need            Need                   @relation(fields: [needId], references: [id], onDelete: Cascade)
   study           Study                  @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  // RIO-FR-011 self-relation: previousVersion is null for the first-ever
+  // version of a Need's survey. onDelete: SetNull (not Cascade) — deleting a
+  // newer draft version must never cascade into deleting the published
+  // version it was drafted from.
+  previousVersion Survey?                @relation("SurveyVersionChain", fields: [previousVersionId], references: [id], onDelete: SetNull)
+  nextVersion     Survey?                @relation("SurveyVersionChain")
   surveyQuestions            SurveyQuestion[]
   builderResponses           SurveyBuilderResponse[]
   responseAnswers            ResponseAnswer[]

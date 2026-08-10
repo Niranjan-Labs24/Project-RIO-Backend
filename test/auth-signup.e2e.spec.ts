@@ -4,26 +4,20 @@ import cookieParser from 'cookie-parser';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AllExceptionsFilter } from '../src/common/filters/http-exception.filter';
-import { MailerService } from '../src/mailer/mailer.service';
+import { DEFAULT_TEMP_PASSWORD } from '../src/modules/auth/auth.repository';
 
-// Requires a running, migrated DB. Unlike auth.e2e.spec.ts (bearer-token
-// only), this flow is cookie-based, so the app must apply cookie-parser
-// middleware the same way src/main.ts does — otherwise req.cookies is
-// undefined and JwtAuthGuard can never see the rio_session cookie.
-describe('signup -> me -> change-password (cookie)', () => {
+// Requires a running, migrated, seeded DB (needs sysadmin@platform.local —
+// see prisma/seed.ts). Cookie-based, like auth-cookie flows — the app must
+// apply cookie-parser middleware the same way src/main.ts does.
+//
+// RIO-FR-010 (client-confirmed): self-registration requires Center (System
+// Admin) approval before activation — signup no longer issues a session,
+// and the entity can't log in until a System Admin approves it.
+describe('signup -> pending approval -> System Admin approves -> entity logs in', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      // Force the "email couldn't be sent" branch deterministically — this
-      // test asserts on the temporary password revealed in the response,
-      // which only happens when the send fails. Without this override, an
-      // environment with real SMTP creds configured (e.g. a local .env)
-      // would email the password away instead and the response would omit
-      // it, regardless of NODE_ENV.
-      .overrideProvider(MailerService)
-      .useValue({ sendTemporaryPassword: async () => false, sendOtpCode: async () => false })
-      .compile();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
     app.use(cookieParser());
     app.setGlobalPrefix('api');
@@ -34,7 +28,7 @@ describe('signup -> me -> change-password (cookie)', () => {
     await app.close();
   });
 
-  it('signs up, sets rio_session cookie, resolves me, then changes password', async () => {
+  it('blocks login until approved, then lets the entity log in with the temp password System Admin\'s approval issues', async () => {
     const server = app.getHttpServer();
     const rn = `RN-${Date.now()}`;
     const email = `admin+${Date.now()}@e2e.test`;
@@ -67,53 +61,57 @@ describe('signup -> me -> change-password (cookie)', () => {
       })
       .expect(201);
 
-    const cookie = signup.headers['set-cookie'] as unknown as string[];
-    expect(cookie).toBeDefined();
-    expect(Array.isArray(cookie)).toBe(true);
-    expect(cookie.join(';')).toContain('rio_session=');
-    const csrfCookie = cookie.find((c) => c.startsWith('rio_csrf='));
-    const csrf = csrfCookie?.match(/rio_csrf=([^;]*)/)?.[1] ?? '';
-    expect(signup.body.mustChangePassword).toBe(true);
-    expect(signup.body.organization.registrationNumber).toBe(rn);
-    // The MailerService override above forces the send to "fail" -> temp
-    // password revealed in the response, deterministically regardless of
-    // whether this environment has real SMTP creds configured.
-    expect(signup.body.temporaryPasswordEmailed).toBe(false);
-    const tempPassword = signup.body.temporaryPassword as string;
-    expect(typeof tempPassword).toBe('string');
+    // No session is established at signup — pending approval, nothing else.
+    expect(signup.body).toEqual({ status: 'pending_approval', organizationName: 'E2E NGO', email });
+    expect(signup.headers['set-cookie']).toBeUndefined();
 
+    // Login is blocked until approved — org.isActive is false from creation.
     await request(server)
-      .get('/api/auth/me')
-      .set('Cookie', cookie)
-      .expect(200)
-      .expect((r) => expect(r.body.user.email).toBe(email));
+      .post('/api/auth/login')
+      .send({ email, password: DEFAULT_TEMP_PASSWORD })
+      .expect(403)
+      .expect((r) => expect(r.body.error.code).toBe('ORG_INACTIVE'));
 
-    const changePassword = await request(server)
-      .post('/api/auth/change-password')
-      .set('Cookie', cookie)
-      .set('x-csrf-token', csrf)
-      .send({ currentPassword: tempPassword, newPassword: 'BrandNewPass123!' })
-      .expect(200)
-      .expect((r) => expect(r.body.mustChangePassword).toBe(false));
+    // System Admin logs in and approves the pending entity.
+    const adminLogin = await request(server)
+      .post('/api/auth/login')
+      .send({ email: 'sysadmin@platform.local', password: 'Passw0rd!' })
+      .expect(200);
+    const adminCookies = adminLogin.headers['set-cookie'] as unknown as string[];
+    const adminCsrf = adminCookies.find((c) => c.startsWith('rio_csrf='))?.match(/rio_csrf=([^;]*)/)?.[1] ?? '';
 
-    // change-password bumps sessionVersion server-side and must re-issue the
-    // rio_session cookie with a matching fresh token — otherwise the very
-    // next cookie-authenticated request (e.g. consent, right after the
-    // signup -> change-password flow) is wrongly rejected as UNAUTHENTICATED
-    // by JwtAuthGuard's sessionVersion check, even with a brand-new browser
-    // session and no stale cookies involved. change-password only reissues
-    // rio_session (rio_csrf is untouched), so a real browser would keep
-    // both — merge them the same way here rather than replacing wholesale.
-    const refreshedSessionCookie = (changePassword.headers['set-cookie'] as unknown as string[])?.find((c) =>
-      c.startsWith('rio_session='),
+    const orgsList = await request(server)
+      .get('/api/organizations')
+      .set('Cookie', adminCookies)
+      .expect(200);
+    const pendingOrg = (orgsList.body as Array<{ id: string; registrationNumber: string }>).find(
+      (o) => o.registrationNumber === rn,
     );
-    expect(refreshedSessionCookie).toBeDefined();
-    const refreshedCookies = [refreshedSessionCookie as string, csrfCookie as string];
+    expect(pendingOrg).toBeDefined();
 
+    const approved = await request(server)
+      .patch(`/api/organizations/${pendingOrg!.id}/approve`)
+      .set('Cookie', adminCookies)
+      .set('x-csrf-token', adminCsrf)
+      .expect(200);
+    expect(approved.body.isActive).toBe(true);
+    expect(approved.body.approvedAt).toEqual(expect.any(String));
+
+    // Approving twice is rejected — already approved.
     await request(server)
-      .post('/api/auth/consent')
-      .set('Cookie', refreshedCookies)
-      .set('x-csrf-token', csrf)
-      .expect(201);
+      .patch(`/api/organizations/${pendingOrg!.id}/approve`)
+      .set('Cookie', adminCookies)
+      .set('x-csrf-token', adminCsrf)
+      .expect(400)
+      .expect((r) => expect(r.body.error.code).toBe('ORG_ALREADY_APPROVED'));
+
+    // The entity can now log in with the temporary password approval issued
+    // (DEFAULT_TEMP_PASSWORD — see OrganizationsService.approve).
+    const entityLogin = await request(server)
+      .post('/api/auth/login')
+      .send({ email, password: DEFAULT_TEMP_PASSWORD })
+      .expect(200);
+    expect(entityLogin.body.mustChangePassword).toBe(true);
+    expect(entityLogin.body.organization.registrationNumber).toBe(rn);
   }, 20_000);
 });

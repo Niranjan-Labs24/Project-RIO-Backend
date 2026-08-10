@@ -65,6 +65,12 @@ export interface SurveyResponseAnswer {
   questionId: string;
   questionText: string;
   answerType: string;
+  /** RIO-FR-011: needed so the frontend can render option-based stats
+   * (percentage bars) for a question from a superseded survey version too —
+   * that question no longer appears in the current survey's own question
+   * list, so its options have to travel with the answer itself. Null for a
+   * free-text/numeric question, which has no fixed option set. */
+  answerOptions: string[] | null;
   answer: string | null;
 }
 

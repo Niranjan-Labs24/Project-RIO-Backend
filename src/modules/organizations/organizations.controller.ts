@@ -54,6 +54,15 @@ export class OrganizationsController {
     return this.orgs.updateStatus(id, body);
   }
 
+  // RIO-FR-010 (client-confirmed): approves a self-registered entity —
+  // separate from updateStatus above, since this also issues the entity's
+  // real temporary password (see OrganizationsService.approve).
+  @Patch(':id/approve')
+  @RequirePermission('entityTeam', 'write')
+  approve(@Param('id', new UuidParamPipe()) id: string): Promise<OrganizationSummary> {
+    return this.orgs.approve(id);
+  }
+
   @Post()
   @RequirePermission('entityTeam', 'create')
   createWithAdmin(@Body(new TypeBoxValidationPipe(CreateOrganizationBody)) body: CreateOrganizationPayload): Promise<Organization> {

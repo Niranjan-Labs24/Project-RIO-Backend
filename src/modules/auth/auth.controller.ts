@@ -12,7 +12,7 @@ import {
   type ChangePasswordDto, type ForgotPasswordDto, type LoginDto, type ResetPasswordDto, type SignupDto,
 } from './auth.contract';
 import { AuthService } from './auth.service';
-import type { SessionContext, SignupResponseView } from './session.types';
+import type { SessionContext, SignupPendingApprovalView } from './session.types';
 
 @Controller('auth')
 export class AuthController {
@@ -42,20 +42,18 @@ export class AuthController {
   }
 
   // Open route (no @RequirePermission): public NGO signup creates the org +
-  // first admin and issues a session, same as login. CSRF-exempt for the same
-  // reason as login: it issues the rio_csrf cookie rather than consuming it.
+  // first admin. RIO-FR-010 (client-confirmed): no session/cookies are
+  // issued here anymore — self-registration requires Center (System Admin)
+  // approval before activation (see AuthService.signup). The entity logs in
+  // normally via POST /auth/login once approved.
   @Post('signup')
   @Public()
   @RateLimit(3, 3600)
   @CsrfExempt()
   async signup(
     @Body(new TypeBoxValidationPipe(SignupBody)) body: SignupDto,
-    @Res({ passthrough: true }) res: Response,
-  ): Promise<SignupResponseView> {
-    const result = await this.auth.signup(body);
-    res.cookie(SESSION_COOKIE_NAME, result.token, sessionCookieOptions(this.config.nodeEnv === 'production'));
-    res.cookie(CSRF_COOKIE_NAME, randomBytes(18).toString('base64url'), csrfCookieOptions(this.config.nodeEnv === 'production'));
-    return result;
+  ): Promise<SignupPendingApprovalView> {
+    return this.auth.signup(body);
   }
 
   // Open routes: unauthenticated by definition (the whole point is to

@@ -128,6 +128,17 @@ export class SurveysController {
     );
   }
 
+  // RIO-FR-011 (client-confirmed): the only way to change a PUBLISHED
+  // survey — creates a new DRAFT version (copying the published one's
+  // questions/methodology/sample-description as a starting point) rather
+  // than editing in place. surveyBuilder:write, same role gate as every
+  // other Researcher-side edit action above.
+  @Post('surveys/:id/new-version')
+  @RequirePermission('surveyBuilder', 'write')
+  createNewVersion(@Param('id', new UuidParamPipe()) id: string) {
+    return this.service.createNewVersion(id);
+  }
+
   // Researcher: hand the current draft (or a fixed-up rejected one) to the
   // Approver. Content itself is saved separately, via updateQuestions above
   // — this route only ever moves status.

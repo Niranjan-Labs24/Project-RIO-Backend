@@ -3,10 +3,11 @@ import { randomBytes } from 'node:crypto';
 import { v7 as uuidv7 } from 'uuid';
 import { UserStatus } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
-import { getOrgStore, requireOrgId } from '../../tenancy/org-context';
+import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { roleByKey } from '../../rbac/role-matrix';
 import { PasswordService } from '../../auth/password.service';
-import { conflictFor, uniqueField } from '../auth/auth.repository';
+import { conflictFor, DEFAULT_TEMP_PASSWORD, uniqueField } from '../auth/auth.repository';
+import { MailerService } from '../../mailer/mailer.service';
 import { AuditService } from '../audit/audit.service';
 import type { AuditChange } from '../audit/audit.types';
 import { DomainsService } from '../domains/domains.service';
@@ -28,7 +29,7 @@ const DIFF_FIELDS = [
 type RawOrgWithGeo = {
   id: string; name: string; purpose: string | null; registrationNumber: string | null;
   logoUrl: string | null; region: string[]; email: string | null; sector: string | null;
-  villages: string[]; regionId: string | null; isActive: boolean; createdAt: Date;
+  villages: string[]; regionId: string | null; isActive: boolean; approvedAt: Date | null; createdAt: Date;
   orgGovernorates: { governorateId: string }[];
   orgCenters: { centerId: string }[];
 };
@@ -43,6 +44,7 @@ export class OrganizationsService {
     private readonly passwords: PasswordService,
     private readonly domains: DomainsService,
     private readonly geography: GeographyService,
+    private readonly mailer: MailerService,
   ) {}
 
   async getCurrent(): Promise<Organization> {
@@ -123,6 +125,10 @@ export class OrganizationsService {
             id: orgId, name: payload.name, purpose: payload.purpose ?? null, registrationNumber: payload.registrationNumber,
             region: payload.region ?? [], email: payload.email ?? null,
             sector: payload.sector ?? null, villages: payload.villages ?? [], isActive: true,
+            // RIO-FR-010 (client-confirmed): the approval gate is only for
+            // self-registration — a System Admin creating an org directly is
+            // inherently pre-approved, so this skips the gate entirely.
+            approvedAt: new Date(), approvedBy: requireActor(),
           },
         });
         if (payload.adminName && payload.adminEmail) {
@@ -242,6 +248,50 @@ export class OrganizationsService {
     return this.getById(id);
   }
 
+  // RIO-FR-010 (client-confirmed): self-registered entities require Center
+  // (System Admin) approval before activation. Separate from updateStatus
+  // above — this issues the entity's real temporary password (a placeholder
+  // was hashed at signup and never revealed/emailed, since login was blocked
+  // by ORG_INACTIVE regardless — see AuthService.signup), which
+  // updateStatus's plain activate/deactivate toggle must never do (it's also
+  // used to suspend/reinstate an already-approved, already-credentialed org).
+  async approve(id: string): Promise<OrganizationSummary> {
+    this.assertCrossEntity();
+    const actorId = requireActor();
+    const current = (await this.tenant.runAsSupervisor((tx) =>
+      tx.organisation.findUnique({
+        where: { id },
+        include: { users: { where: { roleId: 'role_ngo_admin' }, take: 1, select: { id: true, email: true } } },
+      }),
+    )) as (RawOrgWithGeo & { users: { id: string; email: string }[] }) | null;
+    if (!current) throw new NotFoundException({ error: { code: 'ORG_NOT_FOUND', message: 'Organization not found' } });
+    if (current.approvedAt) {
+      throw new BadRequestException({ error: { code: 'ORG_ALREADY_APPROVED', message: 'This organization has already been approved.' } });
+    }
+    const admin = current.users[0];
+    if (!admin) throw new NotFoundException({ error: { code: 'ORG_ADMIN_NOT_FOUND', message: 'No admin user found for this organization.' } });
+
+    const temporaryPassword = DEFAULT_TEMP_PASSWORD;
+    const passwordHash = await this.passwords.hash(temporaryPassword);
+
+    await this.tenant.runAsOrg(id, async (tx) => {
+      await tx.organisation.update({ where: { id }, data: { isActive: true, approvedAt: new Date(), approvedBy: actorId } });
+      await tx.user.update({ where: { id: admin.id }, data: { passwordHash, mustChangePassword: true } });
+    });
+
+    await this.mailer.sendTemporaryPassword(admin.email, current.name, temporaryPassword);
+
+    await this.audit.record({
+      action: 'ORGANIZATION_APPROVED',
+      entityType: 'organization',
+      entityId: current.id,
+      entityLabel: current.name,
+      organizationId: current.id,
+    });
+
+    return this.getById(id);
+  }
+
   // Mirrors AuthService's identical check (see auth.service.ts) — `sector`
   // must match an active Methodology Configuration Domain name or the
   // literal "other" (paired with `purpose` for free text).
@@ -324,7 +374,7 @@ export class OrganizationsService {
     return {
       id: raw.id, name: raw.name, purpose: raw.purpose, registrationNumber: raw.registrationNumber,
       logoUrl: raw.logoUrl, region: raw.region, email: raw.email, sector: raw.sector,
-      villages: raw.villages, regionId: raw.regionId, isActive: raw.isActive, createdAt: raw.createdAt,
+      villages: raw.villages, regionId: raw.regionId, isActive: raw.isActive, approvedAt: raw.approvedAt, createdAt: raw.createdAt,
       governorateIds: raw.orgGovernorates.map((g) => g.governorateId),
       centerIds: raw.orgCenters.map((c) => c.centerId),
     };
@@ -336,7 +386,8 @@ export class OrganizationsService {
       logoUrl: row.logoUrl, region: row.region, email: row.email,
       sector: row.sector, villages: row.villages,
       regionId: row.regionId, governorateIds: row.governorateIds, centerIds: row.centerIds,
-      isActive: row.isActive, createdAt: row.createdAt.toISOString(),
+      isActive: row.isActive, approvedAt: row.approvedAt ? row.approvedAt.toISOString() : null,
+      createdAt: row.createdAt.toISOString(),
     };
   }
 }
