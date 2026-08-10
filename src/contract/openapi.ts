@@ -73,7 +73,7 @@ const ROUTES: RouteDoc[] = [
   },
   {
     method: 'post', path: '/auth/signup', tag: 'Auth', summary: 'Public NGO signup — creates the organisation + its first NGO Admin',
-    auth: undefined, requestSchema: 'SignupBody', response: 'SignupResponseView (SessionContext + temporaryPasswordEmailed)',
+    auth: undefined, requestSchema: 'SignupBody', response: 'SignupPendingApprovalView (status: pending_approval — no session issued, requires Center approval first)',
   },
   {
     method: 'get', path: '/auth/me', tag: 'Auth', summary: "Re-fetch the caller's current session",

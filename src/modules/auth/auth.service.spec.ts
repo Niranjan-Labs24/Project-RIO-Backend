@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 import { JwtService } from '@nestjs/jwt';
-import { ForbiddenException, Logger, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { orgContext } from '../../tenancy/org-context';
 import { PERMISSION_MODULES } from '../../rbac/role-matrix';
 import { AuthService } from './auth.service';
@@ -115,22 +115,25 @@ describe('AuthService.signup', () => {
     service = new AuthService(tenant as never, passwords as never, tokens as never, audit as never, repo as never, mailer as never, config, domainsStub as never, geographyStub as never);
   });
 
-  it('signup: creates org+admin, records audit, returns emailed=true when mailer succeeds', async () => {
+  // RIO-FR-010 (client-confirmed): self-registration requires Center
+  // (System Admin) approval before activation — signup no longer issues a
+  // session or sends the temporary password; both happen at approval
+  // (OrganizationsService.approve) instead.
+  it('signup: creates org+admin, records a pending-approval audit event, returns status=pending_approval with no session', async () => {
     repo.findByRegistrationNumber.mockResolvedValue(null);
     repo.findUserByEmail.mockResolvedValue(null);
     repo.createOrganisationAndAdmin.mockResolvedValue({
-      org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: 'RN1', logoUrl: null, region: [], email: null, sector: null, villages: [], isActive: true, createdAt: new Date() },
+      org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: 'RN1', logoUrl: null, region: [], email: null, sector: null, villages: [], isActive: false, approvedAt: null, createdAt: new Date() },
       user: { id: 'u1', name: 'Org Admin', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h', consentedAt: null, consentedPolicyVersion: null, failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: true },
     });
-    mailer.sendTemporaryPassword.mockResolvedValue(true);
 
     const res = await service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'] });
 
-    expect(res.temporaryPasswordEmailed).toBe(true);
-    expect(res.temporaryPassword).toBeUndefined();
-    expect(res.mustChangePassword).toBe(true);
-    expect(res.organization.registrationNumber).toBe('RN1');
-    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'create', entityType: 'organization' }));
+    expect(res).toEqual({ status: 'pending_approval', organizationName: 'Org', email: 'a@b.test' });
+    expect(mailer.sendTemporaryPassword).not.toHaveBeenCalled();
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'create', entityType: 'organization', metadata: { pendingApproval: true },
+    }));
   });
 
   it('signup: rejects a duplicate registration number before creating', async () => {
@@ -138,57 +141,6 @@ describe('AuthService.signup', () => {
     await expect(service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'] }))
       .rejects.toMatchObject({ response: { error: { code: 'ORGANIZATION_ALREADY_REGISTERED' } } });
     expect(repo.createOrganisationAndAdmin).not.toHaveBeenCalled();
-  });
-
-  it('signup: reveals temporaryPassword only outside production when mailer is unconfigured', async () => {
-    repo.findByRegistrationNumber.mockResolvedValue(null);
-    repo.findUserByEmail.mockResolvedValue(null);
-    repo.createOrganisationAndAdmin.mockResolvedValue({
-      org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: 'RN1', logoUrl: null, region: [], email: null, sector: null, villages: [], isActive: true, createdAt: new Date() },
-      user: { id: 'u1', name: 'Org Admin', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h', consentedAt: null, consentedPolicyVersion: null, failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: true },
-    });
-    mailer.sendTemporaryPassword.mockResolvedValue(false);
-    // config mock nodeEnv = 'development'
-    const res = await service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'] });
-    expect(res.temporaryPasswordEmailed).toBe(false);
-    expect(typeof res.temporaryPassword).toBe('string');
-  });
-
-  it('signup: never leaks temporaryPassword in production, even when the mailer fails to send', async () => {
-    repo.findByRegistrationNumber.mockResolvedValue(null);
-    repo.findUserByEmail.mockResolvedValue(null);
-    repo.createOrganisationAndAdmin.mockResolvedValue({
-      org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: 'RN1', logoUrl: null, region: [], email: null, sector: null, villages: [], isActive: true, createdAt: new Date() },
-      user: { id: 'u1', name: 'Org Admin', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h', consentedAt: null, consentedPolicyVersion: null, failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: true },
-    });
-    mailer.sendTemporaryPassword.mockResolvedValue(false);
-    const prodConfig = { nodeEnv: 'production' } as unknown as ConfigService;
-    const prodService = new AuthService(tenant as never, passwords as never, tokens as never, audit as never, repo as never, mailer as never, prodConfig, domainsStub as never, geographyStub as never);
-
-    const res = await prodService.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'] });
-
-    expect(res.temporaryPasswordEmailed).toBe(false);
-    expect(res.temporaryPassword).toBeUndefined();
-  });
-
-  it('signup: never logs the temporary password, even when revealing it in the response (Task 10)', async () => {
-    repo.findByRegistrationNumber.mockResolvedValue(null);
-    repo.findUserByEmail.mockResolvedValue(null);
-    repo.createOrganisationAndAdmin.mockResolvedValue({
-      org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: 'RN1', logoUrl: null, region: [], email: null, sector: null, villages: [], isActive: true, createdAt: new Date() },
-      user: { id: 'u1', name: 'Org Admin', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h', consentedAt: null, consentedPolicyVersion: null, failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: true },
-    });
-    mailer.sendTemporaryPassword.mockResolvedValue(false);
-    const logSpy = vi.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
-    const errorSpy = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
-
-    const res = await service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'] });
-
-    expect(typeof res.temporaryPassword).toBe('string');
-    const allLoggedArgs = [...logSpy.mock.calls, ...errorSpy.mock.calls].flat().map(String);
-    expect(allLoggedArgs.some((arg) => arg.includes(res.temporaryPassword as string))).toBe(false);
-    logSpy.mockRestore();
-    errorSpy.mockRestore();
   });
 });
 

@@ -6,7 +6,7 @@ const baseRow: OrgRow = {
   id: 'o1', name: 'Old', purpose: 'WASH access', registrationNumber: 'REG-OLD-1',
   region: ['North'], email: null, sector: 'wash',
   logoUrl: null, villages: ['A'], regionId: null, governorateIds: [], centerIds: [],
-  isActive: true, createdAt: new Date('2026-01-01T00:00:00Z'),
+  isActive: true, approvedAt: new Date('2026-01-01T00:00:00Z'), createdAt: new Date('2026-01-01T00:00:00Z'),
 };
 
 function fakeTenant(initial: OrgRow) {
@@ -62,7 +62,7 @@ const geographyStub = {
 
 describe('OrganizationsService', () => {
   it('getCurrent maps a row to Organization with an ISO createdAt', async () => {
-    const svc = new OrganizationsService(fakeTenant(baseRow) as never, { record: async () => {} } as never, {} as never, domainsStub as never, geographyStub as never);
+    const svc = new OrganizationsService(fakeTenant(baseRow) as never, { record: async () => {} } as never, {} as never, domainsStub as never, geographyStub as never, { sendTemporaryPassword: async () => true } as never);
     const org = await orgContext.run({ requestId: 'r', orgId: 'o1' }, () => svc.getCurrent());
     expect(org.name).toBe('Old');
     expect(org.createdAt).toBe(new Date('2026-01-01T00:00:00Z').toISOString());
@@ -71,7 +71,7 @@ describe('OrganizationsService', () => {
   it('updateCurrent computes changes and records an edit audit event', async () => {
     const recorded: { changes?: { field: string; before: unknown; after: unknown }[] }[] = [];
     const audit = { record: async (i: unknown) => { recorded.push(i as never); } };
-    const svc = new OrganizationsService(fakeTenant(baseRow) as never, audit as never, {} as never, domainsStub as never, geographyStub as never);
+    const svc = new OrganizationsService(fakeTenant(baseRow) as never, audit as never, {} as never, domainsStub as never, geographyStub as never, { sendTemporaryPassword: async () => true } as never);
     const result = await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'u1', role: 'ngo_admin' }, () =>
       svc.updateCurrent({ name: 'New' }),
     );
@@ -85,7 +85,7 @@ describe('OrganizationsService', () => {
   it('updateCurrent records nothing when no field actually changes', async () => {
     const recorded: unknown[] = [];
     const audit = { record: async (i: unknown) => { recorded.push(i); } };
-    const svc = new OrganizationsService(fakeTenant(baseRow) as never, audit as never, {} as never, domainsStub as never, geographyStub as never);
+    const svc = new OrganizationsService(fakeTenant(baseRow) as never, audit as never, {} as never, domainsStub as never, geographyStub as never, { sendTemporaryPassword: async () => true } as never);
     await orgContext.run({ requestId: 'r', orgId: 'o1', role: 'ngo_admin' }, () => svc.updateCurrent({ name: 'Old' }));
     expect(recorded).toHaveLength(0);
   });
@@ -121,7 +121,7 @@ describe('OrganizationsService', () => {
           },
         }),
     };
-    const svc = new OrganizationsService(fake as never, audit as never, {} as never, domainsStub as never, geographyStub as never);
+    const svc = new OrganizationsService(fake as never, audit as never, {} as never, domainsStub as never, geographyStub as never, { sendTemporaryPassword: async () => true } as never);
 
     const result = await orgContext.run({ requestId: 'r', orgId: 'o1', role: 'system_admin' }, () =>
       svc.updateStatus('o1', { isActive: false, reason: 'Maintenance' }),

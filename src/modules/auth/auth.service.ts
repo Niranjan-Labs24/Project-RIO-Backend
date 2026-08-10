@@ -12,7 +12,7 @@ import { AuditService } from '../audit/audit.service';
 import { ConfigService } from '../../config/config.service';
 import { MailerService } from '../../mailer/mailer.service';
 import { AuthRepository, conflictFor, DEFAULT_TEMP_PASSWORD } from './auth.repository';
-import type { SessionContext, SessionOrg, SessionUser, SignupResponseView } from './session.types';
+import type { SessionContext, SessionOrg, SessionUser, SignupPendingApprovalView } from './session.types';
 import type { ChangePasswordDto, ForgotPasswordDto, ResetPasswordDto, SignupDto } from './auth.contract';
 
 const MAX_FAILED = 5;
@@ -200,10 +200,14 @@ export class AuthService {
   }
 
   // Public NGO signup: creates the organisation + its first NGO Admin (RLS via
-  // runAsOrg inside the repository) and issues a session — same shape login()
-  // returns, plus how the temp password was delivered. Consent is NOT
-  // recorded here — see AuthService.consent(), triggered post-login.
-  async signup(dto: SignupDto): Promise<SignupResponseView> {
+  // runAsOrg inside the repository). RIO-FR-010 (client-confirmed): no
+  // session is issued here anymore — self-registration requires Center
+  // (System Admin) approval before activation (repo creates the org with
+  // isActive: false). The admin logs in normally via POST /auth/login once
+  // OrganizationsService.approve has run and issued a real temporary
+  // password — the one hashed below is a placeholder that's never revealed
+  // or emailed, since login is blocked by ORG_INACTIVE regardless until then.
+  async signup(dto: SignupDto): Promise<SignupPendingApprovalView> {
     // Friendly pre-checks (the DB unique constraint is still the source of
     // truth, handled inside the repository for the concurrent-signup race —
     // hence the duplicated error envelopes via the shared conflictFor()).
@@ -223,8 +227,7 @@ export class AuthService {
       centerIds: dto.centerIds,
     });
 
-    const temporaryPassword = DEFAULT_TEMP_PASSWORD;
-    const passwordHash = await this.passwords.hash(temporaryPassword);
+    const placeholderPasswordHash = await this.passwords.hash(DEFAULT_TEMP_PASSWORD);
 
     const { org, user } = await this.repo.createOrganisationAndAdmin({
       organizationName: dto.organizationName,
@@ -232,35 +235,26 @@ export class AuthService {
       purpose: dto.purpose,
       registrationNumber: dto.registrationNumber,
       email: dto.email,
-      passwordHash,
+      passwordHash: placeholderPasswordHash,
       regionId: dto.regionId,
       governorateIds: dto.governorateIds,
       centerIds: dto.centerIds,
     });
 
-    const role = this.roleOf(user.roleId);
+    // Attribute the audit entry to the new admin without issuing them a
+    // session — nothing else runs as this actor in this request.
     const store = getOrgStore();
     if (store) {
       store.orgId = org.id;
       store.actorId = user.id;
-      store.role = role.key;
+      store.role = this.roleOf(user.roleId).key;
     }
-    await this.audit.record({ action: 'create', entityType: 'organization', entityId: org.id, entityLabel: org.name, organizationId: org.id });
+    await this.audit.record({
+      action: 'create', entityType: 'organization', entityId: org.id, entityLabel: org.name,
+      organizationId: org.id, metadata: { pendingApproval: true },
+    });
 
-    const token = this.tokens.sign({ sub: user.id, orgId: org.id, roleKey: role.key, sessionVersion: user.sessionVersion });
-    const session = this.buildSession({ ...user, org } as never, role, token);
-
-    const emailed = await this.mailer.sendTemporaryPassword(user.email, org.name, temporaryPassword);
-    if (emailed) {
-      return { ...session, temporaryPasswordEmailed: true };
-    }
-    // Dev only: surface the password in the response itself (below), never
-    // logged — it's already the sole reveal channel when email delivery
-    // fails, and a log line would be a second, redundant disclosure path.
-    if (this.config.nodeEnv !== 'production') {
-      return { ...session, temporaryPasswordEmailed: false, temporaryPassword };
-    }
-    return { ...session, temporaryPasswordEmailed: false };
+    return { status: 'pending_approval', organizationName: org.name, email: user.email };
   }
 
   // Signed-in user replaces a signup-issued temporary password with one they

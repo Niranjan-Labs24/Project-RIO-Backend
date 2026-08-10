@@ -6,10 +6,15 @@ import { PublicSurveysService } from './public-surveys.service';
 // sanitizeForSpreadsheet is actually wired into both export paths, without
 // needing a live database or the full citizen OTP submission flow.
 function makeFakeTx(need: unknown, responses: unknown[], survey: unknown) {
+  // RIO-FR-011: buildQuestionMap unions every version's questions for a
+  // Need (see its own comment) via survey.findMany, not a single
+  // survey.findFirst any more — the fixture is still "the one survey" a
+  // test cares about, just wrapped as the one-element result set that
+  // query now returns.
   return {
     need: { findUnique: vi.fn().mockResolvedValue(need) },
     surveyResponse: { findMany: vi.fn().mockResolvedValue(responses) },
-    survey: { findFirst: vi.fn().mockResolvedValue(survey) },
+    survey: { findMany: vi.fn().mockResolvedValue(survey ? [survey] : []) },
   };
 }
 

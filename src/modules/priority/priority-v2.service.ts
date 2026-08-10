@@ -317,7 +317,18 @@ export class PriorityV2Service {
 
       const studyTitleById = new Map(studies.map((s) => [s.id, s.title]));
       const surveyByNeedId = new Map<string, (typeof surveys)[number]>();
-      for (const survey of surveys) {
+      // RIO-FR-011: a Need can now have more than one Survey row
+      // (versioning) — VillagePriorityAssessment rows key off the
+      // PUBLISHED survey's id (that's the one whose responses were
+      // scored), so picking a newer DRAFT here would silently show "no
+      // score yet" for a need that's actually fully scored. PUBLISHED
+      // first, newest-created as the tiebreak/fallback.
+      const orderedSurveys = [...surveys].sort((a, b) => {
+        if (a.status === 'PUBLISHED' && b.status !== 'PUBLISHED') return -1;
+        if (b.status === 'PUBLISHED' && a.status !== 'PUBLISHED') return 1;
+        return b.createdAt.getTime() - a.createdAt.getTime();
+      });
+      for (const survey of orderedSurveys) {
         if (!surveyByNeedId.has(survey.needId)) surveyByNeedId.set(survey.needId, survey);
       }
       const latestAssessmentBySurveyId = new Map<string, (typeof assessments)[number]>();

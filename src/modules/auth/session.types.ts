@@ -38,8 +38,23 @@ export interface SessionContext {
   mustChangePassword: boolean;
 }
 
-/** signup's response — SessionContext plus how the temp password was delivered. */
+/** signup's response — SessionContext plus how the temp password was delivered.
+ * No longer returned by AuthService.signup() itself (see SignupPendingApprovalView
+ * below) — kept for the shape a login *after* approval still produces. */
 export interface SignupResponseView extends SessionContext {
   temporaryPasswordEmailed: boolean;
   temporaryPassword?: string;
+}
+
+/**
+ * RIO-FR-010 (client-confirmed): self-registration requires Center (System
+ * Admin) approval before activation — no session is established at signup
+ * time. The entity's admin logs in normally via POST /auth/login once
+ * approved and the temporary password has been issued (see
+ * OrganizationsService.approve).
+ */
+export interface SignupPendingApprovalView {
+  status: 'pending_approval';
+  organizationName: string;
+  email: string;
 }

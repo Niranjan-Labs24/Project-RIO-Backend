@@ -40,11 +40,19 @@ describe('ROLE_MATRIX', () => {
     expect(can('system_admin', 'ncnpReport', 'approve')).toBe(false);
   });
 
-  it('ncnp_user is cross-entity but has no permission on any other module', () => {
-    const role = ROLE_MATRIX.find((r) => r.key === 'ncnp_user');
-    expect(role?.id).toBe('role_ncnp_user');
+  // RIO-RBAC-001 (client-confirmed): "Center supervisor / NCNP supervisor"
+  // is one combined role, not two — the old separate `ncnp_user` role is
+  // retired; `center_supervisor` now covers both.
+  it('center_supervisor (NCNP Supervisor) is cross-entity, read-only everywhere, and can view the NCNP Compiled Report', () => {
+    const role = ROLE_MATRIX.find((r) => r.key === 'center_supervisor');
+    expect(role?.id).toBe('role_center_supervisor');
     expect(role?.crossEntity).toBe(true);
-    expect(role?.permissions.every((p) => !p.read && !p.write && !p.create && !p.approve && !p.export && !p.share)).toBe(true);
+    expect(role?.permissions.every((p) => !p.write && !p.create && !p.approve && !p.share)).toBe(true);
+    // archiveSharingAudit:read is what the NCNP Compiled Report controller
+    // actually gates on (see ncnp-report.controller.ts) — without this the
+    // old ncnp_user role could never reach its own report.
+    expect(can('center_supervisor', 'archiveSharingAudit', 'read')).toBe(true);
+    expect(ROLE_MATRIX.find((r) => r.key === 'ncnp_user')).toBeUndefined();
   });
 
   it('ngo_admin has full access; can() reflects the matrix', () => {
