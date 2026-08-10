@@ -295,6 +295,15 @@ export class CitizenService {
       entityId: row.id,
       entityLabel: `Survey response submitted for need "${needTitle}"`,
       organizationId: link.orgId,
+      // Deliberately metadata-shaped, NOT the submitted content: RIO-NFR-002
+      // forbids logging a citizen's answers or contact details. The pair
+      // records that a submission arrived and how large it was, which is what
+      // an auditor needs, without putting respondent data in the audit log.
+      changes: [
+        { field: 'Survey response', before: null, after: 'submitted' },
+        { field: 'Answers submitted', before: null, after: Array.isArray(payload.answers) ? payload.answers.length : null },
+        { field: 'Need', before: null, after: needTitle },
+      ],
     });
 
     // Score and rollup asynchronously. Both calls take `orgId` explicitly —

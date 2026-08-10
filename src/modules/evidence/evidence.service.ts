@@ -99,7 +99,15 @@ export class EvidenceService {
       });
       committed = true;
       for (const row of created) {
-        await this.audit.record({ action: 'create', entityType: 'evidence', entityId: row.id, entityLabel: row.fileName });
+        await this.audit.record({
+          action: 'create', entityType: 'evidence', entityId: row.id, entityLabel: row.fileName,
+          // before: null on an upload — records what was attached and to which
+          // Need, so the detail view is not blank for created events.
+          changes: [
+            { field: 'File name', before: null, after: row.fileName },
+            { field: 'File type', before: null, after: row.fileType },
+          ],
+        });
       }
       const uploaderName = await this.resolveUserName(uploadedBy);
       return created.map((r) => this.toEvidence(r, uploaderName, isDuplicateByRowId.get(r.id) ?? false));
@@ -117,17 +125,28 @@ export class EvidenceService {
   // is a supporting document a researcher may add if they have one, not a
   // prerequisite.
   async submit(needId: string): Promise<void> {
+    // Assigned inside the transaction, read by the audit record below. When
+    // the Need was already past draft the two match, which correctly records
+    // the re-submit as a no-op rather than inventing a transition.
+    let previousStatus = '';
+    let nextStatus = '';
     await this.tenant.runInOrgContext(async (tx) => {
       const need = await tx.need.findUnique({ where: { id: needId } });
       if (!need) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+      previousStatus = need.status;
+      nextStatus = need.status;
       if (need.status === 'draft') {
         await tx.need.update({ where: { id: needId }, data: { status: 'evidence_submitted' } });
+        nextStatus = 'evidence_submitted';
       }
       // Already evidence_submitted/ai_classified/...: submitting again is a
       // harmless no-op, not an error — re-running upload+submit after
       // adding more evidence shouldn't be blocked.
     });
-    await this.audit.record({ action: 'edit', entityType: 'need', entityId: needId, entityLabel: 'evidence submitted' });
+    await this.audit.record({
+      action: 'edit', entityType: 'need', entityId: needId, entityLabel: 'evidence submitted',
+      changes: [{ field: 'Status', before: previousStatus, after: nextStatus }],
+    });
   }
 
   async listByNeedId(needId: string): Promise<Evidence[]> {
@@ -170,10 +189,22 @@ export class EvidenceService {
         });
       }
       await tx.evidence.delete({ where: { id } });
-      return existing;
+      // The Need is already loaded for the status check above — carry its
+      // title out so the audit entry names the Need a reader can recognise
+      // rather than repeating its UUID.
+      return { ...existing, needTitle: need?.title ?? null };
     });
     await this.storage.remove(row.storageKey);
-    await this.audit.record({ action: 'delete', entityType: 'evidence', entityId: row.id, entityLabel: row.fileName });
+    await this.audit.record({
+      action: 'delete', entityType: 'evidence', entityId: row.id, entityLabel: row.fileName,
+      // after: null — the file is removed from storage as well as the row, so
+      // this is the only surviving record of what was deleted.
+      changes: [
+        { field: 'File name', before: row.fileName, after: null },
+        { field: 'File type', before: row.fileType, after: null },
+        { field: 'Linked need', before: row.needTitle, after: null },
+      ],
+    });
   }
 
   // isDuplicate is only meaningful right after an upload (it answers "did

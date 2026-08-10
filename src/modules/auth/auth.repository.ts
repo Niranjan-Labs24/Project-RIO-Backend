@@ -1,8 +1,20 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { v7 as uuidv7 } from 'uuid';
-import { Prisma, UserStatus } from '../../generated/prisma';
+import { ConsentPolicyKind, Prisma, UserStatus } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
+
+/**
+ * RIO-DATA-001 — the resolved, server-side policy rows the registrant
+ * accepted. AuthService loads these from `consent_policies` and checks the
+ * submitted versions against them *before* calling the repository, so by
+ * this point they are known-active policies, not client-supplied strings.
+ */
+export interface ConsentAcceptanceInput {
+  kind: ConsentPolicyKind;
+  version: string;
+  text: string;
+}
 
 export interface CreateOrgAdminInput {
   organizationName: string;
@@ -14,6 +26,8 @@ export interface CreateOrgAdminInput {
   regionId: string;
   governorateIds: string[];
   centerIds: string[];
+  // Both consents, accepted as part of registration itself.
+  consents: ConsentAcceptanceInput[];
 }
 
 // TEMPORARY: the email provider's free-trial plan can only deliver to one
@@ -103,9 +117,15 @@ export class AuthRepository {
             },
           },
         });
-        // Consent is captured after first login (post password-reset), not
-        // here — see AuthService.consent() / the frontend's ConsentGuard.
-        // `consentedAt` stays null, same as an invited user starts out.
+        // RIO-DATA-001 — consent is captured HERE, as part of registration
+        // itself, not after first login: the admin's consent columns are
+        // stamped on the row at creation and the immutable acceptance rows
+        // are written in this same transaction, so an org can never exist
+        // without both consents on record. If any of it fails, the whole
+        // registration rolls back rather than leaving a half-consented org.
+        const usePolicy = input.consents.find((c) => c.kind === ConsentPolicyKind.use_policy);
+        const dataSharing = input.consents.find((c) => c.kind === ConsentPolicyKind.data_sharing);
+        const consentedAt = new Date();
         const user = await tx.user.create({
           data: {
             orgId,
@@ -115,8 +135,27 @@ export class AuthRepository {
             status: UserStatus.active,
             passwordHash: input.passwordHash,
             mustChangePassword: true,
+            consentedAt: usePolicy ? consentedAt : null,
+            consentedPolicyVersion: usePolicy?.version ?? null,
+            sharingConsentedAt: dataSharing ? consentedAt : null,
+            sharingConsentedPolicyVersion: dataSharing?.version ?? null,
           },
         });
+        // Snapshot the exact text of each policy accepted — the acceptance
+        // record has to stand on its own even after the policy text is
+        // later edited or superseded.
+        if (input.consents.length > 0) {
+          await tx.consentAcceptance.createMany({
+            data: input.consents.map((c) => ({
+              orgId,
+              userId: user.id,
+              kind: c.kind,
+              policyVersion: c.version,
+              policyText: c.text,
+              acceptedAt: consentedAt,
+            })),
+          });
+        }
         // Just-created above — no join rows to fetch, build them straight
         // from the input the same shape buildSession()/toOrgRow() expect
         // (see OrganizationsService.createWithAdmin's identical pattern).

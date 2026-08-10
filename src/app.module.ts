@@ -1,5 +1,5 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { ScheduleModule } from '@nestjs/schedule';
 import { LoggerModule } from 'nestjs-pino';
@@ -19,6 +19,7 @@ import { HealthModule } from './health/health.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { AuditModule } from './modules/audit/audit.module';
+import { SystemLogsModule } from './modules/system-logs/system-logs.module';
 import { ContactModule } from './modules/contact/contact.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { UsersModule } from './modules/users/users.module';
@@ -48,6 +49,7 @@ import { AiModule } from './modules/ai/ai.module';
 import { QuestionsModule } from './modules/questions/questions.module';
 import { SurveysModule } from './modules/surveys/surveys.module';
 import { BackupModule } from './modules/backup/backup.module';
+import { OperationalLogInterceptor } from './common/interceptors/operational-log.interceptor';
 import { AppController } from './app.controller';
 
 @Module({
@@ -79,6 +81,9 @@ import { AppController } from './app.controller';
     RolesModule,
     AuthModule,
     AuditModule,
+    // RIO-NFR-016 — operational logging. Global, like AuditModule: any
+    // service, filter or job may need to record an operational event.
+    SystemLogsModule,
     ContactModule,
     OrganizationsModule,
     UsersModule,
@@ -112,6 +117,11 @@ import { AppController } from './app.controller';
   controllers: [AppController],
   providers: [
     TokenService,
+    // RIO-NFR-016 — persists the outcome of successful requests (slow ones
+    // always, ordinary ones sampled). Every 4xx and 5xx is recorded by
+    // AllExceptionsFilter instead: guards run before interceptors, so a 401
+    // or 403 never reaches this one.
+    { provide: APP_INTERCEPTOR, useClass: OperationalLogInterceptor },
     { provide: APP_GUARD, useClass: RateLimitGuard },
     // Order matters: JwtAuthGuard populates the OrgStore from the bearer token,
     // then CsrfGuard checks the double-submit token (no-op unless CSRF_ENFORCE=true),

@@ -60,6 +60,25 @@ export class ConfigService {
   get logLevel(): AppConfig['LOG_LEVEL'] {
     return this.config.LOG_LEVEL;
   }
+  // RIO-NFR-016 — see the SYSTEM_LOG_* block in env.schema.ts.
+  get systemLogEnabled(): boolean {
+    return this.config.SYSTEM_LOG_ENABLED;
+  }
+  get systemLogMinLevel(): AppConfig['SYSTEM_LOG_MIN_LEVEL'] {
+    return this.config.SYSTEM_LOG_MIN_LEVEL;
+  }
+  get systemLogSampleRate(): number {
+    return this.config.SYSTEM_LOG_SAMPLE_RATE;
+  }
+  get systemLogSlowRequestMs(): number {
+    return this.config.SYSTEM_LOG_SLOW_REQUEST_MS;
+  }
+  get systemLogRetentionDays(): number {
+    return this.config.SYSTEM_LOG_RETENTION_DAYS;
+  }
+  get systemLogRetentionCron(): string {
+    return this.config.SYSTEM_LOG_RETENTION_CRON;
+  }
   get corsOrigin(): string {
     return this.config.CORS_ORIGIN;
   }
