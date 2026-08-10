@@ -51,6 +51,9 @@ export class NcnpReportReviewService {
       entityType: 'ncnp_report',
       entityId: row.id,
       entityLabel: 'NCNP Compiled Report generated for review',
+      changes: [
+        { field: 'Status', before: null, after: row.status },
+      ],
     });
     return this.toSummary(row as unknown as NcnpReportReviewRow, await this.namesFor([row as unknown as NcnpReportReviewRow]));
   }
@@ -209,6 +212,9 @@ export class NcnpReportReviewService {
       entityId: row.id,
       entityLabel: 'NCNP Compiled Report published',
       metadata: { step: 'publish' },
+      changes: [
+        { field: 'Status', before: 'approved', after: row.status },
+      ],
     });
     return this.toSummary(row as unknown as NcnpReportReviewRow, await this.namesFor([row as unknown as NcnpReportReviewRow]));
   }

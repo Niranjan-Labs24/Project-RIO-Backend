@@ -49,7 +49,21 @@ export class UsersService {
         return { created: user, orgName: org?.name ?? '' };
       }),
     );
-    await this.audit.record({ action: 'create', entityType: 'user', entityId: created.id, entityLabel: created.email });
+    await this.audit.record({
+      action: 'create',
+      entityType: 'user',
+      entityId: created.id,
+      entityLabel: created.email,
+      // before: null throughout — an invite creates the account. Recorded so
+      // the audit detail view shows which role and status the user started
+      // with, which is what a later role change is read against.
+      changes: [
+        { field: 'Name', before: null, after: created.name },
+        { field: 'Email', before: null, after: created.email },
+        { field: 'Role', before: null, after: role.name },
+        { field: 'Status', before: null, after: created.status },
+      ],
+    });
     const credentials = await this.provisionTemporaryPassword(created.id, created.email, orgName, orgId);
     return { ...this.toOrgUser(created), ...credentials };
   }
@@ -117,7 +131,20 @@ export class UsersService {
       await tx.user.delete({ where: { id } });
       return current;
     });
-    await this.audit.record({ action: 'delete', entityType: 'user', entityId: id, entityLabel: removed.email });
+    await this.audit.record({
+      action: 'delete',
+      entityType: 'user',
+      entityId: id,
+      entityLabel: removed.email,
+      // after: null — the account is gone. `before` is the only remaining
+      // record of what was removed and under which role.
+      changes: [
+        { field: 'Name', before: removed.name, after: null },
+        { field: 'Email', before: removed.email, after: null },
+        { field: 'Role', before: this.roleLabel(removed.roleId), after: null },
+        { field: 'Status', before: removed.status, after: null },
+      ],
+    });
   }
 
   // System-Admin cross-org list.
@@ -237,7 +264,7 @@ export class UsersService {
           entityId: prev.id,
           entityLabel: prev.email,
           organizationId,
-          changes: [{ field: 'roleId', before: ngoAdminRoleId, after: fallbackRoleId }],
+          changes: [{ field: 'Role', before: this.roleLabel(ngoAdminRoleId), after: this.roleLabel(fallbackRoleId) }],
           metadata: { newNgoAdminId: targetUser.id, reason: payload.reason },
         });
       }
@@ -306,7 +333,7 @@ export class UsersService {
         entityId: userId,
         entityLabel: existing.email,
         organizationId,
-        changes: [{ field: 'roleId', before: 'role_ngo_admin', after: role.id }],
+        changes: [{ field: 'Role', before: this.roleLabel('role_ngo_admin'), after: this.roleLabel(role.id) }],
         metadata: { reason: payload.reason },
       });
     } else {
@@ -316,7 +343,7 @@ export class UsersService {
         entityId: userId,
         entityLabel: existing.email,
         organizationId,
-        changes: [{ field: 'roleId', before: existing.roleId, after: role.id }],
+        changes: [{ field: 'Role', before: this.roleLabel(existing.roleId), after: this.roleLabel(role.id) }],
         metadata: payload.reason ? { reason: payload.reason } : undefined,
       });
     }
@@ -441,7 +468,16 @@ export class UsersService {
       }),
     );
     // Attribute the audit event to the affected org, not the acting admin's org.
-    await this.audit.record({ action: 'create', entityType: 'user', entityId: created.id, entityLabel: created.email, organizationId: payload.organizationId });
+    await this.audit.record({
+      action: 'create', entityType: 'user', entityId: created.id, entityLabel: created.email,
+      organizationId: payload.organizationId,
+      changes: [
+        { field: 'Name', before: null, after: created.name },
+        { field: 'Email', before: null, after: created.email },
+        { field: 'Role', before: null, after: role.name },
+        { field: 'Status', before: null, after: created.status },
+      ],
+    });
     const credentials = await this.provisionTemporaryPassword(created.id, created.email, orgName, payload.organizationId);
     return { ...this.toOrgUser(created), ...credentials };
   }
@@ -456,6 +492,17 @@ export class UsersService {
     if (!roleKey || roleByKey(roleKey)?.crossEntity !== true) {
       throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'Cross-entity access required' } });
     }
+  }
+
+  /**
+   * Role display name for an audit entry. The stored value is a seeded id
+   * (`role_ngo_admin`), which reads as noise in a human-facing before/after
+   * table — the Audit Log shows people, not primary keys. Falls back to the
+   * raw id if the matrix ever loses an entry, so an unknown role degrades to
+   * something searchable rather than to an empty cell.
+   */
+  private roleLabel(roleId: string): string {
+    return ROLE_MATRIX.find((r) => r.id === roleId)?.name ?? roleId;
   }
 
   private validateRole(roleId: string): RoleDef {

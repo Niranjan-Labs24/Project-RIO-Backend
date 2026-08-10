@@ -4,6 +4,7 @@ import { Prisma, RejectionReasonCode } from '../../generated/prisma';
 import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { roleByKey } from '../../rbac/role-matrix';
 import { AuditService } from '../audit/audit.service';
+import type { AuditChange } from '../audit/audit.types';
 import { AiService } from '../ai/ai.service';
 import { SURVEY_QUESTION_RECOMMENDATION_TASK } from '../ai/prompts/survey-question-recommendation.task';
 import { MethodologyConfigService } from '../methodology-config/methodology-config.service';
@@ -186,6 +187,67 @@ export class SurveysService {
     return this.toSurveyDetailDto(row);
   }
 
+  // Org-scoped counterpart to getPublishedSurveyByNeedId (which runs
+  // cross-org for the citizen flow) — this is what internal screens that
+  // display "the currently live survey" (Response Summary, the public
+  // survey link's status) must call instead of getSurveyByNeedId. Once a
+  // DRAFT v2 exists, getSurveyByNeedId's "latest version" resolution starts
+  // returning v2 even though v1 is still the one actually collecting
+  // responses; that mismatch is what made a still-published v1 look
+  // unpublished/empty in those screens (RIO-FR-011 regression).
+  async getPublishedSurveyForOrgByNeedId(needId: string) {
+    const row = await this.tenant.runInOrgContext(async (tx) => {
+      const survey = await tx.survey.findFirst({
+        where: { needId, status: 'PUBLISHED' },
+        orderBy: { version: 'desc' },
+        include: {
+          surveyQuestions: {
+            orderBy: { order: 'asc' },
+            include: { question: true },
+          },
+        },
+      });
+      return survey;
+    });
+
+    if (!row) return null;
+    return this.toSurveyDetailDto(row);
+  }
+
+  // Every survey version ever created for a Need, each labeled with how
+  // many of the Need's responses actually belong to it. A SurveyResponse
+  // isn't tagged with a survey/version id directly — its `answers` JSON is
+  // keyed by whichever version's SurveyQuestion ids were live at submission
+  // (see buildQuestionMap's comment in public-surveys.service.ts for the
+  // same fact from the other side) — so membership is derived by checking
+  // which version's question-id set a response's answer keys land in.
+  async listSurveyVersionsByNeedId(needId: string) {
+    return this.tenant.runInOrgContext(async (tx) => {
+      const [surveys, responses] = await Promise.all([
+        tx.survey.findMany({
+          where: { needId },
+          orderBy: { version: 'asc' },
+          include: { surveyQuestions: { select: { id: true } } },
+        }),
+        tx.surveyResponse.findMany({ where: { needId }, select: { answers: true } }),
+      ]);
+      return surveys.map((survey) => {
+        const questionIds = new Set(survey.surveyQuestions.map((sq) => sq.id));
+        const responseCount = responses.filter((r) => {
+          const rawAnswers = (r.answers ?? {}) as Record<string, unknown>;
+          return Object.keys(rawAnswers).some((id) => questionIds.has(id));
+        }).length;
+        return {
+          id: survey.id,
+          version: survey.version,
+          status: survey.status,
+          title: survey.title,
+          responseCount,
+        };
+      });
+    });
+  }
+
   private async toSurveyDetailDto(row: {
     id: string; needId: string; studyId: string; title: string; status: string;
     methodologyVersion: string | null;
@@ -283,6 +345,12 @@ export class SurveysService {
         entityType: 'survey',
         entityId: survey.id,
         entityLabel: `Manually created ${survey.title}`,
+        // before: null on a create — records the survey's opening state so
+        // the audit detail view is not blank for created events.
+        changes: [
+          { field: 'Title', before: null, after: survey.title },
+          { field: 'Status', before: null, after: survey.status },
+        ],
       });
     }
 
@@ -565,6 +633,11 @@ Eligible Questions: ${JSON.stringify(
       entityType: 'survey',
       entityId: survey.id,
       entityLabel: `AI recommended questions for ${survey.title}`,
+      changes: [
+        { field: 'Title', before: null, after: survey.title },
+        { field: 'Status', before: null, after: survey.status },
+        { field: 'Origin', before: null, after: 'AI-recommended questions' },
+      ],
     });
 
     const result = await this.getSurveyByNeedId(needId);
@@ -609,6 +682,8 @@ Eligible Questions: ${JSON.stringify(
     // reorder/custom) right up to Approve & Publish or Reject. Same role
     // split as overrideDomainPreview/generateSuggestedQuestions.
     const allowWhileSubmitted = getOrgStore()?.role !== 'ngo_research_officer';
+    // Assigned inside the transaction, read by the audit record after it commits.
+    let previousQuestionCount = 0;
     const needId = await this.tenant.runInOrgContext(async (tx) => {
       const survey = await tx.survey.findUnique({ where: { id: surveyId } });
       if (!survey) {
@@ -619,6 +694,8 @@ Eligible Questions: ${JSON.stringify(
       // Re-create the links using the incoming array — the whole ordered
       // list (Question Bank + additional questions together) is the unit of
       // save, per the Survey Builder's single Save action.
+      // Counted before the wholesale delete below, for the audit pair.
+      previousQuestionCount = await tx.surveyQuestion.count({ where: { surveyId } });
       await tx.surveyQuestion.deleteMany({ where: { surveyId } });
       await tx.surveyQuestion.createMany({
         data: questions.map((q) => ({
@@ -649,6 +726,10 @@ Eligible Questions: ${JSON.stringify(
       entityType: 'survey',
       entityId: surveyId,
       entityLabel: `Survey questions updated manually`,
+      // Question sets are lists, not scalar fields — the before/after pair is
+      // the count, which is what a reviewer scans for ("did someone strip the
+      // questionnaire down?"). The questions themselves live on the survey.
+      changes: [{ field: 'Question count', before: previousQuestionCount, after: questions.length }],
     });
 
     return this.getSurveyByNeedId(needId);
@@ -756,6 +837,7 @@ Eligible Questions: ${JSON.stringify(
       entityId: newSurveyId,
       entityLabel: `New survey version created from ${surveyId}`,
       metadata: this.actorRoleMetadata(),
+      changes: [{ field: 'Previous version', before: null, after: surveyId }],
     });
 
     return this.getSurveyByNeedId(needId);
@@ -774,14 +856,15 @@ Eligible Questions: ${JSON.stringify(
       });
     }
 
-    const needId = await this.tenant.runInOrgContext(async (tx) => {
+    const { needId, previousVersion } = await this.tenant.runInOrgContext(async (tx) => {
       const survey = await tx.survey.findUnique({ where: { id: surveyId } });
       if (!survey) {
         throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
       }
       this.assertEditable(survey.status);
       await tx.survey.update({ where: { id: surveyId }, data: { methodologyVersion: version } });
-      return survey.needId;
+      // Read before the update overwrites it — the "before" half of the pair.
+      return { needId: survey.needId, previousVersion: survey.methodologyVersion };
     });
 
     await this.audit.record({
@@ -790,6 +873,7 @@ Eligible Questions: ${JSON.stringify(
       entityId: surveyId,
       entityLabel: `Methodology Version set to "${version}"`,
       metadata: this.actorRoleMetadata(),
+      changes: [{ field: 'Methodology version', before: previousVersion, after: version }],
     });
 
     return this.getSurveyByNeedId(needId);
@@ -807,12 +891,25 @@ Eligible Questions: ${JSON.stringify(
     selectionApproach: string,
     geographicCoverage: string,
   ) {
+    // Only genuinely changed fields are recorded, so the audit entry shows
+    // what the editor actually altered rather than restating all four.
+    let sampleChanges: AuditChange[] = [];
     const needId = await this.tenant.runInOrgContext(async (tx) => {
       const survey = await tx.survey.findUnique({ where: { id: surveyId } });
       if (!survey) {
         throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
       }
       this.assertEditable(survey.status);
+      sampleChanges = (
+        [
+          ['Target group', survey.targetGroup, targetGroup],
+          ['Expected sample size', survey.expectedSampleSize, expectedSampleSize],
+          ['Selection approach', survey.selectionApproach, selectionApproach],
+          ['Geographic coverage', survey.geographicCoverage, geographicCoverage],
+        ] as Array<[string, unknown, unknown]>
+      )
+        .filter(([, before, after]) => before !== after)
+        .map(([field, before, after]) => ({ field, before, after }));
       await tx.survey.update({
         where: { id: surveyId },
         data: { targetGroup, expectedSampleSize, selectionApproach, geographicCoverage },
@@ -826,6 +923,7 @@ Eligible Questions: ${JSON.stringify(
       entityId: surveyId,
       entityLabel: 'Sample Description updated',
       metadata: this.actorRoleMetadata(),
+      changes: sampleChanges,
     });
 
     return this.getSurveyByNeedId(needId);
@@ -896,6 +994,7 @@ Eligible Questions: ${JSON.stringify(
       entityId: surveyId,
       entityLabel: 'Survey submitted for approval',
       metadata: this.actorRoleMetadata(),
+      changes: [{ field: 'Status', before: 'DRAFT', after: 'SUBMITTED' }],
     });
 
     return updated;

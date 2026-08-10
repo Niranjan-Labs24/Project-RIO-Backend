@@ -92,7 +92,14 @@ export class PublicSurveysService {
       }
       throw err;
     }
-    await this.audit.record({ action: 'create', entityType: 'survey', entityId: row.id, entityLabel: label });
+    await this.audit.record({
+      action: 'create', entityType: 'survey', entityId: row.id, entityLabel: label,
+      changes: [
+        { field: 'Link label', before: null, after: label },
+        { field: 'Linked need', before: null, after: need.title },
+        { field: 'Active', before: null, after: row.isActive },
+      ],
+    });
     return this.toPublicLink(row);
   }
 
@@ -146,6 +153,13 @@ export class PublicSurveysService {
       entityId: link.id,
       entityLabel: link.label,
       metadata: { channel: 'email' },
+      // A share mutates nothing on the link, so the pair records what was
+      // sent and to whom rather than a field transition.
+      changes: [
+        { field: 'Shared via', before: null, after: 'email' },
+        { field: 'Recipient', before: null, after: email },
+        { field: 'Survey link', before: null, after: link.label },
+      ],
     });
   }
 
@@ -470,13 +484,24 @@ export class PublicSurveysService {
     >,
   ): SurveyResponseDetail {
     const rawAnswers = (row.answers ?? {}) as Record<string, string>;
-    const answers: SurveyResponseAnswer[] = Array.from(questionMap.values()).map((q) => ({
-      questionId: q.questionId,
-      questionText: q.questionText,
-      answerType: q.answerType,
-      answerOptions: q.answerOptions,
-      answer: rawAnswers[q.questionId] ?? null,
-    }));
+    // buildQuestionMap unions every survey version's questions so ANY
+    // response's keys resolve, but that means most entries in the map
+    // belong to versions this particular response was never shown —
+    // createNewVersion copies questions into fresh ids with the same text,
+    // so an unfiltered map would render the same question twice (the
+    // version actually answered, plus a "no answer" placeholder for every
+    // other version's copy). Keeping only the ids this response's own
+    // `answers` payload actually has a key for reconstructs exactly the
+    // question set the citizen was shown, with no cross-version duplicates.
+    const answers: SurveyResponseAnswer[] = Array.from(questionMap.values())
+      .filter((q) => Object.prototype.hasOwnProperty.call(rawAnswers, q.questionId))
+      .map((q) => ({
+        questionId: q.questionId,
+        questionText: q.questionText,
+        answerType: q.answerType,
+        answerOptions: q.answerOptions,
+        answer: rawAnswers[q.questionId] ?? null,
+      }));
     return { ...this.toResponseSummary(row), answers };
   }
 

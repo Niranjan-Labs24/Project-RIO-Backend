@@ -55,6 +55,22 @@ export class SurveysController {
     return this.service.getSurveyByNeedId(needId);
   }
 
+  // RIO-FR-011: the "currently live" survey for the Need, not "latest
+  // version" — Response Summary and other read-only screens must resolve
+  // against this, not getSurveyByNeedId, or they silently flip to an
+  // unpublished draft the moment one is created.
+  @Get('needs/:needId/survey/published')
+  @RequirePermission('studySurvey', 'read')
+  getPublishedSurveyByNeedId(@Param('needId', new UuidParamPipe()) needId: string) {
+    return this.service.getPublishedSurveyForOrgByNeedId(needId);
+  }
+
+  @Get('needs/:needId/survey/versions')
+  @RequirePermission('studySurvey', 'read')
+  listSurveyVersions(@Param('needId', new UuidParamPipe()) needId: string) {
+    return this.service.listSurveyVersionsByNeedId(needId);
+  }
+
   @Post('needs/:needId/survey')
   @RequirePermission('surveyBuilder', 'write')
   createEmptySurvey(@Param('needId', new UuidParamPipe()) needId: string) {

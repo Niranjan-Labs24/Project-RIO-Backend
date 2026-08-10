@@ -240,20 +240,23 @@ async function seedConfirmedSummaryScope(
      VALUES ($1, $2, 'Migration test study', 1, $3, CURRENT_TIMESTAMP)`,
     [ids.studyId, ids.orgId, randomUUID()],
   );
-  // ai_priority_summaries.survey_id is a required FK to surveys, which itself
-  // requires a need — "DISABLE TRIGGER ALL" was the previous approach to skip
-  // that chain, but disabling a foreign-key's internal RI trigger needs actual
-  // Postgres superuser, which cnap_owner doesn't have (see db/init/00-init.sql:
-  // CREATEROLE CREATEDB only). Creating real minimal rows avoids that entirely.
+  // ai_priority_summaries.survey_id is a real FK, so the row it points at has
+  // to exist. This used to be worked around with `ALTER TABLE ... DISABLE
+  // TRIGGER ALL`, which touches system (FK) triggers and therefore requires
+  // superuser — CI connects as cnap_owner, so it failed with 42501. Seeding
+  // the actual parent chain (need -> survey) needs no elevated privilege and
+  // exercises the same constraints the application runs under.
   const needId = randomUUID();
-  await client.query(
-    `INSERT INTO "needs" ("id", "study_id", "org_id", "title", "statement", "source", "created_by", "updated_at")
-     VALUES ($1, $2, $3, 'Migration test need', 'Migration test statement', 'manual_entry', $4, CURRENT_TIMESTAMP)`,
-    [needId, ids.studyId, ids.orgId, randomUUID()],
-  );
   const surveyId = randomUUID();
   await client.query(
-    `INSERT INTO "surveys" ("id", "org_id", "need_id", "study_id", "title", "status", "created_by", "updated_at")
+    `INSERT INTO "needs"
+      ("id", "study_id", "org_id", "title", "statement", "source", "created_by", "updated_at")
+     VALUES ($1, $2, $3, 'Migration test need', 'Migration test statement', 'field_survey', $4, CURRENT_TIMESTAMP)`,
+    [needId, ids.studyId, ids.orgId, randomUUID()],
+  );
+  await client.query(
+    `INSERT INTO "surveys"
+      ("id", "org_id", "need_id", "study_id", "title", "status", "created_by", "updated_at")
      VALUES ($1, $2, $3, $4, 'Migration test survey', 'DRAFT', $5, CURRENT_TIMESTAMP)`,
     [surveyId, ids.orgId, needId, ids.studyId, randomUUID()],
   );

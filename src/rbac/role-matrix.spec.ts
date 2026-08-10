@@ -1,4 +1,4 @@
-import { ROLE_MATRIX, LOGIN_ROLE_KEYS, can } from './role-matrix';
+import { ROLE_MATRIX, LOGIN_ROLE_KEYS, PERMISSION_MODULES, can } from './role-matrix';
 
 describe('ROLE_MATRIX', () => {
   // Relationship assertions rather than a hardcoded total — adding another
@@ -38,6 +38,32 @@ describe('ROLE_MATRIX', () => {
     expect(can('system_admin', 'ncnpReport', 'read')).toBe(true);
     expect(can('system_admin', 'ncnpReport', 'write')).toBe(true);
     expect(can('system_admin', 'ncnpReport', 'approve')).toBe(false);
+  });
+
+  // RIO-FR-007 — the BRD names System Admin as the role that "manages ... the
+  // audit log", so read-alone was a gap: it could open the log but never
+  // download it. `export` is the exact action GET /audit/export is gated on.
+  it('system_admin can read AND export the audit log, without gaining Archive/Sharing writes', () => {
+    expect(can('system_admin', 'archiveSharingAudit', 'read')).toBe(true);
+    expect(can('system_admin', 'archiveSharingAudit', 'export')).toBe(true);
+    // Same module, but export must not have widened anything else: Sharing's
+    // request/decide actions and Archive writes stay out of reach.
+    expect(can('system_admin', 'archiveSharingAudit', 'create')).toBe(false);
+    expect(can('system_admin', 'archiveSharingAudit', 'write')).toBe(false);
+    expect(can('system_admin', 'archiveSharingAudit', 'approve')).toBe(false);
+    expect(can('system_admin', 'archiveSharingAudit', 'share')).toBe(false);
+  });
+
+  // Roles the status review lists as audit-log read-only must stay read-only —
+  // the FR-007 export grant is System Admin's alone (plus ngo_admin's blanket
+  // full access, asserted separately below).
+  it('audit-log export stays exclusive to system_admin and ngo_admin', () => {
+    for (const key of ['human_reviewer', 'data_analyst', 'read_only_viewer', 'center_supervisor', 'ngo_research_officer']) {
+      expect(can(key, 'archiveSharingAudit', 'export')).toBe(false);
+    }
+    // No audit access whatsoever for these two.
+    expect(can('field_researcher', 'archiveSharingAudit', 'read')).toBe(false);
+    expect(can('system_reviewer', 'archiveSharingAudit', 'read')).toBe(false);
   });
 
   // RIO-RBAC-001 (client-confirmed): "Center supervisor / NCNP supervisor"
@@ -108,5 +134,52 @@ describe('ROLE_MATRIX', () => {
     expect(can('ngo_research_officer', 'reportsDashboards', 'create')).toBe(true);
     expect(can('ngo_research_officer', 'reportsDashboards', 'write')).toBe(true);
     expect(can('ngo_research_officer', 'reportsDashboards', 'approve')).toBe(false);
+  });
+
+  // ──────── RIO-NFR-016 — operational log (systemLogs) ────────
+
+  it('system_admin alone can read and export the operational log', () => {
+    expect(can('system_admin', 'systemLogs', 'read')).toBe(true);
+    expect(can('system_admin', 'systemLogs', 'export')).toBe(true);
+    // There is no HTTP write path to this table, so no write bit to hold.
+    expect(can('system_admin', 'systemLogs', 'write')).toBe(false);
+    expect(can('system_admin', 'systemLogs', 'create')).toBe(false);
+    expect(can('system_admin', 'systemLogs', 'approve')).toBe(false);
+  });
+
+  it('no role other than system_admin holds any systemLogs action', () => {
+    const others = ROLE_MATRIX.map((r) => r.key).filter((k) => k !== 'system_admin');
+    for (const key of others) {
+      for (const action of ['read', 'write', 'create', 'approve', 'export', 'share'] as const) {
+        expect(can(key, 'systemLogs', action), `${key} must not hold systemLogs:${action}`).toBe(false);
+      }
+    }
+  });
+
+  it('ngo_admin does not inherit systemLogs from the full-access helper', () => {
+    // Regression: `fullAccess()` grants every module in PERMISSION_MODULES,
+    // so a new non-entity-scoped module silently lands on NGO Admin the
+    // moment it is added to that array — the exact bug that hit ncnpReport.
+    // NON_ENTITY_MODULES is the exclusion list that stops it.
+    expect(can('ngo_admin', 'systemLogs', 'read')).toBe(false);
+    expect(can('ngo_admin', 'systemLogs', 'export')).toBe(false);
+    // NGO Admin still holds full access to every entity-scoped module.
+    expect(can('ngo_admin', 'studySurvey', 'write')).toBe(true);
+    expect(can('ngo_admin', 'archiveSharingAudit', 'export')).toBe(true);
+  });
+
+  it('adding systemLogs did not disturb any audit-log grant', () => {
+    // The whole point of a separate module: audit (RIO-FR-007) access is
+    // unchanged by operational-log (RIO-NFR-016) access, in both directions.
+    expect(can('system_admin', 'archiveSharingAudit', 'read')).toBe(true);
+    expect(can('system_admin', 'archiveSharingAudit', 'export')).toBe(true);
+    expect(can('center_supervisor', 'archiveSharingAudit', 'read')).toBe(true);
+    expect(can('center_supervisor', 'systemLogs', 'read')).toBe(false);
+    expect(can('data_analyst', 'archiveSharingAudit', 'read')).toBe(true);
+    expect(can('data_analyst', 'systemLogs', 'read')).toBe(false);
+  });
+
+  it('lists systemLogs as a real module so the FE type stays in sync', () => {
+    expect(PERMISSION_MODULES).toContain('systemLogs');
   });
 });

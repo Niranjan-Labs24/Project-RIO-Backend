@@ -8,6 +8,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { ConfigService } from './config/config.service';
+import { SystemLogsService } from './modules/system-logs/system-logs.service';
 import { buildHttpsOptions } from './config/https-options';
 import { setupOpenApi } from './contract/openapi';
 
@@ -41,11 +42,25 @@ async function bootstrap(): Promise<void> {
   // it to recover the real filename instead of falling back to a generic one.
   app.enableCors({ origin: config.corsOrigin, credentials: true, exposedHeaders: ['Content-Disposition'] });
 
-  app.useGlobalFilters(new AllExceptionsFilter());
+  // RIO-NFR-016 — the filter is constructed by hand (it always has been),
+  // so the operational-log recorder is handed to it explicitly rather than
+  // injected. `undefined` keeps its default stdout logger; the second
+  // argument is what makes 4xx/5xx queryable in system_logs.
+  const systemLogs = app.get(SystemLogsService);
+  app.useGlobalFilters(new AllExceptionsFilter(undefined, systemLogs));
   app.enableShutdownHooks();
   setupOpenApi(app);
 
   await app.listen(config.port);
+
+  systemLogs.record({
+    level: 'info',
+    category: 'startup',
+    source: 'bootstrap',
+    eventCode: 'APP_STARTED',
+    message: `API listening on port ${config.port}`,
+    context: { port: config.port, nodeEnv: config.nodeEnv, https: Boolean(httpsOptions) },
+  });
 }
 
 void bootstrap();

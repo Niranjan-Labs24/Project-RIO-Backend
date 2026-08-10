@@ -99,6 +99,33 @@ export const EnvSchema = Type.Object({
   // a host machine with multiple Postgres versions (e.g. Homebrew, where
   // `pg_dump` on PATH tracks whichever version is currently linked).
   PG_DUMP_PATH: Type.Optional(Type.String()),
+  // RIO-NFR-016 — persisted operational log (system_logs).
+  //
+  // SYSTEM_LOG_ENABLED is a master kill switch: false turns
+  // SystemLogsService.record() into a no-op, leaving the pino/stdout
+  // pipeline completely untouched. SYSTEM_LOG_MIN_LEVEL gates what is worth
+  // a table row (stdout keeps everything at LOG_LEVEL).
+  //
+  // SYSTEM_LOG_SAMPLE_RATE defaults to 0 deliberately: persisting every
+  // successful request would add millions of rows a month for no
+  // diagnostic value. Errors, warnings and slow requests are never sampled
+  // — they are always recorded regardless of this setting.
+  SYSTEM_LOG_ENABLED: Type.Boolean({ default: true }),
+  SYSTEM_LOG_MIN_LEVEL: Type.Union(
+    [
+      Type.Literal('fatal'),
+      Type.Literal('error'),
+      Type.Literal('warn'),
+      Type.Literal('info'),
+    ],
+    { default: 'info' },
+  ),
+  SYSTEM_LOG_SAMPLE_RATE: Type.Number({ default: 0, minimum: 0, maximum: 1 }),
+  // A 2xx slower than this is recorded anyway, as HTTP_SLOW — the one case
+  // where a successful request is still an operational event.
+  SYSTEM_LOG_SLOW_REQUEST_MS: Type.Number({ default: 3_000 }),
+  SYSTEM_LOG_RETENTION_DAYS: Type.Number({ default: 90 }),
+  SYSTEM_LOG_RETENTION_CRON: Type.String({ default: '0 3 * * *' }),
   LOG_LEVEL: Type.Union(
     [
       Type.Literal('fatal'),

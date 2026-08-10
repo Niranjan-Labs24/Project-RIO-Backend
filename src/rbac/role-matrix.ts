@@ -15,6 +15,14 @@ export const PERMISSION_MODULES = [
   // Reviewer's approve/reject decision; `write` = System Admin's
   // generate/publish actions.
   'ncnpReport',
+  // RIO-NFR-016 — the persisted operational log (system_logs). Deliberately
+  // not folded into archiveSharingAudit: that module is held read-only by
+  // ngo_admin, center_supervisor, data_analyst and others, and operational
+  // rows carry stack traces, internal paths and integration detail that
+  // belong to platform operations rather than tenant governance. Granted to
+  // system_admin alone — see the `fullAccess()` exclusion below, which stops
+  // NGO Admin inheriting it by default.
+  'systemLogs',
 ] as const;
 export type PermissionModule = (typeof PERMISSION_MODULES)[number];
 export type PermissionAction = 'read' | 'write' | 'create' | 'approve' | 'export' | 'share';
@@ -32,10 +40,21 @@ interface Grant { read?: boolean; write?: boolean; create?: boolean; approve?: b
 function perm(module: PermissionModule, g: Grant = {}): ModulePermission {
   return { module, read: g.read ?? false, write: g.write ?? false, create: g.create ?? false, approve: g.approve ?? false, export: g.export ?? false, share: g.share ?? false };
 }
-// "Full access to every module within its own entity" — `ncnpReport` is
-// explicitly excluded (left at no access) since it's the one module that
-// isn't entity-scoped at all: it's the cross-org, kingdom-wide NCNP
-// Compiled Report, gated to System Admin/System Reviewer only. Without
+// Modules that are NOT entity-scoped, and so must never be handed out by
+// the "full access within its own entity" helper below:
+//
+// - `ncnpReport` — the cross-org, kingdom-wide NCNP Compiled Report,
+//   gated to System Admin / System Reviewer.
+// - `systemLogs` — RIO-NFR-016 platform operational telemetry (stack
+//   traces, internal paths, cross-tenant), gated to System Admin.
+//
+// Every future non-entity-scoped module belongs in this list too. See the
+// bug note below for why the default has to be exclusion.
+const NON_ENTITY_MODULES: readonly PermissionModule[] = ['ncnpReport', 'systemLogs'];
+
+// "Full access to every module within its own entity" — the modules above are
+// explicitly excluded (left at no access) since they aren't entity-scoped at
+// all. Without
 // this exclusion, NGO Admin (the only role using this helper) silently
 // inherited full read/write/approve/export on it the moment `ncnpReport`
 // was added to `PERMISSION_MODULES` — a real bug: the backend's own
@@ -45,7 +64,7 @@ function perm(module: PermissionModule, g: Grant = {}): ModulePermission {
 // category filter/column) to a role that could never act on them.
 function fullAccess(): ModulePermission[] {
   return PERMISSION_MODULES.map((m) =>
-    m === 'ncnpReport' ? perm(m) : perm(m, { read: true, write: true, create: true, approve: true, export: true, share: true }),
+    NON_ENTITY_MODULES.includes(m) ? perm(m) : perm(m, { read: true, write: true, create: true, approve: true, export: true, share: true }),
   );
 }
 const RO: Grant = { read: true };
@@ -161,13 +180,27 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('entityTeam', { read: true, write: true, create: true, export: true }),
     perm('rolesPermissions', RO), perm('onboardingConsent', RO), perm('methodologyQuestionBank', RO),
     perm('studySurvey', RO), perm('dataCollection', RO), perm('dataImport', RO), perm('citizenChannel', RO),
-    perm('aiReview', RO), perm('priorityScoring', RO), perm('reportsDashboards', RO), perm('archiveSharingAudit', RO),
+    perm('aiReview', RO), perm('priorityScoring', RO), perm('reportsDashboards', RO),
+    // `export` (on top of `read`) — RIO-FR-007: the BRD names System Admin as
+    // the role that "manages ... the audit log", but this grant was read-only,
+    // so the one role responsible for the audit log couldn't download it. The
+    // audit CSV export (AuditController's GET /audit/export) is gated on
+    // exactly `archiveSharingAudit:export`, and that action gates nothing else
+    // in this module — Archive is read-only and Sharing uses create/approve —
+    // so this widens audit export only, not Archive or Sharing.
+    perm('archiveSharingAudit', { read: true, export: true }),
     perm('surveyBuilder'),
     // Generate a new NCNP Compiled Report snapshot for review, and publish
     // one a System Reviewer has already approved — `write` covers both
     // (this role never Approves/Rejects itself; that's exclusively
     // system_reviewer's `approve` bit below).
     perm('ncnpReport', { read: true, write: true }),
+    // RIO-NFR-016 — the operational log. System Admin is the only role that
+    // holds this module at all: the rows carry stack traces, internal
+    // paths and cross-tenant detail. `export` gates the CSV download only
+    // (GET /system-logs/export); there is no write action to grant, since
+    // the table has no HTTP write path by design.
+    perm('systemLogs', { read: true, export: true }),
   ] },
   { id: 'role_read_only_viewer', key: 'read_only_viewer', name: 'Read-only Viewer', description: 'Views authorized outputs without editing.', crossEntity: false, permissions: [
     perm('entityTeam'), perm('rolesPermissions'), perm('onboardingConsent'),

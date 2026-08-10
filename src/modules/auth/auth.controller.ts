@@ -101,8 +101,15 @@ export class AuthController {
     res.clearCookie(CSRF_COOKIE_NAME, { ...csrfCookieOptions(isProd), maxAge: undefined });
   }
 
+  // RIO-DATA-001 — accepts BOTH consents (use policy + data sharing). Only
+  // reached as a re-prompt now that registration captures them up front:
+  // accounts created before the split, and anyone stale after a policy bump.
   @Post('consent')
-  consent(): Promise<{ consentedAt: string; policyVersion: string | null }> {
+  consent(): Promise<{
+    consentedAt: string;
+    policyVersion: string | null;
+    sharingPolicyVersion: string | null;
+  }> {
     return this.auth.consent();
   }
 

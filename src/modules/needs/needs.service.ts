@@ -103,6 +103,16 @@ export class NeedsService {
       entityId: created.id,
       entityLabel: created.title.slice(0, 80),
       sourceRef: created.referenceId,
+      // before: null on every field — a create has no prior state. Recorded
+      // explicitly so the audit detail view shows what the Need was created
+      // with, rather than an empty change panel.
+      changes: [
+        { field: 'Title', before: null, after: created.title },
+        { field: 'Statement', before: null, after: created.statement },
+        { field: 'Village', before: null, after: created.village },
+        { field: 'Source', before: null, after: created.source },
+        { field: 'Status', before: null, after: created.status },
+      ],
     });
 
     // Fire-and-forget: the client redirects to the Need workspace page
@@ -280,6 +290,16 @@ export class NeedsService {
       entityId: removed.id,
       entityLabel: removed.title.slice(0, 80),
       sourceRef: removed.referenceId,
+      // Mirror image of the create above — after: null, and `before` holds
+      // the record as it last existed. This is the only surviving copy of a
+      // deleted Need's contents, so it is worth capturing in full.
+      changes: [
+        { field: 'Title', before: removed.title, after: null },
+        { field: 'Statement', before: removed.statement, after: null },
+        { field: 'Village', before: removed.village, after: null },
+        { field: 'Source', before: removed.source, after: null },
+        { field: 'Status', before: removed.status, after: null },
+      ],
     });
   }
 

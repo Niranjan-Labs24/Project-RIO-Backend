@@ -7,7 +7,15 @@ import type { ReportRow, ReportStatus } from "./reports.types";
 // lifecycle state machine can be exercised without a database.
 function makeHarness() {
   const store = new Map<string, ReportRow>();
-  const auditCalls: Array<{ action: string; entityId: string; organizationId?: string; metadata?: unknown }> = [];
+  const auditCalls: Array<{
+    action: string;
+    // Nullable: cross-org "viewed all organisations" events carry no entity
+    // id at all (entity_id is a uuid column — see AuditService.record).
+    entityId: string | null;
+    entityLabel?: string;
+    organizationId?: string;
+    metadata?: unknown;
+  }> = [];
   const userFindManyCalls: unknown[] = [];
   const tx = {
     report: {
@@ -235,6 +243,21 @@ describe("ReportsService — system_admin branches", () => {
     const result = await asRole("system_admin", () => h.service.list({}));
     expect(result).toHaveLength(1);
     expect(h.auditCalls.some((c) => c.action === "SYSTEM_ADMIN_VIEWED_REPORT")).toBe(true);
+  });
+
+  it("records the all-orgs view with a null entityId, never the string 'all'", async () => {
+    // Regression: entityId was `params.organizationId ?? "all"`, but
+    // audit_logs.entity_id is a uuid column — Postgres rejected the INSERT
+    // and AuditService.record() swallowed the error, so every cross-org
+    // report view went unaudited while the request still returned 200.
+    // The "all organisations" scope belongs in entityLabel/metadata.
+    seed(h.store, { status: "draft" });
+    await asRole("system_admin", () => h.service.list({}));
+
+    const event = h.auditCalls.find((c) => c.action === "SYSTEM_ADMIN_VIEWED_REPORT");
+    expect(event?.entityId ?? null).toBeNull();
+    expect(event?.entityLabel).toBe("All Platform Reports");
+    expect(event?.metadata).toMatchObject({ scope: "all" });
   });
 
   it("export as system_admin records SYSTEM_ADMIN_DOWNLOADED_REPORT instead of 'share'", async () => {
