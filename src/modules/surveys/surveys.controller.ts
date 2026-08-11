@@ -55,6 +55,22 @@ export class SurveysController {
     return this.service.getSurveyByNeedId(needId);
   }
 
+  // RIO-FR-011: the "currently live" survey for the Need, not "latest
+  // version" — Response Summary and other read-only screens must resolve
+  // against this, not getSurveyByNeedId, or they silently flip to an
+  // unpublished draft the moment one is created.
+  @Get('needs/:needId/survey/published')
+  @RequirePermission('studySurvey', 'read')
+  getPublishedSurveyByNeedId(@Param('needId', new UuidParamPipe()) needId: string) {
+    return this.service.getPublishedSurveyForOrgByNeedId(needId);
+  }
+
+  @Get('needs/:needId/survey/versions')
+  @RequirePermission('studySurvey', 'read')
+  listSurveyVersions(@Param('needId', new UuidParamPipe()) needId: string) {
+    return this.service.listSurveyVersionsByNeedId(needId);
+  }
+
   @Post('needs/:needId/survey')
   @RequirePermission('surveyBuilder', 'write')
   createEmptySurvey(@Param('needId', new UuidParamPipe()) needId: string) {
@@ -126,6 +142,17 @@ export class SurveysController {
       body.selectionApproach,
       body.geographicCoverage,
     );
+  }
+
+  // RIO-FR-011 (client-confirmed): the only way to change a PUBLISHED
+  // survey — creates a new DRAFT version (copying the published one's
+  // questions/methodology/sample-description as a starting point) rather
+  // than editing in place. surveyBuilder:write, same role gate as every
+  // other Researcher-side edit action above.
+  @Post('surveys/:id/new-version')
+  @RequirePermission('surveyBuilder', 'write')
+  createNewVersion(@Param('id', new UuidParamPipe()) id: string) {
+    return this.service.createNewVersion(id);
   }
 
   // Researcher: hand the current draft (or a fixed-up rejected one) to the

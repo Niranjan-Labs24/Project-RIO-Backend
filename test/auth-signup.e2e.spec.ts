@@ -4,26 +4,20 @@ import cookieParser from 'cookie-parser';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AllExceptionsFilter } from '../src/common/filters/http-exception.filter';
-import { MailerService } from '../src/mailer/mailer.service';
+import { DEFAULT_TEMP_PASSWORD } from '../src/modules/auth/auth.repository';
 
-// Requires a running, migrated DB. Unlike auth.e2e.spec.ts (bearer-token
-// only), this flow is cookie-based, so the app must apply cookie-parser
-// middleware the same way src/main.ts does — otherwise req.cookies is
-// undefined and JwtAuthGuard can never see the rio_session cookie.
-describe('signup -> me -> change-password (cookie)', () => {
+// Requires a running, migrated, seeded DB (needs sysadmin@platform.local —
+// see prisma/seed.ts). Cookie-based, like auth-cookie flows — the app must
+// apply cookie-parser middleware the same way src/main.ts does.
+//
+// RIO-FR-010 (client-confirmed): self-registration requires Center (System
+// Admin) approval before activation — signup no longer issues a session,
+// and the entity can't log in until a System Admin approves it.
+describe('signup -> pending approval -> System Admin approves -> entity logs in', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
-      // Force the "email couldn't be sent" branch deterministically — this
-      // test asserts on the temporary password revealed in the response,
-      // which only happens when the send fails. Without this override, an
-      // environment with real SMTP creds configured (e.g. a local .env)
-      // would email the password away instead and the response would omit
-      // it, regardless of NODE_ENV.
-      .overrideProvider(MailerService)
-      .useValue({ sendTemporaryPassword: async () => false, sendOtpCode: async () => false })
-      .compile();
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
     app.use(cookieParser());
     app.setGlobalPrefix('api');
@@ -34,7 +28,7 @@ describe('signup -> me -> change-password (cookie)', () => {
     await app.close();
   });
 
-  it('signs up, sets rio_session cookie, resolves me, then changes password', async () => {
+  it('blocks login until approved, then lets the entity log in with the temp password System Admin\'s approval issues', async () => {
     const server = app.getHttpServer();
     const rn = `RN-${Date.now()}`;
     const email = `admin+${Date.now()}@e2e.test`;
@@ -54,6 +48,13 @@ describe('signup -> me -> change-password (cookie)', () => {
       .expect(200);
     const centerId = centers.body[0].id;
 
+    // RIO-DATA-001 — consent is part of registration, so the versions have to
+    // come from the live policies. Also a public endpoint (no session exists
+    // yet at this point in the flow).
+    const policies = await request(server).get('/api/consent-policy/active').expect(200);
+    expect(policies.body.usePolicy.version).toBeTruthy();
+    expect(policies.body.dataSharing.version).toBeTruthy();
+
     const signup = await request(server)
       .post('/api/auth/signup')
       .send({
@@ -64,56 +65,158 @@ describe('signup -> me -> change-password (cookie)', () => {
         regionId,
         governorateIds: [governorateId],
         centerIds: [centerId],
+        consent: {
+          usePolicyVersion: policies.body.usePolicy.version,
+          dataSharingVersion: policies.body.dataSharing.version,
+        },
       })
       .expect(201);
 
-    const cookie = signup.headers['set-cookie'] as unknown as string[];
-    expect(cookie).toBeDefined();
-    expect(Array.isArray(cookie)).toBe(true);
-    expect(cookie.join(';')).toContain('rio_session=');
-    const csrfCookie = cookie.find((c) => c.startsWith('rio_csrf='));
-    const csrf = csrfCookie?.match(/rio_csrf=([^;]*)/)?.[1] ?? '';
-    expect(signup.body.mustChangePassword).toBe(true);
-    expect(signup.body.organization.registrationNumber).toBe(rn);
-    // The MailerService override above forces the send to "fail" -> temp
-    // password revealed in the response, deterministically regardless of
-    // whether this environment has real SMTP creds configured.
-    expect(signup.body.temporaryPasswordEmailed).toBe(false);
-    const tempPassword = signup.body.temporaryPassword as string;
-    expect(typeof tempPassword).toBe('string');
+    // No session is established at signup — pending approval, nothing else.
+    expect(signup.body).toEqual({ status: 'pending_approval', organizationName: 'E2E NGO', email });
+    expect(signup.headers['set-cookie']).toBeUndefined();
 
+    // Login is blocked until approved — org.isActive is false from creation.
+    await request(server)
+      .post('/api/auth/login')
+      .send({ email, password: DEFAULT_TEMP_PASSWORD })
+      .expect(403)
+      .expect((r) => expect(r.body.error.code).toBe('ORG_INACTIVE'));
+
+    // System Admin logs in and approves the pending entity.
+    const adminLogin = await request(server)
+      .post('/api/auth/login')
+      .send({ email: 'sysadmin@platform.local', password: 'Passw0rd!' })
+      .expect(200);
+    const adminCookies = adminLogin.headers['set-cookie'] as unknown as string[];
+    const adminCsrf = adminCookies.find((c) => c.startsWith('rio_csrf='))?.match(/rio_csrf=([^;]*)/)?.[1] ?? '';
+
+    const orgsList = await request(server)
+      .get('/api/organizations')
+      .set('Cookie', adminCookies)
+      .expect(200);
+    const pendingOrg = (orgsList.body as Array<{ id: string; registrationNumber: string }>).find(
+      (o) => o.registrationNumber === rn,
+    );
+    expect(pendingOrg).toBeDefined();
+
+    const approved = await request(server)
+      .patch(`/api/organizations/${pendingOrg!.id}/approve`)
+      .set('Cookie', adminCookies)
+      .set('x-csrf-token', adminCsrf)
+      .expect(200);
+    expect(approved.body.isActive).toBe(true);
+    expect(approved.body.approvedAt).toEqual(expect.any(String));
+
+    // Approving twice is rejected — already approved.
+    await request(server)
+      .patch(`/api/organizations/${pendingOrg!.id}/approve`)
+      .set('Cookie', adminCookies)
+      .set('x-csrf-token', adminCsrf)
+      .expect(400)
+      .expect((r) => expect(r.body.error.code).toBe('ORG_ALREADY_APPROVED'));
+
+    // The entity can now log in with the temporary password approval issued
+    // (DEFAULT_TEMP_PASSWORD — see OrganizationsService.approve).
+    const entityLogin = await request(server)
+      .post('/api/auth/login')
+      .send({ email, password: DEFAULT_TEMP_PASSWORD })
+      .expect(200);
+    expect(entityLogin.body.mustChangePassword).toBe(true);
+    expect(entityLogin.body.organization.registrationNumber).toBe(rn);
+
+    // RIO-DATA-001 — consent is recorded at signup itself now (no separate
+    // POST /auth/consent step for a self-registered admin), so `me()` should
+    // already report both pairs stamped from registration, not just after
+    // some later re-consent action.
+    const entityCookies = entityLogin.headers['set-cookie'] as unknown as string[];
     await request(server)
       .get('/api/auth/me')
-      .set('Cookie', cookie)
+      .set('Cookie', entityCookies)
       .expect(200)
-      .expect((r) => expect(r.body.user.email).toBe(email));
-
-    const changePassword = await request(server)
-      .post('/api/auth/change-password')
-      .set('Cookie', cookie)
-      .set('x-csrf-token', csrf)
-      .send({ currentPassword: tempPassword, newPassword: 'BrandNewPass123!' })
-      .expect(200)
-      .expect((r) => expect(r.body.mustChangePassword).toBe(false));
-
-    // change-password bumps sessionVersion server-side and must re-issue the
-    // rio_session cookie with a matching fresh token — otherwise the very
-    // next cookie-authenticated request (e.g. consent, right after the
-    // signup -> change-password flow) is wrongly rejected as UNAUTHENTICATED
-    // by JwtAuthGuard's sessionVersion check, even with a brand-new browser
-    // session and no stale cookies involved. change-password only reissues
-    // rio_session (rio_csrf is untouched), so a real browser would keep
-    // both — merge them the same way here rather than replacing wholesale.
-    const refreshedSessionCookie = (changePassword.headers['set-cookie'] as unknown as string[])?.find((c) =>
-      c.startsWith('rio_session='),
-    );
-    expect(refreshedSessionCookie).toBeDefined();
-    const refreshedCookies = [refreshedSessionCookie as string, csrfCookie as string];
-
-    await request(server)
-      .post('/api/auth/consent')
-      .set('Cookie', refreshedCookies)
-      .set('x-csrf-token', csrf)
-      .expect(201);
+      .expect((r) => {
+        expect(r.body.user.consentedAt).toBeTruthy();
+        expect(r.body.user.consentedPolicyVersion).toBe(policies.body.usePolicy.version);
+        expect(r.body.user.sharingConsentedAt).toBeTruthy();
+        expect(r.body.user.sharingConsentedPolicyVersion).toBe(
+          policies.body.dataSharing.version,
+        );
+      });
   }, 20_000);
+
+  // RIO-DATA-001 — "registration cannot complete without it" is the actual
+  // requirement, so these prove the server refuses, not merely that the form
+  // asks. Each asserts no organisation was created.
+  describe('consent is mandatory at registration', () => {
+    async function geography() {
+      const server = app.getHttpServer();
+      const regions = await request(server).get('/api/regions').expect(200);
+      const regionId = regions.body[0].id;
+      const governorates = await request(server).get('/api/governorates').query({ regionId }).expect(200);
+      const governorateId = governorates.body[0].id;
+      const centers = await request(server).get('/api/centers').query({ governorateId }).expect(200);
+      return { regionId, governorateIds: [governorateId], centerIds: [centers.body[0].id] };
+    }
+
+    function body(geo: Awaited<ReturnType<typeof geography>>, consent?: unknown) {
+      const stamp = `${Date.now()}${Math.round(performance.now())}`;
+      return {
+        organizationName: 'No-Consent NGO',
+        purpose: 'testing',
+        registrationNumber: `RN-NC-${stamp}`,
+        email: `noconsent+${stamp}@e2e.test`,
+        ...geo,
+        ...(consent === undefined ? {} : { consent }),
+      };
+    }
+
+    it('rejects a signup with no consent block at all (400)', async () => {
+      const geo = await geography();
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/signup')
+        .send(body(geo))
+        .expect(400);
+      // Schema-level rejection — never reaches the service, so nothing is created.
+      expect(res.body.error).toBeDefined();
+    });
+
+    it('rejects a signup accepting only the use policy (400)', async () => {
+      const geo = await geography();
+      const policies = await request(app.getHttpServer()).get('/api/consent-policy/active').expect(200);
+      await request(app.getHttpServer())
+        .post('/api/auth/signup')
+        .send(body(geo, { usePolicyVersion: policies.body.usePolicy.version }))
+        .expect(400);
+    });
+
+    it('rejects a stale consent version with CONSENT_VERSION_STALE and creates nothing', async () => {
+      const geo = await geography();
+      const policies = await request(app.getHttpServer()).get('/api/consent-policy/active').expect(200);
+      const payload = body(geo, {
+        usePolicyVersion: policies.body.usePolicy.version,
+        // A version that is syntactically fine but not the active one — the
+        // "form left open across a policy update" case.
+        dataSharingVersion: 'v-not-active',
+      });
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/signup')
+        .send(payload)
+        .expect(400);
+      expect(res.body.error?.code ?? res.body.code).toBe('CONSENT_VERSION_STALE');
+
+      // The registration number is still free — proof the rejection happened
+      // before any org row was written.
+      const policiesAgain = await request(app.getHttpServer()).get('/api/consent-policy/active').expect(200);
+      await request(app.getHttpServer())
+        .post('/api/auth/signup')
+        .send({
+          ...payload,
+          consent: {
+            usePolicyVersion: policiesAgain.body.usePolicy.version,
+            dataSharingVersion: policiesAgain.body.dataSharing.version,
+          },
+        })
+        .expect(201);
+    }, 20_000);
+  });
 });

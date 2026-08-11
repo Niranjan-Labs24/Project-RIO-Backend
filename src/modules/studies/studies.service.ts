@@ -50,14 +50,25 @@ export class StudiesService {
   async create(payload: CreateStudyPayload): Promise<Study> {
     const orgId = requireOrgId();
     const createdBy = requireActor();
+    // Resolved inside the transaction, read by the audit record after it commits.
+    let methodologyLabel: string | null = null;
     const created = await this.tenant.runInOrgContext(async (tx) => {
       await this.assertGeographyInOrgScope(tx, orgId, payload.governorateIds, payload.centerIds);
       if (payload.methodologyVersionId) {
-        await this.assertMethodologyVersionPublished(tx, payload.methodologyVersionId);
+        methodologyLabel = await this.assertMethodologyVersionPublished(tx, payload.methodologyVersionId);
       }
       return this.createWithCycleNumber(tx, orgId, createdBy, payload);
     });
-    await this.audit.record({ action: 'create', entityType: 'study', entityId: created.id, entityLabel: created.title });
+    await this.audit.record({
+      action: 'create', entityType: 'study', entityId: created.id, entityLabel: created.title,
+      // before: null on a create — captured so the detail view shows the
+      // study's opening state, which later edits are read against.
+      changes: [
+        { field: 'Title', before: null, after: created.title },
+        { field: 'Cycle number', before: null, after: created.cycleNumber },
+        { field: 'Methodology version', before: null, after: methodologyLabel },
+      ],
+    });
     return this.toStudy(created);
   }
 
@@ -160,8 +171,14 @@ export class StudiesService {
     }
   }
 
-  private async assertMethodologyVersionPublished(tx: Prisma.TransactionClient, id: string): Promise<void> {
-    const version = await tx.methodologyVersion.findUnique({ where: { id }, select: { status: true } });
+  /**
+   * Returns the human-readable version label alongside the validation, so the
+   * caller can put "v2.1" in the audit trail instead of the row's UUID — the
+   * lookup is already happening, and a raw id in a before/after table tells a
+   * reader nothing.
+   */
+  private async assertMethodologyVersionPublished(tx: Prisma.TransactionClient, id: string): Promise<string> {
+    const version = await tx.methodologyVersion.findUnique({ where: { id }, select: { status: true, version: true } });
     if (!version) {
       throw new NotFoundException({ error: { code: 'METHODOLOGY_VERSION_NOT_FOUND', message: 'Methodology Version not found' } });
     }
@@ -170,6 +187,7 @@ export class StudiesService {
         error: { code: 'METHODOLOGY_VERSION_NOT_PUBLISHED', message: 'Only a Published Methodology Version may be selected.' },
       });
     }
+    return version.version;
   }
 
   async list(opts: ListStudiesQuery = {}): Promise<StudyListResult> {
@@ -210,9 +228,16 @@ export class StudiesService {
       await this.audit.record({
         action: 'SYSTEM_ADMIN_VIEWED_STUDIES',
         entityType: 'study',
-        entityId: opts.organizationId ?? 'all',
+        // `null`, never the string 'all': audit_logs.entity_id is a UUID
+        // column, so a sentinel here made Postgres reject the INSERT
+        // ("invalid input syntax for type uuid") and AuditService.record()
+        // swallowed it as a warning — every cross-org study view silently
+        // went unaudited. The "all organisations" case is carried by
+        // entityLabel and `scope` below, matching SurveysService.list.
+        entityId: opts.organizationId ?? null,
         entityLabel: opts.organizationId ? 'Organization Studies' : 'All Platform Studies',
         organizationId: opts.organizationId,
+        metadata: { scope: opts.organizationId ? 'organization' : 'all' },
       });
     } else {
       const result = await this.tenant.runInOrgContext((tx) =>
@@ -409,9 +434,19 @@ export class StudiesService {
   // people rely on it and the Study can no longer be deleted out from under
   // them. An empty Study (no Needs yet) is always deletable.
   async remove(id: string): Promise<void> {
+    let removedMethodologyLabel: string | null = null;
     const removed = await this.tenant.runInOrgContext(async (tx) => {
       const existing = (await tx.study.findUnique({ where: { id } })) as StudyRow | null;
       if (!existing) throw new NotFoundException({ error: { code: 'STUDY_NOT_FOUND', message: 'Study not found' } });
+      // Resolved to its label for the audit entry — the deleted study's row is
+      // the only remaining record of which methodology it ran against, and a
+      // UUID there would be unreadable.
+      removedMethodologyLabel = existing.methodologyVersionId
+        ? ((await tx.methodologyVersion.findUnique({
+            where: { id: existing.methodologyVersionId },
+            select: { version: true },
+          }))?.version ?? null)
+        : null;
       const advancedNeeds = await tx.need.count({ where: { studyId: id, status: { not: 'draft' } } });
       if (advancedNeeds > 0) {
         throw new ConflictException({
@@ -424,7 +459,16 @@ export class StudiesService {
       await tx.study.delete({ where: { id } });
       return existing;
     });
-    await this.audit.record({ action: 'delete', entityType: 'study', entityId: removed.id, entityLabel: removed.title });
+    await this.audit.record({
+      action: 'delete', entityType: 'study', entityId: removed.id, entityLabel: removed.title,
+      // after: null — the study is gone and this is the only surviving record
+      // of what it contained.
+      changes: [
+        { field: 'Title', before: removed.title, after: null },
+        { field: 'Cycle number', before: removed.cycleNumber, after: null },
+        { field: 'Methodology version', before: removedMethodologyLabel, after: null },
+      ],
+    });
   }
 
   private diff(

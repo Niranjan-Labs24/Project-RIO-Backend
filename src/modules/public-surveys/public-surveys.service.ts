@@ -92,7 +92,14 @@ export class PublicSurveysService {
       }
       throw err;
     }
-    await this.audit.record({ action: 'create', entityType: 'survey', entityId: row.id, entityLabel: label });
+    await this.audit.record({
+      action: 'create', entityType: 'survey', entityId: row.id, entityLabel: label,
+      changes: [
+        { field: 'Link label', before: null, after: label },
+        { field: 'Linked need', before: null, after: need.title },
+        { field: 'Active', before: null, after: row.isActive },
+      ],
+    });
     return this.toPublicLink(row);
   }
 
@@ -146,6 +153,13 @@ export class PublicSurveysService {
       entityId: link.id,
       entityLabel: link.label,
       metadata: { channel: 'email' },
+      // A share mutates nothing on the link, so the pair records what was
+      // sent and to whom rather than a field transition.
+      changes: [
+        { field: 'Shared via', before: null, after: 'email' },
+        { field: 'Recipient', before: null, after: email },
+        { field: 'Survey link', before: null, after: link.label },
+      ],
     });
   }
 
@@ -395,17 +409,42 @@ export class PublicSurveysService {
   private async buildQuestionMap(
     tx: Prisma.TransactionClient,
     needId: string,
-  ): Promise<Map<string, { questionId: string; questionText: string; answerType: string }>> {
-    const survey = await tx.survey.findFirst({
+  ): Promise<
+    Map<string, { questionId: string; questionText: string; answerType: string; answerOptions: string[] | null }>
+  > {
+    // RIO-FR-011: a Need can now have more than one Survey row (versioning),
+    // each with its OWN SurveyQuestion rows — createNewVersion copies
+    // questions into fresh rows with new ids, it never reuses the old
+    // version's ids. SurveyResponse.answers is keyed by whichever
+    // SurveyQuestion id was live at submission time, so a response
+    // collected under an older version keys off ids that only exist on
+    // THAT version's rows, not the current one. Picking a single "the"
+    // survey here (even the currently-published one) makes every older
+    // response's answers unresolvable the moment a newer version publishes.
+    // Since SurveyQuestion.id is globally unique, unioning every version's
+    // questions for this Need is always correct: each response's answer
+    // keys resolve against whichever version they actually came from, with
+    // no need to track which version a response belongs to at all.
+    const surveys = await tx.survey.findMany({
       where: { needId },
       include: { surveyQuestions: { include: { question: true }, orderBy: { order: 'asc' } } },
     });
-    const map = new Map<string, { questionId: string; questionText: string; answerType: string }>();
-    for (const sq of survey?.surveyQuestions ?? []) {
+    const map = new Map<
+      string,
+      { questionId: string; questionText: string; answerType: string; answerOptions: string[] | null }
+    >();
+    for (const sq of surveys.flatMap((s) => s.surveyQuestions)) {
+      const rawOptions = sq.question?.answerOptions ?? sq.customOptions ?? null;
       map.set(sq.id, {
         questionId: sq.id,
         questionText: sq.question?.questionText ?? sq.customText ?? '',
         answerType: sq.question?.answerType ?? sq.customAnswerType ?? 'long_text',
+        answerOptions:
+          typeof rawOptions === 'string'
+            ? (JSON.parse(rawOptions) as string[])
+            : Array.isArray(rawOptions)
+              ? (rawOptions as string[])
+              : null,
       });
     }
     return map;
@@ -439,15 +478,30 @@ export class PublicSurveysService {
       submittedAt: Date;
       answers: unknown;
     },
-    questionMap: Map<string, { questionId: string; questionText: string; answerType: string }>,
+    questionMap: Map<
+      string,
+      { questionId: string; questionText: string; answerType: string; answerOptions: string[] | null }
+    >,
   ): SurveyResponseDetail {
     const rawAnswers = (row.answers ?? {}) as Record<string, string>;
-    const answers: SurveyResponseAnswer[] = Array.from(questionMap.values()).map((q) => ({
-      questionId: q.questionId,
-      questionText: q.questionText,
-      answerType: q.answerType,
-      answer: rawAnswers[q.questionId] ?? null,
-    }));
+    // buildQuestionMap unions every survey version's questions so ANY
+    // response's keys resolve, but that means most entries in the map
+    // belong to versions this particular response was never shown —
+    // createNewVersion copies questions into fresh ids with the same text,
+    // so an unfiltered map would render the same question twice (the
+    // version actually answered, plus a "no answer" placeholder for every
+    // other version's copy). Keeping only the ids this response's own
+    // `answers` payload actually has a key for reconstructs exactly the
+    // question set the citizen was shown, with no cross-version duplicates.
+    const answers: SurveyResponseAnswer[] = Array.from(questionMap.values())
+      .filter((q) => Object.prototype.hasOwnProperty.call(rawAnswers, q.questionId))
+      .map((q) => ({
+        questionId: q.questionId,
+        questionText: q.questionText,
+        answerType: q.answerType,
+        answerOptions: q.answerOptions,
+        answer: rawAnswers[q.questionId] ?? null,
+      }));
     return { ...this.toResponseSummary(row), answers };
   }
 

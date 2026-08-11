@@ -23,6 +23,35 @@ interface QuestionBankHierarchyEntry {
 // Dev-only credential seeded on every demo account so login is testable.
 const DEV_PASSWORD = 'Passw0rd!';
 
+// RIO-DATA-001 — the copy of the two consents a registrant accepts. Kept here
+// (and mirrored by the migration that backfills deployed environments) so the
+// policy table is the single source of truth: the signup screen, the
+// post-login re-prompt, and every immutable ConsentAcceptance snapshot all
+// read this same text rather than carrying their own copy in the UI bundle.
+const USE_POLICY_TEXT = `Terms of Use
+
+Welcome to this RIO application. By accessing or using this platform, you agree to the following terms:
+
+This application is provided solely for demonstration, testing, and evaluation purposes.
+Any information entered into the application should be fictitious or non-sensitive unless explicitly authorized.
+Users are responsible for ensuring that any content they submit complies with applicable laws and organizational policies.
+Unauthorized access, misuse, or attempts to disrupt the application are prohibited.
+The application owner may modify, suspend, or discontinue any feature without prior notice.
+Features, workflows, and reports displayed in this demo may not represent the final production version.
+Continued use of the application indicates your acceptance of these terms.`;
+
+const DATA_SHARING_TEXT = `Data Sharing Policy
+
+We value your privacy and are committed to handling your information responsibly.
+
+Information entered into this Rio application is used only for demonstration, testing, and evaluation purposes.
+We do not sell or share your information with third parties for marketing purposes.
+Data may be accessed by authorized administrators or support personnel solely to maintain and improve the application.
+Aggregated and anonymized information may be used to evaluate system performance and enhance user experience.
+Users should avoid entering confidential, personal, financial, or regulated information into this demonstration environment.
+Appropriate security measures are implemented to help protect data; however, no electronic system can guarantee absolute security.
+By using this application, you acknowledge and consent to the collection and processing of information as described in this policy.`;
+
 // Seed runs as cnap_owner (DATABASE_URL) — reference tables have no RLS; tenant
 // tables are FORCE-RLS even for the owner, so tenant inserts set org context.
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL, ssl: pgSslFromEnv() }) });
@@ -165,10 +194,25 @@ async function main(): Promise<void> {
     }
   }
 
+  // RIO-DATA-001 — two separately-versioned consents, both active. Signup
+  // validates the submitted version against the active policy of each kind,
+  // so BOTH must exist or every registration fails its consent check.
+  //
+  // `text` is in `update` as well as `create`: re-seeding an existing
+  // environment has to pick up revised copy, otherwise the first seed run
+  // would pin the wording forever. Acceptance rows are unaffected either way
+  // — each snapshots the text it was accepted under (ConsentAcceptance
+  // .policyText), so already-recorded consents keep the wording their user
+  // actually saw.
   await prisma.consentPolicy.upsert({
-    where: { version: 'v1' },
-    update: { active: true },
-    create: { version: 'v1', active: true, text: 'Buyer-supplied data-use & consent policy — placeholder text seeded until the real copy is provided.' },
+    where: { kind_version: { kind: 'use_policy', version: 'v1' } },
+    update: { active: true, text: USE_POLICY_TEXT },
+    create: { kind: 'use_policy', version: 'v1', active: true, text: USE_POLICY_TEXT },
+  });
+  await prisma.consentPolicy.upsert({
+    where: { kind_version: { kind: 'data_sharing', version: 'v1' } },
+    update: { active: true, text: DATA_SHARING_TEXT },
+    create: { kind: 'data_sharing', version: 'v1', active: true, text: DATA_SHARING_TEXT },
   });
 
   await seedDomainsAndSubdomains();

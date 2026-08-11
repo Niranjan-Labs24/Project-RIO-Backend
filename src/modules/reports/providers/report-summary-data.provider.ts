@@ -507,9 +507,19 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
 
   private async resolveSurveyId(studyId: string, filters: Record<string, unknown>): Promise<string> {
     if (typeof filters.surveyId === "string" && filters.surveyId) return filters.surveyId;
-    const survey = await this.tenant.runInOrgContext((tx) =>
-      tx.survey.findFirst({ where: { studyId }, orderBy: { createdAt: "desc" } }),
-    );
+    // RIO-FR-011: with survey versioning, `createdAt desc` alone can resolve
+    // to a DRAFT version created after the published one — a draft has no
+    // data to report on. PUBLISHED first (there's at most one at a time —
+    // see SurveysService.approveAndPublish's supersede step), falling back
+    // to the newest of whatever exists for a study that's never been
+    // published at all.
+    const survey =
+      (await this.tenant.runInOrgContext((tx) =>
+        tx.survey.findFirst({ where: { studyId, status: "PUBLISHED" }, orderBy: { createdAt: "desc" } }),
+      )) ??
+      (await this.tenant.runInOrgContext((tx) =>
+        tx.survey.findFirst({ where: { studyId }, orderBy: { createdAt: "desc" } }),
+      ));
     if (!survey) throw new Error(`no survey for study ${studyId}`);
     return survey.id;
   }

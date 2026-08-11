@@ -17,6 +17,7 @@ type Tag =
   | 'Surveys'
   | 'Priority Summary'
   | 'Audit'
+  | 'System Logs'
   | 'Health';
 
 interface RouteDoc {
@@ -50,6 +51,7 @@ const TAGS: Array<{ name: Tag; description: string }> = [
   { name: 'Organizations', description: "The caller's own organisation profile, plus cross-entity org listing." },
   { name: 'Roles', description: 'The fixed 9-role permission matrix.' },
   { name: 'Audit', description: 'Immutable audit log of every write across the app.' },
+  { name: 'System Logs', description: 'RIO-NFR-016 — operational events and errors (read-only, System Admin).' },
   { name: 'Health', description: 'Liveness/readiness probes.' },
 ];
 
@@ -73,7 +75,7 @@ const ROUTES: RouteDoc[] = [
   },
   {
     method: 'post', path: '/auth/signup', tag: 'Auth', summary: 'Public NGO signup — creates the organisation + its first NGO Admin',
-    auth: undefined, requestSchema: 'SignupBody', response: 'SignupResponseView (SessionContext + temporaryPasswordEmailed)',
+    auth: undefined, requestSchema: 'SignupBody', response: 'SignupPendingApprovalView (status: pending_approval — no session issued, requires Center approval first)',
   },
   {
     method: 'get', path: '/auth/me', tag: 'Auth', summary: "Re-fetch the caller's current session",
@@ -205,6 +207,38 @@ const ROUTES: RouteDoc[] = [
     auth: { module: 'archiveSharingAudit', action: 'read' },
     query: ['organizationId', 'entityType', 'entityId', 'actorId', 'action', 'dateFrom', 'dateTo', 'search', 'limit', 'offset'],
     response: '{ items: AuditEvent[], total, limit, offset }',
+  },
+  // System Logs (RIO-NFR-016) — operational telemetry, read-only. Distinct
+  // from /audit above: that is the business-event governance trail
+  // (RIO-FR-007); these are system errors, failed integrations, slow
+  // requests and job outcomes, gated on the System-Admin-only `systemLogs`
+  // module. No write/delete route exists — rows are written in-process and
+  // removed only by the retention job.
+  {
+    method: 'get', path: '/system-logs', tag: 'System Logs', summary: 'Operational events and errors, newest first',
+    auth: { module: 'systemLogs', action: 'read' },
+    query: ['level', 'minLevel', 'category', 'source', 'eventCode', 'requestId', 'organizationId', 'actorId', 'statusCode', 'dateFrom', 'dateTo', 'search', 'limit', 'offset'],
+    response: '{ items: SystemLogEntry[], total, limit, offset }',
+  },
+  {
+    method: 'get', path: '/system-logs/summary', tag: 'System Logs', summary: 'Level/category counts, top failures, and the hourly error trend',
+    auth: { module: 'systemLogs', action: 'read' },
+    query: ['window'],
+    response: 'SystemLogSummary',
+  },
+  {
+    method: 'get', path: '/system-logs/export', tag: 'System Logs', summary: 'CSV export of the current filter set (max 10000 rows)',
+    auth: { module: 'systemLogs', action: 'export' },
+    query: ['level', 'minLevel', 'category', 'source', 'eventCode', 'requestId', 'organizationId', 'actorId', 'statusCode', 'dateFrom', 'dateTo', 'search'],
+    response: 'text/csv',
+  },
+  {
+    method: 'get', path: '/system-logs/request/{requestId}', tag: 'System Logs', summary: 'Every entry sharing one request id, oldest first (request trace)',
+    auth: { module: 'systemLogs', action: 'read' }, response: '{ items: SystemLogEntry[] }',
+  },
+  {
+    method: 'get', path: '/system-logs/{id}', tag: 'System Logs', summary: 'One entry with its full stack and context',
+    auth: { module: 'systemLogs', action: 'read' }, response: 'SystemLogEntry',
   },
   {
     method: 'get', path: '/health', tag: 'Health', summary: 'Liveness probe',

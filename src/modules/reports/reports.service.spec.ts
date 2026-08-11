@@ -7,7 +7,15 @@ import type { ReportRow, ReportStatus } from "./reports.types";
 // lifecycle state machine can be exercised without a database.
 function makeHarness() {
   const store = new Map<string, ReportRow>();
-  const auditCalls: Array<{ action: string; entityId: string; organizationId?: string; metadata?: unknown }> = [];
+  const auditCalls: Array<{
+    action: string;
+    // Nullable: cross-org "viewed all organisations" events carry no entity
+    // id at all (entity_id is a uuid column — see AuditService.record).
+    entityId: string | null;
+    entityLabel?: string;
+    organizationId?: string;
+    metadata?: unknown;
+  }> = [];
   const userFindManyCalls: unknown[] = [];
   const tx = {
     report: {
@@ -64,6 +72,7 @@ function seed(store: Map<string, ReportRow>, over: Partial<ReportRow> = {}): Rep
     officerConfirmedAt: null,
     reviewedBy: null,
     reviewedAt: null,
+    reviewerNotes: null,
     archivedAt: null,
     ...over,
   };
@@ -89,16 +98,24 @@ describe("ReportsService lifecycle (two-step approval)", () => {
 
   it("approve WITHOUT a prior officer confirm is rejected", async () => {
     seed(h.store);
-    await expect(asRole("ngo_admin", () => h.service.approve("rpt-1"))).rejects.toMatchObject({
+    await expect(asRole("ngo_admin", () => h.service.approve("rpt-1", "Looks good"))).rejects.toMatchObject({
       response: { error: { code: "REPORT_NOT_CONFIRMED" } },
     });
   });
 
   it("approve AFTER confirm releases the report", async () => {
     seed(h.store, { officerConfirmedBy: "officer-1", officerConfirmedAt: new Date() });
-    const r = await asRole("ngo_admin", () => h.service.approve("rpt-1"));
+    const r = await asRole("ngo_admin", () => h.service.approve("rpt-1", "Looks good"));
     expect(r.status).toBe("released");
     expect(r.reviewedBy).toBe("actor-1");
+    expect(r.reviewerNotes).toBe("Looks good");
+  });
+
+  it("approve rejects blank reviewer notes", async () => {
+    seed(h.store, { officerConfirmedBy: "officer-1", officerConfirmedAt: new Date() });
+    await expect(asRole("ngo_admin", () => h.service.approve("rpt-1", "   "))).rejects.toMatchObject({
+      response: { error: { code: "REVIEWER_NOTES_REQUIRED" } },
+    });
   });
 
   it("archive requires a released report, then makes it archived", async () => {
@@ -150,13 +167,21 @@ describe("ReportsService lifecycle (two-step approval)", () => {
 
   it("reject transitions a draft to rejected; only a draft can be rejected", async () => {
     seed(h.store, { status: "released" });
-    await expect(asRole("ngo_admin", () => h.service.reject("rpt-1"))).rejects.toMatchObject({
+    await expect(asRole("ngo_admin", () => h.service.reject("rpt-1", "Missing data"))).rejects.toMatchObject({
       response: { error: { code: "REPORT_NOT_DRAFT" } },
     });
     h.store.get("rpt-1")!.status = "draft";
-    const r = await asRole("ngo_admin", () => h.service.reject("rpt-1"));
+    const r = await asRole("ngo_admin", () => h.service.reject("rpt-1", "Missing data"));
     expect(r.status).toBe("rejected");
     expect(r.reviewedBy).toBe("actor-1");
+    expect(r.reviewerNotes).toBe("Missing data");
+  });
+
+  it("reject rejects blank reviewer notes", async () => {
+    seed(h.store, { status: "draft" });
+    await expect(asRole("ngo_admin", () => h.service.reject("rpt-1", ""))).rejects.toMatchObject({
+      response: { error: { code: "REVIEWER_NOTES_REQUIRED" } },
+    });
   });
 
   it("namesFor short-circuits without a user lookup when the result set is empty", async () => {
@@ -235,6 +260,21 @@ describe("ReportsService — system_admin branches", () => {
     const result = await asRole("system_admin", () => h.service.list({}));
     expect(result).toHaveLength(1);
     expect(h.auditCalls.some((c) => c.action === "SYSTEM_ADMIN_VIEWED_REPORT")).toBe(true);
+  });
+
+  it("records the all-orgs view with a null entityId, never the string 'all'", async () => {
+    // Regression: entityId was `params.organizationId ?? "all"`, but
+    // audit_logs.entity_id is a uuid column — Postgres rejected the INSERT
+    // and AuditService.record() swallowed the error, so every cross-org
+    // report view went unaudited while the request still returned 200.
+    // The "all organisations" scope belongs in entityLabel/metadata.
+    seed(h.store, { status: "draft" });
+    await asRole("system_admin", () => h.service.list({}));
+
+    const event = h.auditCalls.find((c) => c.action === "SYSTEM_ADMIN_VIEWED_REPORT");
+    expect(event?.entityId ?? null).toBeNull();
+    expect(event?.entityLabel).toBe("All Platform Reports");
+    expect(event?.metadata).toMatchObject({ scope: "all" });
   });
 
   it("export as system_admin records SYSTEM_ADMIN_DOWNLOADED_REPORT instead of 'share'", async () => {

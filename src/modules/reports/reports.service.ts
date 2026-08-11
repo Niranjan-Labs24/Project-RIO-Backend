@@ -5,6 +5,7 @@ import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { getOrgStore, requireActor, requireOrgId } from "../../tenancy/org-context";
 import { can, ROLE_MATRIX } from "../../rbac/role-matrix";
 import { AuditService } from "../audit/audit.service";
+import { requireNonBlank } from "../../common/validation/require-non-blank";
 import {
   buildPlaceholderReport,
   buildExportStub,
@@ -157,7 +158,14 @@ export class ReportsService {
         },
       }),
     );
-    await this.audit.record({ action: "create", entityType: "report", entityId: row.id, entityLabel: title });
+    await this.audit.record({
+      action: "create", entityType: "report", entityId: row.id, entityLabel: title,
+      changes: [
+        { field: "Title", before: null, after: title },
+        { field: "Report type", before: null, after: row.reportType },
+        { field: "Status", before: null, after: row.status },
+      ],
+    });
     return this.hydrateOne(row as unknown as ReportRow);
   }
 
@@ -187,9 +195,14 @@ export class ReportsService {
       await this.audit.record({
         action: "SYSTEM_ADMIN_VIEWED_REPORT",
         entityType: "report",
-        entityId: params.organizationId ?? "all",
+        // `null`, never the string "all" — audit_logs.entity_id is a UUID
+        // column, so the sentinel made Postgres reject the INSERT and
+        // AuditService.record() swallowed it as a warning, silently losing
+        // every cross-org report view. Same shape as SurveysService.list.
+        entityId: params.organizationId ?? null,
         entityLabel: params.organizationId ? "Organization Reports" : "All Platform Reports",
         organizationId: params.organizationId,
+        metadata: { scope: params.organizationId ? "organization" : "all" },
       });
       return this.hydrate(rows as unknown as ReportRow[], true);
     }
@@ -271,12 +284,25 @@ export class ReportsService {
     const row = await this.tenant.runInOrgContext((tx) =>
       tx.report.update({ where: { id }, data: { officerConfirmedBy: officer, officerConfirmedAt: new Date() } }),
     );
-    await this.audit.record({ action: "approve", entityType: "report", entityId: row.id, entityLabel: row.title, metadata: { step: "confirm" } });
+    await this.audit.record({
+      action: "approve", entityType: "report", entityId: row.id, entityLabel: row.title,
+      metadata: { step: "confirm" },
+      // Officer confirm does not move `status` — it stamps the confirmation.
+      // The before/after pair is therefore on the confirmation itself, so the
+      // audit trail shows who confirmed and when it went from unconfirmed.
+      changes: [
+        { field: "Officer confirmed", before: existing.officerConfirmedAt?.toISOString() ?? null, after: row.officerConfirmedAt?.toISOString() ?? null },
+      ],
+    });
     return this.hydrateOne(row as unknown as ReportRow);
   }
 
   // Reviewer approves → released. Requires a prior officer confirm (two-step).
-  async approve(id: string): Promise<Report> {
+  // Notes mandatory (RIO-FR-007 clarification, Aug 4): extends the
+  // NCNP-Compiled-Report-only notes rule to all four report categories —
+  // same shared blank-check as NcnpReportReviewService/SurveysService.
+  async approve(id: string, notes: string): Promise<Report> {
+    requireNonBlank(notes, "REVIEWER_NOTES_REQUIRED", "Reviewer notes are required.");
     const reviewer = requireActor();
     const existing = await this.findOrThrow(id);
     if (existing.status !== "draft") {
@@ -290,13 +316,24 @@ export class ReportsService {
       });
     }
     const row = await this.tenant.runInOrgContext((tx) =>
-      tx.report.update({ where: { id }, data: { status: "released", reviewedBy: reviewer, reviewedAt: new Date() } }),
+      tx.report.update({
+        where: { id },
+        data: { status: "released", reviewedBy: reviewer, reviewedAt: new Date(), reviewerNotes: notes },
+      }),
     );
-    await this.audit.record({ action: "approve", entityType: "report", entityId: row.id, entityLabel: row.title, metadata: { status: "released" } });
+    await this.audit.record({
+      action: "approve", entityType: "report", entityId: row.id, entityLabel: row.title,
+      metadata: { status: "released" },
+      changes: [
+        { field: "Status", before: existing.status, after: row.status },
+        { field: "Reviewer Notes", before: null, after: notes },
+      ],
+    });
     return this.hydrateOne(row as unknown as ReportRow);
   }
 
-  async reject(id: string): Promise<Report> {
+  async reject(id: string, notes: string): Promise<Report> {
+    requireNonBlank(notes, "REVIEWER_NOTES_REQUIRED", "Reviewer notes are required.");
     const reviewer = requireActor();
     const existing = await this.findOrThrow(id);
     if (existing.status !== "draft") {
@@ -305,9 +342,19 @@ export class ReportsService {
       });
     }
     const row = await this.tenant.runInOrgContext((tx) =>
-      tx.report.update({ where: { id }, data: { status: "rejected", reviewedBy: reviewer, reviewedAt: new Date() } }),
+      tx.report.update({
+        where: { id },
+        data: { status: "rejected", reviewedBy: reviewer, reviewedAt: new Date(), reviewerNotes: notes },
+      }),
     );
-    await this.audit.record({ action: "approve", entityType: "report", entityId: row.id, entityLabel: row.title, metadata: { status: "rejected" } });
+    await this.audit.record({
+      action: "approve", entityType: "report", entityId: row.id, entityLabel: row.title,
+      metadata: { status: "rejected" },
+      changes: [
+        { field: "Status", before: existing.status, after: row.status },
+        { field: "Reviewer Notes", before: null, after: notes },
+      ],
+    });
     return this.hydrateOne(row as unknown as ReportRow);
   }
 
@@ -324,7 +371,11 @@ export class ReportsService {
     const row = await this.tenant.runInOrgContext((tx) =>
       tx.report.update({ where: { id }, data: { status: "archived", archivedAt: new Date() } }),
     );
-    await this.audit.record({ action: "edit", entityType: "report", entityId: row.id, entityLabel: row.title, metadata: { status: "archived" } });
+    await this.audit.record({
+      action: "edit", entityType: "report", entityId: row.id, entityLabel: row.title,
+      metadata: { status: "archived" },
+      changes: [{ field: "Status", before: existing.status, after: row.status }],
+    });
     return this.hydrateOne(row as unknown as ReportRow);
   }
 
@@ -371,7 +422,19 @@ export class ReportsService {
       );
     }
 
-    await this.audit.record({ action: "share", entityType: "report", entityId: row.id, entityLabel: row.title, metadata: { format } });
+    await this.audit.record({
+      action: "share", entityType: "report", entityId: row.id, entityLabel: row.title,
+      metadata: { format },
+      // A share does not mutate the report, so there is no field that moved.
+      // The pair records what was released and in what form — before: null
+      // reads as "not previously exported in this action", which is what the
+      // detail view needs to show something meaningful instead of nothing.
+      changes: [
+        { field: "Exported format", before: null, after: format },
+        { field: "Report status at export", before: null, after: row.status },
+        { field: "Scope", before: null, after: "own organization" },
+      ],
+    });
     const auditMeta = await this.tenant.runInOrgContext((tx) => this.resolveExportAuditMeta(row!, tx));
     return buildExportStub(
       format,
@@ -439,7 +502,15 @@ export class ReportsService {
         error: { code: "EXPORT_FORMAT_NOT_SUPPORTED", message: `${row.reportType} doesn't support ${format} export.` },
       });
     }
-    await this.audit.record({ action: "share", entityType: "report", entityId: row.id, entityLabel: row.title, metadata: { format, crossOrg: true } });
+    await this.audit.record({
+      action: "share", entityType: "report", entityId: row.id, entityLabel: row.title,
+      metadata: { format, crossOrg: true },
+      changes: [
+        { field: "Exported format", before: null, after: format },
+        { field: "Report status at export", before: null, after: row.status },
+        { field: "Scope", before: null, after: "cross-organization (approved sharing grant)" },
+      ],
+    });
     const auditMeta = await this.tenant.runAsSupervisor((tx) => this.resolveExportAuditMeta(row, tx));
     return buildExportStub(
       format,
@@ -849,6 +920,7 @@ export class ReportsService {
       reviewedByName: row.reviewedBy ? (nameById.get(row.reviewedBy)?.name ?? null) : null,
       reviewedByRole: row.reviewedBy ? (nameById.get(row.reviewedBy)?.role ?? null) : null,
       reviewedAt: row.reviewedAt ? row.reviewedAt.toISOString() : null,
+      reviewerNotes: row.reviewerNotes,
       archivedAt: row.archivedAt ? row.archivedAt.toISOString() : null,
       exportFormats: meta.exportFormats,
     };

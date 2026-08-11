@@ -173,6 +173,7 @@ describe("Survey-scoped reports (RPT01 / RPT15) — e2e", () => {
       .patch(`/api/reports/${id}/approve`)
       .set("Cookie", cookies)
       .set("x-csrf-token", csrf)
+      .send({ notes: "Looks good" })
       .expect(200);
 
     // supertest doesn't buffer binary responses by default — same parser the

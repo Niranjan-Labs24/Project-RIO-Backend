@@ -20,6 +20,10 @@ export interface Organization {
   governorateIds: string[];
   centerIds: string[];
   isActive: boolean;
+  // RIO-FR-010 (client-confirmed): null = self-registered, never yet
+  // approved by System Admin (Center approval). Always non-null for an org
+  // created directly via createWithAdmin, which skips this gate entirely.
+  approvedAt: string | null;
   createdAt: string;
 }
 
@@ -81,5 +85,6 @@ export interface OrgRow {
   governorateIds: string[];
   centerIds: string[];
   isActive: boolean;
+  approvedAt: Date | null;
   createdAt: Date;
 }

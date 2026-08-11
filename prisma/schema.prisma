@@ -46,6 +46,13 @@ enum PermissionModule {
   // generate+publish actions — two distinct bits so neither role can do
   // the other's job even if both hold this module.
   ncnpReport
+  // RIO-NFR-016 — the persisted operational log (system_logs). Deliberately
+  // NOT folded into archiveSharingAudit: that module is held read-only by
+  // ngo_admin, center_supervisor, data_analyst and others, and operational
+  // rows carry stack traces, internal paths and integration detail that
+  // belong to platform operations, not to tenant governance. Granted to
+  // system_admin alone.
+  systemLogs
 }
 
 // ──────── Reference (global, seeded, read-only to cnap_app) ────────
@@ -79,13 +86,34 @@ model RolePermission {
   @@map("role_permissions")
 }
 
+// RIO-DATA-001 — the Requirements Register calls for two separate,
+// separately-versioned consents, not one combined policy: the acceptance of
+// the platform's use policy, and a distinct data-sharing consent. They are
+// separate `kind`s of the same table (rather than two tables) precisely
+// because they version, activate and get accepted through identical
+// machinery — only the text and the audit meaning differ.
+enum ConsentPolicyKind {
+  use_policy
+  data_sharing
+}
+
 model ConsentPolicy {
-  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  version   String   @unique @db.VarChar(64)
+  id   String            @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  kind ConsentPolicyKind @default(use_policy)
+  // Versions are per-kind, so `v1` of the use policy and `v1` of the
+  // data-sharing consent are two different rows — hence the compound unique
+  // below rather than the global `@unique` this column carried when only one
+  // policy kind existed.
+  version   String   @db.VarChar(64)
   text      String
   active    Boolean  @default(false)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
+  @@unique([kind, version])
+  // Exactly one row per kind is expected to be active at a time; this index
+  // serves the `where: { kind, active: true }` lookup both signup and the
+  // public policy endpoint make on every call.
+  @@index([kind, active])
   @@map("consent_policies")
 }
 
@@ -118,6 +146,16 @@ model Organisation {
   // OrganisationCenter below.
   regionId           String?  @map("region_id") @db.Uuid
   isActive           Boolean  @default(true) @map("is_active")
+  // RIO-FR-010 (client-confirmed): self-registered entities require Center
+  // approval before activation. Separate from `isActive` deliberately —
+  // `isActive` alone can't distinguish "never yet approved" (pending, first
+  // signup) from "was approved, later suspended" (System Admin deactivated
+  // an already-running entity) — those are different situations with
+  // different UI/actions. Null = never approved yet. Always non-null for an
+  // org created directly by System Admin (OrganizationsService.createWithAdmin),
+  // which is inherently pre-approved and skips this gate entirely.
+  approvedAt         DateTime? @map("approved_at") @db.Timestamptz(6)
+  approvedBy         String?   @map("approved_by") @db.Uuid
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -175,6 +213,13 @@ model User {
   // detected on every login/me() without an extra join. The full acceptance
   // history still lives in ConsentAcceptance; this is just "what's current."
   consentedPolicyVersion String?    @map("consented_policy_version") @db.VarChar(64)
+  // RIO-DATA-001's second consent, denormalized for exactly the same reason
+  // as the pair above: the session needs to know whether BOTH consents are
+  // current on every login/me() without joining ConsentAcceptance twice. The
+  // two pairs move independently — each policy kind versions on its own
+  // schedule, so an org can be current on one and stale on the other.
+  sharingConsentedAt            DateTime? @map("sharing_consented_at") @db.Timestamptz(6)
+  sharingConsentedPolicyVersion String?   @map("sharing_consented_policy_version") @db.VarChar(64)
   failedLoginAttempts    Int        @default(0) @map("failed_login_attempts")
   sessionVersion         Int        @default(0) @map("session_version")
   lockedUntil            DateTime?  @map("locked_until") @db.Timestamptz(6)
@@ -216,17 +261,24 @@ model PasswordResetToken {
 }
 
 model ConsentAcceptance {
-  id            String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  orgId         String   @map("org_id") @db.Uuid
-  userId        String   @map("user_id") @db.Uuid
-  policyVersion String   @map("policy_version") @db.VarChar(64)
-  policyText    String   @map("policy_text")
-  acceptedAt    DateTime @default(now()) @map("accepted_at") @db.Timestamptz(6)
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  // Which of the two RIO-DATA-001 consents this row records. Every
+  // acceptance predating that split was the use policy, so `use_policy` is
+  // the backfill default — see the accompanying migration.
+  kind          ConsentPolicyKind @default(use_policy)
+  orgId         String            @map("org_id") @db.Uuid
+  userId        String            @map("user_id") @db.Uuid
+  policyVersion String            @map("policy_version") @db.VarChar(64)
+  policyText    String            @map("policy_text")
+  acceptedAt    DateTime          @default(now()) @map("accepted_at") @db.Timestamptz(6)
 
   org  Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
   user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([orgId])
+  // Drives the per-user, per-kind "has this been accepted, and at which
+  // version" lookup the consent gate makes.
+  @@index([userId, kind])
   @@map("consent_acceptances")
 }
 
@@ -256,6 +308,82 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([sourceRef])
   @@map("audit_logs")
+}
+
+// ──────── RIO-NFR-016: Operational logging ────────
+
+enum SystemLogLevel {
+  fatal
+  error
+  warn
+  info
+}
+
+// Broad bucket for "which part of the system produced this" — an enum, not
+// free text, so the System Logs screen can offer a fixed filter list and a
+// typo at a call site can't invent a phantom category.
+enum SystemLogCategory {
+  http // request/response lifecycle, 4xx/5xx
+  database // Prisma/Postgres errors, constraint violations, timeouts
+  auth // login failures, token/OTP rejection, permission denials
+  integration // outbound: mailer, SMS, AI provider, object storage
+  job // scheduled/background work — imports, scoring, report builds
+  startup // boot, migration, config validation, shutdown
+  security // rate limits, suspicious input, RLS/tenancy violations
+  application // catch-all for service-level operational events
+}
+
+// RIO-NFR-016 — persisted operational telemetry. Deliberately NOT AuditLog:
+// that table is the immutable business-event record (RIO-FR-007) whose own
+// acceptance criterion is "cannot be deleted", so it must never carry a
+// purge path; this one is diagnostic and time-boxed by a retention window.
+// Different volume, different audience, different lifetime.
+//
+// No `org` relation on purpose: organisationId here is a loose correlation
+// key, not ownership. A row about a *failed* org lookup may legitimately
+// reference an id that no longer resolves, and deleting an org must never
+// cascade away the diagnostic history of what it did.
+model SystemLog {
+  id             String            @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  level          SystemLogLevel
+  category       SystemLogCategory
+  // Emitting module/service, e.g. "MailerService", "AllExceptionsFilter".
+  source         String            @db.VarChar(120)
+  // Stable machine code for grouping identical failures over time — e.g.
+  // "MAILER_SEND_FAILED", "HTTP_500", "P2002". Indexed: the first question
+  // asked on this screen is always "how often is X happening".
+  eventCode      String?           @map("event_code") @db.VarChar(80)
+  message        String            @db.VarChar(2000)
+  // Correlation — mirrors the pino `mixin` fields (see logger.config.ts) so
+  // a persisted row and a stdout line for the same request join on
+  // request_id.
+  requestId      String?           @map("request_id") @db.VarChar(64)
+  organisationId String?           @map("organisation_id") @db.Uuid
+  actorUserId    String?           @map("actor_user_id") @db.Uuid
+  // HTTP shape — null for non-http categories.
+  httpMethod     String?           @map("http_method") @db.VarChar(10)
+  httpPath       String?           @map("http_path") @db.VarChar(500)
+  statusCode     Int?              @map("status_code")
+  durationMs     Int?              @map("duration_ms")
+  ipAddress      String?           @map("ip_address") @db.VarChar(64)
+  userAgent      String?           @map("user_agent")
+  // Truncated at write time (SystemLogsService) — a runaway error object
+  // must not be able to bloat the table.
+  stack          String?
+  // Free-form structured detail, redacted and size-capped at write time.
+  context        Json?
+  // Which API instance emitted the row — matters the moment more than one
+  // container is running.
+  instanceId     String?           @map("instance_id") @db.VarChar(120)
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([createdAt])
+  @@index([level, createdAt])
+  @@index([category, createdAt])
+  @@index([eventCode])
+  @@index([requestId])
+  @@index([organisationId])
+  @@map("system_logs")
 }
 
 // ──────── Week 2: Data Capture (RIO-FR-001, RIO-FR-Add-01, RIO-FR-003) ────────
@@ -1264,6 +1392,10 @@ model Report {
   officerConfirmedAt DateTime? @map("officer_confirmed_at") @db.Timestamptz(6)
   reviewedBy   String?      @map("reviewed_by") @db.Uuid
   reviewedAt   DateTime?    @map("reviewed_at") @db.Timestamptz(6)
+  // Mandatory on both approve and reject (RIO-FR-007 clarification: the
+  // notes requirement extends to all four report categories, not just the
+  // NCNP Compiled Report) — see ReportsService.approve/reject.
+  reviewerNotes String?     @map("reviewer_notes")
   archivedAt   DateTime?    @map("archived_at") @db.Timestamptz(6)
 
   org    Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -1514,6 +1646,17 @@ model Survey {
   // that has never been published, or one published before this column
   // existed.
   methodologyVersion String? @map("methodology_version") @db.VarChar(100)
+  // RIO-FR-011 (client-confirmed): once PUBLISHED with responses collected,
+  // a survey is never edited in place — SurveysService.createNewVersion
+  // creates a new DRAFT row instead, incrementing `version` and pointing
+  // `previousVersionId` at this one. This (the old) row, and every response
+  // already attached to it (SurveyResponse.surveyId), never changes —
+  // "existing responses stay attached to the version they were collected
+  // under" is true by construction, not by any special-case logic.
+  // `@unique` on previousVersionId: a given version can be superseded by at
+  // most one newer version, never branched.
+  version            Int     @default(1)
+  previousVersionId  String? @unique @map("previous_version_id") @db.Uuid
   createdBy String   @map("created_by") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -1570,6 +1713,12 @@ model Survey {
   org             Organisation           @relation(fields: [orgId], references: [id], onDelete: Cascade)
   need            Need                   @relation(fields: [needId], references: [id], onDelete: Cascade)
   study           Study                  @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  // RIO-FR-011 self-relation: previousVersion is null for the first-ever
+  // version of a Need's survey. onDelete: SetNull (not Cascade) — deleting a
+  // newer draft version must never cascade into deleting the published
+  // version it was drafted from.
+  previousVersion Survey?                @relation("SurveyVersionChain", fields: [previousVersionId], references: [id], onDelete: SetNull)
+  nextVersion     Survey?                @relation("SurveyVersionChain")
   surveyQuestions            SurveyQuestion[]
   builderResponses           SurveyBuilderResponse[]
   responseAnswers            ResponseAnswer[]

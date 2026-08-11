@@ -4,7 +4,7 @@ import type { Response } from "express";
 import { RequirePermission } from "../../common/guards/permission.guard";
 import { parseIntParam } from "../../common/http/query.util";
 import { TypeBoxValidationPipe } from "../../contract/validation.pipe";
-import { CreateReportBody } from "./reports.contract";
+import { ApproveReportBody, CreateReportBody, RejectReportBody, type ApproveReportDto, type RejectReportDto } from "./reports.contract";
 import { ReportsService } from "./reports.service";
 import type {
   CreateReportPayload, ExportFormat, ListReportsParams, Report, ReportStatus, ReportTypeCode,
@@ -59,14 +59,20 @@ export class ReportsController {
 
   @Patch(":id/approve")
   @RequirePermission("reportsDashboards", "approve")
-  approve(@Param("id", new UuidParamPipe()) id: string): Promise<Report> {
-    return this.reports.approve(id);
+  approve(
+    @Param("id", new UuidParamPipe()) id: string,
+    @Body(new TypeBoxValidationPipe(ApproveReportBody)) body: ApproveReportDto,
+  ): Promise<Report> {
+    return this.reports.approve(id, body.notes);
   }
 
   @Patch(":id/reject")
   @RequirePermission("reportsDashboards", "approve")
-  reject(@Param("id", new UuidParamPipe()) id: string): Promise<Report> {
-    return this.reports.reject(id);
+  reject(
+    @Param("id", new UuidParamPipe()) id: string,
+    @Body(new TypeBoxValidationPipe(RejectReportBody)) body: RejectReportDto,
+  ): Promise<Report> {
+    return this.reports.reject(id, body.notes);
   }
 
   @Patch(":id/archive")

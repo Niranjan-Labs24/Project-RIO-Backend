@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { randomBytes, createHash } from 'node:crypto';
-import { UserStatus } from '../../generated/prisma';
+import { ConsentPolicyKind, UserStatus } from '../../generated/prisma';
+import { ConsentService } from '../consent/consent.service';
 import { DomainsService } from '../domains/domains.service';
 import { GeographyService } from '../geography/geography.service';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
@@ -11,8 +12,8 @@ import { ROLE_MATRIX, type RoleDef } from '../../rbac/role-matrix';
 import { AuditService } from '../audit/audit.service';
 import { ConfigService } from '../../config/config.service';
 import { MailerService } from '../../mailer/mailer.service';
-import { AuthRepository, conflictFor, DEFAULT_TEMP_PASSWORD } from './auth.repository';
-import type { SessionContext, SessionOrg, SessionUser, SignupResponseView } from './session.types';
+import { AuthRepository, conflictFor, DEFAULT_TEMP_PASSWORD, type ConsentAcceptanceInput } from './auth.repository';
+import type { SessionContext, SessionOrg, SessionUser, SignupPendingApprovalView } from './session.types';
 import type { ChangePasswordDto, ForgotPasswordDto, ResetPasswordDto, SignupDto } from './auth.contract';
 
 const MAX_FAILED = 5;
@@ -29,6 +30,8 @@ interface UserWithOrg {
   passwordHash: string | null;
   consentedAt: Date | null;
   consentedPolicyVersion: string | null;
+  sharingConsentedAt: Date | null;
+  sharingConsentedPolicyVersion: string | null;
   failedLoginAttempts: number;
   lockedUntil: Date | null;
   mustChangePassword: boolean;
@@ -63,6 +66,9 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly domains: DomainsService,
     private readonly geography: GeographyService,
+    // RIO-DATA-001 — resolves/validates the active policy of each consent
+    // kind during signup and the post-login re-prompt.
+    private readonly consentPolicies: ConsentService,
   ) {}
 
   async login(email: string, password: string): Promise<SessionContext> {
@@ -163,12 +169,51 @@ export class AuthService {
     );
   }
 
-  async consent(): Promise<{ consentedAt: string; policyVersion: string | null }> {
+  /**
+   * RIO-DATA-001 — the post-login re-prompt path. Registration now captures
+   * both consents up front (see signup()), so this is reached only by:
+   *   - accounts created before that change, which have no data-sharing
+   *     consent on record at all, and
+   *   - anyone whose accepted version is no longer the active one after a
+   *     policy is superseded.
+   *
+   * Both consents are (re-)accepted together in one call, matching the
+   * single-screen gate the client shows. Each is written as its own
+   * acceptance row so the two remain independently auditable.
+   */
+  async consent(): Promise<{
+    consentedAt: string;
+    policyVersion: string | null;
+    sharingPolicyVersion: string | null;
+  }> {
     const actorId = requireActor();
     const orgId = requireOrgId();
     const now = new Date();
-    const policyVersion = await this.tenant.runInOrgContext(async (tx) => {
-      const policy = await tx.consentPolicy.findFirst({ where: { active: true }, orderBy: { createdAt: 'desc' } });
+    // Read outside the tenant transaction: consent_policies is a global
+    // reference table with no RLS (see ConsentService), and resolving both
+    // kinds up front keeps the write below to a single round of statements.
+    const { usePolicy, dataSharing } = await this.consentPolicies.getActivePolicies();
+
+    // Prior acceptance state, read before the update overwrites it — this is
+    // the "before" half of the audit entry's before/after pair. Null on a
+    // first acceptance; the superseded version on a re-acceptance.
+    const prior = await this.tenant.runInOrgContext((tx) =>
+      tx.user.findUnique({
+        where: { id: actorId },
+        select: {
+          consentedAt: true,
+          consentedPolicyVersion: true,
+          sharingConsentedAt: true,
+          sharingConsentedPolicyVersion: true,
+        },
+      }),
+    );
+    const previousUseVersion = prior?.consentedPolicyVersion ?? null;
+    const previousUseAt = prior?.consentedAt?.toISOString() ?? null;
+    const previousSharingVersion = prior?.sharingConsentedPolicyVersion ?? null;
+    const previousSharingAt = prior?.sharingConsentedAt?.toISOString() ?? null;
+
+    await this.tenant.runInOrgContext(async (tx) => {
       // Accepting consent is the signal that an invited user has completed
       // onboarding (temp password already replaced by this point — consent
       // is only reachable post-login) — activate them here rather than
@@ -177,33 +222,121 @@ export class AuthService {
       // them.
       await tx.user.update({
         where: { id: actorId },
-        data: { consentedAt: now, consentedPolicyVersion: policy?.version ?? null, status: UserStatus.active },
+        data: {
+          consentedAt: now,
+          consentedPolicyVersion: usePolicy.version,
+          sharingConsentedAt: now,
+          sharingConsentedPolicyVersion: dataSharing.version,
+          status: UserStatus.active,
+        },
       });
-      // Snapshot the versioned policy the user accepted (immutable acceptance record).
-      if (policy) {
-        await tx.consentAcceptance.create({
-          data: { orgId, userId: actorId, policyVersion: policy.version, policyText: policy.text, acceptedAt: now },
-        });
-      }
-      return policy?.version ?? null;
+      // Snapshot the versioned policy text the user accepted (immutable
+      // acceptance records — one per kind).
+      await tx.consentAcceptance.createMany({
+        data: [
+          {
+            orgId,
+            userId: actorId,
+            kind: ConsentPolicyKind.use_policy,
+            policyVersion: usePolicy.version,
+            policyText: usePolicy.text,
+            acceptedAt: now,
+          },
+          {
+            orgId,
+            userId: actorId,
+            kind: ConsentPolicyKind.data_sharing,
+            policyVersion: dataSharing.version,
+            policyText: dataSharing.text,
+            acceptedAt: now,
+          },
+        ],
+      });
     });
-    // RIO-FR-Add-02 governance: the org's data-sharing consent acceptance
-    // is itself an auditable event, not just a stored timestamp — same
-    // append-only trail as login/signup/password changes.
+
+    // RIO-FR-Add-02 governance: each consent acceptance is itself an
+    // auditable event, not just a stored timestamp — same append-only trail
+    // as login/signup/password changes.
+    // `changes` carries the version each consent moved from/to so the audit
+    // detail view can show a real before/after pair: null -> v1 for a first
+    // acceptance, v1 -> v2 for a re-acceptance after a policy bump.
     await this.audit.record({
       action: 'consent',
       entityType: 'user',
       entityId: actorId,
-      entityLabel: policyVersion ? `Accepted consent policy ${policyVersion}` : 'Accepted consent',
+      entityLabel: `Accepted use policy ${usePolicy.version}`,
+      changes: [
+        { field: 'Use policy version', before: previousUseVersion, after: usePolicy.version },
+        { field: 'Accepted at', before: previousUseAt, after: now.toISOString() },
+      ],
     });
-    return { consentedAt: now.toISOString(), policyVersion };
+    await this.audit.record({
+      action: 'consent',
+      entityType: 'user',
+      entityId: actorId,
+      entityLabel: `Accepted data-sharing consent ${dataSharing.version}`,
+      changes: [
+        { field: 'Data-sharing consent version', before: previousSharingVersion, after: dataSharing.version },
+        { field: 'Accepted at', before: previousSharingAt, after: now.toISOString() },
+      ],
+    });
+    return {
+      consentedAt: now.toISOString(),
+      policyVersion: usePolicy.version,
+      sharingPolicyVersion: dataSharing.version,
+    };
+  }
+
+  /**
+   * RIO-DATA-001 — resolves the two consents a registration claims to accept
+   * against the currently-active policy of each kind.
+   *
+   * The submitted version is checked rather than trusted: a stale value means
+   * the registrant read (and agreed to) different wording from what's live
+   * now — most plausibly a signup form left open across a policy update — so
+   * it's rejected and they're re-shown the current text. Accepting it would
+   * file a consent record against text the user never saw.
+   */
+  private async resolveSignupConsents(consent: SignupDto['consent']): Promise<ConsentAcceptanceInput[]> {
+    const submitted: Array<{ kind: ConsentPolicyKind; version: string }> = [
+      { kind: ConsentPolicyKind.use_policy, version: consent.usePolicyVersion },
+      { kind: ConsentPolicyKind.data_sharing, version: consent.dataSharingVersion },
+    ];
+    return Promise.all(
+      submitted.map(async ({ kind, version }) => {
+        // Throws NO_ACTIVE_CONSENT_POLICY (404) when a kind has no active
+        // policy at all — a server misconfiguration, deliberately surfaced
+        // rather than silently letting an un-consented account through.
+        const active = await this.consentPolicies.getActivePolicy(kind);
+        if (active.version !== version) {
+          throw new BadRequestException({
+            error: {
+              code: 'CONSENT_VERSION_STALE',
+              message:
+                'The consent policy was updated while you were registering. Please review the current version and try again.',
+              details: { kind, submittedVersion: version, currentVersion: active.version },
+            },
+          });
+        }
+        return { kind, version: active.version, text: active.text };
+      }),
+    );
   }
 
   // Public NGO signup: creates the organisation + its first NGO Admin (RLS via
-  // runAsOrg inside the repository) and issues a session — same shape login()
-  // returns, plus how the temp password was delivered. Consent is NOT
-  // recorded here — see AuthService.consent(), triggered post-login.
-  async signup(dto: SignupDto): Promise<SignupResponseView> {
+  // runAsOrg inside the repository). RIO-FR-010 (client-confirmed): no
+  // session is issued here anymore — self-registration requires Center
+  // (System Admin) approval before activation (repo creates the org with
+  // isActive: false). The admin logs in normally via POST /auth/login once
+  // OrganizationsService.approve has run and issued a real temporary
+  // password — the one hashed below is a placeholder that's never revealed
+  // or emailed, since login is blocked by ORG_INACTIVE regardless until then.
+  //
+  // RIO-DATA-001: consent IS recorded here, in the same transaction as the
+  // org and admin rows — registration cannot complete without both the use
+  // policy and the data-sharing consent. AuthService.consent() below is now
+  // only the re-prompt path (accounts predating this, and policy bumps).
+  async signup(dto: SignupDto): Promise<SignupPendingApprovalView> {
     // Friendly pre-checks (the DB unique constraint is still the source of
     // truth, handled inside the repository for the concurrent-signup race —
     // hence the duplicated error envelopes via the shared conflictFor()).
@@ -214,6 +347,9 @@ export class AuthService {
       throw conflictFor('email');
     }
     await this.assertValidSector(dto.sector);
+    // Resolved before any write: a stale/unknown consent version must fail
+    // the registration outright, not after the org row already exists.
+    const consents = await this.resolveSignupConsents(dto.consent);
     // Existence + hierarchy only (every Governorate belongs to the chosen
     // Region, every Center to a chosen Governorate) — there's no existing
     // org scope to check against yet, this org is brand new.
@@ -223,8 +359,7 @@ export class AuthService {
       centerIds: dto.centerIds,
     });
 
-    const temporaryPassword = DEFAULT_TEMP_PASSWORD;
-    const passwordHash = await this.passwords.hash(temporaryPassword);
+    const placeholderPasswordHash = await this.passwords.hash(DEFAULT_TEMP_PASSWORD);
 
     const { org, user } = await this.repo.createOrganisationAndAdmin({
       organizationName: dto.organizationName,
@@ -232,35 +367,65 @@ export class AuthService {
       purpose: dto.purpose,
       registrationNumber: dto.registrationNumber,
       email: dto.email,
-      passwordHash,
+      passwordHash: placeholderPasswordHash,
       regionId: dto.regionId,
       governorateIds: dto.governorateIds,
       centerIds: dto.centerIds,
+      consents,
     });
 
-    const role = this.roleOf(user.roleId);
+    // Attribute the audit entry to the new admin without issuing them a
+    // session — nothing else runs as this actor in this request.
     const store = getOrgStore();
     if (store) {
       store.orgId = org.id;
       store.actorId = user.id;
-      store.role = role.key;
+      store.role = this.roleOf(user.roleId).key;
     }
-    await this.audit.record({ action: 'create', entityType: 'organization', entityId: org.id, entityLabel: org.name, organizationId: org.id });
+    // before is null throughout: a create has no prior state, and recording
+    // the pair explicitly is what lets the audit detail view render the
+    // created values rather than an empty "no changes" panel.
+    await this.audit.record({
+      action: 'create',
+      entityType: 'organization',
+      entityId: org.id,
+      entityLabel: org.name,
+      organizationId: org.id,
+      metadata: { pendingApproval: true },
+      changes: [
+        { field: 'Organization name', before: null, after: org.name },
+        { field: 'Registration number', before: null, after: org.registrationNumber },
+        { field: 'Sector', before: null, after: org.sector },
+        { field: 'Email', before: null, after: org.email },
+        { field: 'Admin account', before: null, after: user.email },
+      ],
+    });
+    // RIO-DATA-001 governance: each consent is its own auditable event, same
+    // append-only trail as the post-login consent() path below. Recorded per
+    // kind rather than as one combined line so the audit log can answer
+    // "when did this org accept the data-sharing consent" independently of
+    // the use policy.
+    for (const c of consents) {
+      await this.audit.record({
+        action: 'consent',
+        entityType: 'user',
+        entityId: user.id,
+        entityLabel: `Accepted ${c.kind === ConsentPolicyKind.data_sharing ? 'data-sharing consent' : 'use policy'} ${c.version} at registration`,
+        organizationId: org.id,
+        // Always null -> version here: registration is by definition a first
+        // acceptance, so there is no prior version to move from.
+        changes: [
+          {
+            field: c.kind === ConsentPolicyKind.data_sharing ? 'Data-sharing consent version' : 'Use policy version',
+            before: null,
+            after: c.version,
+          },
+          { field: 'Accepted by', before: null, after: user.email },
+        ],
+      });
+    }
 
-    const token = this.tokens.sign({ sub: user.id, orgId: org.id, roleKey: role.key, sessionVersion: user.sessionVersion });
-    const session = this.buildSession({ ...user, org } as never, role, token);
-
-    const emailed = await this.mailer.sendTemporaryPassword(user.email, org.name, temporaryPassword);
-    if (emailed) {
-      return { ...session, temporaryPasswordEmailed: true };
-    }
-    // Dev only: surface the password in the response itself (below), never
-    // logged — it's already the sole reveal channel when email delivery
-    // fails, and a log line would be a second, redundant disclosure path.
-    if (this.config.nodeEnv !== 'production') {
-      return { ...session, temporaryPasswordEmailed: false, temporaryPassword };
-    }
-    return { ...session, temporaryPasswordEmailed: false };
+    return { status: 'pending_approval', organizationName: org.name, email: user.email };
   }
 
   // Signed-in user replaces a signup-issued temporary password with one they
@@ -413,6 +578,11 @@ export class AuthService {
       id: u.id, name: u.name, email: u.email,
       consentedAt: u.consentedAt ? u.consentedAt.toISOString() : null,
       consentedPolicyVersion: u.consentedPolicyVersion,
+      // RIO-DATA-001 — the data-sharing consent travels in the session
+      // alongside the use policy so the client can tell which of the two (if
+      // either) is outstanding without a second round-trip.
+      sharingConsentedAt: u.sharingConsentedAt ? u.sharingConsentedAt.toISOString() : null,
+      sharingConsentedPolicyVersion: u.sharingConsentedPolicyVersion,
     };
     const organization: SessionOrg = {
       id: u.org.id, name: u.org.name, logoUrl: u.org.logoUrl, region: u.org.region,

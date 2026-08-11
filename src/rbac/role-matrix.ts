@@ -15,6 +15,14 @@ export const PERMISSION_MODULES = [
   // Reviewer's approve/reject decision; `write` = System Admin's
   // generate/publish actions.
   'ncnpReport',
+  // RIO-NFR-016 — the persisted operational log (system_logs). Deliberately
+  // not folded into archiveSharingAudit: that module is held read-only by
+  // ngo_admin, center_supervisor, data_analyst and others, and operational
+  // rows carry stack traces, internal paths and integration detail that
+  // belong to platform operations rather than tenant governance. Granted to
+  // system_admin alone — see the `fullAccess()` exclusion below, which stops
+  // NGO Admin inheriting it by default.
+  'systemLogs',
 ] as const;
 export type PermissionModule = (typeof PERMISSION_MODULES)[number];
 export type PermissionAction = 'read' | 'write' | 'create' | 'approve' | 'export' | 'share';
@@ -32,10 +40,21 @@ interface Grant { read?: boolean; write?: boolean; create?: boolean; approve?: b
 function perm(module: PermissionModule, g: Grant = {}): ModulePermission {
   return { module, read: g.read ?? false, write: g.write ?? false, create: g.create ?? false, approve: g.approve ?? false, export: g.export ?? false, share: g.share ?? false };
 }
-// "Full access to every module within its own entity" — `ncnpReport` is
-// explicitly excluded (left at no access) since it's the one module that
-// isn't entity-scoped at all: it's the cross-org, kingdom-wide NCNP
-// Compiled Report, gated to System Admin/System Reviewer only. Without
+// Modules that are NOT entity-scoped, and so must never be handed out by
+// the "full access within its own entity" helper below:
+//
+// - `ncnpReport` — the cross-org, kingdom-wide NCNP Compiled Report,
+//   gated to System Admin / System Reviewer.
+// - `systemLogs` — RIO-NFR-016 platform operational telemetry (stack
+//   traces, internal paths, cross-tenant), gated to System Admin.
+//
+// Every future non-entity-scoped module belongs in this list too. See the
+// bug note below for why the default has to be exclusion.
+const NON_ENTITY_MODULES: readonly PermissionModule[] = ['ncnpReport', 'systemLogs'];
+
+// "Full access to every module within its own entity" — the modules above are
+// explicitly excluded (left at no access) since they aren't entity-scoped at
+// all. Without
 // this exclusion, NGO Admin (the only role using this helper) silently
 // inherited full read/write/approve/export on it the moment `ncnpReport`
 // was added to `PERMISSION_MODULES` — a real bug: the backend's own
@@ -45,7 +64,7 @@ function perm(module: PermissionModule, g: Grant = {}): ModulePermission {
 // category filter/column) to a role that could never act on them.
 function fullAccess(): ModulePermission[] {
   return PERMISSION_MODULES.map((m) =>
-    m === 'ncnpReport' ? perm(m) : perm(m, { read: true, write: true, create: true, approve: true, export: true, share: true }),
+    NON_ENTITY_MODULES.includes(m) ? perm(m) : perm(m, { read: true, write: true, create: true, approve: true, export: true, share: true }),
   );
 }
 const RO: Grant = { read: true };
@@ -100,7 +119,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('dataImport'), perm('citizenChannel'), perm('aiReview'), perm('priorityScoring'),
     perm('reportsDashboards'), perm('archiveSharingAudit'), perm('surveyBuilder'), perm('ncnpReport'),
   ] },
-  { id: 'role_human_reviewer', key: 'human_reviewer', name: 'Reviewer/Approver', description: 'Approves or rejects (with comments) a finalized Survey before it publishes.', crossEntity: false, permissions: [
+  { id: 'role_human_reviewer', key: 'human_reviewer', name: 'Human Reviewer', description: 'Approves or rejects (with comments) a finalized Survey before it publishes.', crossEntity: false, permissions: [
     perm('entityTeam'), perm('rolesPermissions'), perm('onboardingConsent'),
     perm('methodologyQuestionBank', RO),
     // `create` (not full `write`) — once a survey is published, the
@@ -145,7 +164,12 @@ export const ROLE_MATRIX: RoleDef[] = [
   ] },
   { id: 'role_data_analyst', key: 'data_analyst', name: 'Data Analyst', description: 'Processes data, reviews quality, and prepares reports and dashboards.', crossEntity: false, permissions: [
     perm('entityTeam'), perm('rolesPermissions'), perm('onboardingConsent'),
-    perm('methodologyQuestionBank', RO), perm('studySurvey', RO), perm('dataCollection', RO),
+    perm('methodologyQuestionBank', RO), perm('studySurvey', RO),
+    // RIO-DATA-003 (client-requested widening): Data Analyst can create
+    // Needs directly, alongside NGO Research Officer/Field Researcher — a
+    // temporary widening ("we will change that later" per the request),
+    // not a permanent role-scope decision.
+    perm('dataCollection', { read: true, write: true, create: true }),
     perm('dataImport', { read: true, write: true, create: true }), perm('citizenChannel'),
     perm('aiReview', RO),
     perm('priorityScoring', { read: true, write: true, create: true, approve: true, export: true }),
@@ -156,13 +180,27 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('entityTeam', { read: true, write: true, create: true, export: true }),
     perm('rolesPermissions', RO), perm('onboardingConsent', RO), perm('methodologyQuestionBank', RO),
     perm('studySurvey', RO), perm('dataCollection', RO), perm('dataImport', RO), perm('citizenChannel', RO),
-    perm('aiReview', RO), perm('priorityScoring', RO), perm('reportsDashboards', RO), perm('archiveSharingAudit', RO),
+    perm('aiReview', RO), perm('priorityScoring', RO), perm('reportsDashboards', RO),
+    // `export` (on top of `read`) — RIO-FR-007: the BRD names System Admin as
+    // the role that "manages ... the audit log", but this grant was read-only,
+    // so the one role responsible for the audit log couldn't download it. The
+    // audit CSV export (AuditController's GET /audit/export) is gated on
+    // exactly `archiveSharingAudit:export`, and that action gates nothing else
+    // in this module — Archive is read-only and Sharing uses create/approve —
+    // so this widens audit export only, not Archive or Sharing.
+    perm('archiveSharingAudit', { read: true, export: true }),
     perm('surveyBuilder'),
     // Generate a new NCNP Compiled Report snapshot for review, and publish
     // one a System Reviewer has already approved — `write` covers both
     // (this role never Approves/Rejects itself; that's exclusively
     // system_reviewer's `approve` bit below).
     perm('ncnpReport', { read: true, write: true }),
+    // RIO-NFR-016 — the operational log. System Admin is the only role that
+    // holds this module at all: the rows carry stack traces, internal
+    // paths and cross-tenant detail. `export` gates the CSV download only
+    // (GET /system-logs/export); there is no write action to grant, since
+    // the table has no HTTP write path by design.
+    perm('systemLogs', { read: true, export: true }),
   ] },
   { id: 'role_read_only_viewer', key: 'read_only_viewer', name: 'Read-only Viewer', description: 'Views authorized outputs without editing.', crossEntity: false, permissions: [
     perm('entityTeam'), perm('rolesPermissions'), perm('onboardingConsent'),
@@ -170,24 +208,27 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('dataImport', RO), perm('citizenChannel'), perm('aiReview', RO), perm('priorityScoring', RO),
     perm('reportsDashboards', { read: true, export: true }), perm('archiveSharingAudit', RO), perm('surveyBuilder'), perm('ncnpReport'),
   ] },
-  { id: 'role_center_supervisor', key: 'center_supervisor', name: 'Center Supervisor', description: 'Cross-entity supervisory authority to follow studies, data, and reports for quality.', crossEntity: true, permissions: [
+  // RIO-RBAC-001 (client-confirmed): "Center supervisor / NCNP supervisor"
+  // is one combined role in the client's own Roles & Permissions sheet, not
+  // two — "Program Supervisor" and "NCNP User" were built as separate roles
+  // without that confirmation. The client's answer: one combined role,
+  // cross-entity view/follow authority only, no edit rights on entity data.
+  // `role_ncnp_user` (previously a separate role here) is retired — no
+  // seeded or real user was ever assigned it (checked before removing), and
+  // its own access was actually broken: the NCNP Compiled Report controller
+  // gates on `archiveSharingAudit:read`, which the old ncnp_user grant
+  // didn't hold (every module was `perm(m)` with no grant) — this role's
+  // read access, including crossEntity: true here, already covers exactly
+  // what NCNP viewing needs (assertCrossEntity() is the report's own
+  // additional check — see NcnpReportService).
+  { id: 'role_center_supervisor', key: 'center_supervisor', name: 'Center Supervisor (NCNP Supervisor)', description: 'Cross-entity view/follow authority to monitor studies, data, reports and the NCNP Compiled Report — no edit rights on entity data.', crossEntity: true, permissions: [
     perm('entityTeam', RO), perm('rolesPermissions'), perm('onboardingConsent'),
     perm('methodologyQuestionBank', RO), perm('studySurvey', RO), perm('dataCollection', RO),
     perm('dataImport', RO), perm('citizenChannel'), perm('aiReview', RO), perm('priorityScoring', RO),
     perm('reportsDashboards', { read: true, export: true }), perm('archiveSharingAudit', RO), perm('surveyBuilder'), perm('ncnpReport'),
   ] },
-  { id: 'role_citizen_guest', key: 'citizen_guest', name: 'Citizen / Beneficiary Guest', description: 'Submits a need as a data source via OTP; not added before human review.', crossEntity: false,
+  { id: 'role_citizen_guest', key: 'citizen_guest', name: 'Citizen / Beneficiary Guest', description: 'Responds to surveys through OTP verification; no internal application access.', crossEntity: false,
     permissions: PERMISSION_MODULES.map((m) => (m === 'citizenChannel' ? perm(m, { create: true }) : perm(m))) },
-  // National Council for NGO Partnerships viewer — deliberately the
-  // narrowest cross-entity role: `crossEntity: true` alone is what unlocks
-  // the NCNP Compiled Report (its access check is `assertCrossEntity()`,
-  // not a `reportsDashboards` permission — see NcnpReportService), and every
-  // other module is left with no access at all, unlike System Admin/Center
-  // Supervisor which are broader operational roles that happen to also
-  // qualify. This role sees the NCNP Compiled Report only, nothing else —
-  // no RPT01-14 report list, no org/study/survey management.
-  { id: 'role_ncnp_user', key: 'ncnp_user', name: 'NCNP User', description: 'Views the national, kingdom-wide NCNP Compiled Report. No access to any other module.', crossEntity: true,
-    permissions: PERMISSION_MODULES.map((m) => perm(m)) },
   // System Reviewer — reviews the NCNP Compiled Report before it publishes
   // (System Admin generates -> System Reviewer approves/rejects with
   // mandatory notes -> System Admin does the final publish; see

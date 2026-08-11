@@ -4,6 +4,7 @@ import { Prisma, RejectionReasonCode } from '../../generated/prisma';
 import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { roleByKey } from '../../rbac/role-matrix';
 import { AuditService } from '../audit/audit.service';
+import type { AuditChange } from '../audit/audit.types';
 import { AiService } from '../ai/ai.service';
 import { SURVEY_QUESTION_RECOMMENDATION_TASK } from '../ai/prompts/survey-question-recommendation.task';
 import { MethodologyConfigService } from '../methodology-config/methodology-config.service';
@@ -137,8 +138,13 @@ export class SurveysService {
   // — nothing about a link points at a frozen snapshot.
   async getPublishedSurveyByNeedId(needId: string) {
     return this.tenant.runAsSupervisor(async (tx) => {
+      // RIO-FR-011: a Need can have more than one PUBLISHED survey row once
+      // a version is superseded (the old version keeps its own PUBLISHED
+      // status forever — see createNewVersion) — `version: 'desc'` picks the
+      // one actually collecting responses right now.
       const survey = await tx.survey.findFirst({
         where: { needId, status: 'PUBLISHED' },
+        orderBy: { version: 'desc' },
         include: {
           surveyQuestions: {
             orderBy: { order: 'asc' },
@@ -161,8 +167,12 @@ export class SurveysService {
 
   async getSurveyByNeedId(needId: string) {
     const row = await this.tenant.runInOrgContext(async (tx) => {
+      // RIO-FR-011: multiple versions can exist for one Need once at least
+      // one has been superseded (see createNewVersion) — always resolve to
+      // the latest version for Survey Builder/management screens.
       const survey = await tx.survey.findFirst({
         where: { needId },
+        orderBy: { version: 'desc' },
         include: {
           surveyQuestions: {
             orderBy: { order: 'asc' },
@@ -177,9 +187,71 @@ export class SurveysService {
     return this.toSurveyDetailDto(row);
   }
 
+  // Org-scoped counterpart to getPublishedSurveyByNeedId (which runs
+  // cross-org for the citizen flow) — this is what internal screens that
+  // display "the currently live survey" (Response Summary, the public
+  // survey link's status) must call instead of getSurveyByNeedId. Once a
+  // DRAFT v2 exists, getSurveyByNeedId's "latest version" resolution starts
+  // returning v2 even though v1 is still the one actually collecting
+  // responses; that mismatch is what made a still-published v1 look
+  // unpublished/empty in those screens (RIO-FR-011 regression).
+  async getPublishedSurveyForOrgByNeedId(needId: string) {
+    const row = await this.tenant.runInOrgContext(async (tx) => {
+      const survey = await tx.survey.findFirst({
+        where: { needId, status: 'PUBLISHED' },
+        orderBy: { version: 'desc' },
+        include: {
+          surveyQuestions: {
+            orderBy: { order: 'asc' },
+            include: { question: true },
+          },
+        },
+      });
+      return survey;
+    });
+
+    if (!row) return null;
+    return this.toSurveyDetailDto(row);
+  }
+
+  // Every survey version ever created for a Need, each labeled with how
+  // many of the Need's responses actually belong to it. A SurveyResponse
+  // isn't tagged with a survey/version id directly — its `answers` JSON is
+  // keyed by whichever version's SurveyQuestion ids were live at submission
+  // (see buildQuestionMap's comment in public-surveys.service.ts for the
+  // same fact from the other side) — so membership is derived by checking
+  // which version's question-id set a response's answer keys land in.
+  async listSurveyVersionsByNeedId(needId: string) {
+    return this.tenant.runInOrgContext(async (tx) => {
+      const [surveys, responses] = await Promise.all([
+        tx.survey.findMany({
+          where: { needId },
+          orderBy: { version: 'asc' },
+          include: { surveyQuestions: { select: { id: true } } },
+        }),
+        tx.surveyResponse.findMany({ where: { needId }, select: { answers: true } }),
+      ]);
+      return surveys.map((survey) => {
+        const questionIds = new Set(survey.surveyQuestions.map((sq) => sq.id));
+        const responseCount = responses.filter((r) => {
+          const rawAnswers = (r.answers ?? {}) as Record<string, unknown>;
+          return Object.keys(rawAnswers).some((id) => questionIds.has(id));
+        }).length;
+        return {
+          id: survey.id,
+          version: survey.version,
+          status: survey.status,
+          title: survey.title,
+          responseCount,
+        };
+      });
+    });
+  }
+
   private async toSurveyDetailDto(row: {
     id: string; needId: string; studyId: string; title: string; status: string;
     methodologyVersion: string | null;
+    version: number; previousVersionId: string | null;
     targetGroup: string | null;
     expectedSampleSize: number | null;
     selectionApproach: string | null;
@@ -202,6 +274,8 @@ export class SurveysService {
       title: row.title,
       status: row.status,
       methodologyVersion: row.methodologyVersion,
+      version: row.version,
+      previousVersionId: row.previousVersionId,
       targetGroup: row.targetGroup,
       expectedSampleSize: row.expectedSampleSize,
       selectionApproach: row.selectionApproach,
@@ -253,7 +327,9 @@ export class SurveysService {
       }
       this.assertClassificationApproved(need.status);
 
-      const existing = await tx.survey.findFirst({ where: { needId } });
+      // RIO-FR-011: a Need can have more than one Survey row now
+      // (versioning) — always resolve to the latest version.
+      const existing = await tx.survey.findFirst({ where: { needId }, orderBy: { version: 'desc' } });
       if (existing) return { survey: existing, created: false };
 
       const row = await tx.survey.create({
@@ -269,6 +345,12 @@ export class SurveysService {
         entityType: 'survey',
         entityId: survey.id,
         entityLabel: `Manually created ${survey.title}`,
+        // before: null on a create — records the survey's opening state so
+        // the audit detail view is not blank for created events.
+        changes: [
+          { field: 'Title', before: null, after: survey.title },
+          { field: 'Status', before: null, after: survey.status },
+        ],
       });
     }
 
@@ -400,7 +482,10 @@ export class SurveysService {
       // lets them override while it's SUBMITTED — see
       // ai-classification-section.tsx's overrideDisabledForResearcher for
       // the matching frontend-side gate.
-      const existingSurvey = await tx.survey.findFirst({ where: { needId } });
+      // RIO-FR-011: resolve to the latest version — once a new DRAFT version
+      // exists for a previously-published Need, this guard should govern
+      // that draft, not the (now superseded-or-still-published) original.
+      const existingSurvey = await tx.survey.findFirst({ where: { needId }, orderBy: { version: 'desc' } });
       if (existingSurvey?.status === 'PUBLISHED') {
         throw new ConflictException({
           error: {
@@ -507,7 +592,7 @@ Eligible Questions: ${JSON.stringify(
 
     // Create-or-update, never a second Survey row for the same Need.
     const survey = await this.tenant.runInOrgContext(async (tx) => {
-      let existingSurvey = await tx.survey.findFirst({ where: { needId } });
+      let existingSurvey = await tx.survey.findFirst({ where: { needId }, orderBy: { version: 'desc' } });
       if (!existingSurvey) {
         existingSurvey = await tx.survey.create({
           data: {
@@ -548,6 +633,11 @@ Eligible Questions: ${JSON.stringify(
       entityType: 'survey',
       entityId: survey.id,
       entityLabel: `AI recommended questions for ${survey.title}`,
+      changes: [
+        { field: 'Title', before: null, after: survey.title },
+        { field: 'Status', before: null, after: survey.status },
+        { field: 'Origin', before: null, after: 'AI-recommended questions' },
+      ],
     });
 
     const result = await this.getSurveyByNeedId(needId);
@@ -592,6 +682,8 @@ Eligible Questions: ${JSON.stringify(
     // reorder/custom) right up to Approve & Publish or Reject. Same role
     // split as overrideDomainPreview/generateSuggestedQuestions.
     const allowWhileSubmitted = getOrgStore()?.role !== 'ngo_research_officer';
+    // Assigned inside the transaction, read by the audit record after it commits.
+    let previousQuestionCount = 0;
     const needId = await this.tenant.runInOrgContext(async (tx) => {
       const survey = await tx.survey.findUnique({ where: { id: surveyId } });
       if (!survey) {
@@ -602,6 +694,8 @@ Eligible Questions: ${JSON.stringify(
       // Re-create the links using the incoming array — the whole ordered
       // list (Question Bank + additional questions together) is the unit of
       // save, per the Survey Builder's single Save action.
+      // Counted before the wholesale delete below, for the audit pair.
+      previousQuestionCount = await tx.surveyQuestion.count({ where: { surveyId } });
       await tx.surveyQuestion.deleteMany({ where: { surveyId } });
       await tx.surveyQuestion.createMany({
         data: questions.map((q) => ({
@@ -632,6 +726,10 @@ Eligible Questions: ${JSON.stringify(
       entityType: 'survey',
       entityId: surveyId,
       entityLabel: `Survey questions updated manually`,
+      // Question sets are lists, not scalar fields — the before/after pair is
+      // the count, which is what a reviewer scans for ("did someone strip the
+      // questionnaire down?"). The questions themselves live on the survey.
+      changes: [{ field: 'Question count', before: previousQuestionCount, after: questions.length }],
     });
 
     return this.getSurveyByNeedId(needId);
@@ -660,6 +758,91 @@ Eligible Questions: ${JSON.stringify(
     }
   }
 
+  // RIO-FR-011 (client-confirmed): the only way to change a PUBLISHED
+  // survey's content — creates a new DRAFT version instead of editing in
+  // place. The old (PUBLISHED) row's questions and every response already
+  // attached to it are never touched — only its `status` moves, to
+  // SUPERSEDED, once and only once the new version itself gets published
+  // (see approveAndPublish below), so scoring/reporting/citizen-link
+  // resolution keep their existing "exactly one PUBLISHED survey per need"
+  // assumption. The new version starts as a copy of the old one's
+  // questions/methodology/sample-description so the Researcher edits from a
+  // known-good starting point rather than an empty survey.
+  async createNewVersion(surveyId: string) {
+    const actorId = requireActor();
+
+    const { newSurveyId, needId } = await this.tenant.runInOrgContext(async (tx) => {
+      const survey = await tx.survey.findUnique({
+        where: { id: surveyId },
+        include: { surveyQuestions: true },
+      });
+      if (!survey) {
+        throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
+      }
+      if (survey.status !== 'PUBLISHED') {
+        throw new ConflictException({
+          error: {
+            code: 'SURVEY_NOT_PUBLISHED',
+            message: 'A new version can only be created from a published survey — this one is already editable directly.',
+          },
+        });
+      }
+      // previousVersionId is @unique — at most one newer version can point
+      // back at this row. Don't silently create a second one; hand back the
+      // one that already exists so the caller continues editing that.
+      const existingNextVersion = await tx.survey.findUnique({ where: { previousVersionId: surveyId } });
+      if (existingNextVersion) {
+        return { newSurveyId: existingNextVersion.id, needId: survey.needId };
+      }
+
+      const created = await tx.survey.create({
+        data: {
+          orgId: survey.orgId,
+          needId: survey.needId,
+          studyId: survey.studyId,
+          title: survey.title,
+          status: 'DRAFT',
+          methodologyVersion: survey.methodologyVersion,
+          targetGroup: survey.targetGroup,
+          expectedSampleSize: survey.expectedSampleSize,
+          selectionApproach: survey.selectionApproach,
+          geographicCoverage: survey.geographicCoverage,
+          version: survey.version + 1,
+          previousVersionId: survey.id,
+          createdBy: actorId,
+        },
+      });
+      if (survey.surveyQuestions.length > 0) {
+        await tx.surveyQuestion.createMany({
+          data: survey.surveyQuestions.map((sq) => ({
+            surveyId: created.id,
+            questionId: sq.questionId,
+            customText: sq.customText,
+            customAnswerType: sq.customAnswerType,
+            customOptions: sq.customOptions as Prisma.InputJsonValue,
+            domain: sq.domain,
+            subDomain: sq.subDomain,
+            kpi: sq.kpi,
+            order: sq.order,
+            isRequired: sq.isRequired,
+          })),
+        });
+      }
+      return { newSurveyId: created.id, needId: survey.needId };
+    });
+
+    await this.audit.record({
+      action: 'create',
+      entityType: 'survey',
+      entityId: newSurveyId,
+      entityLabel: `New survey version created from ${surveyId}`,
+      metadata: this.actorRoleMetadata(),
+      changes: [{ field: 'Previous version', before: null, after: surveyId }],
+    });
+
+    return this.getSurveyByNeedId(needId);
+  }
+
   // Researcher: picks the Methodology Version this survey will publish
   // under — mandatory before submitForApproval will allow SUBMITTED (see
   // below). The Approver never calls this; they only review/publish
@@ -673,14 +856,15 @@ Eligible Questions: ${JSON.stringify(
       });
     }
 
-    const needId = await this.tenant.runInOrgContext(async (tx) => {
+    const { needId, previousVersion } = await this.tenant.runInOrgContext(async (tx) => {
       const survey = await tx.survey.findUnique({ where: { id: surveyId } });
       if (!survey) {
         throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
       }
       this.assertEditable(survey.status);
       await tx.survey.update({ where: { id: surveyId }, data: { methodologyVersion: version } });
-      return survey.needId;
+      // Read before the update overwrites it — the "before" half of the pair.
+      return { needId: survey.needId, previousVersion: survey.methodologyVersion };
     });
 
     await this.audit.record({
@@ -689,6 +873,7 @@ Eligible Questions: ${JSON.stringify(
       entityId: surveyId,
       entityLabel: `Methodology Version set to "${version}"`,
       metadata: this.actorRoleMetadata(),
+      changes: [{ field: 'Methodology version', before: previousVersion, after: version }],
     });
 
     return this.getSurveyByNeedId(needId);
@@ -706,12 +891,25 @@ Eligible Questions: ${JSON.stringify(
     selectionApproach: string,
     geographicCoverage: string,
   ) {
+    // Only genuinely changed fields are recorded, so the audit entry shows
+    // what the editor actually altered rather than restating all four.
+    let sampleChanges: AuditChange[] = [];
     const needId = await this.tenant.runInOrgContext(async (tx) => {
       const survey = await tx.survey.findUnique({ where: { id: surveyId } });
       if (!survey) {
         throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
       }
       this.assertEditable(survey.status);
+      sampleChanges = (
+        [
+          ['Target group', survey.targetGroup, targetGroup],
+          ['Expected sample size', survey.expectedSampleSize, expectedSampleSize],
+          ['Selection approach', survey.selectionApproach, selectionApproach],
+          ['Geographic coverage', survey.geographicCoverage, geographicCoverage],
+        ] as Array<[string, unknown, unknown]>
+      )
+        .filter(([, before, after]) => before !== after)
+        .map(([field, before, after]) => ({ field, before, after }));
       await tx.survey.update({
         where: { id: surveyId },
         data: { targetGroup, expectedSampleSize, selectionApproach, geographicCoverage },
@@ -725,6 +923,7 @@ Eligible Questions: ${JSON.stringify(
       entityId: surveyId,
       entityLabel: 'Sample Description updated',
       metadata: this.actorRoleMetadata(),
+      changes: sampleChanges,
     });
 
     return this.getSurveyByNeedId(needId);
@@ -795,6 +994,7 @@ Eligible Questions: ${JSON.stringify(
       entityId: surveyId,
       entityLabel: 'Survey submitted for approval',
       metadata: this.actorRoleMetadata(),
+      changes: [{ field: 'Status', before: 'DRAFT', after: 'SUBMITTED' }],
     });
 
     return updated;
@@ -843,6 +1043,21 @@ Eligible Questions: ${JSON.stringify(
         },
       });
       await tx.need.update({ where: { id: survey.needId }, data: { status: 'survey_published' } });
+
+      // RIO-FR-011: publishing a new version supersedes the version it was
+      // created from — without this, both rows would sit at PUBLISHED for
+      // the same needId at once, and every "find the published survey for
+      // this need" query elsewhere (scoring, priority calc, reports,
+      // NCNP counts, citizen link resolution) would become non-deterministic
+      // about which one it picks. Only `status` changes here — questions and
+      // every response already attached to the old row are untouched, so
+      // already-scored responses are never recalculated.
+      if (survey.previousVersionId) {
+        await tx.survey.update({
+          where: { id: survey.previousVersionId },
+          data: { status: 'SUPERSEDED' },
+        });
+      }
       return row;
     });
 
@@ -1137,7 +1352,17 @@ Eligible Questions: ${JSON.stringify(
         orgId: s.need?.orgId ?? null,
         orgName: s.need?.org?.name ?? null,
         status: s.status,
-        responseCount: s.need?.surveyResponses?.length ?? 0,
+        version: s.version,
+        // RIO-FR-011: this count is need-scoped, not survey-scoped (see the
+        // schema note on SurveyResponse — it has no surveyId), so a DRAFT
+        // version created via createNewVersion would otherwise show the
+        // same non-zero count as the PUBLISHED version it was copied from,
+        // even though a DRAFT has never gone live and could never actually
+        // have collected any of them. Zero it out for anything that isn't
+        // PUBLISHED/SUPERSEDED so the survey picker (this list) doesn't
+        // point report generation at a version with no real data.
+        responseCount:
+          s.status === 'PUBLISHED' || s.status === 'SUPERSEDED' ? (s.need?.surveyResponses?.length ?? 0) : 0,
         publishedAt: s.publishedAt ? s.publishedAt.toISOString() : null,
         // Survey has no `closedAt` column (never did) — kept as a literal
         // null so the response shape is unchanged rather than dropping the
@@ -1162,7 +1387,7 @@ Eligible Questions: ${JSON.stringify(
           org: true,
           priorityScores: { take: 1, orderBy: { scoredAt: 'desc' as const } },
           _count: { select: { evidence: true } },
-          surveyResponses: { select: { id: true, channel: true, createdAt: true } },
+          surveyResponses: { select: { id: true, submittedAt: true } },
         },
       },
       surveyQuestions: { include: { question: true }, orderBy: { order: 'asc' as const } },
@@ -1194,7 +1419,12 @@ Eligible Questions: ${JSON.stringify(
     }
 
     const questions = (survey.surveyQuestions ?? []).map((sq) => this.toQuestionDto(sq));
-    const responses = survey.need?.surveyResponses ?? [];
+    // RIO-FR-011: need-scoped, not survey-scoped (see listSurveys' matching
+    // note) — a DRAFT version has never gone live, so it structurally can't
+    // own any of the Need's responses even though the count itself is
+    // shared across every version.
+    const responses =
+      survey.status === 'PUBLISHED' || survey.status === 'SUPERSEDED' ? (survey.need?.surveyResponses ?? []) : [];
 
     return {
       id: survey.id,
@@ -1207,6 +1437,8 @@ Eligible Questions: ${JSON.stringify(
       village: Array.isArray(survey.need?.village) ? survey.need.village.join(', ') : (survey.need?.village ?? '—'),
       domainCategory: survey.need?.domain ?? survey.need?.aiSuggestedDomain ?? '—',
       status: survey.status,
+      version: survey.version,
+      previousVersionId: survey.previousVersionId,
       // Survey has no `publicToken` field — the citizen-facing public link
       // token lives on PublicSurveyLink (a separate model, see
       // public-surveys.service.ts), which this query doesn't join. Kept as a
@@ -1219,10 +1451,19 @@ Eligible Questions: ${JSON.stringify(
       evidenceCount: survey.need?._count?.evidence ?? 0,
       score: survey.need?.priorityScores?.[0]?.overallScore ?? null,
       questions,
+      // Pre-existing bug (unrelated to survey versioning, found while adding
+      // the FR-011 e2e test): this was selecting a `channel` field that has
+      // never existed on SurveyResponse, 500ing this endpoint for any survey
+      // with responses. There is currently no field anywhere that
+      // distinguishes a citizen self-submission from a field-collector one —
+      // reporting that split accurately needs a real schema addition, out of
+      // scope here. Reporting everything as field-collector is the closest
+      // safe placeholder given today's live traffic (the citizen OTP channel
+      // is soft-disabled) rather than a fabricated split.
       responsesSummary: {
         total: responses.length,
-        citizenChannelCount: responses.filter((r) => r.channel === 'citizen').length,
-        fieldCollectorCount: responses.filter((r) => r.channel !== 'citizen').length,
+        citizenChannelCount: 0,
+        fieldCollectorCount: responses.length,
       },
       publishedAt: survey.publishedAt ? survey.publishedAt.toISOString() : null,
       // Survey has no `closedAt` column (never did) — see the matching note
