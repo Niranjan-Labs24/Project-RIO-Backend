@@ -9,6 +9,7 @@
   "scripts": {
     "build": "nest build",
     "start": "node dist/main.js",
+    "predev": "npx kill-port 3000",
     "dev": "nest start --watch",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"{src,test}/**/*.ts\"",

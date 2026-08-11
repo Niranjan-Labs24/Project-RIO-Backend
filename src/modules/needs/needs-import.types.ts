@@ -14,3 +14,27 @@ export interface ImportNeedsResult {
   failed: number;
   errors: ImportNeedRowError[];
 }
+
+export interface ParsedPdfNeedItem {
+  id: string;
+  title: string;
+  statement: string;
+  village?: string;
+  referenceId?: string;
+}
+
+export interface PdfPreviewResult {
+  totalExtracted: number;
+  needs: ParsedPdfNeedItem[];
+}
+
+export interface BulkImportNeedItem {
+  title: string;
+  statement: string;
+  village?: string;
+  referenceId?: string;
+}
+
+export interface BulkImportNeedsPayload {
+  needs: BulkImportNeedItem[];
+}
