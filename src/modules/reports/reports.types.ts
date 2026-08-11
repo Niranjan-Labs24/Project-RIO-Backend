@@ -65,6 +65,7 @@ export interface ReportRow {
   officerConfirmedAt: Date | null;
   reviewedBy: string | null;
   reviewedAt: Date | null;
+  reviewerNotes: string | null;
   archivedAt: Date | null;
 }
 
@@ -92,6 +93,9 @@ export interface Report {
   // audit clarity — who, in what capacity, approved the report.
   reviewedByRole: string | null;
   reviewedAt: string | null;
+  // Mandatory on both approve and reject (RIO-FR-007 clarification: notes
+  // requirement extends to all four report categories).
+  reviewerNotes: string | null;
   archivedAt: string | null;
   exportFormats: ExportFormat[];
 }

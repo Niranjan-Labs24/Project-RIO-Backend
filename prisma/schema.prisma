@@ -1392,6 +1392,10 @@ model Report {
   officerConfirmedAt DateTime? @map("officer_confirmed_at") @db.Timestamptz(6)
   reviewedBy   String?      @map("reviewed_by") @db.Uuid
   reviewedAt   DateTime?    @map("reviewed_at") @db.Timestamptz(6)
+  // Mandatory on both approve and reject (RIO-FR-007 clarification: the
+  // notes requirement extends to all four report categories, not just the
+  // NCNP Compiled Report) — see ReportsService.approve/reject.
+  reviewerNotes String?     @map("reviewer_notes")
   archivedAt   DateTime?    @map("archived_at") @db.Timestamptz(6)
 
   org    Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
