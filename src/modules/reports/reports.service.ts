@@ -5,6 +5,7 @@ import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { getOrgStore, requireActor, requireOrgId } from "../../tenancy/org-context";
 import { can, ROLE_MATRIX } from "../../rbac/role-matrix";
 import { AuditService } from "../audit/audit.service";
+import { requireNonBlank } from "../../common/validation/require-non-blank";
 import {
   buildPlaceholderReport,
   buildExportStub,
@@ -297,7 +298,11 @@ export class ReportsService {
   }
 
   // Reviewer approves → released. Requires a prior officer confirm (two-step).
-  async approve(id: string): Promise<Report> {
+  // Notes mandatory (RIO-FR-007 clarification, Aug 4): extends the
+  // NCNP-Compiled-Report-only notes rule to all four report categories —
+  // same shared blank-check as NcnpReportReviewService/SurveysService.
+  async approve(id: string, notes: string): Promise<Report> {
+    requireNonBlank(notes, "REVIEWER_NOTES_REQUIRED", "Reviewer notes are required.");
     const reviewer = requireActor();
     const existing = await this.findOrThrow(id);
     if (existing.status !== "draft") {
@@ -311,19 +316,24 @@ export class ReportsService {
       });
     }
     const row = await this.tenant.runInOrgContext((tx) =>
-      tx.report.update({ where: { id }, data: { status: "released", reviewedBy: reviewer, reviewedAt: new Date() } }),
+      tx.report.update({
+        where: { id },
+        data: { status: "released", reviewedBy: reviewer, reviewedAt: new Date(), reviewerNotes: notes },
+      }),
     );
     await this.audit.record({
       action: "approve", entityType: "report", entityId: row.id, entityLabel: row.title,
       metadata: { status: "released" },
       changes: [
         { field: "Status", before: existing.status, after: row.status },
+        { field: "Reviewer Notes", before: null, after: notes },
       ],
     });
     return this.hydrateOne(row as unknown as ReportRow);
   }
 
-  async reject(id: string): Promise<Report> {
+  async reject(id: string, notes: string): Promise<Report> {
+    requireNonBlank(notes, "REVIEWER_NOTES_REQUIRED", "Reviewer notes are required.");
     const reviewer = requireActor();
     const existing = await this.findOrThrow(id);
     if (existing.status !== "draft") {
@@ -332,13 +342,17 @@ export class ReportsService {
       });
     }
     const row = await this.tenant.runInOrgContext((tx) =>
-      tx.report.update({ where: { id }, data: { status: "rejected", reviewedBy: reviewer, reviewedAt: new Date() } }),
+      tx.report.update({
+        where: { id },
+        data: { status: "rejected", reviewedBy: reviewer, reviewedAt: new Date(), reviewerNotes: notes },
+      }),
     );
     await this.audit.record({
       action: "approve", entityType: "report", entityId: row.id, entityLabel: row.title,
       metadata: { status: "rejected" },
       changes: [
         { field: "Status", before: existing.status, after: row.status },
+        { field: "Reviewer Notes", before: null, after: notes },
       ],
     });
     return this.hydrateOne(row as unknown as ReportRow);
@@ -906,6 +920,7 @@ export class ReportsService {
       reviewedByName: row.reviewedBy ? (nameById.get(row.reviewedBy)?.name ?? null) : null,
       reviewedByRole: row.reviewedBy ? (nameById.get(row.reviewedBy)?.role ?? null) : null,
       reviewedAt: row.reviewedAt ? row.reviewedAt.toISOString() : null,
+      reviewerNotes: row.reviewerNotes,
       archivedAt: row.archivedAt ? row.archivedAt.toISOString() : null,
       exportFormats: meta.exportFormats,
     };

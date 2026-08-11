@@ -72,6 +72,7 @@ function seed(store: Map<string, ReportRow>, over: Partial<ReportRow> = {}): Rep
     officerConfirmedAt: null,
     reviewedBy: null,
     reviewedAt: null,
+    reviewerNotes: null,
     archivedAt: null,
     ...over,
   };
@@ -97,16 +98,24 @@ describe("ReportsService lifecycle (two-step approval)", () => {
 
   it("approve WITHOUT a prior officer confirm is rejected", async () => {
     seed(h.store);
-    await expect(asRole("ngo_admin", () => h.service.approve("rpt-1"))).rejects.toMatchObject({
+    await expect(asRole("ngo_admin", () => h.service.approve("rpt-1", "Looks good"))).rejects.toMatchObject({
       response: { error: { code: "REPORT_NOT_CONFIRMED" } },
     });
   });
 
   it("approve AFTER confirm releases the report", async () => {
     seed(h.store, { officerConfirmedBy: "officer-1", officerConfirmedAt: new Date() });
-    const r = await asRole("ngo_admin", () => h.service.approve("rpt-1"));
+    const r = await asRole("ngo_admin", () => h.service.approve("rpt-1", "Looks good"));
     expect(r.status).toBe("released");
     expect(r.reviewedBy).toBe("actor-1");
+    expect(r.reviewerNotes).toBe("Looks good");
+  });
+
+  it("approve rejects blank reviewer notes", async () => {
+    seed(h.store, { officerConfirmedBy: "officer-1", officerConfirmedAt: new Date() });
+    await expect(asRole("ngo_admin", () => h.service.approve("rpt-1", "   "))).rejects.toMatchObject({
+      response: { error: { code: "REVIEWER_NOTES_REQUIRED" } },
+    });
   });
 
   it("archive requires a released report, then makes it archived", async () => {
@@ -158,13 +167,21 @@ describe("ReportsService lifecycle (two-step approval)", () => {
 
   it("reject transitions a draft to rejected; only a draft can be rejected", async () => {
     seed(h.store, { status: "released" });
-    await expect(asRole("ngo_admin", () => h.service.reject("rpt-1"))).rejects.toMatchObject({
+    await expect(asRole("ngo_admin", () => h.service.reject("rpt-1", "Missing data"))).rejects.toMatchObject({
       response: { error: { code: "REPORT_NOT_DRAFT" } },
     });
     h.store.get("rpt-1")!.status = "draft";
-    const r = await asRole("ngo_admin", () => h.service.reject("rpt-1"));
+    const r = await asRole("ngo_admin", () => h.service.reject("rpt-1", "Missing data"));
     expect(r.status).toBe("rejected");
     expect(r.reviewedBy).toBe("actor-1");
+    expect(r.reviewerNotes).toBe("Missing data");
+  });
+
+  it("reject rejects blank reviewer notes", async () => {
+    seed(h.store, { status: "draft" });
+    await expect(asRole("ngo_admin", () => h.service.reject("rpt-1", ""))).rejects.toMatchObject({
+      response: { error: { code: "REVIEWER_NOTES_REQUIRED" } },
+    });
   });
 
   it("namesFor short-circuits without a user lookup when the result set is empty", async () => {

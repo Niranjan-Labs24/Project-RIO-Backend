@@ -99,7 +99,7 @@ describe("Reports lifecycle flow (RPT14 Village Report)", () => {
       .expect((r) => expect(r.body.error.code).toBe("REPORT_NOT_RELEASED"));
 
     // 3. Approving before officer-confirm is blocked (two-step guard).
-    await auth(request(server).patch(`/api/reports/${id}/approve`))
+    await auth(request(server).patch(`/api/reports/${id}/approve`).send({ notes: "Looks good" }))
       .expect(403)
       .expect((r) => expect(r.body.error.code).toBe("REPORT_NOT_CONFIRMED"));
 
@@ -108,10 +108,13 @@ describe("Reports lifecycle flow (RPT14 Village Report)", () => {
     expect(confirmed.body.status).toBe("draft");
     expect(confirmed.body.officerConfirmedAt).not.toBeNull();
 
-    // 5. Reviewer approves → released.
-    const released = await auth(request(server).patch(`/api/reports/${id}/approve`)).expect(200);
+    // 5. Reviewer approves → released. Notes are mandatory (RIO-FR-007).
+    const released = await auth(
+      request(server).patch(`/api/reports/${id}/approve`).send({ notes: "Looks good" }),
+    ).expect(200);
     expect(released.body.status).toBe("released");
     expect(released.body.reviewedAt).not.toBeNull();
+    expect(released.body.reviewerNotes).toBe("Looks good");
 
     // 6. Export PDF + Excel (now allowed) — save to disk.
     for (const [format, ext] of [["pdf", "pdf"], ["excel", "xlsx"]] as const) {
