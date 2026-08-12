@@ -1,0 +1,70 @@
+{
+  "_meta": {
+    "versionLabel": "v5.0 - Approved methodology baseline",
+    "purpose": "The workbook's own worked example (3 villages / 75 households / 13,800 synthetic rows). Reproducing these numbers is the only real proof the baseline is configured correctly — RIO-AI-005 acceptance criterion 1."
+  },
+  "counts": {
+    "totalQuestions": 193,
+    "fieldItems": 186,
+    "severityScoredItems": 166,
+    "householdFieldedItems": 184,
+    "domains": 9,
+    "subDomains": 44,
+    "indicators": 172,
+    "kpis": 167,
+    "feederItems": 20,
+    "diagnosticItems": 18,
+    "scoringLookupRows": 797,
+    "scoringLookupQuestions": 185,
+    "numericQuestions": 16,
+    "reversedNumericQuestions": 4,
+    "conditionalRules": 25,
+    "rosterLoops": 14,
+    "formerCodesMapped": 193
+  },
+  "priorityClassification": {
+    "rows": 438,
+    "villages": [
+      "Al-Daer Central",
+      "Al-Jumum North",
+      "Al-Makhwah Hills"
+    ],
+    "tierTotals": {
+      "Medium": 197,
+      "High": 61,
+      "Low": 145,
+      "Critical Gap": 35
+    },
+    "tiersByVillage": {
+      "Al-Jumum North": {
+        "Medium": 47,
+        "Low": 84,
+        "Critical Gap": 7,
+        "High": 8
+      },
+      "Al-Daer Central": {
+        "High": 11,
+        "Medium": 94,
+        "Low": 37,
+        "Critical Gap": 4
+      },
+      "Al-Makhwah Hills": {
+        "Medium": 56,
+        "Critical Gap": 24,
+        "High": 42,
+        "Low": 24
+      }
+    }
+  },
+  "villageScorecardAlJumumNorth": {
+    "Health": 27.8,
+    "Education": 35.8,
+    "Water & Sanitation": 42.9,
+    "Energy & Environment": 35.4,
+    "Livelihood": 39.1,
+    "Infrastructure": 49.2,
+    "Social Development": 33.8,
+    "Culture": 36.2,
+    "Governance & Services": 41.4
+  }
+}

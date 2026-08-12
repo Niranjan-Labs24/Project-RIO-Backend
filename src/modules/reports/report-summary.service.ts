@@ -393,12 +393,15 @@ export class ReportSummaryService {
       // KPI→domain link isn't carried on ScoreRollup (KPI rollups don't store
       // their parent domain), so we read it from the Question set: distinct
       // non-null `kpi` grouped by normalized domain. We use the SAME selector
-      // the scoring pipeline uses (`usedInMvp: true`, not methodologyVersionId —
-      // questions may carry a null methodologyVersionId) so this count reflects
-      // the real KPIs that actually fed the rollups. Keyed by normalized domain
-      // to join onto the domain rollups (whose entityId is the domain name).
+      // the scoring pipeline uses, now including methodologyVersionId: questions
+      // are version-scoped (RIO-AI-005), and `methodology_version_id` is NOT
+      // NULL as of 20260812090000, so the old "questions may carry a null
+      // version" caveat no longer holds. Without the filter this counted every
+      // imported bank's KPIs at once and inflated the denominator. Keyed by
+      // normalized domain to join onto the domain rollups (whose entityId is the
+      // domain name).
       const methodologyQuestions = await tx.question.findMany({
-        where: { usedInMvp: true, kpi: { not: null } },
+        where: { methodologyVersionId: mv.id, usedInMvp: true, kpi: { not: null } },
         select: { domain: true, kpi: true, indicator: true },
       });
 

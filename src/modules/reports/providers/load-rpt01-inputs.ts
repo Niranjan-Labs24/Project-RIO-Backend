@@ -35,11 +35,13 @@ export async function loadRpt01ReferenceData(
 
   return tenant.runInOrgContext(async (tx) => {
     const [questions, weights, surveyQuestions, answerStatuses] = await Promise.all([
-      // Same selector the scoring pipeline uses (`usedInMvp: true`, not
-      // methodologyVersionId — bank questions may carry a null version), so this
-      // hierarchy is the one that actually produced the rollups.
+      // Same selector the scoring pipeline uses, now version-scoped
+      // (RIO-AI-005): `methodology_version_id` is NOT NULL as of
+      // 20260812090000, so the old "bank questions may carry a null version"
+      // caveat no longer holds, and an unscoped read would mix a retired
+      // version's hierarchy into the one that actually produced these rollups.
       tx.question.findMany({
-        where: { usedInMvp: true },
+        where: { methodologyVersionId, usedInMvp: true },
         select: { id: true, questionId: true, domain: true, subDomain: true, indicator: true, kpi: true },
       }),
       tx.domainPriorityConfig.findMany({ where: { methodologyVersionId } }),

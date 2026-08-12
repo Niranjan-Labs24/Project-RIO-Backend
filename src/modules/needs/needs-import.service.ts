@@ -109,14 +109,22 @@ export class NeedsImportService {
     const orgId = requireOrgId();
     const createdBy = requireActor();
 
-    const { existingNeeds, studyTitle } = await this.tenant.runInOrgContext(async (tx) => {
-      const study = await tx.study.findUnique({ where: { id: studyId } });
+    const { existingNeeds, studyTitle, studyGovernorateIds, studyCenterIds } = await this.tenant.runInOrgContext(async (tx) => {
+      const study = await tx.study.findUnique({
+        where: { id: studyId },
+        include: { studyGovernorates: true, studyCenters: true },
+      });
       if (!study) throw new NotFoundException({ error: { code: 'STUDY_NOT_FOUND', message: 'Study not found' } });
       const existingNeeds = await tx.need.findMany({
         where: { studyId },
         select: { title: true, village: true, referenceId: true },
       });
-      return { existingNeeds, studyTitle: study.title };
+      return {
+        existingNeeds,
+        studyTitle: study.title,
+        studyGovernorateIds: (study.studyGovernorates ?? []).map((g) => g.governorateId),
+        studyCenterIds: (study.studyCenters ?? []).map((c) => c.centerId),
+      };
     });
 
     const items = payload.needs ?? [];
@@ -181,6 +189,16 @@ export class NeedsImportService {
               referenceId: referenceId || null,
               createdBy,
               status: 'pending_ai_classification',
+              needGovernorates: {
+                createMany: {
+                  data: studyGovernorateIds.map((governorateId) => ({ orgId, governorateId })),
+                },
+              },
+              needCenters: {
+                createMany: {
+                  data: studyCenterIds.map((centerId) => ({ orgId, centerId })),
+                },
+              },
             },
           }),
         );
@@ -204,6 +222,7 @@ export class NeedsImportService {
         entityType: 'need',
         entityId: studyId,
         entityLabel: `Bulk-imported ${imported} need(s) into "${studyTitle}"`,
+        changes: [{ field: 'imported', before: null, after: imported }],
       });
     }
 
@@ -218,14 +237,22 @@ export class NeedsImportService {
     const orgId = requireOrgId();
     const createdBy = requireActor();
 
-    const { existingNeeds, studyTitle } = await this.tenant.runInOrgContext(async (tx) => {
-      const study = await tx.study.findUnique({ where: { id: studyId } });
+    const { existingNeeds, studyTitle, studyGovernorateIds, studyCenterIds } = await this.tenant.runInOrgContext(async (tx) => {
+      const study = await tx.study.findUnique({
+        where: { id: studyId },
+        include: { studyGovernorates: true, studyCenters: true },
+      });
       if (!study) throw new NotFoundException({ error: { code: 'STUDY_NOT_FOUND', message: 'Study not found' } });
       const existingNeeds = await tx.need.findMany({
         where: { studyId },
         select: { title: true, village: true, referenceId: true },
       });
-      return { existingNeeds, studyTitle: study.title };
+      return {
+        existingNeeds,
+        studyTitle: study.title,
+        studyGovernorateIds: (study.studyGovernorates ?? []).map((g) => g.governorateId),
+        studyCenterIds: (study.studyCenters ?? []).map((c) => c.centerId),
+      };
     });
 
     const ext = extname(file.originalname).toLowerCase();
@@ -285,6 +312,16 @@ export class NeedsImportService {
               referenceId: row.referenceId || null,
               createdBy,
               status: 'pending_ai_classification',
+              needGovernorates: {
+                createMany: {
+                  data: studyGovernorateIds.map((governorateId) => ({ orgId, governorateId })),
+                },
+              },
+              needCenters: {
+                createMany: {
+                  data: studyCenterIds.map((centerId) => ({ orgId, centerId })),
+                },
+              },
             },
           }),
         );

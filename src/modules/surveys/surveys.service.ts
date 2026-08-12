@@ -503,17 +503,45 @@ export class SurveysService {
         });
       }
 
+      // RIO-AI-005/RIO-AI-002: the AI may only ever suggest from the approved
+      // bank of ONE methodology version — the draft survey's own snapshot if it
+      // has one, else the latest PUBLISHED version (the same fallback the
+      // scoring engine uses, so nothing can be recommended that scoring would
+      // then fail to resolve). Unscoped, this spanned every imported bank at
+      // once and could recommend a retired version's question.
+      const mv = await tx.methodologyVersion.findFirst({
+        where: existingSurvey?.methodologyVersion
+          ? { version: existingSurvey.methodologyVersion }
+          : { status: 'PUBLISHED' },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, version: true },
+      });
+      if (!mv) {
+        throw new NotFoundException({
+          error: {
+            code: 'METHODOLOGY_VERSION_NOT_FOUND',
+            message:
+              'No published methodology version is configured yet. Import and publish the approved methodology baseline before building surveys.',
+          },
+        });
+      }
+      // isFielded excludes the 7 questionnaire-structure/roster/template modules
+      // (XDM-01..07) — instrument scaffolding, never selectable questions.
       const eligibleQuestions = await tx.question.findMany({
-        where:
-          pairs.length > 0
-            ? { usedInMvp: true, OR: pairs.map((p) => ({ domain: p.domain, subDomain: p.subDomain })) }
-            : { usedInMvp: true },
+        where: {
+          methodologyVersionId: mv.id,
+          usedInMvp: true,
+          isFielded: true,
+          ...(pairs.length > 0
+            ? { OR: pairs.map((p) => ({ domain: p.domain, subDomain: p.subDomain })) }
+            : {}),
+        },
       });
 
-      return { need, eligibleQuestions };
+      return { need, eligibleQuestions, mv };
     });
 
-    const { need, eligibleQuestions } = data;
+    const { need, eligibleQuestions, mv } = data;
 
     let recommendedQuestionIds: string[] = [];
     let confidence = 0;
@@ -602,6 +630,7 @@ Eligible Questions: ${JSON.stringify(
             title: `Survey: ${need.title}`,
             status: 'DRAFT',
             createdBy: actorId,
+            methodologyVersion: mv?.version ?? null,
           },
         });
       } else {

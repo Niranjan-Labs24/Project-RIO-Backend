@@ -42,13 +42,33 @@ function parseCSVLine(line: string): string[] {
   return result;
 }
 
+// The version this legacy CSV belongs to. Questions are version-scoped as of
+// 20260812090000 (RIO-AI-005), so even this pre-v5.0 importer has to name one —
+// it can no longer write into a shared global namespace. For the v5.0 (or any
+// later) approved baseline use prisma/import-methodology.ts instead; this script
+// exists only to keep the v1.0 bank reproducible.
+const LEGACY_VERSION_LABEL = 'v1.0 - Approved implementation baseline';
+
 async function main() {
   const csvPath = path.join(__dirname, '..', 'Village_Needs_Methodology_Implementation(Question Bank (Extended)).csv');
-  
+
   if (!fs.existsSync(csvPath)) {
     console.error(`Error: Question Bank CSV not found at: ${csvPath}`);
     process.exit(1);
   }
+
+  const systemUser = await prisma.user.findFirst({ select: { id: true } });
+  const mv =
+    (await prisma.methodologyVersion.findUnique({ where: { version: LEGACY_VERSION_LABEL } })) ??
+    (await prisma.methodologyVersion.create({
+      data: {
+        name: `Methodology Version ${LEGACY_VERSION_LABEL}`,
+        version: LEGACY_VERSION_LABEL,
+        status: 'PUBLISHED',
+        createdBy: systemUser?.id ?? '00000000-0000-0000-0000-000000000000',
+      },
+    }));
+  console.log(`Target methodology version: ${LEGACY_VERSION_LABEL} (${mv.id})`);
 
   console.log(`Reading Question Bank CSV from: ${csvPath}`);
   const rawContent = fs.readFileSync(csvPath, 'utf-8');
@@ -155,7 +175,9 @@ async function main() {
     const usedInMvp = true;
 
     await prisma.question.upsert({
-      where: { questionId },
+      where: {
+        methodologyVersionId_questionId: { methodologyVersionId: mv.id, questionId },
+      },
       update: {
         domain: domain || "General",
         subDomain: subDomain || "General",
@@ -175,6 +197,7 @@ async function main() {
       },
       create: {
         questionId,
+        methodologyVersionId: mv.id,
         domain: domain || "General",
         subDomain: subDomain || "General",
         indicator: indicator || null,

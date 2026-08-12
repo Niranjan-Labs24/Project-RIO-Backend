@@ -33,8 +33,17 @@ type RawNeedWithGeo = Omit<NeedRow, 'governorateIds' | 'centerIds' | 'needDomain
   needGovernorates: { governorateId: string }[];
   needCenters: { centerId: string }[];
   needDomains: { domain: string; subDomain: string }[];
+  study?: {
+    studyGovernorates: { governorateId: string }[];
+    studyCenters: { centerId: string }[];
+  } | null;
 };
-const GEO_INCLUDE = { needGovernorates: true, needCenters: true, needDomains: true } as const;
+const GEO_INCLUDE = {
+  needGovernorates: true,
+  needCenters: true,
+  needDomains: true,
+  study: { include: { studyGovernorates: true, studyCenters: true } },
+} as const;
 
 @Injectable()
 export class NeedsService {
@@ -58,10 +67,15 @@ export class NeedsService {
     // than allowing an empty string through.
     const title = payload.title?.trim() || payload.statement.trim().slice(0, 80);
     const created = await this.tenant.runInOrgContext(async (tx) => {
-      const study = await tx.study.findUnique({ where: { id: studyId } });
+      const study = await tx.study.findUnique({
+        where: { id: studyId },
+        include: { studyGovernorates: true, studyCenters: true },
+      });
       if (!study) throw new NotFoundException({ error: { code: 'STUDY_NOT_FOUND', message: 'Study not found' } });
-      const governorateIds = payload.governorateIds ?? [];
-      const centerIds = payload.centerIds ?? [];
+      const studyGovernorateIds = (study.studyGovernorates ?? []).map((g) => g.governorateId);
+      const studyCenterIds = (study.studyCenters ?? []).map((c) => c.centerId);
+      const governorateIds = (payload.governorateIds && payload.governorateIds.length > 0) ? payload.governorateIds : studyGovernorateIds;
+      const centerIds = (payload.centerIds && payload.centerIds.length > 0) ? payload.centerIds : studyCenterIds;
       await this.assertGeographyInStudyScope(tx, studyId, governorateIds, centerIds);
       const row = (await tx.need.create({
         data: {
@@ -70,14 +84,9 @@ export class NeedsService {
           title,
           statement: payload.statement,
           village: payload.village ?? [],
-          // RIO-FR-001: this is the manual-create endpoint, so the Need
-          // always came in this way — never accepted from the client.
           source: 'manual_entry',
           referenceId: payload.referenceId ?? null,
           createdBy,
-          // AI Classification is fully automatic now — it starts here,
-          // right after the row exists, rather than as a manual action
-          // gated behind evidence submission.
           status: 'pending_ai_classification',
           needGovernorates: {
             createMany: { data: governorateIds.map((governorateId) => ({ orgId, governorateId })) },
@@ -91,9 +100,6 @@ export class NeedsService {
         ...row,
         needGovernorates: governorateIds.map((governorateId) => ({ governorateId })),
         needCenters: centerIds.map((centerId) => ({ centerId })),
-        // A freshly-created Need has no NeedDomain rows yet — classification
-        // (which populates them) runs only after this create transaction
-        // commits, see the fire-and-forget call below.
         needDomains: [],
       };
     });
@@ -360,10 +366,21 @@ export class NeedsService {
   // in this file works with that flattened NeedRow shape, never the raw
   // join rows directly.
   private toNeedRow(raw: RawNeedWithGeo): NeedRow {
+    const studyGovernorateIds = (raw.study?.studyGovernorates ?? []).map((g) => g.governorateId);
+    const studyCenterIds = (raw.study?.studyCenters ?? []).map((c) => c.centerId);
+    const governorateIds =
+      raw.needGovernorates && raw.needGovernorates.length > 0
+        ? raw.needGovernorates.map((g) => g.governorateId)
+        : studyGovernorateIds;
+    const centerIds =
+      raw.needCenters && raw.needCenters.length > 0
+        ? raw.needCenters.map((c) => c.centerId)
+        : studyCenterIds;
+
     return {
       ...raw,
-      governorateIds: raw.needGovernorates.map((g) => g.governorateId),
-      centerIds: raw.needCenters.map((c) => c.centerId),
+      governorateIds,
+      centerIds,
       needDomains: raw.needDomains.map((d) => ({ domain: d.domain, subDomain: d.subDomain })),
     };
   }

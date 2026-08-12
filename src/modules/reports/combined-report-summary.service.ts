@@ -159,7 +159,7 @@ export class CombinedReportSummaryService {
         title: study.title,
         cycleNumber: study.cycleNumber,
         orgName: study.org.name,
-        methodologyVersion: study.methodologyVersion?.version || "v1.0",
+        methodologyVersion: study.methodologyVersion?.version || "v5.0",
         region: study.org.region[0] || "National",
         governorate: study.studyGovernorates.map((g) => g.governorate.name).join(", ") || "All Governorates",
         documentCount: study.evidenceDocuments.length,

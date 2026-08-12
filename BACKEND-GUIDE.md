@@ -196,9 +196,17 @@ erDiagram
 
 ### Rules baked into the tables themselves (not just app code)
 
-- **One Need per Study** — the database has a *unique* constraint on `needs.study_id`. It is
-  physically impossible to insert a second Need for the same Study, even if application code
-  had a bug that tried.
+- ~~**One Need per Study**~~ — **SUPERSEDED.** There is no longer a unique constraint on
+  `needs.study_id`: a Study groups **many** Needs, and each Need runs its own independent
+  workflow gated by its own `status` (Evidence / AiDecision / Survey / PublicSurveyLink /
+  SurveyResponse all key off `needId`). Nothing about one Need's progress affects a sibling's.
+  See `NeedStatus` in `prisma/schema.prisma`.
+- **A question's identity is `(methodologyVersionId, questionId)`, not `questionId`** — the
+  Question Bank is version-scoped, with a compound unique index and `methodology_version_id`
+  `NOT NULL`. Every read that feeds the Survey Builder picker, AI suggestions, the rollup
+  hierarchy or a report's KPI denominator must filter by methodology version. See
+  `prisma/methodology/README.md` (RIO-AI-005) for why, and for the change-control rules that
+  keep a scored version immutable.
 - **One AI Classification can hold many suggested domains** — `ai_decisions.suggestion` stores
   a list (`domains: string[]`, `subDomains: string[]`), so the AI can suggest multiple
   categories for one Need. This is different from "multiple Needs," which is not allowed.
@@ -386,6 +394,7 @@ to not need a schema change for that swap.
 | How org-isolation actually works | `src/tenancy/org-context.ts`, `src/tenancy/tenant-prisma.service.ts` |
 | Signup / login | `src/modules/auth/auth.service.ts` |
 | Domain/Sub-Domain Master, Methodology Configuration | `src/modules/domains/`, `src/modules/methodology-config/` |
+| **The approved methodology baseline** (RIO-AI-005): where the 193 questions, 44 sub-domains, 172 indicators and the option→severity map come from, and the change-control rules | `prisma/methodology/README.md` · `scripts/extract-methodology-v5.py` · `prisma/import-methodology.ts` |
 | Publish Survey + Citizen public flow | `src/modules/public-surveys/`, `src/modules/citizen/`, `src/modules/survey-definition/` |
 | Response Quality, AI Summary | `src/modules/response-quality/` |
 | Priority Dashboard/Scoring | `src/modules/priority/` |

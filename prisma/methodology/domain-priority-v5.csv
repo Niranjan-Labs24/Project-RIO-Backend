@@ -1,0 +1,10 @@
+domainKey,domainNameSnapshot,weight,isCriticalDomain,criticalPerformanceThreshold
+HEALTH,Health,0.11111,true,20
+EDUCATION,Education,0.11111,false,30
+WATER_SANITATION,Water & Sanitation,0.11111,true,20
+ENERGY_ENVIRONMENT,Energy & Environment,0.11111,false,30
+LIVELIHOOD,Livelihood,0.11111,false,30
+INFRASTRUCTURE,Infrastructure,0.11111,false,30
+SOCIAL_DEVELOPMENT,Social Development,0.11111,false,30
+CULTURE,Culture,0.11111,false,30
+GOVERNANCE_SERVICES,Governance & Services,0.11112,false,30

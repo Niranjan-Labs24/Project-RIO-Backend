@@ -50,8 +50,11 @@ export async function loadSegmentSeverities(
           surveyResponse: { select: { gender: true, settlementType: true, village: true } },
         },
       }),
+      // Version-scoped (RIO-AI-005) — the questionId -> KPI map below is
+      // first-wins, so another imported bank's row could shadow this version's
+      // and attribute a severity score to the wrong KPI.
       tx.question.findMany({
-        where: { usedInMvp: true, kpi: { not: null } },
+        where: { methodologyVersionId, usedInMvp: true, kpi: { not: null } },
         select: { questionId: true, kpi: true },
       }),
     ]);

@@ -35,6 +35,15 @@ export class MethodologyConfigService {
   // was actually published; this makes the dropdown reflect the one real
   // published version instead.
   async listVersionOptions(): Promise<MethodologyVersionOption[]> {
+    const versions = await this.tenant.runAsSupervisor((tx) =>
+      tx.methodologyVersion.findMany({
+        where: { status: "PUBLISHED" },
+        orderBy: { createdAt: "desc" },
+      }),
+    );
+    if (versions.length > 0) {
+      return versions.map((v) => ({ id: v.id, version: v.version }));
+    }
     const row = await this.findRowOrThrow();
     if (row.status !== "published") return [];
     return [{ id: row.id, version: row.version }];
@@ -137,7 +146,7 @@ export class MethodologyConfigService {
 
     const created = await this.prisma.methodologyConfig.create({
       data: {
-        version: "v1.0 - Approved implementation baseline",
+        version: "v5.0 - Approved methodology baseline",
         priorityThresholds: {
           criticalSeverity: 80,
           highSeverity: 70,

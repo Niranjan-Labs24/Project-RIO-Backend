@@ -321,9 +321,13 @@ export class ScoreRollupService {
         }
       });
 
-      // 2. Fetch all Question Bank questions to map hierarchies (domain, subDomain, indicator, kpi)
+      // 2. Fetch this methodology version's Question Bank to map hierarchies
+      // (domain, subDomain, indicator, kpi). Version-scoped (RIO-AI-005): the
+      // map below is keyed by `questionId`, so questions from another imported
+      // bank would shadow this version's own rows and silently roll scores up
+      // under a retired version's hierarchy.
       const questions = await tx.question.findMany({
-        where: { usedInMvp: true }
+        where: { methodologyVersionId, usedInMvp: true }
       });
 
       // Map questionId -> Question record

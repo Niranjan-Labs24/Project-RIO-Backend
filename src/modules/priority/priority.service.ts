@@ -354,7 +354,7 @@ export class PriorityService {
 
       // Get methodology version name
       const survey = await tx.survey.findUnique({ where: { id: surveyId } });
-      const version = survey?.methodologyVersion || 'v1.0';
+      const version = survey?.methodologyVersion || 'v5.0';
 
       return {
         overall: overall ? {
@@ -401,8 +401,18 @@ export class PriorityService {
         orderBy: { severityScore: { sort: 'desc', nulls: 'last' } }
       });
 
-      // Get mappings of KPI -> domain, sub-domain, indicator
-      const questions = await tx.question.findMany({ where: { usedInMvp: true } });
+      // Get mappings of KPI -> domain, sub-domain, indicator.
+      // Version-scoped (RIO-AI-005) off the rollups themselves rather than the
+      // survey: these scores were computed under one specific methodology
+      // version, and that is the hierarchy they must be described with. The
+      // `qMap` below is first-wins per KPI name, so an unscoped read let another
+      // imported bank shadow this version's own rows.
+      const rollupVersionId = rollups[0]?.methodologyVersionId;
+      const questions = rollupVersionId
+        ? await tx.question.findMany({
+            where: { methodologyVersionId: rollupVersionId, usedInMvp: true },
+          })
+        : [];
       const qMap = new Map<string, (typeof questions)[number]>();
       for (const q of questions) {
         if (q.kpi && !qMap.has(q.kpi)) {
@@ -430,25 +440,50 @@ export class PriorityService {
   async getQuestionDetail(studyId: string, surveyId: string, questionId: string, villageId: string | null) {
     const vId = villageId || '';
     return this.tenant.runInOrgContext(async (tx) => {
-      // Find question — supports both direct questionId (e.g. "H01") and
-      // KPI name strings (e.g. "Water Source Reliability") passed from the
-      // KPI ranking table which stores KPI names as entityIds.
-      let question = await tx.question.findUnique({ where: { questionId } });
+      // Resolve the methodology version FIRST: a question's identity is
+      // (methodologyVersionId, questionId) as of RIO-AI-005, so it cannot be
+      // looked up without one. Same fallback as the scoring engine — the
+      // survey's own snapshot label, else the latest PUBLISHED version.
+      //
+      // The previous `survey?.methodologyVersion || 'v1.0'` default could never
+      // match a real row (the seeded label is
+      // "v1.0 - Approved implementation baseline"), so `mv` silently came back
+      // null and the rollup lookup below ran with methodologyVersionId: '' —
+      // always returning nothing.
+      const surveyObj = await tx.survey.findUnique({ where: { id: surveyId } });
+      const mv = await tx.methodologyVersion.findFirst({
+        where: surveyObj?.methodologyVersion
+          ? { version: surveyObj.methodologyVersion }
+          : { status: 'PUBLISHED' },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (!mv) {
+        throw new NotFoundException({
+          error: {
+            code: 'METHODOLOGY_VERSION_NOT_FOUND',
+            message: 'No methodology version is configured for this survey.',
+          },
+        });
+      }
+
+      // Find question — supports both a direct question code (e.g. "HLT-01") and
+      // a KPI name string (e.g. "Water Source Reliability") passed from the KPI
+      // ranking table, which stores KPI names as entityIds.
+      let question = await tx.question.findUnique({
+        where: {
+          methodologyVersionId_questionId: { methodologyVersionId: mv.id, questionId },
+        },
+      });
       if (!question) {
-        // Try resolving by KPI name: find the first scoreable question in this KPI
+        // Try resolving by KPI name: the first scoreable question in this KPI.
         question = await tx.question.findFirst({
-          where: { kpi: questionId, usedInMvp: true },
+          where: { methodologyVersionId: mv.id, kpi: questionId, usedInMvp: true },
           orderBy: { questionId: 'asc' },
         });
       }
       if (!question) {
         throw new NotFoundException({ error: { code: 'QUESTION_NOT_FOUND', message: `No question found for id or kpi: ${questionId}` } });
       }
-
-      // Find methodology version used by the survey
-      const surveyObj = await tx.survey.findUnique({ where: { id: surveyId } });
-      const version = surveyObj?.methodologyVersion || 'v1.0';
-      const mv = await tx.methodologyVersion.findUnique({ where: { version } });
 
       // Find question rollup
       const rollup = await tx.scoreRollup.findUnique({
@@ -532,7 +567,7 @@ export class PriorityService {
         excludedCount: rollup?.excludedResponseCount || 0,
         dontKnowCount: rollup?.dontKnowCount || 0,
         notApplicableCount: rollup?.notApplicableCount || 0,
-        methodologyVersion: version,
+        methodologyVersion: mv.version,
         optionsDistribution: optionsList,
         lookups,
         calculatedAt: rollup?.calculatedAt?.toISOString() || new Date().toISOString(),
