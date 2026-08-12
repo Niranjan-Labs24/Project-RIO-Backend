@@ -201,7 +201,9 @@ describe('ROLE_MATRIX', () => {
     expect(can('system_admin', 'archiveSharingAudit', 'export')).toBe(true);
     expect(can('center_supervisor', 'archiveSharingAudit', 'read')).toBe(true);
     expect(can('center_supervisor', 'systemLogs', 'read')).toBe(false);
-    expect(can('data_analyst', 'archiveSharingAudit', 'read')).toBe(true);
+    // RIO-RBAC-001 matrix (Jagannathan, Aug 12, client-confirmed): Data
+    // Analyst's Audit/System Logs access is now "—" (none) — was read-only.
+    expect(can('data_analyst', 'archiveSharingAudit', 'read')).toBe(false);
     expect(can('data_analyst', 'systemLogs', 'read')).toBe(false);
   });
 
