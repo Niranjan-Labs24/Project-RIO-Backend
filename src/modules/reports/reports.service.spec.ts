@@ -145,8 +145,11 @@ describe("ReportsService lifecycle (two-step approval)", () => {
     await expect(asRole("read_only_viewer", () => h.service.getById("rpt-1"))).rejects.toMatchObject({
       response: { error: { code: "REPORT_NOT_FOUND" } },
     });
-    // …but a privileged role can see the draft.
-    const r = await asRole("ngo_admin", () => h.service.getById("rpt-1"));
+    // …but a privileged role can see the draft. RIO-RBAC-001 matrix
+    // (Aug 11): ngo_admin no longer holds create/write/approve on Reports
+    // (view/export/share only), so it's no longer this test's "privileged"
+    // reference role — ngo_research_officer (Reports: create) still is.
+    const r = await asRole("ngo_research_officer", () => h.service.getById("rpt-1"));
     expect(r.status).toBe("draft");
   });
 
@@ -155,8 +158,10 @@ describe("ReportsService lifecycle (two-step approval)", () => {
     seed(h.store, { id: "r", status: "released" } as Partial<ReportRow> as ReportRow & { id: string });
     const viewer = await asRole("read_only_viewer", () => h.service.list({}));
     expect(viewer.map((x) => x.status).sort()).toEqual(["released"]);
-    const admin = await asRole("ngo_admin", () => h.service.list({}));
-    expect(admin.length).toBe(2);
+    // RIO-RBAC-001 matrix (Aug 11): ngo_admin lost create/write/approve on
+    // Reports, so ngo_research_officer is the privileged reference role now.
+    const officer = await asRole("ngo_research_officer", () => h.service.list({}));
+    expect(officer.length).toBe(2);
   });
 
   it("a read-only user requesting a status they can't see gets an empty result, not an error", async () => {

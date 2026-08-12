@@ -54,9 +54,7 @@ export class StudiesService {
     let methodologyLabel: string | null = null;
     const created = await this.tenant.runInOrgContext(async (tx) => {
       await this.assertGeographyInOrgScope(tx, orgId, payload.governorateIds, payload.centerIds);
-      if (payload.methodologyVersionId) {
-        methodologyLabel = await this.assertMethodologyVersionPublished(tx, payload.methodologyVersionId);
-      }
+      methodologyLabel = await this.assertMethodologyVersionPublished(tx, payload.methodologyVersionId);
       return this.createWithCycleNumber(tx, orgId, createdBy, payload);
     });
     await this.audit.record({
@@ -95,7 +93,7 @@ export class StudiesService {
           orgId,
           title: payload.title,
           villages: payload.villages ?? [],
-          methodologyVersionId: payload.methodologyVersionId ?? null,
+          methodologyVersionId: payload.methodologyVersionId,
           population: payload.population,
           marginOfError,
           requiredSampleSize: sampleSize.requiredSampleSize,
@@ -121,7 +119,7 @@ export class StudiesService {
             orgId,
             title: payload.title,
             villages: payload.villages ?? [],
-            methodologyVersionId: payload.methodologyVersionId ?? null,
+            methodologyVersionId: payload.methodologyVersionId,
             population: payload.population,
             marginOfError,
             requiredSampleSize: sampleSize.requiredSampleSize,
@@ -388,7 +386,7 @@ export class StudiesService {
       if (payload.governorateIds !== undefined || payload.centerIds !== undefined) {
         await this.assertGeographyInOrgScope(tx, orgId, nextGovernorateIds, nextCenterIds);
       }
-      if (payload.methodologyVersionId !== undefined && payload.methodologyVersionId !== null) {
+      if (payload.methodologyVersionId !== undefined) {
         await this.assertMethodologyVersionPublished(tx, payload.methodologyVersionId);
       }
 

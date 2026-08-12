@@ -81,7 +81,12 @@ describe('ReviewerSlaService', () => {
     expect(alerts[1]?.surveyId).toBe('s1');
   });
 
-  it('NGO Admin (full access) also sees report_approval alerts', async () => {
+  // RIO-RBAC-001 matrix (Aug 11, client-confirmed): ngo_admin no longer
+  // holds reportsDashboards:approve (view/export/share only now), so it's
+  // no longer this test's "sees approval alerts" reference role —
+  // human_reviewer is the role the confirmed matrix actually grants
+  // Reports:Approve to.
+  it('Human Reviewer (holds reportsDashboards:approve) sees report_approval alerts', async () => {
     const svc = makeService(
       fakeTenant({
         reports: [
@@ -89,12 +94,15 @@ describe('ReviewerSlaService', () => {
         ],
       }),
     );
-    const alerts = await orgContext.run({ requestId: 'r', role: 'ngo_admin' }, () => svc.listAlerts());
+    const alerts = await orgContext.run({ requestId: 'r', role: 'human_reviewer' }, () => svc.listAlerts());
     const reportAlert = alerts.find((a) => a.type === 'report_approval');
     expect(reportAlert).toBeDefined();
     expect(reportAlert?.studyId).toBeNull(); // org-wide report, no Study
   });
 
+  // RIO-RBAC-001 matrix, refined (Aug 12, client-confirmed): Research
+  // Officer regained reportsDashboards:write (the officer-confirm step) —
+  // restores this role as the natural reference for "own report" alerts.
   it('Research Officer sees their own resolved report alerts (released/rejected), newest first', async () => {
     const svc = makeService(
       fakeTenant({
