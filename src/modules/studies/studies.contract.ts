@@ -11,10 +11,11 @@ const Villages = T.Array(T.String({ minLength: 1, maxLength: 200 }), { maxItems:
 const GovernorateIds = T.Array(T.String({ format: 'uuid' }), { minItems: 1, maxItems: 200 });
 const CenterIds = T.Array(T.String({ format: 'uuid' }), { minItems: 1, maxItems: 1404 });
 
-// Optional link to the real, status-gated MethodologyVersion master data
-// (see priority module) — only a PUBLISHED version may be selected
-// (checked in StudiesService, not enforceable by TypeBox).
-const MethodologyVersionId = T.Union([T.String({ format: 'uuid' }), T.Null()]);
+// Mandatory link to the real, status-gated MethodologyVersion master data
+// (see priority module) — a Study must bind to one at creation; only a
+// PUBLISHED version may be selected (checked in StudiesService, not
+// enforceable by TypeBox).
+const MethodologyVersionId = T.String({ format: 'uuid' });
 
 // RIO-FR-024: "What is the population of your area?" — asked at study
 // creation so the required sample size and MDE can be computed and stored
@@ -31,7 +32,7 @@ export const CreateStudyBody = registerSchema(
       villages: T.Optional(Villages),
       governorateIds: GovernorateIds,
       centerIds: CenterIds,
-      methodologyVersionId: T.Optional(MethodologyVersionId),
+      methodologyVersionId: MethodologyVersionId,
       population: Population,
       marginOfError: T.Optional(MarginOfError),
     },
