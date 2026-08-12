@@ -9,10 +9,17 @@ import { AllExceptionsFilter } from "../src/common/filters/http-exception.filter
 // Survey + Dashboard) end-to-end against the scored seed study — REAL data, not
 // the fixture provider the generator specs use.
 // Requires: pnpm prisma:seed && pnpm seed:scored
+// RIO-RBAC-001 matrix (Aug 11, refined Aug 12): Researcher holds
+// Reports:Create + Edit (creates and confirms their own draft),
+// Reports:Approve/Export is Human Reviewer's — ngo_admin only holds
+// View/Export/Share, so a single "admin does everything" login no longer
+// covers this whole flow.
 describe("Survey-scoped reports (RPT01 / RPT15) — e2e", () => {
   let app: INestApplication;
   let cookies: string[];
   let csrf: string;
+  let reviewerCookies: string[];
+  let reviewerCsrf: string;
   let studyId: string;
   let surveyId: string;
 
@@ -26,10 +33,17 @@ describe("Survey-scoped reports (RPT01 / RPT15) — e2e", () => {
 
     const login = await request(app.getHttpServer())
       .post("/api/auth/login")
-      .send({ email: "admin@demo-ngo.org", password: "Passw0rd!" })
+      .send({ email: "officer@demo-ngo.org", password: "Passw0rd!" })
       .expect(200);
     cookies = login.headers["set-cookie"] as unknown as string[];
     csrf = cookies.find((c) => c.startsWith("rio_csrf="))?.match(/rio_csrf=([^;]*)/)?.[1] ?? "";
+
+    const reviewerLogin = await request(app.getHttpServer())
+      .post("/api/auth/login")
+      .send({ email: "reviewer@demo-ngo.org", password: "Passw0rd!" })
+      .expect(200);
+    reviewerCookies = reviewerLogin.headers["set-cookie"] as unknown as string[];
+    reviewerCsrf = reviewerCookies.find((c) => c.startsWith("rio_csrf="))?.match(/rio_csrf=([^;]*)/)?.[1] ?? "";
 
     const studies = await request(app.getHttpServer()).get("/api/studies").set("Cookie", cookies).expect(200);
     const study = (studies.body.items ?? []).find((s: { title: string }) => s.title.includes("Scored Assessment"));
@@ -171,8 +185,8 @@ describe("Survey-scoped reports (RPT01 / RPT15) — e2e", () => {
       .expect(200);
     await request(app.getHttpServer())
       .patch(`/api/reports/${id}/approve`)
-      .set("Cookie", cookies)
-      .set("x-csrf-token", csrf)
+      .set("Cookie", reviewerCookies)
+      .set("x-csrf-token", reviewerCsrf)
       .send({ notes: "Looks good" })
       .expect(200);
 
@@ -187,7 +201,7 @@ describe("Survey-scoped reports (RPT01 / RPT15) — e2e", () => {
     const pdf = await request(app.getHttpServer())
       .get(`/api/reports/${id}/export`)
       .query({ format: "pdf" })
-      .set("Cookie", cookies)
+      .set("Cookie", reviewerCookies)
       .buffer(true)
       .parse(binary)
       .expect(200);
@@ -197,7 +211,7 @@ describe("Survey-scoped reports (RPT01 / RPT15) — e2e", () => {
     const xlsx = await request(app.getHttpServer())
       .get(`/api/reports/${id}/export`)
       .query({ format: "excel" })
-      .set("Cookie", cookies)
+      .set("Cookie", reviewerCookies)
       .buffer(true)
       .parse(binary)
       .expect(200);

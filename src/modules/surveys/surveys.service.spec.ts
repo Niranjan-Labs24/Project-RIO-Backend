@@ -175,6 +175,41 @@ describe('SurveysService.setSampleDescription', () => {
       runAsApprover(() => service.setSampleDescription('sv1', 'Group', 100, 'Approach', 'Coverage')),
     ).rejects.toBeInstanceOf(ConflictException);
   });
+
+  // Client clarification (Aug 11, confirmed): Survey-level Expected Size
+  // must never auto-populate from, or write back to, the Study's own
+  // calculated Sample Size — the two are independent values the NGO can
+  // legitimately set differently (e.g. targeting a sub-group).
+  it('RIO-FR-011/RIO-FR-024: Expected Size is independent of the Study — the write path has no Study model to touch at all', async () => {
+    // fakeTenant's tx intentionally has no `study` key (see its definition
+    // above) — if setSampleDescription ever tried to read/write a Study
+    // row, this test would throw "tx.study is undefined" rather than
+    // silently pass, so the absence of that error is itself the proof of
+    // independence, not just an assumption.
+    const service = makeService({ id: 'sv1', needId: 'n1', status: 'DRAFT' });
+    const result = (await runAsApprover(() =>
+      service.setSampleDescription('sv1', 'Households with under-5 children', 180, 'Cluster sampling', 'Ad-Dilam'),
+    )) as unknown as FakeSurvey;
+    expect(result.expectedSampleSize).toBe(180);
+  });
+
+  it("Expected Size can legitimately differ from what a Study's own calculation would produce — no clamping/overwriting to a 'correct' value", async () => {
+    const service = makeService({ id: 'sv1', needId: 'n1', status: 'DRAFT' });
+    // An NGO targeting a specific sub-group within the calculated sample —
+    // an arbitrary, unrelated number is accepted as-is.
+    const result = (await runAsApprover(() =>
+      service.setSampleDescription('sv1', 'Female-headed households only', 45, 'Purposive sampling', 'Al-Jumum North'),
+    )) as unknown as FakeSurvey;
+    expect(result.expectedSampleSize).toBe(45);
+  });
+
+  it('editing Expected Size again overwrites only the Survey row — re-saving with a new value never reintroduces an old one', async () => {
+    const service = makeService({ id: 'sv1', needId: 'n1', status: 'DRAFT', expectedSampleSize: 250 });
+    const result = (await runAsApprover(() =>
+      service.setSampleDescription('sv1', 'Households with under-5 children', 90, 'Cluster sampling', 'Ad-Dilam'),
+    )) as unknown as FakeSurvey;
+    expect(result.expectedSampleSize).toBe(90);
+  });
 });
 
 describe('SurveysService.listReusableCustomQuestions', () => {

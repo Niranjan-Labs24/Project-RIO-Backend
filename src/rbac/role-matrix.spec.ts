@@ -28,8 +28,10 @@ describe('ROLE_MATRIX', () => {
     expect(can('system_reviewer', 'reportsDashboards', 'export')).toBe(true);
     expect(can('system_reviewer', 'reportsDashboards', 'write')).toBe(false);
     expect(can('system_reviewer', 'reportsDashboards', 'approve')).toBe(false);
-    // No Administration/Audit access at all.
-    expect(can('system_reviewer', 'entityTeam', 'read')).toBe(false);
+    // RIO-RBAC-001 matrix (Aug 11): view-only on Organization/Users now.
+    // Roles & Permissions and the Audit Log stay out of reach entirely.
+    expect(can('system_reviewer', 'entityTeam', 'read')).toBe(true);
+    expect(can('system_reviewer', 'entityTeam', 'write')).toBe(false);
     expect(can('system_reviewer', 'rolesPermissions', 'read')).toBe(false);
     expect(can('system_reviewer', 'archiveSharingAudit', 'read')).toBe(false);
   });
@@ -54,13 +56,16 @@ describe('ROLE_MATRIX', () => {
     expect(can('system_admin', 'archiveSharingAudit', 'share')).toBe(false);
   });
 
-  // Roles the status review lists as audit-log read-only must stay read-only —
-  // the FR-007 export grant is System Admin's alone (plus ngo_admin's blanket
-  // full access, asserted separately below).
-  it('audit-log export stays exclusive to system_admin and ngo_admin', () => {
-    for (const key of ['human_reviewer', 'data_analyst', 'read_only_viewer', 'center_supervisor', 'ngo_research_officer']) {
+  // RIO-RBAC-001 matrix (Aug 11): audit export is System Admin's alone now
+  // — NGO Admin's blanket full-access grant on this module was removed, and
+  // Center Supervisor separately gained read+export (its own confirmed
+  // "Audit/System Logs: V/Ex" row), so it's asserted on its own below
+  // rather than lumped into the "must stay false" list.
+  it('audit-log export stays exclusive to system_admin', () => {
+    for (const key of ['human_reviewer', 'data_analyst', 'read_only_viewer', 'ngo_research_officer', 'ngo_admin']) {
       expect(can(key, 'archiveSharingAudit', 'export')).toBe(false);
     }
+    expect(can('center_supervisor', 'archiveSharingAudit', 'export')).toBe(true);
     // No audit access whatsoever for these two.
     expect(can('field_researcher', 'archiveSharingAudit', 'read')).toBe(false);
     expect(can('system_reviewer', 'archiveSharingAudit', 'read')).toBe(false);
@@ -81,25 +86,33 @@ describe('ROLE_MATRIX', () => {
     expect(ROLE_MATRIX.find((r) => r.key === 'ncnp_user')).toBeUndefined();
   });
 
-  it('ngo_admin has full access; can() reflects the matrix', () => {
-    expect(can('ngo_admin', 'archiveSharingAudit', 'share')).toBe(true);
+  // RIO-RBAC-001 module-permission matrix (client-confirmed, Aug 11): NGO
+  // Admin is no longer "full access to every module" — Roles & Permissions
+  // and the Audit Log are System-Admin-exclusive now, and Approve on
+  // Studies/Needs/Surveys/Reports moved to Human Reviewer alone.
+  it('ngo_admin no longer has blanket full access; can() reflects the confirmed matrix', () => {
+    expect(can('ngo_admin', 'archiveSharingAudit', 'share')).toBe(false);
+    expect(can('ngo_admin', 'rolesPermissions', 'read')).toBe(false);
+    expect(can('ngo_admin', 'studySurvey', 'approve')).toBe(false);
+    expect(can('ngo_admin', 'studySurvey', 'write')).toBe(true);
     expect(can('system_admin', 'entityTeam', 'create')).toBe(true);
-    expect(can('system_admin', 'studySurvey', 'write')).toBe(false); // reads all, writes only accounts/orgs/config
+    // System Admin now holds real write/create across most modules per the
+    // confirmed matrix — studySurvey included.
+    expect(can('system_admin', 'studySurvey', 'write')).toBe(true);
     // AI classification/Approve/Override/Reject (see
     // AiDecisionsService.approveAiReview/rejectAiReview) is Reviewer-exclusive
     // per the client's Roles & Permissions sheet — Researcher can trigger
-    // classification/Retry (`write`) but does not approve it. Curating the
-    // survey's question list (Domain/Sub-domain select, add from Question
-    // Bank, add/remove custom questions) is shared `write` between both
-    // roles; only the Approver holds surveyBuilder `approve` (Survey
-    // Approve & Publish / Reject stays Approver-exclusive).
+    // classification/Retry (`write`) but does not approve it.
     expect(can('human_reviewer', 'aiReview', 'approve')).toBe(true);
     expect(can('human_reviewer', 'aiReview', 'write')).toBe(false);
     expect(can('ngo_research_officer', 'aiReview', 'approve')).toBe(false);
     expect(can('ngo_research_officer', 'aiReview', 'write')).toBe(true);
     expect(can('ngo_research_officer', 'surveyBuilder', 'write')).toBe(true);
     expect(can('ngo_research_officer', 'surveyBuilder', 'approve')).toBe(false);
-    expect(can('human_reviewer', 'surveyBuilder', 'write')).toBe(true);
+    // RIO-RBAC-001 matrix (Aug 11): Reviewer's Surveys grant narrowed to
+    // View + Approve only — `write` (question curation) is no longer held
+    // here. See role-matrix.ts's flagged comment on this exact line.
+    expect(can('human_reviewer', 'surveyBuilder', 'write')).toBe(false);
     expect(can('human_reviewer', 'surveyBuilder', 'approve')).toBe(true);
     expect(can('ngo_research_officer', 'rolesPermissions', 'read')).toBe(false);
     expect(can(undefined, 'entityTeam', 'read')).toBe(false); // no role → deny
@@ -127,10 +140,11 @@ describe('ROLE_MATRIX', () => {
     expect(can('human_reviewer', 'reportsDashboards', 'write')).toBe(false);
   });
 
-  it('research officer generates AND confirms their own report; approve stays Approver/NGO-Admin-exclusive', () => {
-    // Product decision: generate-then-confirm is one continuous step owned
-    // by the Officer, not split across a separate Data Analyst handoff (see
-    // role-matrix.ts's reportsDashboards comment on this role).
+  it('research officer generates AND confirms their own report (View/Create/Edit); approve stays off this role', () => {
+    // RIO-RBAC-001 matrix, refined (Aug 12, client-confirmed): restores the
+    // "generate-then-confirm is one continuous step" product decision —
+    // Researcher creates and confirms; Human Reviewer is the independent
+    // approver. See role-matrix.ts's comment on this exact grant for why.
     expect(can('ngo_research_officer', 'reportsDashboards', 'create')).toBe(true);
     expect(can('ngo_research_officer', 'reportsDashboards', 'write')).toBe(true);
     expect(can('ngo_research_officer', 'reportsDashboards', 'approve')).toBe(false);
@@ -156,16 +170,28 @@ describe('ROLE_MATRIX', () => {
     }
   });
 
-  it('ngo_admin does not inherit systemLogs from the full-access helper', () => {
-    // Regression: `fullAccess()` grants every module in PERMISSION_MODULES,
-    // so a new non-entity-scoped module silently lands on NGO Admin the
-    // moment it is added to that array — the exact bug that hit ncnpReport.
-    // NON_ENTITY_MODULES is the exclusion list that stops it.
+  it('ngo_admin holds no systemLogs; archiveSharingAudit is Sharing-only, no raw export/audit-download', () => {
+    // systemLogs was always excluded even back when ngo_admin used the
+    // fullAccess() helper (NON_ENTITY_MODULES) — still true now that the
+    // role is an explicit list instead of that helper.
     expect(can('ngo_admin', 'systemLogs', 'read')).toBe(false);
     expect(can('ngo_admin', 'systemLogs', 'export')).toBe(false);
-    // NGO Admin still holds full access to every entity-scoped module.
+    // RIO-RBAC-001 matrix (Aug 11): the confirmed matrix says NGO Admin
+    // should have no Audit/System Logs access at all, but Study/Report
+    // Sharing decisions (FR-014, pre-existing/tested) share this exact
+    // module and the exact `read` action with the Audit Log in code — see
+    // the flagged comment on this role's archiveSharingAudit grant.
+    // Restoring Sharing took priority, so `read`/`create`/`approve` are
+    // granted (which technically also reopens raw audit-log viewing) —
+    // `export` (the audit CSV download specifically) stays off, since
+    // Sharing has no export action of its own.
+    expect(can('ngo_admin', 'archiveSharingAudit', 'read')).toBe(true);
+    expect(can('ngo_admin', 'archiveSharingAudit', 'create')).toBe(true);
+    expect(can('ngo_admin', 'archiveSharingAudit', 'approve')).toBe(true);
+    expect(can('ngo_admin', 'archiveSharingAudit', 'export')).toBe(false);
+    // NGO Admin still holds write on the modules the confirmed matrix keeps
+    // it editing directly (Studies, Needs, Surveys).
     expect(can('ngo_admin', 'studySurvey', 'write')).toBe(true);
-    expect(can('ngo_admin', 'archiveSharingAudit', 'export')).toBe(true);
   });
 
   it('adding systemLogs did not disturb any audit-log grant', () => {

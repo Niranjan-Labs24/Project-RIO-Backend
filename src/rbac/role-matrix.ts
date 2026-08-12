@@ -70,11 +70,56 @@ function fullAccess(): ModulePermission[] {
 const RO: Grant = { read: true };
 
 export const ROLE_MATRIX: RoleDef[] = [
-  { id: 'role_ngo_admin', key: 'ngo_admin', name: 'NGO Admin', description: 'Account owner. Full access to every module within its own entity.', crossEntity: false, permissions: fullAccess() },
-  { id: 'role_ngo_research_officer', key: 'ngo_research_officer', name: 'NGO Research Officer', description: 'Creates studies and surveys from the question bank and enters data.', crossEntity: false, permissions: [
-    perm('entityTeam'), perm('rolesPermissions'), perm('onboardingConsent'),
+  // RIO-RBAC-001 module-permission matrix (client-confirmed, Aug 11): NGO
+  // Admin is no longer "full access to every module in its own entity" —
+  // that assumption predates this matrix. Roles & Permissions and the
+  // Audit Log stay System-Admin-only; Approve is Human Reviewer's alone on
+  // Studies/Needs/Surveys; Report authoring (create/write/approve) moves
+  // to the Researcher/Reviewer pair, leaving Admin view+export+share only.
+  { id: 'role_ngo_admin', key: 'ngo_admin', name: 'NGO Admin', description: 'Account owner — manages its own entity, teams, and studies, with approval/report-authoring held by other roles.', crossEntity: false, permissions: [
+    // Organization (view+edit, no create) and Users (view+create+edit) share
+    // the same entityTeam module in code — union of the two columns.
+    perm('entityTeam', { read: true, write: true, create: true }),
+    perm('rolesPermissions'),
+    perm('onboardingConsent', { read: true, write: true, create: true, approve: true, export: true, share: true }),
     perm('methodologyQuestionBank', RO),
-    perm('studySurvey', { read: true, write: true, create: true, export: true }),
+    perm('studySurvey', { read: true, write: true, create: true, export: true, share: true }),
+    perm('dataCollection', { read: true, write: true, create: true, export: true }),
+    perm('dataImport', { read: true, write: true, create: true, approve: true, export: true, share: true }),
+    perm('citizenChannel', { read: true, write: true, create: true, approve: true, export: true, share: true }),
+    perm('aiReview', { read: true, write: true, create: true, approve: true, export: true, share: true }),
+    perm('priorityScoring', { read: true, export: true }),
+    perm('reportsDashboards', { read: true, export: true, share: true }),
+    // ⚠️ Module conflict, resolved deliberately: the confirmed matrix gives
+    // NGO Admin "Sh" (Share) on Studies/Reports but no Audit/System Logs
+    // access at all. In code, both Study/Report Sharing decisions (see
+    // sharing.controller.ts / report-sharing.controller.ts) AND the Audit
+    // Log (audit.controller.ts) are gated on this SAME module, and both use
+    // the SAME `read` action for two different things (list sharing
+    // requests vs. view the audit log) — there is no way to grant one
+    // without the other at the current permission granularity. Sharing is
+    // pre-existing, already-shipped, heavily tested functionality (FR-014);
+    // silently breaking it to achieve a strict Audit-Log lockout would be a
+    // real regression the client did not ask for. Kept `read`/`create`/
+    // `approve` so Sharing keeps working — `export` stays off (audit CSV
+    // export has no Sharing-side use). Net effect: NGO Admin can technically
+    // still view the raw Audit Log list via this grant, which is NOT what
+    // the matrix asked for — flagging this as needing either a real
+    // read-vs-read module split in a follow-up, or explicit client
+    // confirmation that Sharing capability wins over strict Audit lockout.
+    perm('archiveSharingAudit', { read: true, create: true, approve: true }),
+    perm('surveyBuilder', { read: true, write: true, create: true, export: true }),
+    perm('ncnpReport'),
+    perm('systemLogs'),
+  ] },
+  { id: 'role_ngo_research_officer', key: 'ngo_research_officer', name: 'NGO Research Officer', description: 'Creates studies and surveys from the question bank and enters data.', crossEntity: false, permissions: [
+    // RIO-RBAC-001 matrix (Aug 11): view-only on Organization/Users now
+    // (was none) — matches the client-confirmed "Researcher: V" row.
+    perm('entityTeam', RO), perm('rolesPermissions'), perm('onboardingConsent'),
+    perm('methodologyQuestionBank', RO),
+    // No `export` on Studies per the confirmed matrix (Researcher: V/C/E) —
+    // was granted before this clarification.
+    perm('studySurvey', { read: true, write: true, create: true }),
     perm('dataCollection', { read: true, write: true, create: true }),
     perm('dataImport', { read: true, write: true, create: true }),
     perm('citizenChannel'),
@@ -89,27 +134,25 @@ export const ROLE_MATRIX: RoleDef[] = [
     // Recalculate/Run Priority Scoring on their own studies' Insights page,
     // same as Admin; they still can't approve a priority score elsewhere in
     // the app (no such action exists on this role's other screens anyway).
-    perm('priorityScoring', { read: true, create: true }),
-    // `create` + `write` (not `approve`) — product decision: the Researcher
-    // generates a report draft from their own study's data AND confirms it
-    // themselves (ReportsController's :id/confirm, gated on `write`) before
-    // it reaches the Approver — generate-then-confirm is one continuous step
-    // owned by the Officer, not split across a separate Data Analyst
-    // handoff. They still can't approve/reject/archive it themselves (no
-    // `approve` here) — that stays the Reviewer/Approver's (and NGO Admin's)
-    // job, and they're notified via the Reviewer SLA alert once confirmed
-    // (see ReviewerSlaService).
-    perm('reportsDashboards', { read: true, write: true, create: true, export: true }),
-    // Read-only Archive + able to request cross-org Sharing access (the
-    // owning org's admin still has to approve — see SharingService.decide).
-    perm('archiveSharingAudit', { read: true, create: true }),
-    // `write` (not `approve`) — product decision: the Researcher now
-    // curates questions too (select Domain/Sub-domain when AI can't
-    // classify, add from Question Bank, add/remove custom questions),
-    // alongside the Reviewer/Approver who retains the same `write` plus
-    // `approve` (see role_human_reviewer below) — publishing the finished
-    // survey stays exclusively the Approver's `approve` action.
-    perm('surveyBuilder', { read: true, write: true }),
+    // No `create` per the confirmed matrix (Researcher/Dashboard: V only).
+    perm('priorityScoring', RO),
+    // RIO-RBAC-001 matrix, refined (Aug 12, client-confirmed): Researcher
+    // holds View/Create/Edit on Reports — `write` (the officer-confirm
+    // step) was initially left off per a literal reading of "V/C" in the
+    // matrix, but that made System Admin the only role able to confirm any
+    // report, which doesn't hold up operationally (System Admin has no real
+    // stake in report content). "Confirm" is the same actor finishing what
+    // they just created, not a separate reviewer checkpoint — the two-step
+    // workflow's real separation is Researcher (create+confirm) vs. Human
+    // Reviewer (independent approve), not Researcher vs. System Admin.
+    perm('reportsDashboards', { read: true, create: true, write: true }),
+    // RIO-RBAC-001 matrix: Researcher holds no Audit/System Logs access at
+    // all — this previously doubled as "can request cross-org Sharing,"
+    // which is removed as a side effect. Flag if the Sharing-request
+    // capability still needs a home now that this grant is gone.
+    perm('archiveSharingAudit'),
+    // `create` added per the confirmed matrix (Researcher/Surveys: V/C/E).
+    perm('surveyBuilder', { read: true, write: true, create: true }),
     perm('ncnpReport'),
   ] },
   { id: 'role_field_researcher', key: 'field_researcher', name: 'Field Researcher', description: 'Enters needs and documents the source and field notes.', crossEntity: false, permissions: [
@@ -120,15 +163,17 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('reportsDashboards'), perm('archiveSharingAudit'), perm('surveyBuilder'), perm('ncnpReport'),
   ] },
   { id: 'role_human_reviewer', key: 'human_reviewer', name: 'Human Reviewer', description: 'Approves or rejects (with comments) a finalized Survey before it publishes.', crossEntity: false, permissions: [
-    perm('entityTeam'), perm('rolesPermissions'), perm('onboardingConsent'),
+    // RIO-RBAC-001 matrix (Aug 11): view-only on Organization/Users now
+    // (was none).
+    perm('entityTeam', RO), perm('rolesPermissions'), perm('onboardingConsent'),
     perm('methodologyQuestionBank', RO),
-    // `create` (not full `write`) — once a survey is published, the
-    // Approver can generate its public data-collection links themselves
-    // rather than waiting on the Researcher, but still can't deactivate an
-    // existing link or edit the underlying survey (that stays `write`,
-    // which they don't hold).
-    perm('studySurvey', { read: true, create: true }),
-    perm('dataCollection', RO),
+    // Matrix: Studies = View + Approve only for this role now — the
+    // `create` grant that let the Approver generate public links
+    // themselves is removed per the confirmed matrix.
+    perm('studySurvey', { read: true, approve: true }),
+    // Matrix: Needs = View + Approve (was view-only) — Approve is inert on
+    // the Evidence/Documents side, since no evidence endpoint checks it.
+    perm('dataCollection', { read: true, approve: true }),
     perm('dataImport', RO), perm('citizenChannel', RO),
     // `approve` (not `write`) — deciding on an AI classification
     // (Approve/Override/Reject — see
@@ -151,15 +196,21 @@ export const ROLE_MATRIX: RoleDef[] = [
     // on this exact action) — without it the Approver could only read and
     // export a report, never release or reject one, which defeats the
     // Officer-confirms/Approver-approves two-step workflow entirely.
-    perm('reportsDashboards', { read: true, approve: true, export: true }), perm('archiveSharingAudit', RO),
-    // `write` — curating the suggested question list (add from Question
-    // Bank/add custom/remove/reorder) is shared with the Researcher now
-    // (see role_ngo_research_officer above), alongside `approve` (which
-    // covers Approve/Override/Reject — see
-    // AiDecisionsService.approveAiReview/rejectAiReview — and legacy
-    // Survey approve/reject/publish via SurveysService), which stays
-    // exclusive to this role.
-    perm('surveyBuilder', { read: true, write: true, approve: true }),
+    perm('reportsDashboards', { read: true, approve: true, export: true }),
+    // RIO-RBAC-001 matrix: Audit/System Logs = none for this role (was
+    // read-only).
+    perm('archiveSharingAudit'),
+    // RIO-RBAC-001 matrix (Aug 11, client-confirmed): Surveys = View +
+    // Approve only for this role — `write` is REMOVED here. This reverses
+    // an earlier, deliberate product decision (see the removed comment
+    // above, and role_ngo_research_officer's own surveyBuilder grant) that
+    // the Reviewer/Approver also curates questions alongside the
+    // Researcher. Flagging this explicitly: if the Reviewer is still
+    // expected to edit/override questions before approving (as the earlier
+    // design intended), this specific line needs a follow-up confirmation
+    // with the client before treating it as final — it directly contradicts
+    // prior documented behavior, not just an incremental narrowing.
+    perm('surveyBuilder', { read: true, approve: true }),
     perm('ncnpReport'),
   ] },
   { id: 'role_data_analyst', key: 'data_analyst', name: 'Data Analyst', description: 'Processes data, reviews quality, and prepares reports and dashboards.', crossEntity: false, permissions: [
@@ -178,9 +229,21 @@ export const ROLE_MATRIX: RoleDef[] = [
   ] },
   { id: 'role_system_admin', key: 'system_admin', name: 'System Admin', description: 'Manages accounts, roles, permissions, audit log, and configuration settings.', crossEntity: true, permissions: [
     perm('entityTeam', { read: true, write: true, create: true, export: true }),
-    perm('rolesPermissions', RO), perm('onboardingConsent', RO), perm('methodologyQuestionBank', RO),
-    perm('studySurvey', RO), perm('dataCollection', RO), perm('dataImport', RO), perm('citizenChannel', RO),
-    perm('aiReview', RO), perm('priorityScoring', RO), perm('reportsDashboards', RO),
+    // RIO-RBAC-001 matrix (Aug 11): System Admin gets real write/create on
+    // Roles & Permissions, Studies, Needs, Survey Builder, Question Bank
+    // and Reports now — this role was previously read-only on almost
+    // everything outside its own Administration/Audit scope, which didn't
+    // match the confirmed matrix's "V/C/E(/Ap/Ex/Sh)" rows for System Admin
+    // across those modules.
+    perm('rolesPermissions', { read: true, write: true, create: true }),
+    perm('onboardingConsent', RO), perm('methodologyQuestionBank', { read: true, write: true, create: true }),
+    perm('studySurvey', { read: true, write: true, create: true, approve: true, export: true, share: true }),
+    perm('dataCollection', { read: true, write: true, create: true, approve: true, export: true, share: true }),
+    perm('dataImport', RO), perm('citizenChannel', RO),
+    perm('aiReview', RO),
+    // `export` added per the confirmed matrix (System Admin/Dashboard: V/Ex).
+    perm('priorityScoring', { read: true, export: true }),
+    perm('reportsDashboards', { read: true, write: true, create: true, approve: true, export: true, share: true }),
     // `export` (on top of `read`) — RIO-FR-007: the BRD names System Admin as
     // the role that "manages ... the audit log", but this grant was read-only,
     // so the one role responsible for the audit log couldn't download it. The
@@ -189,7 +252,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     // in this module — Archive is read-only and Sharing uses create/approve —
     // so this widens audit export only, not Archive or Sharing.
     perm('archiveSharingAudit', { read: true, export: true }),
-    perm('surveyBuilder'),
+    perm('surveyBuilder', { read: true, write: true, create: true, approve: true, export: true, share: true }),
     // Generate a new NCNP Compiled Report snapshot for review, and publish
     // one a System Reviewer has already approved — `write` covers both
     // (this role never Approves/Rejects itself; that's exclusively
@@ -224,8 +287,15 @@ export const ROLE_MATRIX: RoleDef[] = [
   { id: 'role_center_supervisor', key: 'center_supervisor', name: 'Center Supervisor (NCNP Supervisor)', description: 'Cross-entity view/follow authority to monitor studies, data, reports and the NCNP Compiled Report — no edit rights on entity data.', crossEntity: true, permissions: [
     perm('entityTeam', RO), perm('rolesPermissions'), perm('onboardingConsent'),
     perm('methodologyQuestionBank', RO), perm('studySurvey', RO), perm('dataCollection', RO),
-    perm('dataImport', RO), perm('citizenChannel'), perm('aiReview', RO), perm('priorityScoring', RO),
-    perm('reportsDashboards', { read: true, export: true }), perm('archiveSharingAudit', RO), perm('surveyBuilder'), perm('ncnpReport'),
+    perm('dataImport', RO), perm('citizenChannel'), perm('aiReview', RO),
+    // `export` added per the confirmed matrix (Center Supervisor/Dashboard: V/Ex).
+    perm('priorityScoring', { read: true, export: true }),
+    perm('reportsDashboards', { read: true, export: true }),
+    // `export` added per the confirmed matrix (Center Supervisor/Audit: V/Ex).
+    perm('archiveSharingAudit', { read: true, export: true }),
+    // `read` added per the confirmed matrix (Center Supervisor/Surveys: V) —
+    // this role previously had zero access to Survey Builder, not even view.
+    perm('surveyBuilder', RO), perm('ncnpReport'),
   ] },
   { id: 'role_citizen_guest', key: 'citizen_guest', name: 'Citizen / Beneficiary Guest', description: 'Responds to surveys through OTP verification; no internal application access.', crossEntity: false,
     permissions: PERMISSION_MODULES.map((m) => (m === 'citizenChannel' ? perm(m, { create: true }) : perm(m))) },
@@ -243,13 +313,26 @@ export const ROLE_MATRIX: RoleDef[] = [
   // NCNP Report Review implementation plan), so nothing beyond `read` is
   // granted for it today.
   { id: 'role_system_reviewer', key: 'system_reviewer', name: 'System Reviewer', description: 'Reviews the NCNP Compiled Report — approves or rejects (with mandatory notes) before System Admin publishes it. Read-only everywhere else.', crossEntity: true, permissions: [
-    perm('entityTeam'), perm('rolesPermissions'), perm('onboardingConsent'), perm('methodologyQuestionBank', RO),
+    // RIO-RBAC-001 matrix (Aug 11): view-only on Organization/Users now
+    // (was none) — matches the confirmed "System Reviewer: V" row.
+    perm('entityTeam', RO), perm('rolesPermissions'), perm('onboardingConsent'), perm('methodologyQuestionBank', RO),
     perm('studySurvey', RO), perm('dataCollection', RO), perm('dataImport', RO), perm('citizenChannel'),
-    // reportsDashboards read + export — "View and download NGO Reports"
-    // (the client's "Documents" menu reuses this existing module/page); no
-    // approve/write, so RPT01-14 confirm/approve/reject/archive stay out of
-    // reach (those need `write`/`approve`, neither granted here).
-    perm('aiReview', RO), perm('priorityScoring', RO), perm('reportsDashboards', { read: true, export: true }), perm('archiveSharingAudit'),
+    perm('aiReview', RO), perm('priorityScoring', RO),
+    // ⚠️ FLAGGED, NOT IMPLEMENTED AS LITERALLY GIVEN: the confirmed matrix
+    // lists Reports = View/Approve/Export for System Reviewer. Deliberately
+    // NOT adding `approve` here — this module (reportsDashboards) is the
+    // general RPT01-14 Reports feature, not the NCNP Compiled Report
+    // (that's the separate `ncnpReport` module below, which already grants
+    // this role `approve`). Per this file's own prior documented warning,
+    // reportsDashboards:approve has no additional crossEntity scoping in
+    // ReportsController, so granting it here would let a System Reviewer
+    // approve/reject/archive any org's RPT01-14 reports — a cross-tenant
+    // capability this role was deliberately never given. Recommend
+    // confirming with the client whether "Reports: Approve" in the matrix
+    // meant the NCNP report specifically (already covered) before granting
+    // this literally.
+    perm('reportsDashboards', { read: true, export: true }),
+    perm('archiveSharingAudit'),
     perm('surveyBuilder', RO),
     perm('ncnpReport', { read: true, approve: true }),
   ] },
