@@ -20,8 +20,7 @@ export const PERMISSION_MODULES = [
   // ngo_admin, center_supervisor, data_analyst and others, and operational
   // rows carry stack traces, internal paths and integration detail that
   // belong to platform operations rather than tenant governance. Granted to
-  // system_admin alone — see the `fullAccess()` exclusion below, which stops
-  // NGO Admin inheriting it by default.
+  // system_admin alone.
   'systemLogs',
 ] as const;
 export type PermissionModule = (typeof PERMISSION_MODULES)[number];
@@ -39,33 +38,6 @@ export interface RoleDef {
 interface Grant { read?: boolean; write?: boolean; create?: boolean; approve?: boolean; export?: boolean; share?: boolean }
 function perm(module: PermissionModule, g: Grant = {}): ModulePermission {
   return { module, read: g.read ?? false, write: g.write ?? false, create: g.create ?? false, approve: g.approve ?? false, export: g.export ?? false, share: g.share ?? false };
-}
-// Modules that are NOT entity-scoped, and so must never be handed out by
-// the "full access within its own entity" helper below:
-//
-// - `ncnpReport` — the cross-org, kingdom-wide NCNP Compiled Report,
-//   gated to System Admin / System Reviewer.
-// - `systemLogs` — RIO-NFR-016 platform operational telemetry (stack
-//   traces, internal paths, cross-tenant), gated to System Admin.
-//
-// Every future non-entity-scoped module belongs in this list too. See the
-// bug note below for why the default has to be exclusion.
-const NON_ENTITY_MODULES: readonly PermissionModule[] = ['ncnpReport', 'systemLogs'];
-
-// "Full access to every module within its own entity" — the modules above are
-// explicitly excluded (left at no access) since they aren't entity-scoped at
-// all. Without
-// this exclusion, NGO Admin (the only role using this helper) silently
-// inherited full read/write/approve/export on it the moment `ncnpReport`
-// was added to `PERMISSION_MODULES` — a real bug: the backend's own
-// `assertCrossEntity()` check would still block NGO Admin from actually
-// using those endpoints, but the frontend's permission-based UI has no
-// such check, so it showed NCNP-only controls (Generate, the Consolidated
-// category filter/column) to a role that could never act on them.
-function fullAccess(): ModulePermission[] {
-  return PERMISSION_MODULES.map((m) =>
-    NON_ENTITY_MODULES.includes(m) ? perm(m) : perm(m, { read: true, write: true, create: true, approve: true, export: true, share: true }),
-  );
 }
 const RO: Grant = { read: true };
 
