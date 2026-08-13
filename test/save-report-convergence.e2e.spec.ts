@@ -27,9 +27,12 @@ describe("saveReportFromSummary → rich content", () => {
     app.setGlobalPrefix("api");
     app.useGlobalFilters(new AllExceptionsFilter());
     await app.init();
+    // RIO-RBAC-001 matrix (Aug 11): Reports:Create is Researcher's grant
+    // now, not ngo_admin's (view/export/share only) — save-report is gated
+    // on reportsDashboards:create.
     const login = await request(app.getHttpServer())
       .post("/api/auth/login")
-      .send({ email: "admin@demo-ngo.org", password: "Passw0rd!" })
+      .send({ email: "officer@demo-ngo.org", password: "Passw0rd!" })
       .expect(200);
     cookies = login.headers["set-cookie"] as unknown as string[];
     const csrfCookie = cookies.find((c) => c.startsWith("rio_csrf="));

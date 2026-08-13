@@ -246,6 +246,37 @@ export class CitizenService {
         });
       }
 
+      // RIO-FR-011 clarification (Aug 11, confirmed): "an old version cannot
+      // accept new responses after a newer version is published." The
+      // citizen's page loads its question set once (resolveSurvey, above)
+      // and answers over some minutes — if a Researcher publishes a new
+      // version in that window, the citizen's already-open page still holds
+      // the OLD version's question ids. Without this check, that stale
+      // submission would silently succeed and get keyed to the old
+      // version's SurveyQuestion rows even though a newer version is now
+      // live. Reject it instead — the currently PUBLISHED survey's own
+      // question ids are the only ones this submission can legitimately
+      // answer against.
+      const currentSurvey = await tx.survey.findFirst({
+        where: { needId: link.needId, status: 'PUBLISHED' },
+        include: { surveyQuestions: { select: { id: true } } },
+      });
+      if (!currentSurvey) {
+        throw new NotFoundException({
+          error: { code: 'SURVEY_NOT_PUBLISHED', message: 'This study does not have a published survey yet.' },
+        });
+      }
+      const currentQuestionIds = new Set(currentSurvey.surveyQuestions.map((q) => q.id));
+      const submittedIds = Object.keys(payload.answers ?? {});
+      if (submittedIds.length > 0 && submittedIds.every((id) => !currentQuestionIds.has(id))) {
+        throw new BadRequestException({
+          error: {
+            code: 'SURVEY_VERSION_CHANGED',
+            message: 'This survey was updated while you were answering it. Please reload the page and submit again.',
+          },
+        });
+      }
+
       // Geography is snapshotted from the Need/Organization at submission
       // time (never asked of the citizen directly) — see the Gender/
       // geography columns' doc comment in schema.prisma. Fetched here, in

@@ -95,7 +95,7 @@ export class StudiesService {
           orgId,
           title: payload.title,
           villages: payload.villages ?? [],
-          methodologyVersionId: payload.methodologyVersionId ?? null,
+          methodologyVersionId: payload.methodologyVersionId,
           population: payload.population,
           marginOfError,
           requiredSampleSize: sampleSize.requiredSampleSize,
@@ -121,7 +121,7 @@ export class StudiesService {
             orgId,
             title: payload.title,
             villages: payload.villages ?? [],
-            methodologyVersionId: payload.methodologyVersionId ?? null,
+            methodologyVersionId: payload.methodologyVersionId,
             population: payload.population,
             marginOfError,
             requiredSampleSize: sampleSize.requiredSampleSize,
@@ -388,7 +388,7 @@ export class StudiesService {
       if (payload.governorateIds !== undefined || payload.centerIds !== undefined) {
         await this.assertGeographyInOrgScope(tx, orgId, nextGovernorateIds, nextCenterIds);
       }
-      if (payload.methodologyVersionId !== undefined && payload.methodologyVersionId !== null) {
+      if (payload.methodologyVersionId !== undefined) {
         await this.assertMethodologyVersionPublished(tx, payload.methodologyVersionId);
       }
 

@@ -257,6 +257,14 @@ export class PublicSurveysService {
     });
 
     const question = questionMap.get(questionId);
+    // Resolve against every other version's copy of this same question
+    // (by text) too — a respondent who answered under a superseded
+    // version's question id would otherwise show "No answer" here despite
+    // having actually answered.
+    const group = this.groupQuestionsByText(questionMap).find(
+      (g) => g.questionId === questionId || g.aliasIds.includes(questionId),
+    );
+    const ids = group ? [group.questionId, ...group.aliasIds] : [questionId];
     return {
       questionId,
       questionText: question?.questionText ?? '',
@@ -268,7 +276,7 @@ export class PublicSurveysService {
         responseId: r.id,
         respondentName: r.contactName,
         contact: r.contact,
-        answer: ((r.answers ?? {}) as Record<string, string>)[questionId] ?? null,
+        answer: this.resolveAnswerAcrossVersions((r.answers ?? {}) as Record<string, string>, ids),
         submittedAt: r.submittedAt.toISOString(),
       })),
     };
@@ -291,10 +299,18 @@ export class PublicSurveysService {
     await this.findNeedOrThrow(needId);
     const escape = (value: string): string => `"${value.replace(/"/g, '""')}"`;
     return this.tenant.runInOrgContext(async (tx) => {
-      const questionMap = await this.buildQuestionMap(tx, needId);
-      const questions = Array.from(questionMap.values());
+      const [questionMap, versionMap] = await Promise.all([
+        this.buildQuestionMap(tx, needId),
+        this.buildVersionMap(tx, needId),
+      ]);
+      // One column per question TEXT, not per version-specific id — the raw
+      // map has a separate entry for the same question in every version it
+      // was copied into.
+      const questions = this.groupQuestionsByText(questionMap);
       const lines = [
-        ['Name', 'Email', 'Submitted Date', ...questions.map((q) => q.questionText)].map(escape).join(','),
+        ['Name', 'Email', 'Submitted Date', 'Survey Version', ...questions.map((q) => q.questionText)]
+          .map(escape)
+          .join(','),
       ];
       for await (const batch of this.iterateResponsesForExport(tx, needId, surveyLinkId)) {
         for (const row of batch) {
@@ -304,7 +320,12 @@ export class PublicSurveysService {
               sanitizeForSpreadsheet(row.contactName ?? ''),
               sanitizeForSpreadsheet(row.contact),
               row.submittedAt.toISOString(),
-              ...questions.map((q) => sanitizeForSpreadsheet(answers[q.questionId] ?? '')),
+              this.resolveResponseVersion(answers, versionMap),
+              ...questions.map((q) =>
+                sanitizeForSpreadsheet(
+                  this.resolveAnswerAcrossVersions(answers, [q.questionId, ...q.aliasIds]) ?? '',
+                ),
+              ),
             ]
               .map((v) => escape(String(v)))
               .join(','),
@@ -318,8 +339,13 @@ export class PublicSurveysService {
   async exportResponsesExcel(needId: string, surveyLinkId?: string): Promise<Buffer> {
     await this.findNeedOrThrow(needId);
     return this.tenant.runInOrgContext(async (tx) => {
-      const questionMap = await this.buildQuestionMap(tx, needId);
-      const questions = Array.from(questionMap.values());
+      const [questionMap, versionMap] = await Promise.all([
+        this.buildQuestionMap(tx, needId),
+        this.buildVersionMap(tx, needId),
+      ]);
+      // One column per question TEXT, not per version-specific id — see the
+      // same note in exportResponsesCsv above.
+      const questions = this.groupQuestionsByText(questionMap);
 
       // Streaming writer, not the in-memory Workbook/Worksheet API: rows are
       // committed (and released from ExcelJS's own memory) one batch at a
@@ -343,6 +369,7 @@ export class PublicSurveysService {
         { header: 'Name', key: 'name', width: 24 },
         { header: 'Email', key: 'email', width: 28 },
         { header: 'Submitted Date', key: 'submittedAt', width: 22 },
+        { header: 'Survey Version', key: 'surveyVersion', width: 20 },
         ...questions.map((q) => ({ header: q.questionText, key: q.questionId, width: 32 })),
       ];
       sheet.getRow(1).font = { bold: true };
@@ -355,8 +382,14 @@ export class PublicSurveysService {
             name: sanitizeForSpreadsheet(row.contactName ?? ''),
             email: sanitizeForSpreadsheet(row.contact),
             submittedAt: row.submittedAt.toISOString(),
+            surveyVersion: this.resolveResponseVersion(answers, versionMap),
             ...Object.fromEntries(
-              questions.map((q) => [q.questionId, sanitizeForSpreadsheet(answers[q.questionId] ?? '')]),
+              questions.map((q) => [
+                q.questionId,
+                sanitizeForSpreadsheet(
+                  this.resolveAnswerAcrossVersions(answers, [q.questionId, ...q.aliasIds]) ?? '',
+                ),
+              ]),
             ),
           });
           excelRow.commit();
@@ -450,6 +483,82 @@ export class PublicSurveysService {
     return map;
   }
 
+  // RIO-FR-011 clarification (Aug 11): exports must be able to distinguish
+  // which survey version each response was actually collected under. A
+  // response's own answer keys are SurveyQuestion ids scoped to exactly one
+  // version (createNewVersion never reuses ids across versions), so the
+  // version that owns the most of those keys is the response's version —
+  // "most", not "any", since a legacy response predating this data model
+  // could theoretically share zero keys with every version if its survey
+  // was deleted outright.
+  private async buildVersionMap(
+    tx: Prisma.TransactionClient,
+    needId: string,
+  ): Promise<Array<{ version: number; status: string; questionIds: Set<string> }>> {
+    const surveys = await tx.survey.findMany({
+      where: { needId },
+      orderBy: { version: 'asc' },
+      include: { surveyQuestions: { select: { id: true } } },
+    });
+    return surveys.map((s) => ({
+      version: s.version,
+      status: s.status,
+      questionIds: new Set(s.surveyQuestions.map((sq) => sq.id)),
+    }));
+  }
+
+  private resolveResponseVersion(
+    rawAnswers: Record<string, string>,
+    versionMap: Array<{ version: number; status: string; questionIds: Set<string> }>,
+  ): string {
+    const answerKeys = Object.keys(rawAnswers);
+    let best: { version: number; status: string } | null = null;
+    let bestOverlap = 0;
+    for (const v of versionMap) {
+      const overlap = answerKeys.filter((k) => v.questionIds.has(k)).length;
+      if (overlap > bestOverlap) {
+        bestOverlap = overlap;
+        best = v;
+      }
+    }
+    return best ? `v${best.version} (${best.status})` : 'Unknown';
+  }
+
+  // Groups buildQuestionMap's per-version entries by questionText — the
+  // same question asked across two versions has two different ids (see
+  // buildQuestionMap's comment), so a lookup keyed to only one specific id
+  // misses any response that happened to answer under a different version's
+  // copy. Mirrors the frontend's aliasIds merge (survey-response-stats.ts).
+  private groupQuestionsByText(
+    questionMap: Map<string, { questionId: string; questionText: string; answerType: string; answerOptions: string[] | null }>,
+  ): Array<{ questionId: string; questionText: string; answerType: string; answerOptions: string[] | null; aliasIds: string[] }> {
+    const byText = new Map<
+      string,
+      { questionId: string; questionText: string; answerType: string; answerOptions: string[] | null; aliasIds: string[] }
+    >();
+    for (const q of questionMap.values()) {
+      const existing = byText.get(q.questionText);
+      if (!existing) {
+        byText.set(q.questionText, { ...q, aliasIds: [] });
+      } else {
+        existing.aliasIds.push(q.questionId);
+      }
+    }
+    return Array.from(byText.values());
+  }
+
+  // First non-blank answer among a question's own id and every alias id
+  // sharing its text — checking only the requested id silently returns "no
+  // answer" for any response that was actually collected under a different
+  // version's copy of the same question.
+  private resolveAnswerAcrossVersions(rawAnswers: Record<string, string>, ids: string[]): string | null {
+    for (const id of ids) {
+      const answer = rawAnswers[id];
+      if (answer && answer.trim()) return answer;
+    }
+    return null;
+  }
+
   private toResponseSummary(row: {
     id: string;
     needId: string;
@@ -526,3 +635,6 @@ export class PublicSurveysService {
     };
   }
 }
+
+
+
