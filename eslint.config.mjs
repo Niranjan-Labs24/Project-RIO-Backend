@@ -14,6 +14,12 @@ export default tseslint.config(
     },
   },
   {
+    files: ['**/*.spec.ts'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
+  {
     // `x ?? 0` on a score/index/rate field is what turned "not measured" into
     // "no problem found" throughout the 28 Jul report: a null severity rendered
     // as 0, banded LOW, and sorted to the bottom of the priority table as though

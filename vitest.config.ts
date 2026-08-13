@@ -2,6 +2,9 @@ import swc from 'unplugin-swc';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  // Vitest 4 uses Oxc by default. Decorator metadata is compiled by SWC
+  // below, so disable the default transform explicitly.
+  oxc: false,
   test: {
     globals: true,
     root: './',

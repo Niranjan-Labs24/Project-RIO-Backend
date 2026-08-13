@@ -80,7 +80,7 @@ export class EvidenceDocumentsService {
       extractedText = buffer.toString("utf-8").replace(/^﻿/, "").trim();
     } else if (ext === ".xlsx") {
       const workbook = new exceljs.Workbook();
-      await workbook.xlsx.load(buffer as any);
+      await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
       const lines: string[] = [];
       workbook.eachSheet((worksheet) => {
         lines.push(`Sheet: ${worksheet.name}`);
@@ -234,9 +234,9 @@ export class EvidenceDocumentsService {
       const result = await this.parseDocumentText(payload.fileName, payload.fileBuffer);
       extractedText = result.text;
       chunksList = this.splitChunks(extractedText);
-    } catch (err: any) {
+    } catch (err: unknown) {
       parsingStatus = "FAILED";
-      parseError = err?.response?.error?.message || err?.message || UNSUPPORTED_SCANNED_MSG;
+      parseError = this.parsingErrorMessage(err);
     }
 
     const doc = await this.tenant.runInOrgContext(async (tx) => {
@@ -286,6 +286,19 @@ export class EvidenceDocumentsService {
     });
 
     return doc;
+  }
+
+  private parsingErrorMessage(err: unknown): string {
+    if (err instanceof BadRequestException) {
+      const response = err.getResponse();
+      if (typeof response === "object" && response !== null && "error" in response) {
+        const error = response.error;
+        if (typeof error === "object" && error !== null && "message" in error) {
+          if (typeof error.message === "string") return error.message;
+        }
+      }
+    }
+    return err instanceof Error ? err.message : UNSUPPORTED_SCANNED_MSG;
   }
 
   async listDocuments(query: ListEvidenceDocumentsQuery) {

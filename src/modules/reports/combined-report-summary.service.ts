@@ -9,6 +9,7 @@ import { requireActor, requireOrgId } from "../../tenancy/org-context";
 import { AuditService } from "../audit/audit.service";
 import { AiService } from "../ai/ai.service";
 import { COMBINED_REPORT_SUMMARY_TASK } from "../ai/prompts/combined-report-summary.task";
+import { Prisma } from "../../generated/prisma";
 
 export interface CombinedReportOutputJson {
   header: {
@@ -211,8 +212,8 @@ export class CombinedReportSummaryService {
       (d) => d.confirmedSummary && documentSummaryIds.includes(d.confirmedSummary.id),
     );
 
-    const scoreSummaryOutput = (scoreSummary?.officerEditedOutputJson ||
-      scoreSummary?.aiOutputJson) as any;
+    const scoreSummaryOutput = (scoreSummary.officerEditedOutputJson ||
+      scoreSummary.aiOutputJson) as Record<string, unknown>;
 
     const inputDataToHash = JSON.stringify({
       scoreSummaryId: scoreSummary.id,
@@ -330,7 +331,7 @@ Generate JSON conforming to:
           modelName,
           modelVersion,
           inputHash,
-          aiOutputJson: aiOutputJson as any,
+          aiOutputJson: aiOutputJson as unknown as Prisma.InputJsonValue,
           generatedBy,
         },
       });
@@ -368,7 +369,7 @@ Generate JSON conforming to:
       tx.combinedReportSummary.update({
         where: { id: summaryId },
         data: {
-          officerEditedOutputJson: editedOutputJson as any,
+          officerEditedOutputJson: editedOutputJson as unknown as Prisma.InputJsonValue,
           status: "DRAFT",
         },
       }),

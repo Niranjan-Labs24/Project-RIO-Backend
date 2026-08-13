@@ -21,6 +21,17 @@ import { RequirePermission } from "../../common/guards/permission.guard";
 import { EvidenceDocumentsService } from "./evidence-documents.service";
 import { DocumentSummaryService, DocumentSummaryOutputJson } from "./document-summary.service";
 
+interface UploadEvidenceDocumentBody {
+  title?: string;
+  documentType?: string;
+  sourceReferenceId?: string;
+  collectedDate?: string;
+  description?: string;
+  linkedNeedId?: string;
+  linkedDomainId?: string;
+  linkedKpiId?: string;
+}
+
 @Controller("studies/:studyId/evidence-documents")
 export class EvidenceDocumentsController {
   constructor(
@@ -38,7 +49,7 @@ export class EvidenceDocumentsController {
   async upload(
     @Param("studyId", new UuidParamPipe()) studyId: string,
     @UploadedFile() file: Express.Multer.File,
-    @Body() body: any,
+    @Body() body: UploadEvidenceDocumentBody,
   ) {
     if (!file) {
       throw new BadRequestException({
