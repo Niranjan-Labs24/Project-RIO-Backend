@@ -26,6 +26,7 @@
     "import:scoring-lookups": "tsx prisma/import-scoring-lookups.ts",
     "import:domain-priority-config": "tsx prisma/import-domain-priority-config.ts",
     "import:geography": "tsx prisma/import-geography.ts",
+    "import:nic-registry": "tsx prisma/import-nic-registry.ts",
     "grant:access": "tsx prisma/grant-access.ts",
     "seed:scored": "tsx prisma/seed-scored-study.ts",
     "fix:report-methodology": "tsx prisma/fix-report-methodology-label.ts",
