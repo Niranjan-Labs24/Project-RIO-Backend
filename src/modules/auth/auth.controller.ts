@@ -8,9 +8,11 @@ import { CSRF_COOKIE_NAME, csrfCookieOptions, SESSION_COOKIE_NAME, sessionCookie
 import { CsrfExempt } from '../../common/guards/csrf.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import {
-  ChangePasswordBody, ForgotPasswordBody, LoginBody, ResetPasswordBody, SignupBody,
+  ChangePasswordBody, ForgotPasswordBody, LoginBody, ResetPasswordBody, SignupBody, VerifyRegistrationNumberBody,
   type ChangePasswordDto, type ForgotPasswordDto, type LoginDto, type ResetPasswordDto, type SignupDto,
+  type VerifyRegistrationNumberDto, type VerifyRegistrationNumberView,
 } from './auth.contract';
+import { NicRegistryService } from '../nic-registry/nic-registry.service';
 import { AuthService } from './auth.service';
 import type { SessionContext, SignupPendingApprovalView } from './session.types';
 
@@ -19,6 +21,7 @@ export class AuthController {
   constructor(
     private readonly auth: AuthService,
     private readonly config: ConfigService,
+    private readonly nicRegistry: NicRegistryService,
   ) {}
 
   // Open route (no @RequirePermission): this is how a caller obtains a token.
@@ -54,6 +57,27 @@ export class AuthController {
     @Body(new TypeBoxValidationPipe(SignupBody)) body: SignupDto,
   ): Promise<SignupPendingApprovalView> {
     return this.auth.signup(body);
+  }
+
+  // Open route, same reasoning as signup itself: it's called from the signup
+  // form, before any session exists. Returns a bare verdict and no registry
+  // data, and is rate-limited well below what bulk-enumerating a ~7.8k-row
+  // register would need — 20/hour is generous for someone checking their own
+  // number and retyping a typo or two.
+  //
+  // 200 with `verified: false` rather than a 4xx: "that number isn't in the
+  // registry" is a successful answer to the question the button asks, and the
+  // form renders it as field state, not as a failed request.
+  @Post('verify-registration-number')
+  @Public()
+  @RateLimit(20, 3600)
+  @HttpCode(200)
+  @CsrfExempt()
+  async verifyRegistrationNumber(
+    @Body(new TypeBoxValidationPipe(VerifyRegistrationNumberBody)) body: VerifyRegistrationNumberDto,
+  ): Promise<VerifyRegistrationNumberView> {
+    const { verified, reason } = await this.nicRegistry.check(body.registrationNumber);
+    return reason ? { verified, reason } : { verified };
   }
 
   // Open routes: unauthenticated by definition (the whole point is to

@@ -7,12 +7,13 @@ import { TokenService } from '../../auth/token.service';
 import { MailerModule } from '../../mailer/mailer.module';
 import { DomainsModule } from '../domains/domains.module';
 import { GeographyModule } from '../geography/geography.module';
+import { NicRegistryModule } from '../nic-registry/nic-registry.module';
 import { ConsentModule } from '../consent/consent.module';
 
 // JwtModule is registered globally in AppModule, so TokenService resolves here.
 // ConfigService, TenantPrismaService, AuditService come from @Global() modules.
 @Module({
-  imports: [MailerModule, DomainsModule, GeographyModule, ConsentModule],
+  imports: [MailerModule, DomainsModule, GeographyModule, NicRegistryModule, ConsentModule],
   controllers: [AuthController],
   providers: [AuthService, AuthRepository, PasswordService, TokenService],
 })

@@ -221,8 +221,19 @@ async function main(): Promise<void> {
   // (RIO-NFR-003 / RIO-RBAC-001's "cross-entity access prevented"), plus a
   // Research Officer in the first org — a role with no entityTeam/
   // rolesPermissions access, needed to prove "unauthorized roles blocked".
+  // The two registration numbers below are real NIC numbers from
+  // `nic_registry` (see prisma/import-nic-registry.ts), not the old
+  // REG-DEMO-000n placeholders: signup only accepts a number the registry
+  // knows, so demo orgs carrying a shape no registrant could ever submit made
+  // the fixtures misleading — and e2e coverage of the duplicate-registration
+  // path needs a seeded org whose number can actually be typed into the form.
+  //
+  // NOTE for existing dev databases: seedOrg is idempotent on
+  // registrationNumber, so changing it leaves any previously seeded
+  // "Demo NGO"/"Riverside Community Trust" row behind rather than renaming
+  // it. Drop those two orgs (or re-create the database) before re-seeding.
   const demoOrgId = await seedOrg({
-    registrationNumber: 'REG-DEMO-0001',
+    registrationNumber: '8000005890',
     name: 'Demo NGO',
     purpose: 'Water, sanitation, and hygiene access for underserved villages.',
     region: ['North'],
@@ -236,7 +247,7 @@ async function main(): Promise<void> {
     ],
   });
   const riversideOrgId = await seedOrg({
-    registrationNumber: 'REG-DEMO-0002',
+    registrationNumber: '8000005887',
     name: 'Riverside Community Trust',
     purpose: 'Livelihoods and economic development along the riverside communities.',
     region: ['South'],

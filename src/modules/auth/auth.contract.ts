@@ -85,6 +85,28 @@ export const SignupBody = registerSchema(
 export type SignupDto = Static<typeof SignupBody>;
 
 /**
+ * The signup form's "Verify" button — checks one registration number against
+ * the NIC entity registry without registering anything. Same loose string
+ * bound as SignupBody.registrationNumber on purpose: the 10-digit rule is
+ * enforced after normalization (Arabic-Indic digits, pasted separators), so a
+ * pattern here would reject input the service itself accepts.
+ */
+export const VerifyRegistrationNumberBody = registerSchema(
+  'VerifyRegistrationNumberBody',
+  T.Object(
+    { registrationNumber: T.String({ minLength: 1, maxLength: 100 }) },
+    { additionalProperties: false },
+  ),
+);
+export type VerifyRegistrationNumberDto = Static<typeof VerifyRegistrationNumberBody>;
+
+export interface VerifyRegistrationNumberView {
+  verified: boolean;
+  /** Why it failed, for the frontend to localize. Absent when verified. */
+  reason?: 'INVALID_FORMAT' | 'NOT_FOUND';
+}
+
+/**
  * Complexity policy for a password the user *sets*: at least 8 characters,
  * with one capital letter, one digit and one special character (anything
  * that isn't a letter, digit or whitespace). Mirrored on the frontend in

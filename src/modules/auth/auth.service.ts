@@ -4,6 +4,7 @@ import { ConsentPolicyKind, UserStatus } from '../../generated/prisma';
 import { ConsentService } from '../consent/consent.service';
 import { DomainsService } from '../domains/domains.service';
 import { GeographyService } from '../geography/geography.service';
+import { NicRegistryService } from '../nic-registry/nic-registry.service';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { PasswordService } from '../../auth/password.service';
@@ -66,6 +67,9 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly domains: DomainsService,
     private readonly geography: GeographyService,
+    // Signup gate: the registration number must be a NIC number in the
+    // published entity registry.
+    private readonly nicRegistry: NicRegistryService,
     // RIO-DATA-001 — resolves/validates the active policy of each consent
     // kind during signup and the post-login re-prompt.
     private readonly consentPolicies: ConsentService,
@@ -337,10 +341,17 @@ export class AuthService {
   // policy and the data-sharing consent. AuthService.consent() below is now
   // only the re-prompt path (accounts predating this, and policy bumps).
   async signup(dto: SignupDto): Promise<SignupPendingApprovalView> {
+    // The registration number must belong to an entity in the NIC registry —
+    // checked before the duplicate lookup because "we've never heard of this
+    // entity" is the more actionable answer, and because everything below
+    // must key off the normalized form this returns (a number entered with
+    // dashes or Arabic-Indic digits would otherwise slip past the duplicate
+    // check and land as a second row for the same entity).
+    const registrationNumber = await this.nicRegistry.assertRegistered(dto.registrationNumber);
     // Friendly pre-checks (the DB unique constraint is still the source of
     // truth, handled inside the repository for the concurrent-signup race —
     // hence the duplicated error envelopes via the shared conflictFor()).
-    if (await this.repo.findByRegistrationNumber(dto.registrationNumber)) {
+    if (await this.repo.findByRegistrationNumber(registrationNumber)) {
       throw conflictFor('registrationNumber');
     }
     if (await this.repo.findUserByEmail(dto.email)) {
@@ -365,7 +376,8 @@ export class AuthService {
       organizationName: dto.organizationName,
       sector: dto.sector,
       purpose: dto.purpose,
-      registrationNumber: dto.registrationNumber,
+      // Normalized, not dto.registrationNumber — see assertRegistered.
+      registrationNumber,
       email: dto.email,
       passwordHash: placeholderPasswordHash,
       regionId: dto.regionId,

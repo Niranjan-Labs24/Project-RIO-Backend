@@ -922,6 +922,44 @@ model Center {
   @@map("centers")
 }
 
+// ──────── NIC entity registry (global, seeded, read-only to cnap_app) ────────
+// The published register of entities and supervisory units (الكيانات والوحدات
+// الاشرافية). Same pattern as the geographic reference above — no org_id, no
+// RLS, seeded via prisma/import-nic-registry.ts (idempotent upsert on
+// `nic_number`) from Entities_Supervisory_Units.xlsx.
+//
+// Sole purpose today: gate self-service signup. AuthService.signup rejects a
+// registration number that isn't a NIC number in here, so an org row can only
+// ever be created for an entity the registry knows about (see
+// NicRegistryService.assertRegistered).
+//
+// The descriptive columns are all nullable on purpose: matching only ever
+// keys off `nic_number`, and a future export that drops or renames a
+// descriptive column must not be able to fail the import that keeps the gate
+// current.
+model NicRegistry {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  // The entity's unified national number — 10 digits in every row of the
+  // source workbook (all 7,840 distinct), stored normalized (ASCII digits,
+  // no separators) so the comparison in assertRegistered is a plain equality
+  // check against an indexed column.
+  nicNumber String @unique @map("nic_number") @db.VarChar(10)
+
+  nameEn                String?   @map("name_en") @db.VarChar(500)
+  nameAr                String?   @map("name_ar") @db.VarChar(500)
+  // The workbook's own License_Number — free-text, non-unique, and NOT what
+  // signup matches on. Kept for support: it's the number an entity is most
+  // likely to quote when they dispute a rejection.
+  licenseNumber         String?   @map("license_number") @db.VarChar(50)
+  supervisoryAgencyName String?   @map("supervisory_agency_name") @db.VarChar(500)
+  licenseExpiryDate     DateTime? @map("license_expiry_date") @db.Date
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("nic_registry")
+}
+
 // An org has exactly one Region (plain scalar FK on Organisation itself, see
 // Organisation.regionId), but can independently span many Governorates and
 // many Centers (not necessarily one Center per selected Governorate) — each
