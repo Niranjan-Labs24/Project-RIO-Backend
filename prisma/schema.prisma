@@ -1360,6 +1360,13 @@ enum ReportType {
 
 enum ReportStatus {
   draft
+  // Client-confirmed (Aug 13): a distinct state for "the Officer confirmed
+  // it, awaiting the Reviewer's decision" — previously confirm() stamped
+  // officerConfirmedAt but left status at "draft", which read as
+  // unconfirmed and confused the Officer into thinking confirm had failed.
+  // Reached only via ReportsService.confirm(); approve()/reject() require
+  // it (not "draft") to move a report onward.
+  submitted
   rejected
   released
   archived

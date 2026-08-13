@@ -109,10 +109,10 @@ describe('ROLE_MATRIX', () => {
     expect(can('ngo_research_officer', 'aiReview', 'write')).toBe(true);
     expect(can('ngo_research_officer', 'surveyBuilder', 'write')).toBe(true);
     expect(can('ngo_research_officer', 'surveyBuilder', 'approve')).toBe(false);
-    // RIO-RBAC-001 matrix (Aug 11): Reviewer's Surveys grant narrowed to
-    // View + Approve only — `write` (question curation) is no longer held
-    // here. See role-matrix.ts's flagged comment on this exact line.
-    expect(can('human_reviewer', 'surveyBuilder', 'write')).toBe(false);
+    // `write` restored (Aug 13 call, client-confirmed): the Reviewer does
+    // curate questions during review — see role-matrix.ts's comment on this
+    // exact line.
+    expect(can('human_reviewer', 'surveyBuilder', 'write')).toBe(true);
     expect(can('human_reviewer', 'surveyBuilder', 'approve')).toBe(true);
     expect(can('ngo_research_officer', 'rolesPermissions', 'read')).toBe(false);
     expect(can(undefined, 'entityTeam', 'read')).toBe(false); // no role → deny

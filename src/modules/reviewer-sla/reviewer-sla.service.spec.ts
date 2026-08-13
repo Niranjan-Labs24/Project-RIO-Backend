@@ -28,18 +28,26 @@ interface FakeReport {
 }
 interface FakeStudy { id: string; title: string }
 interface FakeNeed { id: string; statement: string | null }
+interface FakeEvidenceDocument {
+  id: string;
+  studyId: string;
+  linkedNeedId: string | null;
+  createdAt: Date;
+}
 
 function fakeTenant(opts: {
   surveys?: FakeSurvey[];
   reports?: FakeReport[];
   studies?: FakeStudy[];
   needs?: FakeNeed[];
+  evidenceDocuments?: FakeEvidenceDocument[];
 }) {
   const tx = {
     survey: { findMany: async () => opts.surveys ?? [] },
     report: { findMany: async () => opts.reports ?? [] },
     study: { findMany: async () => opts.studies ?? [] },
     need: { findMany: async () => opts.needs ?? [] },
+    evidenceDocument: { findMany: async () => opts.evidenceDocuments ?? [] },
   };
   return {
     runInOrgContext: async (fn: (tx: unknown) => unknown) => fn(tx),
@@ -62,7 +70,7 @@ describe('ReviewerSlaService', () => {
           { id: 's1', needId: 'n1', studyId: 'st1', status: 'SUBMITTED', submittedAt: newer, updatedAt: newer },
         ],
         reports: [
-          { id: 'r1', studyId: 'st2', status: 'draft', title: 'Village Report', officerConfirmedAt: older, generatedAt: older },
+          { id: 'r1', studyId: 'st2', status: 'submitted', title: 'Village Report', officerConfirmedAt: older, generatedAt: older },
         ],
         studies: [{ id: 'st1', title: 'Study One' }, { id: 'st2', title: 'Study Two' }],
         needs: [{ id: 'n1', statement: 'Need statement' }],
@@ -90,7 +98,7 @@ describe('ReviewerSlaService', () => {
     const svc = makeService(
       fakeTenant({
         reports: [
-          { id: 'r1', studyId: null, status: 'draft', title: 'Org-wide Report', officerConfirmedAt: new Date(), generatedAt: new Date() },
+          { id: 'r1', studyId: null, status: 'submitted', title: 'Org-wide Report', officerConfirmedAt: new Date(), generatedAt: new Date() },
         ],
       }),
     );
@@ -128,13 +136,62 @@ describe('ReviewerSlaService', () => {
   });
 
   it('a role with neither reportsDashboards:approve nor :write gets no report alerts', async () => {
-    const svc = makeService(fakeTenant({ reports: [{ id: 'r1', studyId: null, status: 'draft', title: 'X', officerConfirmedAt: new Date(), generatedAt: new Date() }] }));
+    const svc = makeService(fakeTenant({ reports: [{ id: 'r1', studyId: null, status: 'submitted', title: 'X', officerConfirmedAt: new Date(), generatedAt: new Date() }] }));
     // read_only_viewer holds neither approve nor write on reportsDashboards.
     const alerts = await orgContext.run(
       { requestId: 'r', actorId: 'me', role: 'read_only_viewer' },
       () => svc.listAlerts(),
     );
     expect(alerts.some((a) => a.type.startsWith('report_'))).toBe(false);
+  });
+
+  it('Data Analyst sees evidence_document_uploaded alerts for Needs-linked documents', async () => {
+    const older = new Date('2026-01-01T00:00:00Z');
+    const newer = new Date('2026-01-02T00:00:00Z');
+    const svc = makeService(
+      fakeTenant({
+        evidenceDocuments: [
+          { id: 'd2', studyId: 'st1', linkedNeedId: 'n1', createdAt: newer },
+          { id: 'd1', studyId: 'st1', linkedNeedId: 'n1', createdAt: older },
+        ],
+        studies: [{ id: 'st1', title: 'Study One' }],
+        needs: [{ id: 'n1', statement: 'Need statement' }],
+      }),
+    );
+
+    const alerts = await orgContext.run(
+      { requestId: 'r', actorId: 'me', role: 'data_analyst' },
+      () => svc.listAlerts(),
+    );
+
+    const evidenceAlerts = alerts.filter((a) => a.type === 'evidence_document_uploaded');
+    expect(evidenceAlerts).toHaveLength(2);
+    // data_analyst holds neither surveyBuilder:approve nor
+    // reportsDashboards:approve (only priorityScoring:create, which the
+    // final merge-sort deliberately doesn't key on — see listAlerts' own
+    // comment), so the global sort here is newest-first, even though
+    // listPendingEvidenceSummaryAlerts' own internal order is oldest-first.
+    expect(evidenceAlerts[0]?.id).toBe('d2');
+    expect(evidenceAlerts[1]?.id).toBe('d1');
+    const d1 = evidenceAlerts.find((a) => a.id === 'd1');
+    expect(d1?.needId).toBe('n1');
+    expect(d1?.studyTitle).toBe('Study One');
+    expect(d1?.needStatement).toBe('Need statement');
+    expect(d1?.status).toBe('pending');
+    expect(evidenceAlerts.find((a) => a.id === 'd2')?.needId).toBe('n1');
+  });
+
+  it('a role without priorityScoring:create (e.g. the Research Officer who uploaded it) gets no evidence_document_uploaded alerts', async () => {
+    const svc = makeService(
+      fakeTenant({
+        evidenceDocuments: [{ id: 'd1', studyId: 'st1', linkedNeedId: 'n1', createdAt: new Date() }],
+      }),
+    );
+    const alerts = await orgContext.run(
+      { requestId: 'r', actorId: 'me', role: 'ngo_research_officer' },
+      () => svc.listAlerts(),
+    );
+    expect(alerts.some((a) => a.type === 'evidence_document_uploaded')).toBe(false);
   });
 
   it('getConfig returns the configured SLA hours and poll interval', () => {

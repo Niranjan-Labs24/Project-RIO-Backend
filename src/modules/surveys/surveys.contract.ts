@@ -14,6 +14,13 @@ import { registerSchema, T, type Static } from '../../contract/typebox';
 // where "required for new questions" actually lives; see
 // custom-question-editor-dialog.tsx on the frontend.
 export const SurveyQuestionItem = T.Object({
+  // Present only for a question carried over unchanged from what the
+  // caller loaded (the SurveyQuestion row's own id) — omitted for a
+  // newly-added item, since the backend hasn't generated its id yet. Used
+  // purely to detect removals (see UpdateSurveyQuestionsBody's
+  // removalReasons below); never trusted for anything else, since this
+  // endpoint always deletes-and-recreates the whole set.
+  id: T.Optional(T.String({ format: 'uuid' })),
   questionId: T.Optional(T.String()),
   customText: T.Optional(T.String({ minLength: 1 })),
   customAnswerType: T.Optional(T.String()),
@@ -29,6 +36,15 @@ export const UpdateSurveyQuestionsBody = registerSchema(
   'UpdateSurveyQuestionsBody',
   T.Object({
     questions: T.Array(SurveyQuestionItem),
+    // Client-confirmed (Aug 13 call): a question the Reviewer removes
+    // during their review (survey status SUBMITTED) must carry a reason —
+    // free text for now, a fixed set of codes deferred until the client
+    // hands one over. Keyed by the removed SurveyQuestionItem's own `id`.
+    // SurveysService.updateQuestions rejects the request if any question
+    // present in the survey before this call, and absent from `questions`
+    // here, has no entry in this map — but only while status is SUBMITTED;
+    // the Researcher's own DRAFT-phase edits never require a reason.
+    removalReasons: T.Optional(T.Record(T.String({ format: 'uuid' }), T.String({ minLength: 1, maxLength: 500 }))),
   }),
 );
 export type UpdateSurveyQuestionsDto = Static<typeof UpdateSurveyQuestionsBody>;

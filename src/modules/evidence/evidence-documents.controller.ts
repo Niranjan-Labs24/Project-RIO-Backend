@@ -123,14 +123,22 @@ export class EvidenceDocumentsController {
     return this.documentsService.deleteDocument(id);
   }
 
+  // Client-confirmed (Aug 14): AI Evidence Summary generation is exclusively
+  // Data Analyst's — was aiReview:write, which Research Officer also holds
+  // (for the unrelated Need-classification-trigger action) and silently let
+  // them generate these too. priorityScoring:create/write is the precise
+  // gate: Data Analyst holds both, Research Officer holds neither (they're
+  // View-only on priorityScoring). A pragmatic split ahead of a formal
+  // client sign-off on the exact module — flagged for that if it ever needs
+  // revisiting.
   @Post(":id/summary/generate")
-  @RequirePermission("aiReview", "write")
+  @RequirePermission("priorityScoring", "create")
   async generateSummary(@Param("id", new UuidParamPipe()) id: string) {
     return this.summaryService.generateDocumentSummary(id);
   }
 
   @Put(":id/summary/:summaryId")
-  @RequirePermission("aiReview", "write")
+  @RequirePermission("priorityScoring", "write")
   async updateSummary(
     @Param("summaryId", new UuidParamPipe()) summaryId: string,
     @Body() body: DocumentSummaryOutputJson,
@@ -139,7 +147,7 @@ export class EvidenceDocumentsController {
   }
 
   @Post(":id/summary/:summaryId/confirm")
-  @RequirePermission("aiReview", "write")
+  @RequirePermission("priorityScoring", "write")
   async confirmSummary(@Param("summaryId", new UuidParamPipe()) summaryId: string) {
     return this.summaryService.confirmSummary(summaryId);
   }

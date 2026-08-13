@@ -44,7 +44,7 @@ export class ReviewerSlaService {
 
   async listAlerts(): Promise<SlaAlert[]> {
     const role = getOrgStore()?.role;
-    const [surveyAlerts, reportAlerts] = await Promise.all([
+    const [surveyAlerts, reportAlerts, evidenceAlerts] = await Promise.all([
       can(role, "surveyBuilder", "approve")
         ? this.listSurveyApprovalAlerts()
         : this.listOwnSurveyStatusAlerts(),
@@ -53,14 +53,32 @@ export class ReviewerSlaService {
         : can(role, "reportsDashboards", "write")
           ? this.listOwnReportStatusAlerts()
           : Promise.resolve([]),
+      // priorityScoring:create is the precise gate — matches exactly who can
+      // act on the alert (EvidenceDocumentsController.generateSummary checks
+      // the same permission). data_analyst only; the Research Officer who
+      // uploaded the document holds no grant on it (dataCollection is their
+      // module, not priorityScoring), so they never see their own upload
+      // echoed back at them.
+      can(role, "priorityScoring", "create")
+        ? this.listPendingEvidenceSummaryAlerts()
+        : Promise.resolve([]),
     ]);
     // Each list is already sorted per its own convention (oldest-first for
     // a still-open queue, newest-first for already-resolved items) —
     // interleave both same-convention lists together rather than imposing
     // one global sort that would mix the two meanings.
-    return [...surveyAlerts, ...reportAlerts].sort((a, b) => {
+    return [...surveyAlerts, ...reportAlerts, ...evidenceAlerts].sort((a, b) => {
       const aTime = new Date(a.createdAt).getTime();
       const bTime = new Date(b.createdAt).getTime();
+      // Not folding priorityScoring:create into this flag: data_analyst
+      // also holds reportsDashboards:write (they generate reports too, per
+      // this session's Data Analyst/Research Officer rebalance), so it
+      // already receives listOwnReportStatusAlerts' newest-first "your own
+      // resolved reports" queue alongside its evidence to-do queue — a role
+      // that gets both an open to-do list AND an already-resolved list has
+      // no single correct global direction either way (same limitation the
+      // comment above already accepts), so this stays keyed only to the two
+      // still-open-queue permissions it always meant.
       const pendingQueue = can(role, "surveyBuilder", "approve") || can(role, "reportsDashboards", "approve");
       return pendingQueue ? aTime - bTime : bTime - aTime;
     });
@@ -130,7 +148,7 @@ export class ReviewerSlaService {
 
     const { resolvedSurveys, studies, needs } = await this.tenant.runInOrgContext(async (tx) => {
       const resolvedSurveys = await tx.survey.findMany({
-        where: { createdBy: actorId, status: { in: ["PUBLISHED", "REJECTED"] } },
+        where: { createdBy: actorId, status: { in: ["APPROVED", "REJECTED"] } },
         orderBy: { updatedAt: "desc" },
       });
 
@@ -147,21 +165,21 @@ export class ReviewerSlaService {
     const needById = new Map(needs.map((n) => [n.id, n]));
 
     const alerts: SlaAlert[] = resolvedSurveys.map((survey) => {
-      const isApproved = survey.status === "PUBLISHED";
-      // publishedAt/rejectedAt are always set on their respective
-      // transitions (see SurveysService.approveAndPublish/rejectSurvey) —
-      // the `?? updatedAt` fallback is defensive only.
-      const resolvedAt = (isApproved ? survey.publishedAt : survey.rejectedAt) ?? survey.updatedAt;
+      const isApproved = survey.status === "APPROVED";
+      // approvedAt/rejectedAt are always set on their respective
+      // transitions (see SurveysService.approveSurvey/rejectSurvey) — the
+      // `?? updatedAt` fallback is defensive only.
+      const resolvedAt = (isApproved ? survey.approvedAt : survey.rejectedAt) ?? survey.updatedAt;
       return {
         id: survey.id,
-        type: isApproved ? "survey_approved" : "survey_rejected",
+        type: isApproved ? "survey_ready_to_publish" : "survey_rejected",
         needId: survey.needId,
         studyId: survey.studyId,
         surveyId: survey.id,
         reportId: null,
         studyTitle: studyById.get(survey.studyId)?.title ?? survey.studyId,
         needStatement: needById.get(survey.needId)?.statement ?? null,
-        touchpoint: isApproved ? "survey_approved" : "survey_rejected",
+        touchpoint: isApproved ? "survey_ready_to_publish" : "survey_rejected",
         createdAt: resolvedAt.toISOString(),
         dueAt: resolvedAt.toISOString(),
         // No SLA clock applies to an already-resolved item — "pending" here
@@ -182,8 +200,12 @@ export class ReviewerSlaService {
   // notification, so `status` is always "pending", never at_risk/breached.
   private async listReportApprovalAlerts(): Promise<SlaAlert[]> {
     const { pendingReports, studies } = await this.tenant.runInOrgContext(async (tx) => {
+      // Client-confirmed (Aug 13): "submitted" is now its own status (see
+      // ReportsService.confirm) — a report only ever reaches it via a
+      // confirmed officer sign-off, so officerConfirmedAt is guaranteed
+      // set here without needing a separate filter on it.
       const pendingReports = await tx.report.findMany({
-        where: { status: "draft", officerConfirmedAt: { not: null } },
+        where: { status: "submitted" },
         orderBy: { officerConfirmedAt: "asc" },
       });
       const studyIds = Array.from(
@@ -260,5 +282,53 @@ export class ReviewerSlaService {
     });
 
     return alerts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  // Data-Analyst-facing: EvidenceDocuments a Research Officer uploaded and
+  // linked to a Need that don't have an AI Evidence Summary yet — org-wide,
+  // shown to whoever holds priorityScoring:create. Auto-resolves the same
+  // way listReportApprovalAlerts does: `summaries: { none: {} }` simply stops
+  // matching once GenerateDocumentSummary runs for the document, no explicit
+  // dismiss needed. Documents uploaded without a linked Need (linkedNeedId
+  // null) are excluded — there's nowhere on the Priority Dashboard to route
+  // them to (that page is keyed by Need), and they aren't part of this
+  // per-Need summary workflow anyway. No configured SLA clock for this
+  // either, so `status` is always "pending", same as report_approval.
+  private async listPendingEvidenceSummaryAlerts(): Promise<SlaAlert[]> {
+    const { pendingDocuments, studies, needs } = await this.tenant.runInOrgContext(async (tx) => {
+      const pendingDocuments = await tx.evidenceDocument.findMany({
+        where: { linkedNeedId: { not: null }, summaries: { none: {} } },
+        orderBy: { createdAt: "asc" },
+      });
+      const studyIds = Array.from(new Set(pendingDocuments.map((d) => d.studyId)));
+      const needIds = Array.from(
+        new Set(pendingDocuments.map((d) => d.linkedNeedId).filter((id): id is string => id !== null)),
+      );
+      const [studyRows, needRows] = await Promise.all([
+        tx.study.findMany({ where: { id: { in: studyIds } } }),
+        tx.need.findMany({ where: { id: { in: needIds } } }),
+      ]);
+      return { pendingDocuments, studies: studyRows, needs: needRows };
+    });
+
+    const studyById = new Map(studies.map((s) => [s.id, s]));
+    const needById = new Map(needs.map((n) => [n.id, n]));
+
+    const alerts: SlaAlert[] = pendingDocuments.map((doc) => ({
+      id: doc.id,
+      type: "evidence_document_uploaded",
+      needId: doc.linkedNeedId,
+      studyId: doc.studyId,
+      surveyId: null,
+      reportId: null,
+      studyTitle: studyById.get(doc.studyId)?.title ?? doc.studyId,
+      needStatement: doc.linkedNeedId ? (needById.get(doc.linkedNeedId)?.statement ?? null) : null,
+      touchpoint: "evidence_document_uploaded",
+      createdAt: doc.createdAt.toISOString(),
+      dueAt: doc.createdAt.toISOString(),
+      status: "pending",
+    }));
+
+    return alerts.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
   }
 }

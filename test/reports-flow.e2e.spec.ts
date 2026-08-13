@@ -124,10 +124,13 @@ describe("Reports lifecycle flow (RPT14 Village Report)", () => {
       .expect(403)
       .expect((r) => expect(r.body.error.code).toBe("REPORT_NOT_CONFIRMED"));
 
-    // 4. Officer confirms their own draft → still draft, officer fields set.
-    //    Researcher holds Reports:Edit alongside Create (Aug 12 refinement).
+    // 4. Officer confirms their own draft → moves to "submitted", officer
+    //    fields set. Researcher holds Reports:Edit alongside Create (Aug 12
+    //    refinement). Client-confirmed (Aug 13): confirm() now moves status
+    //    off "draft" — it used to leave it unchanged, which read as if the
+    //    sign-off hadn't registered.
     const confirmed = await officer(request(server).patch(`/api/reports/${id}/confirm`)).expect(200);
-    expect(confirmed.body.status).toBe("draft");
+    expect(confirmed.body.status).toBe("submitted");
     expect(confirmed.body.officerConfirmedAt).not.toBeNull();
 
     // 5. Reviewer approves → released. Notes are mandatory (RIO-FR-007).

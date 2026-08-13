@@ -98,37 +98,147 @@ describe('SurveysService.rejectSurvey', () => {
   });
 });
 
-describe('SurveysService.approveAndPublish', () => {
+// Client-confirmed (Aug 13 call): Approve and Publish are now two separate
+// steps — the Approver approves, the Researcher (or anyone else holding
+// surveyBuilder:write) publishes. See SurveysService.approveSurvey/publishSurvey.
+describe('SurveysService.approveSurvey', () => {
   const submittedSurvey: FakeSurvey = { id: 'sv1', needId: 'n1', status: 'SUBMITTED' };
   const draftSurvey: FakeSurvey = { id: 'sv1', needId: 'n1', status: 'DRAFT' };
 
   it('requires reviewer notes — rejects with empty comments', async () => {
     const service = makeService(submittedSurvey);
-    await expect(runAsApprover(() => service.approveAndPublish('sv1', ''))).rejects.toBeInstanceOf(BadRequestException);
+    await expect(runAsApprover(() => service.approveSurvey('sv1', ''))).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('blank/whitespace-only reviewer notes still fail', async () => {
     const service = makeService(submittedSurvey);
-    await expect(runAsApprover(() => service.approveAndPublish('sv1', '   '))).rejects.toBeInstanceOf(BadRequestException);
+    await expect(runAsApprover(() => service.approveSurvey('sv1', '   '))).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('succeeds with real reviewer notes — persists approverComments and publishes', async () => {
+  it('succeeds with real reviewer notes — persists approverComments, moves to APPROVED, does NOT publish', async () => {
     const service = makeService(submittedSurvey);
-    const result = (await runAsApprover(() => service.approveAndPublish('sv1', 'Looks good, publishing.'))) as FakeSurvey;
-    expect(result.status).toBe('PUBLISHED');
-    expect(result.approverComments).toBe('Looks good, publishing.');
+    const result = (await runAsApprover(() => service.approveSurvey('sv1', 'Looks good.'))) as FakeSurvey;
+    expect(result.status).toBe('APPROVED');
+    expect(result.approverComments).toBe('Looks good.');
   });
 
   it('also succeeds from DRAFT (the AI Review flow, no separate submit step)', async () => {
     const service = makeService(draftSurvey);
-    const result = (await runAsApprover(() => service.approveAndPublish('sv1', 'Approved via AI Review.'))) as FakeSurvey;
-    expect(result.status).toBe('PUBLISHED');
+    const result = (await runAsApprover(() => service.approveSurvey('sv1', 'Approved via AI Review.'))) as FakeSurvey;
+    expect(result.status).toBe('APPROVED');
     expect(result.approverComments).toBe('Approved via AI Review.');
   });
 
   it('rejects a survey that is not currently SUBMITTED or DRAFT', async () => {
     const service = makeService({ id: 'sv1', needId: 'n1', status: 'REJECTED' });
-    await expect(runAsApprover(() => service.approveAndPublish('sv1', 'Notes'))).rejects.toBeInstanceOf(ConflictException);
+    await expect(runAsApprover(() => service.approveSurvey('sv1', 'Notes'))).rejects.toBeInstanceOf(ConflictException);
+  });
+});
+
+describe('SurveysService.publishSurvey', () => {
+  function runAsResearcher<T>(fn: () => Promise<T>): Promise<T> {
+    return orgContext.run({ requestId: 'r1', actorId: 'officer-1', role: 'ngo_research_officer' }, fn);
+  }
+
+  it('publishes an APPROVED survey without requiring any notes', async () => {
+    const service = makeService({ id: 'sv1', needId: 'n1', status: 'APPROVED' });
+    const result = (await runAsResearcher(() => service.publishSurvey('sv1'))) as FakeSurvey;
+    expect(result.status).toBe('PUBLISHED');
+  });
+
+  it('rejects a survey that is not currently APPROVED', async () => {
+    const service = makeService({ id: 'sv1', needId: 'n1', status: 'SUBMITTED' });
+    await expect(runAsResearcher(() => service.publishSurvey('sv1'))).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('rejects publishing an already-PUBLISHED survey', async () => {
+    const service = makeService({ id: 'sv1', needId: 'n1', status: 'PUBLISHED' });
+    await expect(runAsResearcher(() => service.publishSurvey('sv1'))).rejects.toBeInstanceOf(ConflictException);
+  });
+});
+
+// Client-confirmed (Aug 13 call): a question the Reviewer removes during
+// their review (survey status SUBMITTED) must carry a reason — free text
+// for now. The Researcher's own DRAFT-phase editing never requires one.
+describe('SurveysService.updateQuestions — removal reasons', () => {
+  interface FakeSurveyQuestion {
+    id: string;
+    questionId: string | null;
+    customText: string | null;
+    question: { questionText: string } | null;
+  }
+
+  function makeQuestionsService(status: string, existingQuestions: FakeSurveyQuestion[]) {
+    const tx = {
+      survey: {
+        findUnique: async () => ({ id: 'sv1', needId: 'n1', status }),
+        // getSurveyByNeedId's own lookup, called at the end of
+        // updateQuestions to return the fresh survey — this file's tests
+        // only assert the call resolved, not on this shape.
+        findFirst: async () => null,
+      },
+      surveyQuestion: {
+        findMany: async () => existingQuestions,
+        deleteMany: async () => undefined,
+        createMany: async () => undefined,
+      },
+    };
+    const tenant = { runInOrgContext: async (fn: (tx: unknown) => unknown) => fn(tx) };
+    const audit = { record: async () => undefined };
+    return new SurveysService(tenant as never, audit as never, undefined as never, undefined as never);
+  }
+
+  const existing: FakeSurveyQuestion[] = [
+    { id: 'sq1', questionId: 'q1', customText: null, question: { questionText: 'How many people live in this household?' } },
+    { id: 'sq2', questionId: null, customText: 'Any other comments?', question: null },
+  ];
+
+  it('SUBMITTED: removing a question without a reason is rejected', async () => {
+    const service = makeQuestionsService('SUBMITTED', existing);
+    // sq2 is dropped, no removalReasons entry for it.
+    await expect(
+      runAsApprover(() =>
+        service.updateQuestions('sv1', [{ id: 'sq1', questionId: 'q1', order: 1, isRequired: true }], {}),
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('SUBMITTED: removing a question WITH a reason succeeds', async () => {
+    const service = makeQuestionsService('SUBMITTED', existing);
+    await expect(
+      runAsApprover(() =>
+        service.updateQuestions(
+          'sv1',
+          [{ id: 'sq1', questionId: 'q1', order: 1, isRequired: true }],
+          { sq2: 'Redundant with an earlier question' },
+        ),
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  it('SUBMITTED: adding a question (no removal at all) never requires a reason', async () => {
+    const service = makeQuestionsService('SUBMITTED', existing);
+    await expect(
+      runAsApprover(() =>
+        service.updateQuestions(
+          'sv1',
+          [
+            { id: 'sq1', questionId: 'q1', order: 1, isRequired: true },
+            { id: 'sq2', customText: 'Any other comments?', order: 2, isRequired: false },
+            { questionId: 'q3', order: 3, isRequired: true },
+          ],
+          {},
+        ),
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  it('DRAFT: the Researcher removing a question never requires a reason', async () => {
+    const service = makeQuestionsService('DRAFT', existing);
+    const officer = () => orgContext.run({ requestId: 'r1', actorId: 'officer-1', role: 'ngo_research_officer' }, () =>
+      service.updateQuestions('sv1', [{ id: 'sq1', questionId: 'q1', order: 1, isRequired: true }], {}),
+    );
+    await expect(officer()).resolves.toBeDefined();
   });
 });
 

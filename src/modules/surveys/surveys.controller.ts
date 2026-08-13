@@ -111,7 +111,7 @@ export class SurveysController {
     @Param('id', new UuidParamPipe()) id: string,
     @Body(new TypeBoxValidationPipe(UpdateSurveyQuestionsBody)) body: UpdateSurveyQuestionsDto,
   ) {
-    return this.service.updateQuestions(id, body.questions);
+    return this.service.updateQuestions(id, body.questions, body.removalReasons ?? {});
   }
 
   // Researcher-only, same editability window as updateQuestions — see
@@ -147,10 +147,17 @@ export class SurveysController {
   // RIO-FR-011 (client-confirmed): the only way to change a PUBLISHED
   // survey — creates a new DRAFT version (copying the published one's
   // questions/methodology/sample-description as a starting point) rather
-  // than editing in place. surveyBuilder:write, same role gate as every
-  // other Researcher-side edit action above.
+  // than editing in place.
+  //
+  // Bug fix (Aug 13): this used to be surveyBuilder:write, which Human
+  // Reviewer holds too (restored the same day, for a completely unrelated
+  // reason — curating questions mid-review). Starting a fresh post-publish
+  // edit cycle isn't the Reviewer's job; `create` is the precise gate —
+  // every role that should reach this (Researcher, Field Researcher, NGO
+  // Admin, System Admin) holds it, and Human Reviewer, uniquely, doesn't
+  // (read/write/approve only — see role-matrix.ts).
   @Post('surveys/:id/new-version')
-  @RequirePermission('surveyBuilder', 'write')
+  @RequirePermission('surveyBuilder', 'create')
   createNewVersion(@Param('id', new UuidParamPipe()) id: string) {
     return this.service.createNewVersion(id);
   }
@@ -168,11 +175,11 @@ export class SurveysController {
   // grant lets a role reach these; only `approve` does (see role-matrix.ts).
   @Post('surveys/:id/approve')
   @RequirePermission('surveyBuilder', 'approve')
-  approveAndPublish(
+  approveSurvey(
     @Param('id', new UuidParamPipe()) id: string,
     @Body(new TypeBoxValidationPipe(ApproveSurveyBody)) body: ApproveSurveyDto,
   ) {
-    return this.service.approveAndPublish(id, body.comments);
+    return this.service.approveSurvey(id, body.comments);
   }
 
   @Post('surveys/:id/reject')
@@ -182,6 +189,22 @@ export class SurveysController {
     @Body(new TypeBoxValidationPipe(RejectSurveyBody)) body: RejectSurveyDto,
   ) {
     return this.service.rejectSurvey(id, body.reasonCode, body.comments);
+  }
+
+  // Researcher (or anyone with surveyBuilder:create): the actual go-live
+  // step once the Approver has already approved. Client-confirmed (Aug 13
+  // call) — approval no longer auto-publishes, this is now a separate,
+  // deliberate action.
+  //
+  // Bug fix (Aug 13, same day): originally gated on `write`, which Human
+  // Reviewer also holds (for curating questions mid-review — unrelated to
+  // publishing). `create` is the correct gate — see createNewVersion's
+  // comment just above for the exact same reasoning; Human Reviewer is the
+  // one role that holds write+approve but not create on this module.
+  @Post('surveys/:id/publish')
+  @RequirePermission('surveyBuilder', 'create')
+  publishSurvey(@Param('id', new UuidParamPipe()) id: string) {
+    return this.service.publishSurvey(id);
   }
 
   @Get('surveys/public/:id')

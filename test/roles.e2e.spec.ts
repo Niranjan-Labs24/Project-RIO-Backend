@@ -31,9 +31,21 @@ describe('GET /api/roles (e2e)', () => {
     expect(admin.permissions).toHaveLength(PERMISSION_MODULES.length);
   });
 
-  it('forbids a role without rolesPermissions:read', async () => {
-    const res = await request(app.getHttpServer()).get('/api/roles').set('x-org-id', ORG).set('x-role', 'field_researcher');
-    expect(res.status).toBe(403);
-    expect(res.body.message).toBe('Insufficient permission for this action'); // top-level message (DV-8)
+  // Bug fix (Aug 13): this endpoint used to require rolesPermissions:read —
+  // the Roles & Permissions *admin* page's own concern, still separately
+  // protected on the frontend route. Most roles hold no rolesPermissions
+  // grant at all per the confirmed matrix (field_researcher included), which
+  // meant the Users page's "assignable roles" dropdown 403'd for them and
+  // silently hid the Create User button. Fixed to entityTeam:read — every
+  // login-capable role holds that (basic team-visibility), so this now
+  // succeeds for a role like field_researcher that has no rolesPermissions
+  // access at all, proving the fix actually unblocks it.
+  it('succeeds for a role with entityTeam:read but no rolesPermissions:read (the fixed bug)', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/roles')
+      .set('x-org-id', ORG)
+      .set('x-role', 'field_researcher')
+      .expect(200);
+    expect(res.body).toHaveLength(ROLE_MATRIX.length);
   });
 });
