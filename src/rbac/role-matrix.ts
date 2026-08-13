@@ -181,17 +181,15 @@ export const ROLE_MATRIX: RoleDef[] = [
     // RIO-RBAC-001 matrix: Audit/System Logs = none for this role (was
     // read-only).
     perm('archiveSharingAudit'),
-    // RIO-RBAC-001 matrix (Aug 11, client-confirmed): Surveys = View +
-    // Approve only for this role — `write` is REMOVED here. This reverses
-    // an earlier, deliberate product decision (see the removed comment
-    // above, and role_ngo_research_officer's own surveyBuilder grant) that
-    // the Reviewer/Approver also curates questions alongside the
-    // Researcher. Flagging this explicitly: if the Reviewer is still
-    // expected to edit/override questions before approving (as the earlier
-    // design intended), this specific line needs a follow-up confirmation
-    // with the client before treating it as final — it directly contradicts
-    // prior documented behavior, not just an incremental narrowing.
-    perm('surveyBuilder', { read: true, approve: true }),
+    // `write` restored (Aug 13 call, client-confirmed): the Reviewer does
+    // curate questions during review — add, remove, or keep as-is, with a
+    // mandatory reason on any removal (see UpdateSurveyQuestionsBody's
+    // removalReasons, enforced in SurveysService.updateQuestions while the
+    // survey is SUBMITTED). This reverses the Aug 11 matrix's literal
+    // View+Approve-only reading, which had been explicitly flagged in this
+    // file as needing exactly this confirmation before being treated as
+    // final.
+    perm('surveyBuilder', { read: true, write: true, approve: true }),
     perm('ncnpReport'),
   ] },
   { id: 'role_data_analyst', key: 'data_analyst', name: 'Data Analyst', description: 'Processes data, reviews quality, and prepares reports and dashboards.', crossEntity: false, permissions: [

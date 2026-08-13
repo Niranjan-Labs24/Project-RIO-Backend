@@ -273,6 +273,10 @@ export class ReportsService {
   // Officer confirms a draft — the first of the two approval steps. Sets the
   // officer fields but keeps the report in draft; a Reviewer still has to
   // approve() to release it.
+  // Client-confirmed (Aug 13): moves status to `submitted`, not just a
+  // stamped field on an unchanged `draft` — the Officer needs visible
+  // confirmation their sign-off actually registered, and "Draft" reads as
+  // "nothing happened yet."
   async confirm(id: string): Promise<Report> {
     const officer = requireActor();
     const existing = await this.findOrThrow(id);
@@ -282,22 +286,26 @@ export class ReportsService {
       });
     }
     const row = await this.tenant.runInOrgContext((tx) =>
-      tx.report.update({ where: { id }, data: { officerConfirmedBy: officer, officerConfirmedAt: new Date() } }),
+      tx.report.update({
+        where: { id },
+        data: { status: "submitted", officerConfirmedBy: officer, officerConfirmedAt: new Date() },
+      }),
     );
     await this.audit.record({
       action: "approve", entityType: "report", entityId: row.id, entityLabel: row.title,
       metadata: { step: "confirm" },
-      // Officer confirm does not move `status` — it stamps the confirmation.
-      // The before/after pair is therefore on the confirmation itself, so the
-      // audit trail shows who confirmed and when it went from unconfirmed.
       changes: [
+        { field: "Status", before: existing.status, after: row.status },
         { field: "Officer confirmed", before: existing.officerConfirmedAt?.toISOString() ?? null, after: row.officerConfirmedAt?.toISOString() ?? null },
       ],
     });
     return this.hydrateOne(row as unknown as ReportRow);
   }
 
-  // Reviewer approves → released. Requires a prior officer confirm (two-step).
+  // Reviewer approves → released. Requires a prior officer confirm (two-step)
+  // — enforced by requiring `submitted`, not `draft`; a report can only ever
+  // reach `submitted` via confirm() above, so this alone is now sufficient
+  // (the old separate officerConfirmedAt check was redundant with it).
   // Notes mandatory (RIO-FR-007 clarification, Aug 4): extends the
   // NCNP-Compiled-Report-only notes rule to all four report categories —
   // same shared blank-check as NcnpReportReviewService/SurveysService.
@@ -305,14 +313,14 @@ export class ReportsService {
     requireNonBlank(notes, "REVIEWER_NOTES_REQUIRED", "Reviewer notes are required.");
     const reviewer = requireActor();
     const existing = await this.findOrThrow(id);
-    if (existing.status !== "draft") {
-      throw new ForbiddenException({
-        error: { code: "REPORT_NOT_DRAFT", message: "Only a draft report can be approved." },
-      });
-    }
-    if (!existing.officerConfirmedAt) {
+    if (existing.status === "draft") {
       throw new ForbiddenException({
         error: { code: "REPORT_NOT_CONFIRMED", message: "A Research Officer must confirm the report before it can be approved." },
+      });
+    }
+    if (existing.status !== "submitted") {
+      throw new ForbiddenException({
+        error: { code: "REPORT_NOT_DRAFT", message: "Only a submitted report can be approved." },
       });
     }
     const row = await this.tenant.runInOrgContext((tx) =>
@@ -336,9 +344,9 @@ export class ReportsService {
     requireNonBlank(notes, "REVIEWER_NOTES_REQUIRED", "Reviewer notes are required.");
     const reviewer = requireActor();
     const existing = await this.findOrThrow(id);
-    if (existing.status !== "draft") {
+    if (existing.status !== "submitted") {
       throw new ForbiddenException({
-        error: { code: "REPORT_NOT_DRAFT", message: "Only a draft report can be rejected." },
+        error: { code: "REPORT_NOT_DRAFT", message: "Only a submitted report can be rejected." },
       });
     }
     const row = await this.tenant.runInOrgContext((tx) =>

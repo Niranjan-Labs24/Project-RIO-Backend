@@ -16,8 +16,14 @@ import type { AiSummary, ResponseQualityResult } from "./response-quality.types"
 export class ResponseQualityController {
   constructor(private readonly responseQuality: ResponseQualityService) {}
 
+  // Client-confirmed (Aug 14): Quality Assessment is Data Analyst's action,
+  // not Research Officer's — was aiReview:write (shared with Research
+  // Officer's unrelated Need-classification-trigger use of that flag).
+  // priorityScoring:create is the precise gate — Data Analyst holds it,
+  // Research Officer is View-only on priorityScoring. Pragmatic split ahead
+  // of formal client sign-off on the exact module.
   @Post("response-quality/assess")
-  @RequirePermission("aiReview", "write")
+  @RequirePermission("priorityScoring", "create")
   assess(
     @Param("needId", new UuidParamPipe()) needId: string,
     @Query("surveyLinkId") surveyLinkId?: string,
@@ -34,8 +40,9 @@ export class ResponseQualityController {
     return this.responseQuality.listForNeed(needId, surveyLinkId);
   }
 
+  // Same Data-Analyst-only split as assess() above.
   @Post("ai-summary/generate")
-  @RequirePermission("aiReview", "write")
+  @RequirePermission("priorityScoring", "create")
   generateSummary(
     @Param("needId", new UuidParamPipe()) needId: string,
     @Query("surveyLinkId") surveyLinkId?: string,

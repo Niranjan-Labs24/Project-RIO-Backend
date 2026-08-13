@@ -5,7 +5,11 @@ export const REPORT_TYPES = [
 ] as const;
 export type ReportTypeCode = (typeof REPORT_TYPES)[number];
 
-export type ReportStatus = "draft" | "rejected" | "released" | "archived";
+// Client-confirmed (Aug 13): "submitted" is its own status — a report
+// reaches it only via ReportsService.confirm(), distinct from "draft"
+// (not yet confirmed) so the Officer sees their sign-off actually
+// registered instead of the status appearing unchanged.
+export type ReportStatus = "draft" | "submitted" | "rejected" | "released" | "archived";
 export type ExportFormat = "pdf" | "excel";
 
 // Statuses a report may be exported/shared from — reviewer approval (release)

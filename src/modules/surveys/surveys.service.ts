@@ -647,6 +647,7 @@ Eligible Questions: ${JSON.stringify(
   async updateQuestions(
     surveyId: string,
     questions: Array<{
+      id?: string;
       questionId?: string;
       customText?: string;
       customAnswerType?: string;
@@ -657,6 +658,7 @@ Eligible Questions: ${JSON.stringify(
       order: number;
       isRequired: boolean;
     }>,
+    removalReasons: Record<string, string> = {},
   ) {
     // Exactly one of questionId (a real Question Bank row) or customText
     // (an additional, study-only question) per item — never both, never
@@ -684,6 +686,7 @@ Eligible Questions: ${JSON.stringify(
     const allowWhileSubmitted = getOrgStore()?.role !== 'ngo_research_officer';
     // Assigned inside the transaction, read by the audit record after it commits.
     let previousQuestionCount = 0;
+    let removedForAudit: Array<{ label: string; reason: string }> = [];
     const needId = await this.tenant.runInOrgContext(async (tx) => {
       const survey = await tx.survey.findUnique({ where: { id: surveyId } });
       if (!survey) {
@@ -694,8 +697,41 @@ Eligible Questions: ${JSON.stringify(
       // Re-create the links using the incoming array — the whole ordered
       // list (Question Bank + additional questions together) is the unit of
       // save, per the Survey Builder's single Save action.
+      const existing = await tx.surveyQuestion.findMany({
+        where: { surveyId },
+        include: { question: { select: { questionText: true } } },
+      });
       // Counted before the wholesale delete below, for the audit pair.
-      previousQuestionCount = await tx.surveyQuestion.count({ where: { surveyId } });
+      previousQuestionCount = existing.length;
+
+      // Client-confirmed (Aug 13 call): a question the Reviewer removes
+      // during their review must carry a reason. Scoped to SUBMITTED only —
+      // that's precisely the Approver's curation window (see
+      // allowWhileSubmitted above); the Researcher's own DRAFT-phase
+      // editing never requires one. Removed = an existing row whose id
+      // isn't carried through in the incoming array (a newly-added item
+      // never has an `id` at all, so it can never look like a removal).
+      if (survey.status === 'SUBMITTED') {
+        const incomingIds = new Set(questions.map((q) => q.id).filter((id): id is string => Boolean(id)));
+        const removed = existing.filter((sq) => !incomingIds.has(sq.id));
+        const missingReason = removed.find((sq) => !removalReasons[sq.id]?.trim());
+        if (missingReason) {
+          throw new BadRequestException({
+            error: {
+              code: 'REMOVAL_REASON_REQUIRED',
+              message: 'Give a reason for each question removed during review.',
+            },
+          });
+        }
+        removedForAudit = removed.map((sq) => ({
+          label: sq.question?.questionText ?? sq.customText ?? 'Untitled question',
+          // Already validated non-blank above (missingReason check) — the
+          // `?? ''` here is just to satisfy the Record's `string | undefined`
+          // index type, never actually reached empty.
+          reason: removalReasons[sq.id] ?? '',
+        }));
+      }
+
       await tx.surveyQuestion.deleteMany({ where: { surveyId } });
       await tx.surveyQuestion.createMany({
         data: questions.map((q) => ({
@@ -729,7 +765,13 @@ Eligible Questions: ${JSON.stringify(
       // Question sets are lists, not scalar fields — the before/after pair is
       // the count, which is what a reviewer scans for ("did someone strip the
       // questionnaire down?"). The questions themselves live on the survey.
-      changes: [{ field: 'Question count', before: previousQuestionCount, after: questions.length }],
+      // A removal reason (SUBMITTED-phase only, see above) gets its own
+      // change entry per question, so it shows up in the same audit record
+      // rather than needing a second lookup.
+      changes: [
+        { field: 'Question count', before: previousQuestionCount, after: questions.length },
+        ...removedForAudit.map((r) => ({ field: `Removed: ${r.label}`, before: r.reason, after: null })),
+      ],
     });
 
     return this.getSurveyByNeedId(needId);
@@ -749,6 +791,16 @@ Eligible Questions: ${JSON.stringify(
     if (status === 'PUBLISHED') {
       throw new ConflictException({
         error: { code: 'SURVEY_NOT_EDITABLE', message: 'This survey is already published and can no longer be edited.' },
+      });
+    }
+    // Client-confirmed (Aug 13 call): once the Approver has approved, the
+    // Researcher just publishes — no editing window reopens in between, so
+    // an add/remove-question round can't quietly restart the review cycle.
+    // The only ways out of APPROVED are publishSurvey (below) or, if ever
+    // needed, a fresh createNewVersion after publish.
+    if (status === 'APPROVED') {
+      throw new ConflictException({
+        error: { code: 'SURVEY_NOT_EDITABLE', message: 'This survey is approved and ready to publish — it can no longer be edited.' },
       });
     }
     if (status === 'SUBMITTED' && !allowWhileSubmitted) {
@@ -1000,10 +1052,11 @@ Eligible Questions: ${JSON.stringify(
     return updated;
   }
 
-  // Approver: the only path to PUBLISHED. Combines "approve" and "publish"
-  // into one action per the product decision — there's no intermediate
-  // "approved but not yet published" state.
-  async approveAndPublish(surveyId: string, comments: string) {
+  // Approver: reviews and approves. Client-confirmed (Aug 13 call): approval
+  // no longer publishes in the same step — it hands the survey back to the
+  // Researcher, who does the actual publish (see publishSurvey below). No
+  // editing window reopens in between (assertEditable blocks APPROVED).
+  async approveSurvey(surveyId: string, comments: string) {
     requireNonBlank(comments, 'REVIEWER_NOTES_REQUIRED', 'Reviewer notes are required.');
     const survey = await this.tenant.runInOrgContext((tx) => tx.survey.findUnique({ where: { id: surveyId } }));
     if (!survey) {
@@ -1025,22 +1078,57 @@ Eligible Questions: ${JSON.stringify(
     // methodologyVersion is deliberately NOT touched here — it's whatever
     // the Researcher already chose via setMethodologyVersion before
     // submitting (submitForApproval requires it to be set). The Approver
-    // reviews and publishes exactly that choice; they never select or
-    // change it themselves.
-    const updated = await this.tenant.runInOrgContext(async (tx) => {
-      const row = await tx.survey.update({
+    // reviews exactly that choice; they never select or change it
+    // themselves, and publishSurvey doesn't touch it either.
+    const updated = await this.tenant.runInOrgContext((tx) =>
+      tx.survey.update({
         where: { id: surveyId },
         data: {
-          status: 'PUBLISHED',
+          status: 'APPROVED',
           approvedAt: now,
           approvedBy: actorId,
-          publishedAt: now,
-          publishedBy: actorId,
           // Reused from the reject path — this column now holds the
           // reviewer's notes for whichever decision was made most recently,
           // approve or reject (see the field's own schema comment).
           approverComments: comments,
         },
+      }),
+    );
+
+    await this.audit.record({
+      action: 'approve',
+      entityType: 'survey',
+      entityId: surveyId,
+      entityLabel: 'Survey approved — ready for the Researcher to publish',
+      changes: [{ field: 'Approver Comments', before: null, after: comments }],
+      metadata: this.actorRoleMetadata(),
+    });
+
+    return updated;
+  }
+
+  // Researcher (or anyone else holding surveyBuilder:write — NGO Admin,
+  // System Admin, Field Researcher): the actual go-live step, once the
+  // Approver has already approved. No reviewer notes here — that decision
+  // was already recorded by approveSurvey; this is just "make it live."
+  async publishSurvey(surveyId: string) {
+    const survey = await this.tenant.runInOrgContext((tx) => tx.survey.findUnique({ where: { id: surveyId } }));
+    if (!survey) {
+      throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
+    }
+    if (survey.status !== 'APPROVED') {
+      throw new ConflictException({
+        error: { code: 'SURVEY_NOT_APPROVED', message: 'Only an approved survey can be published.' },
+      });
+    }
+
+    const actorId = requireActor();
+    const now = new Date();
+
+    const updated = await this.tenant.runInOrgContext(async (tx) => {
+      const row = await tx.survey.update({
+        where: { id: surveyId },
+        data: { status: 'PUBLISHED', publishedAt: now, publishedBy: actorId },
       });
       await tx.need.update({ where: { id: survey.needId }, data: { status: 'survey_published' } });
 
@@ -1062,11 +1150,11 @@ Eligible Questions: ${JSON.stringify(
     });
 
     await this.audit.record({
-      action: 'approve',
+      action: 'edit',
       entityType: 'survey',
       entityId: surveyId,
-      entityLabel: 'Survey approved and published',
-      changes: [{ field: 'Approver Comments', before: null, after: comments }],
+      entityLabel: 'Survey published',
+      changes: [{ field: 'Status', before: 'APPROVED', after: 'PUBLISHED' }],
       metadata: this.actorRoleMetadata(),
     });
 

@@ -23,8 +23,14 @@ export class CombinedReportSummaryController {
     return this.service.getCombinedReportContext(studyId);
   }
 
+  // Client-confirmed (Aug 14): Combined Summary Report generation is
+  // exclusively Data Analyst's — was aiReview:write, shared with Research
+  // Officer's unrelated Need-classification-trigger use of that flag.
+  // priorityScoring:create/write is the precise gate: Data Analyst holds
+  // both, Research Officer holds neither. Pragmatic split ahead of formal
+  // client sign-off on the exact module.
   @Post("generate")
-  @RequirePermission("aiReview", "write")
+  @RequirePermission("priorityScoring", "create")
   async generateSummary(
     @Param("studyId", new UuidParamPipe()) studyId: string,
     @Body("documentSummaryIds") documentSummaryIds: string[],
@@ -34,7 +40,7 @@ export class CombinedReportSummaryController {
   }
 
   @Put("summary/:summaryId")
-  @RequirePermission("aiReview", "write")
+  @RequirePermission("priorityScoring", "write")
   async updateSummary(
     @Param("summaryId", new UuidParamPipe()) summaryId: string,
     @Body() body: CombinedReportOutputJson,
@@ -43,7 +49,7 @@ export class CombinedReportSummaryController {
   }
 
   @Post("summary/:summaryId/confirm")
-  @RequirePermission("aiReview", "write")
+  @RequirePermission("priorityScoring", "write")
   async confirmSummary(@Param("summaryId", new UuidParamPipe()) summaryId: string) {
     return this.service.confirmCombinedSummary(summaryId);
   }

@@ -88,10 +88,13 @@ describe("ReportsService lifecycle (two-step approval)", () => {
   let h: ReturnType<typeof makeHarness>;
   beforeEach(() => { h = makeHarness(); });
 
-  it("confirm sets officer fields but keeps the report in draft", async () => {
+  // Client-confirmed (Aug 13): confirm() now moves status to "submitted" —
+  // it used to leave status at "draft" (only stamping officerConfirmedAt),
+  // which read as if the sign-off hadn't registered at all.
+  it("confirm moves status to submitted and sets officer fields", async () => {
     seed(h.store);
     const r = await asRole("ngo_research_officer", () => h.service.confirm("rpt-1"));
-    expect(r.status).toBe("draft");
+    expect(r.status).toBe("submitted");
     expect(r.officerConfirmedBy).toBe("actor-1");
     expect(r.officerConfirmedAt).not.toBeNull();
   });
@@ -104,7 +107,7 @@ describe("ReportsService lifecycle (two-step approval)", () => {
   });
 
   it("approve AFTER confirm releases the report", async () => {
-    seed(h.store, { officerConfirmedBy: "officer-1", officerConfirmedAt: new Date() });
+    seed(h.store, { status: "submitted", officerConfirmedBy: "officer-1", officerConfirmedAt: new Date() });
     const r = await asRole("ngo_admin", () => h.service.approve("rpt-1", "Looks good"));
     expect(r.status).toBe("released");
     expect(r.reviewedBy).toBe("actor-1");
@@ -112,7 +115,7 @@ describe("ReportsService lifecycle (two-step approval)", () => {
   });
 
   it("approve rejects blank reviewer notes", async () => {
-    seed(h.store, { officerConfirmedBy: "officer-1", officerConfirmedAt: new Date() });
+    seed(h.store, { status: "submitted", officerConfirmedBy: "officer-1", officerConfirmedAt: new Date() });
     await expect(asRole("ngo_admin", () => h.service.approve("rpt-1", "   "))).rejects.toMatchObject({
       response: { error: { code: "REVIEWER_NOTES_REQUIRED" } },
     });
@@ -170,12 +173,15 @@ describe("ReportsService lifecycle (two-step approval)", () => {
     expect(result).toEqual([]);
   });
 
-  it("reject transitions a draft to rejected; only a draft can be rejected", async () => {
+  // Client-confirmed (Aug 13): reject (like approve) now requires
+  // "submitted", not "draft" — a report unconfirmed by the Officer can no
+  // longer be rejected/approved at all.
+  it("reject transitions a submitted report to rejected; only submitted can be rejected", async () => {
     seed(h.store, { status: "released" });
     await expect(asRole("ngo_admin", () => h.service.reject("rpt-1", "Missing data"))).rejects.toMatchObject({
       response: { error: { code: "REPORT_NOT_DRAFT" } },
     });
-    h.store.get("rpt-1")!.status = "draft";
+    h.store.get("rpt-1")!.status = "submitted";
     const r = await asRole("ngo_admin", () => h.service.reject("rpt-1", "Missing data"));
     expect(r.status).toBe("rejected");
     expect(r.reviewedBy).toBe("actor-1");
@@ -183,7 +189,7 @@ describe("ReportsService lifecycle (two-step approval)", () => {
   });
 
   it("reject rejects blank reviewer notes", async () => {
-    seed(h.store, { status: "draft" });
+    seed(h.store, { status: "submitted" });
     await expect(asRole("ngo_admin", () => h.service.reject("rpt-1", ""))).rejects.toMatchObject({
       response: { error: { code: "REVIEWER_NOTES_REQUIRED" } },
     });
