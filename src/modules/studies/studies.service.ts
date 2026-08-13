@@ -54,7 +54,9 @@ export class StudiesService {
     let methodologyLabel: string | null = null;
     const created = await this.tenant.runInOrgContext(async (tx) => {
       await this.assertGeographyInOrgScope(tx, orgId, payload.governorateIds, payload.centerIds);
-      methodologyLabel = await this.assertMethodologyVersionPublished(tx, payload.methodologyVersionId);
+      if (payload.methodologyVersionId) {
+        methodologyLabel = await this.assertMethodologyVersionPublished(tx, payload.methodologyVersionId);
+      }
       return this.createWithCycleNumber(tx, orgId, createdBy, payload);
     });
     await this.audit.record({

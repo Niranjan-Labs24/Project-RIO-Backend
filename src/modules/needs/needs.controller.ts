@@ -3,9 +3,9 @@ import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, Pa
 import { FileInterceptor } from '@nestjs/platform-express';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
-import { CreateNeedBody, UpdateNeedBody } from './needs.contract';
+import { BulkImportNeedsBody, CreateNeedBody, UpdateNeedBody } from './needs.contract';
 import { NeedsImportService } from './needs-import.service';
-import type { ImportNeedsResult } from './needs-import.types';
+import type { BulkImportNeedsPayload, ImportNeedsResult, PdfPreviewResult } from './needs-import.types';
 import { NeedsService } from './needs.service';
 import type { CreateNeedPayload, Need, UpdateNeedPayload } from './needs.types';
 
@@ -38,7 +38,7 @@ export class NeedsController {
     return this.needs.listByStudyId(studyId);
   }
 
-  // CSV/XLSX only (see NeedsImportService) — one Need per row.
+  // CSV/XLSX direct import — one Need per row.
   @Post('studies/:studyId/needs/import')
   @RequirePermission('dataCollection', 'create')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_IMPORT_FILE_SIZE_BYTES } }))
@@ -50,6 +50,44 @@ export class NeedsController {
       throw new BadRequestException({ error: { code: 'NO_FILE', message: 'A file is required' } });
     }
     return this.needsImport.importFromFile(studyId, file);
+  }
+
+  // Parses an uploaded PDF and returns extracted Needs for user review
+  @Post('studies/:studyId/needs/preview-pdf')
+  @RequirePermission('dataCollection', 'create')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_IMPORT_FILE_SIZE_BYTES } }))
+  previewPdf(
+    @Param('studyId', new UuidParamPipe()) studyId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ): Promise<PdfPreviewResult> {
+    if (!file) {
+      throw new BadRequestException({ error: { code: 'NO_FILE', message: 'A PDF file is required' } });
+    }
+    return this.needsImport.previewPdfFromFile(studyId, file);
+  }
+
+  // Parses uploaded survey results document (PDF/DOCX/XLSX/CSV) and returns extracted Needs for user review
+  @Post('studies/:studyId/needs/preview-survey-results')
+  @RequirePermission('dataCollection', 'create')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_IMPORT_FILE_SIZE_BYTES } }))
+  previewSurveyResults(
+    @Param('studyId', new UuidParamPipe()) studyId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ): Promise<PdfPreviewResult> {
+    if (!file) {
+      throw new BadRequestException({ error: { code: 'NO_FILE', message: 'A survey results document is required' } });
+    }
+    return this.needsImport.previewSurveyResultsFromFile(studyId, file);
+  }
+
+  // Creates confirmed Needs in bulk after PDF review
+  @Post('studies/:studyId/needs/import-bulk')
+  @RequirePermission('dataCollection', 'create')
+  importBulk(
+    @Param('studyId', new UuidParamPipe()) studyId: string,
+    @Body(new TypeBoxValidationPipe(BulkImportNeedsBody)) body: BulkImportNeedsPayload,
+  ): Promise<ImportNeedsResult> {
+    return this.needsImport.importBulk(studyId, body);
   }
 
   @Get('needs/:needId')

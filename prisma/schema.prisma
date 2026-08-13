@@ -1519,11 +1519,19 @@ model MethodologyVersionOption {
 // ──────── Question Bank / AI Survey Builder ────────
 
 // Global reference/master data (no org_id, no RLS — same pattern as
-// Domain/SubDomain) — imported from the question bank dataset via
-// prisma/import-questions.ts, read-only to cnap_app at runtime.
+// Domain/SubDomain) — imported from the approved methodology package via
+// prisma/import-methodology.ts (RIO-AI-005), read-only to cnap_app at runtime.
+//
+// VERSION-SCOPED (see 20260812090000_methodology_version_scoped_questions): a
+// question's identity is (methodologyVersionId, questionId), NOT questionId
+// alone. `questionId` was globally unique and `methodologyVersionId` was never
+// populated, so importing a second bank produced near-duplicate questions the
+// Survey Builder picker could not tell apart — patched twice with prefix-regex
+// UPDATEs before this. Every read that feeds the picker or AI suggestions MUST
+// filter by methodology version; see QuestionsService.
 model Question {
   id               String  @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  questionId       String  @unique @map("question_id") @db.VarChar(64)
+  questionId       String  @map("question_id") @db.VarChar(64)
   domain           String  @db.VarChar(120)
   subDomain        String  @map("sub_domain") @db.VarChar(120)
   indicator        String? @db.VarChar(200)
@@ -1531,23 +1539,62 @@ model Question {
   questionText     String  @map("question_text")
   answerType       String  @map("answer_type") @db.VarChar(64)
   answerOptions    Json?   @map("answer_options")
+  // "required" | "conditional" | "required_per_eligible_person" |
+  // "not_fielded" | "on_hold" — read from the methodology's own
+  // "Mandatory / Optional" column, never hardcoded.
   requiredOptional String  @map("required_optional") @db.VarChar(64)
   usedInMvp        Boolean @default(true) @map("used_in_mvp")
   reportMapping    String? @map("report_mapping")
 
   analyticalCategory   String?  @map("analytical_category") @db.VarChar(100)
+  // The decomposed base type that drives scoring: SINGLE_SELECT | LIKERT_5 |
+  // MULTI_SELECT | NUMERIC | CHECKLIST_MATRIX | TEMPLATE_PATTERN |
+  // METADATA_MODULE | PERSON_ROSTER_MODULE. Roster-qualified and compound
+  // answer types collapse onto their base here, per METH — Answer Type Defs
+  // ("scored exactly as the base type" / "the base type drives the severity
+  // score"); the modifiers live in the flags below.
   measurementMode      String   @default("SINGLE_SELECT") @map("measurement_mode") @db.VarChar(64)
   isScoreable          Boolean  @default(true) @map("is_scoreable")
   severityDirection    String?  @map("severity_direction") @db.VarChar(64)
   conditionalRule      Json?    @map("conditional_rule")
-  methodologyVersionId String?  @map("methodology_version_id") @db.Uuid
+  methodologyVersionId String   @map("methodology_version_id") @db.Uuid
   scoringLookupKey     String?  @map("scoring_lookup_key") @db.VarChar(150)
   priorityWeight       Decimal? @map("priority_weight") @db.Decimal(5, 2)
 
-  surveyQuestions    SurveyQuestion[]
-  methodologyVersion MethodologyVersion? @relation(fields: [methodologyVersionId], references: [id], onDelete: SetNull)
+  // ──────── v5.0 methodology attributes (RIO-AI-005) ────────
+  // The workbook's verbatim Answer Type label, kept for traceability alongside
+  // the decomposed `measurementMode` above.
+  answerTypeRaw                String?  @map("answer_type_raw") @db.VarChar(120)
+  // "person" | "child" | "woman" | "youth" when administered once per eligible
+  // individual; null otherwise.
+  rosterScope                  String?  @map("roster_scope") @db.VarChar(20)
+  isCompound                   Boolean  @default(false) @map("is_compound")
+  isAdminRecord                Boolean  @default(false) @map("is_admin_record")
+  // False for the 7 questionnaire-structure/roster/template modules
+  // (XDM-01..07) — instrument scaffolding, not fielded questions. 193 - 7 = 186.
+  isFielded                    Boolean  @default(true) @map("is_fielded")
+  // 186 - WSH-15 (administrative record) - SOC-08 (on hold under the
+  // sensitivity protocol) = the 184 actually asked of a household.
+  isHouseholdFielded           Boolean  @default(true) @map("is_household_fielded")
+  // XDM-08 is scored but excluded by design from the nine-domain Village
+  // Development Needs Index; it feeds the vulnerability classification.
+  excludedFromNineDomainIndex  Boolean  @default(false) @map("excluded_from_nine_domain_index")
+  // The anchor KPI's question code this feeder item enriches (20 items).
+  feedsKpiAnchor               String?  @map("feeds_kpi_anchor") @db.VarChar(64)
+  // The v1.0 -> v5.0 code map ("Former code: H01"). All 193 v5.0 items carry one.
+  formerCode                   String?  @map("former_code") @db.VarChar(64)
+  targetRespondent             String?  @map("target_respondent")
+  // The roster iteration scope verbatim, e.g. "each child aged 0-59 months".
+  rosterLoop                   String?  @map("roster_loop")
 
+  surveyQuestions    SurveyQuestion[]
+  // RESTRICT, not SetNull: a version any question still belongs to must not be
+  // deletable — retire it (status = 'RETIRED') instead.
+  methodologyVersion MethodologyVersion @relation(fields: [methodologyVersionId], references: [id], onDelete: Restrict)
+
+  @@unique([methodologyVersionId, questionId])
   @@index([domain, subDomain])
+  @@index([methodologyVersionId])
   @@map("questions")
 }
 

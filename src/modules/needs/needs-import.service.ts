@@ -1,11 +1,12 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { extname } from 'node:path';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { requireActor, requireOrgId } from '../../tenancy/org-context';
 import { AuditService } from '../audit/audit.service';
 import { AiDecisionsService } from '../ai-decisions/ai-decisions.service';
-import { parseCsvNeeds, parseExcelNeeds, type ParsedNeedRow } from './needs-import.parser';
-import type { ImportNeedsResult } from './needs-import.types';
+import { AiService } from '../ai/ai.service';
+import { parseCsvNeeds, parseExcelNeeds, parsePdfNeeds, parseSurveyDocumentNeeds, type ParsedNeedRow } from './needs-import.parser';
+import type { BulkImportNeedsPayload, ImportNeedsResult, PdfPreviewResult } from './needs-import.types';
 
 const MAX_IMPORT_ROWS = 2000;
 
@@ -39,11 +40,196 @@ export class NeedsImportService {
     private readonly tenant: TenantPrismaService,
     private readonly audit: AuditService,
     private readonly aiDecisions: AiDecisionsService,
+    @Optional() @Inject(AiService) private readonly aiService?: AiService,
   ) {}
 
-  // CSV/Excel only — PDF isn't parsed for Needs (no AI extraction yet); a
-  // submitter with a PDF instead attaches it as Evidence on a manually
-  // created Need (see EvidenceService.upload), same file, different pipeline.
+  async previewPdfFromFile(
+    studyId: string,
+    file: { originalname: string; buffer: Buffer },
+  ): Promise<PdfPreviewResult> {
+    const ext = extname(file.originalname).toLowerCase();
+    if (ext !== '.pdf') {
+      throw new BadRequestException({
+        error: { code: 'UNSUPPORTED_FILE_TYPE', message: 'Only PDF files can be previewed.' },
+      });
+    }
+
+    try {
+      const rows = await parsePdfNeeds(file.buffer, this.aiService);
+      return {
+        totalExtracted: rows.length,
+        needs: rows.map((r, idx) => ({
+          id: `extracted-${idx + 1}`,
+          title: r.title,
+          statement: r.statement,
+          village: r.village,
+          referenceId: r.referenceId,
+        })),
+      };
+    } catch (err: unknown) {
+      throw new BadRequestException({
+        error: {
+          code: 'PDF_PARSING_FAILED',
+          message: err instanceof Error ? err.message : 'Failed to parse PDF document.',
+        },
+      });
+    }
+  }
+
+  async previewSurveyResultsFromFile(
+    studyId: string,
+    file: { originalname: string; buffer: Buffer },
+  ): Promise<PdfPreviewResult> {
+    try {
+      const rows = await parseSurveyDocumentNeeds(file.buffer, file.originalname, this.aiService);
+      return {
+        totalExtracted: rows.length,
+        needs: rows.map((r, idx) => ({
+          id: `survey-extracted-${idx + 1}`,
+          title: r.title,
+          statement: r.statement,
+          village: r.village,
+          referenceId: r.referenceId,
+        })),
+      };
+    } catch (err: unknown) {
+      throw new BadRequestException({
+        error: {
+          code: 'SURVEY_PARSING_FAILED',
+          message: err instanceof Error ? err.message : 'Failed to parse survey results document.',
+        },
+      });
+    }
+  }
+
+  async importBulk(
+    studyId: string,
+    payload: BulkImportNeedsPayload,
+  ): Promise<ImportNeedsResult> {
+    const orgId = requireOrgId();
+    const createdBy = requireActor();
+
+    const { existingNeeds, studyTitle, studyGovernorateIds, studyCenterIds } = await this.tenant.runInOrgContext(async (tx) => {
+      const study = await tx.study.findUnique({
+        where: { id: studyId },
+        include: { studyGovernorates: true, studyCenters: true },
+      });
+      if (!study) throw new NotFoundException({ error: { code: 'STUDY_NOT_FOUND', message: 'Study not found' } });
+      const existingNeeds = await tx.need.findMany({
+        where: { studyId },
+        select: { title: true, village: true, referenceId: true },
+      });
+      return {
+        existingNeeds,
+        studyTitle: study.title,
+        studyGovernorateIds: (study.studyGovernorates ?? []).map((g) => g.governorateId),
+        studyCenterIds: (study.studyCenters ?? []).map((c) => c.centerId),
+      };
+    });
+
+    const items = payload.needs ?? [];
+    if (items.length === 0) {
+      throw new BadRequestException({
+        error: { code: 'EMPTY_PAYLOAD', message: 'At least one need item is required.' },
+      });
+    }
+
+    if (items.length > MAX_IMPORT_ROWS) {
+      throw new BadRequestException({
+        error: { code: 'IMPORT_TOO_LARGE', message: `A single import can have at most ${MAX_IMPORT_ROWS} items.` },
+      });
+    }
+
+    const seenKeys = new Set(
+      existingNeeds.map((n) => dedupeKey(n.title, n.village.join(','), n.referenceId ?? '')),
+    );
+
+    const errors: ImportNeedsResult['errors'] = [];
+    let imported = 0;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]!;
+      const rowNum = i + 1;
+      const title = (item.title || '').trim();
+      const statement = (item.statement || '').trim();
+      const village = (item.village || '').trim();
+      const referenceId = (item.referenceId || '').trim();
+
+      if (!title) {
+        errors.push({ row: rowNum, message: 'Title is required.', type: 'validation' });
+        continue;
+      }
+      if (!statement) {
+        errors.push({ row: rowNum, message: 'Statement is required.', type: 'validation' });
+        continue;
+      }
+
+      const key = dedupeKey(title, village, referenceId);
+      if (seenKeys.has(key)) {
+        errors.push({
+          row: rowNum,
+          message: referenceId
+            ? `Duplicate Reference ID "${referenceId}" — a Need with this Reference ID already exists in this Study.`
+            : 'Duplicate Need — a Need with this Title and Governorate already exists in this Study.',
+          type: 'duplicate',
+        });
+        continue;
+      }
+
+      try {
+        const created = await this.tenant.runInOrgContext((tx) =>
+          tx.need.create({
+            data: {
+              studyId,
+              orgId,
+              title,
+              statement,
+              village: splitVillages(village),
+              source: 'file_upload',
+              referenceId: referenceId || null,
+              createdBy,
+              status: 'pending_ai_classification',
+              needGovernorates: {
+                createMany: {
+                  data: studyGovernorateIds.map((governorateId) => ({ orgId, governorateId })),
+                },
+              },
+              needCenters: {
+                createMany: {
+                  data: studyCenterIds.map((centerId) => ({ orgId, centerId })),
+                },
+              },
+            },
+          }),
+        );
+        seenKeys.add(key);
+        imported += 1;
+        this.aiDecisions.classifyAutomatically(created.id).catch((err: Error) => {
+          this.logger.warn(`Automatic classification failed for imported need ${created.id}: ${err.message}`);
+        });
+      } catch {
+        errors.push({
+          row: rowNum,
+          message: 'Could not save this item — please check its values and try again.',
+          type: 'validation',
+        });
+      }
+    }
+
+    if (imported > 0) {
+      await this.audit.record({
+        action: 'create',
+        entityType: 'need',
+        entityId: studyId,
+        entityLabel: `Bulk-imported ${imported} need(s) into "${studyTitle}"`,
+        changes: [{ field: 'imported', before: null, after: imported }],
+      });
+    }
+
+    return { totalRows: items.length, imported, failed: errors.length, errors };
+  }
+
+  // CSV/Excel only — PDF isn't parsed directly here (PDF uses preview & confirm flow)
   async importFromFile(
     studyId: string,
     file: { originalname: string; buffer: Buffer },
@@ -51,14 +237,22 @@ export class NeedsImportService {
     const orgId = requireOrgId();
     const createdBy = requireActor();
 
-    const { existingNeeds, studyTitle } = await this.tenant.runInOrgContext(async (tx) => {
-      const study = await tx.study.findUnique({ where: { id: studyId } });
+    const { existingNeeds, studyTitle, studyGovernorateIds, studyCenterIds } = await this.tenant.runInOrgContext(async (tx) => {
+      const study = await tx.study.findUnique({
+        where: { id: studyId },
+        include: { studyGovernorates: true, studyCenters: true },
+      });
       if (!study) throw new NotFoundException({ error: { code: 'STUDY_NOT_FOUND', message: 'Study not found' } });
       const existingNeeds = await tx.need.findMany({
         where: { studyId },
         select: { title: true, village: true, referenceId: true },
       });
-      return { existingNeeds, studyTitle: study.title };
+      return {
+        existingNeeds,
+        studyTitle: study.title,
+        studyGovernorateIds: (study.studyGovernorates ?? []).map((g) => g.governorateId),
+        studyCenterIds: (study.studyCenters ?? []).map((c) => c.centerId),
+      };
     });
 
     const ext = extname(file.originalname).toLowerCase();
@@ -69,7 +263,7 @@ export class NeedsImportService {
       rows = await parseExcelNeeds(file.buffer);
     } else {
       throw new BadRequestException({
-        error: { code: 'UNSUPPORTED_FILE_TYPE', message: 'Only CSV, XLS and XLSX files are supported for import.' },
+        error: { code: 'UNSUPPORTED_FILE_TYPE', message: 'Only CSV, XLS and XLSX files are supported for direct import.' },
       });
     }
 
@@ -79,10 +273,6 @@ export class NeedsImportService {
       });
     }
 
-    // Seeded from what's already in the Study, then grown as the batch is
-    // processed — so two rows of the same file that duplicate each other
-    // (not just a row duplicating an existing Need) are also caught, same
-    // "seed then grow" approach as EvidenceService's file-hash dedup.
     const seenKeys = new Set(
       existingNeeds.map((n) => dedupeKey(n.title, n.village.join(','), n.referenceId ?? '')),
     );
@@ -118,26 +308,25 @@ export class NeedsImportService {
               title: row.title,
               statement: row.statement,
               village: splitVillages(row.village),
-              // RIO-FR-001: Source is system-assigned, not read from the
-              // file — every Need created through this importer came in via
-              // a file upload, full stop.
               source: 'file_upload',
               referenceId: row.referenceId || null,
               createdBy,
-              // Same automatic-classification entry point as the manual
-              // create form (NeedsService.create) — without this, an
-              // imported Need silently defaulted to `draft` and never
-              // classified, leaving its AI Classification section showing
-              // "in progress" forever with nothing actually running.
               status: 'pending_ai_classification',
+              needGovernorates: {
+                createMany: {
+                  data: studyGovernorateIds.map((governorateId) => ({ orgId, governorateId })),
+                },
+              },
+              needCenters: {
+                createMany: {
+                  data: studyCenterIds.map((centerId) => ({ orgId, centerId })),
+                },
+              },
             },
           }),
         );
         seenKeys.add(key);
         imported += 1;
-        // Fire-and-forget, same reasoning as NeedsService.create — never let
-        // a slow/failing AI call turn a successful import row into an error,
-        // and never block the rest of the batch on one row's classification.
         this.aiDecisions.classifyAutomatically(created.id).catch((err: Error) => {
           this.logger.warn(`Automatic classification failed for imported need ${created.id}: ${err.message}`);
         });

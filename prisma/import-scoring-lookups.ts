@@ -69,6 +69,25 @@ async function main() {
   const systemUser = await prisma.user.findFirst();
   const systemUserId = systemUser?.id || "00000000-0000-0000-0000-000000000000";
 
+  // Hoisted out of the per-row loop (it used to be resolved once per CSV line).
+  // Questions are version-scoped as of 20260812090000 (RIO-AI-005), so the
+  // version has to be known before any question can be looked up at all.
+  // For the v5.0 (or any later) approved baseline use prisma/import-methodology.ts
+  // instead; this script exists only to keep the v1.0 bank reproducible.
+  const methodologyVersionLabel = 'v1.0 - Approved implementation baseline';
+  const mv =
+    (await prisma.methodologyVersion.findUnique({ where: { version: methodologyVersionLabel } })) ??
+    (await prisma.methodologyVersion.create({
+      data: {
+        name: `Methodology Version ${methodologyVersionLabel}`,
+        version: methodologyVersionLabel,
+        status: 'PUBLISHED',
+        createdBy: systemUserId,
+      },
+    }));
+  const methodologyVersionId = mv.id;
+  console.log(`Target methodology version: ${methodologyVersionLabel} (${methodologyVersionId})`);
+
   let importedCount = 0;
   let skippedCount = 0;
 
@@ -92,7 +111,7 @@ async function main() {
 
     // Find the question in the DB to match its details
     const question = await prisma.question.findUnique({
-      where: { questionId }
+      where: { methodologyVersionId_questionId: { methodologyVersionId, questionId } }
     });
 
     if (!question) {
@@ -137,25 +156,6 @@ async function main() {
     } else if (scoreType === 'Numeric-Ceiling') {
       numericCeiling = parseFloat(severityScoreRaw);
     }
-
-    // Methodology version: match the versionLabel from question-bank-v1.json
-    const methodologyVersionLabel = 'v1.0 - Approved implementation baseline';
-    let mv = await prisma.methodologyVersion.findUnique({
-      where: { version: methodologyVersionLabel }
-    });
-    if (!mv) {
-      mv = await prisma.methodologyVersion.create({
-        data: {
-          name: `Methodology Version ${methodologyVersionLabel}`,
-          version: methodologyVersionLabel,
-          status: 'PUBLISHED',
-          createdBy: systemUserId,
-        }
-      });
-      console.log(`Created Methodology Version: ${methodologyVersionLabel}`);
-    }
-
-    const methodologyVersionId = mv.id;
 
     // Find and update or create
     const existing = await prisma.scoringLookup.findFirst({

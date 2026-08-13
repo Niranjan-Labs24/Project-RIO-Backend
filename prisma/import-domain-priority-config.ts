@@ -11,8 +11,16 @@
  *      PUBLISHED survey (immutability guard).
  *
  * Usage:
- *   pnpm ts-node prisma/import-domain-priority-config.ts
- *   pnpm ts-node prisma/import-domain-priority-config.ts --version "v1.0 - Approved implementation baseline"
+ *   pnpm import:domain-priority-config
+ *   pnpm import:domain-priority-config --version "v1.0 - Approved implementation baseline"
+ *   pnpm import:domain-priority-config --version "v5.0 - Approved methodology baseline" \
+ *                                      --file methodology/domain-priority-v5.csv
+ *
+ * --file is relative to prisma/ and defaults to domain-priority-baseline.csv (the
+ * pre-v5.0 5-domain file). The v5.0 baseline covers all NINE domains: the old
+ * file silently omitted Energy & Environment, Social Development, Culture and
+ * Governance & Services, so a village's priority score was computed from just
+ * over half the methodology.
  */
 
 import * as fs from 'fs';
@@ -60,7 +68,7 @@ function parseCSVLine(line: string): string[] {
 
 async function main() {
   // Resolve target methodology version (default: latest PUBLISHED)
-  const versionArg = process.argv.find((a, i) => process.argv[i - 1] === '--version');
+  const versionArg = process.argv.find((_a, i) => process.argv[i - 1] === '--version');
   let mv;
   if (versionArg) {
     mv = await prisma.methodologyVersion.findFirst({ where: { version: versionArg } });
@@ -101,7 +109,13 @@ async function main() {
   }
 
   // ── Parse CSV ──────────────────────────────────────────────────────────
-  const csvPath = path.join(__dirname, 'domain-priority-baseline.csv');
+  const fileArg = process.argv.find((_a, i) => process.argv[i - 1] === '--file');
+  const csvPath = path.join(__dirname, fileArg ?? 'domain-priority-baseline.csv');
+  if (!fs.existsSync(csvPath)) {
+    console.error(`CSV not found: ${csvPath}`);
+    process.exit(1);
+  }
+  console.log(`Reading domain weights from: ${csvPath}`);
   const lines = fs.readFileSync(csvPath, 'utf-8').split(/\r?\n/).filter(Boolean);
   const firstLine = lines[0];
   if (!firstLine) {

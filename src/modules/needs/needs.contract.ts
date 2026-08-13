@@ -49,3 +49,22 @@ export const UpdateNeedBody = registerSchema(
   ),
 );
 export type UpdateNeedDto = Static<typeof UpdateNeedBody>;
+
+export const BulkImportNeedsBody = registerSchema(
+  'BulkImportNeedsBody',
+  T.Object(
+    {
+      needs: T.Array(
+        T.Object({
+          title: T.String({ minLength: 1, maxLength: 300 }),
+          statement: T.String({ minLength: 1, maxLength: 5000 }),
+          village: T.Optional(T.String({ maxLength: 500 })),
+          referenceId: T.Optional(T.String({ maxLength: 200 })),
+        }),
+        { maxItems: 2000 },
+      ),
+    },
+    { additionalProperties: false },
+  ),
+);
+export type BulkImportNeedsDto = Static<typeof BulkImportNeedsBody>;

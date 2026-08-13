@@ -32,6 +32,33 @@ export class DeterministicScoringService {
   }
 
   /**
+   * Order-independent key for a COMPOSITE option — a set of selected items
+   * scored as one state rather than summed per option (Change Summary v5.0
+   * item 8: "Checklist items are scored on the composite state"). INF-14 scores
+   * "Ventilation; Roof; Walls" = 90 as a whole, and the workbook enumerates the
+   * same set in several orders, so the key must not depend on order.
+   *
+   * MUST stay byte-identical to composite_option_id() in
+   * scripts/extract-methodology-v5.py, which builds the stored `optionId`.
+   */
+  compositeOptionId(optionIds: string[]): string {
+    return [...optionIds].filter(Boolean).sort().join('__');
+  }
+
+  /**
+   * Measurement modes that never produce a severity score: the 7
+   * questionnaire-structure, roster and template-pattern modules (XDM-01..07)
+   * are instrument scaffolding, and open text has nothing to look up.
+   */
+  private static readonly NON_SCORING_MODES = new Set([
+    'TEMPLATE_PATTERN',
+    'METADATA_MODULE',
+    'PERSON_ROSTER_MODULE',
+    'OPEN_TEXT',
+    'DIAGNOSTIC',
+  ]);
+
+  /**
    * Score a SurveyResponse submission:
    * 1. Extract and validate answers against SurveyQuestions and Question Bank.
    * 2. Save ResponseAnswer records.
@@ -299,38 +326,75 @@ export class DeterministicScoringService {
     if (mode === 'NUMERIC') {
       const val = Number(raw);
       if (!Number.isNaN(val)) res.numericValue = val;
-    } else if (mode === 'MULTI_SELECT') {
+    } else if (mode === 'MULTI_SELECT' || mode === 'CHECKLIST_MATRIX') {
+      // A checklist matrix is a set of items confirmed present/absent — the same
+      // "several values at once" shape as a multi-select, differing only in how
+      // it is scored (see calculateSeverity).
       if (Array.isArray(raw)) {
         res.optionIds = raw.map(o => this.toOptionId(String(o)));
       } else if (typeof raw === 'string') {
-        res.optionIds = raw.split(',').map(o => this.toOptionId(o.trim()));
+        // ';' as well as ',': v5.0 composite option labels are ';'-joined, and a
+        // client echoing a composite label back as one string must still parse
+        // into its parts rather than becoming a single unmatchable option.
+        res.optionIds = raw.split(/[;,]/).map(o => this.toOptionId(o.trim())).filter(Boolean);
       }
-    } else if (mode === 'OPEN_TEXT') {
+    } else if (DeterministicScoringService.NON_SCORING_MODES.has(mode)) {
       res.text = String(raw);
     } else {
-      // SINGLE_SELECT, LIKERT_5, DIAGNOSTIC
+      // SINGLE_SELECT, LIKERT_5
       res.optionId = this.toOptionId(String(raw));
     }
     return res;
   }
 
+  /**
+   * Is this question applicable to this respondent, given their other answers?
+   *
+   * Supports both rule shapes:
+   *   v5.0 — { dependsOn, operator: 'IN' | 'NOT_IN' | 'PROSE', values?, description? }
+   *   v1.0 — { dependsOn, value }   (legacy single-value equality)
+   *
+   * A `PROSE` rule is a real branching condition the methodology states in words
+   * rather than as a question-to-question comparison ("asked only if a birth
+   * occurred in the past 24 months" — 19 of the 25 v5.0 rules). It is treated as
+   * APPLICABLE: the alternative is marking the question not-applicable for
+   * everyone, which would silently discard every answer to it. The survey
+   * instrument is what enforces prose branching in the field; scoring only needs
+   * to avoid inventing an exclusion it cannot justify.
+   *
+   * Rule values are the methodology's human labels ("Yes, once"), while answers
+   * are normalized option ids ("YES_ONCE"), so both sides are normalized here.
+   */
   evaluateConditionalRule(question: Question, answersMap: Map<string, ParsedAnswer>): boolean {
     if (!question.conditionalRule) return true;
     try {
       const rule = (typeof question.conditionalRule === 'string'
         ? JSON.parse(question.conditionalRule)
-        : question.conditionalRule) as { dependsOn?: string; value?: string } | null;
-      if (rule && rule.dependsOn) {
-        const parent = answersMap.get(rule.dependsOn);
-        if (!parent) return false;
+        : question.conditionalRule) as
+        | { dependsOn?: string | null; operator?: string; values?: string[]; value?: string }
+        | null;
+      if (!rule?.dependsOn) return true;
+      if (rule.operator === 'PROSE') return true;
 
-        if (rule.value !== undefined) {
-          if (parent.optionIds && Array.isArray(parent.optionIds)) {
-            return parent.optionIds.includes(rule.value);
-          }
-          return parent.optionId === rule.value;
-        }
-      }
+      const parent = answersMap.get(rule.dependsOn);
+      // The gating question was not asked or not answered — nothing to branch on.
+      if (!parent) return false;
+
+      const raw = rule.values ?? (rule.value !== undefined ? [rule.value] : []);
+      if (raw.length === 0) return true;
+      const wanted = new Set(raw.map((v) => this.toOptionId(v)));
+
+      const given = parent.optionIds?.length
+        ? parent.optionIds
+        : parent.optionId
+          ? [parent.optionId]
+          : [];
+      const hit = given.some((g) => wanted.has(g));
+
+      // NOT_IN is the "Skipped if X = Y" form (WSH-02 is skipped when water is
+      // piped into the dwelling): applicable precisely when the parent answer is
+      // NOT one of the listed values.
+      return rule.operator === 'NOT_IN' ? !hit : hit;
     } catch (e) {
       this.logger.error(`Error parsing conditional rule on question ${question.questionId}`, e as Error);
     }
@@ -362,6 +426,14 @@ export class DeterministicScoringService {
     const qId = question.questionId;
     const mode = question.measurementMode;
 
+    // Instrument scaffolding and diagnostic-only items carry no severity by
+    // design. Reached before any lookup so a missing lookup is never mistaken
+    // for a configuration error (the 18 diagnostic items DO have coded option
+    // rows — they just never enter aggregation).
+    if (DeterministicScoringService.NON_SCORING_MODES.has(mode) || !question.isScoreable) {
+      return { score: null, status: 'NOT_SCOREABLE', scoringLookupId: null };
+    }
+
     if (mode === 'NUMERIC') {
       const lookup = lookups.find(l => l.questionId === qId && l.lookupType === 'NUMERIC');
       if (!lookup) {
@@ -385,23 +457,72 @@ export class DeterministicScoringService {
       return { score, status: 'SCORED', scoringLookupId: lookup.id };
     }
 
-    if (mode === 'MULTI_SELECT') {
+    if (mode === 'MULTI_SELECT' || mode === 'CHECKLIST_MATRIX') {
       const selected = parsed.optionIds || [];
-      const relevantLookups = lookups.filter(l => l.questionId === qId && l.lookupType === 'MULTI_SELECT');
+      const lookupType = mode === 'CHECKLIST_MATRIX' ? 'CHECKLIST' : 'MULTI_SELECT';
+      const relevantLookups = lookups.filter(l => l.questionId === qId && l.lookupType === lookupType);
       if (relevantLookups.length === 0) {
-        throw new Error(`No multi-select lookups found for question: ${qId}`);
+        throw new Error(`No ${lookupType} lookups found for question: ${qId}`);
       }
 
+      // A DK/NA escape wins outright — "Prefer not to answer" on HLT-21 is not a
+      // zero-severity selection, it leaves the denominator entirely.
+      for (const opt of selected) {
+        const esc = relevantLookups.find(l => l.optionId === opt && l.isExcluded);
+        if (esc) {
+          return {
+            score: null,
+            status: 'EXCLUDED',
+            scoringLookupId: esc.id,
+            exclusionReason: esc.exclusionReason || 'NOT_APPLICABLE',
+          };
+        }
+      }
+
+      // ── 1. Composite state ────────────────────────────────────────────────
+      // Some questions score the SET as one state rather than summing options
+      // (INF-14: "Ventilation; Roof; Walls" = 90, which is LESS than the sum of
+      // its parts would be). Per Change Summary v5.0 item 8, checklist items are
+      // "scored on the composite state", so an exact set match must win over the
+      // per-option sum below. Order-independent — see compositeOptionId.
+      if (selected.length > 0) {
+        const compositeKey = this.compositeOptionId(selected);
+        const composite = relevantLookups.find(
+          l => l.optionId === compositeKey && l.severityScore !== null,
+        );
+        if (composite) {
+          return {
+            score: Number(composite.severityScore),
+            status: 'SCORED',
+            scoringLookupId: composite.id,
+          };
+        }
+      }
+
+      // ── 2. Weighted sum of the selected options, capped at 100 ─────────────
+      // METH — Answer Type Defs: multi-select is "a weighted sum of the
+      // severities of the selected options, capped at 100".
       let sum = 0;
-      const usedLookupId = relevantLookups[0]?.id; // default to first lookup record as primary tracking lookup
+      let matchedLookupId: string | null = null;
       for (const opt of selected) {
         const match = relevantLookups.find(l => l.optionId === opt);
         if (match) {
           sum += Number(match.severityScore || 0);
+          matchedLookupId ??= match.id;
         }
       }
-      const score = Math.min(sum, 100);
-      return { score, status: 'SCORED', scoringLookupId: usedLookupId ?? null };
+      // Nothing resolved: an answer was given but not one option matched this
+      // question's lookup, which means the option set and the stored lookup have
+      // drifted. Surfacing ERROR is correct — scoring it 0 would read as "no
+      // unmet need", the exact opposite of "we don't know".
+      if (selected.length > 0 && matchedLookupId === null) {
+        return { score: null, status: 'ERROR', scoringLookupId: null };
+      }
+      return {
+        score: Math.min(sum, 100),
+        status: 'SCORED',
+        scoringLookupId: matchedLookupId ?? relevantLookups[0]?.id ?? null,
+      };
     }
 
     // SINGLE_SELECT or LIKERT_5

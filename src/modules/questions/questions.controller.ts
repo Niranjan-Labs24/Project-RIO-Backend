@@ -6,16 +6,21 @@ import { RequirePermission } from '../../common/guards/permission.guard';
 export class QuestionsController {
   constructor(private readonly service: QuestionsService) {}
 
+  // `methodologyVersion` is the caller's own snapshot label (a Survey stores one
+  // in Survey.methodologyVersion). Omitted means "the latest PUBLISHED version" —
+  // see QuestionsService.resolveVersionId. It is never "all versions": a
+  // question's identity is (methodologyVersionId, questionId), and mixing banks
+  // is what made surveys pick unscoreable legacy twins of real questions.
   @Get('domain-options')
   @RequirePermission('surveyBuilder', 'read')
-  getDomainOptions() {
-    return this.service.getDomainOptions();
+  getDomainOptions(@Query('methodologyVersion') methodologyVersion?: string) {
+    return this.service.getDomainOptions(methodologyVersion);
   }
 
   @Get('kpi-options')
   @RequirePermission('surveyBuilder', 'read')
-  getKpiOptions() {
-    return this.service.getKpiOptions();
+  getKpiOptions(@Query('methodologyVersion') methodologyVersion?: string) {
+    return this.service.getKpiOptions(methodologyVersion);
   }
 
   // `pairs` (JSON-encoded array of {domain, subDomain}) is the multi-domain-
@@ -28,6 +33,7 @@ export class QuestionsController {
     @Query('domain') domain?: string,
     @Query('subDomain') subDomain?: string,
     @Query('pairs') pairsParam?: string,
+    @Query('methodologyVersion') methodologyVersion?: string,
   ) {
     let pairs: Array<{ domain: string; subDomain: string }> = [];
     if (pairsParam) {
@@ -47,6 +53,6 @@ export class QuestionsController {
     if (pairs.length === 0 && domain && subDomain) {
       pairs = [{ domain, subDomain }];
     }
-    return this.service.getQuestions(pairs);
+    return this.service.getQuestions(pairs, methodologyVersion);
   }
 }
