@@ -52,6 +52,34 @@ Users should avoid entering confidential, personal, financial, or regulated info
 Appropriate security measures are implemented to help protect data; however, no electronic system can guarantee absolute security.
 By using this application, you acknowledge and consent to the collection and processing of information as described in this policy.`;
 
+// The same two consents in Arabic (RIO-NFR-007). Same row, same version — a
+// translation is not a separate policy, so these travel with the English copy
+// above rather than as their own `v1-ar`, and the signup screen picks between
+// them by the reader's locale.
+const USE_POLICY_TEXT_AR = `شروط الاستخدام
+
+مرحبًا بك في تطبيق RIO. بدخولك إلى هذه المنصة أو استخدامك لها، فإنك توافق على الشروط التالية:
+
+يُقدَّم هذا التطبيق لأغراض العرض التوضيحي والاختبار والتقييم فقط.
+يجب أن تكون أي معلومات تُدخل في التطبيق وهمية أو غير حساسة ما لم يُصرَّح بغير ذلك صراحةً.
+يتحمل المستخدمون مسؤولية التأكد من أن أي محتوى يقدمونه يمتثل للأنظمة المعمول بها وسياسات الجهة.
+يُحظر الوصول غير المصرح به إلى التطبيق أو إساءة استخدامه أو محاولة تعطيله.
+يجوز لمالك التطبيق تعديل أي ميزة أو تعليقها أو إيقافها دون إشعار مسبق.
+قد لا تمثل الميزات وسير العمل والتقارير المعروضة في هذا العرض التوضيحي النسخة الإنتاجية النهائية.
+يشير استمرارك في استخدام التطبيق إلى قبولك لهذه الشروط.`;
+
+const DATA_SHARING_TEXT_AR = `سياسة مشاركة البيانات
+
+نحن نقدّر خصوصيتك ونلتزم بالتعامل مع معلوماتك بمسؤولية.
+
+تُستخدم المعلومات المُدخلة في تطبيق Rio لأغراض العرض التوضيحي والاختبار والتقييم فقط.
+لا نبيع معلوماتك ولا نشاركها مع أطراف ثالثة لأغراض تسويقية.
+قد يطّلع على البيانات مسؤولون مصرَّح لهم أو موظفو الدعم لغرض صيانة التطبيق وتحسينه فقط.
+قد تُستخدم المعلومات المجمّعة ومجهولة الهوية لتقييم أداء النظام وتحسين تجربة المستخدم.
+ينبغي على المستخدمين تجنب إدخال معلومات سرية أو شخصية أو مالية أو خاضعة للتنظيم في هذه البيئة التجريبية.
+تُطبَّق تدابير أمنية مناسبة للمساعدة في حماية البيانات؛ ومع ذلك، لا يمكن لأي نظام إلكتروني أن يضمن أمانًا مطلقًا.
+باستخدامك هذا التطبيق، فإنك تقر وتوافق على جمع المعلومات ومعالجتها على النحو الموضح في هذه السياسة.`;
+
 // Seed runs as cnap_owner (DATABASE_URL) — reference tables have no RLS; tenant
 // tables are FORCE-RLS even for the owner, so tenant inserts set org context.
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL, ssl: pgSslFromEnv() }) });
@@ -206,13 +234,13 @@ async function main(): Promise<void> {
   // actually saw.
   await prisma.consentPolicy.upsert({
     where: { kind_version: { kind: 'use_policy', version: 'v1' } },
-    update: { active: true, text: USE_POLICY_TEXT },
-    create: { kind: 'use_policy', version: 'v1', active: true, text: USE_POLICY_TEXT },
+    update: { active: true, text: USE_POLICY_TEXT, textAr: USE_POLICY_TEXT_AR },
+    create: { kind: 'use_policy', version: 'v1', active: true, text: USE_POLICY_TEXT, textAr: USE_POLICY_TEXT_AR },
   });
   await prisma.consentPolicy.upsert({
     where: { kind_version: { kind: 'data_sharing', version: 'v1' } },
-    update: { active: true, text: DATA_SHARING_TEXT },
-    create: { kind: 'data_sharing', version: 'v1', active: true, text: DATA_SHARING_TEXT },
+    update: { active: true, text: DATA_SHARING_TEXT, textAr: DATA_SHARING_TEXT_AR },
+    create: { kind: 'data_sharing', version: 'v1', active: true, text: DATA_SHARING_TEXT, textAr: DATA_SHARING_TEXT_AR },
   });
 
   await seedDomainsAndSubdomains();

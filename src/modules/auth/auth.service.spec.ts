@@ -33,8 +33,15 @@ const nicRegistryStub = { assertRegistered: vi.fn(async (raw: string) => raw) };
 // RIO-DATA-001 — the two separately-versioned consents AuthService resolves
 // during signup and the post-login re-prompt. Both are seeded at 'v1' here so
 // a signup fixture that submits 'v1' for each passes the active-version check.
-const USE_POLICY = { kind: 'use_policy' as const, version: 'v1', text: 'policy text' };
-const SHARING_POLICY = { kind: 'data_sharing' as const, version: 'v1', text: 'sharing text' };
+// The use policy is translated; the data-sharing one deliberately is NOT
+// (textAr: null), so one fixture covers both the Arabic path and the
+// fall-back-to-English path a partially-translated policy set produces.
+const USE_POLICY = {
+  kind: 'use_policy' as const, version: 'v1', text: 'policy text', textAr: 'نص السياسة',
+};
+const SHARING_POLICY = {
+  kind: 'data_sharing' as const, version: 'v1', text: 'sharing text', textAr: null,
+};
 const consentStub = {
   getActivePolicy: vi.fn(async (kind: 'use_policy' | 'data_sharing') =>
     kind === 'use_policy' ? USE_POLICY : SHARING_POLICY,
@@ -294,8 +301,39 @@ describe('AuthService.signup', () => {
     const passed = repo.createOrganisationAndAdmin.mock.calls[0]?.[0]?.consents;
     expect(passed).toHaveLength(2);
     // Text comes from the server's own policy row, never from the client.
-    expect(passed).toContainEqual({ kind: 'use_policy', version: 'v1', text: 'policy text' });
-    expect(passed).toContainEqual({ kind: 'data_sharing', version: 'v1', text: 'sharing text' });
+    // No locale submitted, so both resolve to English.
+    expect(passed).toContainEqual({ kind: 'use_policy', version: 'v1', text: 'policy text', locale: 'en' });
+    expect(passed).toContainEqual({ kind: 'data_sharing', version: 'v1', text: 'sharing text', locale: 'en' });
+  });
+
+  // RIO-NFR-007 — an Arabic registrant reads the Arabic wording, so that is
+  // the wording their immutable acceptance has to record. Snapshotting the
+  // English source here would file consent against text they never saw, the
+  // same defect CONSENT_VERSION_STALE exists to prevent for versions.
+  it('snapshots the Arabic wording when the registrant submits locale "ar"', async () => {
+    stubSuccessfulCreate();
+
+    await service.signup({ ...signupBody, consent: { ...VALID_CONSENT, locale: 'ar' } });
+
+    const passed = repo.createOrganisationAndAdmin.mock.calls[0]?.[0]?.consents;
+    expect(passed).toContainEqual({
+      kind: 'use_policy', version: 'v1', text: 'نص السياسة', locale: 'ar',
+    });
+  });
+
+  // The data-sharing policy has no Arabic copy in the fixture. An Arabic
+  // registrant necessarily read the English text, so the record must say
+  // 'en' — labelling it 'ar' because that is what was *asked for* would make
+  // the snapshot claim a translation that was never shown.
+  it('records "en" when Arabic is requested but the policy has no translation', async () => {
+    stubSuccessfulCreate();
+
+    await service.signup({ ...signupBody, consent: { ...VALID_CONSENT, locale: 'ar' } });
+
+    const passed = repo.createOrganisationAndAdmin.mock.calls[0]?.[0]?.consents;
+    expect(passed).toContainEqual({
+      kind: 'data_sharing', version: 'v1', text: 'sharing text', locale: 'en',
+    });
   });
 
   it('audits each consent as its own event at registration', async () => {
