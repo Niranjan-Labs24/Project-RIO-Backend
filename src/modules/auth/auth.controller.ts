@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { Body, Controller, Get, HttpCode, Post, Res } from '@nestjs/common';
+import { Body, Controller, DefaultValuePipe, Get, HttpCode, Post, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ConfigService } from '../../config/config.service';
 import { Public } from '../../auth/public.decorator';
@@ -8,9 +8,10 @@ import { CSRF_COOKIE_NAME, csrfCookieOptions, SESSION_COOKIE_NAME, sessionCookie
 import { CsrfExempt } from '../../common/guards/csrf.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import {
-  ChangePasswordBody, ForgotPasswordBody, LoginBody, ResetPasswordBody, SignupBody, VerifyRegistrationNumberBody,
-  type ChangePasswordDto, type ForgotPasswordDto, type LoginDto, type ResetPasswordDto, type SignupDto,
-  type VerifyRegistrationNumberDto, type VerifyRegistrationNumberView,
+  ChangePasswordBody, ConsentBody, ForgotPasswordBody, LoginBody, ResetPasswordBody, SignupBody,
+  VerifyRegistrationNumberBody,
+  type ChangePasswordDto, type ConsentDto, type ForgotPasswordDto, type LoginDto, type ResetPasswordDto,
+  type SignupDto, type VerifyRegistrationNumberDto, type VerifyRegistrationNumberView,
 } from './auth.contract';
 import { NicRegistryService } from '../nic-registry/nic-registry.service';
 import { AuthService } from './auth.service';
@@ -128,13 +129,25 @@ export class AuthController {
   // RIO-DATA-001 — accepts BOTH consents (use policy + data sharing). Only
   // reached as a re-prompt now that registration captures them up front:
   // accounts created before the split, and anyone stale after a policy bump.
+  //
+  // The body carries only the locale the gate rendered the policies in, so
+  // the acceptance snapshots the wording actually read (RIO-NFR-007). It is
+  // defaulted to `{}` rather than required: this route accepted no body at
+  // all before, and an omitted locale means English.
   @Post('consent')
-  consent(): Promise<{
+  consent(
+    // DefaultValuePipe runs first so a request that sends no body at all —
+    // which is every caller written before this parameter existed — is
+    // validated as `{}` rather than as `undefined`, which the schema would
+    // reject outright. A body that IS sent still has to satisfy ConsentBody.
+    @Body(new DefaultValuePipe({}), new TypeBoxValidationPipe(ConsentBody))
+    body: ConsentDto,
+  ): Promise<{
     consentedAt: string;
     policyVersion: string | null;
     sharingPolicyVersion: string | null;
   }> {
-    return this.auth.consent();
+    return this.auth.consent(body);
   }
 
   // Authenticated via requireActor() inside the service — no @RequirePermission,

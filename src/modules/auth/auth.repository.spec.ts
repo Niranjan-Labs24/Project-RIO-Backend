@@ -6,9 +6,12 @@ import { Prisma } from '../../generated/prisma';
 // RIO-DATA-001 — the two consents a registration accepts. AuthService has
 // already validated these against the active policy of each kind by the time
 // the repository sees them.
+// Deliberately an Arabic registration: `policy_locale` defaults to 'en' in
+// the database, so a fixture that accepted in English would pass even if the
+// repository dropped the field entirely.
 const CONSENTS = [
-  { kind: 'use_policy' as const, version: 'v1', text: 'use policy text' },
-  { kind: 'data_sharing' as const, version: 'v3', text: 'sharing consent text' },
+  { kind: 'use_policy' as const, version: 'v1', text: 'use policy text', locale: 'ar' as const },
+  { kind: 'data_sharing' as const, version: 'v3', text: 'sharing consent text', locale: 'ar' as const },
 ];
 
 /** The signup input, minus whatever a given test wants to vary. */
@@ -71,12 +74,16 @@ describe('AuthRepository.createOrganisationAndAdmin', () => {
     const rows = tx.consentAcceptance.createMany.mock.calls[0]?.[0]?.data;
     expect(rows).toHaveLength(2);
     // The policy TEXT is snapshotted, not just the version — the acceptance
-    // record has to survive the policy text later being edited.
+    // record has to survive the policy text later being edited. Its LOCALE
+    // rides along for the same reason: once a policy exists in more than one
+    // language, the version no longer identifies the wording that was read.
     expect(rows).toContainEqual(expect.objectContaining({
       userId: 'u1', kind: 'use_policy', policyVersion: 'v1', policyText: 'use policy text',
+      policyLocale: 'ar',
     }));
     expect(rows).toContainEqual(expect.objectContaining({
       userId: 'u1', kind: 'data_sharing', policyVersion: 'v3', policyText: 'sharing consent text',
+      policyLocale: 'ar',
     }));
     // orgId is the id the repository generated for this registration (it
     // creates the uuid itself rather than reading it back), and it must be

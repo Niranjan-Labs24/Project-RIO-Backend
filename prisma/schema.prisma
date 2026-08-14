@@ -104,8 +104,21 @@ model ConsentPolicy {
   // data-sharing consent are two different rows — hence the compound unique
   // below rather than the global `@unique` this column carried when only one
   // policy kind existed.
-  version   String   @db.VarChar(64)
-  text      String
+  version String @db.VarChar(64)
+  text    String
+  // The same policy, same version, in Arabic — a sibling column rather than a
+  // `locale` row (which would have meant widening the unique key to
+  // [kind, version, locale] and teaching every "the active policy" lookup to
+  // pick a row per language). A translation is not a separate policy: it
+  // versions, activates and is superseded in lockstep with `text`, so keeping
+  // the pair on one row makes that impossible to get wrong. Mirrors
+  // NicRegistry's own nameEn/nameAr precedent.
+  //
+  // Nullable because a translation can lag its English source: a policy
+  // published before its Arabic copy is ready still has to be servable.
+  // Readers fall back to `text` (see consentPolicyTextFor) rather than
+  // showing an Arabic reader an empty consent.
+  textAr    String?  @map("text_ar")
   active    Boolean  @default(false)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -270,6 +283,14 @@ model ConsentAcceptance {
   userId        String            @map("user_id") @db.Uuid
   policyVersion String            @map("policy_version") @db.VarChar(64)
   policyText    String            @map("policy_text")
+  // Which language's wording `policyText` is — the one actually rendered to
+  // this user, not the policy's canonical language. Without it the snapshot
+  // is ambiguous the moment a policy exists in more than one language: you
+  // could no longer tell an Arabic acceptance from an English one, only that
+  // *some* text was agreed to. Defaults to 'en' because every acceptance
+  // predating the Arabic copy was necessarily English (see the accompanying
+  // migration's backfill).
+  policyLocale  String            @default("en") @map("policy_locale") @db.VarChar(8)
   acceptedAt    DateTime          @default(now()) @map("accepted_at") @db.Timestamptz(6)
 
   org  Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)

@@ -39,7 +39,12 @@ export class ConsentService {
         },
       });
     }
-    return { kind, version: policy.version, text: policy.text };
+    // Both languages travel together — the caller (public endpoint or signup
+    // validation) picks one via consentPolicyTextFor. Serving a pre-resolved
+    // single string would mean re-fetching on every language switch, and
+    // would leave signup unable to check that the text it snapshots is the
+    // text the browser rendered.
+    return { kind, version: policy.version, text: policy.text, textAr: policy.textAr };
   }
 
   /** Both consents in one round-trip — what the registration form needs. */

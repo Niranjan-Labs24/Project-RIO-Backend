@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { NotFoundException } from '@nestjs/common';
 import { ConsentService } from './consent.service';
+import { consentPolicyTextFor, resolveConsentLocale } from './consent.types';
 
 /**
  * RIO-DATA-001 — ConsentService is what makes "registration cannot complete
@@ -14,6 +15,7 @@ interface PolicyRow {
   kind: 'use_policy' | 'data_sharing';
   version: string;
   text: string;
+  textAr: string | null;
   active: boolean;
   createdAt: Date;
 }
@@ -22,13 +24,17 @@ const USE_V1: PolicyRow = {
   kind: 'use_policy',
   version: 'v1',
   text: 'Use policy text',
+  textAr: 'نص سياسة الاستخدام',
   active: true,
   createdAt: new Date('2026-01-01T00:00:00Z'),
 };
+// Untranslated on purpose — the service must surface `textAr: null` rather
+// than hiding the gap, so callers can fall back to English explicitly.
 const SHARING_V1: PolicyRow = {
   kind: 'data_sharing',
   version: 'v1',
   text: 'Data-sharing consent text',
+  textAr: null,
   active: true,
   createdAt: new Date('2026-01-01T00:00:00Z'),
 };
@@ -71,10 +77,14 @@ describe('ConsentService.getActivePolicy (RIO-DATA-001)', () => {
     const { prisma, findFirst } = fakePrisma([USE_V1, SHARING_V1]);
     const svc = new ConsentService(prisma as never, fakeTenant(null) as never);
 
+    // Both languages come back together: the signup screen keeps them side by
+    // side so switching language re-renders the open policy without another
+    // round-trip.
     await expect(svc.getActivePolicy('use_policy')).resolves.toEqual({
       kind: 'use_policy',
       version: 'v1',
       text: 'Use policy text',
+      textAr: 'نص سياسة الاستخدام',
     });
     expect(findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { kind: 'use_policy', active: true } }),
@@ -124,6 +134,7 @@ describe('ConsentService.getActivePolicy (RIO-DATA-001)', () => {
       kind: 'use_policy',
       version: 'v2',
       text: 'Revised use policy text',
+      textAr: 'نص سياسة الاستخدام المُنقّح',
       active: true,
       createdAt: new Date('2026-06-01T00:00:00Z'),
     };
@@ -143,8 +154,14 @@ describe('ConsentService.getActivePolicies (RIO-DATA-001)', () => {
     const svc = new ConsentService(prisma as never, fakeTenant(null) as never);
 
     await expect(svc.getActivePolicies()).resolves.toEqual({
-      usePolicy: { kind: 'use_policy', version: 'v1', text: 'Use policy text' },
-      dataSharing: { kind: 'data_sharing', version: 'v1', text: 'Data-sharing consent text' },
+      usePolicy: {
+        kind: 'use_policy', version: 'v1',
+        text: 'Use policy text', textAr: 'نص سياسة الاستخدام',
+      },
+      dataSharing: {
+        kind: 'data_sharing', version: 'v1',
+        text: 'Data-sharing consent text', textAr: null,
+      },
     });
   });
 
@@ -235,5 +252,43 @@ describe('ConsentService.getOrganizationStatus (RIO-DATA-001 AC2)', () => {
       acceptedByName: null,
       acceptedByEmail: null,
     });
+  });
+});
+
+/**
+ * RIO-NFR-007 — the pair of helpers that decide which wording a reader sees
+ * and which language an acceptance claims. They are tested together because
+ * their contract is a joint one: the text returned by the first must always
+ * be in the language named by the second, or an immutable ConsentAcceptance
+ * ends up describing wording the user never read.
+ */
+describe('consentPolicyTextFor / resolveConsentLocale', () => {
+  const translated = { text: 'English wording', textAr: 'النص العربي' };
+  const untranslated = { text: 'English wording', textAr: null };
+
+  it('serves the Arabic wording, labelled "ar", to an Arabic reader', () => {
+    expect(consentPolicyTextFor(translated, 'ar')).toBe('النص العربي');
+    expect(resolveConsentLocale(translated, 'ar')).toBe('ar');
+  });
+
+  it('serves English, labelled "en", to an English reader even when a translation exists', () => {
+    expect(consentPolicyTextFor(translated, 'en')).toBe('English wording');
+    expect(resolveConsentLocale(translated, 'en')).toBe('en');
+  });
+
+  // The case the two helpers exist to keep consistent: an untranslated policy
+  // must render English rather than a blank consent, and must then be
+  // RECORDED as English. Returning the fallback text while still labelling it
+  // 'ar' is the specific bug this asserts against.
+  it('falls back to English — and says so — when Arabic is asked for but absent', () => {
+    expect(consentPolicyTextFor(untranslated, 'ar')).toBe('English wording');
+    expect(resolveConsentLocale(untranslated, 'ar')).toBe('en');
+  });
+
+  // An empty-string translation is a broken import, not a translation.
+  it('treats an empty Arabic column as untranslated rather than rendering nothing', () => {
+    const empty = { text: 'English wording', textAr: '' };
+    expect(consentPolicyTextFor(empty, 'ar')).toBe('English wording');
+    expect(resolveConsentLocale(empty, 'ar')).toBe('en');
   });
 });
