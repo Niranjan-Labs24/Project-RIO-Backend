@@ -36,7 +36,10 @@ export type AuditAction =
   | 'confirm_document_summary'
   | 'generate_combined_summary'
   | 'confirm_combined_summary'
-  | 'export';
+  | 'export'
+  | 'PRIORITY_SCORING_RECALCULATE'
+  | 'AI_DECISION_GENERATED'
+  | 'ACCESS_DENIED';
 export type AuditEntityType =
   | 'organization'
   | 'user'
@@ -52,7 +55,8 @@ export type AuditEntityType =
   | 'evidence_document'
   | 'evidence_document_summary'
   | 'combined_report_summary'
-  | 'ncnp_report';
+  | 'ncnp_report'
+  | 'permission';
 
 export interface AuditChange {
   field: string;
