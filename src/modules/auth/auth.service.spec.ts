@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 import { JwtService } from '@nestjs/jwt';
-import { ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { orgContext } from '../../tenancy/org-context';
 import { PERMISSION_MODULES } from '../../rbac/role-matrix';
 import { AuthService } from './auth.service';
@@ -22,6 +22,13 @@ const domainsStub = {
   listDomains: async () => [{ id: 'd1', code: 'W', name: 'Water & Sanitation', isActive: true }],
 };
 const geographyStub = { validateHierarchy: vi.fn().mockResolvedValue(undefined) };
+
+// The signup NIC gate. Echoes back whatever it is given (already the
+// normalized form in these fixtures) so the existing signup tests exercise
+// the path after the gate; NIC_FIXTURE is a real 10-digit shape rather than
+// a placeholder, since the service now persists what this returns.
+const NIC_FIXTURE = '7011038218';
+const nicRegistryStub = { assertRegistered: vi.fn(async (raw: string) => raw) };
 
 // RIO-DATA-001 — the two separately-versioned consents AuthService resolves
 // during signup and the post-login re-prompt. Both are seeded at 'v1' here so
@@ -64,7 +71,7 @@ describe('AuthService.login', () => {
   });
 
   it('returns a SessionContext with token, user, org and role on valid credentials', async () => {
-    const svc = new AuthService(fakeTenant(user) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, consentStub as never);
+    const svc = new AuthService(fakeTenant(user) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never);
     const session = await svc.login('admin@demo-ngo.org', 'Passw0rd!');
     expect(session.token).toBeTruthy();
     expect(tokens.verify(session.token).sub).toBe('u1');
@@ -78,18 +85,18 @@ describe('AuthService.login', () => {
   });
 
   it('throws 401 on a wrong password', async () => {
-    const svc = new AuthService(fakeTenant(user) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, consentStub as never);
+    const svc = new AuthService(fakeTenant(user) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never);
     await expect(svc.login('admin@demo-ngo.org', 'wrong')).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('throws 401 when the user does not exist', async () => {
-    const svc = new AuthService(fakeTenant(null) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, consentStub as never);
+    const svc = new AuthService(fakeTenant(null) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never);
     await expect(svc.login('nobody@x.org', 'whatever')).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('refuses valid credentials when the org is deactivated (403 ORG_INACTIVE)', async () => {
     const inactive = { ...user, org: { ...orgFixture, isActive: false } };
-    const svc = new AuthService(fakeTenant(inactive) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, consentStub as never);
+    const svc = new AuthService(fakeTenant(inactive) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never);
     await expect(svc.login('admin@demo-ngo.org', 'Passw0rd!')).rejects.toBeInstanceOf(ForbiddenException);
   });
 });
@@ -129,7 +136,7 @@ describe('AuthService.consent', () => {
 
   it('stamps both consent pairs on the user and snapshots each policy separately', async () => {
     const { tenant, created, userUpdates } = consentTenant();
-    const svc = new AuthService(tenant as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, consentStub as never);
+    const svc = new AuthService(tenant as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never);
     const res = await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'u1' }, () => svc.consent());
 
     expect(res.policyVersion).toBe('v1');
@@ -154,7 +161,7 @@ describe('AuthService.consent', () => {
   it('records a separate audit event per consent kind', async () => {
     const { tenant } = consentTenant();
     const audit = { record: vi.fn() };
-    const svc = new AuthService(tenant as never, passwords, tokens, audit as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, consentStub as never);
+    const svc = new AuthService(tenant as never, passwords, tokens, audit as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never);
     await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'u1' }, () => svc.consent());
 
     expect(audit.record).toHaveBeenCalledTimes(2);
@@ -178,7 +185,7 @@ describe('AuthService.signup', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    service = new AuthService(tenant as never, passwords as never, tokens as never, audit as never, repo as never, mailer as never, config, domainsStub as never, geographyStub as never, consentStub as never);
+    service = new AuthService(tenant as never, passwords as never, tokens as never, audit as never, repo as never, mailer as never, config, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never);
   });
 
   // RIO-FR-010 (client-confirmed): self-registration requires Center
@@ -189,11 +196,11 @@ describe('AuthService.signup', () => {
     repo.findByRegistrationNumber.mockResolvedValue(null);
     repo.findUserByEmail.mockResolvedValue(null);
     repo.createOrganisationAndAdmin.mockResolvedValue({
-      org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: 'RN1', logoUrl: null, region: [], email: null, sector: null, villages: [], isActive: false, approvedAt: null, createdAt: new Date() },
+      org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: NIC_FIXTURE, logoUrl: null, region: [], email: null, sector: null, villages: [], isActive: false, approvedAt: null, createdAt: new Date() },
       user: { id: 'u1', name: 'Org Admin', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h', consentedAt: null, consentedPolicyVersion: null, failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: true },
     });
 
-    const res = await service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'], consent: VALID_CONSENT });
+    const res = await service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: NIC_FIXTURE, email: 'a@b.test', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'], consent: VALID_CONSENT });
 
     expect(res).toEqual({ status: 'pending_approval', organizationName: 'Org', email: 'a@b.test' });
     expect(mailer.sendTemporaryPassword).not.toHaveBeenCalled();
@@ -204,9 +211,56 @@ describe('AuthService.signup', () => {
 
   it('signup: rejects a duplicate registration number before creating', async () => {
     repo.findByRegistrationNumber.mockResolvedValue({ id: 'existing' });
-    await expect(service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'], consent: VALID_CONSENT }))
+    await expect(service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: NIC_FIXTURE, email: 'a@b.test', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'], consent: VALID_CONSENT }))
       .rejects.toMatchObject({ response: { error: { code: 'ORGANIZATION_ALREADY_REGISTERED' } } });
     expect(repo.createOrganisationAndAdmin).not.toHaveBeenCalled();
+  });
+
+  // ── NIC registry gate ──────────────────────────────────────────────────
+
+  it('signup: refuses a registration number that is not in the NIC registry, creating nothing', async () => {
+    repo.findByRegistrationNumber.mockResolvedValue(null);
+    repo.findUserByEmail.mockResolvedValue(null);
+    nicRegistryStub.assertRegistered.mockRejectedValueOnce(
+      new BadRequestException({
+        error: { code: 'REGISTRATION_NUMBER_NOT_RECOGNISED', message: 'not found' },
+      }),
+    );
+
+    await expect(
+      service.signup({ ...signupBody, registrationNumber: '9999999999', consent: VALID_CONSENT }),
+    ).rejects.toMatchObject({ response: { error: { code: 'REGISTRATION_NUMBER_NOT_RECOGNISED' } } });
+
+    expect(repo.createOrganisationAndAdmin).not.toHaveBeenCalled();
+  });
+
+  it('signup: checks the registry before the duplicate lookup', async () => {
+    // An unrecognised entity should hear "we don't know this number", not
+    // "already registered" — and the duplicate lookup must run against the
+    // normalized value, not the raw input.
+    nicRegistryStub.assertRegistered.mockRejectedValueOnce(
+      new BadRequestException({
+        error: { code: 'REGISTRATION_NUMBER_NOT_RECOGNISED', message: 'not found' },
+      }),
+    );
+
+    await expect(
+      service.signup({ ...signupBody, registrationNumber: '9999999999', consent: VALID_CONSENT }),
+    ).rejects.toMatchObject({ response: { error: { code: 'REGISTRATION_NUMBER_NOT_RECOGNISED' } } });
+
+    expect(repo.findByRegistrationNumber).not.toHaveBeenCalled();
+  });
+
+  it('signup: persists the normalized registration number, not the raw input', async () => {
+    stubSuccessfulCreate();
+    nicRegistryStub.assertRegistered.mockResolvedValueOnce(NIC_FIXTURE);
+
+    await service.signup({ ...signupBody, registrationNumber: ' 7011-038-218 ', consent: VALID_CONSENT });
+
+    expect(repo.findByRegistrationNumber).toHaveBeenCalledWith(NIC_FIXTURE);
+    expect(repo.createOrganisationAndAdmin).toHaveBeenCalledWith(
+      expect.objectContaining({ registrationNumber: NIC_FIXTURE }),
+    );
   });
 
   // ── RIO-DATA-001: consent is part of registration ──────────────────────
@@ -221,14 +275,14 @@ describe('AuthService.signup', () => {
     repo.findByRegistrationNumber.mockResolvedValue(null);
     repo.findUserByEmail.mockResolvedValue(null);
     repo.createOrganisationAndAdmin.mockResolvedValue({
-      org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: 'RN1', logoUrl: null, region: [], email: null, sector: null, villages: [], isActive: true, createdAt: new Date() },
+      org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: NIC_FIXTURE, logoUrl: null, region: [], email: null, sector: null, villages: [], isActive: true, createdAt: new Date() },
       user: { id: 'u1', name: 'Org Admin', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h', consentedAt: new Date(), consentedPolicyVersion: 'v1', sharingConsentedAt: new Date(), sharingConsentedPolicyVersion: 'v1', failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: true },
     });
     mailer.sendTemporaryPassword.mockResolvedValue(true);
   }
 
   const signupBody = {
-    organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test',
+    organizationName: 'Org', purpose: 'p', registrationNumber: NIC_FIXTURE, email: 'a@b.test',
     regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'],
   };
 
@@ -333,7 +387,7 @@ describe('AuthService.changePassword', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    service = new AuthService(tenant as never, passwords as never, tokens, audit as never, repo as never, mailer as never, config, domainsStub as never, geographyStub as never, consentStub as never);
+    service = new AuthService(tenant as never, passwords as never, tokens, audit as never, repo as never, mailer as never, config, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never);
   });
 
   it('changePassword: rejects a wrong current password with 401 INVALID_CURRENT_PASSWORD', async () => {
