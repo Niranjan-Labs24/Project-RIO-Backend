@@ -64,16 +64,55 @@ export class AiService {
     throw lastTransient!.httpError;
   }
 
+  private activeKeyIndex = 0;
+
+  private getApiKeys(): string[] {
+    const raw = this.config.geminiApiKey ?? '';
+    return raw
+      .split(',')
+      .map((k) => k.trim())
+      .filter((k) => k.length > 0);
+  }
+
   private async callOnce<TResponse>(
     task: AiTask<TResponse>,
     prompt: string,
   ): Promise<{ response: TResponse; raw: unknown }> {
-    const apiKey = this.config.geminiApiKey;
-    if (!apiKey) {
+    const keys = this.getApiKeys();
+    if (keys.length === 0) {
       this.logger.warn('GEMINI_API_KEY is not set. Falling back to manual mode.');
       throw new Error('Gemini API key is not configured');
     }
 
+    let lastError: unknown;
+    const startIndex = this.activeKeyIndex % keys.length;
+
+    for (let i = 0; i < keys.length; i++) {
+      const keyIndex = (startIndex + i) % keys.length;
+      const apiKey = keys[keyIndex]!;
+
+      try {
+        const result = await this.executeCall<TResponse>(task, prompt, apiKey);
+        this.activeKeyIndex = keyIndex;
+        return result;
+      } catch (err) {
+        lastError = err;
+        if (keys.length > 1) {
+          this.logger.warn(
+            `[${task.name}] Gemini API key #${keyIndex + 1} failed. Rotating to key #${((keyIndex + 1) % keys.length) + 1}...`,
+          );
+        }
+      }
+    }
+
+    throw lastError;
+  }
+
+  private async executeCall<TResponse>(
+    task: AiTask<TResponse>,
+    prompt: string,
+    apiKey: string,
+  ): Promise<{ response: TResponse; raw: unknown }> {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${task.model}:generateContent?key=${apiKey}`;
 
     const body = {
@@ -102,9 +141,6 @@ export class AiService {
         this.logger.error(
           `[${task.name}] Gemini API call failed with status ${res.status}: ${errText}`,
         );
-        // 429 = quota/rate-limit; 5xx = upstream outage — both are "try again
-        // later", so both are retryable and both surface as 503 if retries run
-        // out. Anything else is our own bad request and must not be retried.
         if (res.status === 429) {
           throw new TransientAiError(
             'rate-limited',
@@ -154,11 +190,6 @@ export class AiService {
           }),
         );
       }
-      // Anything else (a bad status, an unparsable response, ...) keeps its own
-      // specific message — callers such as
-      // AiDecisionsService.runAndPersistClassification store this verbatim as
-      // the classification failure reason, so collapsing it to a generic string
-      // here would throw away real diagnostic detail.
       if (!(err instanceof TransientAiError)) {
         this.logger.error(
           `[${task.name}] Failed to call Gemini: ${err instanceof Error ? err.message : String(err)}`,
