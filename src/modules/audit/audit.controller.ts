@@ -10,7 +10,7 @@ export class AuditController {
   constructor(private readonly audit: AuditService) {}
 
   @Get()
-  @RequirePermission('archiveSharingAudit', 'read')
+  @RequirePermission('auditLog', 'read')
   list(
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
@@ -43,7 +43,7 @@ export class AuditController {
   // query string; kept in the signature for the CSV/PDF/Excel contract
   // parity note above exportCsv().
   @Get('export')
-  @RequirePermission('archiveSharingAudit', 'export')
+  @RequirePermission('auditLog', 'export')
   async export(
     @Res({ passthrough: true }) res: Response,
     @Query('organizationId') organizationId?: string,
@@ -75,13 +75,13 @@ export class AuditController {
   }
 
   @Get('summary')
-  @RequirePermission('archiveSharingAudit', 'read')
+  @RequirePermission('auditLog', 'read')
   getSummary() {
     return this.audit.getSummary();
   }
 
   @Get(':id')
-  @RequirePermission('archiveSharingAudit', 'read')
+  @RequirePermission('auditLog', 'read')
   getById(@Param('id') id: string) {
     return this.audit.getById(id);
   }

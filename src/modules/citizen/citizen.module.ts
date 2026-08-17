@@ -5,10 +5,11 @@ import { SurveysModule } from '../surveys/surveys.module';
 import { PriorityModule } from '../priority/priority.module';
 import { CitizenController } from './citizen.controller';
 import { CitizenService } from './citizen.service';
+import { CitizenPiiRetentionService } from './citizen-pii.retention';
 
 @Module({
   imports: [SmsModule, SurveysModule, PriorityModule],
   controllers: [CitizenController],
-  providers: [CitizenService, PasswordService],
+  providers: [CitizenService, PasswordService, CitizenPiiRetentionService],
 })
 export class CitizenModule {}

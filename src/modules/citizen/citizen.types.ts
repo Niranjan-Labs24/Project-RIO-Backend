@@ -86,6 +86,9 @@ export interface SubmitResponsePayload {
   gender?: Gender;
   ageBracket: AgeBracket;
   answers: Record<string, unknown>;
+  /** RIO-NFR-002: version string of the consent copy the citizen accepted,
+   * stamped on the SurveyResponse for audit trail. */
+  consentVersion?: string;
 }
 
 export interface SubmitResponseResult {

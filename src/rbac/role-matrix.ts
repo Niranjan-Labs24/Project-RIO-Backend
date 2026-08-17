@@ -22,6 +22,14 @@ export const PERMISSION_MODULES = [
   // belong to platform operations rather than tenant governance. Granted to
   // system_admin alone.
   'systemLogs',
+  // RIO-NFR-004 / RIO-FR-007 module-conflict fix: archiveSharingAudit is
+  // held by ngo_admin (read/create/approve for Sharing) and center_supervisor
+  // (read for NCNP/supervisor views), so merging the Audit Log into that
+  // module gave NGO Admin unintended raw audit-log read access. This separate
+  // module covers audit.controller.ts only. Granted to system_admin (read +
+  // export) and center_supervisor (read + export); every other role gets no
+  // grant, including ngo_admin.
+  'auditLog',
 ] as const;
 export type PermissionModule = (typeof PERMISSION_MODULES)[number];
 export type PermissionAction = 'read' | 'write' | 'create' | 'approve' | 'export' | 'share';
@@ -83,6 +91,9 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('surveyBuilder', { read: true, write: true, create: true, export: true }),
     perm('ncnpReport'),
     perm('systemLogs'),
+    // RIO-NFR-004 fix: archiveSharingAudit:read stays for Sharing; Audit Log
+    // is gated on the separate auditLog module — NGO Admin gets no grant here.
+    perm('auditLog'),
   ] },
   { id: 'role_ngo_research_officer', key: 'ngo_research_officer', name: 'NGO Research Officer', description: 'Creates studies and surveys from the question bank and enters data.', crossEntity: false, permissions: [
     // RIO-RBAC-001 matrix (Aug 11): view-only on Organization/Users now
@@ -126,6 +137,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     // `create` added per the confirmed matrix (Researcher/Surveys: V/C/E).
     perm('surveyBuilder', { read: true, write: true, create: true }),
     perm('ncnpReport'),
+    perm('auditLog'),
   ] },
   { id: 'role_field_researcher', key: 'field_researcher', name: 'Field Researcher', description: 'Enters needs and documents the source and field notes.', crossEntity: false, permissions: [
     // Confirmed matrix (Jagannathan, Aug 12): Organization/Users = View.
@@ -142,6 +154,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('reportsDashboards', RO), perm('archiveSharingAudit'),
     // Surveys/Survey Builder = View/Create/Edit — was no access.
     perm('surveyBuilder', { read: true, create: true, write: true }), perm('ncnpReport'),
+    perm('auditLog'),
   ] },
   { id: 'role_human_reviewer', key: 'human_reviewer', name: 'Human Reviewer', description: 'Approves or rejects (with comments) a finalized Survey before it publishes.', crossEntity: false, permissions: [
     // RIO-RBAC-001 matrix (Aug 11): view-only on Organization/Users now
@@ -191,6 +204,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     // final.
     perm('surveyBuilder', { read: true, write: true, approve: true }),
     perm('ncnpReport'),
+    perm('auditLog'),
   ] },
   { id: 'role_data_analyst', key: 'data_analyst', name: 'Data Analyst', description: 'Processes data, reviews quality, and prepares reports and dashboards.', crossEntity: false, permissions: [
     // Confirmed matrix (Jagannathan, Aug 12): Organization/Users = View.
@@ -228,6 +242,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('archiveSharingAudit'),
     // Confirmed matrix: Surveys/Survey Builder = View.
     perm('surveyBuilder', RO), perm('ncnpReport'),
+    perm('auditLog'),
   ] },
   { id: 'role_system_admin', key: 'system_admin', name: 'System Admin', description: 'Manages accounts, roles, permissions, audit log, and configuration settings.', crossEntity: true, permissions: [
     perm('entityTeam', { read: true, write: true, create: true, export: true }),
@@ -246,14 +261,10 @@ export const ROLE_MATRIX: RoleDef[] = [
     // `export` added per the confirmed matrix (System Admin/Dashboard: V/Ex).
     perm('priorityScoring', { read: true, export: true }),
     perm('reportsDashboards', { read: true, write: true, create: true, approve: true, export: true, share: true }),
-    // `export` (on top of `read`) — RIO-FR-007: the BRD names System Admin as
-    // the role that "manages ... the audit log", but this grant was read-only,
-    // so the one role responsible for the audit log couldn't download it. The
-    // audit CSV export (AuditController's GET /audit/export) is gated on
-    // exactly `archiveSharingAudit:export`, and that action gates nothing else
-    // in this module — Archive is read-only and Sharing uses create/approve —
-    // so this widens audit export only, not Archive or Sharing.
-    perm('archiveSharingAudit', { read: true, export: true }),
+    // archiveSharingAudit:read kept for Archive/Sharing oversight — `export`
+    // moved to the dedicated auditLog module below (RIO-NFR-004 fix) so that
+    // the audit CSV download no longer requires the same grant as Sharing.
+    perm('archiveSharingAudit', { read: true }),
     perm('surveyBuilder', { read: true, write: true, create: true, approve: true, export: true, share: true }),
     // Generate a new NCNP Compiled Report snapshot for review, and publish
     // one a System Reviewer has already approved — `write` covers both
@@ -266,6 +277,9 @@ export const ROLE_MATRIX: RoleDef[] = [
     // (GET /system-logs/export); there is no write action to grant, since
     // the table has no HTTP write path by design.
     perm('systemLogs', { read: true, export: true }),
+    // RIO-NFR-004 fix: Audit Log is now its own module, gating
+    // audit.controller.ts exclusively. `export` gates GET /audit/export.
+    perm('auditLog', { read: true, export: true }),
   ] },
   { id: 'role_read_only_viewer', key: 'read_only_viewer', name: 'Read-only Viewer', description: 'Views authorized outputs without editing.', crossEntity: false, permissions: [
     // Confirmed matrix (Jagannathan, Aug 12): Organization/Users = View.
@@ -280,6 +294,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('archiveSharingAudit'),
     // Confirmed matrix: Surveys/Survey Builder = View — was no access.
     perm('surveyBuilder', RO), perm('ncnpReport'),
+    perm('auditLog'),
   ] },
   // RIO-RBAC-001 (client-confirmed): "Center supervisor / NCNP supervisor"
   // is one combined role in the client's own Roles & Permissions sheet, not
@@ -301,11 +316,14 @@ export const ROLE_MATRIX: RoleDef[] = [
     // `export` added per the confirmed matrix (Center Supervisor/Dashboard: V/Ex).
     perm('priorityScoring', { read: true, export: true }),
     perm('reportsDashboards', { read: true, export: true }),
-    // `export` added per the confirmed matrix (Center Supervisor/Audit: V/Ex).
-    perm('archiveSharingAudit', { read: true, export: true }),
+    // archiveSharingAudit:read for NCNP/supervisor views — `export` moved to
+    // the dedicated auditLog module below (RIO-NFR-004 fix).
+    perm('archiveSharingAudit', { read: true }),
     // `read` added per the confirmed matrix (Center Supervisor/Surveys: V) —
     // this role previously had zero access to Survey Builder, not even view.
     perm('surveyBuilder', RO), perm('ncnpReport'),
+    // RIO-NFR-004 fix: confirmed matrix (Center Supervisor/Audit: V/Ex).
+    perm('auditLog', { read: true, export: true }),
   ] },
   { id: 'role_citizen_guest', key: 'citizen_guest', name: 'Citizen / Beneficiary Guest', description: 'Responds to surveys through OTP verification; no internal application access.', crossEntity: false,
     permissions: PERMISSION_MODULES.map((m) => (m === 'citizenChannel' ? perm(m, { create: true }) : perm(m))) },
@@ -345,6 +363,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('archiveSharingAudit'),
     perm('surveyBuilder', RO),
     perm('ncnpReport', { read: true, approve: true }),
+    perm('auditLog'),
   ] },
 ];
 

@@ -129,4 +129,14 @@ export class ConfigService {
   get pgDumpPath(): string | undefined {
     return this.config.PG_DUMP_PATH;
   }
+  // RIO-NFR-002 — AES-256-CBC key for citizen PII encryption at rest.
+  get encryptionKey(): string {
+    return this.config.ENCRYPTION_KEY;
+  }
+  get citizenPiiRetentionDays(): number {
+    return this.config.CITIZEN_PII_RETENTION_DAYS;
+  }
+  get citizenPiiRetentionCron(): string {
+    return this.config.CITIZEN_PII_RETENTION_CRON;
+  }
 }

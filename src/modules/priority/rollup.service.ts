@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
+import { AuditService } from '../audit/audit.service';
 import { Prisma, type Question } from '../../generated/prisma';
 import { DeterministicScoringService, type ParsedAnswer } from './scoring.service';
 import { PriorityV2Service } from './priority-v2.service';
@@ -20,6 +21,7 @@ export class ScoreRollupService {
 
   constructor(
     private readonly tenant: TenantPrismaService,
+    private readonly audit: AuditService,
     private readonly scoringEngine: DeterministicScoringService,
     private readonly priorityV2: PriorityV2Service
   ) {}
@@ -271,6 +273,16 @@ export class ScoreRollupService {
 
     // Call priority v2 recalculation
     await this.priorityV2.recalculateAll(studyId, surveyId);
+
+    // RIO-NFR-004: audit every scoring recalculation so prioritisation
+    // outcomes are traceable to their triggering event, actor, and time.
+    await this.audit.record({
+      action: 'PRIORITY_SCORING_RECALCULATE',
+      entityType: 'survey',
+      entityId: surveyId,
+      entityLabel: `Score rollup for study ${studyId}`,
+      metadata: { studyId, surveyId },
+    });
   }
 
   /**

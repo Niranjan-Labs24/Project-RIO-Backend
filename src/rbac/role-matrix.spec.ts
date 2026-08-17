@@ -42,33 +42,40 @@ describe('ROLE_MATRIX', () => {
     expect(can('system_admin', 'ncnpReport', 'approve')).toBe(false);
   });
 
-  // RIO-FR-007 — the BRD names System Admin as the role that "manages ... the
-  // audit log", so read-alone was a gap: it could open the log but never
-  // download it. `export` is the exact action GET /audit/export is gated on.
-  it('system_admin can read AND export the audit log, without gaining Archive/Sharing writes', () => {
+  // RIO-FR-007 / RIO-NFR-004 fix: the Audit Log is now gated on the dedicated
+  // `auditLog` module; `archiveSharingAudit` is Sharing/Archive only.
+  it('system_admin can read AND export the audit log via the auditLog module, without gaining Archive/Sharing writes', () => {
+    // Audit Log access — auditLog module only.
+    expect(can('system_admin', 'auditLog', 'read')).toBe(true);
+    expect(can('system_admin', 'auditLog', 'export')).toBe(true);
+    // archiveSharingAudit:read kept for Archive/Sharing oversight; export moved out.
     expect(can('system_admin', 'archiveSharingAudit', 'read')).toBe(true);
-    expect(can('system_admin', 'archiveSharingAudit', 'export')).toBe(true);
-    // Same module, but export must not have widened anything else: Sharing's
-    // request/decide actions and Archive writes stay out of reach.
+    expect(can('system_admin', 'archiveSharingAudit', 'export')).toBe(false);
+    // Sharing's request/decide actions stay out of reach.
     expect(can('system_admin', 'archiveSharingAudit', 'create')).toBe(false);
     expect(can('system_admin', 'archiveSharingAudit', 'write')).toBe(false);
     expect(can('system_admin', 'archiveSharingAudit', 'approve')).toBe(false);
     expect(can('system_admin', 'archiveSharingAudit', 'share')).toBe(false);
   });
 
-  // RIO-RBAC-001 matrix (Aug 11): audit export is System Admin's alone now
-  // — NGO Admin's blanket full-access grant on this module was removed, and
-  // Center Supervisor separately gained read+export (its own confirmed
-  // "Audit/System Logs: V/Ex" row), so it's asserted on its own below
-  // rather than lumped into the "must stay false" list.
-  it('audit-log export stays exclusive to system_admin', () => {
-    for (const key of ['human_reviewer', 'data_analyst', 'read_only_viewer', 'ngo_research_officer', 'ngo_admin']) {
-      expect(can(key, 'archiveSharingAudit', 'export')).toBe(false);
+  // RIO-NFR-004 fix: auditLog module now exclusively gates audit.controller.ts.
+  // Only system_admin and center_supervisor hold any grant on it.
+  it('auditLog:read and auditLog:export are held only by system_admin and center_supervisor', () => {
+    const auditRoles = ['system_admin', 'center_supervisor'];
+    const nonAuditRoles = ROLE_MATRIX.map((r) => r.key).filter((k) => !auditRoles.includes(k));
+    for (const key of nonAuditRoles) {
+      expect(can(key, 'auditLog', 'read'), `${key} must not hold auditLog:read`).toBe(false);
+      expect(can(key, 'auditLog', 'export'), `${key} must not hold auditLog:export`).toBe(false);
     }
-    expect(can('center_supervisor', 'archiveSharingAudit', 'export')).toBe(true);
-    // No audit access whatsoever for these two.
-    expect(can('field_researcher', 'archiveSharingAudit', 'read')).toBe(false);
-    expect(can('system_reviewer', 'archiveSharingAudit', 'read')).toBe(false);
+    expect(can('system_admin', 'auditLog', 'read')).toBe(true);
+    expect(can('system_admin', 'auditLog', 'export')).toBe(true);
+    expect(can('center_supervisor', 'auditLog', 'read')).toBe(true);
+    expect(can('center_supervisor', 'auditLog', 'export')).toBe(true);
+    // archiveSharingAudit:export is now unused by the audit controller — no
+    // role should hold it (it was only ever granted for the audit CSV download).
+    for (const key of ROLE_MATRIX.map((r) => r.key)) {
+      expect(can(key, 'archiveSharingAudit', 'export'), `${key} must not hold archiveSharingAudit:export`).toBe(false);
+    }
   });
 
   // RIO-RBAC-001 (client-confirmed): "Center supervisor / NCNP supervisor"
@@ -170,21 +177,18 @@ describe('ROLE_MATRIX', () => {
     }
   });
 
-  it('ngo_admin holds no systemLogs; archiveSharingAudit is Sharing-only, no raw export/audit-download', () => {
-    // systemLogs was always excluded even back when ngo_admin used the
-    // fullAccess() helper (NON_ENTITY_MODULES) — still true now that the
-    // role is an explicit list instead of that helper.
+  it('ngo_admin holds no systemLogs or auditLog; archiveSharingAudit grants are for Sharing only', () => {
+    // systemLogs was always excluded — still true.
     expect(can('ngo_admin', 'systemLogs', 'read')).toBe(false);
     expect(can('ngo_admin', 'systemLogs', 'export')).toBe(false);
-    // RIO-RBAC-001 matrix (Aug 11): the confirmed matrix says NGO Admin
-    // should have no Audit/System Logs access at all, but Study/Report
-    // Sharing decisions (FR-014, pre-existing/tested) share this exact
-    // module and the exact `read` action with the Audit Log in code — see
-    // the flagged comment on this role's archiveSharingAudit grant.
-    // Restoring Sharing took priority, so `read`/`create`/`approve` are
-    // granted (which technically also reopens raw audit-log viewing) —
-    // `export` (the audit CSV download specifically) stays off, since
-    // Sharing has no export action of its own.
+    // RIO-NFR-004 fix: the Audit Log is now isolated behind the `auditLog`
+    // module — NGO Admin has no grant there, so the archiveSharingAudit:read
+    // grant no longer leaks raw audit-log access. The Sharing grants are
+    // legitimate and intentional (FR-014).
+    expect(can('ngo_admin', 'auditLog', 'read')).toBe(false);
+    expect(can('ngo_admin', 'auditLog', 'export')).toBe(false);
+    // archiveSharingAudit grants are Sharing-only — read/create/approve for
+    // Study/Report Sharing workflows; no export (Sharing has no export action).
     expect(can('ngo_admin', 'archiveSharingAudit', 'read')).toBe(true);
     expect(can('ngo_admin', 'archiveSharingAudit', 'create')).toBe(true);
     expect(can('ngo_admin', 'archiveSharingAudit', 'approve')).toBe(true);
@@ -194,20 +198,30 @@ describe('ROLE_MATRIX', () => {
     expect(can('ngo_admin', 'studySurvey', 'write')).toBe(true);
   });
 
-  it('adding systemLogs did not disturb any audit-log grant', () => {
-    // The whole point of a separate module: audit (RIO-FR-007) access is
-    // unchanged by operational-log (RIO-NFR-016) access, in both directions.
+  it('adding systemLogs and auditLog modules did not disturb each other or archiveSharingAudit grants', () => {
+    // Three separate modules, three independent grant sets — none bleeds into
+    // another. auditLog = Audit Log (RIO-FR-007); systemLogs = operational
+    // log (RIO-NFR-016); archiveSharingAudit = Sharing/Archive/NCNP views.
+    expect(can('system_admin', 'auditLog', 'read')).toBe(true);
+    expect(can('system_admin', 'auditLog', 'export')).toBe(true);
     expect(can('system_admin', 'archiveSharingAudit', 'read')).toBe(true);
-    expect(can('system_admin', 'archiveSharingAudit', 'export')).toBe(true);
+    expect(can('system_admin', 'systemLogs', 'read')).toBe(true);
+    expect(can('center_supervisor', 'auditLog', 'read')).toBe(true);
+    expect(can('center_supervisor', 'auditLog', 'export')).toBe(true);
     expect(can('center_supervisor', 'archiveSharingAudit', 'read')).toBe(true);
     expect(can('center_supervisor', 'systemLogs', 'read')).toBe(false);
     // RIO-RBAC-001 matrix (Jagannathan, Aug 12, client-confirmed): Data
     // Analyst's Audit/System Logs access is now "—" (none) — was read-only.
+    expect(can('data_analyst', 'auditLog', 'read')).toBe(false);
     expect(can('data_analyst', 'archiveSharingAudit', 'read')).toBe(false);
     expect(can('data_analyst', 'systemLogs', 'read')).toBe(false);
   });
 
   it('lists systemLogs as a real module so the FE type stays in sync', () => {
     expect(PERMISSION_MODULES).toContain('systemLogs');
+  });
+
+  it('lists auditLog as a real module so the FE type stays in sync', () => {
+    expect(PERMISSION_MODULES).toContain('auditLog');
   });
 });
