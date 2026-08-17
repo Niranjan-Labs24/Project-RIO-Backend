@@ -433,7 +433,7 @@ export class PriorityService {
       // Find question — supports both direct questionId (e.g. "H01") and
       // KPI name strings (e.g. "Water Source Reliability") passed from the
       // KPI ranking table which stores KPI names as entityIds.
-      let question = await tx.question.findUnique({ where: { questionId } });
+      let question = await tx.question.findFirst({ where: { questionId } });
       if (!question) {
         // Try resolving by KPI name: find the first scoreable question in this KPI
         question = await tx.question.findFirst({
