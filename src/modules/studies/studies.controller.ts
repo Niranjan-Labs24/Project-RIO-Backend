@@ -64,13 +64,13 @@ export class StudiesController {
   }
 
   @Post(':id/archive')
-  @RequirePermission('archiveSharingAudit', 'write')
+  @RequirePermission('studySurvey', 'write')
   archive(@Param('id') id: string, @Body('reason') reason?: string): Promise<Study> {
     return this.studies.archive(id, reason);
   }
 
   @Post(':id/restore')
-  @RequirePermission('archiveSharingAudit', 'write')
+  @RequirePermission('studySurvey', 'write')
   restore(@Param('id') id: string): Promise<Study> {
     return this.studies.restore(id);
   }

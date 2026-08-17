@@ -65,11 +65,11 @@ describe('AuditController route surface (RIO-FR-007 AC2 — no deletion path)', 
 });
 
 describe('AuditController permission gating (RIO-FR-007)', () => {
-  it('gates every route on the archiveSharingAudit module — none is unguarded', () => {
+  it('gates every route on the auditLog module — none is unguarded', () => {
     for (const name of decoratedHandlers()) {
       const required = routePermission(name);
       expect.soft(required, `${name} must declare a permission`).toBeDefined();
-      expect.soft(required?.module, `${name} module`).toBe('archiveSharingAudit');
+      expect.soft(required?.module, `${name} module`).toBe('auditLog');
     }
   });
 
@@ -77,8 +77,8 @@ describe('AuditController permission gating (RIO-FR-007)', () => {
     ['list', 'read'],
     ['getSummary', 'read'],
     ['getById', 'read'],
-  ])('%s requires archiveSharingAudit:%s', (handler, action) => {
-    expect(routePermission(handler)).toEqual({ module: 'archiveSharingAudit', action });
+  ])('%s requires auditLog:%s', (handler, action) => {
+    expect(routePermission(handler)).toEqual({ module: 'auditLog', action });
   });
 
   it('export is gated on `export`, not on `read`', () => {
@@ -86,7 +86,7 @@ describe('AuditController permission gating (RIO-FR-007)', () => {
     // action (see role-matrix.spec). If the route were gated on `read`, that
     // grant would be meaningless and every read-only role could download the
     // full log.
-    expect(routePermission('export')).toEqual({ module: 'archiveSharingAudit', action: 'export' });
+    expect(routePermission('export')).toEqual({ module: 'auditLog', action: 'export' });
     expect(routePath('export')).toBe('export');
   });
 

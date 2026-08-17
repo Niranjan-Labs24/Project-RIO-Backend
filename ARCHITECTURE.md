@@ -93,6 +93,40 @@ Each feature module owns one responsibility and communicates through typed servi
 - **Scalability (RIO‑NFR‑006):** stateless auth (no session store), bounded list pagination, indexed FK/lookup columns, and row-per-entity multitenancy let new entities/villages be added without schema change. **Load-tested at pilot volume** (50 entities / 500 users; harness in `load-test/`, Artillery): sustained **77 req/s** over the auth+RLS read paths with **p95 ≈ 211 ms** and **0 errors** — well within the p95 < 500 ms budget, so no caching layer is needed at pilot scale. Horizontal scaling, pool sizing, a soak run, and load against the Week‑2/3 pipeline endpoints are follow‑up capacity work.
 - **Maintainability (RIO‑NFR‑013):** small single-responsibility modules, strict typing, and a real-DB e2e suite give regression safety; this document is the architecture reference.
 
-## 9. Not yet built
+## 9. Deferred decisions & known gaps
+
+### Deferred: `archiveSharingAudit` permission module split (NFR-004)
+
+**Status:** Deferred — documented 2026-08-13. See `src/rbac/role-matrix.ts` comment.
+
+**Problem:** The `archiveSharingAudit` module gates Study/Report Sharing (FR-010/014) AND the Audit Log viewer (FR-007) under the same name. NGO Admin holds `read/create/approve` for Sharing, which unintentionally grants Audit Log access.
+
+**Fix when prioritised:**
+1. Add `auditLog` to `PERMISSION_MODULES` in `src/rbac/role-matrix.ts` and frontend `src/types/permissions.ts`
+2. Gate `audit.controller.ts` on `auditLog:read` instead of `archiveSharingAudit:read`
+3. Strip `auditLog` permissions from NGO Admin, Data Analyst, Center Supervisor in the matrix
+4. New DB migration to re-seed `role_permissions`
+
+**Trigger:** Any sprint touching Audit Log access control, or a new role that must not see the Audit Log.
+
+### Phase 2: Async job queue for heavy operations (NFR-006)
+
+**Status:** Not implemented in MVP. Load test confirms p95 < 211 ms at pilot volume — synchronous execution is acceptable today.
+
+**Recommended stack:** Bull/BullMQ + Redis.
+**Operations to move async:** AI classification, score rollup (`ScoreRollupService.recalculateStudyScores`), PDF report generation.
+**Trigger:** p95 > 2 s on any pipeline endpoint under load, or visible user-facing lag on scoring/report generation.
+
+### Encryption key rotation procedure (NFR-002)
+
+Citizen PII (`SurveyResponse.contact`, `.mobile`) is encrypted with AES-256-CBC via `citizen-pii.crypto.ts` using `ENCRYPTION_KEY`.
+
+**To rotate the key:**
+1. Deploy new `ENCRYPTION_KEY` alongside old value as `ENCRYPTION_KEY_OLD`
+2. Run one-off script: re-encrypt all rows with the new key
+3. Remove `ENCRYPTION_KEY_OLD` from env
+4. Never rotate in-place without the two-key window — data loss risk.
+
+## 10. Not yet built
 
 OTP staff-login and forgot/reset-password (need a mail/SMS provider); the PRD assessment pipeline (studies → define-need (AI) → survey → collection → scoring → reports); `citizenChannel`/`dataImport` features (permissions seeded but inert). Production hardening: CA-signed TLS certs and encrypted storage volumes (deployment concerns).

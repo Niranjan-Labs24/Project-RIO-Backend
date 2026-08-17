@@ -126,6 +126,16 @@ export const EnvSchema = Type.Object({
   SYSTEM_LOG_SLOW_REQUEST_MS: Type.Number({ default: 3_000 }),
   SYSTEM_LOG_RETENTION_DAYS: Type.Number({ default: 90 }),
   SYSTEM_LOG_RETENTION_CRON: Type.String({ default: '0 3 * * *' }),
+  // RIO-NFR-002 — citizen PII (SurveyResponse.contact/mobile) is encrypted
+  // at rest using AES-256-CBC with this key. Must be exactly 32 bytes
+  // (256 bits). Required in production; defaults to a dev-only placeholder
+  // so existing dev/test setups continue without change. NEVER use the
+  // default in staging or production.
+  ENCRYPTION_KEY: Type.String({ default: 'dev-only-32-byte-placeholder-key!', minLength: 32 }),
+  // How many days citizen contact PII (contact email, mobile) is retained on
+  // SurveyResponse rows before being nullified by CitizenPiiRetentionService.
+  CITIZEN_PII_RETENTION_DAYS: Type.Number({ default: 90, minimum: 1 }),
+  CITIZEN_PII_RETENTION_CRON: Type.String({ default: '0 2 * * *' }),
   LOG_LEVEL: Type.Union(
     [
       Type.Literal('fatal'),
