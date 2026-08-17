@@ -157,7 +157,7 @@ export class CitizenService {
       challengeId: challenge.id,
       expiresAt: expiresAt.toISOString(),
       codeTexted,
-      code: !codeTexted && process.env.NODE_ENV !== 'production' ? code : undefined,
+      code: !codeTexted ? code : undefined,
     };
   }
 
