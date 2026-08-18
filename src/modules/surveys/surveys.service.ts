@@ -67,28 +67,37 @@ export class SurveysService {
   // questions don't have. `bankQuestionId` is the Question row's id,
   // present only for bank questions, and is what a save must send back to
   // keep pointing at that same Question Bank row.
-  private toQuestionDto(sq: {
-    id: string;
-    order: number;
-    isRequired: boolean;
-    customText: string | null;
-    customAnswerType: string | null;
-    customOptions: unknown;
-    domain: string | null;
-    subDomain: string | null;
-    kpi: string | null;
-    question: {
+  private toQuestionDto(
+    sq: {
       id: string;
-      questionId: string;
-      questionText: string;
-      answerType: string;
-      answerOptions: unknown;
-      domain: string;
-      subDomain: string;
-      indicator: string | null;
+      order: number;
+      isRequired: boolean;
+      customText: string | null;
+      customAnswerType: string | null;
+      customOptions: unknown;
+      domain: string | null;
+      subDomain: string | null;
       kpi: string | null;
-    } | null;
-  }) {
+      question: {
+        id: string;
+        questionId: string;
+        questionText: string;
+        answerType: string;
+        answerOptions: unknown;
+        domain: string;
+        subDomain: string;
+        indicator: string | null;
+        kpi: string | null;
+        priorityWeight?: Prisma.Decimal | null;
+      } | null;
+    },
+    // RIO-AI-002: the Domain → Indicator → KPI → Weight linkage is an
+    // internal Survey Builder concern (Research Officer/Reviewer curating
+    // the questionnaire) — deliberately NOT included in the citizen-facing
+    // DTO (getPublishedSurveyByNeedId never passes this), so a public
+    // survey-response payload never leaks methodology weight values.
+    includeWeight = false,
+  ) {
     if (sq.question) {
       return {
         id: sq.id,
@@ -104,6 +113,7 @@ export class SurveysService {
         subDomain: sq.question.subDomain,
         indicator: sq.question.indicator,
         kpi: sq.question.kpi,
+        priorityWeight: includeWeight ? (sq.question.priorityWeight?.toNumber() ?? null) : undefined,
         isCustom: false,
         order: sq.order,
         isRequired: sq.isRequired,
@@ -124,6 +134,9 @@ export class SurveysService {
       subDomain: sq.subDomain,
       indicator: null,
       kpi: sq.kpi,
+      // A custom question has no Question Bank row, so no weight — kept as
+      // an explicit key (not omitted) so both branches share one shape.
+      priorityWeight: undefined,
       isCustom: true,
       order: sq.order,
       isRequired: sq.isRequired,
@@ -248,6 +261,11 @@ export class SurveysService {
     });
   }
 
+  // Both callers (getSurveyByNeedId, getPublishedSurveyForOrgByNeedId) are
+  // org-scoped Survey Builder / management screens, never the citizen flow
+  // (see getPublishedSurveyByNeedId/getPublicSurvey below for that) — so
+  // this always surfaces weight, per RIO-AI-002's Domain → Indicator →
+  // Weight linkage requirement.
   private async toSurveyDetailDto(row: {
     id: string; needId: string; studyId: string; title: string; status: string;
     methodologyVersion: string | null;
@@ -292,7 +310,7 @@ export class SurveysService {
       publishedAt: row.publishedAt ? row.publishedAt.toISOString() : null,
       publishedBy: row.publishedBy,
       publishedByName: row.publishedBy ? (names.get(row.publishedBy) ?? null) : null,
-      questions: row.surveyQuestions.map((sq) => this.toQuestionDto(sq)),
+      questions: row.surveyQuestions.map((sq) => this.toQuestionDto(sq, true)),
     };
   }
 
@@ -465,7 +483,7 @@ export class SurveysService {
     const domainLabel = pairs.length > 0 ? pairs.map((p) => `${p.domain} / ${p.subDomain}`).join(', ') : 'All Domains';
 
     const data = await this.tenant.runInOrgContext(async (tx) => {
-      const need = await tx.need.findUnique({ where: { id: needId } });
+      const need = await tx.need.findUnique({ where: { id: needId }, include: { study: { select: { studyType: true } } } });
       if (!need) {
         throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
       }
@@ -527,6 +545,17 @@ export class SurveysService {
       }
       // isFielded excludes the 7 questionnaire-structure/roster/template modules
       // (XDM-01..07) — instrument scaffolding, never selectable questions.
+      //
+      // RIO-AI-002 (Sprint 2 clarification Q4) — Study Type filtering.
+      // `need.study.studyType` is read and threaded through here so the
+      // mechanism is wired end to end, but there is no filter clause below
+      // yet: the client hasn't confirmed valid Study Type values or which
+      // domains/questions each one should restrict, so there's nothing
+      // correct to filter on yet. Once answered, add a `studyType`-based
+      // condition to this `where` (or a Question-side mapping) without
+      // needing to touch any caller — they already pass the Study's
+      // studyType down to this point.
+      const studyType = need.study?.studyType ?? null;
       const eligibleQuestions = await tx.question.findMany({
         where: {
           methodologyVersionId: mv.id,
@@ -538,10 +567,11 @@ export class SurveysService {
         },
       });
 
-      return { need, eligibleQuestions, mv };
+      return { need, eligibleQuestions, mv, studyType };
     });
 
-    const { need, eligibleQuestions, mv } = data;
+    const { need, eligibleQuestions, mv, studyType } = data;
+    void studyType; // see the studyType comment above — read and passed through, not yet a live filter
 
     let recommendedQuestionIds: string[] = [];
     let confidence = 0;
@@ -569,6 +599,12 @@ Eligible Questions: ${JSON.stringify(
           answerOptions: typeof q.answerOptions === 'string' ? JSON.parse(q.answerOptions) : q.answerOptions,
           indicator: q.indicator,
           kpi: q.kpi,
+          // RIO-AI-002: surfaced so the recommendation reasoning can factor
+          // in a question's weight, and so the Domain → Indicator → KPI →
+          // Weight linkage the story requires is available end to end —
+          // the value itself already lived on Question, just wasn't read
+          // here or exposed to the Survey Builder UI before this.
+          priorityWeight: q.priorityWeight,
         })),
       )}`;
 
@@ -1317,7 +1353,7 @@ Eligible Questions: ${JSON.stringify(
       // question and an additional/open-ended one, which has no Question
       // row to key off.
       const computedStats = survey.surveyQuestions.map((sq) => {
-        const dto = this.toQuestionDto(sq);
+        const dto = this.toQuestionDto(sq, true);
 
         const answersList: string[] = [];
         survey.builderResponses.forEach((resp) => {
@@ -1535,7 +1571,7 @@ Eligible Questions: ${JSON.stringify(
       throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
     }
 
-    const questions = (survey.surveyQuestions ?? []).map((sq) => this.toQuestionDto(sq));
+    const questions = (survey.surveyQuestions ?? []).map((sq) => this.toQuestionDto(sq, true));
     // RIO-FR-011: need-scoped, not survey-scoped (see listSurveys' matching
     // note) — a DRAFT version has never gone live, so it structurally can't
     // own any of the Need's responses even though the count itself is

@@ -1,6 +1,7 @@
-import { Controller, Get, Query } from '@nestjs/common';
-import { QuestionsService } from './questions.service';
+import { Body, Controller, Get, Param, Patch, Query } from '@nestjs/common';
+import { QuestionsService, type UpdateQuestionInput } from './questions.service';
 import { RequirePermission } from '../../common/guards/permission.guard';
+import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 
 @Controller('question-bank')
 export class QuestionsController {
@@ -54,5 +55,63 @@ export class QuestionsController {
       pairs = [{ domain, subDomain }];
     }
     return this.service.getQuestions(pairs, methodologyVersion);
+  }
+
+  // RIO-FR-012 — admin management listing (includes deactivated questions,
+  // unlike GET /questions above). Gated on surveyBuilder:write since seeing
+  // an inactive question is only useful to whoever can also reactivate it.
+  @Get('questions/manage')
+  @RequirePermission('surveyBuilder', 'write')
+  getQuestionsForManagement(
+    @Query('domain') domain?: string,
+    @Query('subDomain') subDomain?: string,
+    @Query('pairs') pairsParam?: string,
+    @Query('methodologyVersion') methodologyVersion?: string,
+  ) {
+    let pairs: Array<{ domain: string; subDomain: string }> = [];
+    if (pairsParam) {
+      try {
+        const parsed: unknown = JSON.parse(pairsParam);
+        if (Array.isArray(parsed)) {
+          pairs = parsed.filter(
+            (p): p is { domain: string; subDomain: string } =>
+              Boolean(p) && typeof p.domain === 'string' && typeof p.subDomain === 'string',
+          );
+        }
+      } catch {
+        // Malformed pairs param — fall through to the domain/subDomain
+        // fallback below rather than erroring the whole request.
+      }
+    }
+    if (pairs.length === 0 && domain && subDomain) {
+      pairs = [{ domain, subDomain }];
+    }
+    return this.service.getQuestionsForManagement(pairs, methodologyVersion);
+  }
+
+  // RIO-FR-012 — admin management. Gated on surveyBuilder:write, the same
+  // action Research Officer and Human Reviewer already share for curating
+  // survey questions — see role-matrix.ts. ⚠️ Which roles specifically
+  // should manage the bank (vs. just curate a survey's own question list)
+  // is still an open Sprint 2 clarification (Q3); narrow this once answered.
+  @Patch('questions/:id')
+  @RequirePermission('surveyBuilder', 'write')
+  updateQuestion(
+    @Param('id', new UuidParamPipe()) id: string,
+    @Body() body: UpdateQuestionInput,
+  ) {
+    return this.service.update(id, body);
+  }
+
+  @Patch('questions/:id/deactivate')
+  @RequirePermission('surveyBuilder', 'write')
+  deactivateQuestion(@Param('id', new UuidParamPipe()) id: string) {
+    return this.service.deactivate(id);
+  }
+
+  @Patch('questions/:id/reactivate')
+  @RequirePermission('surveyBuilder', 'write')
+  reactivateQuestion(@Param('id', new UuidParamPipe()) id: string) {
+    return this.service.reactivate(id);
   }
 }

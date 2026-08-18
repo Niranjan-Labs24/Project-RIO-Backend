@@ -52,7 +52,8 @@ export type AuditEntityType =
   | 'evidence_document'
   | 'evidence_document_summary'
   | 'combined_report_summary'
-  | 'ncnp_report';
+  | 'ncnp_report'
+  | 'question';
 
 export interface AuditChange {
   field: string;

@@ -28,6 +28,7 @@
     "import:geography": "tsx prisma/import-geography.ts",
     "import:nic-registry": "tsx prisma/import-nic-registry.ts",
     "grant:access": "tsx prisma/grant-access.ts",
+    "setup:local": "pnpm run prisma:generate && pnpm run prisma:deploy && pnpm run prisma:seed && pnpm run import:methodology -- --publish && pnpm run import:geography && pnpm run import:nic-registry && pnpm run grant:access",
     "seed:scored": "tsx prisma/seed-scored-study.ts",
     "fix:report-methodology": "tsx prisma/fix-report-methodology-label.ts",
     "score:study": "tsx prisma/score-study.ts",
