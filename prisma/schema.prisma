@@ -112,8 +112,21 @@ model ConsentPolicy {
   // data-sharing consent are two different rows — hence the compound unique
   // below rather than the global `@unique` this column carried when only one
   // policy kind existed.
-  version   String   @db.VarChar(64)
-  text      String
+  version String @db.VarChar(64)
+  text    String
+  // The same policy, same version, in Arabic — a sibling column rather than a
+  // `locale` row (which would have meant widening the unique key to
+  // [kind, version, locale] and teaching every "the active policy" lookup to
+  // pick a row per language). A translation is not a separate policy: it
+  // versions, activates and is superseded in lockstep with `text`, so keeping
+  // the pair on one row makes that impossible to get wrong. Mirrors
+  // NicRegistry's own nameEn/nameAr precedent.
+  //
+  // Nullable because a translation can lag its English source: a policy
+  // published before its Arabic copy is ready still has to be servable.
+  // Readers fall back to `text` (see consentPolicyTextFor) rather than
+  // showing an Arabic reader an empty consent.
+  textAr    String?  @map("text_ar")
   active    Boolean  @default(false)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -278,6 +291,14 @@ model ConsentAcceptance {
   userId        String            @map("user_id") @db.Uuid
   policyVersion String            @map("policy_version") @db.VarChar(64)
   policyText    String            @map("policy_text")
+  // Which language's wording `policyText` is — the one actually rendered to
+  // this user, not the policy's canonical language. Without it the snapshot
+  // is ambiguous the moment a policy exists in more than one language: you
+  // could no longer tell an Arabic acceptance from an English one, only that
+  // *some* text was agreed to. Defaults to 'en' because every acceptance
+  // predating the Arabic copy was necessarily English (see the accompanying
+  // migration's backfill).
+  policyLocale  String            @default("en") @map("policy_locale") @db.VarChar(8)
   acceptedAt    DateTime          @default(now()) @map("accepted_at") @db.Timestamptz(6)
 
   org  Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
@@ -928,6 +949,44 @@ model Center {
 
   @@index([governorateId])
   @@map("centers")
+}
+
+// ──────── NIC entity registry (global, seeded, read-only to cnap_app) ────────
+// The published register of entities and supervisory units (الكيانات والوحدات
+// الاشرافية). Same pattern as the geographic reference above — no org_id, no
+// RLS, seeded via prisma/import-nic-registry.ts (idempotent upsert on
+// `nic_number`) from Entities_Supervisory_Units.xlsx.
+//
+// Sole purpose today: gate self-service signup. AuthService.signup rejects a
+// registration number that isn't a NIC number in here, so an org row can only
+// ever be created for an entity the registry knows about (see
+// NicRegistryService.assertRegistered).
+//
+// The descriptive columns are all nullable on purpose: matching only ever
+// keys off `nic_number`, and a future export that drops or renames a
+// descriptive column must not be able to fail the import that keeps the gate
+// current.
+model NicRegistry {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  // The entity's unified national number — 10 digits in every row of the
+  // source workbook (all 7,840 distinct), stored normalized (ASCII digits,
+  // no separators) so the comparison in assertRegistered is a plain equality
+  // check against an indexed column.
+  nicNumber String @unique @map("nic_number") @db.VarChar(10)
+
+  nameEn                String?   @map("name_en") @db.VarChar(500)
+  nameAr                String?   @map("name_ar") @db.VarChar(500)
+  // The workbook's own License_Number — free-text, non-unique, and NOT what
+  // signup matches on. Kept for support: it's the number an entity is most
+  // likely to quote when they dispute a rejection.
+  licenseNumber         String?   @map("license_number") @db.VarChar(50)
+  supervisoryAgencyName String?   @map("supervisory_agency_name") @db.VarChar(500)
+  licenseExpiryDate     DateTime? @map("license_expiry_date") @db.Date
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("nic_registry")
 }
 
 // An org has exactly one Region (plain scalar FK on Organisation itself, see

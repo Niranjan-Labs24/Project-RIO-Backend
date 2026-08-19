@@ -2,8 +2,14 @@ import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Inj
 import { randomBytes, createHash } from 'node:crypto';
 import { ConsentPolicyKind, UserStatus } from '../../generated/prisma';
 import { ConsentService } from '../consent/consent.service';
+import {
+  consentPolicyTextFor,
+  DEFAULT_CONSENT_LOCALE,
+  resolveConsentLocale,
+} from '../consent/consent.types';
 import { DomainsService } from '../domains/domains.service';
 import { GeographyService } from '../geography/geography.service';
+import { NicRegistryService } from '../nic-registry/nic-registry.service';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { PasswordService } from '../../auth/password.service';
@@ -14,7 +20,7 @@ import { ConfigService } from '../../config/config.service';
 import { MailerService } from '../../mailer/mailer.service';
 import { AuthRepository, conflictFor, DEFAULT_TEMP_PASSWORD, type ConsentAcceptanceInput } from './auth.repository';
 import type { SessionContext, SessionOrg, SessionUser, SignupPendingApprovalView } from './session.types';
-import type { ChangePasswordDto, ForgotPasswordDto, ResetPasswordDto, SignupDto } from './auth.contract';
+import type { ChangePasswordDto, ConsentDto, ForgotPasswordDto, ResetPasswordDto, SignupDto } from './auth.contract';
 
 const MAX_FAILED = 5;
 const LOCK_MINUTES = 15;
@@ -66,6 +72,9 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly domains: DomainsService,
     private readonly geography: GeographyService,
+    // Signup gate: the registration number must be a NIC number in the
+    // published entity registry.
+    private readonly nicRegistry: NicRegistryService,
     // RIO-DATA-001 — resolves/validates the active policy of each consent
     // kind during signup and the post-login re-prompt.
     private readonly consentPolicies: ConsentService,
@@ -181,11 +190,12 @@ export class AuthService {
    * single-screen gate the client shows. Each is written as its own
    * acceptance row so the two remain independently auditable.
    */
-  async consent(): Promise<{
+  async consent(dto: ConsentDto = {}): Promise<{
     consentedAt: string;
     policyVersion: string | null;
     sharingPolicyVersion: string | null;
   }> {
+    const requestedLocale = dto.locale ?? DEFAULT_CONSENT_LOCALE;
     const actorId = requireActor();
     const orgId = requireOrgId();
     const now = new Date();
@@ -239,7 +249,11 @@ export class AuthService {
             userId: actorId,
             kind: ConsentPolicyKind.use_policy,
             policyVersion: usePolicy.version,
-            policyText: usePolicy.text,
+            // Snapshot the language the re-prompt was rendered in, same as
+            // signup — an acceptance has to stand on its own, and "which
+            // wording" now includes "which translation".
+            policyText: consentPolicyTextFor(usePolicy, requestedLocale),
+            policyLocale: resolveConsentLocale(usePolicy, requestedLocale),
             acceptedAt: now,
           },
           {
@@ -247,7 +261,8 @@ export class AuthService {
             userId: actorId,
             kind: ConsentPolicyKind.data_sharing,
             policyVersion: dataSharing.version,
-            policyText: dataSharing.text,
+            policyText: consentPolicyTextFor(dataSharing, requestedLocale),
+            policyLocale: resolveConsentLocale(dataSharing, requestedLocale),
             acceptedAt: now,
           },
         ],
@@ -296,8 +311,16 @@ export class AuthService {
    * now — most plausibly a signup form left open across a policy update — so
    * it's rejected and they're re-shown the current text. Accepting it would
    * file a consent record against text the user never saw.
+   *
+   * The same reasoning extends to language: the submitted locale selects
+   * which of the policy's translations gets snapshotted, so an Arabic
+   * registrant's acceptance records the Arabic wording they read rather than
+   * the English source. The client sends only the locale — never the text —
+   * so what is stored is always a server-held policy, not a client-supplied
+   * string.
    */
   private async resolveSignupConsents(consent: SignupDto['consent']): Promise<ConsentAcceptanceInput[]> {
+    const requestedLocale = consent.locale ?? DEFAULT_CONSENT_LOCALE;
     const submitted: Array<{ kind: ConsentPolicyKind; version: string }> = [
       { kind: ConsentPolicyKind.use_policy, version: consent.usePolicyVersion },
       { kind: ConsentPolicyKind.data_sharing, version: consent.dataSharingVersion },
@@ -318,7 +341,15 @@ export class AuthService {
             },
           });
         }
-        return { kind, version: active.version, text: active.text };
+        // Locale is resolved, not echoed: asking for Arabic against a policy
+        // with no Arabic copy yields the English text, and the record has to
+        // say so (see resolveConsentLocale).
+        return {
+          kind,
+          version: active.version,
+          text: consentPolicyTextFor(active, requestedLocale),
+          locale: resolveConsentLocale(active, requestedLocale),
+        };
       }),
     );
   }
@@ -337,10 +368,17 @@ export class AuthService {
   // policy and the data-sharing consent. AuthService.consent() below is now
   // only the re-prompt path (accounts predating this, and policy bumps).
   async signup(dto: SignupDto): Promise<SignupPendingApprovalView> {
+    // The registration number must belong to an entity in the NIC registry —
+    // checked before the duplicate lookup because "we've never heard of this
+    // entity" is the more actionable answer, and because everything below
+    // must key off the normalized form this returns (a number entered with
+    // dashes or Arabic-Indic digits would otherwise slip past the duplicate
+    // check and land as a second row for the same entity).
+    const registrationNumber = await this.nicRegistry.assertRegistered(dto.registrationNumber);
     // Friendly pre-checks (the DB unique constraint is still the source of
     // truth, handled inside the repository for the concurrent-signup race —
     // hence the duplicated error envelopes via the shared conflictFor()).
-    if (await this.repo.findByRegistrationNumber(dto.registrationNumber)) {
+    if (await this.repo.findByRegistrationNumber(registrationNumber)) {
       throw conflictFor('registrationNumber');
     }
     if (await this.repo.findUserByEmail(dto.email)) {
@@ -365,7 +403,8 @@ export class AuthService {
       organizationName: dto.organizationName,
       sector: dto.sector,
       purpose: dto.purpose,
-      registrationNumber: dto.registrationNumber,
+      // Normalized, not dto.registrationNumber — see assertRegistered.
+      registrationNumber,
       email: dto.email,
       passwordHash: placeholderPasswordHash,
       regionId: dto.regionId,

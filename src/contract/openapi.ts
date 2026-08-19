@@ -87,14 +87,14 @@ const ROUTES: RouteDoc[] = [
   },
   {
     method: 'post', path: '/auth/consent', tag: 'Auth', summary: 'Record the consent-policy acceptance for the current user',
-    auth: 'session', response: '{ consentedAt, policyVersion }',
+    auth: 'session', requestSchema: 'ConsentBody', response: '{ consentedAt, policyVersion }',
   },
   {
     method: 'post', path: '/auth/change-password', tag: 'Auth', summary: "Replace the caller's own password",
     auth: 'session', requestSchema: 'ChangePasswordBody', response: 'SessionContext',
   },
   {
-    method: 'get', path: '/consent-policy/active', tag: 'Consent', summary: 'The currently active data-sharing consent policy (version + text)',
+    method: 'get', path: '/consent-policy/active', tag: 'Consent', summary: 'The currently active consent policies (version + English and Arabic text)',
     auth: undefined, response: 'ActiveConsentPolicy',
   },
   {

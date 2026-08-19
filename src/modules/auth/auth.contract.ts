@@ -27,6 +27,13 @@ export type LoginDto = Static<typeof LoginBody>;
 // organizations.contract.ts's own SectorValue.
 const SectorValue = T.String({ minLength: 1, maxLength: 200 });
 
+// The language a consent was rendered in. A closed union rather than a free
+// string: the value ends up on an immutable acceptance record describing what
+// the user read, so an unrecognised locale is a lie the schema can prevent.
+// Kept in step with CONSENT_LOCALES (consent.types.ts) and, in turn, the
+// frontend's routing.locales.
+const ConsentLocaleValue = T.Union([T.Literal('en'), T.Literal('ar')]);
+
 /**
  * RIO-DATA-001 — the two consents the registrant must accept, submitted as
  * the exact policy version each checkbox was shown for, not as a bare
@@ -40,6 +47,18 @@ const ConsentAcceptanceBody = T.Object(
   {
     usePolicyVersion: T.String({ minLength: 1, maxLength: 64 }),
     dataSharingVersion: T.String({ minLength: 1, maxLength: 64 }),
+    // Which language the two policies were rendered in, for the same reason
+    // the version is sent: it pins *what* was agreed to. Once a policy exists
+    // in English and Arabic, the version alone no longer identifies the
+    // wording a registrant read, and the acceptance snapshot would be filed
+    // against text they never saw.
+    //
+    // Optional so a client that predates the Arabic copy keeps working — an
+    // omitted locale means English, which is what such a client necessarily
+    // displayed. Not trusted as text either: the server re-derives the
+    // wording from this locale (see resolveSignupConsents), so the client
+    // chooses a language, never the policy content.
+    locale: T.Optional(ConsentLocaleValue),
   },
   { additionalProperties: false },
 );
@@ -83,6 +102,44 @@ export const SignupBody = registerSchema(
   ),
 );
 export type SignupDto = Static<typeof SignupBody>;
+
+/**
+ * Body for the post-login consent re-prompt (POST /auth/consent). Carries no
+ * versions — unlike signup, this path accepts whatever is active at the
+ * moment of the call — but it does carry the locale, for the same reason
+ * signup does: the acceptance snapshots the wording shown, and the server
+ * cannot otherwise know which language that was.
+ *
+ * The whole body is optional (see the controller): this endpoint took none
+ * before, and an omitted locale means English.
+ */
+export const ConsentBody = registerSchema(
+  'ConsentBody',
+  T.Object({ locale: T.Optional(ConsentLocaleValue) }, { additionalProperties: false }),
+);
+export type ConsentDto = Static<typeof ConsentBody>;
+
+/**
+ * The signup form's "Verify" button — checks one registration number against
+ * the NIC entity registry without registering anything. Same loose string
+ * bound as SignupBody.registrationNumber on purpose: the 10-digit rule is
+ * enforced after normalization (Arabic-Indic digits, pasted separators), so a
+ * pattern here would reject input the service itself accepts.
+ */
+export const VerifyRegistrationNumberBody = registerSchema(
+  'VerifyRegistrationNumberBody',
+  T.Object(
+    { registrationNumber: T.String({ minLength: 1, maxLength: 100 }) },
+    { additionalProperties: false },
+  ),
+);
+export type VerifyRegistrationNumberDto = Static<typeof VerifyRegistrationNumberBody>;
+
+export interface VerifyRegistrationNumberView {
+  verified: boolean;
+  /** Why it failed, for the frontend to localize. Absent when verified. */
+  reason?: 'INVALID_FORMAT' | 'NOT_FOUND';
+}
 
 /**
  * Complexity policy for a password the user *sets*: at least 8 characters,

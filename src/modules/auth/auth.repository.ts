@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { v7 as uuidv7 } from 'uuid';
 import { ConsentPolicyKind, Prisma, UserStatus } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
+import type { ConsentLocale } from '../consent/consent.types';
 
 /**
  * RIO-DATA-001 — the resolved, server-side policy rows the registrant
@@ -13,7 +14,14 @@ import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 export interface ConsentAcceptanceInput {
   kind: ConsentPolicyKind;
   version: string;
+  /** The wording actually rendered to the registrant, in `locale`. */
   text: string;
+  /**
+   * Which language `text` is. Resolved server-side from the requested locale
+   * and what translations the policy actually has — so this is the language
+   * the registrant really read, not merely the one they asked for.
+   */
+  locale: ConsentLocale;
 }
 
 export interface CreateOrgAdminInput {
@@ -152,6 +160,7 @@ export class AuthRepository {
               kind: c.kind,
               policyVersion: c.version,
               policyText: c.text,
+              policyLocale: c.locale,
               acceptedAt: consentedAt,
             })),
           });

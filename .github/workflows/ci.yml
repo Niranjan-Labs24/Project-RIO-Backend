@@ -59,10 +59,15 @@ jobs:
       # which both require a PUBLISHED MethodologyVersion to exist.
       # geography is independent but still needed — auth-signup.e2e.spec.ts
       # reads real /api/regions data.
+      #
+      # nic-registry likewise: signup rejects any registration number that
+      # isn't a NIC number in that table, so without this every signup spec
+      # fails at the gate (and takeUnusedNicNumber has nothing to claim).
       - run: pnpm import:questions
       - run: pnpm import:scoring-lookups
       - run: pnpm import:domain-priority-config
       - run: pnpm import:geography
+      - run: pnpm import:nic-registry
       - run: pnpm grant:access
       - run: pnpm seed:scored
       - run: pnpm typecheck
