@@ -1,4 +1,5 @@
 import { flattenReportContent } from "./report-content-flatten";
+import { severityBandOf } from "./providers/severity-bands";
 
 // Normalized, render-agnostic report document. The PDF and Excel renderers
 // both consume this, so layout logic lives in one place and the two exports
@@ -6,11 +7,63 @@ import { flattenReportContent } from "./report-content-flatten";
 // generators) into these sections; unknown/placeholder shapes fall back to the
 // generic flatten path.
 
+// ── Drill-down ──
+//
+// The client's requirement is that the interactivity survives EXPORT: a shared
+// PDF must still drill, not just the web view. So a drill target is modelled as
+// a symbolic anchor id on the document, and each renderer realises it in its
+// own idiom — PDF link annotations (/Annots + /GoTo), Excel HYPERLINK() to a
+// sheet, and accordion/navigation on screen. One contract, three surfaces:
+// anything else lets the surfaces drift apart.
+//
+// Anchor ids are derived from stable domain keys (domain code, indicator id),
+// never array positions, so regenerating a report keeps the same internal
+// structure and two runs stay diffable.
+
+/** Registers the current position as a jump target. Draws nothing itself. */
+export interface DocAnchor {
+  kind: "anchor";
+  id: string;
+}
+
+/** A clickable tile — the index-grid affordance from the reference artefact. */
+export interface DocTile {
+  label: string;
+  sub: string;
+  /** Anchor id this tile jumps to. */
+  to: string;
+}
+
 export type DocSection =
   | { kind: "keyvalue"; heading: string; rows: Array<{ label: string; value: string }> }
-  | { kind: "table"; heading: string; columns: string[]; rows: string[][] }
+  // `rowLinks[i]` is the anchor id row i drills into (null = not clickable).
+  // Optional so every existing table section keeps working untouched.
+  | {
+      kind: "table";
+      heading: string;
+      columns: string[];
+      rows: string[][];
+      rowLinks?: Array<string | null>;
+    }
+  | DocAnchor
+  // Grid of clickable tiles — the drill-down index.
+  | { kind: "navGrid"; heading: string; tiles: DocTile[] }
+  // Forces a physical page break and registers an anchor for it. Drill targets
+  // are MATERIALISED pages in the PDF: there is no lazy loading in a PDF, so
+  // every target must exist as a page before it can be linked to.
+  | { kind: "pageBreak"; anchorId: string; heading?: string }
+  // "Back to …" trail, drawn at the top of a detail page.
+  | { kind: "breadcrumb"; trail: Array<{ label: string; to?: string }> }
   | { kind: "bars"; heading: string; max: number; bars: Array<{ label: string; value: number }> }
-  | { kind: "pie"; heading: string; slices: Array<{ label: string; value: number }> }
+  // `emphasis` renders the chart large and centred with its legend beneath,
+  // rather than small with the legend beside it. For a figure that is the point
+  // of its section rather than one of several on a page.
+  | {
+      kind: "pie";
+      heading: string;
+      slices: Array<{ label: string; value: number }>;
+      emphasis?: boolean;
+    }
   | { kind: "gauge"; heading: string; value: number; max: number; sub?: string }
   | { kind: "radar"; heading: string; max: number; axes: string[]; series: Array<{ name: string; values: number[] }> }
   | { kind: "list"; heading: string; items: string[] }
@@ -34,11 +87,27 @@ export type DocSection =
   // wants the narrower half, not an even split.
   | { kind: "columns"; children: DocSection[]; weights?: number[] };
 
+/** One collapsible chapter of a report. */
+export interface DocChapter {
+  /** Box label on the contents page. */
+  name: string;
+  /** One-line descriptor under the label — what the reader will find inside. */
+  summary: string;
+  sections: DocSection[];
+}
+
 export interface ReportDoc {
   title: string;
   headerBand: Array<{ label: string; value: string }>;
   sections: DocSection[];
   audit: Array<{ label: string; value: string }>;
+  /**
+   * Present when the report is laid out as collapsible chapters: the PDF
+   * renderer draws each one into its own hidden layer, revealed by clicking its
+   * box on the contents page. `sections` still carries the same content in
+   * reading order, so Excel and the on-screen viewer are unaffected.
+   */
+  chapters?: DocChapter[];
 }
 
 function titleCase(key: string): string {
@@ -156,15 +225,177 @@ interface Col {
   // (Confidence = qualitative band + quantitative %). Falls back to scalar().
   format?: (o: Record<string, unknown>) => string;
 }
-function pickTableSection(heading: string, arr: Array<Record<string, unknown>>, cols: Col[]): DocSection {
+function pickTableSection(
+  heading: string,
+  arr: Array<Record<string, unknown>>,
+  cols: Col[],
+  // Anchor id per row — the drill target that row opens. Optional so every
+  // existing call site is unaffected.
+  rowLinks?: Array<string | null>,
+): DocSection {
   const present = cols.filter((c) => arr.some((o) => o[c.key] !== undefined));
   return {
     kind: "table",
     heading,
     columns: present.map((c) => c.label),
     rows: arr.map((o) => present.map((c) => (c.format ? c.format(o) : scalar(o[c.key], c.key)))),
+    ...(rowLinks ? { rowLinks } : {}),
   };
 }
+
+// ── Drill-down ──────────────────────────────────────────────────────────────
+//
+// Anchor ids are derived from STABLE methodology keys (domain code, indicator
+// id), never from array position, so a regenerated report keeps the same
+// internal link structure and two runs stay comparable.
+
+// Anchor ids are NAMESPACED by report. In a combined export two reports can
+// easily both contain domain HEALTH; without the prefix the first one's page
+// wins the id and every link in the second silently jumps into the first
+// report's section. The reader would have no way to tell that had happened.
+const domainAnchor = (domainKey: unknown, ns = ""): string => `${ns}domain:${String(domainKey)}`;
+const indicatorAnchor = (indicatorId: unknown, ns = ""): string =>
+  `${ns}indicator:${String(indicatorId)}`;
+/** Per-report prefix, e.g. "RPT14/". Empty for a single-report export. */
+const nsOf = (reportKey?: string): string => (reportKey ? `${reportKey}/` : "");
+
+/**
+ * Materialised detail pages for the domain → sub-domain → indicator drill.
+ *
+ * A PDF has no lazy loading: every target a link jumps to has to physically
+ * exist as a page in the same file. That is the cost of the interactivity
+ * surviving export, and it is why these pages are built up front rather than
+ * fetched on click.
+ *
+ * The payload is the detail the summary sections deliberately omit — the
+ * client's "collapsed on screen, revealed on click" principle, applied to a
+ * medium that cannot collapse.
+ */
+function drillDownSections(domains: Array<Record<string, unknown>>, ns = ""): DocSection[] {
+  const out: DocSection[] = [];
+
+  // The index grid — the reference artefact's page 1.
+  out.push({
+    kind: "navGrid",
+    heading: "Drill-down Index — Domains",
+    tiles: domains.map((d) => {
+      const subs = (d.subDomains as Array<Record<string, unknown>>) ?? [];
+      const indicators = subs.reduce(
+        (sum, sub) => sum + (((sub.indicators as unknown[]) ?? []).length),
+        0,
+      );
+      return {
+        label: String(d.domain),
+        sub: `${subs.length} sub-domain(s) · ${indicators} indicator(s)`,
+        to: domainAnchor(d.domainKey, ns),
+      };
+    }),
+  });
+
+  for (const d of domains) {
+    const subs = (d.subDomains as Array<Record<string, unknown>>) ?? [];
+    out.push({
+      kind: "pageBreak",
+      anchorId: domainAnchor(d.domainKey, ns),
+      heading: `${String(d.domain)} — Domain Detail`,
+    });
+    out.push({
+      kind: "breadcrumb",
+      trail: [{ label: "Drill-down Index", to: drillIndexAnchor(ns) }, { label: String(d.domain) }],
+    });
+    out.push({
+      kind: "keyvalue",
+      heading: "",
+      rows: [
+        { label: "Severity", value: severityCell(d) },
+        { label: "Confidence", value: scalar(d.confidence) },
+        { label: "Why this band", value: scalar(d.confidenceReason) },
+        { label: "Weight", value: scalar(d.weight) },
+        { label: "Weighted Contribution", value: scalar(d.weightedContribution) },
+        {
+          label: "Coverage",
+          value: `${n(d.kpisScored)} of ${n(d.kpisAsked)} indicators measured; ${n(d.kpisDefined)} defined in the methodology`,
+        },
+        { label: "Questions Asked", value: scalar(d.questionsAsked) },
+        { label: "Trend", value: scalar(d.trendNote) },
+      ],
+    });
+
+    // Sub-domain → indicator breakdown, with each indicator drilling one level
+    // further into its own KPI/scoring detail.
+    const indicatorRows: Array<Record<string, unknown>> = [];
+    const indicatorLinks: Array<string | null> = [];
+    for (const sub of subs) {
+      for (const ind of ((sub.indicators as Array<Record<string, unknown>>) ?? [])) {
+        indicatorRows.push({
+          subDomain: sub.subDomain,
+          indicatorName: ind.indicatorName,
+          severityScore: ind.severityScore,
+          confidence: ind.confidence,
+          kpiCount: ((ind.needs as unknown[]) ?? []).length,
+        });
+        indicatorLinks.push(indicatorAnchor(ind.indicatorId, ns));
+      }
+    }
+    if (indicatorRows.length) {
+      out.push(
+        pickTableSection("Sub-domains and Indicators", indicatorRows, SUBDOMAIN_COLS, indicatorLinks),
+      );
+    }
+
+    // Indicator leaf pages — the deepest level, carrying the scoring detail
+    // (raw severity, band, confidence trigger, equity, gap type, exclusions).
+    for (const sub of subs) {
+      for (const ind of ((sub.indicators as Array<Record<string, unknown>>) ?? [])) {
+        const needs = (ind.needs as Array<Record<string, unknown>>) ?? [];
+        out.push({
+          kind: "pageBreak",
+          anchorId: indicatorAnchor(ind.indicatorId, ns),
+          heading: `${String(ind.indicatorName)} — Indicator Detail`,
+        });
+        out.push({
+          kind: "breadcrumb",
+          trail: [
+            { label: "Drill-down Index", to: drillIndexAnchor(ns) },
+            { label: String(d.domain), to: domainAnchor(d.domainKey, ns) },
+            { label: String(sub.subDomain) },
+            { label: String(ind.indicatorName) },
+          ],
+        });
+        out.push({
+          kind: "keyvalue",
+          heading: "",
+          rows: [
+            { label: "Domain", value: String(d.domain) },
+            { label: "Sub-domain", value: String(sub.subDomain) },
+            { label: "Indicator ID", value: scalar(ind.indicatorId) },
+            { label: "Severity", value: severityCell(ind) },
+            { label: "Confidence", value: scalar(ind.confidence) },
+          ],
+        });
+        if (needs.length) {
+          // The KPI rows beneath this indicator — question-level scoring
+          // detail, which is exactly the "raw vs. calibrated" payload the
+          // client asked the drill to reveal.
+          out.push(pickTableSection("KPIs under this Indicator", needs, NEED_RECORD_COLS_FULL));
+        }
+      }
+    }
+  }
+
+  return out;
+}
+
+/** Anchor for the drill index itself, so every detail page can link back. */
+const drillIndexAnchor = (ns = ""): string => `${ns}drill:index`;
+
+const SUBDOMAIN_COLS: Col[] = [
+  { key: "subDomain", label: "Sub-domain" },
+  { key: "indicatorName", label: "Indicator" },
+  { key: "severityScore", label: "Severity", format: severityCell },
+  { key: "confidence", label: "Confidence" },
+  { key: "kpiCount", label: "KPIs" },
+];
 
 const DOMAIN_TABLE_COLS: Col[] = [
   { key: "name", label: "Domain" },
@@ -187,6 +418,100 @@ const DOMAIN_TABLE_COLS: Col[] = [
   { key: "confidence", label: "Confidence" },
   { key: "validResponseRatePct", label: "Valid %" },
   { key: "isCriticalDomain", label: "Critical" },
+];
+
+// ── RPT03 / RPT09 Top-Priority ──
+
+const TIER_SUMMARY_COLS: Col[] = [
+  { key: "tier", label: "Priority Tier" },
+  { key: "count", label: "Needs" },
+  { key: "sharePct", label: "Share", format: (o) => `${scalar(o.sharePct)}%` },
+  // The methodology promotes an equity-flagged need a tier, so showing how many
+  // of each tier arrived there via equity keeps the banding auditable.
+  { key: "equityFlagged", label: "Equity-flagged" },
+];
+
+const DOMAIN_ROLLUP_COLS: Col[] = [
+  { key: "domain", label: "Domain" },
+  {
+    key: "averageSeverity",
+    label: "Avg Severity",
+    format: (o) => (typeof o.averageSeverity === "number" ? o.averageSeverity.toFixed(2) : "—"),
+  },
+  // The no-masking column. A domain can average LOW while hiding a CRITICAL
+  // KPI; printing the max next to the average is that rule in table form.
+  {
+    key: "maxKpiSeverity",
+    label: "Max KPI Severity",
+    format: (o) => (typeof o.maxKpiSeverity === "number" ? o.maxKpiSeverity.toFixed(2) : "—"),
+  },
+  { key: "criticalKpiCount", label: "Critical KPIs" },
+  { key: "kpiCount", label: "KPIs Defined" },
+  {
+    key: "masksCriticalFinding",
+    label: "Masking?",
+    format: (o) => (o.masksCriticalFinding === true ? "YES — read Max, not Avg" : "No"),
+  },
+];
+
+// ── RPT10 Data-Quality ──
+
+const DOMAIN_CONFIDENCE_COLS: Col[] = [
+  { key: "domain", label: "Domain" },
+  { key: "confidence", label: "Confidence" },
+  { key: "validResponseRatePct", label: "Valid-Response Rate", format: (o) => `${scalar(o.validResponseRatePct)}%` },
+  { key: "dontKnowRatePct", label: "Don't-Know Rate", format: (o) => `${scalar(o.dontKnowRatePct)}%` },
+  { key: "kpiCount", label: "KPIs" },
+  // Names the condition that actually fired, so a LOW band is never left
+  // looking arbitrary.
+  { key: "reason", label: "Why this band" },
+];
+
+const FLAGGED_RECORD_COLS: Col[] = [
+  { key: "flag", label: "Flag" },
+  { key: "domain", label: "Domain" },
+  { key: "indicatorName", label: "Indicator" },
+  { key: "reason", label: "Reason" },
+];
+
+// ── RPT06 Region ──
+
+const GOVERNORATE_COLS: Col[] = [
+  { key: "governorate", label: "Governorate" },
+  { key: "needCount", label: "Needs" },
+  { key: "responseCount", label: "Responses" },
+  {
+    key: "severityScore",
+    label: "Avg Severity",
+    format: (o) => (typeof o.severityScore === "number" ? o.severityScore.toFixed(2) : "—"),
+  },
+  // The no-masking column: a governorate can average Low while containing a
+  // critical village, so the worst village is printed beside the mean.
+  {
+    key: "maxVillageSeverity",
+    label: "Worst Village",
+    format: (o) => (typeof o.maxVillageSeverity === "number" ? o.maxVillageSeverity.toFixed(2) : "—"),
+  },
+  {
+    key: "priorityScore",
+    label: "Priority",
+    format: (o) => (typeof o.priorityScore === "number" ? o.priorityScore.toFixed(2) : "—"),
+  },
+  { key: "priorityStatus", label: "Status" },
+];
+
+const REGION_VILLAGE_COLS: Col[] = [
+  { key: "village", label: "Village" },
+  { key: "governorate", label: "Governorate" },
+  { key: "needCount", label: "Needs" },
+  { key: "responseCount", label: "Responses" },
+  { key: "severityScore", label: "Severity", format: severityCell },
+  {
+    key: "priorityScore",
+    label: "Priority",
+    format: (o) => (typeof o.priorityScore === "number" ? o.priorityScore.toFixed(2) : "—"),
+  },
+  { key: "priorityStatus", label: "Status" },
 ];
 
 const TOP_KPI_COLS: Col[] = [
@@ -857,7 +1182,7 @@ function patternAnalysisSections(pa: Record<string, unknown>): DocSection[] {
   return out;
 }
 
-function priorityNeedsSections(pn: Record<string, unknown>): DocSection[] {
+function priorityNeedsSections(pn: Record<string, unknown>, drillable = false, ns = ""): DocSection[] {
   const out: DocSection[] = [];
   const vp = isPlainObject(pn.villagePriority) ? pn.villagePriority : null;
 
@@ -880,11 +1205,20 @@ function priorityNeedsSections(pn: Record<string, unknown>): DocSection[] {
   }
   if (isObjectArray(pn.needs)) {
     out.push(
-      pickTableSection("Priority Needs", pn.needs, [
-        { key: "rank", label: "#" },
-        ...NEED_RECORD_COLS_FULL,
-        { key: "relevanceScore", label: "Relevance" },
-      ]),
+      pickTableSection(
+        "Priority Needs",
+        pn.needs,
+        [
+          { key: "rank", label: "#" },
+          ...NEED_RECORD_COLS_FULL,
+          { key: "relevanceScore", label: "Relevance" },
+        ],
+        // Each ranked need drills to its indicator's leaf page — the question
+        // wording, response distribution and severity calculation behind the
+        // number. That is the client's "click a priority need, see how it was
+        // scored" requirement.
+        drillable ? pn.needs.map((need) => indicatorAnchor(need.indicatorId, ns)) : undefined,
+      ),
     );
   }
   // Ranked out, but never dropped — an indicator nobody could answer is a
@@ -948,11 +1282,182 @@ function dataQualitySections(dq: Record<string, unknown>): DocSection[] {
   return out;
 }
 
+// Sections that carry real weight — a chart or a table — earn their own page.
+// A one-line note or a short key/value block does not: a report where every
+// paragraph is its own page reads as padded, not as navigable.
+const HEAVY_KINDS = new Set(["table", "bars", "pie", "radar", "gauge", "stats", "groupedBars"]);
+
+function isHeavy(s: DocSection): boolean {
+  if (s.kind === "columns") return s.children.some(isHeavy);
+  return HEAVY_KINDS.has(s.kind);
+}
+
+/** Short, honest descriptor for a chapter box — what the reader will find. */
+function chapterSummary(sections: DocSection[]): string {
+  let rows = 0;
+  let charts = 0;
+  const walk = (list: DocSection[]) => {
+    for (const s of list) {
+      if (s.kind === "columns") walk(s.children);
+      else if (s.kind === "table") rows += s.rows.length;
+      else if (HEAVY_KINDS.has(s.kind)) charts += 1;
+    }
+  };
+  walk(sections);
+  const parts: string[] = [];
+  if (rows) parts.push(`${rows} row${rows === 1 ? "" : "s"}`);
+  if (charts) parts.push(`${charts} chart${charts === 1 ? "" : "s"}`);
+  return parts.join(" · ") || "Summary";
+}
+
+/**
+ * The chapter scheme every report is laid out against.
+ *
+ * Chapters are SEMANTIC, not "one per heading": a bar chart and the table that
+ * restates it belong on the same page, and a box called "Domain Severity
+ * (0-100)" tells a reader less than one called "Severity by Domain". Matching
+ * is by keyword so a new section heading lands somewhere sensible without this
+ * list having to be updated in lockstep.
+ *
+ * Order here is the order the document reads in — fixed, so the six report
+ * types are navigated the same way rather than each in the order its generator
+ * happened to push sections.
+ */
+const CHAPTER_SCHEME: Array<{ name: string; match: RegExp }> = [
+  { name: "Overview", match: /report basis|^survey$|coverage|geographic scope|region \/ governorate|portfolio|response quality|needs index|organisation dashboard/i },
+  { name: "Executive Summary", match: /executive summary|ai summary|key findings|summary of needs|critical needs/i },
+  { name: "Severity by Domain", match: /domain severity|domain profile|^domains$|scoring distribution|collective kpis/i },
+  // `domain masking` and `geographic masking` are deliberately distinct: the
+  // same no-masking rule applies to domains and to geography, and each alert
+  // belongs beside the table it is about, not both in whichever chapter is
+  // listed first.
+  { name: "Priority Needs", match: /priority tier|domain rollup|domain masking|priority needs|village priority|^priority$|top kpis|top priorities|not measured|priority ranking/i },
+  { name: "Geographic Breakdown", match: /^regions$|governorate|^villages$|region scope|geographic masking|village breakdown/i },
+  { name: "Methodology Hierarchy", match: /needs by domain|calculation basis|all need records/i },
+  { name: "Pattern Analysis", match: /pattern|intersection/i },
+  { name: "Demographics", match: /gender|rural|urban|demographic/i },
+  { name: "Evidence", match: /evidence|document register|themes across/i },
+  { name: "Comparison", match: /comparison|reconciliation/i },
+  { name: "Data Quality", match: /data quality|completeness|confidence by domain|flagged records|answer status|anomalies|response funnel|questions per domain/i },
+  { name: "Sharing", match: /sharing|^requests$/i },
+  { name: "Conclusions & Recommendations", match: /recommendation|reviewer notes|^trend|trend note/i },
+];
+
+const FALLBACK_CHAPTER = "Additional Detail";
+
+function chapterFor(section: DocSection): string {
+  // A `columns` pair is a layout device with no heading of its own. Classify it
+  // by what it CONTAINS, or the severity radar and its bar chart get filed under
+  // whatever chapter happened to be open — which is how the domain charts ended
+  // up separated from the domain table they illustrate.
+  if (section.kind === "columns") {
+    for (const child of section.children) {
+      const name = chapterFor(child);
+      if (name) return name;
+    }
+    return "";
+  }
+  const heading = "heading" in section ? (section.heading ?? "") : "";
+  if (!heading) return "";
+  return CHAPTER_SCHEME.find((c) => c.match.test(heading))?.name ?? FALLBACK_CHAPTER;
+}
+
+/**
+ * Group a flat section list into the semantic chapters above.
+ *
+ * A section with no heading (a `columns` pair, an anchor) attaches to whichever
+ * chapter is in progress — those are layout devices, not topics of their own.
+ */
+function chapterize(sections: DocSection[]): Array<{ name: string; sections: DocSection[] }> {
+  const order = [...CHAPTER_SCHEME.map((c) => c.name), FALLBACK_CHAPTER];
+  const byName = new Map<string, DocSection[]>();
+  let current = "";
+
+  for (const section of sections) {
+    const name = chapterFor(section) || current || "Overview";
+    current = name;
+    const list = byName.get(name);
+    if (list) list.push(section);
+    else byName.set(name, [section]);
+  }
+
+  return order
+    .filter((name) => byName.has(name))
+    .map((name) => ({ name, sections: byName.get(name)! }));
+}
+
+/**
+ * A report as a navigable document rather than one long scroll.
+ *
+ * Page 1 is a grid of boxes — one per chapter, named and summarised. Clicking a
+ * box opens that chapter's own page; every chapter links back. This mirrors the
+ * reference artefact: the interactivity is built from PDF link annotations, so
+ * it survives being exported, shared and opened offline.
+ */
 export function buildReportDoc(
   title: string,
   content: Record<string, unknown>,
   audit: Array<{ label: string; value: string }>,
 ): ReportDoc {
+  const { headerBand, sections: body, drillSections } = buildReportSections(content);
+  const chapters = chapterize(body);
+
+  // One chapter (or none) is not worth a contents page — a box grid listing a
+  // single entry is furniture, not navigation.
+  if (chapters.length < 2) {
+    return { title, headerBand, sections: [...body, ...drillSections], audit };
+  }
+
+  const docChapters: DocChapter[] = chapters.map((c) => ({
+    name: c.name,
+    summary: chapterSummary(c.sections),
+    sections: c.sections,
+  }));
+
+  // The domain drill-down is a destination in its own right, so it becomes a
+  // chapter like any other rather than being reachable only by scrolling past
+  // everything else.
+  if (drillSections.length) {
+    docChapters.push({
+      name: "Drill-down by Domain",
+      summary: "Domain to indicator detail",
+      sections: drillSections,
+    });
+  }
+
+  // `sections` keeps the whole report in reading order. The PDF renderer uses
+  // `chapters` to lay them out as collapsible layers; Excel and the on-screen
+  // viewer consume `sections` and are unaffected by the chapter split.
+  return {
+    title,
+    headerBand,
+    sections: docChapters.flatMap((c) => c.sections),
+    audit,
+    chapters: docChapters,
+  };
+}
+
+
+
+/**
+ * One report's header band and body sections, with every drill anchor prefixed
+ * by `reportKey`.
+ *
+ * Split out of buildReportDoc so the combined export can lay several reports
+ * into ONE document without their anchor ids colliding — see nsOf.
+ */
+function buildReportSections(
+  content: Record<string, unknown>,
+  reportKey?: string,
+): {
+  headerBand: Array<{ label: string; value: string }>;
+  sections: DocSection[];
+  drillSections: DocSection[];
+} {
+  const ns = nsOf(reportKey);
+  // Drill pages are kept apart from the body: they already carry their own
+  // page structure, so the chapter pass below must not try to re-chapter them.
+  const drillSections: DocSection[] = [];
   const headerBand = isPlainObject(content.header) ? kvRows(content.header) : [];
   // KEEP IN SYNC with the identical predicate in the frontend viewer
   // (Project-RIO-Frontend/src/components/features/reports/report-content-view.tsx).
@@ -980,6 +1485,12 @@ export function buildReportDoc(
       isObjectArray(content.scoringDistribution) ||
       isObjectArray(content.requests) ||
       isPlainObject(content.evidenceSection) ||
+      // RPT03/RPT09 Top-Priority and RPT10 Data-Quality. Neither carries a
+      // `severity` block (they project the unified pipeline rather than
+      // re-deriving it), so without these two arms both would have fallen
+      // through to the flat key-value dump — the same defect RPT17 hit.
+      isObjectArray(content.tierSummary) ||
+      isObjectArray(content.completeness) ||
       isPlainObject(content.geography));
 
   const sections: DocSection[] = [];
@@ -1046,6 +1557,63 @@ export function buildReportDoc(
       });
     }
 
+    // ── RPT03/RPT09 Top-Priority headline: tier distribution, then the domain
+    // rollup carrying the no-masking columns. Both come before the ranked list
+    // so a reader meets the shape of the findings before the findings. ──
+    if (isObjectArray(content.tierSummary)) {
+      const maxCount = Math.max(1, ...content.tierSummary.map((r) => Number(r.count) || 0));
+      sections.push(barsSection("Needs by Priority Tier", content.tierSummary, "tier", "count", maxCount));
+      sections.push(pickTableSection("Priority Tier Summary", content.tierSummary, TIER_SUMMARY_COLS));
+    }
+    if (isObjectArray(content.domainRollup)) {
+      sections.push(pickTableSection("Domain Rollup", content.domainRollup, DOMAIN_ROLLUP_COLS));
+      // The no-masking rule made explicit. A reader who only skims the averages
+      // column is precisely the reader this note exists for.
+      const masking = content.domainRollup.filter((r) => r.masksCriticalFinding === true);
+      if (masking.length) {
+        sections.push({
+          kind: "note",
+          heading: "Domain Masking Alert",
+          text:
+            `${masking.length} domain(s) average a milder band than their worst KPI: ` +
+            `${masking.map((r) => scalar(r.domain)).join(", ")}. ` +
+            "Per the methodology, a critical need surfaces regardless of its domain average — " +
+            "read the Max KPI Severity column, not the average, for these domains.",
+        });
+      }
+    }
+
+    // ── RPT10 Data-Quality: completeness tiles, per-domain confidence, then
+    // the flagged records themselves. ──
+    if (isObjectArray(content.completeness)) {
+      sections.push({
+        kind: "keyvalue",
+        heading: "Completeness & Confidence",
+        rows: content.completeness.map((r) => ({ label: scalar(r.label), value: scalar(r.value) })),
+      });
+    }
+    if (isObjectArray(content.domainConfidence)) {
+      sections.push(pickTableSection("Confidence by Domain", content.domainConfidence, DOMAIN_CONFIDENCE_COLS));
+    }
+    // Array.isArray, NOT isObjectArray — an EMPTY flagged list must still print
+    // its section. isObjectArray is false for `[]`, which would have dropped the
+    // section entirely, and a missing section reads as "quality was not checked"
+    // rather than "nothing was flagged". Under AC 6 those are opposite claims.
+    if (Array.isArray(content.flaggedRecords)) {
+      sections.push({
+        kind: "note",
+        heading: "Flagged Records",
+        text:
+          content.flaggedRecords.length === 0
+            ? "No incomplete or unassessed records were found. Every indicator in scope produced a measurable score."
+            : `${content.flaggedRecords.length} record(s) are flagged below. They are listed rather than removed — ` +
+              "each remains part of the dataset and is excluded only from severity averages, where noted.",
+      });
+      if (content.flaggedRecords.length) {
+        sections.push(pickTableSection("Flagged Records Detail", content.flaggedRecords, FLAGGED_RECORD_COLS));
+      }
+    }
+
     // The evidence (RPT15) and combined (RPT16) reports carry structured
     // `geography` rather than the executive report's `scope`. Without this the
     // required Region → Governorate section was silently absent from every
@@ -1074,6 +1642,12 @@ export function buildReportDoc(
       sections.push({ kind: "keyvalue", heading: "Region / Governorate", rows });
     }
 
+    // The domain → sub-domain → indicator hierarchy is what the drill pages are
+    // built from. No hierarchy → no drill targets, and every table stays plain
+    // rather than offering a click that leads nowhere.
+    const hierarchy = isObjectArray(content.needsByDomain) ? content.needsByDomain : null;
+    const drillable = hierarchy !== null;
+
     const rq: DocSection | null = isPlainObject(content.responseQuality)
       ? { kind: "keyvalue", heading: "Response Quality", rows: responseQualityRows(content.responseQuality) }
       : null;
@@ -1098,7 +1672,15 @@ export function buildReportDoc(
     if (domains) {
       if (domains.length >= 3) radar = domainRadar(domains);
       bars = barsSection("Domain Severity (0-100)", domains, "name", "severityScore", 100);
-      domainsTable = pickTableSection("Domains", domains, DOMAIN_TABLE_COLS);
+      // Each domain row drills into its own detail page when the hierarchy that
+      // backs those pages is present. `domainCode` here and `domainKey` in the
+      // hierarchy are the same methodology key under two field names.
+      domainsTable = pickTableSection(
+        "Domains",
+        domains,
+        DOMAIN_TABLE_COLS,
+        drillable ? domains.map((d) => domainAnchor(d.domainCode, ns)) : undefined,
+      );
     }
 
     // Row 1: gauge + response quality (or whichever exists).
@@ -1128,7 +1710,7 @@ export function buildReportDoc(
     // ── Section 5 — Priority Needs. Supersedes the flat Priority block below
     // when present, so the two never render the same figure twice. ──
     if (isPlainObject(content.priorityNeeds)) {
-      sections.push(...priorityNeedsSections(content.priorityNeeds));
+      sections.push(...priorityNeedsSections(content.priorityNeeds, drillable, ns));
     } else if (isPlainObject(content.priority)) {
       sections.push({ kind: "keyvalue", heading: "Priority", rows: kvRows(content.priority) });
     }
@@ -1218,14 +1800,59 @@ export function buildReportDoc(
       sections.push({ kind: "keyvalue", heading: "Sharing Summary", rows: kvRows(content.summary) });
     }
     if (isObjectArray(content.requests)) sections.push(tableSection("Sharing Requests", content.requests));
-    if (isObjectArray(content.regions)) sections.push(tableSection("Regions", content.regions));
+    // ── RPT06 Region: scope band, governorate rows, then the villages
+    // beneath them. The scope band comes first so a reader knows what the rows
+    // cover before reading them — including what could NOT be attributed. ──
+    if (isPlainObject(content.regionScope)) {
+      const rs = content.regionScope as Record<string, unknown>;
+      const unscored = Array.isArray(rs.unscoredVillages) ? (rs.unscoredVillages as unknown[]) : [];
+      sections.push({
+        kind: "keyvalue",
+        heading: "Region Scope",
+        rows: [
+          { label: "Region", value: scalar(rs.regionName) },
+          { label: "Governorates covered", value: scalar(rs.governorateCount) },
+          { label: "Villages covered", value: scalar(rs.villageCount) },
+          // Both of these are findings about the assessment, not omissions:
+          // stating them is what stops a partial region reading as a complete one.
+          { label: "Needs with no governorate link", value: scalar(rs.unmappedNeedCount) },
+          {
+            label: "Villages not yet scored",
+            value: unscored.length ? unscored.map(String).join(", ") : "None",
+          },
+          { label: "How severity is aggregated", value: scalar(rs.aggregationBasis) },
+        ],
+      });
+    }
+    if (isObjectArray(content.regions)) {
+      sections.push(pickTableSection("Governorates", content.regions, GOVERNORATE_COLS));
+      const masking = content.regions.filter(
+        (r) =>
+          typeof r.severityScore === "number" &&
+          typeof r.maxVillageSeverity === "number" &&
+          severityBandOf(r.maxVillageSeverity) !== severityBandOf(r.severityScore),
+      );
+      if (masking.length) {
+        sections.push({
+          kind: "note",
+          heading: "Geographic Masking Alert",
+          text:
+            `${masking.length} governorate(s) average a milder band than their worst village: ` +
+            `${masking.map((r) => scalar(r.governorate)).join(", ")}. ` +
+            "Read the Worst Village column, not the average, for these rows.",
+        });
+      }
+    }
+    if (isObjectArray(content.villages)) {
+      sections.push(pickTableSection("Villages", content.villages, REGION_VILLAGE_COLS));
+    }
     if (isObjectArray(content.topKpis)) sections.push(pickTableSection("Top KPIs", content.topKpis, TOP_KPI_COLS));
     if (isObjectArray(content.topPriorities)) sections.push(tableSection("Top Priorities", content.topPriorities));
 
-    // Demographic pies side by side. The Executive report may have an empty
-    // topPriorities list, so also treat a report carrying Response Quality as a
-    // needs report — otherwise it would silently drop the demographics
-    // placeholder that every other needs report shows.
+    // Demographics. The Executive report may have an empty topPriorities list,
+    // so also treat a report carrying Response Quality as a needs report —
+    // otherwise it would silently drop the demographics placeholder that every
+    // other needs report shows.
     const isNeedsReport =
       !!sev ||
       !!domains ||
@@ -1234,14 +1861,20 @@ export function buildReportDoc(
       isPlainObject(content.responseQuality);
     const demo = isPlainObject(content.demographics) ? content.demographics : null;
     const toSlices = (arr: Array<Record<string, unknown>>) => arr.map((r) => ({ label: scalar(r.label), value: Number(r.count) || 0 }));
+    // Gender is the headline demographic finding, so it is drawn large and
+    // centred on its own full width rather than squeezed beside the settlement
+    // split. The two were paired to keep the report short; now that
+    // Demographics is its own chapter that constraint is gone.
     const genderPie: DocSection | null =
-      demo && isObjectArray(demo.gender) ? { kind: "pie", heading: "Gender Breakdown", slices: toSlices(demo.gender) } : null;
+      demo && isObjectArray(demo.gender)
+        ? { kind: "pie", heading: "Gender Breakdown", slices: toSlices(demo.gender), emphasis: true }
+        : null;
     const ruralPie: DocSection | null =
       demo && isObjectArray(demo.rural) ? { kind: "pie", heading: "Rural / Urban Breakdown", slices: toSlices(demo.rural) } : null;
-    if (genderPie && ruralPie) sections.push({ kind: "columns", children: [genderPie, ruralPie] });
-    else if (genderPie) sections.push(genderPie);
-    else if (ruralPie) sections.push(ruralPie);
-    else if (isNeedsReport) sections.push(DEMOGRAPHICS_NOTE);
+    if (genderPie) sections.push(genderPie);
+    if (ruralPie) sections.push(ruralPie);
+    if (!genderPie && !ruralPie && isNeedsReport) sections.push(DEMOGRAPHICS_NOTE);
+
 
     if (isPlainObject(content.aiSummary)) sections.push(...aiSummarySections(content.aiSummary));
 
@@ -1297,6 +1930,16 @@ export function buildReportDoc(
       sections.push(...combinedSummarySections(content.combinedSummarySection));
     }
 
+    // ── Drill-down pages ──
+    //
+    // Appended LAST so the report still reads top-to-bottom as a document for
+    // anyone who never clicks: summary first, detail behind it. The index grid
+    // carries its own anchor so every detail page can link back to it.
+    if (hierarchy) {
+      drillSections.push({ kind: "anchor", id: drillIndexAnchor(ns) });
+      drillSections.push(...drillDownSections(hierarchy, ns));
+    }
+
     // Top-level recommendations. `aiSummarySections` handles the nested
     // `aiSummary.recommendations`, which is a different field.
     if (Array.isArray(content.recommendations) && content.recommendations.length) {
@@ -1321,5 +1964,5 @@ export function buildReportDoc(
     for (const t of flat.tables) sections.push(tableSection(titleCase(t.name), t.rows));
   }
 
-  return { title, headerBand, sections, audit };
+  return { headerBand, sections, drillSections };
 }

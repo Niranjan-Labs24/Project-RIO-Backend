@@ -23,10 +23,15 @@ export async function aggregateDemographics(
   tenant: TenantPrismaService,
   scope: { needId: string } | { studyId: string },
   villageId: string,
+  // RPT06: the villages a REGION covers. Without it a region report's gender
+  // split came from the whole study, so the chart contradicted the rows above
+  // it. A single villageId still wins — it is the narrower ask.
+  villageIds?: string[],
 ): Promise<Demographics | null> {
   return tenant.runInOrgContext(async (tx) => {
     const where: Record<string, unknown> = { ...scope };
     if (villageId) where.village = { has: villageId };
+    else if (villageIds?.length) where.village = { hasSome: villageIds };
 
     const [genderRows, settlementRows] = await Promise.all([
       tx.surveyResponse.groupBy({ by: ["gender"], where, _count: true }),

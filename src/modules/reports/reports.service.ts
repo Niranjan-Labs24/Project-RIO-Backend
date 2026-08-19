@@ -20,6 +20,8 @@ import { regionGenerator } from "./generators/region.generator";
 import { executiveGenerator } from "./generators/executive.generator";
 import { collectiveGenerator } from "./generators/collective.generator";
 import { sharingStatusGenerator } from "./generators/sharing-status.generator";
+import { topPriorityGenerator } from "./generators/top-priority.generator";
+import { dataQualityGenerator } from "./generators/data-quality.generator";
 import { ReportDataProvider } from "./providers/report-data.provider";
 import {
   EXPORTABLE_STATUSES,
@@ -47,6 +49,33 @@ function formatAssessmentPeriod(min: Date | null, max: Date | null): string | un
   const from = fmt(min);
   const to = fmt(max);
   return from === to ? from : `${from} - ${to}`;
+}
+
+/**
+ * The methodology version a stored report was generated against (AC 5).
+ *
+ * Every core generator writes `header.methodologyVersion`; the survey-scoped
+ * ones additionally carry `survey.methodologyVersion`. Placeholder content has
+ * neither, and returns null rather than a guess — an invented version stamp is
+ * worse than a missing one, because it would be believed.
+ */
+function methodologyVersionOf(content: unknown): string | null {
+  if (typeof content !== "object" || content === null) return null;
+  const c = content as Record<string, unknown>;
+
+  const header = c.header;
+  if (typeof header === "object" && header !== null) {
+    const v = (header as Record<string, unknown>).methodologyVersion;
+    if (typeof v === "string" && v.trim()) return v;
+  }
+
+  const survey = c.survey;
+  if (typeof survey === "object" && survey !== null) {
+    const v = (survey as Record<string, unknown>).methodologyVersion;
+    if (typeof v === "string" && v.trim()) return v;
+  }
+
+  return null;
 }
 
 // Minimal shape both runInOrgContext and runAsSupervisor transaction clients
@@ -475,6 +504,11 @@ export class ReportsService {
       reviewedByRole: row.reviewedBy ? (roleById.get(row.reviewedBy) ?? null) : null,
       reviewedAt: row.reviewedAt ? row.reviewedAt.toISOString() : null,
       archivedAt: row.archivedAt ? row.archivedAt.toISOString() : null,
+      // AC 5. Read from the stored content's own header — the version the
+      // generator ran against, frozen at generation time. Deliberately NOT the
+      // study's current methodologyVersion: that moves on, and stamping it here
+      // would relabel an archived report with rules it was never scored under.
+      methodologyVersion: methodologyVersionOf(row.content),
     };
   }
 
@@ -590,6 +624,12 @@ export class ReportsService {
     if (reportType === "RPT13") return executiveGenerator(providerCtx);
     if (reportType === "RPT02") return collectiveGenerator(providerCtx);
     if (reportType === "RPT12") return sharingStatusGenerator(providerCtx);
+    // RPT03 (Top Needs View) and RPT09 (Priority Ranking) are the same report
+    // under the BRD's two names — one ranked list off one scoring engine. They
+    // share a generator rather than diverging into two lists that would have to
+    // be kept reconciled with each other.
+    if (reportType === "RPT03" || reportType === "RPT09") return topPriorityGenerator(providerCtx);
+    if (reportType === "RPT10") return dataQualityGenerator(providerCtx);
 
     if (reportType === "RPT17" || reportType === "RPT16") {
       if (!studyId) throw new BadRequestException({ error: { code: "STUDY_ID_REQUIRED", message: `${reportType} requires studyId` } });

@@ -5,6 +5,7 @@ import type {
   CollectiveReportContent,
   CombinedReportContent,
   CoverageBlock,
+  DataQualityReportContent,
   Demographics,
   ExecutiveReportContent,
   IndividualSurveyReportContent,
@@ -13,8 +14,11 @@ import type {
   SharingStatusContent,
   SurveyIdentity,
   SurveyReportBase,
+  TopPriorityReportContent,
   VillageReportContent,
 } from "../report-content.types";
+import type { UnifiedRpt01Sections } from "../unified-report.types";
+import { buildDataQualityContent, buildTopPriorityContent } from "./build-focused-reports";
 import {
   ReportSummaryService,
   type ReportDataSnapshot,
@@ -26,6 +30,7 @@ import { ReportSharingService } from "../../report-sharing/report-sharing.servic
 import { ReviewerSlaService } from "../../reviewer-sla/reviewer-sla.service";
 import { slaComplianceFromAlerts } from "../../reviewer-sla/sla-compliance";
 import { aggregateDemographics } from "./aggregate-demographics";
+import { loadRegionBreakdown } from "./load-region-breakdown";
 import {
   ReportDataProvider,
   type ScopedReportQuery,
@@ -120,52 +125,7 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
   // a study-wide aggregate but would silently report on the wrong survey here.
   async getIndividualSurveyReport(query: SurveyReportQuery): Promise<IndividualSurveyReportContent> {
     try {
-      const half = await this.surveyHalf(query, "INDIVIDUAL");
-      const { snapshot, aiOutput, survey, coverage, demographics } = half;
-
-      const base = snapshotToSurveyBase({
-        snapshot,
-        aiOutput,
-        survey,
-        coverage,
-        demographics,
-        assessmentPeriod: coverage.assessmentPeriod,
-        filters: query.filters,
-      });
-
-      const villageId = typeof query.filters.villageId === "string" ? query.filters.villageId : "";
-      const [reference, segmentsByIndicator] = await Promise.all([
-        loadRpt01ReferenceData(this.tenant, {
-          studyId: query.studyId,
-          surveyId: query.surveyId,
-          methodologyVersionId: snapshot.study.methodologyVersionId,
-          villageId: villageId || undefined,
-        }),
-        loadSegmentSeverities(this.tenant, {
-          studyId: query.studyId,
-          surveyId: query.surveyId,
-          methodologyVersionId: snapshot.study.methodologyVersionId,
-          villageId: villageId || undefined,
-        }),
-      ]);
-      // The SAME geography the AI snapshot was written against — resolving it a
-      // second time here is exactly how the header and the narrative came to
-      // name different governorates.
-      const unitGeo = snapshot.unitGeo ?? EMPTY_UNIT_GEO;
-
-      const unified = buildUnifiedRpt01(
-        assembleUnifiedInput({ snapshot, coverage, base, reference, segmentsByIndicator, unitGeo, villageId }),
-      );
-
-      // No narrative (AI unavailable, or its cached output was written against a
-      // superseded prompt and was rejected above) → compose one from the figures
-      // rather than ship an empty summary or a stale, contradicting one.
-      const fallback = composeDeterministicNarrative(unified);
-      const aiSummary = {
-        ...base.aiSummary,
-        executiveSummary: base.aiSummary.executiveSummary || fallback.executiveSummary,
-        keyFindings: base.aiSummary.keyFindings || fallback.keyFindings,
-      };
+      const { base, unified, aiSummary } = await this.unifiedHalf(query, "INDIVIDUAL");
 
       // Coverage counts and the sections beneath them must agree — the tiles
       // once said 4 domains over a table of 2. Assert it here so an inconsistent
@@ -175,6 +135,133 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
       return content;
     } catch (err) {
       this.rethrow("Individual survey", err);
+    }
+  }
+
+  /**
+   * The unified-pipeline half: one snapshot → one set of need records → the six
+   * narrative sections. RPT01, RPT03/09 and RPT10 all consume exactly this, and
+   * that shared call is the reconciliation guarantee — the same one RPT15 gets
+   * from sharing surveyHalf(). Recomputing any of it per report type is what
+   * would let the three drift apart.
+   */
+  private async unifiedHalf(
+    query: SurveyReportQuery,
+    scope: SummaryScopeType,
+  ): Promise<{
+    snapshot: ReportDataSnapshot;
+    base: SurveyReportBase;
+    unified: UnifiedRpt01Sections;
+    aiSummary: SurveyReportBase["aiSummary"];
+    demographics: Demographics | null;
+  }> {
+    const half = await this.surveyHalf(query, scope);
+    const { snapshot, aiOutput, survey, coverage, demographics } = half;
+
+    const base = snapshotToSurveyBase({
+      snapshot,
+      aiOutput,
+      survey,
+      coverage,
+      demographics,
+      assessmentPeriod: coverage.assessmentPeriod,
+      filters: query.filters,
+    });
+
+    const villageId = typeof query.filters.villageId === "string" ? query.filters.villageId : "";
+    const [reference, segmentsByIndicator] = await Promise.all([
+      loadRpt01ReferenceData(this.tenant, {
+        studyId: query.studyId,
+        surveyId: query.surveyId,
+        methodologyVersionId: snapshot.study.methodologyVersionId,
+        villageId: villageId || undefined,
+      }),
+      loadSegmentSeverities(this.tenant, {
+        studyId: query.studyId,
+        surveyId: query.surveyId,
+        methodologyVersionId: snapshot.study.methodologyVersionId,
+        villageId: villageId || undefined,
+      }),
+    ]);
+    // The SAME geography the AI snapshot was written against — resolving it a
+    // second time here is exactly how the header and the narrative came to
+    // name different governorates.
+    const unitGeo = snapshot.unitGeo ?? EMPTY_UNIT_GEO;
+
+    const unified = buildUnifiedRpt01(
+      assembleUnifiedInput({ snapshot, coverage, base, reference, segmentsByIndicator, unitGeo, villageId }),
+    );
+
+    // No narrative (AI unavailable, or its cached output was written against a
+    // superseded prompt and was rejected above) → compose one from the figures
+    // rather than ship an empty summary or a stale, contradicting one.
+    const fallback = composeDeterministicNarrative(unified);
+    const aiSummary = {
+      ...base.aiSummary,
+      executiveSummary: base.aiSummary.executiveSummary || fallback.executiveSummary,
+      keyFindings: base.aiSummary.keyFindings || fallback.keyFindings,
+    };
+
+    return { snapshot, base, unified, aiSummary, demographics };
+  }
+
+  // RPT03 / RPT09 Top-Priority Report. Study-scoped: follows the same
+  // resolveSurveyId convention as the sector/region/executive reports rather
+  // than requiring the caller to name a survey, since "the study's highest
+  // priorities" is a study-level question.
+  async getTopPriorityReport(query: ScopedReportQuery): Promise<TopPriorityReportContent> {
+    try {
+      if (!query.studyId) throw new Error("studyId required");
+      const surveyId = await this.resolveSurveyId(query.studyId, query.filters);
+      const { snapshot, base, unified, aiSummary, demographics } = await this.unifiedHalf(
+        { ...query, studyId: query.studyId, surveyId },
+        "EXECUTIVE",
+      );
+
+      return buildTopPriorityContent({
+        header: base.header,
+        unified,
+        responseQuality: base.responseQuality,
+        aiSummary,
+        dataQualityNote: base.dataQualityNote,
+        trendNote: base.trendNote,
+        demographics,
+        domains: base.severity.domains,
+        scope: {
+          villages: snapshot.study.villageName || "Consolidated Villages",
+          governorate: snapshot.study.governorateName,
+        },
+        filters: query.filters,
+      });
+    } catch (err) {
+      this.rethrow("Top-priority", err);
+    }
+  }
+
+  // RPT10 Data-Quality Report. Same unified half, projected onto completeness
+  // and confidence instead of ranking — so the quality figures a reader sees
+  // here are the ones that produced the scores in every other report.
+  async getDataQualityReport(query: ScopedReportQuery): Promise<DataQualityReportContent> {
+    try {
+      if (!query.studyId) throw new Error("studyId required");
+      const surveyId = await this.resolveSurveyId(query.studyId, query.filters);
+      const { base, unified, aiSummary } = await this.unifiedHalf(
+        { ...query, studyId: query.studyId, surveyId },
+        "EXECUTIVE",
+      );
+
+      return buildDataQualityContent({
+        header: base.header,
+        unified,
+        responseQuality: base.responseQuality,
+        aiSummary,
+        dataQualityNote: base.dataQualityNote,
+        trendNote: base.trendNote,
+        domains: base.severity.domains,
+        filters: query.filters,
+      });
+    } catch (err) {
+      this.rethrow("Data-quality", err);
     }
   }
 
@@ -301,14 +388,33 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
       const surveyId = await this.resolveSurveyId(query.studyId, query.filters);
       const regionId = typeof query.filters.regionId === "string" ? query.filters.regionId : undefined;
       const { snapshot, aiOutput } = await this.realData(query.studyId, surveyId, "REGION", { regionId });
-      // TODO(multi-region): this aggregates study-wide (or the optional
-      // village sub-filter), not scoped down to just this region's own
-      // villages — regionId isn't resolved to a village list anywhere in
-      // this pipeline yet. Still real, non-null data rather than the
-      // previous hard-coded "unavailable".
+
+      // Region-SCOPED, not study-wide: the region is resolved to its own
+      // governorates and their villages, and each governorate's figures come
+      // from its own villages' rollups. Reading the study-wide rollup and
+      // printing it under a region's name meant two regions in one study
+      // reported identical numbers.
+      const breakdown = await loadRegionBreakdown(this.tenant, {
+        studyId: query.studyId,
+        surveyId,
+        methodologyVersionId: snapshot.study.methodologyVersionId,
+        regionId,
+      });
+
+      // Demographics follow the same scope: the villages this region actually
+      // covers, so the gender split belongs to the rows above it. A region with
+      // no resolved villages falls back to study-wide rather than reporting an
+      // empty breakdown as though nobody answered.
       const villageId = typeof query.filters.villageId === "string" ? query.filters.villageId : "";
-      const demographics = await aggregateDemographics(this.tenant, { studyId: query.studyId }, villageId);
-      return snapshotToRegionContent({ snapshot, aiOutput, filters: query.filters, demographics });
+      const villageNames = breakdown.villages.map((v) => v.village);
+      const demographics = await aggregateDemographics(
+        this.tenant,
+        { studyId: query.studyId },
+        villageId,
+        villageNames.length ? villageNames : undefined,
+      );
+
+      return snapshotToRegionContent({ snapshot, aiOutput, breakdown, filters: query.filters, demographics });
     } catch (err) {
       this.rethrow("Region", err);
     }

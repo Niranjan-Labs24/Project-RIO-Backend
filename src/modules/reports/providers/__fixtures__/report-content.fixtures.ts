@@ -4,12 +4,14 @@ import type {
   CollectiveReportContent,
   CombinedReportContent,
   CoverageBlock,
+  DataQualityReportContent,
   ExecutiveReportContent,
   IndividualSurveyReportContent,
   RegionReportContent,
   SectorReportContent,
   SharingStatusContent,
   SurveyIdentity,
+  TopPriorityReportContent,
   VillageReportContent,
 } from "../../report-content.types";
 import {
@@ -20,6 +22,8 @@ import {
 } from "../report-data.provider";
 import { buildComparisonBand, buildResponseFunnel } from "../survey-report-derivations";
 import { buildUnifiedRpt01, type UnifiedRpt01Input } from "../build-unified-rpt01";
+import { buildDataQualityContent, buildTopPriorityContent } from "../build-focused-reports";
+import { REGION_AGGREGATION_BASIS } from "../snapshot-to-content";
 import type { ClassificationRow, KpiRollupRow } from "../build-need-records";
 import type { DomainMeta, RollupLevelValue } from "../build-need-hierarchy";
 import { DEFAULT_THRESHOLDS } from "../../need-record.types";
@@ -219,6 +223,54 @@ export class StubReportDataProvider extends ReportDataProvider {
     };
   }
 
+  // RPT03/RPT09 and RPT10. Both go through the REAL pure mappers over the same
+  // unified sections the RPT01 fixture uses — so the specs assert the actual
+  // projection logic, and the three reports reconcile in the fixture exactly as
+  // they must in production.
+  private async stubUnified(query: ScopedReportQuery): Promise<{
+    village: VillageReportContent;
+    unified: ReturnType<typeof buildUnifiedRpt01>;
+  }> {
+    const village = await this.getVillageReport({
+      studyId: query.studyId ?? "study-1",
+      villageId: "Sample Village",
+      orgId: query.orgId,
+      studyTitle: query.studyTitle,
+      filters: query.filters,
+    });
+    return { village, unified: buildUnifiedRpt01(stubUnifiedInput(village, this.stubCoverage())) };
+  }
+
+  async getTopPriorityReport(query: ScopedReportQuery): Promise<TopPriorityReportContent> {
+    const { village, unified } = await this.stubUnified(query);
+    return buildTopPriorityContent({
+      header: village.header,
+      unified,
+      responseQuality: village.responseQuality,
+      aiSummary: village.aiSummary,
+      dataQualityNote: village.dataQualityNote,
+      trendNote: village.trendNote,
+      demographics: village.demographics,
+      domains: village.severity.domains,
+      scope: { villages: village.village.name, governorate: null },
+      filters: query.filters,
+    });
+  }
+
+  async getDataQualityReport(query: ScopedReportQuery): Promise<DataQualityReportContent> {
+    const { village, unified } = await this.stubUnified(query);
+    return buildDataQualityContent({
+      header: village.header,
+      unified,
+      responseQuality: village.responseQuality,
+      aiSummary: village.aiSummary,
+      dataQualityNote: village.dataQualityNote,
+      trendNote: village.trendNote,
+      domains: village.severity.domains,
+      filters: query.filters,
+    });
+  }
+
   async getCombinedReport(query: SurveyReportQuery): Promise<CombinedReportContent> {
     const individual = await this.getIndividualSurveyReport(query);
     const dashboard = await this.getCollectiveDashboard({ orgId: query.orgId, filters: query.filters });
@@ -333,8 +385,25 @@ export class StubReportDataProvider extends ReportDataProvider {
         methodologyVersion: "v1.0",
         reportGeneratedAt: "2026-07-22T10:30:00Z",
       },
+      // Two governorates with DIFFERENT figures — a fixture where both rows
+      // matched would pass even if the report went back to printing one
+      // study-wide number under every governorate's name.
+      regionScope: {
+        regionName: "Sample Region",
+        governorateCount: 2,
+        villageCount: 3,
+        unmappedNeedCount: 1,
+        unscoredVillages: ["Unscored Village"],
+        aggregationBasis: REGION_AGGREGATION_BASIS,
+      },
       regions: [
-        { needCount: 12, regionName: "Sample Region", governorate: "Sample Governorate", responseCount: 38, severityScore: 63, priorityScore: 37.45, priorityStatus: "HIGH" },
+        { needCount: 12, regionName: "Sample Region", governorate: "North Governorate", responseCount: 38, severityScore: 63, maxVillageSeverity: 81, priorityScore: 37.45, priorityStatus: "HIGH" },
+        { needCount: 5, regionName: "Sample Region", governorate: "South Governorate", responseCount: 14, severityScore: 41, maxVillageSeverity: 44, priorityScore: 62.1, priorityStatus: "MEDIUM" },
+      ],
+      villages: [
+        { village: "Sample Village", governorate: "North Governorate", needCount: 8, responseCount: 26, severityScore: 81, priorityScore: 31.2, priorityStatus: "HIGH" },
+        { village: "North Hamlet", governorate: "North Governorate", needCount: 4, responseCount: 12, severityScore: 45, priorityScore: 43.7, priorityStatus: "MEDIUM" },
+        { village: "Unscored Village", governorate: "South Governorate", needCount: 5, responseCount: 14, severityScore: null, priorityScore: null, priorityStatus: null },
       ],
       aiSummary: {
         executiveSummary: "Sample Region shows High priority driven by water and health needs.",

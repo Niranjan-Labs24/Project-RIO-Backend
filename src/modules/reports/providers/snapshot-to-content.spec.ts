@@ -167,15 +167,53 @@ describe("snapshot-to-content mappers", () => {
     expect(sector.trendNote).toBe(SINGLE_CYCLE_TREND_NOTE);
     expect(sector.aiSummary.dataQualityNote).toBe("");
 
-    const region = snapshotToRegionContent({ snapshot: snapshot(), aiOutput });
+    // RPT06 is REGION-SCOPED: its rows come from the resolved breakdown, one
+    // per governorate, from that governorate's own villages. The snapshot alone
+    // cannot produce them — reading the study-wide rollup and printing it under
+    // a region's name is the defect this replaced.
+    const region = snapshotToRegionContent({
+      snapshot: snapshot(),
+      aiOutput,
+      breakdown: {
+        regionId: "region-1",
+        regionName: "Riyadh Region",
+        governorates: [
+          { governorate: "Riyadh", governorateCode: "0101", villageCount: 2, needCount: 12, responseCount: 38, severityScore: 63.8, maxVillageSeverity: 81, priorityScore: 37.45 },
+          { governorate: "Al Kharj", governorateCode: "0102", villageCount: 1, needCount: 4, responseCount: 11, severityScore: 42.1, maxVillageSeverity: 42.1, priorityScore: 71.2 },
+        ],
+        villages: [
+          { village: "Al Jumum North", governorate: "Riyadh", needCount: 8, responseCount: 26, severityScore: 81, priorityScore: 31.2, priorityStatus: "HIGH" },
+        ],
+        unmappedNeedCount: 1,
+        unscoredVillages: ["Unscored Village"],
+      },
+    });
     expect(region.regions[0]?.priorityStatus).toBe("HIGH");
     expect(region.regions[0]?.priorityScore).toBe(37.45);
-    // New/populated region columns: actual region name, governorate name,
-    // contributing responses, and severity score shown alongside priority score.
     expect(region.regions[0]?.regionName).toBe("Riyadh Region");
     expect(region.regions[0]?.governorate).toBe("Riyadh");
     expect(region.regions[0]?.responseCount).toBe(38);
     expect(region.regions[0]?.severityScore).toBe(63.8);
+
+    // Two governorates, two DIFFERENT sets of figures. Identical rows would be
+    // the old study-wide number wearing each governorate's name in turn.
+    expect(region.regions).toHaveLength(2);
+    expect(region.regions[1]?.governorate).toBe("Al Kharj");
+    expect(region.regions[1]?.severityScore).not.toBe(region.regions[0]?.severityScore);
+    // The worst village travels with the mean, so a governorate averaging
+    // Medium cannot hide a Critical village.
+    expect(region.regions[0]?.maxVillageSeverity).toBe(81);
+
+    // What could not be attributed is reported, not dropped.
+    expect(region.regionScope.unmappedNeedCount).toBe(1);
+    expect(region.regionScope.unscoredVillages).toEqual(["Unscored Village"]);
+    expect(region.villages).toHaveLength(1);
+
+    // Without a resolved breakdown there are no rows at all — the mapper must
+    // never fall back to a study-wide figure dressed as a region.
+    const unresolved = snapshotToRegionContent({ snapshot: snapshot(), aiOutput });
+    expect(unresolved.regions).toEqual([]);
+    expect(unresolved.regionScope.governorateCount).toBe(0);
     // Data Quality and Trend notes are promoted to first-class fields and
     // removed from the AI Summary block (no duplication).
     expect(region.dataQualityNote).toBe("Water & Sanitation has Low Confidence.");

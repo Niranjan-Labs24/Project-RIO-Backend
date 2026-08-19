@@ -36,6 +36,7 @@ import {
 import { composeConfidenceReason, dontKnowBandOf, priorityStatusOf } from "./severity-bands";
 import { DEFAULT_THRESHOLDS } from "../need-record.types";
 import { deriveTrendNote } from "./derive-trend-note";
+import type { RegionBreakdown } from "./load-region-breakdown";
 
 export const EMPTY_APPROVAL: ApprovalBlock = {
   officerConfirmedBy: null,
@@ -452,31 +453,52 @@ export function snapshotToSectorContent(input: MapperInput): SectorReportContent
 
 // One region row from this snapshot's scope. True multi-region aggregation is a
 // follow-up (the REGION-scope snapshot still returns a single scoped view).
-export function snapshotToRegionContent(input: MapperInput): RegionReportContent {
-  const { snapshot } = input;
+export interface RegionMapperInput extends MapperInput {
+  /** Resolved by loadRegionBreakdown. Absent only if the caller could not
+   *  resolve geography at all, in which case the report says so rather than
+   *  falling back to a study-wide figure wearing a region's name. */
+  breakdown?: RegionBreakdown | null;
+}
+
+/** How the per-governorate figures are derived — printed on the report. */
+export const REGION_AGGREGATION_BASIS =
+  "Severity per governorate is the cross-village mean of its scored villages, shown beside the worst single village. " +
+  "Villages with no score are listed separately and excluded from the mean rather than counted as zero.";
+
+export function snapshotToRegionContent(input: RegionMapperInput): RegionReportContent {
+  const { snapshot, breakdown } = input;
   // Promote the data-quality and trend notes to first-class region fields, and
   // blank them inside aiSummary so the AI Summary block doesn't render them
   // twice.
   const notes = promoteNotes(aiOutputToSummaryBlock(input.aiOutput));
+
+  // Region-scoped rows: one per governorate, from that governorate's OWN
+  // villages. The previous behaviour printed the study-wide rollup under the
+  // region's name, which read as a per-region figure and was not one — two
+  // regions in the same study would have shown identical numbers.
+  const regions = (breakdown?.governorates ?? []).map((g) => ({
+    needCount: g.needCount,
+    regionName: breakdown?.regionName ?? snapshot.study.regionName ?? snapshot.study.studyName,
+    governorate: g.governorate,
+    responseCount: g.responseCount,
+    severityScore: g.severityScore,
+    maxVillageSeverity: g.maxVillageSeverity,
+    priorityScore: g.priorityScore,
+    priorityStatus: priorityStatusOf(g.priorityScore),
+  }));
+
   return {
     header: buildHeader(snapshot, input.methodologyVersion),
-    regions: [
-      // Keys ordered for the auto-derived table (renderers preserve insertion
-      // order): identity → responses → severity beside priority. needCount kept
-      // first to match the report's existing column layout.
-      {
-        needCount: snapshot.severity.topKpis.length,
-        // The actual region where the study was conducted (from its
-        // governorates' parent Region), not the consolidated-scope label. Falls
-        // back to the study name when no region is linked.
-        regionName: snapshot.study.regionName || snapshot.study.studyName,
-        governorate: snapshot.study.governorateName ?? null,
-        responseCount: snapshot.responseQuality.validResponseCount,
-        severityScore: snapshot.severity.overallVillageNeedsIndex,
-        priorityScore: snapshot.priority.villagePriorityScore,
-        priorityStatus: priorityStatusOf(snapshot.priority.villagePriorityScore),
-      },
-    ],
+    regionScope: {
+      regionName: breakdown?.regionName ?? snapshot.study.regionName ?? null,
+      governorateCount: breakdown?.governorates.length ?? 0,
+      villageCount: breakdown?.villages.length ?? 0,
+      unmappedNeedCount: breakdown?.unmappedNeedCount ?? 0,
+      unscoredVillages: breakdown?.unscoredVillages ?? [],
+      aggregationBasis: REGION_AGGREGATION_BASIS,
+    },
+    regions,
+    villages: breakdown?.villages ?? [],
     aiSummary: notes.aiSummary,
     dataQualityNote: notes.dataQualityNote,
     trendNote: notes.trendNote,
