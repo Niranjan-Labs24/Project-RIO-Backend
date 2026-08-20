@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { requireActor } from '../../tenancy/org-context';
@@ -64,7 +64,17 @@ export class QuestionsService {
    * elsewhere, so a survey that already included it is untouched.
    */
   private selectableWhere(methodologyVersionId: string): Prisma.QuestionWhereInput {
-    return { methodologyVersionId, usedInMvp: true, isFielded: true, isActive: true };
+    return {
+      methodologyVersionId,
+      usedInMvp: true,
+      isFielded: true,
+      isActive: true,
+      // RIO-FR-012 (Q30/Q31, client-confirmed 2026-08-20) — a pending or
+      // historical version must never surface here: new surveys are always
+      // built from whichever row is both current AND already approved.
+      isCurrentVersion: true,
+      approvalStatus: 'approved',
+    };
   }
 
   async getDomainOptions(methodologyVersion?: string): Promise<Array<{ domain: string; subDomain: string }>> {
@@ -126,8 +136,12 @@ export class QuestionsService {
   // like XDM-01..07) but deliberately WITHOUT the isActive filter
   // selectableWhere applies — an admin curating the bank needs to see
   // deactivated questions too, in order to reactivate them. Gated at the
-  // controller on surveyBuilder:write, unlike getQuestions (read-only,
-  // used by the Survey Builder's own question-bank browsing).
+  // controller on methodologyQuestionBank:write (NCNP Admin only, per
+  // Q31), unlike getQuestions (read-only, used by the Survey Builder's own
+  // question-bank browsing). Always isCurrentVersion:true — a row with a
+  // pending edit still shows its live (pre-edit) content here until that
+  // edit is approved; the pending edit itself is visible via
+  // listPendingApprovals.
   async getQuestionsForManagement(
     pairs: Array<{ domain: string; subDomain: string }>,
     methodologyVersion?: string,
@@ -137,6 +151,7 @@ export class QuestionsService {
       methodologyVersionId,
       usedInMvp: true,
       isFielded: true,
+      isCurrentVersion: true,
     };
     const rows = await this.tenant.runAsSupervisor((tx) =>
       tx.question.findMany({
@@ -145,6 +160,21 @@ export class QuestionsService {
             ? { ...base, OR: pairs.map((p) => ({ domain: p.domain, subDomain: p.subDomain })) }
             : base,
         orderBy: { questionId: 'asc' },
+      }),
+    );
+    return rows.map((r) => this.toQuestionRow(r));
+  }
+
+  // RIO-FR-012 (Q31) — Human Reviewer's approval queue: every question-bank
+  // change (edit/deactivate/reactivate) submitted by NCNP Admin sits here as
+  // a non-current, pending row until approved or rejected. Cross-version
+  // scoped (not filtered by methodologyVersionId) since a Reviewer's queue
+  // is a single worklist, not a per-version browse.
+  async listPendingApprovals() {
+    const rows = await this.tenant.runAsSupervisor((tx) =>
+      tx.question.findMany({
+        where: { approvalStatus: 'pending_approval' },
+        orderBy: { submittedAt: 'asc' },
       }),
     );
     return rows.map((r) => this.toQuestionRow(r));
@@ -175,6 +205,12 @@ export class QuestionsService {
     feedsKpiAnchor: string | null;
     isActive: boolean;
     deactivatedAt: Date | null;
+    version: number;
+    isCurrentVersion: boolean;
+    approvalStatus: string;
+    submittedAt: Date | null;
+    reviewedAt: Date | null;
+    rejectionReason: string | null;
   }) {
     return {
       id: r.id,
@@ -213,6 +249,15 @@ export class QuestionsService {
       // but meaningful on getQuestionsForManagement, which shows both.
       isActive: r.isActive,
       deactivatedAt: r.deactivatedAt ? r.deactivatedAt.toISOString() : null,
+      // RIO-FR-012 (Q30/Q31) — version/approval state, so the admin UI can
+      // show "pending approval" and the Reviewer's queue can show what
+      // changed and when it was submitted.
+      version: r.version,
+      isCurrentVersion: r.isCurrentVersion,
+      approvalStatus: r.approvalStatus,
+      submittedAt: r.submittedAt ? r.submittedAt.toISOString() : null,
+      reviewedAt: r.reviewedAt ? r.reviewedAt.toISOString() : null,
+      rejectionReason: r.rejectionReason,
     };
   }
 
@@ -224,70 +269,205 @@ export class QuestionsService {
     return row;
   }
 
-  // RIO-FR-012 — admin edit. Editing a question's text/domain/indicator does
-  // NOT touch already-published surveys: SurveyQuestion snapshots its own
-  // questionText at the point a survey was built (see SurveysService), so an
-  // edit here only ever affects future surveys built from the bank after
-  // this point — matching the story's "does not retroactively alter
-  // already-published survey results" requirement without any extra work.
-  async update(id: string, input: UpdateQuestionInput) {
-    const existing = await this.findOrThrow(id);
-    const updated = await this.tenant.runAsSupervisor((tx) =>
-      tx.question.update({ where: { id }, data: input }),
-    );
-    await this.audit.record({
-      action: 'edit',
-      entityType: 'question',
-      entityId: id,
-      entityLabel: existing.questionText,
-      changes: (Object.keys(input) as Array<keyof UpdateQuestionInput>)
-        .filter((k) => input[k] !== undefined)
-        .map((k) => ({ field: k, before: existing[k], after: input[k] })),
-    });
-    return updated;
-  }
-
-  // ⚠️ Default behaviour, not yet client-confirmed (Sprint 2 clarification
-  // Q3) — see the schema comment on Question.isActive for what's still open.
-  async deactivate(id: string) {
+  // RIO-FR-012 (Q30/Q31, client-confirmed 2026-08-20) — every submitted
+  // change creates a NEW row rather than mutating the current one in place,
+  // pinned to isCurrentVersion:false + approvalStatus:'pending_approval'
+  // until a Human Reviewer approves it. The row this creates from is left
+  // completely untouched (still isCurrentVersion:true, still governing new
+  // surveys and Question Bank browsing) — this is also what keeps an
+  // already-published SurveyQuestion pinned to its exact original config:
+  // its FK points at that untouched row's id, which this method never
+  // updates or deletes.
+  private async createPendingVersion(
+    currentId: string,
+    overrides: Partial<
+      Pick<
+        Prisma.QuestionUncheckedCreateInput,
+        'questionText' | 'domain' | 'subDomain' | 'indicator' | 'kpi' | 'isActive' | 'deactivatedAt' | 'deactivatedBy'
+      >
+    >,
+  ) {
     const actorId = requireActor();
-    const existing = await this.findOrThrow(id);
-    if (!existing.isActive) {
-      return existing;
+    const current = await this.findOrThrow(currentId);
+    if (!current.isCurrentVersion) {
+      throw new ConflictException({
+        error: {
+          code: 'QUESTION_NOT_CURRENT_VERSION',
+          message: 'This question row is not the current version — refresh and try again.',
+        },
+      });
     }
-    const updated = await this.tenant.runAsSupervisor((tx) =>
-      tx.question.update({
-        where: { id },
-        data: { isActive: false, deactivatedAt: new Date(), deactivatedBy: actorId },
+    if (current.approvalStatus === 'pending_approval') {
+      throw new ConflictException({
+        error: {
+          code: 'QUESTION_HAS_PENDING_CHANGE',
+          message: 'This question already has a change awaiting Human Reviewer approval.',
+        },
+      });
+    }
+
+    // Destructure out the identity/version-bookkeeping fields that must
+    // never be copied verbatim into the new row.
+    const {
+      id: _id,
+      version,
+      isCurrentVersion: _isCurrentVersion,
+      approvalStatus: _approvalStatus,
+      previousVersionId: _previousVersionId,
+      submittedBy: _submittedBy,
+      submittedAt: _submittedAt,
+      reviewedBy: _reviewedBy,
+      reviewedAt: _reviewedAt,
+      rejectionReason: _rejectionReason,
+      answerOptions,
+      conditionalRule,
+      ...rest
+    } = current;
+
+    const pending = await this.tenant.runAsSupervisorWrite((tx) =>
+      tx.question.create({
+        data: {
+          ...rest,
+          answerOptions: answerOptions === null ? Prisma.JsonNull : answerOptions,
+          conditionalRule: conditionalRule === null ? Prisma.JsonNull : conditionalRule,
+          ...overrides,
+          version: version + 1,
+          isCurrentVersion: false,
+          approvalStatus: 'pending_approval',
+          previousVersionId: current.id,
+          submittedBy: actorId,
+          submittedAt: new Date(),
+        },
       }),
     );
+
     await this.audit.record({
       action: 'edit',
       entityType: 'question',
-      entityId: id,
-      entityLabel: existing.questionText,
-      changes: [{ field: 'Status', before: 'Active', after: 'Deactivated' }],
+      entityId: pending.id,
+      entityLabel: current.questionText,
+      changes: (Object.keys(overrides) as Array<keyof typeof overrides>).map((k) => ({
+        field: k,
+        before: current[k as keyof typeof current],
+        after: overrides[k],
+      })),
+      metadata: { supersedes: current.id, awaitingApproval: true },
     });
-    return updated;
+
+    return pending;
+  }
+
+  // RIO-FR-012 — admin edit. See createPendingVersion: the edit does not
+  // take effect for new surveys until a Human Reviewer approves it, and an
+  // already-published survey is unaffected either way (its SurveyQuestion
+  // row is pinned to the pre-edit row's id, which is never touched).
+  async update(id: string, input: UpdateQuestionInput) {
+    return this.createPendingVersion(id, input);
+  }
+
+  async deactivate(id: string) {
+    const actorId = requireActor();
+    return this.createPendingVersion(id, {
+      isActive: false,
+      deactivatedAt: new Date(),
+      deactivatedBy: actorId,
+    });
   }
 
   async reactivate(id: string) {
-    const existing = await this.findOrThrow(id);
-    if (existing.isActive) {
-      return existing;
+    return this.createPendingVersion(id, {
+      isActive: true,
+      deactivatedAt: null,
+      deactivatedBy: null,
+    });
+  }
+
+  // RIO-FR-012 (Q31) — Human Reviewer approves a pending change: the pending
+  // row becomes the current version, and the row it supersedes is flipped
+  // off isCurrentVersion (its own approvalStatus stays 'approved' — it WAS
+  // a real approved version, just no longer the live one; already-published
+  // surveys keep resolving to it by id regardless).
+  async approve(id: string) {
+    const actorId = requireActor();
+    const pending = await this.findOrThrow(id);
+    if (pending.approvalStatus !== 'pending_approval') {
+      throw new ConflictException({
+        error: { code: 'QUESTION_NOT_PENDING', message: 'This question change is not awaiting approval.' },
+      });
     }
-    const updated = await this.tenant.runAsSupervisor((tx) =>
+    const previous = pending.previousVersionId
+      ? await this.tenant.runAsSupervisor((tx) =>
+          tx.question.findUnique({ where: { id: pending.previousVersionId! } }),
+        )
+      : null;
+
+    const updated = await this.tenant.runAsSupervisorWrite(async (tx) => {
+      if (pending.previousVersionId) {
+        await tx.question.update({
+          where: { id: pending.previousVersionId },
+          data: { isCurrentVersion: false },
+        });
+      }
+      return tx.question.update({
+        where: { id },
+        data: { approvalStatus: 'approved', isCurrentVersion: true, reviewedBy: actorId, reviewedAt: new Date() },
+      });
+    });
+
+    // RIO-FR-007 — before/after pair required for every 'approve' event.
+    // Diffs the fields a Question Bank edit can actually touch (see
+    // UpdateQuestionInput / createPendingVersion's overrides) against the
+    // version this approval supersedes.
+    const diffFields: Array<keyof typeof updated> = [
+      'questionText',
+      'domain',
+      'subDomain',
+      'indicator',
+      'kpi',
+      'isActive',
+    ];
+    const changes = previous
+      ? diffFields
+          .filter((f) => previous[f] !== updated[f])
+          .map((f) => ({ field: String(f), before: previous[f], after: updated[f] }))
+      : [{ field: 'approvalStatus', before: 'pending_approval', after: 'approved' }];
+
+    await this.audit.record({
+      action: 'approve',
+      entityType: 'question',
+      entityId: id,
+      entityLabel: pending.questionText,
+      changes,
+      metadata: { supersedes: pending.previousVersionId },
+    });
+    return updated;
+  }
+
+  async reject(id: string, reason: string) {
+    const actorId = requireActor();
+    const pending = await this.findOrThrow(id);
+    if (pending.approvalStatus !== 'pending_approval') {
+      throw new ConflictException({
+        error: { code: 'QUESTION_NOT_PENDING', message: 'This question change is not awaiting approval.' },
+      });
+    }
+    const updated = await this.tenant.runAsSupervisorWrite((tx) =>
       tx.question.update({
         where: { id },
-        data: { isActive: true, deactivatedAt: null, deactivatedBy: null },
+        data: {
+          approvalStatus: 'rejected',
+          reviewedBy: actorId,
+          reviewedAt: new Date(),
+          rejectionReason: reason,
+        },
       }),
     );
     await this.audit.record({
-      action: 'edit',
+      action: 'reject',
       entityType: 'question',
       entityId: id,
-      entityLabel: existing.questionText,
-      changes: [{ field: 'Status', before: 'Deactivated', after: 'Active' }],
+      entityLabel: pending.questionText,
+      changes: [{ field: 'Rejection reason', before: null, after: reason }],
     });
     return updated;
   }

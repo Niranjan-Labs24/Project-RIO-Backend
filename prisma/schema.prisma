@@ -1667,22 +1667,50 @@ model Question {
   // that already included it — already-published surveys and their scored
   // responses never change shape because a question was deactivated later.
   // Reversible by design (reactivate = isActive: true again).
-  // ⚠️ Default behaviour, not yet client-confirmed (Sprint 2 clarification
-  // Q3) — who may deactivate, and whether it needs Reviewer approval, are
-  // both still open. Implemented for now as: NGO Admin or Human Reviewer,
-  // no separate approval gate. Narrow this once the client answers.
   isActive          Boolean   @default(true) @map("is_active")
   deactivatedAt     DateTime? @map("deactivated_at") @db.Timestamptz(6)
   deactivatedBy     String?   @map("deactivated_by") @db.Uuid
+
+  // RIO-FR-012 — versioning + approval (client-confirmed Q30/Q31, 2026-08-20).
+  // Every edit/deactivate/reactivate creates a NEW row rather than mutating
+  // the existing one — this is what keeps already-published surveys pinned
+  // to the exact config active at their publish time: SurveyQuestion.
+  // questionId is a foreign key to one specific Question row's id, and rows
+  // are never deleted or mutated in place, so an already-published survey's
+  // reference is automatically frozen without needing any change on
+  // SurveyQuestion itself. `isCurrentVersion` marks which row governs new
+  // surveys/Question Bank browsing; only ever one true row per
+  // (methodologyVersionId, questionId), enforced in QuestionsService, not
+  // the DB, since Prisma's schema DSL has no partial-unique-index primitive.
+  version          Int      @default(1)
+  isCurrentVersion Boolean  @default(true) @map("is_current_version")
+  // 'approved' | 'pending_approval' | 'rejected'. Only an 'approved' AND
+  // isCurrentVersion row is ever selectable for a new survey — a pending
+  // edit does not replace the active version until a Human Reviewer
+  // approves it (client-confirmed: "previously-active version remains
+  // available for new surveys... new version only becomes available once
+  // approved").
+  approvalStatus   String   @default("approved") @map("approval_status") @db.VarChar(20)
+  // Self-relation: the row this version was created from, for audit trail.
+  // No onDelete action needed — Question rows are never deleted.
+  previousVersionId String? @map("previous_version_id") @db.Uuid
+  submittedBy       String? @map("submitted_by") @db.Uuid
+  submittedAt       DateTime? @map("submitted_at") @db.Timestamptz(6)
+  reviewedBy        String?   @map("reviewed_by") @db.Uuid
+  reviewedAt        DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  rejectionReason   String?   @map("rejection_reason")
 
   surveyQuestions    SurveyQuestion[]
   // RESTRICT, not SetNull: a version any question still belongs to must not be
   // deletable — retire it (status = 'RETIRED') instead.
   methodologyVersion MethodologyVersion @relation(fields: [methodologyVersionId], references: [id], onDelete: Restrict)
+  previousVersion    Question?  @relation("QuestionVersionHistory", fields: [previousVersionId], references: [id], onDelete: SetNull)
+  nextVersions       Question[] @relation("QuestionVersionHistory")
 
-  @@unique([methodologyVersionId, questionId])
+  @@unique([methodologyVersionId, questionId, version])
   @@index([domain, subDomain])
   @@index([methodologyVersionId])
+  @@index([methodologyVersionId, questionId, isCurrentVersion])
   @@map("questions")
 }
 

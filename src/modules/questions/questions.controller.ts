@@ -58,10 +58,11 @@ export class QuestionsController {
   }
 
   // RIO-FR-012 — admin management listing (includes deactivated questions,
-  // unlike GET /questions above). Gated on surveyBuilder:write since seeing
-  // an inactive question is only useful to whoever can also reactivate it.
+  // unlike GET /questions above). Gated on methodologyQuestionBank:write —
+  // client-confirmed (Q31, 2026-08-20): only NCNP Admin (System Admin) may
+  // initiate Question Bank changes, not Research Officer/Human Reviewer.
   @Get('questions/manage')
-  @RequirePermission('surveyBuilder', 'write')
+  @RequirePermission('methodologyQuestionBank', 'write')
   getQuestionsForManagement(
     @Query('domain') domain?: string,
     @Query('subDomain') subDomain?: string,
@@ -89,13 +90,13 @@ export class QuestionsController {
     return this.service.getQuestionsForManagement(pairs, methodologyVersion);
   }
 
-  // RIO-FR-012 — admin management. Gated on surveyBuilder:write, the same
-  // action Research Officer and Human Reviewer already share for curating
-  // survey questions — see role-matrix.ts. ⚠️ Which roles specifically
-  // should manage the bank (vs. just curate a survey's own question list)
-  // is still an open Sprint 2 clarification (Q3); narrow this once answered.
+  // RIO-FR-012 (Q31, client-confirmed 2026-08-20) — only NCNP Admin (System
+  // Admin) may initiate a Question Bank change. Every one of these three
+  // actions now creates a pending, non-current version awaiting Human
+  // Reviewer approval (see QuestionsService.createPendingVersion) rather
+  // than taking effect immediately.
   @Patch('questions/:id')
-  @RequirePermission('surveyBuilder', 'write')
+  @RequirePermission('methodologyQuestionBank', 'write')
   updateQuestion(
     @Param('id', new UuidParamPipe()) id: string,
     @Body() body: UpdateQuestionInput,
@@ -104,14 +105,40 @@ export class QuestionsController {
   }
 
   @Patch('questions/:id/deactivate')
-  @RequirePermission('surveyBuilder', 'write')
+  @RequirePermission('methodologyQuestionBank', 'write')
   deactivateQuestion(@Param('id', new UuidParamPipe()) id: string) {
     return this.service.deactivate(id);
   }
 
   @Patch('questions/:id/reactivate')
-  @RequirePermission('surveyBuilder', 'write')
+  @RequirePermission('methodologyQuestionBank', 'write')
   reactivateQuestion(@Param('id', new UuidParamPipe()) id: string) {
     return this.service.reactivate(id);
+  }
+
+  // RIO-FR-012 (Q31) — Human Reviewer's approval queue and decision actions.
+  // Gated on the `approve` action specifically, not `write` — a Reviewer
+  // approves/rejects changes NCNP Admin submitted, they don't submit their
+  // own (see role-matrix.ts: human_reviewer holds approve, not write, on
+  // methodologyQuestionBank).
+  @Get('questions/pending-approvals')
+  @RequirePermission('methodologyQuestionBank', 'approve')
+  listPendingApprovals() {
+    return this.service.listPendingApprovals();
+  }
+
+  @Patch('questions/:id/approve')
+  @RequirePermission('methodologyQuestionBank', 'approve')
+  approveQuestion(@Param('id', new UuidParamPipe()) id: string) {
+    return this.service.approve(id);
+  }
+
+  @Patch('questions/:id/reject')
+  @RequirePermission('methodologyQuestionBank', 'approve')
+  rejectQuestion(
+    @Param('id', new UuidParamPipe()) id: string,
+    @Body('reason') reason: string,
+  ) {
+    return this.service.reject(id, reason);
   }
 }

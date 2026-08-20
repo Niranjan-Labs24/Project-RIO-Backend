@@ -54,7 +54,10 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('entityTeam', { read: true, write: true, create: true }),
     perm('rolesPermissions'),
     perm('onboardingConsent', { read: true, write: true, create: true, approve: true, export: true, share: true }),
-    perm('methodologyQuestionBank', RO),
+    // Client-confirmed (2026-08-20): Methodology Configuration belongs at
+    // NCNP Admin (System Admin) level only — NGO Admin previously had
+    // read-only access here, which the client flagged as the wrong level.
+    perm('methodologyQuestionBank'),
     perm('studySurvey', { read: true, write: true, create: true, export: true, share: true }),
     perm('dataCollection', { read: true, write: true, create: true, export: true }),
     perm('dataImport', { read: true, write: true, create: true, approve: true, export: true, share: true }),
@@ -147,7 +150,10 @@ export const ROLE_MATRIX: RoleDef[] = [
     // RIO-RBAC-001 matrix (Aug 11): view-only on Organization/Users now
     // (was none).
     perm('entityTeam', RO), perm('rolesPermissions'), perm('onboardingConsent'),
-    perm('methodologyQuestionBank', RO),
+    // RIO-FR-012 (Q31, client-confirmed 2026-08-20): Human Reviewer approves
+    // or rejects a pending Question Bank change NCNP Admin submitted —
+    // `approve`, not `write` (Reviewer never initiates a change directly).
+    perm('methodologyQuestionBank', { read: true, approve: true }),
     // Matrix: Studies = View + Approve only for this role now — the
     // `create` grant that let the Approver generate public links
     // themselves is removed per the confirmed matrix.

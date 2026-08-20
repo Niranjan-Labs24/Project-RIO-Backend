@@ -176,7 +176,7 @@ async function main() {
 
     await prisma.question.upsert({
       where: {
-        methodologyVersionId_questionId: { methodologyVersionId: mv.id, questionId },
+        methodologyVersionId_questionId_version: { methodologyVersionId: mv.id, questionId, version: 1 },
       },
       update: {
         domain: domain || "General",

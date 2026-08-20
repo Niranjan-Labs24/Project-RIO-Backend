@@ -9,6 +9,7 @@ import { AiService } from '../ai/ai.service';
 import { SURVEY_QUESTION_RECOMMENDATION_TASK } from '../ai/prompts/survey-question-recommendation.task';
 import { MethodologyConfigService } from '../methodology-config/methodology-config.service';
 import { requireNonBlank } from '../../common/validation/require-non-blank';
+import { computeQuestionWeights } from '../questions/question-weight.util';
 
 @Injectable()
 export class SurveysService {
@@ -556,22 +557,42 @@ export class SurveysService {
       // needing to touch any caller — they already pass the Study's
       // studyType down to this point.
       const studyType = need.study?.studyType ?? null;
+      // RIO-FR-012 (Q30/Q31, client-confirmed 2026-08-20) — a deactivated
+      // question, or one with an edit still awaiting Human Reviewer
+      // approval, must never be recommended for a new survey. Only the
+      // active, current, approved version of each question is eligible.
+      const selectableWhere: Prisma.QuestionWhereInput = {
+        methodologyVersionId: mv.id,
+        usedInMvp: true,
+        isFielded: true,
+        isActive: true,
+        isCurrentVersion: true,
+        approvalStatus: 'approved',
+      };
       const eligibleQuestions = await tx.question.findMany({
         where: {
-          methodologyVersionId: mv.id,
-          usedInMvp: true,
-          isFielded: true,
+          ...selectableWhere,
           ...(pairs.length > 0
             ? { OR: pairs.map((p) => ({ domain: p.domain, subDomain: p.subDomain })) }
             : {}),
         },
       });
+      // RIO-AI-002 (Q32, client-confirmed 2026-08-20) — weight is computed
+      // by even distribution across the WHOLE methodology tree for this
+      // version, not just the domains relevant to this one Need (a KPI's
+      // sibling-question count doesn't change depending on which Need is
+      // asking). Fetched separately from eligibleQuestions for that reason.
+      const allSelectableQuestions = await tx.question.findMany({
+        where: selectableWhere,
+        select: { id: true, domain: true, subDomain: true, indicator: true, kpi: true },
+      });
 
-      return { need, eligibleQuestions, mv, studyType };
+      return { need, eligibleQuestions, allSelectableQuestions, mv, studyType };
     });
 
-    const { need, eligibleQuestions, mv, studyType } = data;
+    const { need, eligibleQuestions, allSelectableQuestions, mv, studyType } = data;
     void studyType; // see the studyType comment above — read and passed through, not yet a live filter
+    const questionWeights = computeQuestionWeights(allSelectableQuestions);
 
     let recommendedQuestionIds: string[] = [];
     let confidence = 0;
@@ -599,12 +620,14 @@ Eligible Questions: ${JSON.stringify(
           answerOptions: typeof q.answerOptions === 'string' ? JSON.parse(q.answerOptions) : q.answerOptions,
           indicator: q.indicator,
           kpi: q.kpi,
-          // RIO-AI-002: surfaced so the recommendation reasoning can factor
-          // in a question's weight, and so the Domain → Indicator → KPI →
-          // Weight linkage the story requires is available end to end —
-          // the value itself already lived on Question, just wasn't read
-          // here or exposed to the Survey Builder UI before this.
-          priorityWeight: q.priorityWeight,
+          // RIO-AI-002 (Q32, client-confirmed 2026-08-20): weight is
+          // computed by even distribution across the methodology tree, not
+          // a stored per-question value — see computeQuestionWeights. Kept
+          // in the prompt so the recommendation reasoning can factor in the
+          // Domain -> Indicator -> KPI -> Weight linkage the story
+          // requires; never exposed in the Question Bank or Survey Builder
+          // UI to the Research Officer/Human Reviewer (client-confirmed).
+          priorityWeight: questionWeights.get(q.id) ?? null,
         })),
       )}`;
 

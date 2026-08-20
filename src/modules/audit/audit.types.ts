@@ -2,6 +2,7 @@ export type AuditAction =
   | 'create'
   | 'edit'
   | 'approve'
+  | 'reject'
   | 'share'
   | 'delete'
   | 'login'

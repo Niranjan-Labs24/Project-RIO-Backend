@@ -110,8 +110,8 @@ async function main() {
     }
 
     // Find the question in the DB to match its details
-    const question = await prisma.question.findUnique({
-      where: { methodologyVersionId_questionId: { methodologyVersionId, questionId } }
+    const question = await prisma.question.findFirst({
+      where: { methodologyVersionId, questionId, isCurrentVersion: true }
     });
 
     if (!question) {
