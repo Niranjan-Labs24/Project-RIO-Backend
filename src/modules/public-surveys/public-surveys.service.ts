@@ -10,6 +10,7 @@ import { requireOrgId, requireActor } from '../../tenancy/org-context';
 import { AuditService } from '../audit/audit.service';
 import { MailerService } from '../../mailer/mailer.service';
 import { sanitizeForSpreadsheet } from '../../common/security/spreadsheet-sanitize';
+import { decryptPii } from '../citizen/citizen-pii.crypto';
 import type {
   CreateSurveyLinkPayload,
   PublicSurveyLink,
@@ -275,7 +276,7 @@ export class PublicSurveysService {
       items: rows.map((r) => ({
         responseId: r.id,
         respondentName: r.contactName,
-        contact: r.contact,
+        contact: decryptPii(r.contact, this.config.encryptionKey),
         answer: this.resolveAnswerAcrossVersions((r.answers ?? {}) as Record<string, string>, ids),
         submittedAt: r.submittedAt.toISOString(),
       })),
@@ -318,7 +319,7 @@ export class PublicSurveysService {
           lines.push(
             [
               sanitizeForSpreadsheet(row.contactName ?? ''),
-              sanitizeForSpreadsheet(row.contact),
+              sanitizeForSpreadsheet(decryptPii(row.contact, this.config.encryptionKey)),
               row.submittedAt.toISOString(),
               this.resolveResponseVersion(answers, versionMap),
               ...questions.map((q) =>
@@ -380,7 +381,7 @@ export class PublicSurveysService {
           const answers = (row.answers ?? {}) as Record<string, string>;
           const excelRow = sheet.addRow({
             name: sanitizeForSpreadsheet(row.contactName ?? ''),
-            email: sanitizeForSpreadsheet(row.contact),
+            email: sanitizeForSpreadsheet(decryptPii(row.contact, this.config.encryptionKey)),
             submittedAt: row.submittedAt.toISOString(),
             surveyVersion: this.resolveResponseVersion(answers, versionMap),
             ...Object.fromEntries(
@@ -572,7 +573,7 @@ export class PublicSurveysService {
       needId: row.needId,
       surveyLinkId: row.surveyLinkId,
       contactName: row.contactName,
-      contact: row.contact,
+      contact: decryptPii(row.contact, this.config.encryptionKey),
       submittedAt: row.submittedAt.toISOString(),
     };
   }

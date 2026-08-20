@@ -51,6 +51,13 @@ export class ConfigService {
   get dbSslCaPath(): string | undefined {
     return this.config.DB_SSL_CA;
   }
+  // RIO-NFR-006 — see env.schema.ts's DB_POOL_MAX comment.
+  get dbPoolMax(): number {
+    return this.config.DB_POOL_MAX;
+  }
+  get dbSupervisorPoolMax(): number {
+    return this.config.DB_SUPERVISOR_POOL_MAX;
+  }
   get port(): number {
     return this.config.PORT;
   }

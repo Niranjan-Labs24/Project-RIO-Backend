@@ -35,8 +35,12 @@ export function encryptPii(plaintext: string, keyHex: string): string {
 }
 
 export function decryptPii(ciphertext: string, keyHex: string): string {
-  const [ivHex, encHex] = ciphertext.split(':');
-  if (!ivHex || !encHex) return ciphertext; // not encrypted (legacy row)
+  // A plaintext legacy/unencrypted value can validly contain a ":" (e.g. a
+  // URL) — check the full "<32-hex-iv>:<hex>" shape via isEncrypted, not
+  // just "has a colon", so a plaintext value is passed through unchanged
+  // instead of being fed to the decipher and throwing.
+  if (!isEncrypted(ciphertext)) return ciphertext;
+  const [ivHex, encHex] = ciphertext.split(':') as [string, string];
   const keyBuf = Buffer.from(keyHex.padEnd(32).slice(0, 32), 'utf8');
   const iv = Buffer.from(ivHex, 'hex');
   const decipher = createDecipheriv(ALGORITHM, keyBuf, iv);

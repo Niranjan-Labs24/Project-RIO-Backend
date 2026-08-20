@@ -9,7 +9,7 @@ import { AuditService } from '../audit/audit.service';
 import { SurveysService } from '../surveys/surveys.service';
 import { DeterministicScoringService } from '../priority/scoring.service';
 import { ScoreRollupService } from '../priority/rollup.service';
-import { encryptPii, decryptPii, isEncrypted } from './citizen-pii.crypto';
+import { encryptPii } from './citizen-pii.crypto';
 import type {
   CheckDuplicatePayload, CheckDuplicateResult, CitizenOtpChallengeRow, PublicSurveyLinkRow, RequestOtpPayload,
   RequestOtpResult, ResolvedSurvey, SubmitResponsePayload, SubmitResponseResult, VerifyOtpPayload, VerifyOtpResult,
