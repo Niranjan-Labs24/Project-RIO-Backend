@@ -20,7 +20,11 @@ async function main() {
 
   try {
     // Grant permissions on new tables to the app role
-    await prisma.$executeRawUnsafe('GRANT SELECT ON "questions" TO cnap_app;');
+    // Read-only reference data. "nic_registry" is granted by its own migration
+    // too; it is repeated here because this script is what repairs a database
+    // whose grants have drifted (a db push or a manual table recreate drops the
+    // ACL the migration set), and a table missing from this list stays broken.
+    await prisma.$executeRawUnsafe('GRANT SELECT ON "questions", "nic_registry" TO cnap_app;');
     await prisma.$executeRawUnsafe('GRANT SELECT, INSERT, UPDATE, DELETE ON "ai_priority_summaries", "ai_suggestions", "human_decisions", "surveys", "survey_questions", "survey_responses" TO cnap_app;');
     await prisma.$executeRawUnsafe('GRANT SELECT, INSERT, UPDATE, DELETE ON "ncnp_report_reviews" TO cnap_app;');
     await prisma.$executeRawUnsafe('ALTER TABLE "ai_priority_summaries" ENABLE ROW LEVEL SECURITY;');
