@@ -1,0 +1,203 @@
+// =====================================================================
+// Project RIO / CNAP - Backend database schema
+// Source of truth: prisma/schema.prisma + prisma/migrations/*
+// Engine: PostgreSQL (Prisma 7, driver adapter @prisma/adapter-pg)
+//
+// HOW TO USE:  copy this whole file into https://dbdiagram.io  ->  paste
+// into the left editor pane to render the ER diagram.
+// =====================================================================
+
+Project cnap_rio {
+  database_type: 'PostgreSQL'
+  Note: '''
+  # Project RIO (CNAP) - Multi-tenant backend
+
+  **Tenancy model:** shared database, shared schema, isolated by `org_id`
+  enforced with PostgreSQL **Row-Level Security (RLS)**. Every request sets
+  `app.current_org_id`; RLS policies use a fail-closed `NULLIF(...)` guard so a
+  missing tenant context returns zero rows (never all rows).
+
+  **Roles (DB level):**
+  - `cnap_owner`   - CREATEROLE/CREATEDB, used by Prisma CLI (migrate/seed).
+  - `cnap_app`     - runtime app role, NOBYPASSRLS + FORCE RLS. Tenant-scoped.
+  - `cnap_supervisor` - cross-org READ-ONLY role (supervisor dashboards).
+
+  **Table classes:**
+  - Reference (global, seeded, read-only to app): roles, role_permissions,
+    consent_policies.
+  - Tenant / identity (RLS-isolated by org): organisations, users,
+    consent_acceptances, audit_logs.
+
+  **Encryption:** in-transit TLS; at-rest via encrypted volumes + `pgcrypto`
+  extension available for column-level crypto (RIO-NFR-001).
+  '''
+}
+
+// --------------------------- ENUMS ---------------------------
+
+Enum "Sector" {
+  education
+  healthcare
+  agriculture
+  wash
+  livelihoods
+  disaster_relief
+  other
+}
+
+Enum "UserStatus" {
+  invited  [note: 'default - user created via invite, no password yet']
+  active   [note: 'password set / login enabled']
+}
+
+Enum "PermissionModule" {
+  entityTeam
+  rolesPermissions
+  onboardingConsent
+  methodologyQuestionBank
+  studySurvey
+  dataCollection
+  dataImport
+  citizenChannel
+  aiReview
+  priorityScoring
+  reportsDashboards
+  archiveSharingAudit
+}
+
+// ------------ REFERENCE TABLES (global, seeded, read-only) ------------
+
+Table roles {
+  id           varchar(64) [pk, note: 'stable seeded id "role_<key>" (matches FE)']
+  key          varchar(64) [not null, unique]
+  name         varchar(120) [not null]
+  description  text [not null]
+  cross_entity boolean [not null, note: 'role spans all entities/orgs']
+
+  Note: 'Global role catalog. Read-only to cnap_app.'
+}
+
+Table role_permissions {
+  id       uuid [pk, default: `uuidv7()`]
+  role_id  varchar(64) [not null]
+  module   "PermissionModule" [not null]
+  read     boolean [not null, default: false]
+  write    boolean [not null, default: false]
+  create   boolean [not null, default: false]
+  approve  boolean [not null, default: false]
+  export   boolean [not null, default: false]
+  share    boolean [not null, default: false]
+
+  Indexes {
+    (role_id, module) [unique, name: 'role_permissions_role_id_module_key']
+  }
+  Note: 'Per-module permission matrix for each role (CRUD + approve/export/share).'
+}
+
+Table consent_policies {
+  id         uuid [pk, default: `uuidv7()`]
+  version    varchar(64) [not null, unique]
+  text       text [not null]
+  active     boolean [not null, default: false]
+  created_at timestamptz [not null, default: `now()`]
+
+  Note: 'Versioned consent policy text. One row is the active policy.'
+}
+
+// ------------ TENANCY & IDENTITY (RLS-isolated by org) ------------
+
+Table organisations {
+  id         uuid [pk, default: `uuidv7()`]
+  name       varchar(200) [not null]
+  region     varchar(200)
+  email      varchar(320)
+  sector     "Sector"
+  logo_url   text
+  villages   "text[]" [note: "default ARRAY[]::text[]"]
+  is_active  boolean [not null, default: true]
+  created_at timestamptz [not null, default: `now()`]
+  updated_at timestamptz [not null, note: '@updatedAt']
+
+  Note: 'Tenant root. RLS: a tenant sees/writes only its own row (id = current_org_id).'
+}
+
+Table users {
+  id                    uuid [pk, default: `uuidv7()`]
+  org_id                uuid [not null]
+  role_id               varchar(64) [not null]
+  name                  varchar(200) [not null]
+  email                 varchar(320) [not null, unique]
+  status                "UserStatus" [not null, default: 'invited']
+  password_hash         varchar(255) [note: 'argon2; null until invite accepted']
+  consented_at          timestamptz
+  failed_login_attempts integer [not null, default: 0]
+  locked_until          timestamptz [note: 'account lockout after failed attempts']
+  last_login_at         timestamptz
+  created_at            timestamptz [not null, default: `now()`]
+  updated_at            timestamptz [not null, note: '@updatedAt']
+
+  Indexes {
+    org_id  [name: 'users_org_id_idx']
+    role_id [name: 'users_role_id_idx']
+  }
+  Note: 'Application users. RLS-isolated by org_id. Email is globally unique.'
+}
+
+Table consent_acceptances {
+  id             uuid [pk, default: `uuidv7()`]
+  org_id         uuid [not null]
+  user_id        uuid [not null]
+  policy_version varchar(64) [not null]
+  policy_text    text [not null, note: 'snapshot of policy text at acceptance time']
+  accepted_at    timestamptz [not null, default: `now()`]
+
+  Indexes {
+    org_id [name: 'consent_acceptances_org_id_idx']
+  }
+  Note: 'Immutable record that a user accepted a specific consent policy version.'
+}
+
+Table audit_logs {
+  id              uuid [pk, default: `uuidv7()`]
+  organisation_id uuid [note: 'nullable for system-level events']
+  actor_user_id   uuid [note: 'no FK - retained even if user is deleted']
+  action          varchar(64) [not null]
+  entity_type     varchar(64) [not null]
+  entity_id       uuid
+  entity_label    text [not null]
+  metadata        json [note: 'JSONB in Postgres']
+  ip_address      varchar(64)
+  user_agent      text
+  created_at      timestamptz [not null, default: `now()`]
+
+  Indexes {
+    organisation_id          [name: 'audit_logs_organisation_id_idx']
+    (entity_type, entity_id) [name: 'audit_logs_entity_type_entity_id_idx']
+  }
+  Note: 'Append-only audit trail (app has INSERT/SELECT only). RLS by organisation_id.'
+}
+
+// --------------------------- RELATIONSHIPS ---------------------------
+// FK on-delete behaviour matches the migration exactly.
+
+Ref: role_permissions.role_id > roles.id [delete: restrict]                 // ON DELETE RESTRICT
+Ref: users.org_id > organisations.id [delete: cascade]                      // ON DELETE CASCADE
+Ref: users.role_id > roles.id [delete: restrict]                            // ON DELETE RESTRICT
+Ref: consent_acceptances.org_id > organisations.id [delete: cascade]        // ON DELETE CASCADE
+Ref: consent_acceptances.user_id > users.id [delete: cascade]               // ON DELETE CASCADE
+Ref: audit_logs.organisation_id > organisations.id [delete: set null]       // ON DELETE SET NULL
+
+// --------------------------- DIAGRAM GROUPS ---------------------------
+
+TableGroup reference [note: 'Global seeded reference data (read-only to app)'] {
+  roles
+  role_permissions
+  consent_policies
+}
+
+TableGroup tenant [note: 'Tenant-scoped, RLS-isolated by org'] {
+  organisations
+  users
+  consent_acceptances
+  audit_logs
+}

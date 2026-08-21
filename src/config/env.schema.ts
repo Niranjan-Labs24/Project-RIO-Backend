@@ -2,6 +2,10 @@ import { Type, type Static } from '@sinclair/typebox';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 
+// Shared with the fail-closed production check in validateEnv() below — a
+// single source of truth so the two can't drift apart.
+const DEV_ONLY_ENCRYPTION_KEY = 'dev-only-32-byte-placeholder-key!';
+
 export const EnvSchema = Type.Object({
   // Fail-safe default: an unset NODE_ENV must behave as production (the
   // strictest, most locked-down mode) rather than opening dev-only seams
@@ -44,6 +48,19 @@ export const EnvSchema = Type.Object({
   DB_SSL_REJECT_UNAUTHORIZED: Type.Boolean({ default: false }),
   // Optional CA/chain PEM path to trust when verifying a non-system-CA cert.
   DB_SSL_CA: Type.Optional(Type.String()),
+  // RIO-NFR-006 — connection-pool sizing. `@prisma/adapter-pg` wraps a plain
+  // `pg.Pool`, which defaults to `max: 10` when unset — the exact bottleneck
+  // the 2026-07-27 load test reproduced (`Unable to start a transaction in
+  // the given time` under concurrency; see load-test/README.md). Two
+  // separate runtime pools exist (cnap_app, cnap_supervisor — the owner
+  // connection is CLI-only, never held open at runtime), so size each with
+  // Postgres's own `max_connections` in mind: (this pool's max) + (the other
+  // pool's max) + a margin for other services must stay under
+  // `max_connections`. Defaults raised from the library default of 10 to 20
+  // each — comfortable headroom under the load test's `max_connections: 100`
+  // dev box, tune further once a production-sized Postgres instance exists.
+  DB_POOL_MAX: Type.Integer({ default: 20, minimum: 1 }),
+  DB_SUPERVISOR_POOL_MAX: Type.Integer({ default: 20, minimum: 1 }),
   // Frontend origin allowed to send credentialed (cookie) requests. Single
   // explicit origin — credentials mode forbids a wildcard.
   CORS_ORIGIN: Type.String({ default: 'http://localhost:3000' }),
@@ -126,6 +143,16 @@ export const EnvSchema = Type.Object({
   SYSTEM_LOG_SLOW_REQUEST_MS: Type.Number({ default: 3_000 }),
   SYSTEM_LOG_RETENTION_DAYS: Type.Number({ default: 90 }),
   SYSTEM_LOG_RETENTION_CRON: Type.String({ default: '0 3 * * *' }),
+  // RIO-NFR-002 — citizen PII (SurveyResponse.contact/mobile) is encrypted
+  // at rest using AES-256-CBC with this key. Must be exactly 32 bytes
+  // (256 bits). Required in production; defaults to a dev-only placeholder
+  // so existing dev/test setups continue without change. NEVER use the
+  // default in staging or production.
+  ENCRYPTION_KEY: Type.String({ default: DEV_ONLY_ENCRYPTION_KEY, minLength: 32 }),
+  // How many days citizen contact PII (contact email, mobile) is retained on
+  // SurveyResponse rows before being nullified by CitizenPiiRetentionService.
+  CITIZEN_PII_RETENTION_DAYS: Type.Number({ default: 90, minimum: 1 }),
+  CITIZEN_PII_RETENTION_CRON: Type.String({ default: '0 2 * * *' }),
   LOG_LEVEL: Type.Union(
     [
       Type.Literal('fatal'),
@@ -156,6 +183,13 @@ export function validateEnv(raw: Record<string, unknown>): AppConfig {
   }
   if (candidate.NODE_ENV === 'production' && !candidate.REDIS_URL) {
     throw new Error('Invalid environment configuration: REDIS_URL is required in production');
+  }
+  // RIO-NFR-001/002 — the schema-level default below exists only to keep
+  // dev/test setups working without a .env entry; it must never reach
+  // production, where it would silently make citizen PII encryption
+  // reversible by anyone who reads this file.
+  if (candidate.NODE_ENV === 'production' && candidate.ENCRYPTION_KEY === DEV_ONLY_ENCRYPTION_KEY) {
+    throw new Error('Invalid environment configuration: ENCRYPTION_KEY must be set to a real value in production');
   }
   return candidate as AppConfig;
 }

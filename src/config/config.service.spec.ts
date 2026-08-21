@@ -9,6 +9,7 @@ const valid = {
   SUPERVISOR_DATABASE_URL: 'postgresql://cnap_supervisor:pw@localhost:5432/cnap',
   JWT_SECRET: 'test_jwt_secret_at_least_32_chars_long_xx',
   REDIS_URL: 'redis://localhost:6379',
+  ENCRYPTION_KEY: 'a-real-32-byte-production-key!!!',
   LOG_LEVEL: 'info',
 };
 
@@ -47,6 +48,16 @@ describe('validateEnv', () => {
   it('requires distributed rate-limit storage in production', () => {
     const { REDIS_URL: _omit, ...rest } = valid;
     expect(() => validateEnv({ ...rest, NODE_ENV: 'production' })).toThrow(/REDIS_URL/);
+  });
+
+  it('rejects the default dev-only ENCRYPTION_KEY in production', () => {
+    const { ENCRYPTION_KEY: _omit, ...rest } = valid;
+    expect(() => validateEnv({ ...rest, NODE_ENV: 'production' })).toThrow(/ENCRYPTION_KEY/);
+  });
+
+  it('accepts a real ENCRYPTION_KEY in production', () => {
+    const cfg = validateEnv({ ...valid, NODE_ENV: 'production' });
+    expect(cfg.ENCRYPTION_KEY).toBe(valid.ENCRYPTION_KEY);
   });
 });
 

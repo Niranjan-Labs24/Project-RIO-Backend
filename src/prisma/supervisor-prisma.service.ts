@@ -11,7 +11,9 @@ import { pgSslOption } from './pg-ssl';
 @Injectable()
 export class SupervisorPrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   constructor(config: ConfigService) {
-    super({ adapter: new PrismaPg({ connectionString: config.supervisorDatabaseUrl, ssl: pgSslOption({ enabled: config.dbSsl, rejectUnauthorized: config.dbSslRejectUnauthorized, caPath: config.dbSslCaPath }) }) });
+    // RIO-NFR-006 — see PrismaService's identical comment; same fix applied
+    // to this second runtime pool.
+    super({ adapter: new PrismaPg({ connectionString: config.supervisorDatabaseUrl, max: config.dbSupervisorPoolMax, ssl: pgSslOption({ enabled: config.dbSsl, rejectUnauthorized: config.dbSslRejectUnauthorized, caPath: config.dbSslCaPath }) }) });
   }
 
   async onModuleInit(): Promise<void> {

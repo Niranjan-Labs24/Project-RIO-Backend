@@ -32,6 +32,14 @@ describe('Sharing workflow (e2e) — FR-014', () => {
   let orgBId: string; // requesting org
   let tokenA: string;
   let tokenB: string;
+  // RIO-NFR-004 moved GET /api/audit off `archiveSharingAudit` onto the
+  // `auditLog` module, which no org-scoped role holds — ngo_admin can still
+  // request/approve sharing, but can no longer read the raw log. The audit
+  // assertions below therefore read as a System Admin and scope each read to
+  // one org with `?organizationId=`, which is how a crossEntity reader narrows
+  // to a single tenant (see AuditService.query). Same claim under test: the
+  // event is written under BOTH orgs, not only the org that acted.
+  let auditToken: string;
   let studyId: string;
   let reportId: string;
   let studyRequestId: string;
@@ -49,6 +57,23 @@ describe('Sharing workflow (e2e) — FR-014', () => {
         },
       });
       return { orgId, adminId: admin.id };
+    });
+  }
+
+  // JwtAuthGuard re-reads the caller's role from `users.roleId` and ignores the
+  // token's own roleKey claim, so the audit reader has to be a real
+  // system_admin row — a minted "system_admin" token over an ngo_admin user
+  // still resolves to ngo_admin and 403s.
+  async function seedSystemAdmin(orgId: string, email: string): Promise<string> {
+    return owner.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.current_org_id', ${orgId}, true)`;
+      const user = await tx.user.create({
+        data: {
+          orgId, roleId: 'role_system_admin', name: 'Sharing Test System Admin', email,
+          status: 'active', passwordHash: 'unused-minted-token-bypasses-login',
+        },
+      });
+      return user.id;
     });
   }
 
@@ -88,6 +113,8 @@ describe('Sharing workflow (e2e) — FR-014', () => {
 
     tokenA = tokens.sign({ sub: a.adminId, orgId: orgAId, roleKey: 'ngo_admin' });
     tokenB = tokens.sign({ sub: b.adminId, orgId: orgBId, roleKey: 'ngo_admin' });
+    const auditorId = await seedSystemAdmin(orgAId, `sharing-auditor-${run}@example.org`);
+    auditToken = tokens.sign({ sub: auditorId, orgId: orgAId, roleKey: 'system_admin' });
   });
 
   afterAll(async () => {
@@ -155,12 +182,12 @@ describe('Sharing workflow (e2e) — FR-014', () => {
 
     it('the approval is visible in BOTH orgs\' own Audit Log — not just the org that acted', async () => {
       const asOwner = await request(app.getHttpServer())
-        .get(`/api/audit?entityType=sharing_request&entityId=${studyRequestId}`)
-        .set('Authorization', `Bearer ${tokenA}`)
+        .get(`/api/audit?entityType=sharing_request&entityId=${studyRequestId}&organizationId=${orgAId}`)
+        .set('Authorization', `Bearer ${auditToken}`)
         .expect(200);
       const asRequester = await request(app.getHttpServer())
-        .get(`/api/audit?entityType=sharing_request&entityId=${studyRequestId}`)
-        .set('Authorization', `Bearer ${tokenB}`)
+        .get(`/api/audit?entityType=sharing_request&entityId=${studyRequestId}&organizationId=${orgBId}`)
+        .set('Authorization', `Bearer ${auditToken}`)
         .expect(200);
 
       expect(asOwner.body.items.length).toBeGreaterThan(0);
@@ -241,12 +268,12 @@ describe('Sharing workflow (e2e) — FR-014', () => {
 
     it('the rejection is visible in BOTH orgs\' own Audit Log, including the reject reason', async () => {
       const asOwner = await request(app.getHttpServer())
-        .get(`/api/audit?entityType=report_sharing_request&entityId=${reportRequestId}`)
-        .set('Authorization', `Bearer ${tokenA}`)
+        .get(`/api/audit?entityType=report_sharing_request&entityId=${reportRequestId}&organizationId=${orgAId}`)
+        .set('Authorization', `Bearer ${auditToken}`)
         .expect(200);
       const asRequester = await request(app.getHttpServer())
-        .get(`/api/audit?entityType=report_sharing_request&entityId=${reportRequestId}`)
-        .set('Authorization', `Bearer ${tokenB}`)
+        .get(`/api/audit?entityType=report_sharing_request&entityId=${reportRequestId}&organizationId=${orgBId}`)
+        .set('Authorization', `Bearer ${auditToken}`)
         .expect(200);
       expect(asOwner.body.items.length).toBeGreaterThan(0);
       expect(asRequester.body.items.length).toBeGreaterThan(0);

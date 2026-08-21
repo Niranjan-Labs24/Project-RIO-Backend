@@ -2,12 +2,14 @@ import { BadRequestException, GoneException, Injectable, Logger, NotFoundExcepti
 import { randomInt } from 'node:crypto';
 import { Prisma } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
+import { ConfigService } from '../../config/config.service';
 import { PasswordService } from '../../auth/password.service';
 import { SmsService } from '../../sms/sms.service';
 import { AuditService } from '../audit/audit.service';
 import { SurveysService } from '../surveys/surveys.service';
 import { DeterministicScoringService } from '../priority/scoring.service';
 import { ScoreRollupService } from '../priority/rollup.service';
+import { encryptPii } from './citizen-pii.crypto';
 import type {
   CheckDuplicatePayload, CheckDuplicateResult, CitizenOtpChallengeRow, PublicSurveyLinkRow, RequestOtpPayload,
   RequestOtpResult, ResolvedSurvey, SubmitResponsePayload, SubmitResponseResult, VerifyOtpPayload, VerifyOtpResult,
@@ -23,6 +25,7 @@ export class CitizenService {
 
   constructor(
     private readonly tenant: TenantPrismaService,
+    private readonly config: ConfigService,
     private readonly passwords: PasswordService,
     private readonly sms: SmsService,
     private readonly surveys: SurveysService,
@@ -117,11 +120,18 @@ export class CitizenService {
     // normalizeContact/normalizeMobile) so a trivial casing/whitespace
     // difference can't bypass this check. A match on EITHER channel counts
     // as a duplicate — see SurveyResponse.mobile's comment.
-    const contact = this.normalizeContact(payload.contact);
-    const mobile = this.normalizeMobile(payload.mobile);
+    const encKey = this.config.encryptionKey;
+    // Deterministic encryption: same plaintext + key → same ciphertext,
+    // so equality queries against encrypted stored values work correctly.
+    const contact = encryptPii(this.normalizeContact(payload.contact), encKey);
+    const normalizedMobile = this.normalizeMobile(payload.mobile);
+    const mobile = normalizedMobile ? encryptPii(normalizedMobile, encKey) : null;
     const existing = await this.tenant.runAsSupervisor((tx) =>
       tx.surveyResponse.findFirst({
-        where: { needId: link.needId, OR: [{ contact }, { mobile }] },
+        where: {
+          needId: link.needId,
+          OR: [{ contact }, ...(mobile ? [{ mobile }] : [])],
+        },
       }),
     );
     return { isDuplicate: existing !== null };
@@ -290,14 +300,16 @@ export class CitizenService {
         }),
         tx.organisation.findUnique({ where: { id: link.orgId }, select: { regionId: true } }),
       ]);
+      const encKey = this.config.encryptionKey;
       const created = await tx.surveyResponse.create({
         data: {
           orgId: link.orgId,
           needId: link.needId,
           studyId: link.studyId,
           surveyLinkId: link.id,
-          contact: challenge.contact,
-          mobile: challenge.mobile,
+          // RIO-NFR-002: encrypt citizen PII at rest (AES-256-CBC, deterministic IV).
+          contact: encryptPii(challenge.contact, encKey),
+          mobile: challenge.mobile ? encryptPii(challenge.mobile, encKey) : null,
           contactName: payload.contactName ?? null,
           gender: payload.gender ?? null,
           ageBracket: payload.ageBracket,
@@ -306,6 +318,7 @@ export class CitizenService {
           centerIds: need?.needCenters.map((c) => c.centerId) ?? [],
           village: need?.village ?? [],
           answers: payload.answers as unknown as Prisma.InputJsonValue,
+          consentVersion: payload.consentVersion ?? null,
         },
       });
       // Challenge was already atomically claimed (consumedAt set) above —

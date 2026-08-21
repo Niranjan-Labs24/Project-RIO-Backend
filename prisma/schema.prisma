@@ -53,6 +53,14 @@ enum PermissionModule {
   // belong to platform operations, not to tenant governance. Granted to
   // system_admin alone.
   systemLogs
+  // RIO-NFR-004 / RIO-FR-007 module-conflict fix: archiveSharingAudit is
+  // held by ngo_admin (read/create/approve for Sharing) and center_supervisor
+  // (read for NCNP/supervisor views), so merging the Audit Log into that
+  // module gave NGO Admin unintended raw audit-log read access. This separate
+  // module isolates the Audit Log (audit.controller.ts) entirely. Granted to
+  // system_admin (read + export) and center_supervisor (read + export) only —
+  // no other role holds any action on this module.
+  auditLog
 }
 
 // ──────── Reference (global, seeded, read-only to cnap_app) ────────
@@ -1149,7 +1157,12 @@ model SurveyResponse {
   // Email — see CitizenOtpChallenge.contact's comment; every downstream
   // reader (reports, scoring, respondent dedup) already treats this as the
   // respondent's email identity, so it keeps its existing name.
-  contact      String   @db.VarChar(320)
+  // Text, not VarChar: this column stores CIPHERTEXT, not the raw email.
+  // encryptPii emits "<iv-hex>:<ciphertext-hex>" — 32 hex IV chars + a colon
+  // + the AES-CBC block-padded body — so a 30-char email lands at 97 chars
+  // and the width has to track the ciphertext, never the plaintext. Sized
+  // by the value it holds instead of a guessed ceiling.
+  contact      String   @db.Text
   // Mobile number — new, alongside `contact`. Both are copied from the
   // CitizenOtpChallenge that verified this submission (see
   // CitizenService.submitResponse); either one matching a prior response
@@ -1158,7 +1171,11 @@ model SurveyResponse {
   // only so pre-this-feature rows don't need a backfill — Postgres treats
   // multiple NULLs as distinct under a unique index, so this doesn't weaken
   // the dedup guarantee for any row that does have one.
-  mobile       String?  @db.VarChar(32)
+  // Text for the same reason as `contact` above. VarChar(32) here was
+  // unsatisfiable: the shortest possible ciphertext is 65 chars (32 IV + 1
+  // + one 32-char AES block), so every mobile-bearing submission failed on
+  // P2000 before this.
+  mobile       String?  @db.Text
   gender       Gender?
   settlementType SettlementType? @map("settlement_type")
   ageBracket     AgeBracket?     @map("age_bracket")
@@ -1173,8 +1190,10 @@ model SurveyResponse {
   governorateIds String[] @default([]) @map("governorate_ids") @db.Uuid
   centerIds      String[] @default([]) @map("center_ids") @db.Uuid
   village        String[] @default([])
-  answers      Json
-  submittedAt  DateTime @default(now()) @map("submitted_at") @db.Timestamptz(6)
+  answers        Json
+  // RIO-NFR-002: consent copy version the citizen accepted before submitting.
+  consentVersion String?  @map("consent_version") @db.VarChar(32)
+  submittedAt    DateTime @default(now()) @map("submitted_at") @db.Timestamptz(6)
 
   org        Organisation     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   study      Study            @relation(fields: [studyId], references: [id], onDelete: Cascade)

@@ -51,6 +51,13 @@ export class ConfigService {
   get dbSslCaPath(): string | undefined {
     return this.config.DB_SSL_CA;
   }
+  // RIO-NFR-006 — see env.schema.ts's DB_POOL_MAX comment.
+  get dbPoolMax(): number {
+    return this.config.DB_POOL_MAX;
+  }
+  get dbSupervisorPoolMax(): number {
+    return this.config.DB_SUPERVISOR_POOL_MAX;
+  }
   get port(): number {
     return this.config.PORT;
   }
@@ -128,5 +135,15 @@ export class ConfigService {
   }
   get pgDumpPath(): string | undefined {
     return this.config.PG_DUMP_PATH;
+  }
+  // RIO-NFR-002 — AES-256-CBC key for citizen PII encryption at rest.
+  get encryptionKey(): string {
+    return this.config.ENCRYPTION_KEY;
+  }
+  get citizenPiiRetentionDays(): number {
+    return this.config.CITIZEN_PII_RETENTION_DAYS;
+  }
+  get citizenPiiRetentionCron(): string {
+    return this.config.CITIZEN_PII_RETENTION_CRON;
   }
 }
