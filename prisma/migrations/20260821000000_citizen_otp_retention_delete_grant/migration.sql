@@ -1,0 +1,12 @@
+-- RIO-NFR-002 follow-up: the citizen PII retention job
+-- (CitizenPiiRetentionService) hard-deletes expired OTP challenges. The
+-- original citizen grant (20260716093000_dev1_week2_week3_schema) deliberately
+-- withheld DELETE from cnap_app because survey_responses is retained/archived,
+-- not deleted. That rationale does not apply to citizen_otp_challenges: OTP
+-- challenges are ephemeral verification tokens meant to be purged once expired,
+-- not archival data. Grant DELETE on that table alone so the retention job can
+-- remove expired challenges under org context (RLS still scopes the delete to
+-- the caller's org). survey_responses intentionally keeps NO delete grant — the
+-- job scrubs its PII in place (redacts contact, nullifies mobile) rather than
+-- deleting the analytical row.
+GRANT DELETE ON "citizen_otp_challenges" TO cnap_app;

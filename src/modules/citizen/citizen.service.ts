@@ -124,9 +124,8 @@ export class CitizenService {
     // Deterministic encryption: same plaintext + key → same ciphertext,
     // so equality queries against encrypted stored values work correctly.
     const contact = encryptPii(this.normalizeContact(payload.contact), encKey);
-    const mobile = this.normalizeMobile(payload.mobile)
-      ? encryptPii(this.normalizeMobile(payload.mobile)!, encKey)
-      : null;
+    const normalizedMobile = this.normalizeMobile(payload.mobile);
+    const mobile = normalizedMobile ? encryptPii(normalizedMobile, encKey) : null;
     const existing = await this.tenant.runAsSupervisor((tx) =>
       tx.surveyResponse.findFirst({
         where: {

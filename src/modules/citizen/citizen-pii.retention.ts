@@ -50,29 +50,52 @@ export class CitizenPiiRetentionService implements OnModuleInit {
         Date.now() - this.config.citizenPiiRetentionDays * 86_400_000,
       );
 
-      // 1. Delete expired OTP challenges (ephemeral, no audit value retained)
-      const { count: otpDeleted } = await this.tenant.runAsSupervisor((tx) =>
-        tx.citizenOtpChallenge.deleteMany({
-          where: { createdAt: { lt: otpCutoff } },
-        }),
+      // Retention writes are per-organisation, not cross-org. The citizen
+      // tables enforce RLS on org_id, and the only runtime path that both
+      // satisfies that policy and holds write grants is cnap_app with the org
+      // GUC set (runAsOrg). The cross-org cnap_supervisor connection is
+      // SELECT-only, and the GUC-less cnap_app path (runAsSupervisorWrite) is
+      // fail-closed by RLS — either one would touch zero rows (or be denied
+      // outright). Enumerate orgs via the supervisor read, then purge each
+      // under its own context.
+      const orgs = await this.tenant.runAsSupervisor((tx) =>
+        tx.organisation.findMany({ select: { id: true } }),
       );
 
-      // 2. Nullify contact/mobile on old SurveyResponse rows.
-      //    Uses runAsSupervisor (cross-org) since retention is a platform-wide
-      //    operation, not scoped to a single organisation.
-      const { count: responsesNullified } = await this.tenant.runAsSupervisor((tx) =>
-        tx.surveyResponse.updateMany({
-          where: {
-            submittedAt: { lt: responseCutoff },
-            OR: [{ contact: { not: '' } }, { mobile: { not: null } }],
-          },
-          data: { contact: '', mobile: null },
-        }),
-      );
+      let otpDeleted = 0;
+      let responsesRedacted = 0;
+      for (const { id: orgId } of orgs) {
+        await this.tenant.runAsOrg(orgId, async (tx) => {
+          // 1. Delete expired OTP challenges — ephemeral verification tokens
+          //    (cnap_app holds DELETE on this table alone; see
+          //    20260821000000_citizen_otp_retention_delete_grant).
+          const { count } = await tx.citizenOtpChallenge.deleteMany({
+            where: { createdAt: { lt: otpCutoff } },
+          });
+          otpDeleted += count;
+
+          // 2. Scrub contact/mobile on old SurveyResponse rows. A raw UPDATE,
+          //    not updateMany: `contact` is non-nullable and carries a
+          //    @@unique([needId, contact]) constraint, so blanking every aged
+          //    row to one shared value would collide the moment a single Need
+          //    has two aged responses. Redacting to a per-row-unique
+          //    "redacted:<id>" token removes the PII while keeping the value
+          //    unique; decryptPii() passes the token through unchanged (it is
+          //    not ciphertext). The response row and its answers/scores are
+          //    kept for analytical reporting — only the identifiers go.
+          responsesRedacted += await tx.$executeRaw`
+            UPDATE "survey_responses"
+            SET "contact" = 'redacted:' || "id"::text, "mobile" = NULL
+            WHERE "submitted_at" < ${responseCutoff}
+              AND "contact" NOT LIKE 'redacted:%'
+          `;
+        });
+      }
 
       this.logger.log(
         `Citizen PII retention: deleted ${otpDeleted} OTP challenges, ` +
-        `nullified PII on ${responsesNullified} survey responses`,
+        `redacted PII on ${responsesRedacted} survey responses ` +
+        `across ${orgs.length} organisations`,
       );
     } catch (err) {
       this.logger.error(
