@@ -81,7 +81,12 @@ async function main() {
       data: {
         name: `Methodology Version ${methodologyVersionLabel}`,
         version: methodologyVersionLabel,
-        status: 'PUBLISHED',
+        // Client-confirmed: v5.0 is the current approved methodology (see
+        // import-methodology.ts). This legacy v1.0 bank is superseded —
+        // RETIRED so it never sits selectable alongside v5.0 in Study
+        // creation/Survey Builder, the same reasoning that retired the
+        // pre-existing legacy row (20260821000000_methodology_version_v5_cleanup).
+        status: 'RETIRED',
         createdBy: systemUserId,
       },
     }));
