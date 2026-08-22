@@ -172,9 +172,9 @@ const PLACEHOLDER_REPORT_META: Record<
     summary:
       "Summary of current KPI measurements for the selected reporting scope.",
     findings: [
-      "68% of monitored indicators met the expected threshold.",
+      "Most monitored indicators met the expected threshold.",
       "Access to basic services showed gradual improvement.",
-      "Three indicators remain below the target level.",
+      "Some indicators remain below the target level.",
     ],
     recommendations: [
       "Review underperforming indicators.",
@@ -202,9 +202,9 @@ const PLACEHOLDER_REPORT_META: Record<
     summary:
       "Assessment of survey completeness and confidence across collected responses.",
     findings: [
-      "95% response completeness achieved.",
+      "High response completeness achieved.",
       "Most confidence flags remain within acceptable thresholds.",
-      "Low-confidence responses were limited to two locations.",
+      "Low-confidence responses were limited to a small number of locations.",
     ],
     recommendations: [
       "Review incomplete submissions before publication.",
@@ -240,15 +240,18 @@ export function buildPlaceholderReport(reportType: PlaceholderReportType): { tit
         { title: "Key Findings", content: meta.findings },
         { title: "Recommendations", content: meta.recommendations },
       ],
-      metrics: [
-        { label: "Needs Identified", value: 24 },
-        { label: "Priority Level", value: "High" },
-        { label: "Data Confidence", value: "92%" },
-        { label: "Assessment Coverage", value: "8 Governorates" },
-      ],
       generatedBy: "RIO AI",
       generatedAt: new Date().toISOString(),
       isPlaceholder: true,
     },
   };
+}
+
+/**
+ * A report whose content is canned placeholder text, not real program/AI
+ * output. Such reports must never be exported or released as data — see
+ * GAP-05. Keyed off the `isPlaceholder` flag `buildPlaceholderReport` sets.
+ */
+export function isPlaceholderReport(content: unknown): boolean {
+  return Boolean((content as { isPlaceholder?: unknown } | null)?.isPlaceholder);
 }
