@@ -360,6 +360,15 @@ export const LOGIN_ROLE_KEYS = ROLE_MATRIX.filter((r) => r.key !== 'citizen_gues
 export function roleByKey(key: string): RoleDef | undefined {
   return ROLE_MATRIX.find((r) => r.key === key);
 }
+
+// `User.roleId` stores the full role id (e.g. 'role_center_supervisor'),
+// not the short `key` `can()`/`getOrgStore().role` use — this is the
+// matching lookup for callers that only have the id (e.g.
+// PermissionGrantsService validating a grantee's role before creating a
+// grant for them).
+export function roleById(id: string): RoleDef | undefined {
+  return ROLE_MATRIX.find((r) => r.id === id);
+}
 export function can(roleKey: string | undefined, module: PermissionModule, action: PermissionAction): boolean {
   if (!roleKey) return false;
   const p = roleByKey(roleKey)?.permissions.find((x) => x.module === module);

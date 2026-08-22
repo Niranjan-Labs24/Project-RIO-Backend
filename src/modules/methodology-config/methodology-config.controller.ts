@@ -4,7 +4,8 @@ import { TypeBoxValidationPipe } from "../../contract/validation.pipe";
 import { UpdateMethodologyConfigBody } from "./methodology-config.contract";
 import { MethodologyConfigService } from "./methodology-config.service";
 import type {
-  MethodologyConfig, MethodologyVersionOption, UpdateMethodologyConfigPayload,
+  MethodologyConfig, MethodologyConfigHistoryEntry, MethodologyVersionOption,
+  UpdateMethodologyConfigPayload,
 } from "./methodology-config.types";
 
 @Controller("methodology-config")
@@ -38,5 +39,12 @@ export class MethodologyConfigController {
   @RequirePermission("methodologyQuestionBank", "write")
   publish(): Promise<MethodologyConfig> {
     return this.methodologyConfig.publish();
+  }
+
+  // RIO-NFR-017 — every past edit/publish, newest first.
+  @Get("history")
+  @RequirePermission("methodologyQuestionBank", "read")
+  getHistory(): Promise<MethodologyConfigHistoryEntry[]> {
+    return this.methodologyConfig.getHistory();
   }
 }

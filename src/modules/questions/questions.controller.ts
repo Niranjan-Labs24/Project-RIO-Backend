@@ -1,6 +1,8 @@
-import { Body, Controller, Get, Param, Patch, Query } from '@nestjs/common';
-import { QuestionsService, type UpdateQuestionInput } from './questions.service';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { QuestionsService, type CreateQuestionInput, type UpdateQuestionInput } from './questions.service';
+import { CreateQuestionBody, type CreateQuestionDto } from './questions.contract';
 import { RequirePermission } from '../../common/guards/permission.guard';
+import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 
 @Controller('question-bank')
@@ -22,6 +24,14 @@ export class QuestionsController {
   @RequirePermission('surveyBuilder', 'read')
   getKpiOptions(@Query('methodologyVersion') methodologyVersion?: string) {
     return this.service.getKpiOptions(methodologyVersion);
+  }
+
+  // Same gate/shape as domain-options/kpi-options — Survey Builder's Sample
+  // Description "Target Group" combobox reads this.
+  @Get('target-respondent-options')
+  @RequirePermission('surveyBuilder', 'read')
+  getTargetRespondentOptions(@Query('methodologyVersion') methodologyVersion?: string) {
+    return this.service.getTargetRespondentOptions(methodologyVersion);
   }
 
   // `pairs` (JSON-encoded array of {domain, subDomain}) is the multi-domain-
@@ -58,11 +68,16 @@ export class QuestionsController {
   }
 
   // RIO-FR-012 — admin management listing (includes deactivated questions,
-  // unlike GET /questions above). Gated on methodologyQuestionBank:write —
-  // client-confirmed (Q31, 2026-08-20): only NCNP Admin (System Admin) may
-  // initiate Question Bank changes, not Research Officer/Human Reviewer.
+  // unlike GET /questions above). Gated on methodologyQuestionBank:read —
+  // this is a VIEW, not a change: every role that can see the Question
+  // Bank tab at all (Research Officer, Field Researcher, Human Reviewer,
+  // Data Analyst, System Admin, etc. — all hold at least `read`) needs this
+  // to actually load. Only the write actions below (edit/deactivate/create)
+  // are restricted to NCNP Admin (System Admin), per Q31. This endpoint was
+  // previously gated on `write`, which 403'd every non-System-Admin role
+  // out of the whole tab — a real bug, not the intended scope.
   @Get('questions/manage')
-  @RequirePermission('methodologyQuestionBank', 'write')
+  @RequirePermission('methodologyQuestionBank', 'read')
   getQuestionsForManagement(
     @Query('domain') domain?: string,
     @Query('subDomain') subDomain?: string,
@@ -88,6 +103,18 @@ export class QuestionsController {
       pairs = [{ domain, subDomain }];
     }
     return this.service.getQuestionsForManagement(pairs, methodologyVersion);
+  }
+
+  // RIO-FR-012 (AC3, Q31 client-confirmed) — a genuinely new question.
+  // "Creating a new question" is explicitly one of the change types
+  // requiring Human Reviewer approval before it's active for new surveys —
+  // same gate and same pending-approval mechanism as the edit actions below.
+  @Post('questions')
+  @RequirePermission('methodologyQuestionBank', 'write')
+  createQuestion(
+    @Body(new TypeBoxValidationPipe(CreateQuestionBody)) body: CreateQuestionDto,
+  ) {
+    return this.service.create(body as CreateQuestionInput);
   }
 
   // RIO-FR-012 (Q31, client-confirmed 2026-08-20) — only NCNP Admin (System

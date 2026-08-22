@@ -50,6 +50,20 @@ export const UpdateNeedBody = registerSchema(
 );
 export type UpdateNeedDto = Static<typeof UpdateNeedBody>;
 
+// RIO-FR-005 (Q12, client-confirmed) — five fixed values, final, no
+// additions. Analyst-entered, never auto-calculated (see schema.prisma's
+// comment on Need.gapType).
+export const GAP_TYPES = ['acute', 'chronic', 'structural', 'seasonal', 'equity'] as const;
+
+export const SetNeedGapTypeBody = registerSchema(
+  'SetNeedGapTypeBody',
+  T.Object(
+    { gapType: T.Union([T.Literal('acute'), T.Literal('chronic'), T.Literal('structural'), T.Literal('seasonal'), T.Literal('equity'), T.Null()]) },
+    { additionalProperties: false },
+  ),
+);
+export type SetNeedGapTypeDto = Static<typeof SetNeedGapTypeBody>;
+
 export const BulkImportNeedsBody = registerSchema(
   'BulkImportNeedsBody',
   T.Object(

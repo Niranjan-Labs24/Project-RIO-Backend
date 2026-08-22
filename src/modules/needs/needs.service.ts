@@ -275,6 +275,36 @@ export class NeedsService {
     return this.toNeed(updated, await this.resolveUserName(updated.createdBy));
   }
 
+  // RIO-FR-005 (Q12) — analyst-entered, so deliberately NOT gated behind
+  // NEED_EDITABLE_STATUSES the way title/statement/geography are above:
+  // gap classification is a priority-scoring-stage judgment call that can
+  // legitimately be entered/revised any time after a Need exists, not just
+  // during the pre-classification editing window.
+  async setGapType(needId: string, gapType: string | null): Promise<Need> {
+    const updated = await this.tenant.runInOrgContext(async (tx) => {
+      const currentRaw = (await tx.need.findUnique({ where: { id: needId }, include: GEO_INCLUDE })) as RawNeedWithGeo | null;
+      if (!currentRaw) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+      const before = currentRaw.gapType;
+      const updatedRaw = (await tx.need.update({
+        where: { id: needId },
+        data: { gapType },
+        include: GEO_INCLUDE,
+      })) as RawNeedWithGeo;
+      if (before !== gapType) {
+        await this.audit.record({
+          action: 'edit',
+          entityType: 'need',
+          entityId: needId,
+          entityLabel: currentRaw.title.slice(0, 80),
+          changes: [{ field: 'gapType', before, after: gapType }],
+          sourceRef: currentRaw.referenceId,
+        });
+      }
+      return this.toNeedRow(updatedRaw);
+    });
+    return this.toNeed(updated, await this.resolveUserName(updated.createdBy));
+  }
+
   // Same editability rule as update() — a Need can only be removed while
   // still `draft`. Every later stage has downstream artifacts (evidence, an
   // AI classification, a survey...) that other people may already rely on;
@@ -410,6 +440,7 @@ export class NeedsService {
         ? (row.proposedDomains as Array<{ domain: string; subDomain: string }>)
         : null,
       proposedReason: row.proposedReason,
+      gapType: row.gapType,
       createdBy: row.createdBy,
       createdByName,
       createdAt: row.createdAt.toISOString(),

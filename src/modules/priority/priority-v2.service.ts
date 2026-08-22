@@ -291,15 +291,21 @@ export class PriorityV2Service {
    * LOW natively; a triggered critical-domain override is the one case that
    * warrants standing out as its own bucket on this landing page).
    */
-  async listForOrg(): Promise<
+  async listForOrg(gapType?: string): Promise<
     Array<{
       studyId: string;
       studyTitle: string;
       needId: string;
+      // RIO-FR-005 (Q12) — the Need's own analyst-entered Gap Type
+      // classification (acute/chronic/structural/seasonal/equity), not to
+      // be confused with `score.overrideReason` below — a previous version
+      // of this method conflated the two under one `gapType` key, which
+      // was really always the critical-domain override reason string.
+      gapType: string | null;
       score: {
         overallScore: number;
         level: 'critical' | 'high' | 'medium' | 'low';
-        gapType: string | null;
+        overrideReason: string | null;
         scoredAt: string;
       } | null;
     }>
@@ -338,29 +344,32 @@ export class PriorityV2Service {
         }
       }
 
-      return needs.map((need) => {
-        const survey = surveyByNeedId.get(need.id);
-        const assessment = survey ? latestAssessmentBySurveyId.get(survey.id) : undefined;
-        return {
-          studyId: need.studyId,
-          studyTitle: studyTitleById.get(need.studyId) ?? need.studyId,
-          needId: need.id,
-          score: assessment
-            ? {
-                overallScore: Math.round(Number(assessment.priorityScore) * 10) / 10,
-                level: (assessment.overrideApplied
-                  ? 'critical'
-                  : assessment.priorityStatus.toLowerCase()) as
-                  | 'critical'
-                  | 'high'
-                  | 'medium'
-                  | 'low',
-                gapType: assessment.overrideReason,
-                scoredAt: assessment.calculatedAt.toISOString(),
-              }
-            : null,
-        };
-      });
+      return needs
+        .filter((need) => !gapType || need.gapType === gapType)
+        .map((need) => {
+          const survey = surveyByNeedId.get(need.id);
+          const assessment = survey ? latestAssessmentBySurveyId.get(survey.id) : undefined;
+          return {
+            studyId: need.studyId,
+            studyTitle: studyTitleById.get(need.studyId) ?? need.studyId,
+            needId: need.id,
+            gapType: need.gapType,
+            score: assessment
+              ? {
+                  overallScore: Math.round(Number(assessment.priorityScore) * 10) / 10,
+                  level: (assessment.overrideApplied
+                    ? 'critical'
+                    : assessment.priorityStatus.toLowerCase()) as
+                    | 'critical'
+                    | 'high'
+                    | 'medium'
+                    | 'low',
+                  overrideReason: assessment.overrideReason,
+                  scoredAt: assessment.calculatedAt.toISOString(),
+                }
+              : null,
+          };
+        });
     });
   }
 

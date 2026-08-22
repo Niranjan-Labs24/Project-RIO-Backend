@@ -7,7 +7,8 @@ import { CreateMethodologyVersionBody, type CreateMethodologyVersionDto } from "
 import { PriorityService } from "./priority.service";
 import { ScoreRollupService } from "./rollup.service";
 import { PriorityV2Service } from "./priority-v2.service";
-import type { PriorityDashboardEntry, PriorityScore } from "./priority.types";
+import { VillageAggregationService } from "./village-aggregation.service";
+import type { PriorityDashboardEntry, PriorityScore, VillageComparisonEntry } from "./priority.types";
 
 @Controller()
 export class PriorityController {
@@ -114,12 +115,24 @@ export class PriorityDashboardController {
   constructor(
     private readonly priority: PriorityService,
     private readonly priorityV2: PriorityV2Service,
+    private readonly villageAggregation: VillageAggregationService,
   ) {}
 
+  // RIO-FR-005 (Q12) — `gapType` filters to Needs whose analyst-entered
+  // Gap Type classification matches exactly one of the five fixed values.
   @Get()
   @RequirePermission("priorityScoring", "read")
-  list(): Promise<PriorityDashboardEntry[]> {
-    return this.priorityV2.listForOrg();
+  list(@Query("gapType") gapType?: string): Promise<PriorityDashboardEntry[]> {
+    return this.priorityV2.listForOrg(gapType);
+  }
+
+  // RIO-FR-005 (Q9) — village comparison. studyIds is a comma-separated
+  // query param, e.g. ?studyIds=id-a,id-b,id-c.
+  @Get("village-comparison")
+  @RequirePermission("priorityScoring", "read")
+  compareVillages(@Query("studyIds") studyIds?: string): Promise<VillageComparisonEntry[]> {
+    const ids = (studyIds ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    return this.villageAggregation.compareVillages(ids);
   }
 
   @Patch(":id/approve")

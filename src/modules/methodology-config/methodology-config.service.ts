@@ -4,8 +4,8 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { requireActor } from "../../tenancy/org-context";
 import type {
-  ConfidenceFlagSettings, MethodologyConfig, MethodologyConfigRow, MethodologyVersionOption,
-  PriorityFactorWeight, PriorityThresholds, UpdateMethodologyConfigPayload,
+  ConfidenceFlagSettings, MethodologyConfig, MethodologyConfigHistoryEntry, MethodologyConfigRow,
+  MethodologyVersionOption, PriorityFactorWeight, PriorityThresholds, UpdateMethodologyConfigPayload,
 } from "./methodology-config.types";
 
 // Global reference/master data (no orgId, no RLS — same pattern as
@@ -80,6 +80,7 @@ export class MethodologyConfigService {
         updatedBy,
       },
     });
+    await this.recordHistory(row as unknown as MethodologyConfigRow, "edit", updatedBy);
     return this.toConfig(row as unknown as MethodologyConfigRow);
   }
 
@@ -90,7 +91,50 @@ export class MethodologyConfigService {
       where: { id: existing.id },
       data: { status: "published", publishedBy, publishedAt: new Date(), updatedBy: publishedBy },
     });
+    await this.recordHistory(row as unknown as MethodologyConfigRow, "publish", publishedBy);
     return this.toConfig(row as unknown as MethodologyConfigRow);
+  }
+
+  // RIO-NFR-017 (client-confirmed) — "retain full version history of every
+  // methodology configuration change — never overwrite." One immutable
+  // snapshot per update()/publish() call; see MethodologyConfigHistory's
+  // own schema comment for why this lives in a separate append-only table
+  // rather than versioning the MethodologyConfig row itself.
+  async getHistory(): Promise<MethodologyConfigHistoryEntry[]> {
+    const rows = await this.prisma.methodologyConfigHistory.findMany({
+      orderBy: { changedAt: "desc" },
+    });
+    const names = await Promise.all(rows.map((r) => this.resolveActorName(r.changedBy)));
+    return rows.map((r, i) => ({
+      id: r.id,
+      version: r.version,
+      status: r.status,
+      changeType: r.changeType as "edit" | "publish",
+      priorityThresholds: r.priorityThresholds as unknown as PriorityThresholds,
+      priorityFactorWeights: r.priorityFactorWeights as unknown as PriorityFactorWeight[],
+      confidenceFlagSettings: r.confidenceFlagSettings as unknown as ConfidenceFlagSettings,
+      changedByName: names[i] ?? null,
+      changedAt: r.changedAt.toISOString(),
+    }));
+  }
+
+  private async recordHistory(
+    row: MethodologyConfigRow,
+    changeType: "edit" | "publish",
+    changedBy: string | null,
+  ): Promise<void> {
+    await this.prisma.methodologyConfigHistory.create({
+      data: {
+        configId: row.id,
+        version: row.version,
+        status: row.status,
+        changeType,
+        priorityThresholds: row.priorityThresholds as unknown as Prisma.InputJsonValue,
+        priorityFactorWeights: row.priorityFactorWeights as unknown as Prisma.InputJsonValue,
+        confidenceFlagSettings: row.confidenceFlagSettings as unknown as Prisma.InputJsonValue,
+        changedBy,
+      },
+    });
   }
 
   /** Internal accessor for other services (Priority/Response Quality) that

@@ -12,6 +12,32 @@ export interface UpdateQuestionInput {
   kpi?: string | null;
 }
 
+export interface CreateQuestionInput {
+  questionId: string;
+  domain: string;
+  subDomain: string;
+  indicator?: string;
+  kpi?: string;
+  questionText: string;
+  answerType: 'select' | 'multiselect' | 'numeric' | 'checklist' | 'open_ended';
+  answerOptions?: string[];
+  requiredOptional: 'required' | 'optional';
+}
+
+// RIO-FR-012 (AC2, Q1 client-confirmed) — measurementMode is the decomposed
+// base type the scoring engine keys off (schema.prisma's own comment on
+// Question.measurementMode). OPEN_TEXT is already a recognized non-scoring
+// mode there (DeterministicScoringService.NON_SCORING_MODES) — 27 existing
+// v5.0 questions already use isScoreable:false today, so this reuses a
+// real, already-exercised code path rather than inventing a new one.
+const MEASUREMENT_MODE_BY_ANSWER_TYPE: Record<CreateQuestionInput['answerType'], string> = {
+  select: 'SINGLE_SELECT',
+  multiselect: 'MULTI_SELECT',
+  numeric: 'NUMERIC',
+  checklist: 'CHECKLIST_MATRIX',
+  open_ended: 'OPEN_TEXT',
+};
+
 @Injectable()
 export class QuestionsService {
   constructor(
@@ -105,6 +131,29 @@ export class QuestionsService {
       }),
     );
     return rows.map((r) => r.kpi).filter((kpi): kpi is string => Boolean(kpi));
+  }
+
+  // Survey Builder's Sample Description "Target Group" field (RIO-FR-011)
+  // used to be free text. It describes the same underlying concept as the
+  // Question Bank's per-question `targetRespondent` (METH — Question Bank
+  // column J — "who answers this question": head of household, caregiver of
+  // a child 0-59 months, etc.) — 16 confirmed methodology vocabulary values,
+  // already imported for all 193 questions but never surfaced anywhere in
+  // the UI until now. Sourced live from the Question Bank, not hardcoded, so
+  // it tracks whatever the current methodology version actually contains.
+  async getTargetRespondentOptions(methodologyVersion?: string): Promise<string[]> {
+    const methodologyVersionId = await this.resolveVersionId(methodologyVersion);
+    const rows = await this.tenant.runAsSupervisor((tx) =>
+      tx.question.findMany({
+        where: { ...this.selectableWhere(methodologyVersionId), targetRespondent: { not: null } },
+        select: { targetRespondent: true },
+        distinct: ['targetRespondent'],
+        orderBy: { targetRespondent: 'asc' },
+      }),
+    );
+    return rows
+      .map((r) => r.targetRespondent)
+      .filter((v): v is string => Boolean(v));
   }
 
   // Empty `pairs` means "every selectable Question Bank entry in this version" —
@@ -355,6 +404,99 @@ export class QuestionsService {
     });
 
     return pending;
+  }
+
+  // RIO-FR-012 (AC3, Q31 client-confirmed) — a genuinely new question, not
+  // an edit of an existing one. "Creating a new question" is explicitly
+  // listed among the change types requiring Human Reviewer approval before
+  // it's active for new surveys — so this starts life exactly like a
+  // pending edit (approvalStatus: 'pending_approval'), just with no
+  // previousVersionId to supersede. approve() already handles a null
+  // previousVersionId correctly (see its own `if (pending.previousVersionId)`
+  // guard) — that branch existed before this method did, so this reuses an
+  // already-working path rather than adding a new one.
+  //
+  // isCurrentVersion: true from the start (unlike a pending edit, which
+  // stays false until approved) — there is no prior approved row for this
+  // questionId to keep serving in the meantime, so nothing is "current"
+  // until this becomes it. It still can't be recommended or selected for a
+  // new survey while pending: selectableWhere requires
+  // approvalStatus:'approved' as well, which this only gets on approval.
+  async create(input: CreateQuestionInput) {
+    const actorId = requireActor();
+    const methodologyVersionId = await this.resolveVersionId();
+
+    if ((input.answerType === 'select' || input.answerType === 'multiselect' || input.answerType === 'checklist')
+      && (!input.answerOptions || input.answerOptions.length === 0)) {
+      throw new ConflictException({
+        error: {
+          code: 'ANSWER_OPTIONS_REQUIRED',
+          message: `Answer options are required for a "${input.answerType}" question.`,
+        },
+      });
+    }
+
+    let created;
+    try {
+      created = await this.tenant.runAsSupervisorWrite((tx) =>
+        tx.question.create({
+          data: {
+            questionId: input.questionId,
+            domain: input.domain,
+            subDomain: input.subDomain,
+            indicator: input.indicator ?? null,
+            kpi: input.kpi ?? null,
+            questionText: input.questionText,
+            answerType: input.answerType,
+            answerOptions: input.answerOptions && input.answerOptions.length > 0
+              ? input.answerOptions
+              : Prisma.JsonNull,
+            requiredOptional: input.requiredOptional,
+            measurementMode: MEASUREMENT_MODE_BY_ANSWER_TYPE[input.answerType],
+            // RIO-FR-012 AC2 — an open-ended question is free text: no
+            // ScoringLookup mapping exists or is meaningful for it, so it
+            // must never be scored. Matches the 27 existing v5.0 questions
+            // already marked isScoreable:false.
+            isScoreable: input.answerType !== 'open_ended',
+            methodologyVersionId,
+            usedInMvp: true,
+            isFielded: true,
+            isHouseholdFielded: true,
+            version: 1,
+            isCurrentVersion: true,
+            approvalStatus: 'pending_approval',
+            submittedBy: actorId,
+            submittedAt: new Date(),
+          },
+        }),
+      );
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new ConflictException({
+          error: {
+            code: 'QUESTION_ID_TAKEN',
+            message: `"${input.questionId}" already exists in this methodology version.`,
+          },
+        });
+      }
+      throw err;
+    }
+
+    await this.audit.record({
+      action: 'create',
+      entityType: 'question',
+      entityId: created.id,
+      entityLabel: created.questionText,
+      changes: [
+        { field: 'Question ID', before: null, after: created.questionId },
+        { field: 'Domain', before: null, after: created.domain },
+        { field: 'Sub-domain', before: null, after: created.subDomain },
+        { field: 'Answer type', before: null, after: created.answerType },
+      ],
+      metadata: { awaitingApproval: true },
+    });
+
+    return this.toQuestionRow(created);
   }
 
   // RIO-FR-012 — admin edit. See createPendingVersion: the edit does not

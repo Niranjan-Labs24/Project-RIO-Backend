@@ -48,6 +48,7 @@ export interface NeedRow {
   // Need.proposedDomains. Cleared once approved/rejected.
   proposedDomains: unknown;
   proposedReason: string | null;
+  gapType: string | null;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
@@ -105,6 +106,11 @@ export interface Need {
   // Need.proposedDomains. Cleared (both null) once approved/rejected.
   proposedDomains: Array<{ domain: string; subDomain: string }> | null;
   proposedReason: string | null;
+  // RIO-FR-005 (Q12) — one of GAP_TYPES (see needs.contract.ts), or null.
+  // Analyst-entered, never auto-calculated (see schema.prisma's comment on
+  // Need.gapType for why the Reports module's separate heuristic isn't
+  // reused here).
+  gapType: string | null;
   createdBy: string;
   // Resolved display name for Entered By — null if the creating user has
   // since been removed (e.g. no self-org lookup for a deleted account).

@@ -8,6 +8,12 @@ export interface OrgStore {
   role?: string; // role key of the authenticated caller (populated by auth/dev seam)
   ip?: string; // client IP, captured by the middleware for audit rows
   userAgent?: string; // client UA, captured by the middleware for audit rows
+  // RIO-RBAC-002 — set by PermissionGuard, mutating this same store object,
+  // when a request only succeeded because of a PermissionGrant rather than
+  // the static role matrix (never set for a request the static matrix
+  // already allowed). AuditService.record() reads this to cite the grant
+  // per the client's spec (Grant ID, approver, reason/scope, expiry).
+  grantCitation?: { grantId: string; approvedBy: string; reason: string; expiresAt: string | null };
 }
 
 export const orgContext = new AsyncLocalStorage<OrgStore>();

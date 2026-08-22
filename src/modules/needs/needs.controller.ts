@@ -3,7 +3,8 @@ import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, Pa
 import { FileInterceptor } from '@nestjs/platform-express';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
-import { BulkImportNeedsBody, CreateNeedBody, UpdateNeedBody } from './needs.contract';
+import { BulkImportNeedsBody, CreateNeedBody, SetNeedGapTypeBody, UpdateNeedBody } from './needs.contract';
+import type { SetNeedGapTypeDto } from './needs.contract';
 import { NeedsImportService } from './needs-import.service';
 import type { BulkImportNeedsPayload, ImportNeedsResult, PdfPreviewResult } from './needs-import.types';
 import { NeedsService } from './needs.service';
@@ -103,6 +104,19 @@ export class NeedsController {
     @Body(new TypeBoxValidationPipe(UpdateNeedBody)) body: UpdateNeedPayload,
   ): Promise<Need> {
     return this.needs.update(needId, body ?? {});
+  }
+
+  // RIO-FR-005 (Q12) — analyst-entered, gated on priorityScoring:write
+  // (Data Analyst) rather than dataCollection:write (Research
+  // Officer/Field Researcher) — a different module because gap
+  // classification is a priority-scoring judgment call, not raw Need data.
+  @Patch('needs/:needId/gap-type')
+  @RequirePermission('priorityScoring', 'write')
+  setGapType(
+    @Param('needId', new UuidParamPipe()) needId: string,
+    @Body(new TypeBoxValidationPipe(SetNeedGapTypeBody)) body: SetNeedGapTypeDto,
+  ): Promise<Need> {
+    return this.needs.setGapType(needId, body.gapType);
   }
 
   @Delete('needs/:needId')

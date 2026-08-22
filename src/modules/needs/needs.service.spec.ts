@@ -27,6 +27,7 @@ function makeRow(overrides: Partial<NeedRow> = {}): NeedRow {
     classificationError: null,
     proposedDomains: null,
     proposedReason: null,
+    gapType: null,
     createdBy: 'me',
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),
