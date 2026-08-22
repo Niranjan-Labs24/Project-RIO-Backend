@@ -222,6 +222,13 @@ export class CitizenService {
         error: { code: 'OTP_ALREADY_USED', message: 'This verification code has already been used to submit a response.' },
       });
     }
+    // GAP-10: a challenge verified before it expired must not stay usable
+    // indefinitely — re-validate expiry at submission, same as verifyOtp.
+    if (challenge.expiresAt.getTime() < Date.now()) {
+      throw new GoneException({
+        error: { code: 'OTP_EXPIRED', message: 'This verification code has expired.' },
+      });
+    }
 
     const { row, needTitle } = await this.tenant.runAsOrg(link.orgId, async (tx) => {
       // Atomic claim, before any other work — closes a race the plain
@@ -231,7 +238,7 @@ export class CitizenService {
       // match, so a second concurrent request is rejected here instead of
       // both creating a SurveyResponse row.
       const claimed = await tx.citizenOtpChallenge.updateMany({
-        where: { id: challenge.id, verifiedAt: { not: null }, consumedAt: null },
+        where: { id: challenge.id, verifiedAt: { not: null }, consumedAt: null, expiresAt: { gt: new Date() } },
         data: { consumedAt: new Date() },
       });
       if (claimed.count !== 1) {
