@@ -41,44 +41,15 @@ export class AuditService {
   // resolving the user.
   async record(input: RecordAuditInput): Promise<void> {
     try {
-      const store = getOrgStore();
-      const metadata: Record<string, unknown> = { ...(input.metadata ?? {}) };
-      if (input.changes && input.changes.length > 0) {
-        metadata.changes = input.changes;
-      }
-      // audit_logs.entity_id is a UUID column, and a non-UUID value makes
-      // Postgres reject the whole INSERT — which the catch below then
-      // swallows as a warning, losing the audit event entirely. Callers have
-      // twice passed a sentinel here ('all', for cross-org list views), so
-      // this degrades a bad id to NULL and keeps the raw value in metadata
-      // rather than dropping the record. Losing one field beats losing the
-      // event: RIO-FR-007 AC1 is that every material action IS logged.
-      const entityId = isUuid(input.entityId) ? input.entityId : null;
-      if (input.entityId !== null && input.entityId !== undefined && entityId === null) {
-        metadata.invalidEntityId = input.entityId;
-      }
-      const rawOrgId = input.organizationId ?? store?.orgId ?? null;
-      const isVirtualOrg = !rawOrgId || rawOrgId === '00000000-0000-0000-0000-000000000001';
-      const targetOrgId = isVirtualOrg ? null : rawOrgId;
-
+      const data = this.buildAuditData(input);
+      // `data` is cast to the (relation-shaped) Prisma.AuditLogCreateInput
+      // for the create() call below, but at runtime it's actually built as
+      // the Unchecked variant with a plain `organisationId` scalar (see
+      // buildAuditData) — read it back through that shape to decide which
+      // tenant context to run the write under.
+      const targetOrgId = (data as unknown as { organisationId: string | null }).organisationId;
       const write = (tx: Prisma.TransactionClient): Promise<unknown> =>
-        tx.auditLog.create({
-          data: {
-            organisationId: targetOrgId,
-            actorUserId: store?.actorId ?? null,
-            action: input.action,
-            entityType: input.entityType,
-            entityId,
-            entityLabel: input.entityLabel,
-            metadata:
-              Object.keys(metadata).length > 0
-                ? (metadata as unknown as Prisma.InputJsonValue)
-                : undefined,
-            sourceRef: input.sourceRef ?? null,
-            ipAddress: store?.ip ?? null,
-            userAgent: store?.userAgent ?? null,
-          },
-        });
+        tx.auditLog.create({ data });
 
       if (targetOrgId) {
         await this.tenant.runAsOrg(targetOrgId, write);
@@ -89,6 +60,60 @@ export class AuditService {
       // Audit recording should log a warning but never crash the primary read/write request
       console.warn('Audit recording warning:', err);
     }
+  }
+
+  /**
+   * Builds the Prisma create payload shared by `record()` and
+   * `recordWithTx()` — metadata/changes folding, entity_id UUID guarding
+   * (see the comment this replaced, preserved below), and org targeting.
+   */
+  private buildAuditData(input: RecordAuditInput): Prisma.AuditLogCreateInput {
+    const store = getOrgStore();
+    const metadata: Record<string, unknown> = { ...(input.metadata ?? {}) };
+    if (input.changes && input.changes.length > 0) {
+      metadata.changes = input.changes;
+    }
+    // audit_logs.entity_id is a UUID column, and a non-UUID value makes
+    // Postgres reject the whole INSERT — which record()'s catch then
+    // swallows as a warning, losing the audit event entirely. Callers have
+    // twice passed a sentinel here ('all', for cross-org list views), so
+    // this degrades a bad id to NULL and keeps the raw value in metadata
+    // rather than dropping the record. Losing one field beats losing the
+    // event: RIO-FR-007 AC1 is that every material action IS logged.
+    const entityId = isUuid(input.entityId) ? input.entityId : null;
+    if (input.entityId !== null && input.entityId !== undefined && entityId === null) {
+      metadata.invalidEntityId = input.entityId;
+    }
+    const rawOrgId = input.organizationId ?? store?.orgId ?? null;
+    const isVirtualOrg = !rawOrgId || rawOrgId === '00000000-0000-0000-0000-000000000001';
+    const targetOrgId = isVirtualOrg ? null : rawOrgId;
+
+    return {
+      organisationId: targetOrgId,
+      actorUserId: store?.actorId ?? null,
+      action: input.action,
+      entityType: input.entityType,
+      entityId,
+      entityLabel: input.entityLabel,
+      metadata:
+        Object.keys(metadata).length > 0
+          ? (metadata as unknown as Prisma.InputJsonValue)
+          : undefined,
+      sourceRef: input.sourceRef ?? null,
+      ipAddress: store?.ip ?? null,
+      userAgent: store?.userAgent ?? null,
+    } as unknown as Prisma.AuditLogCreateInput;
+  }
+
+  /**
+   * GAP-11: write the audit row on the CALLER'S transaction and let any
+   * failure propagate, so the audited action and its audit entry commit or
+   * roll back together. Use this from write paths where a missing audit
+   * entry is unacceptable (e.g. citizen submissions). `record()` keeps its
+   * own-context, best-effort behaviour for non-critical callers.
+   */
+  async recordWithTx(tx: Prisma.TransactionClient, input: RecordAuditInput): Promise<void> {
+    await tx.auditLog.create({ data: this.buildAuditData(input) });
   }
 
   // Own-org (ambient) by default; crossEntity roles (system_admin,

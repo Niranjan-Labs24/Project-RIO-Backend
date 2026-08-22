@@ -582,4 +582,22 @@ describe('AuditService.exportCsv (RIO-FR-007 — System Admin download)', () => 
     expect(rows[0]?.entityId).toBeNull();
     expect(rows[0]?.metadata).toBeUndefined();
   });
+
+  it('recordWithTx propagates a write failure instead of swallowing it (GAP-11)', async () => {
+    const tx = { auditLog: { create: vi.fn().mockRejectedValue(new Error('insert failed')) } };
+    const svc = new AuditService(fakeTenant() as never);
+    await orgContext.run(
+      { requestId: 'r1', orgId: 'org1', role: 'ngo_admin' },
+      async () => {
+        await expect(
+          svc.recordWithTx(tx as never, {
+            action: 'create', entityType: 'survey_response',
+            entityId: '00000000-0000-0000-0000-000000000abc',
+            entityLabel: 'x', organizationId: 'org1',
+          }),
+        ).rejects.toThrow('insert failed');
+      },
+    );
+    expect(tx.auditLog.create).toHaveBeenCalledOnce();
+  });
 });
