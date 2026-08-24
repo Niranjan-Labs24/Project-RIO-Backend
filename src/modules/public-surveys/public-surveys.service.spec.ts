@@ -13,7 +13,10 @@ function makeFakeTx(need: unknown, responses: unknown[], survey: unknown) {
   // query now returns.
   return {
     need: { findUnique: vi.fn().mockResolvedValue(need) },
-    surveyResponse: { findMany: vi.fn().mockResolvedValue(responses) },
+    surveyResponse: {
+      findMany: vi.fn().mockResolvedValue(responses),
+      count: vi.fn().mockResolvedValue(responses.length),
+    },
     survey: { findMany: vi.fn().mockResolvedValue(survey ? [survey] : []) },
   };
 }
@@ -219,5 +222,29 @@ describe('PublicSurveysService bounded reads (Task 8)', () => {
     // asserting a precise byte budget GC timing can't guarantee here.
     const deltaMb = (after - before) / (1024 * 1024);
     expect(deltaMb).toBeLessThan(200);
+  });
+});
+
+describe('PublicSurveysService pagination stable tie-breaker (GAP-17)', () => {
+  it('listResponses orders by submittedAt desc with id desc as a tie-breaker', async () => {
+    const tx = makeFakeTx(NEED, [], SURVEY);
+    const service = makeService(tx);
+
+    await service.listResponses('need-1');
+
+    expect(tx.surveyResponse.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: [{ submittedAt: 'desc' }, { id: 'desc' }] }),
+    );
+  });
+
+  it('listQuestionResponses orders by submittedAt desc with id desc as a tie-breaker', async () => {
+    const tx = makeFakeTx(NEED, [], SURVEY);
+    const service = makeService(tx);
+
+    await service.listQuestionResponses('need-1', 'q1');
+
+    expect(tx.surveyResponse.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ orderBy: [{ submittedAt: 'desc' }, { id: 'desc' }] }),
+    );
   });
 });

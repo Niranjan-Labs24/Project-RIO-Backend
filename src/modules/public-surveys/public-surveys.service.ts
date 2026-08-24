@@ -194,7 +194,7 @@ export class PublicSurveysService {
     };
     const [rows, total] = await this.tenant.runInOrgContext((tx) =>
       Promise.all([
-        tx.surveyResponse.findMany({ where, orderBy: { submittedAt: 'desc' }, take, skip }),
+        tx.surveyResponse.findMany({ where, orderBy: [{ submittedAt: 'desc' }, { id: 'desc' }], take, skip }),
         tx.surveyResponse.count({ where }),
       ]),
     );
@@ -250,7 +250,7 @@ export class PublicSurveysService {
     };
     const { rows, total, questionMap } = await this.tenant.runInOrgContext(async (tx) => {
       const [rows, total, questionMap] = await Promise.all([
-        tx.surveyResponse.findMany({ where, orderBy: { submittedAt: 'desc' }, take, skip }),
+        tx.surveyResponse.findMany({ where, orderBy: [{ submittedAt: 'desc' }, { id: 'desc' }], take, skip }),
         tx.surveyResponse.count({ where }),
         this.buildQuestionMap(tx, needId),
       ]);
