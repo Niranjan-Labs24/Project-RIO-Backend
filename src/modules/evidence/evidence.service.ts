@@ -44,16 +44,6 @@ export class EvidenceService {
     }
     const studyId = need.studyId;
 
-    const existingCount = await this.tenant.runInOrgContext((tx) => tx.evidence.count({ where: { needId } }));
-    if (existingCount + files.length > MAX_EVIDENCE_FILES_PER_STUDY) {
-      throw new ConflictException({
-        error: {
-          code: 'EVIDENCE_LIMIT_REACHED',
-          message: `A need can have at most ${MAX_EVIDENCE_FILES_PER_STUDY} evidence files (${existingCount} already uploaded).`,
-        },
-      });
-    }
-
     // Duplicate detection is scoped to needId — each Need runs its own
     // independent evidence set, so the same file can validly reappear under
     // a sibling Need without being flagged. Seeded from what's already
@@ -84,6 +74,21 @@ export class EvidenceService {
         prepared.push({ ...file, fileHash, storageKey, isDuplicate });
       }
       const created = await this.tenant.runInOrgContext(async (tx) => {
+        // GAP-12: serialize concurrent uploads for THIS need so the capacity
+        // check and the inserts are atomic (Read Committed alone can't
+        // prevent two concurrent uploads from both reading count < cap
+        // before either commits). Held for the rest of this transaction,
+        // released automatically at commit/rollback.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'evidence:' + needId}))`;
+        const existingCount = await tx.evidence.count({ where: { needId } });
+        if (existingCount + files.length > MAX_EVIDENCE_FILES_PER_STUDY) {
+          throw new ConflictException({
+            error: {
+              code: 'EVIDENCE_LIMIT_REACHED',
+              message: `A need can have at most ${MAX_EVIDENCE_FILES_PER_STUDY} evidence files (${existingCount} already uploaded).`,
+            },
+          });
+        }
         const rows: EvidenceRow[] = [];
         for (const file of prepared) {
           const row = await tx.evidence.create({

@@ -37,33 +37,60 @@ function fakeTenant(opts: {
   onEvidenceCreate?: (data: Record<string, unknown>) => void;
   onEvidenceDelete?: (where: unknown) => void;
   users?: { id: string; name: string }[];
+  // GAP-12: records every call made against a tx, in order, tagged with
+  // which runInOrgContext invocation it happened in — lets the race-fix
+  // test assert the count+create happen inside ONE transaction and that
+  // the advisory lock is taken first.
+  onCall?: (call: { txInvocation: number; op: string; args?: unknown }) => void;
 }) {
   let idCounter = 0;
-  const tx = {
-    need: { findUnique: async () => opts.need ?? null },
-    evidence: {
-      count: async () => opts.existingEvidenceCount ?? 0,
-      findMany: async (args?: { select?: { fileHash?: boolean } }) => {
-        if (args?.select?.fileHash) {
-          return (opts.existingHashes ?? []).map((h) => ({ fileHash: h }));
-        }
-        return [];
+  let txInvocation = 0;
+  function makeTx(invocation: number) {
+    return {
+      $executeRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
+        opts.onCall?.({ txInvocation: invocation, op: 'executeRaw', args: { strings: strings.join('?'), values } });
+        return 0;
       },
-      create: async ({ data }: { data: Record<string, unknown> }) => {
-        idCounter += 1;
-        opts.onEvidenceCreate?.(data);
-        return { id: `ev-${idCounter}`, uploadedAt: new Date('2026-01-01T00:00:00Z'), ...data };
+      need: {
+        findUnique: async () => {
+          opts.onCall?.({ txInvocation: invocation, op: 'need.findUnique' });
+          return opts.need ?? null;
+        },
       },
-      findUnique: async () => opts.evidenceRow ?? null,
-      delete: async ({ where }: { where: unknown }) => {
-        opts.onEvidenceDelete?.(where);
+      evidence: {
+        count: async () => {
+          opts.onCall?.({ txInvocation: invocation, op: 'evidence.count' });
+          return opts.existingEvidenceCount ?? 0;
+        },
+        findMany: async (args?: { select?: { fileHash?: boolean } }) => {
+          opts.onCall?.({ txInvocation: invocation, op: 'evidence.findMany', args });
+          if (args?.select?.fileHash) {
+            return (opts.existingHashes ?? []).map((h) => ({ fileHash: h }));
+          }
+          return [];
+        },
+        create: async ({ data }: { data: Record<string, unknown> }) => {
+          idCounter += 1;
+          opts.onCall?.({ txInvocation: invocation, op: 'evidence.create', args: data });
+          opts.onEvidenceCreate?.(data);
+          return { id: `ev-${idCounter}`, uploadedAt: new Date('2026-01-01T00:00:00Z'), ...data };
+        },
+        findUnique: async () => opts.evidenceRow ?? null,
+        delete: async ({ where }: { where: unknown }) => {
+          opts.onEvidenceDelete?.(where);
+        },
       },
-    },
-    user: {
-      findMany: async () => opts.users ?? [],
+      user: {
+        findMany: async () => opts.users ?? [],
+      },
+    };
+  }
+  return {
+    runInOrgContext: async (fn: (tx: unknown) => unknown) => {
+      txInvocation += 1;
+      return fn(makeTx(txInvocation));
     },
   };
-  return { runInOrgContext: async (fn: (tx: unknown) => unknown) => fn(tx) };
 }
 
 function makeService(
@@ -137,6 +164,79 @@ describe('EvidenceService', () => {
       );
       expect(first?.isDuplicate).toBe(false);
       expect(second?.isDuplicate).toBe(false);
+    });
+
+    // GAP-12: the capacity check (count) and the create loop used to run in
+    // two SEPARATE runInOrgContext transactions, leaving a Read-Committed
+    // window where two concurrent uploads for the same need could both pass
+    // the count check before either inserted. The fix serializes per-need
+    // uploads with a Postgres advisory lock and performs the (re-)count and
+    // the inserts inside ONE transaction.
+    it('takes a per-need advisory lock and performs the capacity count and the inserts inside a single runInOrgContext transaction', async () => {
+      const calls: { txInvocation: number; op: string; args?: unknown }[] = [];
+      const svc = makeService(
+        fakeTenant({
+          need: { studyId: 'study-1', status: 'draft' },
+          existingEvidenceCount: 0,
+          onCall: (c) => calls.push(c),
+        }),
+      );
+      await orgContext.run(ctx, () => svc.upload('need-1', [file('a.pdf', 'content-a')]));
+
+      // find calls after the need.findUnique lookup(s) — the count and create
+      // must share one transaction invocation.
+      const countCall = calls.find((c) => c.op === 'evidence.count');
+      const createCall = calls.find((c) => c.op === 'evidence.create');
+      const lockCall = calls.find((c) => c.op === 'executeRaw');
+      expect(countCall).toBeDefined();
+      expect(createCall).toBeDefined();
+      expect(lockCall).toBeDefined();
+
+      // Same transaction invocation for lock + count + create.
+      expect(lockCall?.txInvocation).toBe(countCall?.txInvocation);
+      expect(countCall?.txInvocation).toBe(createCall?.txInvocation);
+
+      // Lock must be taken before the count, which must happen before create,
+      // all within that shared invocation.
+      const sharedInvocation = countCall?.txInvocation;
+      const orderedOps = calls
+        .filter((c) => c.txInvocation === sharedInvocation)
+        .map((c) => c.op);
+      const lockIdx = orderedOps.indexOf('executeRaw');
+      const countIdx = orderedOps.indexOf('evidence.count');
+      const createIdx = orderedOps.indexOf('evidence.create');
+      expect(lockIdx).toBeGreaterThanOrEqual(0);
+      expect(lockIdx).toBeLessThan(countIdx);
+      expect(countIdx).toBeLessThan(createIdx);
+
+      // The advisory lock must be keyed per-need (hashtext of a string that
+      // includes the needId), not global.
+      const lockArgs = lockCall?.args as { strings: string; values: unknown[] } | undefined;
+      expect(lockArgs?.values).toContain('evidence:need-1');
+    });
+
+    it('409s when the upload would exceed the per-need file limit, using the count taken inside the same locked transaction', async () => {
+      const calls: { txInvocation: number; op: string }[] = [];
+      const svc = makeService(
+        fakeTenant({
+          need: { studyId: 'study-1', status: 'draft' },
+          existingEvidenceCount: MAX_EVIDENCE_FILES_PER_STUDY,
+          onCall: (c) => calls.push(c),
+        }),
+      );
+      await expect(
+        orgContext.run(ctx, () => svc.upload('need-1', [file('a.pdf', 'content-a')])),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      // No separate stand-alone count transaction before the locked one — the
+      // only evidence.count call happens in the same invocation as the lock.
+      const countCall = calls.find((c) => c.op === 'evidence.count');
+      const lockCall = calls.find((c) => c.op === 'executeRaw');
+      expect(countCall).toBeDefined();
+      expect(lockCall).toBeDefined();
+      expect(countCall?.txInvocation).toBe(lockCall?.txInvocation);
+      // create must never be reached once over capacity.
+      expect(calls.some((c) => c.op === 'evidence.create')).toBe(false);
     });
   });
 
