@@ -3,6 +3,13 @@ import { randomBytes } from "node:crypto";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma";
 import { pgSslFromEnv } from "../src/prisma/pg-ssl";
+import { computeBlindIndex } from "../src/modules/citizen/citizen-pii.crypto";
+
+// GAP-03/AD-17: SurveyResponse.contactBlindIndex is now required (dedup
+// moved off the ciphertext column). This dev script bypasses ConfigService,
+// so fall back to the same dev-only sentinel env.schema.ts defaults to when
+// PII_BLIND_INDEX_KEY is unset in .env — fine for local seed data.
+const BLIND_INDEX_KEY = process.env.PII_BLIND_INDEX_KEY ?? Buffer.alloc(32, 2).toString("base64");
 
 // Dev helper: score an EXISTING study (by title) so its reports render real data.
 // Creates survey responses (with gender + settlement), score rollups (OVERALL +
@@ -94,13 +101,17 @@ async function main(): Promise<void> {
     const toAdd = Math.max(0, 38 - existing);
     if (toAdd > 0) {
       await tx.surveyResponse.createMany({
-        data: Array.from({ length: toAdd }, (_, i) => ({
-          orgId, needId: need.id, studyId: study.id, surveyLinkId: link!.id,
-          contact: `score-${Date.now()}-${i}@dev.local`,
-          gender: (i % 38 < 21 ? "female" : "male") as "female" | "male",
-          settlementType: (i % 38 < 26 ? "rural" : "urban") as "rural" | "urban",
-          village: [village], answers: {},
-        })),
+        data: Array.from({ length: toAdd }, (_, i) => {
+          const contact = `score-${Date.now()}-${i}@dev.local`;
+          return {
+            orgId, needId: need.id, studyId: study.id, surveyLinkId: link!.id,
+            contact,
+            contactBlindIndex: computeBlindIndex(contact.trim().toLowerCase(), BLIND_INDEX_KEY),
+            gender: (i % 38 < 21 ? "female" : "male") as "female" | "male",
+            settlementType: (i % 38 < 26 ? "rural" : "urban") as "rural" | "urban",
+            village: [village], answers: {},
+          };
+        }),
       });
     }
 

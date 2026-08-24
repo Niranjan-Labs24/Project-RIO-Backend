@@ -3,6 +3,13 @@ import { randomBytes } from "node:crypto";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma";
 import { pgSslFromEnv } from "../src/prisma/pg-ssl";
+import { computeBlindIndex } from "../src/modules/citizen/citizen-pii.crypto";
+
+// GAP-03/AD-17: SurveyResponse.contactBlindIndex is now required (dedup
+// moved off the ciphertext column). This seed script bypasses ConfigService,
+// so fall back to the same dev-only sentinel env.schema.ts defaults to when
+// PII_BLIND_INDEX_KEY is unset in .env — fine for local seed data.
+const BLIND_INDEX_KEY = process.env.PII_BLIND_INDEX_KEY ?? Buffer.alloc(32, 2).toString("base64");
 
 // Seeds ONE fully-scored study so the real report pipeline (buildReportDataSnapshot)
 // returns real data instead of falling back to the mock. Idempotent: re-running
@@ -121,22 +128,26 @@ async function main(): Promise<void> {
 
     // 38 valid responses: 21 female, 17 male.
     await tx.surveyResponse.createMany({
-      data: Array.from({ length: 38 }, (_, i) => ({
-        orgId,
-        needId: need.id,
-        studyId: study.id,
-        surveyLinkId: link.id,
-        contact: `respondent-${i + 1}@seed.local`,
-        gender: (i < 21 ? "female" : "male") as "female" | "male",
-        settlementType: (i < 26 ? "rural" : "urban") as "rural" | "urban",
-        village: [VILLAGE],
-        // Snapshotted from the org, same as the real citizen-submission path
-        // (CitizenService.submitResponse) — omitting this left every seeded
-        // response with no region, silently missing from every region-based
-        // breakdown in the NCNP report despite the org having a real region.
-        regionId: org?.regionId ?? null,
-        answers: {},
-      })),
+      data: Array.from({ length: 38 }, (_, i) => {
+        const contact = `respondent-${i + 1}@seed.local`;
+        return {
+          orgId,
+          needId: need.id,
+          studyId: study.id,
+          surveyLinkId: link.id,
+          contact,
+          contactBlindIndex: computeBlindIndex(contact.trim().toLowerCase(), BLIND_INDEX_KEY),
+          gender: (i < 21 ? "female" : "male") as "female" | "male",
+          settlementType: (i < 26 ? "rural" : "urban") as "rural" | "urban",
+          village: [VILLAGE],
+          // Snapshotted from the org, same as the real citizen-submission path
+          // (CitizenService.submitResponse) — omitting this left every seeded
+          // response with no region, silently missing from every region-based
+          // breakdown in the NCNP report despite the org having a real region.
+          regionId: org?.regionId ?? null,
+          answers: {},
+        };
+      }),
     });
 
     // ── Score rollups (villageId-scoped) ──
