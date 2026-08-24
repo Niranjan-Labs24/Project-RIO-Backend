@@ -97,6 +97,10 @@ export const EnvSchema = Type.Object({
   // swap to object storage later without touching the Evidence table, which
   // only stores a storageKey string).
   EVIDENCE_STORAGE_PATH: Type.String({ default: './storage/evidence' }),
+  // GAP-13: how often EvidenceFileCleanupService sweeps PendingFileDeletion
+  // and retries the physical delete for evidence files whose unlink failed
+  // after the DB row was already removed.
+  EVIDENCE_CLEANUP_CRON: Type.String({ default: '0 4 * * *' }),
   // Reviewer SLA alerts: how long a pending human-review item has before
   // it's "at risk"/"breached", and how often the frontend should poll for
   // alerts — both configurable per RIO-NFR-014, not hardcoded constants.

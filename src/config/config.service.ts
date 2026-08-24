@@ -106,6 +106,10 @@ export class ConfigService {
   get evidenceStoragePath(): string {
     return this.config.EVIDENCE_STORAGE_PATH;
   }
+  // GAP-13 — see EVIDENCE_CLEANUP_CRON in env.schema.ts.
+  get evidenceCleanupCron(): string {
+    return this.config.EVIDENCE_CLEANUP_CRON;
+  }
   get reviewerSlaHours(): number {
     return this.config.REVIEWER_SLA_HOURS;
   }
