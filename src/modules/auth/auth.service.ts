@@ -528,6 +528,12 @@ export class AuthService {
       tx.user.findUnique({ where: { email }, include: { org: true } }),
     )) as UserWithOrg | null;
     if (!found || !found.passwordHash || !found.org.isActive) {
+      // GAP-14: run comparable work + return the same message for unknown users so
+      // response latency doesn't reveal which emails are registered. Email is sent
+      // fire-and-forget so the awaited mail-provider round-trip is not on the
+      // request's critical path. (Once GAP-04's durable queue exists, migrate this
+      // to a durable enqueue instead of fire-and-forget.)
+      await this.passwords.hash(randomBytes(32).toString('base64url'));
       return genericResult;
     }
 
@@ -555,7 +561,14 @@ export class AuthService {
     // it. Exercise this flow locally either with a real (or Resend
     // sandbox) mailer configured, or in a test by mocking
     // MailerService.sendPasswordResetEmail and reading its call args.
-    await this.mailer.sendPasswordResetEmail(found.email, resetUrl);
+    //
+    // GAP-14: fire-and-forget, not awaited — the mail-provider round-trip
+    // (network + provider latency) was the dominant, most-variable timing
+    // signal distinguishing this branch from the unknown-user branch above.
+    // A send failure is logged, not surfaced: best-effort is acceptable for
+    // a reset link the user can re-request, and the existing rate limit
+    // bounds abuse.
+    void this.mailer.sendPasswordResetEmail(found.email, resetUrl).catch((err) => this.logger.error('reset email failed', err));
     return genericResult;
   }
 
