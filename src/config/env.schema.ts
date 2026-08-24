@@ -3,8 +3,14 @@ import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 
 // Shared with the fail-closed production check in validateEnv() below — a
-// single source of truth so the two can't drift apart.
-const DEV_ONLY_ENCRYPTION_KEY = 'dev-only-32-byte-placeholder-key!';
+// single source of truth so the two can't drift apart. Both are base64 and
+// decode to exactly 32 bytes (GAP-03 requires ENCRYPTION_KEY/
+// PII_BLIND_INDEX_KEY to be base64 32-byte keys, validated at startup), and
+// are deliberately distinct byte patterns so the blind index can never be
+// derived from the encryption key even if someone points both env vars at
+// "the dev default" by mistake.
+const DEV_ONLY_ENCRYPTION_KEY = Buffer.alloc(32, 1).toString('base64');
+const DEV_ONLY_BLIND_INDEX_KEY = Buffer.alloc(32, 2).toString('base64');
 
 export const EnvSchema = Type.Object({
   // Fail-safe default: an unset NODE_ENV must behave as production (the
@@ -143,12 +149,22 @@ export const EnvSchema = Type.Object({
   SYSTEM_LOG_SLOW_REQUEST_MS: Type.Number({ default: 3_000 }),
   SYSTEM_LOG_RETENTION_DAYS: Type.Number({ default: 90 }),
   SYSTEM_LOG_RETENTION_CRON: Type.String({ default: '0 3 * * *' }),
-  // RIO-NFR-002 — citizen PII (SurveyResponse.contact/mobile) is encrypted
-  // at rest using AES-256-CBC with this key. Must be exactly 32 bytes
-  // (256 bits). Required in production; defaults to a dev-only placeholder
-  // so existing dev/test setups continue without change. NEVER use the
-  // default in staging or production.
+  // RIO-NFR-002 / AD-17 — citizen PII (SurveyResponse.contact/mobile) is
+  // encrypted at rest using AES-256-GCM (authenticated, random IV) with this
+  // key. Base64-encoded, must decode to exactly 32 bytes (256 bits) — see
+  // the length check in validateEnv() below (ajv's minLength here is on the
+  // base64 *string*, just a coarse floor; the real 32-byte check happens
+  // after decoding). Required in production; defaults to a dev-only
+  // placeholder so existing dev/test setups continue without change. NEVER
+  // use the default in staging or production.
   ENCRYPTION_KEY: Type.String({ default: DEV_ONLY_ENCRYPTION_KEY, minLength: 32 }),
+  // GAP-03 / AD-17 — keyed blind index (HMAC-SHA256) for equality lookups/
+  // uniqueness on the now-nondeterministic GCM ciphertext columns. MUST be a
+  // distinct 32-byte base64 key from ENCRYPTION_KEY — reusing the encryption
+  // key here would let anyone who can compute the blind index also decrypt,
+  // defeating the point of separating the two. Required in production;
+  // defaults to a dev-only placeholder for existing dev/test setups.
+  PII_BLIND_INDEX_KEY: Type.String({ default: DEV_ONLY_BLIND_INDEX_KEY, minLength: 32 }),
   // How many days citizen contact PII (contact email, mobile) is retained on
   // SurveyResponse rows before being nullified by CitizenPiiRetentionService.
   CITIZEN_PII_RETENTION_DAYS: Type.Number({ default: 90, minimum: 1 }),
@@ -190,6 +206,23 @@ export function validateEnv(raw: Record<string, unknown>): AppConfig {
   // reversible by anyone who reads this file.
   if (candidate.NODE_ENV === 'production' && candidate.ENCRYPTION_KEY === DEV_ONLY_ENCRYPTION_KEY) {
     throw new Error('Invalid environment configuration: ENCRYPTION_KEY must be set to a real value in production');
+  }
+  // GAP-03 — same fail-closed guard as ENCRYPTION_KEY above, for the
+  // separate blind-index key: the dev placeholder must never reach
+  // production, where it would make the blind index guessable/derivable by
+  // anyone who reads this file.
+  if (candidate.NODE_ENV === 'production' && candidate.PII_BLIND_INDEX_KEY === DEV_ONLY_BLIND_INDEX_KEY) {
+    throw new Error('Invalid environment configuration: PII_BLIND_INDEX_KEY must be set to a real value in production');
+  }
+  // GAP-03 / AD-17 — both PII keys must base64-decode to exactly 32 bytes
+  // (AES-256-GCM / HMAC-SHA256 key size). Checked here (post base64-decode)
+  // rather than as a schema-level string length, since ajv's minLength
+  // above only bounds the *encoded* string, not the decoded byte count.
+  for (const key of ['ENCRYPTION_KEY', 'PII_BLIND_INDEX_KEY'] as const) {
+    const value = candidate[key] as string;
+    if (Buffer.from(value, 'base64').length !== 32) {
+      throw new Error(`Invalid environment configuration: ${key} must base64-decode to exactly 32 bytes`);
+    }
   }
   // RIO-NFR-001 — in production the DB connection must be encrypted AND the
   // server certificate verified; a deploy that forgets these would run over

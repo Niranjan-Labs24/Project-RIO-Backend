@@ -136,9 +136,15 @@ export class ConfigService {
   get pgDumpPath(): string | undefined {
     return this.config.PG_DUMP_PATH;
   }
-  // RIO-NFR-002 — AES-256-CBC key for citizen PII encryption at rest.
+  // RIO-NFR-002 / AD-17 — AES-256-GCM key for citizen PII encryption at rest.
   get encryptionKey(): string {
     return this.config.ENCRYPTION_KEY;
+  }
+  // GAP-03 / AD-17 — separate keyed-HMAC key for the PII blind index
+  // (dedup/uniqueness on the now-nondeterministic GCM ciphertext columns).
+  // Deliberately distinct from encryptionKey — see env.schema.ts.
+  get blindIndexKey(): string {
+    return this.config.PII_BLIND_INDEX_KEY;
   }
   get citizenPiiRetentionDays(): number {
     return this.config.CITIZEN_PII_RETENTION_DAYS;

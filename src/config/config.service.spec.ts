@@ -1,6 +1,12 @@
 import { ConfigService } from './config.service';
 import { validateEnv } from './env.schema';
 
+// Valid 32-byte base64 keys (GAP-03: ENCRYPTION_KEY switched from raw-UTF-8
+// to base64, and PII_BLIND_INDEX_KEY was added — both must decode to
+// exactly 32 bytes). Distinct fill bytes so the two can never collide.
+const REAL_ENCRYPTION_KEY = Buffer.alloc(32, 11).toString('base64');
+const REAL_BLIND_INDEX_KEY = Buffer.alloc(32, 12).toString('base64');
+
 const valid = {
   NODE_ENV: 'development',
   PORT: '3000',
@@ -9,7 +15,8 @@ const valid = {
   SUPERVISOR_DATABASE_URL: 'postgresql://cnap_supervisor:pw@localhost:5432/cnap',
   JWT_SECRET: 'test_jwt_secret_at_least_32_chars_long_xx',
   REDIS_URL: 'redis://localhost:6379',
-  ENCRYPTION_KEY: 'a-real-32-byte-production-key!!!',
+  ENCRYPTION_KEY: REAL_ENCRYPTION_KEY,
+  PII_BLIND_INDEX_KEY: REAL_BLIND_INDEX_KEY,
   LOG_LEVEL: 'info',
 };
 
