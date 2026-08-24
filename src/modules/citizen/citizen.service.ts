@@ -9,7 +9,7 @@ import { AuditService } from '../audit/audit.service';
 import { SurveysService } from '../surveys/surveys.service';
 import { DeterministicScoringService } from '../priority/scoring.service';
 import { ScoreRollupService } from '../priority/rollup.service';
-import { encryptPii } from './citizen-pii.crypto';
+import { computeBlindIndex, encryptPii } from './citizen-pii.crypto';
 import type {
   CheckDuplicatePayload, CheckDuplicateResult, CitizenOtpChallengeRow, PublicSurveyLinkRow, RequestOtpPayload,
   RequestOtpResult, ResolvedSurvey, SubmitResponsePayload, SubmitResponseResult, VerifyOtpPayload, VerifyOtpResult,
@@ -120,17 +120,19 @@ export class CitizenService {
     // normalizeContact/normalizeMobile) so a trivial casing/whitespace
     // difference can't bypass this check. A match on EITHER channel counts
     // as a duplicate — see SurveyResponse.mobile's comment.
-    const encKey = this.config.encryptionKey;
-    // Deterministic encryption: same plaintext + key → same ciphertext,
-    // so equality queries against encrypted stored values work correctly.
-    const contact = encryptPii(this.normalizeContact(payload.contact), encKey);
+    // GAP-03/AD-17: equality is via the keyed blind index, not the GCM
+    // ciphertext columns — GCM's random IV means the same plaintext never
+    // produces the same ciphertext twice, so a ciphertext-equality query
+    // would never match even for a genuine duplicate.
+    const idxKey = this.config.blindIndexKey;
+    const contactBlindIndex = computeBlindIndex(this.normalizeContact(payload.contact), idxKey);
     const normalizedMobile = this.normalizeMobile(payload.mobile);
-    const mobile = normalizedMobile ? encryptPii(normalizedMobile, encKey) : null;
+    const mobileBlindIndex = normalizedMobile ? computeBlindIndex(normalizedMobile, idxKey) : null;
     const existing = await this.tenant.runAsSupervisor((tx) =>
       tx.surveyResponse.findFirst({
         where: {
           needId: link.needId,
-          OR: [{ contact }, ...(mobile ? [{ mobile }] : [])],
+          OR: [{ contactBlindIndex }, ...(mobileBlindIndex ? [{ mobileBlindIndex }] : [])],
         },
       }),
     );
@@ -251,10 +253,18 @@ export class CitizenService {
       // verification, not just a reused challenge. Scoped to the Need, not
       // the Study — see checkDuplicate's comment. `mobile` is only in the
       // OR when the challenge actually has one (see its nullable comment).
+      // GAP-03 fix: this previously compared challenge.contact (PLAINTEXT)
+      // against the stored `contact` column (CIPHERTEXT) — an always-false
+      // comparison that silently never caught a duplicate. Query by the
+      // keyed blind index instead, same as checkDuplicate.
+      const idxKey = this.config.blindIndexKey;
+      const contactBlindIndex = computeBlindIndex(this.normalizeContact(challenge.contact), idxKey);
+      const normalizedChallengeMobile = challenge.mobile ? this.normalizeMobile(challenge.mobile) : null;
+      const mobileBlindIndex = normalizedChallengeMobile ? computeBlindIndex(normalizedChallengeMobile, idxKey) : null;
       const existing = await tx.surveyResponse.findFirst({
         where: {
           needId: link.needId,
-          OR: [{ contact: challenge.contact }, ...(challenge.mobile ? [{ mobile: challenge.mobile }] : [])],
+          OR: [{ contactBlindIndex }, ...(mobileBlindIndex ? [{ mobileBlindIndex }] : [])],
         },
       });
       if (existing) {
@@ -314,9 +324,16 @@ export class CitizenService {
           needId: link.needId,
           studyId: link.studyId,
           surveyLinkId: link.id,
-          // RIO-NFR-002: encrypt citizen PII at rest (AES-256-CBC, deterministic IV).
+          // RIO-NFR-002 / AD-17: encrypt citizen PII at rest (AES-256-GCM,
+          // random IV — authenticated, non-deterministic).
           contact: encryptPii(challenge.contact, encKey),
           mobile: challenge.mobile ? encryptPii(challenge.mobile, encKey) : null,
+          // GAP-03/AD-17: keyed blind index, computed above from the same
+          // normalized challenge contact/mobile the dedup check just used —
+          // this is what dedup/uniqueness now runs against, since the GCM
+          // ciphertext above is no longer deterministic.
+          contactBlindIndex,
+          mobileBlindIndex,
           contactName: payload.contactName ?? null,
           gender: payload.gender ?? null,
           ageBracket: payload.ageBracket,
