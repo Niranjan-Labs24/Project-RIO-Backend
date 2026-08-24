@@ -99,6 +99,9 @@ export class DeterministicScoringService {
 
       const { needId, studyId, orgId } = response;
       const villageId = response.need.village?.[0] || null;
+      // Denormalized snapshot of SurveyResponse.contact, which is per-response
+      // AES-256-GCM ciphertext (non-deterministic) — must NOT be used to
+      // group/compare respondents across responses; use the PII blind index for that.
       const respondentId = response.contact;
 
       // Find the published survey for this Need

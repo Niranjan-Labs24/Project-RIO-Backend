@@ -117,6 +117,9 @@ export class ScoreRollupService {
               surveyId: survey.id,
               studyId,
               villageId: resolvedVillageId,
+              // Denormalized snapshot of SurveyResponse.contact, which is per-response
+              // AES-256-GCM ciphertext (non-deterministic) — must NOT be used to
+              // group/compare respondents across responses; use the PII blind index for that.
               respondentId: r.contact,
               questionId: qId,
               answerOptionId: parsed.optionId,
