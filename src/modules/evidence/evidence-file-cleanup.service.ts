@@ -52,8 +52,12 @@ export class EvidenceFileCleanupService implements OnModuleInit {
       let cleared = 0;
       let stillFailing = 0;
       for (const row of pending) {
-        const removed = await this.storage.remove(row.storageKey);
-        if (removed) {
+        // GAP-13 review follow-up: storage.remove() now resolves the real
+        // caught error (message + OS error code) instead of a bare
+        // boolean — that real error is persisted as lastError, replacing
+        // the old generic "Retry failed at <timestamp>" placeholder.
+        const removeError = await this.storage.remove(row.storageKey);
+        if (!removeError) {
           await this.tenant.runAsSupervisorWrite((tx) => tx.pendingFileDeletion.delete({ where: { id: row.id } }));
           cleared += 1;
         } else {
@@ -62,7 +66,7 @@ export class EvidenceFileCleanupService implements OnModuleInit {
               where: { id: row.id },
               data: {
                 attempts: row.attempts + 1,
-                lastError: `Retry failed at ${new Date().toISOString()}`,
+                lastError: `${removeError.code ?? 'ERR'}: ${removeError.message}`,
               },
             }),
           );

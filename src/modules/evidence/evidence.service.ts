@@ -209,14 +209,21 @@ export class EvidenceService {
     // written via runAsSupervisorWrite — see tenant-prisma.service.ts) and
     // log at error level instead of dropping the failure on the floor.
     // EvidenceFileCleanupService's cron sweep retries these.
-    const removed = await this.storage.remove(row.storageKey);
-    if (!removed) {
+    //
+    // GAP-13 review follow-up: storage.remove() now resolves the real
+    // caught error (message + OS error code) rather than a bare boolean —
+    // that real error is what gets persisted as lastError, not a generic
+    // "Retry failed at <timestamp>" placeholder.
+    const removeError = await this.storage.remove(row.storageKey);
+    if (removeError) {
       this.logger.error(
         `Failed to delete evidence file from storage (storageKey=${row.storageKey}, evidenceId=${row.id}); ` +
         'queued for retry via PendingFileDeletion',
       );
       await this.tenant.runAsSupervisorWrite((tx) =>
-        tx.pendingFileDeletion.create({ data: { storageKey: row.storageKey } }),
+        tx.pendingFileDeletion.create({
+          data: { storageKey: row.storageKey, lastError: `${removeError.code ?? 'ERR'}: ${removeError.message}` },
+        }),
       );
     }
     await this.audit.record({

@@ -46,6 +46,13 @@ describe('EvidenceStorageService', () => {
   // `.catch(() => undefined)`, always resolving as if the delete succeeded
   // even when the file was left on disk. It must now surface failure to the
   // caller instead of silently pretending success.
+  //
+  // GAP-13 review follow-up: remove() must still never throw (the
+  // upload-rollback Promise.all(prepared.map(remove)) path must never
+  // reject), but on failure it must return the real OS error — including
+  // its `code` (e.g. ENOENT) — instead of a bare boolean, so callers can
+  // record the genuine error in PendingFileDeletion.lastError rather than a
+  // generic placeholder string.
   describe('remove', () => {
     let dir: string;
 
@@ -57,27 +64,37 @@ describe('EvidenceStorageService', () => {
       rmSync(dir, { recursive: true, force: true });
     });
 
-    it('deletes an existing file and resolves true', async () => {
+    it('deletes an existing file and resolves null (no error)', async () => {
       const key = 'a1111111-1111-1111-1111-111111111111.pdf';
       writeFileSync(join(dir, key), 'content');
       const svc = makeServiceWithStorageDir(dir);
 
       const result = await svc.remove(key);
 
-      expect(result).toBe(true);
+      expect(result).toBeNull();
       expect(existsSync(join(dir, key))).toBe(false);
     });
 
-    it('surfaces failure instead of silently swallowing it when the file does not exist', async () => {
+    it('surfaces the real OS error instead of silently swallowing it when the file does not exist', async () => {
       const key = 'a2222222-2222-2222-2222-222222222222.pdf';
       const svc = makeServiceWithStorageDir(dir);
 
       const result = await svc.remove(key);
 
       // Previously this resolved undefined (swallowed) no matter what
-      // happened on disk. It must now report the failure rather than
-      // looking identical to a successful delete.
-      expect(result).toBe(false);
+      // happened on disk, and later a bare `false`. It must now report the
+      // genuine error — including the OS error code — rather than a
+      // placeholder.
+      expect(result).not.toBeNull();
+      expect(result?.code).toBe('ENOENT');
+      expect(result?.message).toBeTruthy();
+    });
+
+    it('never rejects even when the underlying unlink fails', async () => {
+      const key = 'a3333333-3333-3333-3333-333333333333.pdf';
+      const svc = makeServiceWithStorageDir(dir);
+
+      await expect(svc.remove(key)).resolves.not.toThrow();
     });
   });
 });

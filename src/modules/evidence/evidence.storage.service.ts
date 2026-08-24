@@ -124,13 +124,32 @@ export class EvidenceStorageService {
   // callers (EvidenceService.remove's durable-retry recording, and the
   // upload-rollback path) can tell the two apart instead of assuming the
   // file is always gone.
-  async remove(storageKey: string): Promise<boolean> {
+  //
+  // GAP-13 review follow-up: on failure this resolves the real caught error
+  // (message + OS error `code`, e.g. ENOENT/EACCES) instead of a bare
+  // `false`, so callers can persist the genuine cause into
+  // PendingFileDeletion.lastError rather than a generic placeholder. It
+  // still never throws/rejects — that invariant is load-bearing for the
+  // upload-rollback path (`Promise.all(prepared.map((f) =>
+  // this.storage.remove(f.storageKey)))`), which must never reject so the
+  // original upload error is what actually propagates.
+  async remove(storageKey: string): Promise<EvidenceRemoveError | null> {
     const dir = resolve(this.config.evidenceStoragePath);
     try {
       await unlink(join(dir, storageKey));
-      return true;
-    } catch {
-      return false;
+      return null;
+    } catch (error) {
+      const code = error instanceof Error && 'code' in error ? (error as NodeJS.ErrnoException).code : undefined;
+      const message = error instanceof Error ? error.message : String(error);
+      return { message, code };
     }
   }
+}
+
+// GAP-13 review follow-up: the shape returned by remove() on failure — the
+// real error message plus, when available, the OS error code (ENOENT,
+// EACCES, ...). null on success.
+export interface EvidenceRemoveError {
+  message: string;
+  code?: string;
 }

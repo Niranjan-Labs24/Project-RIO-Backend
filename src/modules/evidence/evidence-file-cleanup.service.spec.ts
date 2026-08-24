@@ -52,9 +52,14 @@ function fakeTenant(initial: FakePendingRow[] = []) {
   return { tenant, rows };
 }
 
-function fakeStorage(overrides: { remove?: (key: string) => Promise<boolean> } = {}) {
+// GAP-13 review follow-up: storage.remove() now resolves the real error (or
+// null on success) instead of a bare boolean — mirrors
+// evidence.storage.service.spec.ts / evidence.service.spec.ts's fakeStorage.
+function fakeStorage(
+  overrides: { remove?: (key: string) => Promise<{ message: string; code?: string } | null> } = {},
+) {
   return {
-    remove: overrides.remove ?? (async () => true),
+    remove: overrides.remove ?? (async () => null),
   };
 }
 
@@ -81,7 +86,7 @@ describe('EvidenceFileCleanupService', () => {
       const storage = fakeStorage({
         remove: async (key) => {
           removedKeys.push(key);
-          return true;
+          return null;
         },
       });
       const service = new EvidenceFileCleanupService(fakeConfig(), tenant, fakeSchedulerRegistry(), storage as never);
@@ -92,18 +97,33 @@ describe('EvidenceFileCleanupService', () => {
       expect(rows).toHaveLength(0);
     });
 
-    it('increments attempts and records lastError, leaving the row for the next sweep, when the retry fails', async () => {
+    // GAP-13 review follow-up: lastError must be the real OS error (code +
+    // message) surfaced by storage.remove(), not a generic
+    // "Retry failed at <timestamp>" placeholder.
+    it('increments attempts and records the real error, leaving the row for the next sweep, when the retry fails', async () => {
       const { tenant, rows } = fakeTenant([
         { id: 'pfd-1', storageKey: 'key-a', attempts: 2, lastError: 'previous failure', createdAt: new Date('2026-01-01T00:00:00Z') },
       ]);
-      const storage = fakeStorage({ remove: async () => false });
+      const storage = fakeStorage({ remove: async () => ({ message: 'no such file or directory', code: 'ENOENT' }) });
       const service = new EvidenceFileCleanupService(fakeConfig(), tenant, fakeSchedulerRegistry(), storage as never);
 
       await service.sweep();
 
       expect(rows).toHaveLength(1);
       expect(rows[0]?.attempts).toBe(3);
-      expect(rows[0]?.lastError).toBeTruthy();
+      expect(rows[0]?.lastError).toBe('ENOENT: no such file or directory');
+    });
+
+    it('falls back to a generic error code when the storage error has no OS error code', async () => {
+      const { tenant, rows } = fakeTenant([
+        { id: 'pfd-1', storageKey: 'key-a', attempts: 0, lastError: null, createdAt: new Date('2026-01-01T00:00:00Z') },
+      ]);
+      const storage = fakeStorage({ remove: async () => ({ message: 'unknown failure' }) });
+      const service = new EvidenceFileCleanupService(fakeConfig(), tenant, fakeSchedulerRegistry(), storage as never);
+
+      await service.sweep();
+
+      expect(rows[0]?.lastError).toBe('ERR: unknown failure');
     });
 
     it('never throws — a sweep error must not crash the process', async () => {
@@ -123,7 +143,7 @@ describe('EvidenceFileCleanupService', () => {
         { id: 'pfd-2', storageKey: 'key-b', attempts: 0, lastError: null, createdAt: new Date('2026-01-01T00:00:00Z') },
       ]);
       const storage = fakeStorage({
-        remove: async (key) => key === 'key-a',
+        remove: async (key) => (key === 'key-a' ? null : { message: 'permission denied', code: 'EACCES' }),
       });
       const service = new EvidenceFileCleanupService(fakeConfig(), tenant, fakeSchedulerRegistry(), storage as never);
 

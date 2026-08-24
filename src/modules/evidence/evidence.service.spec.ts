@@ -19,9 +19,14 @@ function fakeStorage(
     onRemove?: (key: string) => void;
     // GAP-13: remove() now reports success/failure (see
     // evidence.storage.service.spec.ts) instead of always resolving as if
-    // the delete succeeded — defaults to true (successful delete) so every
-    // existing test that doesn't care about this keeps passing unchanged.
-    removeResult?: boolean;
+    // the delete succeeded — defaults to null (successful delete, no error)
+    // so every existing test that doesn't care about this keeps passing
+    // unchanged.
+    // GAP-13 review follow-up: on failure this is the real error object
+    // (with an optional OS error `code`), not a bare boolean — lets tests
+    // assert the genuine error text/code flows through to
+    // PendingFileDeletion.lastError instead of a generic placeholder.
+    removeError?: { message: string; code?: string } | null;
   } = {},
 ) {
   return {
@@ -35,7 +40,7 @@ function fakeStorage(
     },
     remove: async (key: string) => {
       opts.onRemove?.(key);
-      return opts.removeResult ?? true;
+      return opts.removeError ?? null;
     },
   };
 }
@@ -324,7 +329,7 @@ describe('EvidenceService', () => {
     // PendingFileDeletion row rather than dropping the failure on the floor.
     it('records a PendingFileDeletion row when the physical file delete fails', async () => {
       let pendingCreate: Record<string, unknown> | undefined;
-      const storage = fakeStorage({ removeResult: false });
+      const storage = fakeStorage({ removeError: { message: 'permission denied', code: 'EACCES' } });
       const svc = makeService(
         fakeTenant({
           evidenceRow: row,
@@ -341,11 +346,31 @@ describe('EvidenceService', () => {
 
       expect(pendingCreate).toBeDefined();
       expect(pendingCreate?.storageKey).toBe('key-a');
+      // GAP-13 review follow-up: lastError must be the real OS error (code +
+      // message), not a generic "Retry failed at <timestamp>" placeholder.
+      expect(pendingCreate?.lastError).toBe('EACCES: permission denied');
+    });
+
+    it('falls back to a generic error code when the storage error has no OS error code', async () => {
+      let pendingCreate: Record<string, unknown> | undefined;
+      const storage = fakeStorage({ removeError: { message: 'something went wrong' } });
+      const svc = makeService(
+        fakeTenant({
+          evidenceRow: row,
+          need: { studyId: 'study-1', status: 'draft' },
+          onPendingFileDeletionCreate: (data) => { pendingCreate = data; },
+        }),
+        storage,
+      );
+
+      await orgContext.run(ctx, () => svc.remove('ev-1'));
+
+      expect(pendingCreate?.lastError).toBe('ERR: something went wrong');
     });
 
     it('does not record a PendingFileDeletion row when the physical file delete succeeds', async () => {
       let pendingCreated = false;
-      const storage = fakeStorage({ removeResult: true });
+      const storage = fakeStorage({ removeError: null });
       const svc = makeService(
         fakeTenant({
           evidenceRow: row,
