@@ -9,6 +9,7 @@ import { pgSslFromEnv } from '../src/prisma/pg-ssl';
 import { appClient, ownerClient } from './db.helper';
 import { AuditCheckpointService } from '../src/modules/audit/audit-checkpoint.service';
 import type { ConfigService } from '../src/config/config.service';
+import type { SystemLogsService } from '../src/modules/system-logs/system-logs.service';
 
 // Security CI gate for FR-010 (fail-closed, org-scoped RLS) on the DOMAIN
 // tenant tables — replaces the notes-based gate the domain migration removed.
@@ -126,6 +127,13 @@ describe('Audit checkpoint integrity (GAP-02)', () => {
   function fakeSchedulerRegistry(): SchedulerRegistry {
     return { addCronJob: () => undefined } as unknown as SchedulerRegistry;
   }
+  // The off-box mirror (GAP-02 Task 5) isn't what this suite exercises —
+  // it's covered by audit-checkpoint.service.spec.ts's own unit tests —
+  // so a no-op fake keeps this integration test focused on checkpoint/
+  // verify against the real DB without also writing to system_logs.
+  function fakeSystemLogs(): SystemLogsService {
+    return { record: () => undefined } as unknown as SystemLogsService;
+  }
 
   async function seedAuditRow(action: string, label: string): Promise<string> {
     const id = uuidv7();
@@ -152,7 +160,7 @@ describe('Audit checkpoint integrity (GAP-02)', () => {
       adapter: new PrismaPg({ connectionString: process.env.SUPERVISOR_DATABASE_URL, ssl: pgSslFromEnv() }),
     });
     tenant = new TenantPrismaService(app as never, supervisor as never);
-    service = new AuditCheckpointService(fakeConfig(), tenant, fakeSchedulerRegistry());
+    service = new AuditCheckpointService(fakeConfig(), tenant, fakeSchedulerRegistry(), fakeSystemLogs());
     await owner.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT set_config('app.current_org_id', ${orgC}, true)`;
       await tx.$executeRaw`INSERT INTO organisations (id, name, updated_at) VALUES (${orgC}::uuid, 'ISO Org C (checkpoint)', now())`;

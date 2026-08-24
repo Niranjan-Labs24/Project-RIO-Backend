@@ -3,6 +3,11 @@ import type { SchedulerRegistry } from '@nestjs/schedule';
 import { AuditCheckpointService } from './audit-checkpoint.service';
 import type { ConfigService } from '../../config/config.service';
 import type { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
+import type { SystemLogsService } from '../system-logs/system-logs.service';
+
+function fakeSystemLogs(): SystemLogsService {
+  return { record: vi.fn() } as unknown as SystemLogsService;
+}
 
 const KEY = Buffer.alloc(32, 5).toString('base64');
 
@@ -103,7 +108,7 @@ describe('AuditCheckpointService (GAP-02)', () => {
   it('registers a cron job on init using the configured schedule', () => {
     const scheduler = fakeSchedulerRegistry();
     const { tenant } = fakeTenant([]);
-    const service = new AuditCheckpointService(fakeConfig(), tenant, scheduler);
+    const service = new AuditCheckpointService(fakeConfig(), tenant, scheduler, fakeSystemLogs());
 
     service.onModuleInit();
 
@@ -114,7 +119,7 @@ describe('AuditCheckpointService (GAP-02)', () => {
   it('genesis: with no prior checkpoint, covers every existing audit row from the start', async () => {
     const rows = [ROW('a', '2026-08-24T00:00:00Z'), ROW('b', '2026-08-24T00:00:01Z')];
     const { tenant, checkpoints } = fakeTenant(rows);
-    const service = new AuditCheckpointService(fakeConfig(), tenant, fakeSchedulerRegistry());
+    const service = new AuditCheckpointService(fakeConfig(), tenant, fakeSchedulerRegistry(), fakeSystemLogs());
 
     await service.checkpoint();
 
@@ -130,7 +135,7 @@ describe('AuditCheckpointService (GAP-02)', () => {
   it('incremental: a second run only covers rows after the last checkpoint boundary, chained to its signature', async () => {
     const rows = [ROW('a', '2026-08-24T00:00:00Z'), ROW('b', '2026-08-24T00:00:01Z')];
     const { tenant, checkpoints } = fakeTenant(rows);
-    const service = new AuditCheckpointService(fakeConfig(), tenant, fakeSchedulerRegistry());
+    const service = new AuditCheckpointService(fakeConfig(), tenant, fakeSchedulerRegistry(), fakeSystemLogs());
     await service.checkpoint();
     const first = checkpoints[0] as { signature: string; coveredToId: string };
 
@@ -149,7 +154,7 @@ describe('AuditCheckpointService (GAP-02)', () => {
   it('no-op: a run with nothing new since the last checkpoint writes nothing', async () => {
     const rows = [ROW('a', '2026-08-24T00:00:00Z')];
     const { tenant, checkpoints } = fakeTenant(rows);
-    const service = new AuditCheckpointService(fakeConfig(), tenant, fakeSchedulerRegistry());
+    const service = new AuditCheckpointService(fakeConfig(), tenant, fakeSchedulerRegistry(), fakeSystemLogs());
     await service.checkpoint();
     expect(checkpoints).toHaveLength(1);
 
@@ -164,8 +169,64 @@ describe('AuditCheckpointService (GAP-02)', () => {
       },
       runAsSupervisorWrite: async (fn: (tx: unknown) => unknown) => fn({}),
     } as unknown as TenantPrismaService;
-    const service = new AuditCheckpointService(fakeConfig(), tenant, fakeSchedulerRegistry());
+    const service = new AuditCheckpointService(fakeConfig(), tenant, fakeSchedulerRegistry(), fakeSystemLogs());
 
     await expect(service.checkpoint()).resolves.toBeUndefined();
+  });
+
+  describe('off-box mirror (GAP-02 Task 5 first cut)', () => {
+    it('mirrors a new checkpoint to SystemLogsService, first-cut off-box anchor', async () => {
+      const rows = [ROW('a', '2026-08-24T00:00:00Z'), ROW('b', '2026-08-24T00:00:01Z')];
+      const { tenant, checkpoints } = fakeTenant(rows);
+      const systemLogs = fakeSystemLogs();
+      const service = new AuditCheckpointService(fakeConfig(), tenant, fakeSchedulerRegistry(), systemLogs);
+
+      await service.checkpoint();
+
+      const created = checkpoints[0] as { id: string; coveredToId: string; digest: string; signature: string };
+      expect(systemLogs.record).toHaveBeenCalledTimes(1);
+      expect(systemLogs.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          level: 'info',
+          category: 'job',
+          source: 'AuditCheckpointService',
+          eventCode: 'AUDIT_CHECKPOINT_CREATED',
+          context: expect.objectContaining({
+            id: created.id,
+            coveredToId: created.coveredToId,
+            digest: created.digest,
+            signature: created.signature,
+          }),
+        }),
+      );
+    });
+
+    it('does not mirror when there is nothing new to checkpoint', async () => {
+      const rows = [ROW('a', '2026-08-24T00:00:00Z')];
+      const { tenant } = fakeTenant(rows);
+      const systemLogs = fakeSystemLogs();
+      const service = new AuditCheckpointService(fakeConfig(), tenant, fakeSchedulerRegistry(), systemLogs);
+      await service.checkpoint();
+      vi.mocked(systemLogs.record).mockClear();
+
+      await service.checkpoint();
+
+      expect(systemLogs.record).not.toHaveBeenCalled();
+    });
+
+    it('a mirror failure never fails the checkpoint run itself', async () => {
+      const rows = [ROW('a', '2026-08-24T00:00:00Z')];
+      const { tenant, checkpoints } = fakeTenant(rows);
+      const systemLogs = {
+        record: vi.fn(() => {
+          throw new Error('mirror down');
+        }),
+      } as unknown as SystemLogsService;
+      const service = new AuditCheckpointService(fakeConfig(), tenant, fakeSchedulerRegistry(), systemLogs);
+
+      await expect(service.checkpoint()).resolves.toBeUndefined();
+      // The checkpoint itself still landed — only the best-effort mirror failed.
+      expect(checkpoints).toHaveLength(1);
+    });
   });
 });

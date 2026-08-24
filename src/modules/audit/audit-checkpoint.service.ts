@@ -3,6 +3,7 @@ import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
 import { ConfigService } from '../../config/config.service';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
+import { SystemLogsService } from '../system-logs/system-logs.service';
 import { chainSign, computeDigest, type CheckpointRow } from './audit-checkpoint.crypto';
 
 const CRON_JOB_NAME = 'audit-checkpoint';
@@ -83,6 +84,7 @@ export class AuditCheckpointService implements OnModuleInit {
     private readonly config: ConfigService,
     private readonly tenant: TenantPrismaService,
     private readonly schedulerRegistry: SchedulerRegistry,
+    private readonly systemLogs: SystemLogsService,
   ) {}
 
   onModuleInit(): void {
@@ -125,7 +127,7 @@ export class AuditCheckpointService implements OnModuleInit {
 
       // 4. Insert the checkpoint — cnap_app INSERT on the no-RLS table (no
       //    org GUC set: a checkpoint is not org-owned data).
-      await this.tenant.runAsSupervisorWrite((tx) =>
+      const created = await this.tenant.runAsSupervisorWrite((tx) =>
         tx.auditCheckpoint.create({
           data: {
             prevChainHash: last?.signature ?? null,
@@ -143,9 +145,49 @@ export class AuditCheckpointService implements OnModuleInit {
         `Audit checkpoint created: covered ${rows.length} row(s) up to ${lastRow.id} ` +
         `(${lastRow.createdAt.toISOString()})`,
       );
+
+      this.mirrorOffBox(created as AuditCheckpointRecord);
     } catch (err) {
       this.logger.error(
         'Audit checkpoint run failed',
+        err instanceof Error ? err.stack : String(err),
+      );
+    }
+  }
+
+  /**
+   * GAP-02 Task 5 first cut — off-box anchor. A checkpoint is only
+   * trustworthy as tamper-evidence if a copy of it lives somewhere a DB
+   * admin/owner can't quietly edit alongside the audit_logs/audit_checkpoints
+   * tables it's meant to protect. The real answer is an external sink
+   * (object storage with retention/immutability, or an external log
+   * service) — deliberately NOT built here; that needs a sink decision this
+   * plan defers explicitly. This first cut mirrors the checkpoint's
+   * identifying fields into SystemLogsService, which is at least a
+   * different code path/table (and, once SystemLogsService ships its own
+   * external shipping, a different destination) than audit_checkpoints
+   * itself. Best-effort: SystemLogsService.record() already never throws by
+   * its own contract, but this is wrapped anyway so a mirror failure can
+   * never take down a checkpoint run that has already committed.
+   */
+  private mirrorOffBox(cp: AuditCheckpointRecord): void {
+    try {
+      this.systemLogs.record({
+        level: 'info',
+        category: 'job',
+        source: AuditCheckpointService.name,
+        eventCode: 'AUDIT_CHECKPOINT_CREATED',
+        message: `Audit checkpoint ${cp.id} created, covering up to audit_logs row ${cp.coveredToId}`,
+        context: {
+          id: cp.id,
+          coveredToId: cp.coveredToId,
+          digest: cp.digest,
+          signature: cp.signature,
+        },
+      });
+    } catch (err) {
+      this.logger.error(
+        'Audit checkpoint off-box mirror failed (checkpoint itself was still recorded)',
         err instanceof Error ? err.stack : String(err),
       );
     }

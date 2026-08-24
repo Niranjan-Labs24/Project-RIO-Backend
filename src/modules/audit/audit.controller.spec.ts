@@ -13,7 +13,7 @@ import { AuditController } from './audit.controller';
  * developer who did not read the requirement.
  */
 
-const HANDLERS = ['list', 'export', 'getSummary', 'getById'] as const;
+const HANDLERS = ['list', 'export', 'getSummary', 'getById', 'getIntegrity'] as const;
 
 function routeMethod(name: string): number | undefined {
   const handler = (AuditController.prototype as unknown as Record<string, unknown>)[name];
@@ -65,8 +65,16 @@ describe('AuditController route surface (RIO-FR-007 AC2 — no deletion path)', 
 });
 
 describe('AuditController permission gating (RIO-FR-007)', () => {
-  it('gates every route on the auditLog module — none is unguarded', () => {
-    for (const name of decoratedHandlers()) {
+  // getIntegrity (GAP-02) is deliberately excluded here: it is gated on the
+  // separate systemLogs module (see its own describe block below), not
+  // auditLog — auditLog is held by both system_admin and center_supervisor,
+  // but the integrity/checkpoint-verify endpoint must be system-admin-only,
+  // matching the plan's requirement and mirroring how systemLogs itself is
+  // system_admin-exclusive in role-matrix.ts.
+  const AUDIT_LOG_HANDLERS = HANDLERS.filter((n) => n !== 'getIntegrity');
+
+  it('gates every non-integrity route on the auditLog module — none is unguarded', () => {
+    for (const name of AUDIT_LOG_HANDLERS) {
       const required = routePermission(name);
       expect.soft(required, `${name} must declare a permission`).toBeDefined();
       expect.soft(required?.module, `${name} module`).toBe('auditLog');
@@ -96,6 +104,29 @@ describe('AuditController permission gating (RIO-FR-007)', () => {
   });
 });
 
+describe('AuditController integrity endpoint gating (GAP-02)', () => {
+  // System-admin-only: reuses the systemLogs module, which role-matrix.ts
+  // grants to system_admin alone (see its own RIO-NFR-016 comment) — NOT
+  // auditLog, which center_supervisor also holds. A checkpoint-integrity
+  // check exposes whether the tamper-evidence chain itself is intact,
+  // which is platform-operations territory, same posture as system_logs.
+  it('GET /audit/integrity requires systemLogs:read', () => {
+    expect(routePermission('getIntegrity')).toEqual({ module: 'systemLogs', action: 'read' });
+    expect(routePath('getIntegrity')).toBe('integrity');
+    expect(routeMethod('getIntegrity')).toBe(RequestMethod.GET);
+  });
+
+  it('is declared before the :id route so "integrity" can never be swallowed as an id', () => {
+    // Same ordering hazard system-logs.controller.ts's request/:requestId
+    // comment calls out — a literal path segment must be registered ahead
+    // of the parameterised :id route it would otherwise be captured by.
+    const names = Object.getOwnPropertyNames(AuditController.prototype).filter(
+      (n) => n !== 'constructor' && routeMethod(n) !== undefined,
+    );
+    expect(names.indexOf('getIntegrity')).toBeLessThan(names.indexOf('getById'));
+  });
+});
+
 describe('AuditController delegation', () => {
   const service = {
     list: vi.fn().mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 }),
@@ -103,7 +134,10 @@ describe('AuditController delegation', () => {
     getSummary: vi.fn().mockResolvedValue({}),
     getById: vi.fn().mockResolvedValue({}),
   };
-  const controller = new AuditController(service as never);
+  const checkpoints = {
+    verify: vi.fn().mockResolvedValue({ ok: true }),
+  };
+  const controller = new AuditController(service as never, checkpoints as never);
 
   it('forwards every filter to the service, coercing empty strings to undefined', async () => {
     // An untouched filter input posts `?actorId=` — passing that through as
@@ -137,5 +171,14 @@ describe('AuditController delegation', () => {
       /^attachment; filename="audit-log-\d{4}-\d{2}-\d{2}\.csv"$/,
     );
     expect(service.exportCsv).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'o1' }));
+  });
+
+  it('getIntegrity returns the checkpoint verifier result as-is', async () => {
+    checkpoints.verify.mockResolvedValueOnce({ ok: false, brokenCheckpointId: 'cp-1' });
+
+    const result = await controller.getIntegrity();
+
+    expect(checkpoints.verify).toHaveBeenCalledWith();
+    expect(result).toEqual({ ok: false, brokenCheckpointId: 'cp-1' });
   });
 });
