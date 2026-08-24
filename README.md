@@ -15,6 +15,7 @@ one worked example module (`notes`).
 pnpm install
 cp .env.example .env
 pnpm db:up                       # postgres:18 + provisions cnap_owner / cnap_app roles
+pnpm gw:bootstrap                # install the graphile-worker schema (must run before migrate deploy)
 pnpm prisma migrate deploy       # apply schema + RLS
 pnpm prisma:seed                 # optional demo data (Org A / Org B)
 pnpm dev                         # http://localhost:3000  (docs at /docs, spec at /openapi.json)
@@ -27,6 +28,17 @@ present, this is a harmless no-op — config comes from the environment (compose
 If your host already has PostgreSQL bound to port 5432 (e.g. a native Windows service), set
 `DB_HOST_PORT=<free port>` in `.env` and update the two `*_URL` values to match — docker compose
 auto-reads `.env` for the `${DB_HOST_PORT:-5432}` substitution in `docker-compose.yml`.
+
+### Database setup / deploy ordering
+Always run `pnpm gw:bootstrap` **before** `pnpm prisma migrate deploy` against a fresh database:
+```bash
+pnpm gw:bootstrap && pnpm prisma migrate deploy
+```
+`gw:bootstrap` installs the `graphile_worker` schema (jobs tables + `add_job`). Migration
+`20260824160000_graphile_worker_grants` GRANTs on `graphile_worker._private_*` objects that only
+exist after that schema is installed, so on a fresh database `migrate deploy` aborts if
+`gw:bootstrap` hasn't run first. Both steps are idempotent and safe to re-run (CI runs them in this
+order every time — see `.github/workflows/ci.yml`).
 
 ### Local development vs. production Compose
 `docker-compose.yml` on its own is the production-safe definition: it has no default database
@@ -114,6 +126,7 @@ it, the same command fails on the first FORCE-RLS table it reaches.
 ## Running the whole stack in Docker (db + api)
 ```bash
 pnpm db:up                       # start Postgres first
+pnpm gw:bootstrap                # install the graphile-worker schema (must run before migrate deploy)
 pnpm prisma migrate deploy       # apply schema + RLS from the host — see "Migrations in Docker" below
 docker compose up -d --build     # builds and starts the api image (db is already up)
 curl http://localhost:4000/health
@@ -137,9 +150,10 @@ dev-only tooling the running app never touches (`PrismaService` talks to Postgre
 `@prisma/adapter-pg` driver adapter using the pre-generated client baked into `dist/generated/prisma`
 at build time; no query-engine binary or CLI is needed at runtime). Consequently the `api`
 container does **not** run migrations on startup. Apply schema changes with the Prisma CLI from the
-host (pointed at the host-published db port) before or after `docker compose up -d api`:
+host (pointed at the host-published db port) before or after `docker compose up -d api` — see
+"Database setup / deploy ordering" above for why `gw:bootstrap` must run first on a fresh database:
 ```bash
-pnpm prisma migrate deploy
+pnpm gw:bootstrap && pnpm prisma migrate deploy
 ```
 This mirrors local dev, where migrations are always applied the same way regardless of whether the
 api process itself runs on the host or in a container.
