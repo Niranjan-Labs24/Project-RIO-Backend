@@ -152,4 +152,12 @@ export class ConfigService {
   get citizenPiiRetentionCron(): string {
     return this.config.CITIZEN_PII_RETENTION_CRON;
   }
+  // GAP-02 — see the AUDIT_CHECKPOINT_CRON/AUDIT_SIGNING_KEY block in
+  // env.schema.ts.
+  get auditCheckpointCron(): string {
+    return this.config.AUDIT_CHECKPOINT_CRON;
+  }
+  get auditSigningKey(): string {
+    return this.config.AUDIT_SIGNING_KEY;
+  }
 }

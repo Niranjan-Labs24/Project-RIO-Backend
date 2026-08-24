@@ -11,6 +11,12 @@ import addFormats from 'ajv-formats';
 // "the dev default" by mistake.
 const DEV_ONLY_ENCRYPTION_KEY = Buffer.alloc(32, 1).toString('base64');
 const DEV_ONLY_BLIND_INDEX_KEY = Buffer.alloc(32, 2).toString('base64');
+// GAP-02 — audit checkpoint chain-signing key (HMAC-SHA256), same
+// dev-sentinel/32-byte-base64 convention as the two PII keys above. Byte 9:
+// distinct from every other DEV_ONLY_*/DEFAULT_*_KEY fixture in this file
+// and in env.schema.spec.ts, so it can never accidentally equal a "real"
+// key used in a test and mask the production guard below.
+const DEV_ONLY_AUDIT_SIGNING_KEY = Buffer.alloc(32, 9).toString('base64');
 
 export const EnvSchema = Type.Object({
   // Fail-safe default: an unset NODE_ENV must behave as production (the
@@ -169,6 +175,13 @@ export const EnvSchema = Type.Object({
   // SurveyResponse rows before being nullified by CitizenPiiRetentionService.
   CITIZEN_PII_RETENTION_DAYS: Type.Number({ default: 90, minimum: 1 }),
   CITIZEN_PII_RETENTION_CRON: Type.String({ default: '0 2 * * *' }),
+  // GAP-02 — periodic signed checkpoint job over audit_logs
+  // (AuditCheckpointService). AUDIT_CHECKPOINT_CRON defaults to hourly.
+  // AUDIT_SIGNING_KEY is the HMAC-SHA256 chain-signing key (base64,
+  // 32 bytes) — the trust root for tamper-evidence; required in production
+  // and validated the same way as ENCRYPTION_KEY/PII_BLIND_INDEX_KEY below.
+  AUDIT_CHECKPOINT_CRON: Type.String({ default: '0 * * * *' }),
+  AUDIT_SIGNING_KEY: Type.String({ default: DEV_ONLY_AUDIT_SIGNING_KEY, minLength: 32 }),
   LOG_LEVEL: Type.Union(
     [
       Type.Literal('fatal'),
@@ -214,11 +227,19 @@ export function validateEnv(raw: Record<string, unknown>): AppConfig {
   if (candidate.NODE_ENV === 'production' && candidate.PII_BLIND_INDEX_KEY === DEV_ONLY_BLIND_INDEX_KEY) {
     throw new Error('Invalid environment configuration: PII_BLIND_INDEX_KEY must be set to a real value in production');
   }
-  // GAP-03 / AD-17 — both PII keys must base64-decode to exactly 32 bytes
-  // (AES-256-GCM / HMAC-SHA256 key size). Checked here (post base64-decode)
-  // rather than as a schema-level string length, since ajv's minLength
-  // above only bounds the *encoded* string, not the decoded byte count.
-  for (const key of ['ENCRYPTION_KEY', 'PII_BLIND_INDEX_KEY'] as const) {
+  // GAP-02 — same fail-closed guard, for the audit checkpoint chain-signing
+  // key: the dev placeholder must never reach production, where it would
+  // let anyone who reads this file forge a checkpoint signature and defeat
+  // the tamper-evidence the checkpoint chain exists to provide.
+  if (candidate.NODE_ENV === 'production' && candidate.AUDIT_SIGNING_KEY === DEV_ONLY_AUDIT_SIGNING_KEY) {
+    throw new Error('Invalid environment configuration: AUDIT_SIGNING_KEY must be set to a real value in production');
+  }
+  // GAP-03 / AD-17 / GAP-02 — all three keys must base64-decode to exactly
+  // 32 bytes (AES-256-GCM / HMAC-SHA256 key size). Checked here (post
+  // base64-decode) rather than as a schema-level string length, since ajv's
+  // minLength above only bounds the *encoded* string, not the decoded byte
+  // count.
+  for (const key of ['ENCRYPTION_KEY', 'PII_BLIND_INDEX_KEY', 'AUDIT_SIGNING_KEY'] as const) {
     const value = candidate[key] as string;
     if (Buffer.from(value, 'base64').length !== 32) {
       throw new Error(`Invalid environment configuration: ${key} must base64-decode to exactly 32 bytes`);

@@ -8,6 +8,11 @@ import { validateEnv } from './env.schema';
 // case that doesn't care about key validation still passes it.
 const DEFAULT_ENCRYPTION_KEY = Buffer.alloc(32, 3).toString('base64');
 const DEFAULT_BLIND_INDEX_KEY = Buffer.alloc(32, 4).toString('base64');
+// GAP-02 — same convention, for AUDIT_SIGNING_KEY. Byte 8: distinct from
+// every other key fixture in this file (and from the dev sentinel, byte 9,
+// in env.schema.ts) so this "valid prod default" can never collide with
+// either.
+const DEFAULT_AUDIT_SIGNING_KEY = Buffer.alloc(32, 8).toString('base64');
 
 // Base on the loaded .env (setup-env.ts loads it) so all other required
 // fields are already present; override only what each case exercises.
@@ -18,6 +23,7 @@ function prodEnv(overrides: Record<string, unknown>) {
     REDIS_URL: 'redis://localhost:6379',
     ENCRYPTION_KEY: DEFAULT_ENCRYPTION_KEY,
     PII_BLIND_INDEX_KEY: DEFAULT_BLIND_INDEX_KEY,
+    AUDIT_SIGNING_KEY: DEFAULT_AUDIT_SIGNING_KEY,
     DB_SSL: 'true',
     DB_SSL_REJECT_UNAUTHORIZED: 'true',
     ...overrides,
@@ -47,5 +53,52 @@ describe('validateEnv PII key validation (GAP-03)', () => {
   });
   it('accepts production with two distinct valid 32-byte keys', () => {
     expect(() => validateEnv(prodEnv({ ENCRYPTION_KEY: K32, PII_BLIND_INDEX_KEY: Buffer.alloc(32, 6).toString('base64') }))).not.toThrow();
+  });
+});
+
+// Fill byte 7 — distinct from every other key fixture in this file, so a
+// "real" signing key can never accidentally collide with the dev sentinel
+// in env.schema.ts (byte 9, see DEV_ONLY_AUDIT_SIGNING_KEY) or any other
+// fixture above.
+const AUDIT_KEY_32 = Buffer.alloc(32, 7).toString('base64');
+describe('validateEnv audit checkpoint signing key (GAP-02)', () => {
+  it('rejects production when AUDIT_SIGNING_KEY is left at the dev sentinel', () => {
+    expect(() =>
+      validateEnv(
+        prodEnv({ ENCRYPTION_KEY: K32, PII_BLIND_INDEX_KEY: Buffer.alloc(32, 6).toString('base64') }),
+      ),
+    ).not.toThrow();
+    // The dev default itself, passed explicitly, must be rejected in prod.
+    expect(() =>
+      validateEnv(
+        prodEnv({
+          ENCRYPTION_KEY: K32,
+          PII_BLIND_INDEX_KEY: Buffer.alloc(32, 6).toString('base64'),
+          AUDIT_SIGNING_KEY: Buffer.alloc(32, 9).toString('base64'),
+        }),
+      ),
+    ).toThrow(/AUDIT_SIGNING_KEY/);
+  });
+  it('rejects production when AUDIT_SIGNING_KEY does not decode to 32 bytes', () => {
+    expect(() =>
+      validateEnv(
+        prodEnv({
+          ENCRYPTION_KEY: K32,
+          PII_BLIND_INDEX_KEY: Buffer.alloc(32, 6).toString('base64'),
+          AUDIT_SIGNING_KEY: Buffer.alloc(16).toString('base64'),
+        }),
+      ),
+    ).toThrow(/32 bytes|AUDIT_SIGNING_KEY/);
+  });
+  it('accepts production with a valid, distinct 32-byte signing key', () => {
+    expect(() =>
+      validateEnv(
+        prodEnv({
+          ENCRYPTION_KEY: K32,
+          PII_BLIND_INDEX_KEY: Buffer.alloc(32, 6).toString('base64'),
+          AUDIT_SIGNING_KEY: AUDIT_KEY_32,
+        }),
+      ),
+    ).not.toThrow();
   });
 });
