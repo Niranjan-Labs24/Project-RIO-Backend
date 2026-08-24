@@ -42,6 +42,9 @@ jobs:
         run: |
           node -e "if (process.versions.node.split('.')[0] !== '24') { console.error('Expected Node 24, got ' + process.version); process.exit(1); }"
       - run: pnpm install --frozen-lockfile
+      - run: pnpm openapi:export
+      - name: Fail if openapi.json is stale (regenerate with `pnpm openapi:export`)
+        run: git diff --exit-code openapi.json
       - name: Provision roles and database
         run: |
           PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -f db/init/00-init.sql
