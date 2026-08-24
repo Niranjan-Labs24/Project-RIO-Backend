@@ -1,53 +1,51 @@
-import { createCipheriv, createDecipheriv, createHmac } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto';
+
+// RIO-NFR-002 / AD-17 — AES-256-GCM (authenticated) for the recoverable value,
+// random IV per encryption (no longer deterministic). Equality/dedup is served
+// by a SEPARATE keyed blind index (see computeBlindIndex), so this no longer
+// needs to be deterministic. Format: "gcm.v1:<iv-hex>:<tag-hex>:<ct-hex>".
+const ALGORITHM = 'aes-256-gcm' as const;
+const IV_BYTES = 12;
+const SCHEME = 'gcm.v1';
+
+/** Decode a base64 key to exactly 32 bytes, or throw. */
+export function decodeKey(keyB64: string): Buffer {
+  const buf = Buffer.from(keyB64, 'base64');
+  if (buf.length !== 32) {
+    throw new Error(`Key must base64-decode to exactly 32 bytes (got ${buf.length})`);
+  }
+  return buf;
+}
+
+export function encryptPii(plaintext: string, keyB64: string): string {
+  const key = decodeKey(keyB64);
+  const iv = randomBytes(IV_BYTES);
+  const cipher = createCipheriv(ALGORITHM, key, iv);
+  const ct = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `${SCHEME}:${iv.toString('hex')}:${tag.toString('hex')}:${ct.toString('hex')}`;
+}
+
+export function decryptPii(value: string, keyB64: string): string {
+  if (!isEncrypted(value)) return value; // redacted:<id> / legacy plaintext pass through
+  const parts = value.split(':');
+  const ivHex = parts[1] as string;
+  const tagHex = parts[2] as string;
+  const ctHex = parts[3] as string;
+  const decipher = createDecipheriv(ALGORITHM, decodeKey(keyB64), Buffer.from(ivHex, 'hex'));
+  decipher.setAuthTag(Buffer.from(tagHex, 'hex')); // throws on tamper in final()
+  return Buffer.concat([decipher.update(Buffer.from(ctHex, 'hex')), decipher.final()]).toString('utf8');
+}
+
+export function isEncrypted(value: string): boolean {
+  return /^gcm\.v1:[0-9a-f]{24}:[0-9a-f]{32}:[0-9a-f]+$/.test(value);
+}
 
 /**
- * RIO-NFR-002 — Deterministic AES-256-CBC encryption for citizen PII fields
- * (SurveyResponse.contact, SurveyResponse.mobile).
- *
- * Deterministic (IV derived via HMAC of the plaintext + key) so that the
- * same contact value always produces the same ciphertext — required for
- * the deduplication query in CitizenService.checkDuplicate(), which
- * compares stored ciphertext against the incoming (re-encrypted) value.
- *
- * Output format: "<iv-hex>:<ciphertext-hex>" stored as TEXT — no Prisma
- * schema type change needed, and the prefix makes it self-describing for
- * future key rotation tooling.
- *
- * Key rotation: re-encrypt all rows with the new key before removing the
- * old one (see ARCHITECTURE.md §Encryption key rotation).
+ * Keyed blind index for equality lookups / uniqueness on encrypted fields.
+ * HMAC-SHA256(indexKey, normalizedValue) → 64 hex chars. MUST use a key
+ * distinct from the encryption key, and MUST be fed the normalized form.
  */
-
-const ALGORITHM = 'aes-256-cbc' as const;
-const IV_BYTES = 16;
-
-function deriveIv(plaintext: string, keyBuf: Buffer): Buffer {
-  // HMAC-SHA256 of the plaintext with the key → first 16 bytes → IV.
-  // Same plaintext + same key → same IV → same ciphertext (deterministic).
-  return createHmac('sha256', keyBuf).update(plaintext).digest().subarray(0, IV_BYTES);
-}
-
-export function encryptPii(plaintext: string, keyHex: string): string {
-  const keyBuf = Buffer.from(keyHex.padEnd(32).slice(0, 32), 'utf8');
-  const iv = deriveIv(plaintext, keyBuf);
-  const cipher = createCipheriv(ALGORITHM, keyBuf, iv);
-  const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
-  return `${iv.toString('hex')}:${encrypted.toString('hex')}`;
-}
-
-export function decryptPii(ciphertext: string, keyHex: string): string {
-  // A plaintext legacy/unencrypted value can validly contain a ":" (e.g. a
-  // URL) — check the full "<32-hex-iv>:<hex>" shape via isEncrypted, not
-  // just "has a colon", so a plaintext value is passed through unchanged
-  // instead of being fed to the decipher and throwing.
-  if (!isEncrypted(ciphertext)) return ciphertext;
-  const [ivHex, encHex] = ciphertext.split(':') as [string, string];
-  const keyBuf = Buffer.from(keyHex.padEnd(32).slice(0, 32), 'utf8');
-  const iv = Buffer.from(ivHex, 'hex');
-  const decipher = createDecipheriv(ALGORITHM, keyBuf, iv);
-  return Buffer.concat([decipher.update(Buffer.from(encHex, 'hex')), decipher.final()]).toString('utf8');
-}
-
-/** Returns true if the string looks like an encrypted PII value. */
-export function isEncrypted(value: string): boolean {
-  return /^[0-9a-f]{32}:[0-9a-f]+$/.test(value);
+export function computeBlindIndex(normalizedValue: string, indexKeyB64: string): string {
+  return createHmac('sha256', decodeKey(indexKeyB64)).update(normalizedValue).digest('hex');
 }
