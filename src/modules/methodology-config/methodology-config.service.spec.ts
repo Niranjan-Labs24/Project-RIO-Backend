@@ -23,6 +23,8 @@ const BASE_ROW: MethodologyConfigRow = {
 function makeService(row: Partial<MethodologyConfigRow> = {}) {
   const current = { ...BASE_ROW, ...row };
   const writes: Record<string, unknown>[] = [];
+  // RIO-NFR-017's per-change snapshot, written by update()/publish().
+  const history: Record<string, unknown>[] = [];
   const prisma = {
     methodologyConfig: {
       findFirst: async () => current,
@@ -32,12 +34,20 @@ function makeService(row: Partial<MethodologyConfigRow> = {}) {
       },
       create: async ({ data }: { data: Record<string, unknown> }) => ({ ...BASE_ROW, ...data }),
     },
+    methodologyConfigHistory: {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        history.push(data);
+        return data;
+      },
+      findMany: async () => history,
+    },
   };
   // resolveActorName's cross-org user lookup — no user rows needed here.
   const tenant = { runAsSupervisor: async () => null };
   return {
     service: new MethodologyConfigService(prisma as never, tenant as never),
     writes,
+    history,
   };
 }
 
@@ -87,6 +97,21 @@ describe('MethodologyConfigService — aiClassificationSettings (RIO-AI-001)', (
         service.update({ aiClassificationSettings: { veryLowConfidenceThreshold: 0.7 } }),
       ),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('snapshots the AI thresholds into the config history', async () => {
+    // RIO-NFR-017 records every configuration change. Without this family in
+    // the snapshot, an edit that changed ONLY an AI confidence threshold
+    // would write a history row identical to the one before it.
+    const { service, history } = makeService();
+    await orgContext.run(ctx, () =>
+      service.update({ aiClassificationSettings: { lowConfidenceThreshold: 0.85 } }),
+    );
+    expect(history).toHaveLength(1);
+    expect(history[0]?.aiClassificationSettings).toEqual({
+      lowConfidenceThreshold: 0.85,
+      veryLowConfidenceThreshold: 0.4,
+    });
   });
 
   it('leaves the other threshold families untouched when only this one is patched', async () => {

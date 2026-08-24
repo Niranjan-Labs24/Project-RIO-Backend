@@ -8,7 +8,9 @@ import {
   mapPriorityLevel,
   type ScoringThresholds,
 } from "./scoring";
-import type { PriorityDashboardEntry, PriorityScore, PriorityScoreRow } from "./priority.types";
+import type {
+  PriorityDashboardEntry, PriorityScore, PriorityScoreRow,
+} from "./priority.types";
 
 @Injectable()
 export class PriorityService {
@@ -128,11 +130,15 @@ export class PriorityService {
 
     return needs.map((need) => {
       const scoreRow = latestByNeed.get(need.id);
+      const score = scoreRow ? this.toScore(scoreRow) : null;
       return {
         studyId: need.studyId,
         studyTitle: studyTitleById.get(need.studyId) ?? need.studyId,
         needId: need.id,
-        score: scoreRow ? this.toScore(scoreRow) : null,
+        gapType: need.gapType,
+        // This v1 path (unused by any UI — see PriorityDashboardEntry's own
+        // comment) has no override-reason concept of its own.
+        score: score ? { ...score, overrideReason: null } : null,
       };
     });
   }
@@ -469,10 +475,8 @@ export class PriorityService {
       // Find question — supports both a direct question code (e.g. "HLT-01") and
       // a KPI name string (e.g. "Water Source Reliability") passed from the KPI
       // ranking table, which stores KPI names as entityIds.
-      let question = await tx.question.findUnique({
-        where: {
-          methodologyVersionId_questionId: { methodologyVersionId: mv.id, questionId },
-        },
+      let question = await tx.question.findFirst({
+        where: { methodologyVersionId: mv.id, questionId, isCurrentVersion: true },
       });
       if (!question) {
         // Try resolving by KPI name: the first scoreable question in this KPI.

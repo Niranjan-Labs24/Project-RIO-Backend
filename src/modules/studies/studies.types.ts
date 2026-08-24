@@ -17,6 +17,8 @@ export interface StudyRow {
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
+  studyType: string | null;
+  targetSector: string | null;
 }
 
 // A Study is a pure container — no status/domain/subDomain of its own.
@@ -51,6 +53,8 @@ export interface Study {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  studyType: string | null;
+  targetSector: string | null;
   orgName?: string;
   surveysCount?: number;
 }
@@ -65,6 +69,10 @@ export interface CreateStudyPayload {
   methodologyVersionId: string;
   population: number;
   marginOfError?: number;
+  // RIO-FR-012 (Q3/Q4) — validated against StudyTypeOption/TargetSectorOption's
+  // active names at the API layer, not an FK (see study-config.service.ts).
+  studyType?: string;
+  targetSector?: string;
 }
 
 export interface UpdateStudyPayload {
@@ -76,6 +84,8 @@ export interface UpdateStudyPayload {
   // but never nullable — once set at creation, a Study can no longer be
   // left without a methodology version.
   methodologyVersionId?: string;
+  studyType?: string;
+  targetSector?: string;
 }
 
 export interface ListStudiesQuery {

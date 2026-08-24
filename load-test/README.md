@@ -42,6 +42,30 @@ These are the pass/fail bars for a load run against a production-like environmen
 | Postgres connections in use | < 80 % of `max_connections`, and the app must never see `PrismaClientKnownRequestError: Transaction API error: Unable to start a transaction in the given time.` | `SELECT count(*) FROM pg_stat_activity` sampled during the run, plus a grep of app logs for that exact error string |
 | Redis connections in use | < 80 % of `maxclients` | `redis-cli INFO clients` sampled during the run (only meaningful once `REDIS_URL` is configured — see Notes below) |
 
+### RIO-NFR-005 — Performance (dashboard/report targets)
+
+No numeric target for this NFR exists anywhere in the BRD, Annex A, or Build
+Instruction Pack — its own acceptance criteria says "target to be confirmed
+during technical design," and that confirmation never happened (checked
+again against all 34 answered Sprint 2 clarification questions — none cover
+it). The targets below are **internally set working targets, not yet
+client-confirmed** — proceeding with these so the story isn't blocked, to be
+verified with the client once possible.
+
+| Metric | Internal target | Basis |
+|---|---|---|
+| Dashboard load (Priority Dashboard, System Admin Dashboard, etc.) | < 3 seconds | Standard web-app responsiveness bar; the `p95 latency < 500 ms` API threshold above is the main contributor and is already enforced automatically — the remaining budget is frontend render time |
+| Report generation (PDF/Excel, non-AI content) | 10–15 seconds | Observed typical generation time for the existing report types |
+| Report generation involving an AI-generated summary (executive/combined summaries) | up to 60 seconds | LLM-call latency dominates; not meaningfully reducible without changing the summarization approach |
+| Pilot data-volume assumption these targets are tested against | 50 orgs × 500 users | Same scale already established and seeded by `load-seed.ts` for the NFR-006 run above — reused rather than inventing a second scale |
+
+**Not yet automated**: report-generation timing (unlike the API p95 above)
+has no Artillery scenario or regression test today — PDF/Excel/AI-summary
+generation is a separate, longer-running, partly-async path this load
+test's request/response model doesn't naturally cover. A real regression
+test against these targets (the story's own AC requires one before closing)
+is still open work, not just a documentation gap.
+
 ## Alert-worthy events
 
 Per Task 12 of the remediation plan, these are the events an operations dashboard/alerting

@@ -171,12 +171,16 @@ export class ReportsService {
 
   async list(params: ListReportsParams): Promise<Report[]> {
     const store = getOrgStore();
-    const isSysAdmin = store?.role === "system_admin";
+    // RIO-RBAC-002 (AC1, fixed 2026-08-23) — center_supervisor holds
+    // reportsDashboards:read+export with crossEntity:true, but this branch
+    // used to check `=== 'system_admin'` literally — see
+    // StudiesService.list's identical comment for the full story.
+    const isCrossOrgReader = store?.role === "system_admin" || store?.role === "center_supervisor";
 
     const take = Math.min(Math.max(params.limit ?? 100, 1), 200);
     const skip = Math.max(params.offset ?? 0, 0);
 
-    if (isSysAdmin) {
+    if (isCrossOrgReader) {
       const where = {
         ...(params.organizationId ? { orgId: params.organizationId } : {}),
         ...(params.reportType ? { reportType: params.reportType } : {}),
@@ -193,7 +197,7 @@ export class ReportsService {
         }),
       );
       await this.audit.record({
-        action: "SYSTEM_ADMIN_VIEWED_REPORT",
+        action: store?.role === "center_supervisor" ? "SUPERVISOR_VIEWED_REPORT" : "SYSTEM_ADMIN_VIEWED_REPORT",
         entityType: "report",
         // `null`, never the string "all" — audit_logs.entity_id is a UUID
         // column, so the sentinel made Postgres reject the INSERT and
@@ -225,15 +229,16 @@ export class ReportsService {
 
   async getById(id: string): Promise<Report> {
     const store = getOrgStore();
-    const isSysAdmin = store?.role === "system_admin";
+    // RIO-RBAC-002 (AC1, fixed 2026-08-23) — see list()'s comment above.
+    const isCrossOrgReader = store?.role === "system_admin" || store?.role === "center_supervisor";
 
-    if (isSysAdmin) {
+    if (isCrossOrgReader) {
       const row = (await this.tenant.runAsSupervisor((tx) =>
         tx.report.findUnique({ where: { id } }),
       )) as ReportRow | null;
       if (!row) throw new NotFoundException({ error: { code: "REPORT_NOT_FOUND", message: "Report not found" } });
       await this.audit.record({
-        action: "SYSTEM_ADMIN_VIEWED_REPORT",
+        action: store?.role === "center_supervisor" ? "SUPERVISOR_VIEWED_REPORT" : "SYSTEM_ADMIN_VIEWED_REPORT",
         entityType: "report",
         entityId: id,
         entityLabel: row.title,
@@ -389,10 +394,14 @@ export class ReportsService {
 
   async export(id: string, format: ExportFormat): Promise<{ filename: string; contentType: string; body: Buffer }> {
     const store = getOrgStore();
-    const isSysAdmin = store?.role === "system_admin";
+    // RIO-RBAC-002 (AC1, fixed 2026-08-23) — export is a download of
+    // already-released content, not a data mutation, so this extends
+    // unconditionally like the read paths above (center_supervisor holds
+    // reportsDashboards:export statically).
+    const isCrossOrgReader = store?.role === "system_admin" || store?.role === "center_supervisor";
 
     let row: ReportRow | null = null;
-    if (isSysAdmin) {
+    if (isCrossOrgReader) {
       row = (await this.tenant.runAsSupervisor((tx) =>
         tx.report.findUnique({ where: { id } }),
       )) as ReportRow | null;
@@ -413,9 +422,9 @@ export class ReportsService {
       });
     }
 
-    if (isSysAdmin) {
+    if (isCrossOrgReader) {
       await this.audit.record({
-        action: "SYSTEM_ADMIN_DOWNLOADED_REPORT",
+        action: store?.role === "center_supervisor" ? "SUPERVISOR_DOWNLOADED_REPORT" : "SYSTEM_ADMIN_DOWNLOADED_REPORT",
         entityType: "report",
         entityId: row.id,
         entityLabel: row.title,

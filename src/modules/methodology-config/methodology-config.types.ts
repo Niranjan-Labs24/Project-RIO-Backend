@@ -60,6 +60,21 @@ export interface MethodologyConfig {
   updatedByName: string | null;
 }
 
+// RIO-NFR-017 — one immutable snapshot per edit/publish (see
+// MethodologyConfigHistory's schema comment).
+export interface MethodologyConfigHistoryEntry {
+  id: string;
+  version: string;
+  status: MethodologyStatus;
+  changeType: "edit" | "publish";
+  priorityThresholds: PriorityThresholds;
+  priorityFactorWeights: PriorityFactorWeight[];
+  confidenceFlagSettings: ConfidenceFlagSettings;
+  aiClassificationSettings: AiClassificationSettings;
+  changedByName: string | null;
+  changedAt: string;
+}
+
 export interface UpdateMethodologyConfigPayload {
   version?: string;
   priorityThresholds?: Partial<PriorityThresholds>;
