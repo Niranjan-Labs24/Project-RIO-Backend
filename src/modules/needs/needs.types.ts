@@ -49,6 +49,8 @@ export interface NeedRow {
   proposedDomains: unknown;
   proposedReason: string | null;
   gapType: string | null;
+  affectedPeople: number | null;
+  affectedHouseholds: number | null;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
@@ -111,6 +113,13 @@ export interface Need {
   // Need.gapType for why the Reports module's separate heuristic isn't
   // reused here).
   gapType: string | null;
+  // RIO-FR-005 (Round 4, client-confirmed 2026-08-24) — "Roughly how many
+  // people/households does this need affect?", entered on the need-entry
+  // form. This is the PRIMARY Affected Population value — see
+  // schema.prisma's comment on Need.affectedPeople for the GASTAT
+  // cross-check that's still blocked pending the client's actual dataset.
+  affectedPeople: number | null;
+  affectedHouseholds: number | null;
   createdBy: string;
   // Resolved display name for Entered By — null if the creating user has
   // since been removed (e.g. no self-org lookup for a deleted account).
@@ -127,6 +136,8 @@ export interface CreateNeedPayload {
   governorateIds?: string[];
   centerIds?: string[];
   referenceId?: string;
+  affectedPeople?: number;
+  affectedHouseholds?: number;
 }
 
 export interface UpdateNeedPayload {
@@ -136,6 +147,8 @@ export interface UpdateNeedPayload {
   governorateIds?: string[];
   centerIds?: string[];
   referenceId?: string | null;
+  affectedPeople?: number | null;
+  affectedHouseholds?: number | null;
 }
 
 // A Need is editable up through classification being attempted, but NOT

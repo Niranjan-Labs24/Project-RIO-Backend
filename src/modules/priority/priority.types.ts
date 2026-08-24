@@ -62,11 +62,7 @@ export interface PriorityDashboardEntry {
 
 // RIO-FR-005 (Q9) — client-confirmed comparison metrics: "Priority Score,
 // Needs Index, Critical/High Priority counts, Domain-wise severity, need
-// type, and affected population." Affected population is deliberately
-// omitted below — no data source for it exists anywhere yet (confirmed by
-// grep across the whole schema; FR-003's own Q16 flagged the same gap for
-// "affected-group size" and was punted back to dev, unanswered). Showing a
-// fabricated number would be worse than showing none.
+// type, and affected population."
 export interface VillageComparisonEntry {
   village: string;
   studyIds: string[];
@@ -84,4 +80,11 @@ export interface VillageComparisonEntry {
    * equivalent to "need type" in the confirmed metric list. */
   needTypeCounts: Record<string, number>;
   totalNeedCount: number;
+  // RIO-FR-005 (Round 4, client-confirmed 2026-08-24) — sum of each Need's
+  // manually entered Need.affectedPeople/affectedHouseholds for this
+  // village. Null when none of the village's Needs have either value
+  // entered yet, rather than a fabricated 0 — see
+  // VillageAggregationService.aggregateByVillage.
+  affectedPeople: number | null;
+  affectedHouseholds: number | null;
 }

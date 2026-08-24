@@ -484,7 +484,7 @@ export class SurveysService {
     const domainLabel = pairs.length > 0 ? pairs.map((p) => `${p.domain} / ${p.subDomain}`).join(', ') : 'All Domains';
 
     const data = await this.tenant.runInOrgContext(async (tx) => {
-      const need = await tx.need.findUnique({ where: { id: needId }, include: { study: { select: { studyType: true } } } });
+      const need = await tx.need.findUnique({ where: { id: needId }, include: { study: { select: { studyType: true, targetSector: true } } } });
       if (!need) {
         throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
       }
@@ -547,16 +547,15 @@ export class SurveysService {
       // isFielded excludes the 7 questionnaire-structure/roster/template modules
       // (XDM-01..07) — instrument scaffolding, never selectable questions.
       //
-      // RIO-AI-002 (Sprint 2 clarification Q4) — Study Type filtering.
-      // `need.study.studyType` is read and threaded through here so the
-      // mechanism is wired end to end, but there is no filter clause below
-      // yet: the client hasn't confirmed valid Study Type values or which
-      // domains/questions each one should restrict, so there's nothing
-      // correct to filter on yet. Once answered, add a `studyType`-based
-      // condition to this `where` (or a Question-side mapping) without
-      // needing to touch any caller — they already pass the Study's
-      // studyType down to this point.
+      // RIO-AI-002 (Round 4, client-confirmed 2026-08-24) — Study Type is
+      // still read through here but has no per-question counterpart to rank
+      // against (only Target Sector does — see Question.targetSector) and
+      // the client's answer didn't define a Study-Type-side mapping either,
+      // so it stays unused below, same as before. Target Sector, however,
+      // is now a live ranking signal (never a filter — every eligible
+      // question stays selectable regardless of match).
       const studyType = need.study?.studyType ?? null;
+      const targetSector = need.study?.targetSector ?? null;
       // RIO-FR-012 (Q30/Q31, client-confirmed 2026-08-20) — a deactivated
       // question, or one with an edit still awaiting Human Reviewer
       // approval, must never be recommended for a new survey. Only the
@@ -587,11 +586,26 @@ export class SurveysService {
         select: { id: true, domain: true, subDomain: true, indicator: true, kpi: true },
       });
 
-      return { need, eligibleQuestions, allSelectableQuestions, mv, studyType };
+      return { need, eligibleQuestions, allSelectableQuestions, mv, studyType, targetSector };
     });
 
-    const { need, eligibleQuestions, allSelectableQuestions, mv, studyType } = data;
-    void studyType; // see the studyType comment above — read and passed through, not yet a live filter
+    const { need, eligibleQuestions, allSelectableQuestions, mv, studyType, targetSector } = data;
+    void studyType; // see the studyType comment above — read and passed through, still unused
+    // RIO-AI-002 (Round 4, client-confirmed 2026-08-24) — "ranking/
+    // preference, not a hard filter": questions whose own targetSector
+    // matches the Study's are surfaced first (stable sort — everything
+    // else keeps its original relative order), but the array still
+    // contains every eligible question either way. This ordering feeds
+    // both the AI prompt below (so a matching question is more likely to
+    // be recommended) and the AI-unavailable fallback, which recommends
+    // eligibleQuestions verbatim in this same order.
+    const rankedEligibleQuestions = targetSector
+      ? [...eligibleQuestions].sort((a, b) => {
+          const aMatch = a.targetSector === targetSector ? 0 : 1;
+          const bMatch = b.targetSector === targetSector ? 0 : 1;
+          return aMatch - bMatch;
+        })
+      : eligibleQuestions;
     const questionWeights = computeQuestionWeights(allSelectableQuestions);
 
     let recommendedQuestionIds: string[] = [];
@@ -606,14 +620,14 @@ export class SurveysService {
     // Bank tab (any domain) or with custom questions, rather than a hard
     // failure that silently leaves the Need with no Survey at all (see
     // AiDecisionsService.runAndPersistClassification's best-effort catch).
-    if (eligibleQuestions.length === 0) {
+    if (rankedEligibleQuestions.length === 0) {
       reason =
         `No Question Bank questions match ${domainLabel} — this survey was created with no recommended questions. Add questions from the Question Bank or as custom questions.`;
     } else {
       const prompt = `Need Statement: "${need.statement}"
 Domain(s): "${domainLabel}"
 Eligible Questions: ${JSON.stringify(
-        eligibleQuestions.map((q) => ({
+        rankedEligibleQuestions.map((q) => ({
           questionId: q.questionId,
           questionText: q.questionText,
           answerType: q.answerType,
@@ -641,7 +655,7 @@ Eligible Questions: ${JSON.stringify(
         // Question suggestion must never leave the Need with nothing to show
         // an Approver — if Gemini is unavailable, fall back to every eligible
         // Question Bank entry for this domain/subDomain rather than throwing.
-        recommendedQuestionIds = eligibleQuestions.map((q) => q.questionId);
+        recommendedQuestionIds = rankedEligibleQuestions.map((q) => q.questionId);
         confidence = 0;
         const message = err instanceof Error ? err.message : String(err);
         reason = `AI question recommendation was unavailable (${message}) — showing all eligible Question Bank questions for ${domainLabel} instead.`;
@@ -649,12 +663,12 @@ Eligible Questions: ${JSON.stringify(
     }
 
     // Validate recommended questions exist in DB and match the criteria
-    const validatedQuestions = eligibleQuestions.filter((q) =>
+    const validatedQuestions = rankedEligibleQuestions.filter((q) =>
       recommendedQuestionIds.includes(q.questionId),
     );
 
     // If validation results in 0 questions, use all eligible questions as fallback
-    const finalQuestions = validatedQuestions.length > 0 ? validatedQuestions : eligibleQuestions;
+    const finalQuestions = validatedQuestions.length > 0 ? validatedQuestions : rankedEligibleQuestions;
 
     // Log AI Suggestion — the "suggested, as opposed to approved" snapshot.
     // Never touched again after this; whatever the Approver leaves in

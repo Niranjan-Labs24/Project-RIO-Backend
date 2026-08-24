@@ -676,6 +676,21 @@ model Need {
   // client is that a human sets it). Optional — "keeps gap classification's
   // already-confirmed optional status."
   gapType String? @map("gap_type") @db.VarChar(20)
+  // RIO-FR-005 (Round 4, client-confirmed 2026-08-24) — "Roughly how many
+  // people/households does this need affect?" on the need-entry form. This
+  // manually entered figure is the PRIMARY Affected Population value (not
+  // a GASTAT-derived or survey-respondent-derived estimate — client was
+  // explicit the manual entry is primary and any reference dataset is only
+  // ever a cross-check displayed alongside it). Both fields are optional
+  // and independent — a Need may have one, both, or neither known.
+  //
+  // No GASTAT (Saudi General Authority for Statistics) integration exists
+  // yet — that requires the actual reference dataset/API from the client,
+  // which has not been provided. These two fields are the buildable half
+  // of the Round 4 answer; the GASTAT cross-check display is a separate,
+  // still-blocked follow-up once that dataset arrives.
+  affectedPeople     Int? @map("affected_people")
+  affectedHouseholds Int? @map("affected_households")
   createdBy String     @map("created_by") @db.Uuid
   createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -1838,6 +1853,16 @@ model Question {
   targetRespondent             String?  @map("target_respondent")
   // The roster iteration scope verbatim, e.g. "each child aged 0-59 months".
   rosterLoop                   String?  @map("roster_loop")
+
+  // RIO-FR-012/RIO-AI-002 (Round 4, client-confirmed 2026-08-24) — one of
+  // the configured TargetSectorOption values, or null if this question
+  // hasn't been tagged yet. Used only as a ranking signal in
+  // SurveysService.generateSuggestedQuestions: a question whose
+  // targetSector matches the Study's own targetSector is surfaced first,
+  // but every question stays selectable regardless — the client was
+  // explicit this must never become a hard filter. Untagged questions
+  // simply don't get the ranking boost; they are never excluded.
+  targetSector String? @map("target_sector") @db.VarChar(100)
 
   // RIO-FR-012 (Sprint 2) — Question Bank management. Deactivation is a soft
   // hide, not a delete: a deactivated question disappears from new-survey

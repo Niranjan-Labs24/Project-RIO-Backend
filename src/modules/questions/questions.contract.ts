@@ -33,6 +33,12 @@ export const CreateQuestionBody = registerSchema(
       // conditionally require without a discriminated union per type).
       answerOptions: T.Optional(T.Array(T.String({ minLength: 1 }))),
       requiredOptional: T.Union([T.Literal('required'), T.Literal('optional')]),
+      // RIO-FR-012/RIO-AI-002 (Round 4, client-confirmed 2026-08-24) — one
+      // of the configured TargetSectorOption values, or omitted/null if
+      // this question isn't tagged. Used only as a suggested-question
+      // ranking signal, never a hard filter — see
+      // SurveysService.generateSuggestedQuestions.
+      targetSector: T.Optional(T.String({ maxLength: 100 })),
     },
     { additionalProperties: false },
   ),

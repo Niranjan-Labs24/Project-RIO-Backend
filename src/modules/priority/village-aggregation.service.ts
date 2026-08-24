@@ -96,6 +96,8 @@ export class VillageAggregationService {
             highNeedCount: 0,
             needTypeCounts: {},
             totalNeedCount: 0,
+            affectedPeople: null,
+            affectedHouseholds: null,
           };
           byVillage.set(village, entry);
         }
@@ -104,6 +106,16 @@ export class VillageAggregationService {
         entry.needTypeCounts[domainKey] = (entry.needTypeCounts[domainKey] ?? 0) + 1;
         if (scoreRow?.level === 'critical') entry.criticalNeedCount += 1;
         else if (scoreRow?.level === 'high') entry.highNeedCount += 1;
+        // RIO-FR-005 (Round 4, client-confirmed 2026-08-24) — sum only the
+        // Needs that actually have a manually entered value; stays null
+        // (not 0) until at least one does, so the UI can distinguish "no
+        // data yet" from "confirmed zero."
+        if (need.affectedPeople !== null) {
+          entry.affectedPeople = (entry.affectedPeople ?? 0) + need.affectedPeople;
+        }
+        if (need.affectedHouseholds !== null) {
+          entry.affectedHouseholds = (entry.affectedHouseholds ?? 0) + need.affectedHouseholds;
+        }
       }
     }
 

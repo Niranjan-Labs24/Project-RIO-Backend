@@ -28,6 +28,13 @@ export const CreateNeedBody = registerSchema(
       // The submitter's own external tracking id (a field form number, a
       // partner org's case id, etc.) — free text, never validated.
       referenceId: T.Optional(T.String({ maxLength: 200 })),
+      // RIO-FR-005 (Round 4, client-confirmed 2026-08-24) — "Roughly how
+      // many people/households does this need affect?" This manually
+      // entered figure is the PRIMARY Affected Population value (see
+      // schema.prisma's comment on Need.affectedPeople/affectedHouseholds
+      // for why no GASTAT-derived value is offered here yet).
+      affectedPeople: T.Optional(T.Integer({ minimum: 0 })),
+      affectedHouseholds: T.Optional(T.Integer({ minimum: 0 })),
     },
     { additionalProperties: false },
   ),
@@ -44,6 +51,8 @@ export const UpdateNeedBody = registerSchema(
       governorateIds: T.Optional(GovernorateIds),
       centerIds: T.Optional(CenterIds),
       referenceId: T.Optional(T.Union([T.String({ maxLength: 200 }), T.Null()])),
+      affectedPeople: T.Optional(T.Union([T.Integer({ minimum: 0 }), T.Null()])),
+      affectedHouseholds: T.Optional(T.Union([T.Integer({ minimum: 0 }), T.Null()])),
     },
     { additionalProperties: false },
   ),
