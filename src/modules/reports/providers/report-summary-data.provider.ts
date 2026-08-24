@@ -745,7 +745,7 @@ function buildCollectiveNarrative(
   if (data.anomalies.some((a) => a.severity === "warning"))
     recommendations.push("Field-validate the findings flagged as low confidence.");
   if (slaCompliancePct !== null && slaCompliancePct < 100)
-    recommendations.push(`Clear the overdue reviewer queue — SLA compliance is ${slaCompliancePct}%.`);
+    recommendations.push(`Clear the overdue reviewer queue — open-queue health is ${slaCompliancePct}%.`);
 
   return {
     executiveSummary,

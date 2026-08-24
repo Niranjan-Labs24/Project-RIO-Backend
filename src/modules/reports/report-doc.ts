@@ -1174,7 +1174,7 @@ export function buildReportDoc(
         const slaPct = kpis.slaCompliancePct;
         const slaGauge: DocSection | null =
           typeof slaPct === "number"
-            ? { kind: "gauge", heading: "Reviewer SLA Compliance", value: Math.round(slaPct), max: 100, sub: "%" }
+            ? { kind: "gauge", heading: "Reviewer Open-Queue Health", value: Math.round(slaPct), max: 100, sub: "%" }
             : null;
         const kpiRows: DocSection = {
           kind: "keyvalue",
