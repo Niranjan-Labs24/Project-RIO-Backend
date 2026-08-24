@@ -90,6 +90,13 @@ export class DeterministicScoringService {
         throw new Error(`SurveyResponse not found: ${surveyResponseId}`);
       }
 
+      // Idempotency (GAP-04): a durable job may redeliver this after a crash/retry.
+      // Clear any prior answers/scores for this response before recomputing, so a
+      // re-run replaces rather than duplicates (no unique constraint guards these).
+      // Mirrors the delete-first pattern in rollup.service.ts (recalculateStudyScores).
+      await tx.responseAnswer.deleteMany({ where: { surveyResponseId } });
+      await tx.responseSeverityScore.deleteMany({ where: { surveyResponseId } });
+
       const { needId, studyId, orgId } = response;
       const villageId = response.need.village?.[0] || null;
       const respondentId = response.contact;
