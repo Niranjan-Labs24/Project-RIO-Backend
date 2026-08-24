@@ -196,18 +196,24 @@ export class ReportsService {
           skip,
         }),
       );
-      await this.audit.record({
-        action: store?.role === "center_supervisor" ? "SUPERVISOR_VIEWED_REPORT" : "SYSTEM_ADMIN_VIEWED_REPORT",
-        entityType: "report",
-        // `null`, never the string "all" — audit_logs.entity_id is a UUID
-        // column, so the sentinel made Postgres reject the INSERT and
-        // AuditService.record() swallowed it as a warning, silently losing
-        // every cross-org report view. Same shape as SurveysService.list.
-        entityId: params.organizationId ?? null,
-        entityLabel: params.organizationId ? "Organization Reports" : "All Platform Reports",
-        organizationId: params.organizationId,
-        metadata: { scope: params.organizationId ? "organization" : "all" },
-      });
+      // RIO-RBAC-002 (Round 5, client-confirmed 2026-08-24) — Supervisor
+      // view access isn't logged; the NGO's own onboarding consent already
+      // covers Center/NCNP's right to see/preview their data. Only System
+      // Admin's cross-org view is still logged.
+      if (store?.role === "system_admin") {
+        await this.audit.record({
+          action: "SYSTEM_ADMIN_VIEWED_REPORT",
+          entityType: "report",
+          // `null`, never the string "all" — audit_logs.entity_id is a UUID
+          // column, so the sentinel made Postgres reject the INSERT and
+          // AuditService.record() swallowed it as a warning, silently losing
+          // every cross-org report view. Same shape as SurveysService.list.
+          entityId: params.organizationId ?? null,
+          entityLabel: params.organizationId ? "Organization Reports" : "All Platform Reports",
+          organizationId: params.organizationId,
+          metadata: { scope: params.organizationId ? "organization" : "all" },
+        });
+      }
       return this.hydrate(rows as unknown as ReportRow[], true);
     }
 
@@ -237,13 +243,17 @@ export class ReportsService {
         tx.report.findUnique({ where: { id } }),
       )) as ReportRow | null;
       if (!row) throw new NotFoundException({ error: { code: "REPORT_NOT_FOUND", message: "Report not found" } });
-      await this.audit.record({
-        action: store?.role === "center_supervisor" ? "SUPERVISOR_VIEWED_REPORT" : "SYSTEM_ADMIN_VIEWED_REPORT",
-        entityType: "report",
-        entityId: id,
-        entityLabel: row.title,
-        organizationId: row.orgId,
-      });
+      // RIO-RBAC-002 (Round 5, client-confirmed 2026-08-24) — Supervisor
+      // view access isn't logged; see list()'s comment above.
+      if (store?.role === "system_admin") {
+        await this.audit.record({
+          action: "SYSTEM_ADMIN_VIEWED_REPORT",
+          entityType: "report",
+          entityId: id,
+          entityLabel: row.title,
+          organizationId: row.orgId,
+        });
+      }
       return this.hydrateOne(row, true);
     }
 
@@ -423,14 +433,19 @@ export class ReportsService {
     }
 
     if (isCrossOrgReader) {
-      await this.audit.record({
-        action: store?.role === "center_supervisor" ? "SUPERVISOR_DOWNLOADED_REPORT" : "SYSTEM_ADMIN_DOWNLOADED_REPORT",
-        entityType: "report",
-        entityId: row.id,
-        entityLabel: row.title,
-        organizationId: row.orgId,
-        metadata: { format },
-      });
+      // RIO-RBAC-002 (Round 5, client-confirmed 2026-08-24) — Supervisor
+      // access (including export/download) isn't logged; see list()'s
+      // comment above.
+      if (store?.role === "system_admin") {
+        await this.audit.record({
+          action: "SYSTEM_ADMIN_DOWNLOADED_REPORT",
+          entityType: "report",
+          entityId: row.id,
+          entityLabel: row.title,
+          organizationId: row.orgId,
+          metadata: { format },
+        });
+      }
       const auditMeta = await this.tenant.runAsSupervisor((tx) => this.resolveExportAuditMeta(row!, tx));
       return buildExportStub(
         format,

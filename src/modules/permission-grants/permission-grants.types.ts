@@ -6,8 +6,6 @@ export interface PermissionGrant {
   granteeName: string | null;
   module: PermissionModule;
   action: PermissionAction;
-  targetOrgId: string | null;
-  targetOrgName: string | null;
   reason: string;
   grantedBy: string;
   grantedByName: string | null;
@@ -25,7 +23,6 @@ export interface CreatePermissionGrantPayload {
   granteeId: string;
   module: PermissionModule;
   action: PermissionAction;
-  targetOrgId?: string;
   reason: string;
   expiresAt?: string;
 }

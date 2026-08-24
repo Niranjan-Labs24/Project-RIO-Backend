@@ -26,13 +26,6 @@ export type AuditAction =
   | 'SYSTEM_ADMIN_VIEWED_SURVEY'
   | 'SYSTEM_ADMIN_VIEWED_REPORT'
   | 'SYSTEM_ADMIN_DOWNLOADED_REPORT'
-  // RIO-RBAC-002 (AC4) — the same cross-org view/export events as the
-  // SYSTEM_ADMIN_* actions above, distinctly named when the actor is
-  // Center/NCNP Supervisor instead, so an Entity Admin can filter the
-  // Audit Log for exactly "when did the Supervisor access our data."
-  | 'SUPERVISOR_VIEWED_STUDIES'
-  | 'SUPERVISOR_VIEWED_REPORT'
-  | 'SUPERVISOR_DOWNLOADED_REPORT'
   | 'STUDY_ARCHIVED'
   | 'STUDY_RESTORED'
   | 'SYSTEM_ADMIN_VIEWED_ARCHIVE'

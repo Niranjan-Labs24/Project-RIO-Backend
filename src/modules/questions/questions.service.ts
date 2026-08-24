@@ -10,8 +10,6 @@ export interface UpdateQuestionInput {
   subDomain?: string;
   indicator?: string | null;
   kpi?: string | null;
-  // RIO-FR-012/RIO-AI-002 (Round 4, client-confirmed 2026-08-24).
-  targetSector?: string | null;
 }
 
 export interface CreateQuestionInput {
@@ -24,7 +22,6 @@ export interface CreateQuestionInput {
   answerType: 'select' | 'multiselect' | 'numeric' | 'checklist' | 'open_ended';
   answerOptions?: string[];
   requiredOptional: 'required' | 'optional';
-  targetSector?: string;
 }
 
 // RIO-FR-012 (AC2, Q1 client-confirmed) — measurementMode is the decomposed
@@ -239,7 +236,6 @@ export class QuestionsService {
     subDomain: string;
     indicator: string | null;
     kpi: string | null;
-    targetSector: string | null;
     priorityWeight: Prisma.Decimal | null;
     questionText: string;
     answerType: string;
@@ -272,10 +268,6 @@ export class QuestionsService {
       subDomain: r.subDomain,
       indicator: r.indicator,
       kpi: r.kpi,
-      // RIO-FR-012/RIO-AI-002 (Round 4, client-confirmed 2026-08-24) — the
-      // suggested-question ranking tag; see SurveysService.
-      // generateSuggestedQuestions and schema.prisma's Question.targetSector.
-      targetSector: r.targetSector,
       // RIO-AI-002: the Domain → Indicator → KPI → Weight linkage needs to
       // be visible wherever a Researcher browses/picks Question Bank
       // entries, not just after they've been added to a survey (see
@@ -340,7 +332,7 @@ export class QuestionsService {
     overrides: Partial<
       Pick<
         Prisma.QuestionUncheckedCreateInput,
-        'questionText' | 'domain' | 'subDomain' | 'indicator' | 'kpi' | 'targetSector' | 'isActive' | 'deactivatedAt' | 'deactivatedBy'
+        'questionText' | 'domain' | 'subDomain' | 'indicator' | 'kpi' | 'isActive' | 'deactivatedAt' | 'deactivatedBy'
       >
     >,
   ) {
@@ -454,7 +446,6 @@ export class QuestionsService {
             subDomain: input.subDomain,
             indicator: input.indicator ?? null,
             kpi: input.kpi ?? null,
-            targetSector: input.targetSector ?? null,
             questionText: input.questionText,
             answerType: input.answerType,
             answerOptions: input.answerOptions && input.answerOptions.length > 0
@@ -575,7 +566,6 @@ export class QuestionsService {
       'subDomain',
       'indicator',
       'kpi',
-      'targetSector',
       'isActive',
     ];
     const changes = previous

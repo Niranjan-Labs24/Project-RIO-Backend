@@ -18,8 +18,6 @@ export const CreatePermissionGrantBody = registerSchema(
       granteeId: T.String({ format: 'uuid' }),
       module: ModuleLiteral,
       action: ActionLiteral,
-      // Omitted = every entity the grantee can already cross-entity read.
-      targetOrgId: T.Optional(T.String({ format: 'uuid' })),
       reason: T.String({ minLength: 1, maxLength: 1000 }),
       expiresAt: T.Optional(T.String({ format: 'date-time' })),
     },

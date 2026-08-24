@@ -31,7 +31,7 @@ export class PermissionGuard implements CanActivate {
     // object AsyncLocalStorage is already holding for this request, so
     // AuditService.record() downstream sees it without any extra plumbing.
     if (store?.role === 'center_supervisor' && store.actorId) {
-      const grant = await this.grants.findActiveGrant(store.actorId, required.module, required.action, store.orgId);
+      const grant = await this.grants.findActiveGrant(store.actorId, required.module, required.action);
       if (grant) {
         store.grantCitation = grant;
         return true;

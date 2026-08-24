@@ -335,8 +335,8 @@ model AuditLog {
 // mechanism: Center/NCNP Supervisor holds read-only access everywhere by
 // default (see role-matrix.ts's `center_supervisor` entry); this table is
 // the ONLY way that role ever gets a write/create/approve action, one
-// specific (module, action) pair at a time, optionally scoped to a single
-// entity (`targetOrgId` null = every entity) and optionally time-limited.
+// specific (module, action) pair at a time, applied across every entity,
+// and optionally time-limited.
 // Checked by PermissionGuard as a fallback only when the static role
 // matrix already says no — never widens any other role's static grants.
 // Read-only from the application's perspective otherwise: a grant is
@@ -347,9 +347,11 @@ model PermissionGrant {
   granteeId   String    @map("grantee_id") @db.Uuid
   module      String    @map("module") @db.VarChar(50)
   action      String    @map("action") @db.VarChar(20)
-  // Null = every entity (org) this grantee can already cross-entity READ.
-  // Set = this write/create/approve grant only applies to that one entity.
-  targetOrgId String?   @map("target_org_id") @db.Uuid
+  // RIO-RBAC-002 (client-confirmed 2026-08-23, reconfirmed 2026-08-24) — a
+  // grant always applies across every entity; there is deliberately no
+  // per-entity scope column. (A `target_org_id` column existed briefly and
+  // was dropped in 20260824020000_drop_permission_grant_entity_scope —
+  // the client's answer never allowed scoping to a single entity.)
   reason      String    @db.VarChar(1000)
   grantedBy   String    @map("granted_by") @db.Uuid
   grantedAt   DateTime  @default(now()) @map("granted_at") @db.Timestamptz(6)
@@ -1853,16 +1855,6 @@ model Question {
   targetRespondent             String?  @map("target_respondent")
   // The roster iteration scope verbatim, e.g. "each child aged 0-59 months".
   rosterLoop                   String?  @map("roster_loop")
-
-  // RIO-FR-012/RIO-AI-002 (Round 4, client-confirmed 2026-08-24) — one of
-  // the configured TargetSectorOption values, or null if this question
-  // hasn't been tagged yet. Used only as a ranking signal in
-  // SurveysService.generateSuggestedQuestions: a question whose
-  // targetSector matches the Study's own targetSector is surfaced first,
-  // but every question stays selectable regardless — the client was
-  // explicit this must never become a hard filter. Untagged questions
-  // simply don't get the ranking boost; they are never excluded.
-  targetSector String? @map("target_sector") @db.VarChar(100)
 
   // RIO-FR-012 (Sprint 2) — Question Bank management. Deactivation is a soft
   // hide, not a delete: a deactivated question disappears from new-survey

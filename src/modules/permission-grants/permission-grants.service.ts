@@ -7,10 +7,9 @@ import type { CreatePermissionGrantPayload, PermissionGrant } from './permission
 
 // RIO-RBAC-002 (client-confirmed) — the exact audit-log fields specified:
 // "Grant ID, approver, stated reason/scope, and expiry." `scope` isn't a
-// separate field here — module+action+targetOrgId (already the audit
-// event's own action/entityType/orgId) already express it, so citing
-// reason+approver+expiry alongside the grantId is the whole spec, not a
-// partial version of it.
+// separate field here — every grant applies across all entities (see the
+// module comment below), so there's nothing further to cite beyond
+// reason+approver+expiry alongside the grantId.
 export interface GrantCitation {
   grantId: string;
   approvedBy: string;
@@ -18,9 +17,14 @@ export interface GrantCitation {
   expiresAt: string | null;
 }
 
-// RIO-RBAC-002 (client-confirmed 2026-08-23) — the runtime layer under the
-// static role-matrix. Global reference data (no orgId/RLS — same pattern
-// as MethodologyConfig/StudyTypeOption), read via the bare PrismaService.
+// RIO-RBAC-002 (client-confirmed 2026-08-23, and reconfirmed 2026-08-24 —
+// "a grant applies across all entities once given, it is not scoped to a
+// single entity") — the runtime layer under the static role-matrix. Global
+// reference data (no orgId/RLS — same pattern as
+// MethodologyConfig/StudyTypeOption), read via the bare PrismaService.
+// There is deliberately no per-entity scope on a grant: every grant this
+// service creates applies to every organisation the Supervisor might act
+// on, full stop.
 @Injectable()
 export class PermissionGrantsService {
   constructor(
@@ -35,10 +39,9 @@ export class PermissionGrantsService {
     granteeId: string,
     module: string,
     action: string,
-    orgId: string | undefined,
   ): Promise<GrantCitation | null> {
     const now = new Date();
-    const rows = await this.prisma.permissionGrant.findMany({
+    const match = await this.prisma.permissionGrant.findFirst({
       where: {
         granteeId,
         module,
@@ -46,9 +49,8 @@ export class PermissionGrantsService {
         revokedAt: null,
         OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
       },
-      select: { id: true, targetOrgId: true, grantedBy: true, reason: true, expiresAt: true },
+      select: { id: true, grantedBy: true, reason: true, expiresAt: true },
     });
-    const match = rows.find((r) => r.targetOrgId === null || r.targetOrgId === orgId);
     if (!match) return null;
     return {
       grantId: match.id,
@@ -61,21 +63,17 @@ export class PermissionGrantsService {
   async list(): Promise<PermissionGrant[]> {
     const rows = await this.prisma.permissionGrant.findMany({ orderBy: { grantedAt: 'desc' } });
     const userIds = new Set<string>();
-    const orgIds = new Set<string>();
     for (const r of rows) {
       userIds.add(r.granteeId);
       userIds.add(r.grantedBy);
       if (r.revokedBy) userIds.add(r.revokedBy);
-      if (r.targetOrgId) orgIds.add(r.targetOrgId);
     }
-    const [users, orgs] = await Promise.all([
-      this.tenant.runAsSupervisor((tx) => tx.user.findMany({ where: { id: { in: [...userIds] } }, select: { id: true, name: true } })),
-      this.tenant.runAsSupervisor((tx) => tx.organisation.findMany({ where: { id: { in: [...orgIds] } }, select: { id: true, name: true } })),
-    ]);
+    const users = await this.tenant.runAsSupervisor((tx) =>
+      tx.user.findMany({ where: { id: { in: [...userIds] } }, select: { id: true, name: true } }),
+    );
     const nameByUserId = new Map(users.map((u) => [u.id, u.name]));
-    const nameByOrgId = new Map(orgs.map((o) => [o.id, o.name]));
     const now = Date.now();
-    return rows.map((r) => this.toGrant(r, nameByUserId, nameByOrgId, now));
+    return rows.map((r) => this.toGrant(r, nameByUserId, now));
   }
 
   async create(payload: CreatePermissionGrantPayload): Promise<PermissionGrant> {
@@ -99,19 +97,12 @@ export class PermissionGrantsService {
       });
     }
 
-    if (payload.targetOrgId) {
-      const org = await this.tenant.runAsSupervisor((tx) => tx.organisation.findUnique({ where: { id: payload.targetOrgId } }));
-      if (!org) {
-        throw new NotFoundException({ error: { code: 'ORG_NOT_FOUND', message: 'Target entity not found' } });
-      }
-    }
-
-    const existing = await this.findActiveGrant(payload.granteeId, payload.module, payload.action, payload.targetOrgId);
+    const existing = await this.findActiveGrant(payload.granteeId, payload.module, payload.action);
     if (existing) {
       throw new ConflictException({
         error: {
           code: 'GRANT_ALREADY_ACTIVE',
-          message: 'An active grant for this user/module/action/entity combination already exists.',
+          message: 'An active grant for this user/module/action combination already exists.',
         },
       });
     }
@@ -121,14 +112,13 @@ export class PermissionGrantsService {
         granteeId: payload.granteeId,
         module: payload.module,
         action: payload.action,
-        targetOrgId: payload.targetOrgId ?? null,
         reason: payload.reason,
         grantedBy,
         expiresAt: payload.expiresAt ? new Date(payload.expiresAt) : null,
       },
     });
     const now = Date.now();
-    return this.toGrant(row, new Map(), new Map(), now);
+    return this.toGrant(row, new Map(), now);
   }
 
   async revoke(id: string): Promise<PermissionGrant> {
@@ -145,7 +135,7 @@ export class PermissionGrantsService {
       data: { revokedAt: new Date(), revokedBy },
     });
     const now = Date.now();
-    return this.toGrant(row, new Map(), new Map(), now);
+    return this.toGrant(row, new Map(), now);
   }
 
   private toGrant(
@@ -154,7 +144,6 @@ export class PermissionGrantsService {
       granteeId: string;
       module: string;
       action: string;
-      targetOrgId: string | null;
       reason: string;
       grantedBy: string;
       grantedAt: Date;
@@ -163,7 +152,6 @@ export class PermissionGrantsService {
       revokedBy: string | null;
     },
     nameByUserId: Map<string, string>,
-    nameByOrgId: Map<string, string>,
     now: number,
   ): PermissionGrant {
     const isActive = !row.revokedAt && (!row.expiresAt || row.expiresAt.getTime() > now);
@@ -173,8 +161,6 @@ export class PermissionGrantsService {
       granteeName: nameByUserId.get(row.granteeId) ?? null,
       module: row.module as PermissionGrant['module'],
       action: row.action as PermissionGrant['action'],
-      targetOrgId: row.targetOrgId,
-      targetOrgName: row.targetOrgId ? (nameByOrgId.get(row.targetOrgId) ?? null) : null,
       reason: row.reason,
       grantedBy: row.grantedBy,
       grantedByName: nameByUserId.get(row.grantedBy) ?? null,

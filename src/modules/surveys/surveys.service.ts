@@ -547,13 +547,16 @@ export class SurveysService {
       // isFielded excludes the 7 questionnaire-structure/roster/template modules
       // (XDM-01..07) — instrument scaffolding, never selectable questions.
       //
-      // RIO-AI-002 (Round 4, client-confirmed 2026-08-24) — Study Type is
-      // still read through here but has no per-question counterpart to rank
-      // against (only Target Sector does — see Question.targetSector) and
-      // the client's answer didn't define a Study-Type-side mapping either,
-      // so it stays unused below, same as before. Target Sector, however,
-      // is now a live ranking signal (never a filter — every eligible
-      // question stays selectable regardless of match).
+      // RIO-AI-002 (Round 5, client-confirmed 2026-08-24) — the Round 4
+      // "rank by Target Sector" answer was itself corrected: question
+      // relevance is driven entirely by Domain/Sub-domain classification
+      // (the `pairs` filter below, from AI-001), which is already the
+      // basis for how the Question Bank is structured. Target Sector
+      // classifies the Study itself for reporting/filtering — it was never
+      // meant to influence question selection, and Study Type has no
+      // question-ranking role either. Both are read and passed through for
+      // traceability but intentionally unused below — do not reintroduce a
+      // Target-Sector-based sort here without a new client answer.
       const studyType = need.study?.studyType ?? null;
       const targetSector = need.study?.targetSector ?? null;
       // RIO-FR-012 (Q30/Q31, client-confirmed 2026-08-20) — a deactivated
@@ -590,22 +593,13 @@ export class SurveysService {
     });
 
     const { need, eligibleQuestions, allSelectableQuestions, mv, studyType, targetSector } = data;
-    void studyType; // see the studyType comment above — read and passed through, still unused
-    // RIO-AI-002 (Round 4, client-confirmed 2026-08-24) — "ranking/
-    // preference, not a hard filter": questions whose own targetSector
-    // matches the Study's are surfaced first (stable sort — everything
-    // else keeps its original relative order), but the array still
-    // contains every eligible question either way. This ordering feeds
-    // both the AI prompt below (so a matching question is more likely to
-    // be recommended) and the AI-unavailable fallback, which recommends
-    // eligibleQuestions verbatim in this same order.
-    const rankedEligibleQuestions = targetSector
-      ? [...eligibleQuestions].sort((a, b) => {
-          const aMatch = a.targetSector === targetSector ? 0 : 1;
-          const bMatch = b.targetSector === targetSector ? 0 : 1;
-          return aMatch - bMatch;
-        })
-      : eligibleQuestions;
+    void studyType; // see the studyType comment above — read and passed through, unused
+    void targetSector; // see the targetSector comment above — read and passed through, unused
+    // RIO-AI-002 (Round 5, client-confirmed 2026-08-24) — no ranking by
+    // Target Sector or Study Type. Question relevance comes entirely from
+    // the Domain/Sub-domain `pairs` filter above (AI-001's classification),
+    // which eligibleQuestions is already scoped to.
+    const rankedEligibleQuestions = eligibleQuestions;
     const questionWeights = computeQuestionWeights(allSelectableQuestions);
 
     let recommendedQuestionIds: string[] = [];

@@ -74,6 +74,27 @@ Users should avoid entering confidential, personal, financial, or regulated info
 Appropriate security measures are implemented to help protect data; however, no electronic system can guarantee absolute security.
 By using this application, you acknowledge and consent to the collection and processing of information as described in this policy.`;
 
+// RIO-RBAC-002 (Round 5, client-confirmed 2026-08-24) — v3 corrects v2's
+// "every such view... is recorded in the audit trail" claim, which stopped
+// being true once Supervisor view-access logging was removed per this
+// answer: "under the consent NGOs approve when joining the platform, the
+// Center/NCNP already has the right to see and preview their data —
+// Supervisor read/view access does not require separate logging." v3 makes
+// that consent basis explicit and drops the no-longer-true logging claim
+// for views (edits are still logged, unchanged).
+const DATA_SHARING_TEXT_V3 = `Data Sharing Policy
+
+We value your privacy and are committed to handling your information responsibly.
+
+Information entered into this Rio application is used only for demonstration, testing, and evaluation purposes.
+We do not sell or share your information with third parties for marketing purposes.
+Data may be accessed by authorized administrators or support personnel solely to maintain and improve the application.
+By agreeing to this policy, you acknowledge and agree that the Center/NCNP Supervisor role holds cross-entity supervisory visibility under this consent — it may view and preview studies, data, and reports across every entity on the platform for oversight purposes. The Supervisor cannot edit an entity's data unless a specific, time-limited permission grant for that action has been approved by a System Administrator; every granted edit is recorded in the audit trail.
+Aggregated and anonymized information may be used to evaluate system performance and enhance user experience.
+Users should avoid entering confidential, personal, financial, or regulated information into this demonstration environment.
+Appropriate security measures are implemented to help protect data; however, no electronic system can guarantee absolute security.
+By using this application, you acknowledge and consent to the collection and processing of information as described in this policy.`;
+
 // The same two consents in Arabic (RIO-NFR-007). Same row, same version — a
 // translation is not a separate policy, so these travel with the English copy
 // above rather than as their own `v1-ar`, and the signup screen picks between
@@ -113,6 +134,20 @@ const DATA_SHARING_TEXT_AR_V2 = `سياسة مشاركة البيانات
 لا نبيع معلوماتك ولا نشاركها مع أطراف ثالثة لأغراض تسويقية.
 قد يطّلع على البيانات مسؤولون مصرَّح لهم أو موظفو الدعم لغرض صيانة التطبيق وتحسينه فقط.
 يتمتع دور مشرف المركز/الهيئة الوطنية للأعمال الخيرية (NCNP) بصلاحية إشراف عابرة للكيانات — يجوز له الاطلاع على الدراسات والبيانات والتقارير عبر جميع الكيانات في المنصة لأغراض الرقابة، لكن لا يجوز له تعديل بيانات أي كيان إلا بموجب إذن صلاحية محدد ومحدود المدة يوافق عليه مسؤول النظام لذلك الإجراء تحديدًا. يُسجَّل كل اطلاع وكل تعديل ممنوح في سجل التدقيق.
+قد تُستخدم المعلومات المجمّعة ومجهولة الهوية لتقييم أداء النظام وتحسين تجربة المستخدم.
+ينبغي على المستخدمين تجنب إدخال معلومات سرية أو شخصية أو مالية أو خاضعة للتنظيم في هذه البيئة التجريبية.
+تُطبَّق تدابير أمنية مناسبة للمساعدة في حماية البيانات؛ ومع ذلك، لا يمكن لأي نظام إلكتروني أن يضمن أمانًا مطلقًا.
+باستخدامك هذا التطبيق، فإنك تقر وتوافق على جمع المعلومات ومعالجتها على النحو الموضح في هذه السياسة.`;
+
+// v3 Arabic — see DATA_SHARING_TEXT_V3's comment above.
+const DATA_SHARING_TEXT_AR_V3 = `سياسة مشاركة البيانات
+
+نحن نقدّر خصوصيتك ونلتزم بالتعامل مع معلوماتك بمسؤولية.
+
+تُستخدم المعلومات المُدخلة في تطبيق Rio لأغراض العرض التوضيحي والاختبار والتقييم فقط.
+لا نبيع معلوماتك ولا نشاركها مع أطراف ثالثة لأغراض تسويقية.
+قد يطّلع على البيانات مسؤولون مصرَّح لهم أو موظفو الدعم لغرض صيانة التطبيق وتحسينه فقط.
+بموافقتك على هذه السياسة، فإنك تقرّ وتوافق على أن دور مشرف المركز/الهيئة الوطنية للأعمال الخيرية (NCNP) يتمتع بصلاحية إشراف عابرة للكيانات بموجب هذه الموافقة — يجوز له الاطلاع على الدراسات والبيانات والتقارير ومعاينتها عبر جميع الكيانات في المنصة لأغراض الرقابة. لا يجوز للمشرف تعديل بيانات أي كيان إلا بموجب إذن صلاحية محدد ومحدود المدة يوافق عليه مسؤول النظام لذلك الإجراء تحديدًا؛ ويُسجَّل كل تعديل ممنوح في سجل التدقيق.
 قد تُستخدم المعلومات المجمّعة ومجهولة الهوية لتقييم أداء النظام وتحسين تجربة المستخدم.
 ينبغي على المستخدمين تجنب إدخال معلومات سرية أو شخصية أو مالية أو خاضعة للتنظيم في هذه البيئة التجريبية.
 تُطبَّق تدابير أمنية مناسبة للمساعدة في حماية البيانات؛ ومع ذلك، لا يمكن لأي نظام إلكتروني أن يضمن أمانًا مطلقًا.
@@ -336,8 +371,16 @@ async function main(): Promise<void> {
   });
   await prisma.consentPolicy.upsert({
     where: { kind_version: { kind: 'data_sharing', version: 'v2' } },
-    update: { active: true, text: DATA_SHARING_TEXT_V2, textAr: DATA_SHARING_TEXT_AR_V2 },
-    create: { kind: 'data_sharing', version: 'v2', active: true, text: DATA_SHARING_TEXT_V2, textAr: DATA_SHARING_TEXT_AR_V2 },
+    update: { active: false, text: DATA_SHARING_TEXT_V2, textAr: DATA_SHARING_TEXT_AR_V2 },
+    create: { kind: 'data_sharing', version: 'v2', active: false, text: DATA_SHARING_TEXT_V2, textAr: DATA_SHARING_TEXT_AR_V2 },
+  });
+  // RIO-RBAC-002 (Round 5, 2026-08-24) — v3 supersedes v2: drops the
+  // "every view is logged" claim (no longer true) and makes explicit that
+  // this consent is the basis for the Supervisor's view/preview right.
+  await prisma.consentPolicy.upsert({
+    where: { kind_version: { kind: 'data_sharing', version: 'v3' } },
+    update: { active: true, text: DATA_SHARING_TEXT_V3, textAr: DATA_SHARING_TEXT_AR_V3 },
+    create: { kind: 'data_sharing', version: 'v3', active: true, text: DATA_SHARING_TEXT_V3, textAr: DATA_SHARING_TEXT_AR_V3 },
   });
 
   await seedDomainsAndSubdomains();

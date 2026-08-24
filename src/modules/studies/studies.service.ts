@@ -268,24 +268,29 @@ export class StudiesService {
       rows = result[0] as (RawStudyWithGeo & { org?: { name: string } | null; _count?: { needs: number } })[];
       total = result[1];
 
-      // RIO-RBAC-002 (AC4) — a distinct action name per role, so an Entity
-      // Admin filtering the Audit Log for SUPERVISOR_VIEWED_STUDIES sees
-      // exactly the transparency the AC asks for, without System Admin's
-      // own routine cross-org views mixed in.
-      await this.audit.record({
-        action: store?.role === 'center_supervisor' ? 'SUPERVISOR_VIEWED_STUDIES' : 'SYSTEM_ADMIN_VIEWED_STUDIES',
-        entityType: 'study',
-        // `null`, never the string 'all': audit_logs.entity_id is a UUID
-        // column, so a sentinel here made Postgres reject the INSERT
-        // ("invalid input syntax for type uuid") and AuditService.record()
-        // swallowed it as a warning — every cross-org study view silently
-        // went unaudited. The "all organisations" case is carried by
-        // entityLabel and `scope` below, matching SurveysService.list.
-        entityId: opts.organizationId ?? null,
-        entityLabel: opts.organizationId ? 'Organization Studies' : 'All Platform Studies',
-        organizationId: opts.organizationId,
-        metadata: { scope: opts.organizationId ? 'organization' : 'all' },
-      });
+      // RIO-RBAC-002 (Round 5, client-confirmed 2026-08-24) — Supervisor
+      // view/read access does not require dedicated audit logging; the
+      // NGO's own onboarding consent already covers Center/NCNP's right to
+      // see and preview their data. Only System Admin's cross-org view is
+      // still logged here — logging was never about System Admin's own
+      // access in the first place, this branch just happens to be shared
+      // between both cross-org-reading roles.
+      if (store?.role === 'system_admin') {
+        await this.audit.record({
+          action: 'SYSTEM_ADMIN_VIEWED_STUDIES',
+          entityType: 'study',
+          // `null`, never the string 'all': audit_logs.entity_id is a UUID
+          // column, so a sentinel here made Postgres reject the INSERT
+          // ("invalid input syntax for type uuid") and AuditService.record()
+          // swallowed it as a warning — every cross-org study view silently
+          // went unaudited. The "all organisations" case is carried by
+          // entityLabel and `scope` below, matching SurveysService.list.
+          entityId: opts.organizationId ?? null,
+          entityLabel: opts.organizationId ? 'Organization Studies' : 'All Platform Studies',
+          organizationId: opts.organizationId,
+          metadata: { scope: opts.organizationId ? 'organization' : 'all' },
+        });
+      }
     } else {
       const result = await this.tenant.runInOrgContext((tx) =>
         Promise.all([
@@ -358,9 +363,11 @@ export class StudiesService {
       needCount = result[2];
       needsList = result[3];
 
-      if (row) {
+      // RIO-RBAC-002 (Round 5, client-confirmed 2026-08-24) — Supervisor
+      // view access isn't logged; see the list() method's comment above.
+      if (row && store?.role === 'system_admin') {
         await this.audit.record({
-          action: store?.role === 'center_supervisor' ? 'SUPERVISOR_VIEWED_STUDIES' : 'SYSTEM_ADMIN_VIEWED_STUDIES',
+          action: 'SYSTEM_ADMIN_VIEWED_STUDIES',
           entityType: 'study',
           entityId: id,
           entityLabel: row.title,
