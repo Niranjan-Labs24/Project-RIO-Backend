@@ -27,6 +27,16 @@ export const UpdateMethodologyConfigBody = registerSchema(
           minRespondentsForStandardConfidence: T.Optional(T.Integer({ minimum: 0 })),
         }),
       ),
+      // RIO-AI-001. 0..1 (AiDecision.confidence's scale), not 0-100 — see
+      // AiClassificationSettings. Ordering (veryLow < low) is enforced in the
+      // service, next to validateThresholds, not here: TypeBox can range-check
+      // each field but not their relationship.
+      aiClassificationSettings: T.Optional(
+        T.Object({
+          lowConfidenceThreshold: T.Optional(T.Number({ minimum: 0, maximum: 1 })),
+          veryLowConfidenceThreshold: T.Optional(T.Number({ minimum: 0, maximum: 1 })),
+        }),
+      ),
     },
     { additionalProperties: false },
   ),

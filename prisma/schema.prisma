@@ -814,7 +814,14 @@ model AiDecision {
   modelName     String       @map("model_name") @db.VarChar(150)
   modelVersion  String       @map("model_version") @db.VarChar(100)
   suggestion    Json
-  confidence    Decimal
+  // Nullable on purpose. `0` is a REAL value here — the "AI ran and declined
+  // to classify" path (see AiDecisionsService.runAndPersistClassification)
+  // stores 0 to mean "no confidence at all". A model that classified but
+  // omitted its confidence is a different thing entirely, and coercing that
+  // to 0 used to make a good classification look like the worst possible one.
+  // NULL means "not reported" and the reviewer UI flags it for closer review
+  // rather than showing a fabricated number.
+  confidence    Decimal?
   humanDecision Json?        @map("human_decision")
   decidedBy     String?      @map("decided_by") @db.Uuid
   decidedAt     DateTime?    @map("decided_at") @db.Timestamptz(6)
@@ -1556,6 +1563,14 @@ model MethodologyConfig {
   // response-quality.placeholder.ts. Shape: { dontKnowRatioThreshold,
   // minRespondentsForStandardConfidence }.
   confidenceFlagSettings Json              @map("confidence_flag_settings")
+  // RIO-AI-001's "low-confidence suggestions below a CONFIGURABLE threshold
+  // are visually flagged" rule. Shape: { lowConfidenceThreshold,
+  // veryLowConfidenceThreshold } — both 0..1, matching AiDecision.confidence's
+  // own 0..1 scale (not 0-100). These were hardcoded in the frontend
+  // component before, which meant the acceptance criterion's "configurable"
+  // could not be met at all; they live here so the Methodology Configuration
+  // screen owns them like every other methodology threshold.
+  aiClassificationSettings Json            @map("ai_classification_settings")
   updatedAt              DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
   updatedBy              String?           @map("updated_by") @db.Uuid
 

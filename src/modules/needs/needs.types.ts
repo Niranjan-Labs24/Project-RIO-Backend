@@ -1,3 +1,5 @@
+import type { ConfidenceBand } from '../ai-decisions/confidence-band';
+
 export type NeedStatus =
   | 'draft'
   | 'pending_ai_classification'
@@ -97,6 +99,18 @@ export interface Need {
   // predicted. See AiDecisionsService.classifyAutomatically/review.
   aiSuggestedDomain: string | null;
   aiSuggestedSubDomain: string | null;
+  // RIO-AI-001 — the latest classification's self-reported confidence and its
+  // resolved band, surfaced on the Need itself so the Needs list can show and
+  // filter on it. Without this a reviewer had to open every Need one at a time
+  // to discover which ones the AI was unsure about, which is the opposite of
+  // "flagged for closer reviewer attention".
+  //
+  // `null` band means no classification has run yet (a draft /
+  // pending_ai_classification / ai_classification_failed Need) — distinct from
+  // the 'not_reported' band, which means one DID run and returned no
+  // confidence.
+  aiConfidence: number | null;
+  aiConfidenceBand: ConfidenceBand | null;
   classifiedAt: string | null;
   classificationError: string | null;
   // A staged (not-yet-decided) Override, visible to anyone reviewing this
