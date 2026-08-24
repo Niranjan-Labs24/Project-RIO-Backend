@@ -206,8 +206,13 @@ export class AuditCheckpointService implements OnModuleInit {
    * id.
    */
   async verify(): Promise<VerifyResult> {
+    // `id` (uuidv7) is a monotonic secondary sort here — same reliance on
+    // server-generated uuidv7 monotonicity (no client-supplied-id path) that
+    // the coverage boundaries (afterBoundary/uptoBoundary) already depend
+    // on — so two checkpoints created within the same createdAt microsecond
+    // still walk in chain order.
     const checkpoints = (await this.tenant.runAsSupervisor((tx) =>
-      tx.auditCheckpoint.findMany({ orderBy: { createdAt: 'asc' } }),
+      tx.auditCheckpoint.findMany({ orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] }),
     )) as AuditCheckpointRecord[];
 
     let prevSignature: string | null = null;
