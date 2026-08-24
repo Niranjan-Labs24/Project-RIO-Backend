@@ -340,6 +340,36 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+// GAP-02 — tamper-evident audit via periodic signed checkpoints. Append-only
+// is already enforced for the app on audit_logs (cnap_app has SELECT,
+// INSERT only — no UPDATE/DELETE); the residual threat this table addresses
+// is a privileged actor (DB owner/superuser) editing audit_logs history
+// directly. A checkpoint job periodically reads all audit rows since the
+// last checkpoint (ordered by (createdAt, id) — createdAt is not unique, so
+// id, a uuidv7, is the mandatory tie-breaker for deterministic coverage
+// boundaries), computes a digest, chains it to the previous checkpoint's
+// signature, and signs it. A verifier recomputes from source rows and
+// compares. Single global chain — spans every org, so this table carries no
+// org ownership and no RLS policy (same "global table, no RLS" pattern as
+// SystemLog/NcnpReportReview); grants alone confine it (see the migration).
+model AuditCheckpoint {
+  id                 String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  // HMAC-SHA256 signature of the previous checkpoint in the chain; null for
+  // the genesis checkpoint.
+  prevChainHash      String?  @map("prev_chain_hash") @db.Char(64)
+  // Null on the genesis checkpoint (coverage starts "from the beginning").
+  coveredFromId      String?  @map("covered_from_id") @db.Uuid
+  coveredToId        String   @map("covered_to_id") @db.Uuid
+  coveredToCreatedAt DateTime @map("covered_to_created_at") @db.Timestamptz(6)
+  rowCount           Int      @map("row_count")
+  digest             String   @db.Char(64)
+  signature          String   @db.Char(64)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([createdAt])
+  @@map("audit_checkpoints")
+}
+
 // ──────── RIO-NFR-016: Operational logging ────────
 
 enum SystemLogLevel {
