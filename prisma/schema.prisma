@@ -1767,7 +1767,10 @@ model MethodologyConfigHistory {
   status                 MethodologyStatus
   // "edit" (update()) or "publish" (publish()) — which action produced this
   // snapshot, so the timeline reads as a log of actions, not just states.
-  changeType             String   @db.VarChar(20)
+  // @map is required: 20260823010000_methodology_config_history creates this
+  // as `change_type`, and without the mapping Prisma queries a `changeType`
+  // column that does not exist — every GET /methodology-config/history 500s.
+  changeType             String   @map("change_type") @db.VarChar(20)
   priorityThresholds     Json     @map("priority_thresholds")
   priorityFactorWeights  Json     @map("priority_factor_weights")
   confidenceFlagSettings Json     @map("confidence_flag_settings")
