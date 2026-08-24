@@ -13,7 +13,17 @@ function file(name: string, content: string): UploadedFilePayload {
 // under test doesn't depend on the hash algorithm, only on "same content in
 // -> same hash out". The real sha256 implementation is covered separately in
 // evidence.storage.service.spec.ts.
-function fakeStorage(opts: { onSave?: (name: string, buffer: Buffer) => void; onRemove?: (key: string) => void } = {}) {
+function fakeStorage(
+  opts: {
+    onSave?: (name: string, buffer: Buffer) => void;
+    onRemove?: (key: string) => void;
+    // GAP-13: remove() now reports success/failure (see
+    // evidence.storage.service.spec.ts) instead of always resolving as if
+    // the delete succeeded — defaults to true (successful delete) so every
+    // existing test that doesn't care about this keeps passing unchanged.
+    removeResult?: boolean;
+  } = {},
+) {
   return {
     assertAllowedExtension: () => {},
     assertAllowedSize: () => {},
@@ -25,6 +35,7 @@ function fakeStorage(opts: { onSave?: (name: string, buffer: Buffer) => void; on
     },
     remove: async (key: string) => {
       opts.onRemove?.(key);
+      return opts.removeResult ?? true;
     },
   };
 }
@@ -42,6 +53,9 @@ function fakeTenant(opts: {
   // test assert the count+create happen inside ONE transaction and that
   // the advisory lock is taken first.
   onCall?: (call: { txInvocation: number; op: string; args?: unknown }) => void;
+  // GAP-13: records every PendingFileDeletion row EvidenceService.remove
+  // writes via runAsSupervisorWrite when a physical delete fails.
+  onPendingFileDeletionCreate?: (data: Record<string, unknown>) => void;
 }) {
   let idCounter = 0;
   let txInvocation = 0;
@@ -90,6 +104,19 @@ function fakeTenant(opts: {
       txInvocation += 1;
       return fn(makeTx(txInvocation));
     },
+    // GAP-13: PendingFileDeletion is a global table with no org scoping, so
+    // EvidenceService.remove writes the retry-queue row through
+    // runAsSupervisorWrite rather than runInOrgContext — see
+    // tenant-prisma.service.ts and the pending_file_deletions migration.
+    runAsSupervisorWrite: async (fn: (tx: unknown) => unknown) =>
+      fn({
+        pendingFileDeletion: {
+          create: async ({ data }: { data: Record<string, unknown> }) => {
+            opts.onPendingFileDeletionCreate?.(data);
+            return { id: 'pfd-1', attempts: 0, lastError: null, createdAt: new Date('2026-01-01T00:00:00Z'), ...data };
+          },
+        },
+      }),
   };
 }
 
@@ -288,6 +315,49 @@ describe('EvidenceService', () => {
       const svc = makeService(fakeTenant({ evidenceRow: row, need: null, onEvidenceDelete: () => { deleted = true; } }));
       await orgContext.run(ctx, () => svc.remove('ev-1'));
       expect(deleted).toBe(true);
+    });
+
+    // GAP-13: storage.remove() failing after the DB row is already gone used
+    // to be a silent no-op (the failure was swallowed inside
+    // EvidenceStorageService.remove itself). Now that remove() reports
+    // failure, EvidenceService.remove must record a durable, retryable
+    // PendingFileDeletion row rather than dropping the failure on the floor.
+    it('records a PendingFileDeletion row when the physical file delete fails', async () => {
+      let pendingCreate: Record<string, unknown> | undefined;
+      const storage = fakeStorage({ removeResult: false });
+      const svc = makeService(
+        fakeTenant({
+          evidenceRow: row,
+          need: { studyId: 'study-1', status: 'draft' },
+          onPendingFileDeletionCreate: (data) => { pendingCreate = data; },
+        }),
+        storage,
+      );
+
+      // The DB delete + audit trail must still complete — a failed physical
+      // cleanup is recorded for retry, not surfaced as a failure of the
+      // delete operation itself.
+      await orgContext.run(ctx, () => svc.remove('ev-1'));
+
+      expect(pendingCreate).toBeDefined();
+      expect(pendingCreate?.storageKey).toBe('key-a');
+    });
+
+    it('does not record a PendingFileDeletion row when the physical file delete succeeds', async () => {
+      let pendingCreated = false;
+      const storage = fakeStorage({ removeResult: true });
+      const svc = makeService(
+        fakeTenant({
+          evidenceRow: row,
+          need: { studyId: 'study-1', status: 'draft' },
+          onPendingFileDeletionCreate: () => { pendingCreated = true; },
+        }),
+        storage,
+      );
+
+      await orgContext.run(ctx, () => svc.remove('ev-1'));
+
+      expect(pendingCreated).toBe(false);
     });
   });
 });

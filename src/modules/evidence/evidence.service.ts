@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException, Injectable } from '@nestjs/common';
+import { ConflictException, NotFoundException, Injectable, Logger } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { requireActor, requireOrgId } from '../../tenancy/org-context';
 import { AuditService } from '../audit/audit.service';
@@ -8,6 +8,8 @@ import type { Evidence, EvidenceRow, UploadedFilePayload } from './evidence.type
 
 @Injectable()
 export class EvidenceService {
+  private readonly logger = new Logger(EvidenceService.name);
+
   constructor(
     private readonly tenant: TenantPrismaService,
     private readonly audit: AuditService,
@@ -199,7 +201,24 @@ export class EvidenceService {
       // rather than repeating its UUID.
       return { ...existing, needTitle: need?.title ?? null };
     });
-    await this.storage.remove(row.storageKey);
+    // GAP-13: the DB row is already gone at this point — a failed physical
+    // delete here used to be silently swallowed inside
+    // EvidenceStorageService.remove, orphaning the file with nothing to
+    // signal it. storage.remove() now reports success/failure; on failure,
+    // record a durable, retryable PendingFileDeletion row (a global table,
+    // written via runAsSupervisorWrite — see tenant-prisma.service.ts) and
+    // log at error level instead of dropping the failure on the floor.
+    // EvidenceFileCleanupService's cron sweep retries these.
+    const removed = await this.storage.remove(row.storageKey);
+    if (!removed) {
+      this.logger.error(
+        `Failed to delete evidence file from storage (storageKey=${row.storageKey}, evidenceId=${row.id}); ` +
+        'queued for retry via PendingFileDeletion',
+      );
+      await this.tenant.runAsSupervisorWrite((tx) =>
+        tx.pendingFileDeletion.create({ data: { storageKey: row.storageKey } }),
+      );
+    }
     await this.audit.record({
       action: 'delete', entityType: 'evidence', entityId: row.id, entityLabel: row.fileName,
       // after: null — the file is removed from storage as well as the row, so
