@@ -48,8 +48,6 @@ function makeService(challenge: Record<string, unknown>, fakeTx = makeFakeTx()) 
       noop, // sms
       noop, // surveys
       { record: vi.fn(), recordWithTx: vi.fn() } as never, // audit
-      noop, // scoringEngine
-      noop, // rollupService
     ),
     fakeTx,
   };
