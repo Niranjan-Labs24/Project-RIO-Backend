@@ -1,0 +1,4469 @@
+{
+  "components": {
+    "schemas": {
+      "AiReviewApproveBody": {
+        "additionalProperties": false,
+        "properties": {
+          "domainOverride": {
+            "properties": {
+              "pairs": {
+                "items": {
+                  "properties": {
+                    "domain": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "subDomain": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "domain",
+                    "subDomain"
+                  ],
+                  "type": "object"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "reason": {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "pairs",
+              "reason"
+            ],
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "AiReviewOverrideDomainBody": {
+        "additionalProperties": false,
+        "properties": {
+          "pairs": {
+            "items": {
+              "properties": {
+                "domain": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "subDomain": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "domain",
+                "subDomain"
+              ],
+              "type": "object"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "reason": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "pairs",
+          "reason"
+        ],
+        "type": "object"
+      },
+      "AiReviewRejectBody": {
+        "additionalProperties": false,
+        "properties": {
+          "comments": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "comments"
+        ],
+        "type": "object"
+      },
+      "ApproveNcnpReportBody": {
+        "properties": {
+          "notes": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "notes"
+        ],
+        "type": "object"
+      },
+      "ApproveReportBody": {
+        "properties": {
+          "notes": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "notes"
+        ],
+        "type": "object"
+      },
+      "ApproveSurveyBody": {
+        "properties": {
+          "comments": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "comments"
+        ],
+        "type": "object"
+      },
+      "AssignNgoAdminBody": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "maxLength": 320,
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 500,
+            "type": "string"
+          },
+          "userId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BulkImportNeedsBody": {
+        "additionalProperties": false,
+        "properties": {
+          "needs": {
+            "items": {
+              "properties": {
+                "referenceId": {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                "statement": {
+                  "maxLength": 5000,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "title": {
+                  "maxLength": 300,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "village": {
+                  "maxLength": 500,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "title",
+                "statement"
+              ],
+              "type": "object"
+            },
+            "maxItems": 2000,
+            "type": "array"
+          }
+        },
+        "required": [
+          "needs"
+        ],
+        "type": "object"
+      },
+      "ChangePasswordBody": {
+        "additionalProperties": false,
+        "properties": {
+          "currentPassword": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "newPassword": {
+            "maxLength": 200,
+            "minLength": 8,
+            "pattern": "^(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9\\s]).{8,}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "currentPassword",
+          "newPassword"
+        ],
+        "type": "object"
+      },
+      "CheckDuplicateBody": {
+        "additionalProperties": false,
+        "properties": {
+          "contact": {
+            "format": "email",
+            "type": "string"
+          },
+          "mobile": {
+            "maxLength": 32,
+            "minLength": 3,
+            "type": "string"
+          }
+        },
+        "required": [
+          "contact",
+          "mobile"
+        ],
+        "type": "object"
+      },
+      "ConsentBody": {
+        "additionalProperties": false,
+        "properties": {
+          "locale": {
+            "anyOf": [
+              {
+                "const": "en",
+                "type": "string"
+              },
+              {
+                "const": "ar",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "ContactBody": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "maxLength": 320,
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "organizationId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "purpose": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "region": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "organizationId",
+          "name",
+          "email",
+          "region",
+          "purpose"
+        ],
+        "type": "object"
+      },
+      "CreateDomainBody": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "displayOrder": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "type": "object"
+      },
+      "CreateMethodologyVersionBody": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "maxLength": 1000,
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "version": {
+            "maxLength": 50,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "version"
+        ],
+        "type": "object"
+      },
+      "CreateNeedBody": {
+        "additionalProperties": false,
+        "properties": {
+          "centerIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 1404,
+            "type": "array"
+          },
+          "governorateIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 150,
+            "type": "array"
+          },
+          "referenceId": {
+            "maxLength": 200,
+            "type": "string"
+          },
+          "statement": {
+            "maxLength": 5000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 300,
+            "type": "string"
+          },
+          "village": {
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 200,
+            "type": "array"
+          }
+        },
+        "required": [
+          "statement"
+        ],
+        "type": "object"
+      },
+      "CreateOrganizationBody": {
+        "properties": {
+          "adminEmail": {
+            "format": "email",
+            "maxLength": 320,
+            "type": "string"
+          },
+          "adminName": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "format": "email",
+                "maxLength": 320,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "purpose": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "region": {
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 2000,
+            "type": "array"
+          },
+          "registrationNumber": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sector": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "villages": {
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 2000,
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "registrationNumber"
+        ],
+        "type": "object"
+      },
+      "CreateReportBody": {
+        "additionalProperties": false,
+        "properties": {
+          "filters": {
+            "patternProperties": {
+              "^(.*)$": {}
+            },
+            "type": "object"
+          },
+          "reportType": {
+            "anyOf": [
+              {
+                "const": "RPT01",
+                "type": "string"
+              },
+              {
+                "const": "RPT02",
+                "type": "string"
+              },
+              {
+                "const": "RPT03",
+                "type": "string"
+              },
+              {
+                "const": "RPT04",
+                "type": "string"
+              },
+              {
+                "const": "RPT05",
+                "type": "string"
+              },
+              {
+                "const": "RPT06",
+                "type": "string"
+              },
+              {
+                "const": "RPT07",
+                "type": "string"
+              },
+              {
+                "const": "RPT08",
+                "type": "string"
+              },
+              {
+                "const": "RPT09",
+                "type": "string"
+              },
+              {
+                "const": "RPT10",
+                "type": "string"
+              },
+              {
+                "const": "RPT11",
+                "type": "string"
+              },
+              {
+                "const": "RPT12",
+                "type": "string"
+              },
+              {
+                "const": "RPT13",
+                "type": "string"
+              },
+              {
+                "const": "RPT14",
+                "type": "string"
+              },
+              {
+                "const": "RPT15",
+                "type": "string"
+              },
+              {
+                "const": "RPT16",
+                "type": "string"
+              },
+              {
+                "const": "RPT17",
+                "type": "string"
+              }
+            ]
+          },
+          "studyId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "surveyId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reportType"
+        ],
+        "type": "object"
+      },
+      "CreateReportSharingRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "ownerOrgId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "reportId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ownerOrgId",
+          "reportId",
+          "note"
+        ],
+        "type": "object"
+      },
+      "CreateSharingRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "ownerOrgId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "studyId": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ownerOrgId",
+          "studyId",
+          "note"
+        ],
+        "type": "object"
+      },
+      "CreateStudyBody": {
+        "additionalProperties": false,
+        "properties": {
+          "centerIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 1404,
+            "minItems": 1,
+            "type": "array"
+          },
+          "governorateIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "type": "array"
+          },
+          "marginOfError": {
+            "exclusiveMaximum": 1,
+            "exclusiveMinimum": 0,
+            "type": "number"
+          },
+          "methodologyVersionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "population": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "title": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "villages": {
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 2000,
+            "type": "array"
+          }
+        },
+        "required": [
+          "title",
+          "governorateIds",
+          "centerIds",
+          "methodologyVersionId",
+          "population"
+        ],
+        "type": "object"
+      },
+      "CreateSubDomainBody": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "displayOrder": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "type": "object"
+      },
+      "CreateSurveyLinkBody": {
+        "additionalProperties": false,
+        "properties": {
+          "expiresInDays": {
+            "maximum": 365,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "label": {
+            "maxLength": 150,
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "type": "object"
+      },
+      "DecideReportSharingRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "maxLength": 1000,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DecideSharingRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "note": {
+            "maxLength": 1000,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ForgotPasswordBody": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "format": "email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "type": "object"
+      },
+      "GenerateNcnpReportBody": {
+        "properties": {
+          "dormantDays": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "periodDays": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "InviteUserBody": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "maxLength": 320,
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "roleId": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "email",
+          "roleId"
+        ],
+        "type": "object"
+      },
+      "LoginBody": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "maxLength": 320,
+            "minLength": 1,
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "type": "object"
+      },
+      "RejectNcnpReportBody": {
+        "properties": {
+          "notes": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "notes"
+        ],
+        "type": "object"
+      },
+      "RejectReportBody": {
+        "properties": {
+          "notes": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "notes"
+        ],
+        "type": "object"
+      },
+      "RejectSurveyBody": {
+        "properties": {
+          "comments": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "reasonCode": {
+            "anyOf": [
+              {
+                "const": "REJ_01",
+                "type": "string"
+              },
+              {
+                "const": "REJ_02",
+                "type": "string"
+              },
+              {
+                "const": "REJ_03",
+                "type": "string"
+              },
+              {
+                "const": "REJ_04",
+                "type": "string"
+              },
+              {
+                "const": "REJ_05",
+                "type": "string"
+              },
+              {
+                "const": "REJ_06",
+                "type": "string"
+              },
+              {
+                "const": "REJ_07",
+                "type": "string"
+              },
+              {
+                "const": "REJ_99",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "required": [
+          "reasonCode",
+          "comments"
+        ],
+        "type": "object"
+      },
+      "RequestOtpBody": {
+        "additionalProperties": false,
+        "properties": {
+          "contact": {
+            "format": "email",
+            "type": "string"
+          },
+          "mobile": {
+            "maxLength": 32,
+            "minLength": 3,
+            "type": "string"
+          }
+        },
+        "required": [
+          "contact",
+          "mobile"
+        ],
+        "type": "object"
+      },
+      "ResetPasswordBody": {
+        "additionalProperties": false,
+        "properties": {
+          "password": {
+            "maxLength": 200,
+            "minLength": 8,
+            "pattern": "^(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9\\s]).{8,}$",
+            "type": "string"
+          },
+          "token": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "password"
+        ],
+        "type": "object"
+      },
+      "ReviewDecisionBody": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "anyOf": [
+              {
+                "const": "approved",
+                "type": "string"
+              },
+              {
+                "const": "rejected",
+                "type": "string"
+              },
+              {
+                "const": "modified",
+                "type": "string"
+              }
+            ]
+          },
+          "notes": {
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "overrideValue": {}
+        },
+        "required": [
+          "decision"
+        ],
+        "type": "object"
+      },
+      "SaveDraftEditsBody": {
+        "additionalProperties": false,
+        "properties": {
+          "editedOutputJson": {
+            "maxProperties": 50,
+            "patternProperties": {
+              "^(.*)$": {}
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "editedOutputJson"
+        ],
+        "type": "object"
+      },
+      "SaveSummaryBody": {
+        "additionalProperties": false,
+        "properties": {
+          "editedOutputJson": {
+            "maxProperties": 50,
+            "patternProperties": {
+              "^(.*)$": {}
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "SetMethodologyVersionBody": {
+        "properties": {
+          "version": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "type": "object"
+      },
+      "SetSampleDescriptionBody": {
+        "properties": {
+          "expectedSampleSize": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "geographicCoverage": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          },
+          "selectionApproach": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "targetGroup": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "targetGroup",
+          "expectedSampleSize",
+          "selectionApproach",
+          "geographicCoverage"
+        ],
+        "type": "object"
+      },
+      "ShareSurveyLinkEmailBody": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "format": "email",
+            "maxLength": 320,
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "type": "object"
+      },
+      "SignupBody": {
+        "additionalProperties": false,
+        "properties": {
+          "centerIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 1404,
+            "minItems": 1,
+            "type": "array"
+          },
+          "consent": {
+            "additionalProperties": false,
+            "properties": {
+              "dataSharingVersion": {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              "locale": {
+                "anyOf": [
+                  {
+                    "const": "en",
+                    "type": "string"
+                  },
+                  {
+                    "const": "ar",
+                    "type": "string"
+                  }
+                ]
+              },
+              "usePolicyVersion": {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "usePolicyVersion",
+              "dataSharingVersion"
+            ],
+            "type": "object"
+          },
+          "email": {
+            "format": "email",
+            "type": "string"
+          },
+          "governorateIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 150,
+            "minItems": 1,
+            "type": "array"
+          },
+          "organizationName": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "purpose": {
+            "maxLength": 500,
+            "type": "string"
+          },
+          "regionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "registrationNumber": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sector": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "organizationName",
+          "registrationNumber",
+          "email",
+          "consent",
+          "regionId",
+          "governorateIds",
+          "centerIds"
+        ],
+        "type": "object"
+      },
+      "SubmitResponseBody": {
+        "additionalProperties": false,
+        "properties": {
+          "ageBracket": {
+            "anyOf": [
+              {
+                "const": "age_15_24",
+                "type": "string"
+              },
+              {
+                "const": "age_25_34",
+                "type": "string"
+              },
+              {
+                "const": "age_35_44",
+                "type": "string"
+              },
+              {
+                "const": "age_45_54",
+                "type": "string"
+              },
+              {
+                "const": "age_55_64",
+                "type": "string"
+              },
+              {
+                "const": "age_65_plus",
+                "type": "string"
+              },
+              {
+                "const": "prefer_not_to_say",
+                "type": "string"
+              }
+            ]
+          },
+          "answers": {
+            "patternProperties": {
+              "^(.*)$": {}
+            },
+            "type": "object"
+          },
+          "challengeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "contactName": {
+            "maxLength": 200,
+            "type": "string"
+          },
+          "gender": {
+            "anyOf": [
+              {
+                "const": "male",
+                "type": "string"
+              },
+              {
+                "const": "female",
+                "type": "string"
+              },
+              {
+                "const": "other",
+                "type": "string"
+              },
+              {
+                "const": "prefer_not_to_say",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "required": [
+          "challengeId",
+          "ageBracket",
+          "answers"
+        ],
+        "type": "object"
+      },
+      "SubmitSurveyBody": {
+        "additionalProperties": false,
+        "properties": {
+          "answers": {
+            "maxProperties": 500,
+            "patternProperties": {
+              "^(.*)$": {
+                "maxLength": 5000,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "answers"
+        ],
+        "type": "object"
+      },
+      "SummaryScopeBody": {
+        "additionalProperties": false,
+        "properties": {
+          "scope": {
+            "anyOf": [
+              {
+                "const": "VILLAGE",
+                "type": "string"
+              },
+              {
+                "const": "SECTOR",
+                "type": "string"
+              },
+              {
+                "const": "REGION",
+                "type": "string"
+              },
+              {
+                "const": "EXECUTIVE",
+                "type": "string"
+              }
+            ]
+          },
+          "scopeFilters": {
+            "additionalProperties": false,
+            "properties": {
+              "domainKey": {
+                "maxLength": 200,
+                "type": "string"
+              },
+              "regionId": {
+                "maxLength": 200,
+                "type": "string"
+              },
+              "villageId": {
+                "maxLength": 200,
+                "type": "string"
+              },
+              "villageIds": {
+                "items": {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                "maxItems": 500,
+                "type": "array"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "ToggleEvidenceInclusionBody": {
+        "additionalProperties": false,
+        "properties": {
+          "isIncludedInReport": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "isIncludedInReport"
+        ],
+        "type": "object"
+      },
+      "UpdateDomainBody": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "displayOrder": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateMethodologyConfigBody": {
+        "additionalProperties": false,
+        "properties": {
+          "confidenceFlagSettings": {
+            "properties": {
+              "dontKnowRatioThreshold": {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              "minRespondentsForStandardConfidence": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "priorityFactorWeights": {
+            "items": {
+              "properties": {
+                "key": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "weight": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "key",
+                "weight"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "priorityThresholds": {
+            "properties": {
+              "criticalSeverity": {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "equityHighSeverity": {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "highSeverity": {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "mediumSeverity": {
+                "maximum": 100,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "version": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateNeedBody": {
+        "additionalProperties": false,
+        "properties": {
+          "centerIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 1404,
+            "type": "array"
+          },
+          "governorateIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 150,
+            "type": "array"
+          },
+          "referenceId": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "statement": {
+            "maxLength": 5000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "village": {
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 200,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateOrganizationBody": {
+        "properties": {
+          "centerIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 1404,
+            "type": "array"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "format": "email",
+                "maxLength": 320,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "governorateIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 150,
+            "type": "array"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "logoUrl": {
+            "anyOf": [
+              {
+                "maxLength": 2800000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "purpose": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "region": {
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 2000,
+            "type": "array"
+          },
+          "regionId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sector": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "villages": {
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 2000,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateOrganizationStatusBody": {
+        "properties": {
+          "isActive": {
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "isActive"
+        ],
+        "type": "object"
+      },
+      "UpdateStudyBody": {
+        "additionalProperties": false,
+        "properties": {
+          "centerIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 1404,
+            "minItems": 1,
+            "type": "array"
+          },
+          "governorateIds": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "type": "array"
+          },
+          "methodologyVersionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "villages": {
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 2000,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateSubDomainBody": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "displayOrder": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateSurveyQuestionsBody": {
+        "properties": {
+          "questions": {
+            "items": {
+              "properties": {
+                "customAnswerType": {
+                  "type": "string"
+                },
+                "customOptions": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "customText": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "domain": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "id": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "isRequired": {
+                  "type": "boolean"
+                },
+                "kpi": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "order": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "questionId": {
+                  "type": "string"
+                },
+                "subDomain": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "order",
+                "isRequired"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "removalReasons": {
+            "patternProperties": {
+              "^(.*)$": {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "questions"
+        ],
+        "type": "object"
+      },
+      "UpdateUserBody": {
+        "properties": {
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "roleId": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "const": "active",
+                "type": "string"
+              },
+              {
+                "const": "invited",
+                "type": "string"
+              },
+              {
+                "const": "disabled",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "UpdateUserRoleBody": {
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "type": "string"
+          },
+          "roleId": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "roleId"
+        ],
+        "type": "object"
+      },
+      "UpdateUserStatusBody": {
+        "properties": {
+          "reason": {
+            "maxLength": 500,
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "const": "active",
+                "type": "string"
+              },
+              {
+                "const": "invited",
+                "type": "string"
+              },
+              {
+                "const": "disabled",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
+      "VerifyOtpBody": {
+        "additionalProperties": false,
+        "properties": {
+          "challengeId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "code": {
+            "maxLength": 8,
+            "minLength": 4,
+            "type": "string"
+          }
+        },
+        "required": [
+          "challengeId",
+          "code"
+        ],
+        "type": "object"
+      },
+      "VerifyRegistrationNumberBody": {
+        "additionalProperties": false,
+        "properties": {
+          "registrationNumber": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "registrationNumber"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Session is a bearer token or the rio_session httpOnly cookie. Routes marked with a required permission additionally need the caller's role to have that module/action grant (see RBAC role-matrix.ts).",
+    "title": "cnap-api",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/ai-decisions/{id}/review": {
+      "patch": {
+        "description": "Requires aiReview:approve.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewDecisionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "AiDecision"
+          }
+        },
+        "summary": "Record a human reviewer's decision over an AI suggestion",
+        "tags": [
+          "AI Decisions"
+        ],
+        "x-required-permission": {
+          "action": "approve",
+          "module": "aiReview"
+        }
+      }
+    },
+    "/api/audit": {
+      "get": {
+        "description": "Requires auditLog:read.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "organizationId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entityType",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entityId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actorId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "action",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dateFrom",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dateTo",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{ items: AuditEvent[], total, limit, offset }"
+          }
+        },
+        "summary": "Immutable audit log — own organisation, or (cross-entity) any organisation via ?organizationId",
+        "tags": [
+          "Audit"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "auditLog"
+        }
+      }
+    },
+    "/api/auth/change-password": {
+      "post": {
+        "description": "Requires a signed-in session.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "SessionContext"
+          }
+        },
+        "summary": "Replace the caller's own password",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/auth/consent": {
+      "post": {
+        "description": "Requires a signed-in session.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsentBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "{ consentedAt, policyVersion }"
+          }
+        },
+        "summary": "Record the consent-policy acceptance for the current user",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "description": "No authentication required.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "SessionContext"
+          }
+        },
+        "summary": "Sign in with email + password",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "description": "Requires a signed-in session.",
+        "responses": {
+          "200": {
+            "description": "204 No Content"
+          }
+        },
+        "summary": "Sign out (clears the session/CSRF cookies)",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "description": "Requires a signed-in session.",
+        "responses": {
+          "200": {
+            "description": "SessionContext"
+          }
+        },
+        "summary": "Re-fetch the caller's current session",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/auth/signup": {
+      "post": {
+        "description": "No authentication required.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignupBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "SignupPendingApprovalView (status: pending_approval — no session issued, requires Center approval first)"
+          }
+        },
+        "summary": "Public NGO signup — creates the organisation + its first NGO Admin",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/consent-policy/active": {
+      "get": {
+        "description": "No authentication required.",
+        "responses": {
+          "200": {
+            "description": "ActiveConsentPolicy"
+          }
+        },
+        "summary": "The currently active consent policies (version + English and Arabic text)",
+        "tags": [
+          "Consent"
+        ]
+      }
+    },
+    "/api/custom-questions": {
+      "get": {
+        "description": "Requires surveyBuilder:read.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "domain",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subDomain",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "CustomQuestion[]"
+          }
+        },
+        "summary": "Org-wide reusable custom questions, filtered by domain/subDomain",
+        "tags": [
+          "Surveys"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "surveyBuilder"
+        }
+      }
+    },
+    "/api/evidence/{evidenceId}/toggle-inclusion": {
+      "patch": {
+        "description": "Requires studySurvey:write.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "evidenceId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToggleEvidenceInclusionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Evidence"
+          }
+        },
+        "summary": "Toggle an evidence item's inclusion in the generated report",
+        "tags": [
+          "Priority Summary"
+        ],
+        "x-required-permission": {
+          "action": "write",
+          "module": "studySurvey"
+        }
+      }
+    },
+    "/api/evidence/{id}": {
+      "delete": {
+        "description": "Requires dataCollection:write.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "204 No Content"
+          }
+        },
+        "summary": "Delete an uploaded evidence file",
+        "tags": [
+          "Evidence"
+        ],
+        "x-required-permission": {
+          "action": "write",
+          "module": "dataCollection"
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "description": "No authentication required.",
+        "responses": {
+          "200": {
+            "description": "{ status: \"ok\" }"
+          }
+        },
+        "summary": "Liveness probe",
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/api/health/db": {
+      "get": {
+        "description": "No authentication required.",
+        "responses": {
+          "200": {
+            "description": "{ status: \"ok\" } | 503"
+          }
+        },
+        "summary": "Readiness probe — confirms the database is reachable",
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/api/health/redis": {
+      "get": {
+        "description": "No authentication required.",
+        "responses": {
+          "200": {
+            "description": "{ status: \"ok\" } | 503"
+          }
+        },
+        "summary": "Readiness probe — confirms Redis is reachable",
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/api/methodology-versions": {
+      "get": {
+        "description": "Requires methodologyQuestionBank:read.",
+        "responses": {
+          "200": {
+            "description": "MethodologyVersion[]"
+          }
+        },
+        "summary": "List methodology versions",
+        "tags": [
+          "Priority"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "methodologyQuestionBank"
+        }
+      },
+      "post": {
+        "description": "Requires methodologyQuestionBank:create.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMethodologyVersionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "MethodologyVersion"
+          }
+        },
+        "summary": "Create a new methodology version",
+        "tags": [
+          "Priority"
+        ],
+        "x-required-permission": {
+          "action": "create",
+          "module": "methodologyQuestionBank"
+        }
+      }
+    },
+    "/api/methodology-versions/{id}/upload-lookups": {
+      "post": {
+        "description": "Requires methodologyQuestionBank:create.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "MethodologyVersion"
+          }
+        },
+        "summary": "Upload a scoring-lookup CSV for a methodology version",
+        "tags": [
+          "Priority"
+        ],
+        "x-required-permission": {
+          "action": "create",
+          "module": "methodologyQuestionBank"
+        }
+      }
+    },
+    "/api/needs/{needId}/priority-score": {
+      "get": {
+        "description": "Requires priorityScoring:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "needId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "surveyLinkId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PriorityScore | null"
+          }
+        },
+        "summary": "Get a Need's latest priority score",
+        "tags": [
+          "Priority"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "priorityScoring"
+        }
+      },
+      "post": {
+        "description": "Requires priorityScoring:create.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "needId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "surveyLinkId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PriorityScore"
+          }
+        },
+        "summary": "Compute and save a Need's priority score",
+        "tags": [
+          "Priority"
+        ],
+        "x-required-permission": {
+          "action": "create",
+          "module": "priorityScoring"
+        }
+      }
+    },
+    "/api/needs/{needId}/recommend-questions": {
+      "post": {
+        "description": "Requires surveyBuilder:write.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "needId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Survey"
+          }
+        },
+        "summary": "Auto-populate a survey from the Question Bank for this Need",
+        "tags": [
+          "Surveys"
+        ],
+        "x-required-permission": {
+          "action": "write",
+          "module": "surveyBuilder"
+        }
+      }
+    },
+    "/api/needs/{needId}/survey": {
+      "get": {
+        "description": "Requires surveyBuilder:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "needId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Survey"
+          }
+        },
+        "summary": "Get a Need's survey (question set + status)",
+        "tags": [
+          "Surveys"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "surveyBuilder"
+        }
+      },
+      "post": {
+        "description": "Requires surveyBuilder:write.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "needId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Survey"
+          }
+        },
+        "summary": "Create an empty (hand-built) survey for a Need",
+        "tags": [
+          "Surveys"
+        ],
+        "x-required-permission": {
+          "action": "write",
+          "module": "surveyBuilder"
+        }
+      }
+    },
+    "/api/organizations": {
+      "get": {
+        "description": "Requires entityTeam:read.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OrganizationSummary[]"
+          }
+        },
+        "summary": "Cross-entity — every organisation on the platform",
+        "tags": [
+          "Organizations"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "entityTeam"
+        }
+      },
+      "post": {
+        "description": "Requires entityTeam:create.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrganizationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Organization"
+          }
+        },
+        "summary": "Create a new organisation + its first NGO Admin",
+        "tags": [
+          "Organizations"
+        ],
+        "x-required-permission": {
+          "action": "create",
+          "module": "entityTeam"
+        }
+      }
+    },
+    "/api/organizations/current": {
+      "get": {
+        "description": "Requires entityTeam:read.",
+        "responses": {
+          "200": {
+            "description": "Organization"
+          }
+        },
+        "summary": "The caller's own organisation profile",
+        "tags": [
+          "Organizations"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "entityTeam"
+        }
+      },
+      "patch": {
+        "description": "Requires entityTeam:write.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateOrganizationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Organization"
+          }
+        },
+        "summary": "Update the caller's own organisation profile",
+        "tags": [
+          "Organizations"
+        ],
+        "x-required-permission": {
+          "action": "write",
+          "module": "entityTeam"
+        }
+      }
+    },
+    "/api/organizations/{id}": {
+      "get": {
+        "description": "Requires entityTeam:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OrganizationSummary"
+          }
+        },
+        "summary": "Cross-entity — another organisation's profile",
+        "tags": [
+          "Organizations"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "entityTeam"
+        }
+      }
+    },
+    "/api/priority-scores": {
+      "get": {
+        "description": "Requires priorityScoring:read.",
+        "responses": {
+          "200": {
+            "description": "PriorityDashboardEntry[]"
+          }
+        },
+        "summary": "Cross-Need priority-score dashboard for the org",
+        "tags": [
+          "Priority"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "priorityScoring"
+        }
+      }
+    },
+    "/api/priority-scores/{id}/approve": {
+      "patch": {
+        "description": "Requires priorityScoring:approve.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PriorityScore"
+          }
+        },
+        "summary": "Approve a computed priority score",
+        "tags": [
+          "Priority"
+        ],
+        "x-required-permission": {
+          "action": "approve",
+          "module": "priorityScoring"
+        }
+      }
+    },
+    "/api/priority-summaries/{summaryId}": {
+      "delete": {
+        "description": "Requires priorityScoring:write.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "summaryId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "204 No Content"
+          }
+        },
+        "summary": "Delete a saved priority summary",
+        "tags": [
+          "Priority Summary"
+        ],
+        "x-required-permission": {
+          "action": "write",
+          "module": "priorityScoring"
+        }
+      },
+      "patch": {
+        "description": "Requires priorityScoring:write.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "summaryId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveDraftEditsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "PrioritySummary"
+          }
+        },
+        "summary": "Save a draft edit to a priority summary's output JSON",
+        "tags": [
+          "Priority Summary"
+        ],
+        "x-required-permission": {
+          "action": "write",
+          "module": "priorityScoring"
+        }
+      }
+    },
+    "/api/priority-summaries/{summaryId}/confirm": {
+      "post": {
+        "description": "Requires priorityScoring:approve.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "summaryId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PrioritySummary"
+          }
+        },
+        "summary": "Confirm (approve) a priority summary",
+        "tags": [
+          "Priority Summary"
+        ],
+        "x-required-permission": {
+          "action": "approve",
+          "module": "priorityScoring"
+        }
+      }
+    },
+    "/api/priority-summaries/{summaryId}/save": {
+      "post": {
+        "description": "Requires priorityScoring:write.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "summaryId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveSummaryBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "PrioritySummary"
+          }
+        },
+        "summary": "Save (finalize a draft of) a priority summary",
+        "tags": [
+          "Priority Summary"
+        ],
+        "x-required-permission": {
+          "action": "write",
+          "module": "priorityScoring"
+        }
+      }
+    },
+    "/api/priority-summaries/{summaryId}/save-report": {
+      "post": {
+        "description": "Requires reportsDashboards:create.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "summaryId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Report"
+          }
+        },
+        "summary": "Save a priority summary as a formal Report",
+        "tags": [
+          "Priority Summary"
+        ],
+        "x-required-permission": {
+          "action": "create",
+          "module": "reportsDashboards"
+        }
+      }
+    },
+    "/api/roles": {
+      "get": {
+        "description": "Requires rolesPermissions:read.",
+        "responses": {
+          "200": {
+            "description": "RoleDef[]"
+          }
+        },
+        "summary": "List the fixed 9-role permission matrix",
+        "tags": [
+          "Roles"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "rolesPermissions"
+        }
+      }
+    },
+    "/api/studies": {
+      "get": {
+        "description": "Requires studySurvey:read.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "StudyListResult ({ items: Study[], total, limit, offset })"
+          }
+        },
+        "summary": "List the caller's organisation's studies",
+        "tags": [
+          "Studies"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "studySurvey"
+        }
+      },
+      "post": {
+        "description": "Requires studySurvey:create.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateStudyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Study"
+          }
+        },
+        "summary": "Create a study",
+        "tags": [
+          "Studies"
+        ],
+        "x-required-permission": {
+          "action": "create",
+          "module": "studySurvey"
+        }
+      }
+    },
+    "/api/studies/{id}": {
+      "delete": {
+        "description": "Requires studySurvey:write.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "204 No Content"
+          }
+        },
+        "summary": "Delete a study — allowed only up to evidence_submitted; blocked once ai_classified/human_reviewed",
+        "tags": [
+          "Studies"
+        ],
+        "x-required-permission": {
+          "action": "write",
+          "module": "studySurvey"
+        }
+      },
+      "get": {
+        "description": "Requires studySurvey:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "StudyDetail (Study + evidenceCount)"
+          }
+        },
+        "summary": "Get a single study",
+        "tags": [
+          "Studies"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "studySurvey"
+        }
+      },
+      "patch": {
+        "description": "Requires studySurvey:write.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateStudyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Study"
+          }
+        },
+        "summary": "Rename a study (title is the only editable Study-level field)",
+        "tags": [
+          "Studies"
+        ],
+        "x-required-permission": {
+          "action": "write",
+          "module": "studySurvey"
+        }
+      }
+    },
+    "/api/studies/{studyId}/ai-decisions": {
+      "get": {
+        "description": "Requires aiReview:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "studyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "AiDecision[]"
+          }
+        },
+        "summary": "List a study's AI decisions",
+        "tags": [
+          "AI Decisions"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "aiReview"
+        }
+      }
+    },
+    "/api/studies/{studyId}/ai-decisions/classify": {
+      "post": {
+        "description": "Requires aiReview:write.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "studyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "AiDecision"
+          }
+        },
+        "summary": "Run the (placeholder) need classification and store the AI suggestion (domains[]/subDomains[] — one Need, possibly several suggested domains). Requires evidence to have been submitted first.",
+        "tags": [
+          "AI Decisions"
+        ],
+        "x-required-permission": {
+          "action": "write",
+          "module": "aiReview"
+        }
+      }
+    },
+    "/api/studies/{studyId}/ai-decisions/score": {
+      "post": {
+        "description": "Requires priorityScoring:create.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "studyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{ status: \"pending\", message: string }"
+          }
+        },
+        "summary": "Priority scoring stub — no DB write; scoring engine lands once methodology is approved",
+        "tags": [
+          "AI Decisions"
+        ],
+        "x-required-permission": {
+          "action": "create",
+          "module": "priorityScoring"
+        }
+      }
+    },
+    "/api/studies/{studyId}/evidence": {
+      "get": {
+        "description": "Requires dataCollection:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "studyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Evidence[]"
+          }
+        },
+        "summary": "List a study's uploaded evidence",
+        "tags": [
+          "Evidence"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "dataCollection"
+        }
+      },
+      "post": {
+        "description": "Requires dataCollection:create.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "studyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Evidence[]"
+          }
+        },
+        "summary": "Upload one or more evidence files (multipart/form-data, field name \"files\"; max 10MB/file, 10 files/study)",
+        "tags": [
+          "Evidence"
+        ],
+        "x-required-permission": {
+          "action": "create",
+          "module": "dataCollection"
+        }
+      }
+    },
+    "/api/studies/{studyId}/evidence/submit": {
+      "post": {
+        "description": "Requires dataCollection:write.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "studyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "200 OK"
+          }
+        },
+        "summary": "Submit uploaded evidence — required before AI Classification is allowed to run",
+        "tags": [
+          "Evidence"
+        ],
+        "x-required-permission": {
+          "action": "write",
+          "module": "dataCollection"
+        }
+      }
+    },
+    "/api/studies/{studyId}/need": {
+      "get": {
+        "description": "Requires dataCollection:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "studyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Need"
+          }
+        },
+        "summary": "Get a study's captured need",
+        "tags": [
+          "Needs"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "dataCollection"
+        }
+      },
+      "patch": {
+        "description": "Requires dataCollection:write.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "studyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNeedBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Need"
+          }
+        },
+        "summary": "Edit a study's captured need",
+        "tags": [
+          "Needs"
+        ],
+        "x-required-permission": {
+          "action": "write",
+          "module": "dataCollection"
+        }
+      },
+      "post": {
+        "description": "Requires dataCollection:create.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "studyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateNeedBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Need"
+          }
+        },
+        "summary": "Capture the need for a study (one per study)",
+        "tags": [
+          "Needs"
+        ],
+        "x-required-permission": {
+          "action": "create",
+          "module": "dataCollection"
+        }
+      }
+    },
+    "/api/studies/{studyId}/surveys/{surveyId}/priority-summaries/saved": {
+      "get": {
+        "description": "Requires priorityScoring:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "studyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "surveyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PrioritySummary[]"
+          }
+        },
+        "summary": "List saved priority summaries for a study/survey",
+        "tags": [
+          "Priority Summary"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "priorityScoring"
+        }
+      }
+    },
+    "/api/studies/{studyId}/surveys/{surveyId}/priority-summary": {
+      "get": {
+        "description": "Requires priorityScoring:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "studyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "surveyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "villageId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PrioritySummary"
+          }
+        },
+        "summary": "Get the current priority summary for a scope",
+        "tags": [
+          "Priority Summary"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "priorityScoring"
+        }
+      }
+    },
+    "/api/studies/{studyId}/surveys/{surveyId}/priority-summary/generate": {
+      "post": {
+        "description": "Requires priorityScoring:create.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "studyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "surveyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SummaryScopeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "PrioritySummary"
+          }
+        },
+        "summary": "Generate and save a priority summary for a scope",
+        "tags": [
+          "Priority Summary"
+        ],
+        "x-required-permission": {
+          "action": "create",
+          "module": "priorityScoring"
+        }
+      }
+    },
+    "/api/studies/{studyId}/surveys/{surveyId}/priority-summary/history": {
+      "get": {
+        "description": "Requires priorityScoring:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "studyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "surveyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PrioritySummary[]"
+          }
+        },
+        "summary": "Priority-summary revision history for a scope",
+        "tags": [
+          "Priority Summary"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "priorityScoring"
+        }
+      }
+    },
+    "/api/studies/{studyId}/surveys/{surveyId}/priority-summary/preview-snapshot": {
+      "post": {
+        "description": "Requires priorityScoring:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "studyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "surveyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SummaryScopeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "PrioritySummaryPreview"
+          }
+        },
+        "summary": "Preview a priority-summary snapshot for a scope, without saving it",
+        "tags": [
+          "Priority Summary"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "priorityScoring"
+        }
+      }
+    },
+    "/api/studies/{studyId}/surveys/{surveyId}/questions/{questionId}": {
+      "get": {
+        "description": "Requires priorityScoring:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "studyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "surveyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "questionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "villageId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "QuestionDetail"
+          }
+        },
+        "summary": "Per-question severity detail",
+        "tags": [
+          "Priority"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "priorityScoring"
+        }
+      }
+    },
+    "/api/studies/{studyId}/surveys/{surveyId}/recalculate": {
+      "post": {
+        "description": "Requires priorityScoring:create.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "studyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "surveyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{ success: true }"
+          }
+        },
+        "summary": "Recalculate KPI → Indicator → Sub-Domain → Domain rollups",
+        "tags": [
+          "Priority"
+        ],
+        "x-required-permission": {
+          "action": "create",
+          "module": "priorityScoring"
+        }
+      }
+    },
+    "/api/studies/{studyId}/surveys/{surveyId}/severity-dashboard": {
+      "get": {
+        "description": "Requires priorityScoring:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "studyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "surveyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "villageId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SeverityDashboard"
+          }
+        },
+        "summary": "Severity dashboard for a study/survey",
+        "tags": [
+          "Priority"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "priorityScoring"
+        }
+      }
+    },
+    "/api/studies/{studyId}/surveys/{surveyId}/severity-kpis": {
+      "get": {
+        "description": "Requires priorityScoring:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "studyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "surveyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "villageId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "KpiRanking[]"
+          }
+        },
+        "summary": "KPI severity ranking for a study/survey",
+        "tags": [
+          "Priority"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "priorityScoring"
+        }
+      }
+    },
+    "/api/studies/{studyId}/surveys/{surveyId}/village-priority": {
+      "get": {
+        "description": "Requires priorityScoring:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "studyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "surveyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "villageId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "VillagePriority"
+          }
+        },
+        "summary": "Village-level priority ranking",
+        "tags": [
+          "Priority"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "priorityScoring"
+        }
+      }
+    },
+    "/api/surveys/public/{id}": {
+      "get": {
+        "description": "No authentication required.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PublicSurveyView"
+          }
+        },
+        "summary": "Citizen-facing: get a published survey by its public link id",
+        "tags": [
+          "Surveys"
+        ]
+      }
+    },
+    "/api/surveys/public/{id}/submit": {
+      "post": {
+        "description": "No authentication required.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitSurveyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "SurveyResponse"
+          }
+        },
+        "summary": "Citizen-facing: submit answers to a published survey",
+        "tags": [
+          "Surveys"
+        ]
+      }
+    },
+    "/api/surveys/{id}/approve": {
+      "post": {
+        "description": "Requires surveyBuilder:approve.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Survey"
+          }
+        },
+        "summary": "Approver: approve and publish the survey",
+        "tags": [
+          "Surveys"
+        ],
+        "x-required-permission": {
+          "action": "approve",
+          "module": "surveyBuilder"
+        }
+      }
+    },
+    "/api/surveys/{id}/methodology-version": {
+      "patch": {
+        "description": "Requires surveyBuilder:write.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetMethodologyVersionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Survey"
+          }
+        },
+        "summary": "Set the survey's methodology version",
+        "tags": [
+          "Surveys"
+        ],
+        "x-required-permission": {
+          "action": "write",
+          "module": "surveyBuilder"
+        }
+      }
+    },
+    "/api/surveys/{id}/questions": {
+      "patch": {
+        "description": "Requires surveyBuilder:write.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSurveyQuestionsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Survey"
+          }
+        },
+        "summary": "Replace a draft survey's question set",
+        "tags": [
+          "Surveys"
+        ],
+        "x-required-permission": {
+          "action": "write",
+          "module": "surveyBuilder"
+        }
+      }
+    },
+    "/api/surveys/{id}/reject": {
+      "post": {
+        "description": "Requires surveyBuilder:approve.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectSurveyBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Survey"
+          }
+        },
+        "summary": "Approver: reject the submitted survey back to draft",
+        "tags": [
+          "Surveys"
+        ],
+        "x-required-permission": {
+          "action": "approve",
+          "module": "surveyBuilder"
+        }
+      }
+    },
+    "/api/surveys/{id}/responses": {
+      "get": {
+        "description": "Requires surveyBuilder:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SurveyResponse[]"
+          }
+        },
+        "summary": "List a survey’s submitted responses",
+        "tags": [
+          "Surveys"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "surveyBuilder"
+        }
+      }
+    },
+    "/api/surveys/{id}/submit": {
+      "post": {
+        "description": "Requires surveyBuilder:write.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Survey"
+          }
+        },
+        "summary": "Researcher: submit the draft survey for Approver review",
+        "tags": [
+          "Surveys"
+        ],
+        "x-required-permission": {
+          "action": "write",
+          "module": "surveyBuilder"
+        }
+      }
+    },
+    "/api/system-logs": {
+      "get": {
+        "description": "Requires systemLogs:read.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "level",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "minLevel",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "eventCode",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "requestId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "organizationId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actorId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "statusCode",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dateFrom",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dateTo",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{ items: SystemLogEntry[], total, limit, offset }"
+          }
+        },
+        "summary": "Operational events and errors, newest first",
+        "tags": [
+          "System Logs"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "systemLogs"
+        }
+      }
+    },
+    "/api/system-logs/export": {
+      "get": {
+        "description": "Requires systemLogs:export.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "level",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "minLevel",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "eventCode",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "requestId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "organizationId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actorId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "statusCode",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dateFrom",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dateTo",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "text/csv"
+          }
+        },
+        "summary": "CSV export of the current filter set (max 10000 rows)",
+        "tags": [
+          "System Logs"
+        ],
+        "x-required-permission": {
+          "action": "export",
+          "module": "systemLogs"
+        }
+      }
+    },
+    "/api/system-logs/request/{requestId}": {
+      "get": {
+        "description": "Requires systemLogs:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "requestId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{ items: SystemLogEntry[] }"
+          }
+        },
+        "summary": "Every entry sharing one request id, oldest first (request trace)",
+        "tags": [
+          "System Logs"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "systemLogs"
+        }
+      }
+    },
+    "/api/system-logs/summary": {
+      "get": {
+        "description": "Requires systemLogs:read.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SystemLogSummary"
+          }
+        },
+        "summary": "Level/category counts, top failures, and the hourly error trend",
+        "tags": [
+          "System Logs"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "systemLogs"
+        }
+      }
+    },
+    "/api/system-logs/{id}": {
+      "get": {
+        "description": "Requires systemLogs:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SystemLogEntry"
+          }
+        },
+        "summary": "One entry with its full stack and context",
+        "tags": [
+          "System Logs"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "systemLogs"
+        }
+      }
+    },
+    "/api/users": {
+      "get": {
+        "description": "Requires entityTeam:read.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "organizationId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OrgUser[]"
+          }
+        },
+        "summary": "List the caller's own organisation's users, or (cross-entity) another org's via ?organizationId",
+        "tags": [
+          "Users"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "entityTeam"
+        }
+      },
+      "post": {
+        "description": "Requires entityTeam:create.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InviteUserBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OrgUser"
+          }
+        },
+        "summary": "Invite a user into the caller's own organisation",
+        "tags": [
+          "Users"
+        ],
+        "x-required-permission": {
+          "action": "create",
+          "module": "entityTeam"
+        }
+      }
+    },
+    "/api/users/{id}": {
+      "delete": {
+        "description": "Requires entityTeam:write.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "204 No Content"
+          }
+        },
+        "summary": "Remove a user from the caller's own organisation",
+        "tags": [
+          "Users"
+        ],
+        "x-required-permission": {
+          "action": "write",
+          "module": "entityTeam"
+        }
+      },
+      "patch": {
+        "description": "Requires entityTeam:write.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OrgUser"
+          }
+        },
+        "summary": "Update a user in the caller's own organisation",
+        "tags": [
+          "Users"
+        ],
+        "x-required-permission": {
+          "action": "write",
+          "module": "entityTeam"
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "description": "Signup, login, session, and password/consent for the calling user.",
+      "name": "Auth"
+    },
+    {
+      "description": "The active data-sharing consent policy shown before signup.",
+      "name": "Consent"
+    },
+    {
+      "description": "RIO-FR-001 — the container for a captured community need.",
+      "name": "Studies"
+    },
+    {
+      "description": "RIO-FR-001 — the one need captured per study.",
+      "name": "Needs"
+    },
+    {
+      "description": "RIO-FR-Add-01 — supporting documents uploaded against a study.",
+      "name": "Evidence"
+    },
+    {
+      "description": "RIO-FR-003 — classification/scoring placeholders and human review.",
+      "name": "AI Decisions"
+    },
+    {
+      "description": "Survey Builder — question set, methodology version, approval, and citizen submission.",
+      "name": "Surveys"
+    },
+    {
+      "description": "Deterministic severity scoring, dashboards, and methodology-version/lookup management.",
+      "name": "Priority"
+    },
+    {
+      "description": "Priority summary drafting/approval workflow feeding the Reports module.",
+      "name": "Priority Summary"
+    },
+    {
+      "description": "Manage the caller's own organisation's members.",
+      "name": "Users"
+    },
+    {
+      "description": "The caller's own organisation profile, plus cross-entity org listing.",
+      "name": "Organizations"
+    },
+    {
+      "description": "The fixed 9-role permission matrix.",
+      "name": "Roles"
+    },
+    {
+      "description": "Immutable audit log of every write across the app.",
+      "name": "Audit"
+    },
+    {
+      "description": "RIO-NFR-016 — operational events and errors (read-only, System Admin).",
+      "name": "System Logs"
+    },
+    {
+      "description": "Liveness/readiness probes.",
+      "name": "Health"
+    }
+  ]
+}
