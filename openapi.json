@@ -730,6 +730,59 @@
         },
         "type": "object"
       },
+      "Evidence": {
+        "properties": {
+          "fileName": {
+            "type": "string"
+          },
+          "fileSize": {
+            "type": "number"
+          },
+          "fileType": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "isDuplicate": {
+            "type": "boolean"
+          },
+          "needId": {
+            "type": "string"
+          },
+          "studyId": {
+            "type": "string"
+          },
+          "uploadedAt": {
+            "type": "string"
+          },
+          "uploadedBy": {
+            "type": "string"
+          },
+          "uploadedByName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "needId",
+          "studyId",
+          "fileName",
+          "fileType",
+          "fileSize",
+          "uploadedBy",
+          "uploadedByName",
+          "uploadedAt"
+        ],
+        "type": "object"
+      },
       "ForgotPasswordBody": {
         "additionalProperties": false,
         "properties": {
@@ -781,6 +834,73 @@
         ],
         "type": "object"
       },
+      "InviteUserResponse": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "key": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "key",
+              "name"
+            ],
+            "type": "object"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "const": "active",
+                "type": "string"
+              },
+              {
+                "const": "invited",
+                "type": "string"
+              },
+              {
+                "const": "disabled",
+                "type": "string"
+              }
+            ]
+          },
+          "temporaryPassword": {
+            "type": "string"
+          },
+          "temporaryPasswordEmailed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "email",
+          "role",
+          "status",
+          "createdAt",
+          "temporaryPasswordEmailed"
+        ],
+        "type": "object"
+      },
       "LoginBody": {
         "additionalProperties": false,
         "properties": {
@@ -798,6 +918,708 @@
         "required": [
           "email",
           "password"
+        ],
+        "type": "object"
+      },
+      "ModulePermission": {
+        "properties": {
+          "approve": {
+            "type": "boolean"
+          },
+          "create": {
+            "type": "boolean"
+          },
+          "export": {
+            "type": "boolean"
+          },
+          "module": {
+            "anyOf": [
+              {
+                "const": "entityTeam",
+                "type": "string"
+              },
+              {
+                "const": "rolesPermissions",
+                "type": "string"
+              },
+              {
+                "const": "onboardingConsent",
+                "type": "string"
+              },
+              {
+                "const": "methodologyQuestionBank",
+                "type": "string"
+              },
+              {
+                "const": "studySurvey",
+                "type": "string"
+              },
+              {
+                "const": "dataCollection",
+                "type": "string"
+              },
+              {
+                "const": "dataImport",
+                "type": "string"
+              },
+              {
+                "const": "citizenChannel",
+                "type": "string"
+              },
+              {
+                "const": "aiReview",
+                "type": "string"
+              },
+              {
+                "const": "priorityScoring",
+                "type": "string"
+              },
+              {
+                "const": "reportsDashboards",
+                "type": "string"
+              },
+              {
+                "const": "archiveSharingAudit",
+                "type": "string"
+              },
+              {
+                "const": "surveyBuilder",
+                "type": "string"
+              },
+              {
+                "const": "ncnpReport",
+                "type": "string"
+              },
+              {
+                "const": "systemLogs",
+                "type": "string"
+              },
+              {
+                "const": "auditLog",
+                "type": "string"
+              }
+            ]
+          },
+          "read": {
+            "type": "boolean"
+          },
+          "share": {
+            "type": "boolean"
+          },
+          "write": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "module",
+          "read",
+          "write",
+          "create",
+          "approve",
+          "export",
+          "share"
+        ],
+        "type": "object"
+      },
+      "Need": {
+        "properties": {
+          "aiSuggestedDomain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "aiSuggestedSubDomain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "allDomainsSelected": {
+            "type": "boolean"
+          },
+          "centerIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "classificationError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "classifiedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "createdByName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "governorateIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "internalReferenceId": {
+            "type": "string"
+          },
+          "needDomains": {
+            "items": {
+              "properties": {
+                "domain": {
+                  "type": "string"
+                },
+                "subDomain": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "domain",
+                "subDomain"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "proposedDomains": {
+            "anyOf": [
+              {
+                "items": {
+                  "properties": {
+                    "domain": {
+                      "type": "string"
+                    },
+                    "subDomain": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "domain",
+                    "subDomain"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proposedReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "referenceId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "anyOf": [
+              {
+                "const": "manual_entry",
+                "type": "string"
+              },
+              {
+                "const": "file_upload",
+                "type": "string"
+              },
+              {
+                "const": "citizen_input",
+                "type": "string"
+              },
+              {
+                "const": "field_survey",
+                "type": "string"
+              }
+            ]
+          },
+          "statement": {
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "const": "draft",
+                "type": "string"
+              },
+              {
+                "const": "pending_ai_classification",
+                "type": "string"
+              },
+              {
+                "const": "evidence_submitted",
+                "type": "string"
+              },
+              {
+                "const": "ai_classified",
+                "type": "string"
+              },
+              {
+                "const": "ai_classification_failed",
+                "type": "string"
+              },
+              {
+                "const": "reviewer_approved",
+                "type": "string"
+              },
+              {
+                "const": "survey_created",
+                "type": "string"
+              },
+              {
+                "const": "survey_published",
+                "type": "string"
+              }
+            ]
+          },
+          "studyId": {
+            "type": "string"
+          },
+          "subDomain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "village": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "studyId",
+          "title",
+          "statement",
+          "village",
+          "governorateIds",
+          "centerIds",
+          "source",
+          "referenceId",
+          "internalReferenceId",
+          "status",
+          "domain",
+          "subDomain",
+          "allDomainsSelected",
+          "needDomains",
+          "aiSuggestedDomain",
+          "aiSuggestedSubDomain",
+          "classifiedAt",
+          "classificationError",
+          "proposedDomains",
+          "proposedReason",
+          "createdBy",
+          "createdByName",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "OrgUser": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "key": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "key",
+              "name"
+            ],
+            "type": "object"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "const": "active",
+                "type": "string"
+              },
+              {
+                "const": "invited",
+                "type": "string"
+              },
+              {
+                "const": "disabled",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "email",
+          "role",
+          "status",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "OrgUserRole": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "name"
+        ],
+        "type": "object"
+      },
+      "Organization": {
+        "properties": {
+          "approvedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "centerIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "governorateIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "logoUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "region": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "regionId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "registrationNumber": {
+            "type": "string"
+          },
+          "sector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "villages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "purpose",
+          "registrationNumber",
+          "logoUrl",
+          "region",
+          "email",
+          "sector",
+          "villages",
+          "regionId",
+          "governorateIds",
+          "centerIds",
+          "isActive",
+          "approvedAt",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "OrganizationSummary": {
+        "properties": {
+          "approvedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "centerIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "deactivationReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "email": {
+            "type": "string"
+          },
+          "governorateIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "logoUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "memberCount": {
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ngoAdminEmail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ngoAdminName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "region": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "regionId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "registrationNumber": {
+            "type": "string"
+          },
+          "reportCount": {
+            "type": "number"
+          },
+          "sector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "studyCount": {
+            "type": "number"
+          },
+          "surveyCount": {
+            "type": "number"
+          },
+          "villages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "purpose",
+          "registrationNumber",
+          "logoUrl",
+          "region",
+          "email",
+          "sector",
+          "villages",
+          "regionId",
+          "governorateIds",
+          "centerIds",
+          "isActive",
+          "approvedAt",
+          "createdAt",
+          "memberCount"
         ],
         "type": "object"
       },
@@ -944,6 +1766,137 @@
         },
         "required": [
           "decision"
+        ],
+        "type": "object"
+      },
+      "RoleDef": {
+        "properties": {
+          "crossEntity": {
+            "type": "boolean"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "properties": {
+                "approve": {
+                  "type": "boolean"
+                },
+                "create": {
+                  "type": "boolean"
+                },
+                "export": {
+                  "type": "boolean"
+                },
+                "module": {
+                  "anyOf": [
+                    {
+                      "const": "entityTeam",
+                      "type": "string"
+                    },
+                    {
+                      "const": "rolesPermissions",
+                      "type": "string"
+                    },
+                    {
+                      "const": "onboardingConsent",
+                      "type": "string"
+                    },
+                    {
+                      "const": "methodologyQuestionBank",
+                      "type": "string"
+                    },
+                    {
+                      "const": "studySurvey",
+                      "type": "string"
+                    },
+                    {
+                      "const": "dataCollection",
+                      "type": "string"
+                    },
+                    {
+                      "const": "dataImport",
+                      "type": "string"
+                    },
+                    {
+                      "const": "citizenChannel",
+                      "type": "string"
+                    },
+                    {
+                      "const": "aiReview",
+                      "type": "string"
+                    },
+                    {
+                      "const": "priorityScoring",
+                      "type": "string"
+                    },
+                    {
+                      "const": "reportsDashboards",
+                      "type": "string"
+                    },
+                    {
+                      "const": "archiveSharingAudit",
+                      "type": "string"
+                    },
+                    {
+                      "const": "surveyBuilder",
+                      "type": "string"
+                    },
+                    {
+                      "const": "ncnpReport",
+                      "type": "string"
+                    },
+                    {
+                      "const": "systemLogs",
+                      "type": "string"
+                    },
+                    {
+                      "const": "auditLog",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "read": {
+                  "type": "boolean"
+                },
+                "share": {
+                  "type": "boolean"
+                },
+                "write": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "module",
+                "read",
+                "write",
+                "create",
+                "approve",
+                "export",
+                "share"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "name",
+          "description",
+          "crossEntity",
+          "permissions"
         ],
         "type": "object"
       },
@@ -1122,6 +2075,358 @@
           "regionId",
           "governorateIds",
           "centerIds"
+        ],
+        "type": "object"
+      },
+      "Study": {
+        "properties": {
+          "centerIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "cycleNumber": {
+            "type": "number"
+          },
+          "governorateIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "marginOfError": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "methodologyVersionId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "minimumDetectableEffect": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "population": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requiredSampleSize": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "villages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "villages",
+          "governorateIds",
+          "centerIds",
+          "methodologyVersionId",
+          "population",
+          "marginOfError",
+          "requiredSampleSize",
+          "minimumDetectableEffect",
+          "cycleNumber",
+          "createdBy",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "StudyDetail": {
+        "properties": {
+          "centerIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "cycleNumber": {
+            "type": "number"
+          },
+          "evidenceCount": {
+            "type": "number"
+          },
+          "governorateIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "marginOfError": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "methodologyVersionId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "minimumDetectableEffect": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "needCount": {
+            "type": "number"
+          },
+          "population": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requiredSampleSize": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "villages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "villages",
+          "governorateIds",
+          "centerIds",
+          "methodologyVersionId",
+          "population",
+          "marginOfError",
+          "requiredSampleSize",
+          "minimumDetectableEffect",
+          "cycleNumber",
+          "createdBy",
+          "createdAt",
+          "updatedAt",
+          "evidenceCount",
+          "needCount"
+        ],
+        "type": "object"
+      },
+      "StudyListResult": {
+        "properties": {
+          "items": {
+            "items": {
+              "properties": {
+                "centerIds": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "createdAt": {
+                  "type": "string"
+                },
+                "createdBy": {
+                  "type": "string"
+                },
+                "cycleNumber": {
+                  "type": "number"
+                },
+                "governorateIds": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "marginOfError": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "methodologyVersionId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "minimumDetectableEffect": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "population": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "requiredSampleSize": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "title": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "string"
+                },
+                "villages": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "id",
+                "title",
+                "villages",
+                "governorateIds",
+                "centerIds",
+                "methodologyVersionId",
+                "population",
+                "marginOfError",
+                "requiredSampleSize",
+                "minimumDetectableEffect",
+                "cycleNumber",
+                "createdBy",
+                "createdAt",
+                "updatedAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "offset": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
         ],
         "type": "object"
       },
@@ -2470,6 +3775,16 @@
         ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OrganizationSummary"
+                  },
+                  "type": "array"
+                }
+              }
+            },
             "description": "OrganizationSummary[]"
           }
         },
@@ -2496,6 +3811,13 @@
         },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Organization"
+                }
+              }
+            },
             "description": "Organization"
           }
         },
@@ -2514,6 +3836,13 @@
         "description": "Requires entityTeam:read.",
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Organization"
+                }
+              }
+            },
             "description": "Organization"
           }
         },
@@ -2540,6 +3869,13 @@
         },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Organization"
+                }
+              }
+            },
             "description": "Organization"
           }
         },
@@ -2568,6 +3904,13 @@
         ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationSummary"
+                }
+              }
+            },
             "description": "OrganizationSummary"
           }
         },
@@ -2790,6 +4133,16 @@
         "description": "Requires rolesPermissions:read.",
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RoleDef"
+                  },
+                  "type": "array"
+                }
+              }
+            },
             "description": "RoleDef[]"
           }
         },
@@ -2842,6 +4195,13 @@
         ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudyListResult"
+                }
+              }
+            },
             "description": "StudyListResult ({ items: Study[], total, limit, offset })"
           }
         },
@@ -2868,6 +4228,13 @@
         },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Study"
+                }
+              }
+            },
             "description": "Study"
           }
         },
@@ -2922,6 +4289,13 @@
         ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudyDetail"
+                }
+              }
+            },
             "description": "StudyDetail (Study + evidenceCount)"
           }
         },
@@ -2958,6 +4332,13 @@
         },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Study"
+                }
+              }
+            },
             "description": "Study"
           }
         },
@@ -3070,6 +4451,16 @@
         ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Evidence"
+                  },
+                  "type": "array"
+                }
+              }
+            },
             "description": "Evidence[]"
           }
         },
@@ -3096,6 +4487,16 @@
         ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Evidence"
+                  },
+                  "type": "array"
+                }
+              }
+            },
             "description": "Evidence[]"
           }
         },
@@ -3152,6 +4553,13 @@
         ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Need"
+                }
+              }
+            },
             "description": "Need"
           }
         },
@@ -3188,6 +4596,13 @@
         },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Need"
+                }
+              }
+            },
             "description": "Need"
           }
         },
@@ -3224,6 +4639,13 @@
         },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Need"
+                }
+              }
+            },
             "description": "Need"
           }
         },
@@ -4300,6 +5722,16 @@
         ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OrgUser"
+                  },
+                  "type": "array"
+                }
+              }
+            },
             "description": "OrgUser[]"
           }
         },
@@ -4326,7 +5758,14 @@
         },
         "responses": {
           "200": {
-            "description": "OrgUser"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InviteUserResponse"
+                }
+              }
+            },
+            "description": "InviteUserResponse (OrgUser + temporaryPasswordEmailed, temporaryPassword?)"
           }
         },
         "summary": "Invite a user into the caller's own organisation",
@@ -4390,6 +5829,13 @@
         },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgUser"
+                }
+              }
+            },
             "description": "OrgUser"
           }
         },

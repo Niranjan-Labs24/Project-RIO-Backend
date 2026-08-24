@@ -127,19 +127,23 @@ const ROUTES: RouteDoc[] = [
   {
     method: 'post', path: '/studies', tag: 'Studies', summary: 'Create a study',
     auth: { module: 'studySurvey', action: 'create' }, requestSchema: 'CreateStudyBody', response: 'Study',
+    responseSchema: 'Study',
   },
   {
     method: 'get', path: '/studies', tag: 'Studies', summary: "List the caller's organisation's studies",
     auth: { module: 'studySurvey', action: 'read' }, query: ['limit', 'offset', 'status', 'search'],
     response: 'StudyListResult ({ items: Study[], total, limit, offset })',
+    responseSchema: 'StudyListResult',
   },
   {
     method: 'get', path: '/studies/{id}', tag: 'Studies', summary: 'Get a single study',
     auth: { module: 'studySurvey', action: 'read' }, response: 'StudyDetail (Study + evidenceCount)',
+    responseSchema: 'StudyDetail',
   },
   {
     method: 'patch', path: '/studies/{id}', tag: 'Studies', summary: "Rename a study (title is the only editable Study-level field)",
     auth: { module: 'studySurvey', action: 'write' }, requestSchema: 'UpdateStudyBody', response: 'Study',
+    responseSchema: 'Study',
   },
   {
     method: 'delete', path: '/studies/{id}', tag: 'Studies', summary: 'Delete a study — allowed only up to evidence_submitted; blocked once ai_classified/human_reviewed',
@@ -148,22 +152,27 @@ const ROUTES: RouteDoc[] = [
   {
     method: 'post', path: '/studies/{studyId}/need', tag: 'Needs', summary: 'Capture the need for a study (one per study)',
     auth: { module: 'dataCollection', action: 'create' }, requestSchema: 'CreateNeedBody', response: 'Need',
+    responseSchema: 'Need',
   },
   {
     method: 'get', path: '/studies/{studyId}/need', tag: 'Needs', summary: "Get a study's captured need",
     auth: { module: 'dataCollection', action: 'read' }, response: 'Need',
+    responseSchema: 'Need',
   },
   {
     method: 'patch', path: '/studies/{studyId}/need', tag: 'Needs', summary: "Edit a study's captured need",
     auth: { module: 'dataCollection', action: 'write' }, requestSchema: 'UpdateNeedBody', response: 'Need',
+    responseSchema: 'Need',
   },
   {
     method: 'post', path: '/studies/{studyId}/evidence', tag: 'Evidence', summary: 'Upload one or more evidence files (multipart/form-data, field name "files"; max 10MB/file, 10 files/study)',
     auth: { module: 'dataCollection', action: 'create' }, response: 'Evidence[]',
+    responseSchema: 'Evidence', responseIsArray: true,
   },
   {
     method: 'get', path: '/studies/{studyId}/evidence', tag: 'Evidence', summary: "List a study's uploaded evidence",
     auth: { module: 'dataCollection', action: 'read' }, response: 'Evidence[]',
+    responseSchema: 'Evidence', responseIsArray: true,
   },
   {
     method: 'post', path: '/studies/{studyId}/evidence/submit', tag: 'Evidence', summary: 'Submit uploaded evidence — required before AI Classification is allowed to run',
@@ -192,14 +201,18 @@ const ROUTES: RouteDoc[] = [
   {
     method: 'get', path: '/users', tag: 'Users', summary: "List the caller's own organisation's users, or (cross-entity) another org's via ?organizationId",
     auth: { module: 'entityTeam', action: 'read' }, query: ['organizationId', 'limit', 'offset'], response: 'OrgUser[]',
+    responseSchema: 'OrgUser', responseIsArray: true,
   },
   {
     method: 'post', path: '/users', tag: 'Users', summary: 'Invite a user into the caller\'s own organisation',
-    auth: { module: 'entityTeam', action: 'create' }, requestSchema: 'InviteUserBody', response: 'OrgUser',
+    auth: { module: 'entityTeam', action: 'create' }, requestSchema: 'InviteUserBody',
+    response: 'InviteUserResponse (OrgUser + temporaryPasswordEmailed, temporaryPassword?)',
+    responseSchema: 'InviteUserResponse',
   },
   {
     method: 'patch', path: '/users/{id}', tag: 'Users', summary: "Update a user in the caller's own organisation",
     auth: { module: 'entityTeam', action: 'write' }, requestSchema: 'UpdateUserBody', response: 'OrgUser',
+    responseSchema: 'OrgUser',
   },
   {
     method: 'delete', path: '/users/{id}', tag: 'Users', summary: "Remove a user from the caller's own organisation",
@@ -208,26 +221,32 @@ const ROUTES: RouteDoc[] = [
   {
     method: 'get', path: '/organizations/current', tag: 'Organizations', summary: "The caller's own organisation profile",
     auth: { module: 'entityTeam', action: 'read' }, response: 'Organization',
+    responseSchema: 'Organization',
   },
   {
     method: 'patch', path: '/organizations/current', tag: 'Organizations', summary: "Update the caller's own organisation profile",
     auth: { module: 'entityTeam', action: 'write' }, requestSchema: 'UpdateOrganizationBody', response: 'Organization',
+    responseSchema: 'Organization',
   },
   {
     method: 'get', path: '/organizations', tag: 'Organizations', summary: 'Cross-entity — every organisation on the platform',
     auth: { module: 'entityTeam', action: 'read' }, query: ['limit', 'offset'], response: 'OrganizationSummary[]',
+    responseSchema: 'OrganizationSummary', responseIsArray: true,
   },
   {
     method: 'get', path: '/organizations/{id}', tag: 'Organizations', summary: "Cross-entity — another organisation's profile",
     auth: { module: 'entityTeam', action: 'read' }, response: 'OrganizationSummary',
+    responseSchema: 'OrganizationSummary',
   },
   {
     method: 'post', path: '/organizations', tag: 'Organizations', summary: 'Create a new organisation + its first NGO Admin',
     auth: { module: 'entityTeam', action: 'create' }, requestSchema: 'CreateOrganizationBody', response: 'Organization',
+    responseSchema: 'Organization',
   },
   {
     method: 'get', path: '/roles', tag: 'Roles', summary: 'List the fixed 9-role permission matrix',
     auth: { module: 'rolesPermissions', action: 'read' }, response: 'RoleDef[]',
+    responseSchema: 'RoleDef', responseIsArray: true,
   },
   {
     method: 'get', path: '/audit', tag: 'Audit', summary: 'Immutable audit log — own organisation, or (cross-entity) any organisation via ?organizationId',

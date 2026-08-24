@@ -10,7 +10,7 @@
  *
  * There is no barrel that imports every *.contract.ts today — each one is
  * imported ad hoc by its own controller/service — so this script imports
- * all 18 explicitly, purely for their registerSchema() side effects. No
+ * all 19 explicitly, purely for their registerSchema() side effects. No
  * Nest bootstrap (no app, no DB) is needed to build the doc.
  *
  * Run: pnpm openapi:export
@@ -38,6 +38,7 @@ import '../src/modules/public-surveys/public-surveys.contract';
 import '../src/modules/report-sharing/report-sharing.contract';
 import '../src/modules/reports/priority-summary.contract';
 import '../src/modules/reports/reports.contract';
+import '../src/modules/roles/roles.contract';
 import '../src/modules/sharing/sharing.contract';
 import '../src/modules/studies/studies.contract';
 import '../src/modules/surveys/surveys.contract';

@@ -76,3 +76,64 @@ export const UpdateOrganizationStatusBody = registerSchema(
   }),
 );
 export type UpdateOrganizationStatusDto = Static<typeof UpdateOrganizationStatusBody>;
+
+// Response schemas (GAP-08 Phase 0) — shape sourced from the frontend's
+// Organization/OrganizationSummary
+// (Project-RIO-Frontend/src/services/organizations/organizations.types.ts).
+//
+// NOTE (discrepancy, not fixed here): the frontend types `purpose`,
+// `registrationNumber`, and `email` as non-nullable `string`, but the
+// backend's actual Organization type (organizations.types.ts) has all
+// three as `string | null` (registrationNumber/email are nullable Postgres
+// columns; purpose is only meaningful when sector = 'other'). Registered
+// here per the frontend shape as instructed — flagged for Phase 3 to
+// reconcile (either the frontend types are wrong, or the backend needs to
+// guarantee non-null before responding).
+export const Organization = registerSchema(
+  'Organization',
+  T.Object({
+    id: T.String(),
+    name: T.String(),
+    purpose: T.String(),
+    registrationNumber: T.String(),
+    logoUrl: T.Union([T.String(), T.Null()]),
+    region: T.Array(T.String()),
+    email: T.String(),
+    sector: T.Union([T.String(), T.Null()]),
+    villages: T.Array(T.String()),
+    regionId: T.Union([T.String(), T.Null()]),
+    governorateIds: T.Array(T.String()),
+    centerIds: T.Array(T.String()),
+    isActive: T.Boolean(),
+    approvedAt: T.Union([T.String(), T.Null()]),
+    createdAt: T.String(),
+  }),
+);
+
+export const OrganizationSummary = registerSchema(
+  'OrganizationSummary',
+  T.Object({
+    id: T.String(),
+    name: T.String(),
+    purpose: T.String(),
+    registrationNumber: T.String(),
+    logoUrl: T.Union([T.String(), T.Null()]),
+    region: T.Array(T.String()),
+    email: T.String(),
+    sector: T.Union([T.String(), T.Null()]),
+    villages: T.Array(T.String()),
+    regionId: T.Union([T.String(), T.Null()]),
+    governorateIds: T.Array(T.String()),
+    centerIds: T.Array(T.String()),
+    isActive: T.Boolean(),
+    approvedAt: T.Union([T.String(), T.Null()]),
+    createdAt: T.String(),
+    memberCount: T.Number(),
+    studyCount: T.Optional(T.Number()),
+    surveyCount: T.Optional(T.Number()),
+    reportCount: T.Optional(T.Number()),
+    ngoAdminName: T.Optional(T.Union([T.String(), T.Null()])),
+    ngoAdminEmail: T.Optional(T.Union([T.String(), T.Null()])),
+    deactivationReason: T.Optional(T.Union([T.String(), T.Null()])),
+  }),
+);
