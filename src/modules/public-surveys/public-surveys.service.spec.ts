@@ -225,6 +225,38 @@ describe('PublicSurveysService bounded reads (Task 8)', () => {
   });
 });
 
+describe('PublicSurveysService reject silent export truncation (GAP-18)', () => {
+  it('exportResponsesCsv rejects with EXPORT_TOO_LARGE when the count exceeds the cap', async () => {
+    const tx = makeFakeTx(NEED, [], SURVEY);
+    (tx.surveyResponse.count as ReturnType<typeof vi.fn>).mockResolvedValue(50_001);
+    const service = makeService(tx);
+
+    await expect(service.exportResponsesCsv('need-1')).rejects.toMatchObject({
+      response: { error: { code: 'EXPORT_TOO_LARGE' } },
+    });
+  });
+
+  it('listResponsesWithAnswers rejects with EXPORT_TOO_LARGE when the count exceeds the cap', async () => {
+    const tx = makeFakeTx(NEED, [], SURVEY);
+    (tx.surveyResponse.count as ReturnType<typeof vi.fn>).mockResolvedValue(50_001);
+    const service = makeService(tx);
+
+    await expect(service.listResponsesWithAnswers('need-1')).rejects.toMatchObject({
+      response: { error: { code: 'EXPORT_TOO_LARGE' } },
+    });
+  });
+
+  it('exportResponsesExcel rejects with EXPORT_TOO_LARGE when the count exceeds the cap', async () => {
+    const tx = makeFakeTx(NEED, [], SURVEY);
+    (tx.surveyResponse.count as ReturnType<typeof vi.fn>).mockResolvedValue(50_001);
+    const service = makeService(tx);
+
+    await expect(service.exportResponsesExcel('need-1')).rejects.toMatchObject({
+      response: { error: { code: 'EXPORT_TOO_LARGE' } },
+    });
+  });
+});
+
 describe('PublicSurveysService pagination stable tie-breaker (GAP-17)', () => {
   it('listResponses orders by submittedAt desc with id desc as a tie-breaker', async () => {
     const tx = makeFakeTx(NEED, [], SURVEY);
