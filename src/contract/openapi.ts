@@ -33,6 +33,33 @@ interface RouteDoc {
   requestSchema?: string;
   query?: string[];
   response: string;
+  /**
+   * Name of a schema registered via registerSchema() (GAP-08 Phase 0) that
+   * describes this route's 200 response body. `response` above stays as
+   * the human-readable description (unchanged) — `responseSchema` adds a
+   * machine-readable `content.application/json.schema.$ref` alongside it.
+   * Optional and additive: routes without it render byte-identically to
+   * before this field existed.
+   *
+   * Convention (pick one, used consistently across the whole file):
+   *  - Single object (e.g. `response: 'Study'`): set
+   *    `responseSchema: 'Study'` only.
+   *  - Bare array (e.g. `response: 'Evidence[]'`): register the *item*
+   *    schema (e.g. 'Evidence') and set `responseSchema: 'Evidence'` +
+   *    `responseIsArray: true` — buildOperation() wraps it as
+   *    `{ type: 'array', items: { $ref } }`. Do NOT register a separate
+   *    "EvidenceList" wrapper schema for this case.
+   *  - Paginated envelope (e.g. `{ items: Study[], total, limit, offset }`,
+   *    doc'd as `response: 'StudyListResult (...)'`): register ONE schema
+   *    for the whole envelope object (e.g. 'StudyListResult', itself
+   *    containing `items: Study[]` inline via T.Array(T.Ref('Study'))) and
+   *    set `responseSchema` to that envelope schema's name, with
+   *    `responseIsArray` left unset — the envelope IS the 200 body, not an
+   *    array itself.
+   */
+  responseSchema?: string;
+  /** See responseSchema doc above — set true only for the bare-array case. */
+  responseIsArray?: boolean;
 }
 
 // One entry per tag, in the order they should appear in Swagger UI's
@@ -453,7 +480,20 @@ function buildOperation(route: RouteDoc): Record<string, unknown> {
         }
       : {}),
     responses: {
-      '200': { description: route.response },
+      '200': {
+        description: route.response,
+        ...(route.responseSchema
+          ? {
+              content: {
+                'application/json': {
+                  schema: route.responseIsArray
+                    ? { type: 'array', items: { $ref: `#/components/schemas/${route.responseSchema}` } }
+                    : { $ref: `#/components/schemas/${route.responseSchema}` },
+                },
+              },
+            }
+          : {}),
+      },
     },
     ...(route.auth && route.auth !== 'session' ? { 'x-required-permission': route.auth } : {}),
   };
