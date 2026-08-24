@@ -118,8 +118,19 @@ export class EvidenceStorageService {
     }
   }
 
-  async remove(storageKey: string): Promise<void> {
+  // GAP-13: used to swallow a failed unlink (.catch(() => undefined)),
+  // resolving successfully even when the file was left on disk — an
+  // orphaned file with nothing to signal it. Now reports success/failure so
+  // callers (EvidenceService.remove's durable-retry recording, and the
+  // upload-rollback path) can tell the two apart instead of assuming the
+  // file is always gone.
+  async remove(storageKey: string): Promise<boolean> {
     const dir = resolve(this.config.evidenceStoragePath);
-    await unlink(join(dir, storageKey)).catch(() => undefined);
+    try {
+      await unlink(join(dir, storageKey));
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
