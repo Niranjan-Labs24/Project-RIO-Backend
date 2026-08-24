@@ -18,3 +18,15 @@ export function appClient(): PrismaClient {
     adapter: new PrismaPg({ connectionString: process.env.APP_DATABASE_URL, ssl: pgSslFromEnv() }),
   });
 }
+
+/**
+ * Supervisor client (cnap_supervisor, NOBYPASSRLS, cross-org SELECT policies) —
+ * the read path TenantPrismaService.runAsSupervisor uses. Needed so tests that
+ * exercise runAsSupervisor (e.g. the GAP-04 score_response task's response/
+ * survey refetch) see rows across orgs, exactly as the running app does.
+ */
+export function supervisorClient(): PrismaClient {
+  return new PrismaClient({
+    adapter: new PrismaPg({ connectionString: process.env.SUPERVISOR_DATABASE_URL, ssl: pgSslFromEnv() }),
+  });
+}
