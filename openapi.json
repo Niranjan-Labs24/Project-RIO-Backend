@@ -312,6 +312,48 @@
         ],
         "type": "object"
       },
+      "AiSummaryView": {
+        "properties": {
+          "generatedAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "needId": {
+            "type": "string"
+          },
+          "responseCount": {
+            "type": "number"
+          },
+          "studyId": {
+            "type": "string"
+          },
+          "summaryText": {
+            "type": "string"
+          },
+          "surveyLinkId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "needId",
+          "studyId",
+          "surveyLinkId",
+          "summaryText",
+          "responseCount",
+          "generatedAt"
+        ],
+        "type": "object"
+      },
       "ApproveNcnpReportBody": {
         "properties": {
           "notes": {
@@ -770,6 +812,17 @@
         "required": [
           "contact",
           "mobile"
+        ],
+        "type": "object"
+      },
+      "CheckDuplicateResultView": {
+        "properties": {
+          "isDuplicate": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "isDuplicate"
         ],
         "type": "object"
       },
@@ -1668,6 +1721,1387 @@
         ],
         "type": "object"
       },
+      "NcnpReportView": {
+        "properties": {
+          "criticalNeeds": {
+            "properties": {
+              "priorityNeeds": {
+                "items": {
+                  "properties": {
+                    "domain": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "equityFlag": {
+                      "type": "boolean"
+                    },
+                    "evidenceCount": {
+                      "type": "number"
+                    },
+                    "indicatorId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "needId": {
+                      "type": "string"
+                    },
+                    "needTitle": {
+                      "type": "string"
+                    },
+                    "organizationName": {
+                      "type": "string"
+                    },
+                    "primaryGap": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "priorityScore": {
+                      "type": "number"
+                    },
+                    "priorityStatus": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "sourceRef": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "subDomain": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "unitGeoRegion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "needId",
+                    "needTitle",
+                    "domain",
+                    "subDomain",
+                    "organizationName",
+                    "priorityScore",
+                    "priorityStatus",
+                    "primaryGap",
+                    "evidenceCount",
+                    "source",
+                    "equityFlag",
+                    "indicatorId",
+                    "unitGeoRegion",
+                    "sourceRef"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "topCriticalNeeds": {
+                "items": {
+                  "properties": {
+                    "domain": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "equityFlag": {
+                      "type": "boolean"
+                    },
+                    "evidenceCount": {
+                      "type": "number"
+                    },
+                    "indicatorId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "needId": {
+                      "type": "string"
+                    },
+                    "needTitle": {
+                      "type": "string"
+                    },
+                    "organizationName": {
+                      "type": "string"
+                    },
+                    "primaryGap": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "priorityScore": {
+                      "type": "number"
+                    },
+                    "priorityStatus": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "sourceRef": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "subDomain": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "unitGeoRegion": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "needId",
+                    "needTitle",
+                    "domain",
+                    "subDomain",
+                    "organizationName",
+                    "priorityScore",
+                    "priorityStatus",
+                    "primaryGap",
+                    "evidenceCount",
+                    "source",
+                    "equityFlag",
+                    "indicatorId",
+                    "unitGeoRegion",
+                    "sourceRef"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "totalNeeds": {
+                "type": "number"
+              },
+              "totalRankableNeeds": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "topCriticalNeeds",
+              "priorityNeeds",
+              "totalRankableNeeds",
+              "totalNeeds"
+            ],
+            "type": "object"
+          },
+          "dataQualityNotes": {
+            "properties": {
+              "assessedResponses": {
+                "type": "number"
+              },
+              "duplicateFlaggedCount": {
+                "type": "number"
+              },
+              "lowConfidenceCount": {
+                "type": "number"
+              },
+              "needsUnclassified": {
+                "type": "number"
+              },
+              "needsWithEvidence": {
+                "type": "number"
+              },
+              "needsWithoutEvidence": {
+                "type": "number"
+              },
+              "totalNeeds": {
+                "type": "number"
+              },
+              "totalResponses": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "totalResponses",
+              "assessedResponses",
+              "lowConfidenceCount",
+              "duplicateFlaggedCount",
+              "totalNeeds",
+              "needsWithEvidence",
+              "needsWithoutEvidence",
+              "needsUnclassified"
+            ],
+            "type": "object"
+          },
+          "domainRegionIntersections": {
+            "items": {
+              "properties": {
+                "domainName": {
+                  "type": "string"
+                },
+                "needCount": {
+                  "type": "number"
+                },
+                "regionName": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "regionName",
+                "domainName",
+                "needCount"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "generatedAt": {
+            "type": "string"
+          },
+          "geography": {
+            "properties": {
+              "organizationsByCenter": {
+                "items": {
+                  "properties": {
+                    "count": {
+                      "type": "number"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "count"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "organizationsByGovernorate": {
+                "items": {
+                  "properties": {
+                    "count": {
+                      "type": "number"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "count"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "organizationsByRegion": {
+                "items": {
+                  "properties": {
+                    "count": {
+                      "type": "number"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "count"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "studiesByRegion": {
+                "items": {
+                  "properties": {
+                    "count": {
+                      "type": "number"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "count"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "organizationsByRegion",
+              "organizationsByGovernorate",
+              "organizationsByCenter",
+              "studiesByRegion"
+            ],
+            "type": "object"
+          },
+          "needDomains": {
+            "items": {
+              "properties": {
+                "domainCode": {
+                  "type": "string"
+                },
+                "domainName": {
+                  "type": "string"
+                },
+                "needCount": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "domainCode",
+                "domainName",
+                "needCount"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "needSubDomains": {
+            "items": {
+              "properties": {
+                "domainName": {
+                  "type": "string"
+                },
+                "needCount": {
+                  "type": "number"
+                },
+                "subDomainName": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "domainName",
+                "subDomainName",
+                "needCount"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "needsGeography": {
+            "properties": {
+              "byCenter": {
+                "items": {
+                  "properties": {
+                    "count": {
+                      "type": "number"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "count"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "byGovernorate": {
+                "items": {
+                  "properties": {
+                    "count": {
+                      "type": "number"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "count"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "byRegion": {
+                "items": {
+                  "properties": {
+                    "count": {
+                      "type": "number"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "count"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "byRegion",
+              "byGovernorate",
+              "byCenter"
+            ],
+            "type": "object"
+          },
+          "orgHealth": {
+            "properties": {
+              "active": {
+                "type": "number"
+              },
+              "dormant": {
+                "type": "number"
+              },
+              "dormantDays": {
+                "type": "number"
+              },
+              "inactive": {
+                "type": "number"
+              },
+              "needsAttention": {
+                "items": {
+                  "properties": {
+                    "lastActivity": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "organizationId": {
+                      "type": "string"
+                    },
+                    "organizationName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "organizationId",
+                    "organizationName",
+                    "lastActivity"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "active",
+              "inactive",
+              "dormant",
+              "dormantDays",
+              "needsAttention"
+            ],
+            "type": "object"
+          },
+          "orgSummary": {
+            "properties": {
+              "byResponses": {
+                "items": {
+                  "properties": {
+                    "isActive": {
+                      "type": "boolean"
+                    },
+                    "organizationId": {
+                      "type": "string"
+                    },
+                    "organizationName": {
+                      "type": "string"
+                    },
+                    "responseCount": {
+                      "type": "number"
+                    },
+                    "studyCount": {
+                      "type": "number"
+                    },
+                    "surveyCount": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "organizationId",
+                    "organizationName",
+                    "studyCount",
+                    "surveyCount",
+                    "responseCount",
+                    "isActive"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "byStudies": {
+                "items": {
+                  "properties": {
+                    "isActive": {
+                      "type": "boolean"
+                    },
+                    "organizationId": {
+                      "type": "string"
+                    },
+                    "organizationName": {
+                      "type": "string"
+                    },
+                    "responseCount": {
+                      "type": "number"
+                    },
+                    "studyCount": {
+                      "type": "number"
+                    },
+                    "surveyCount": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "organizationId",
+                    "organizationName",
+                    "studyCount",
+                    "surveyCount",
+                    "responseCount",
+                    "isActive"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "bySurveys": {
+                "items": {
+                  "properties": {
+                    "isActive": {
+                      "type": "boolean"
+                    },
+                    "organizationId": {
+                      "type": "string"
+                    },
+                    "organizationName": {
+                      "type": "string"
+                    },
+                    "responseCount": {
+                      "type": "number"
+                    },
+                    "studyCount": {
+                      "type": "number"
+                    },
+                    "surveyCount": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "organizationId",
+                    "organizationName",
+                    "studyCount",
+                    "surveyCount",
+                    "responseCount",
+                    "isActive"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "totalOrganizations": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "byStudies",
+              "bySurveys",
+              "byResponses",
+              "totalOrganizations"
+            ],
+            "type": "object"
+          },
+          "priorityOverview": {
+            "properties": {
+              "byStatus": {
+                "items": {
+                  "properties": {
+                    "count": {
+                      "type": "number"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "count"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "domainComparison": {
+                "items": {
+                  "properties": {
+                    "assessmentCount": {
+                      "type": "number"
+                    },
+                    "avgPerformanceScore": {
+                      "type": "number"
+                    },
+                    "domainKey": {
+                      "type": "string"
+                    },
+                    "domainName": {
+                      "type": "string"
+                    },
+                    "isCriticalDomain": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "domainKey",
+                    "domainName",
+                    "avgPerformanceScore",
+                    "isCriticalDomain",
+                    "assessmentCount"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "topPriorityVillages": {
+                "items": {
+                  "properties": {
+                    "priorityScore": {
+                      "type": "number"
+                    },
+                    "priorityStatus": {
+                      "type": "string"
+                    },
+                    "studyId": {
+                      "type": "string"
+                    },
+                    "surveyId": {
+                      "type": "string"
+                    },
+                    "villageId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "studyId",
+                    "surveyId",
+                    "villageId",
+                    "priorityScore",
+                    "priorityStatus"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "byStatus",
+              "domainComparison",
+              "topPriorityVillages"
+            ],
+            "type": "object"
+          },
+          "publicLinkStatus": {
+            "properties": {
+              "closed": {
+                "type": "number"
+              },
+              "open": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "open",
+              "closed"
+            ],
+            "type": "object"
+          },
+          "regionSummary": {
+            "items": {
+              "properties": {
+                "avgResponsesPerSurvey": {
+                  "type": "number"
+                },
+                "regionId": {
+                  "type": "string"
+                },
+                "regionName": {
+                  "type": "string"
+                },
+                "responseCount": {
+                  "type": "number"
+                },
+                "surveyCount": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "regionId",
+                "regionName",
+                "surveyCount",
+                "responseCount",
+                "avgResponsesPerSurvey"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "responseAnalytics": {
+            "properties": {
+              "ageBracketDistribution": {
+                "items": {
+                  "properties": {
+                    "ageBracket": {
+                      "type": "string"
+                    },
+                    "count": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "ageBracket",
+                    "count"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "genderDistribution": {
+                "items": {
+                  "properties": {
+                    "count": {
+                      "type": "number"
+                    },
+                    "gender": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "gender",
+                    "count"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "hasResponsesWithoutAgeBracket": {
+                "type": "boolean"
+              },
+              "monthlyTrend": {
+                "items": {
+                  "properties": {
+                    "count": {
+                      "type": "number"
+                    },
+                    "month": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "month",
+                    "count"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "responsesByRegion": {
+                "items": {
+                  "properties": {
+                    "count": {
+                      "type": "number"
+                    },
+                    "regionId": {
+                      "type": "string"
+                    },
+                    "regionName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "regionId",
+                    "regionName",
+                    "count"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "topOrgsByAvgResponsesPerSurvey": {
+                "items": {
+                  "properties": {
+                    "organizationId": {
+                      "type": "string"
+                    },
+                    "organizationName": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "organizationId",
+                    "organizationName",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "topOrgsByTotalResponses": {
+                "items": {
+                  "properties": {
+                    "organizationId": {
+                      "type": "string"
+                    },
+                    "organizationName": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "organizationId",
+                    "organizationName",
+                    "value"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "monthlyTrend",
+              "responsesByRegion",
+              "genderDistribution",
+              "ageBracketDistribution",
+              "hasResponsesWithoutAgeBracket",
+              "topOrgsByTotalResponses",
+              "topOrgsByAvgResponsesPerSurvey"
+            ],
+            "type": "object"
+          },
+          "studyOverview": {
+            "properties": {
+              "studiesCreatedTrend": {
+                "items": {
+                  "properties": {
+                    "count": {
+                      "type": "number"
+                    },
+                    "month": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "month",
+                    "count"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "topOrgsByStudyCount": {
+                "items": {
+                  "properties": {
+                    "organizationId": {
+                      "type": "string"
+                    },
+                    "organizationName": {
+                      "type": "string"
+                    },
+                    "studyCount": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "organizationId",
+                    "organizationName",
+                    "studyCount"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "totalOrganizations": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "topOrgsByStudyCount",
+              "totalOrganizations",
+              "studiesCreatedTrend"
+            ],
+            "type": "object"
+          },
+          "studyStatus": {
+            "properties": {
+              "active": {
+                "type": "number"
+              },
+              "archived": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "active",
+              "archived"
+            ],
+            "type": "object"
+          },
+          "summary": {
+            "properties": {
+              "newThisPeriod": {
+                "properties": {
+                  "organizations": {
+                    "properties": {
+                      "changePct": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "current": {
+                        "type": "number"
+                      },
+                      "previous": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "current",
+                      "previous",
+                      "changePct"
+                    ],
+                    "type": "object"
+                  },
+                  "periodDays": {
+                    "type": "number"
+                  },
+                  "responses": {
+                    "properties": {
+                      "changePct": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "current": {
+                        "type": "number"
+                      },
+                      "previous": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "current",
+                      "previous",
+                      "changePct"
+                    ],
+                    "type": "object"
+                  },
+                  "studies": {
+                    "properties": {
+                      "changePct": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "current": {
+                        "type": "number"
+                      },
+                      "previous": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "current",
+                      "previous",
+                      "changePct"
+                    ],
+                    "type": "object"
+                  },
+                  "surveys": {
+                    "properties": {
+                      "changePct": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "current": {
+                        "type": "number"
+                      },
+                      "previous": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "current",
+                      "previous",
+                      "changePct"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "periodDays",
+                  "organizations",
+                  "studies",
+                  "surveys",
+                  "responses"
+                ],
+                "type": "object"
+              },
+              "totals": {
+                "properties": {
+                  "needs": {
+                    "type": "number"
+                  },
+                  "organizations": {
+                    "type": "number"
+                  },
+                  "responses": {
+                    "type": "number"
+                  },
+                  "studies": {
+                    "type": "number"
+                  },
+                  "surveys": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "organizations",
+                  "studies",
+                  "surveys",
+                  "responses",
+                  "needs"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "totals",
+              "newThisPeriod"
+            ],
+            "type": "object"
+          },
+          "surveyAnalytics": {
+            "properties": {
+              "avgResponsesPerPublishedSurvey": {
+                "type": "number"
+              },
+              "rejectionReasonBreakdown": {
+                "items": {
+                  "properties": {
+                    "count": {
+                      "type": "number"
+                    },
+                    "reasonCode": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "reasonCode",
+                    "count"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "statusByRegion": {
+                "items": {
+                  "properties": {
+                    "count": {
+                      "type": "number"
+                    },
+                    "regionId": {
+                      "type": "string"
+                    },
+                    "regionName": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "properties": {
+                        "draft": {
+                          "type": "number"
+                        },
+                        "published": {
+                          "type": "number"
+                        },
+                        "rejected": {
+                          "type": "number"
+                        },
+                        "submitted": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "draft",
+                        "submitted",
+                        "published",
+                        "rejected"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "regionId",
+                    "regionName",
+                    "count",
+                    "status"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "statusPlatformWide": {
+                "properties": {
+                  "draft": {
+                    "type": "number"
+                  },
+                  "published": {
+                    "type": "number"
+                  },
+                  "rejected": {
+                    "type": "number"
+                  },
+                  "submitted": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "draft",
+                  "submitted",
+                  "published",
+                  "rejected"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "statusPlatformWide",
+              "statusByRegion",
+              "avgResponsesPerPublishedSurvey",
+              "rejectionReasonBreakdown"
+            ],
+            "type": "object"
+          },
+          "surveyGeography": {
+            "properties": {
+              "byCenter": {
+                "items": {
+                  "properties": {
+                    "count": {
+                      "type": "number"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "count"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "byGovernorate": {
+                "items": {
+                  "properties": {
+                    "count": {
+                      "type": "number"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "count"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "byRegion": {
+                "items": {
+                  "properties": {
+                    "count": {
+                      "type": "number"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "count"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "byRegion",
+              "byGovernorate",
+              "byCenter"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "generatedAt",
+          "summary",
+          "orgHealth",
+          "orgSummary",
+          "needDomains",
+          "needSubDomains",
+          "needsGeography",
+          "studyStatus",
+          "publicLinkStatus",
+          "studyOverview",
+          "geography",
+          "surveyAnalytics",
+          "surveyGeography",
+          "regionSummary",
+          "responseAnalytics",
+          "priorityOverview",
+          "criticalNeeds",
+          "dataQualityNotes",
+          "domainRegionIntersections"
+        ],
+        "type": "object"
+      },
       "Need": {
         "properties": {
           "aiSuggestedDomain": {
@@ -1931,6 +3365,21 @@
           "createdByName",
           "createdAt",
           "updatedAt"
+        ],
+        "type": "object"
+      },
+      "OrgLookupResultView": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
         ],
         "type": "object"
       },
@@ -3674,6 +5123,60 @@
         ],
         "type": "object"
       },
+      "PublicSurveyLinkView": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "needId": {
+            "type": "string"
+          },
+          "publicUrl": {
+            "type": "string"
+          },
+          "responseCount": {
+            "type": "number"
+          },
+          "studyId": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "needId",
+          "studyId",
+          "label",
+          "token",
+          "publicUrl",
+          "expiresAt",
+          "isActive",
+          "createdAt",
+          "responseCount"
+        ],
+        "type": "object"
+      },
       "PublicSurveyView": {
         "properties": {
           "id": {
@@ -3953,6 +5456,82 @@
         ],
         "type": "object"
       },
+      "QuestionResponseListResult": {
+        "properties": {
+          "answerType": {
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "properties": {
+                "answer": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "contact": {
+                  "type": "string"
+                },
+                "respondentName": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "responseId": {
+                  "type": "string"
+                },
+                "submittedAt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "responseId",
+                "respondentName",
+                "contact",
+                "answer",
+                "submittedAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "offset": {
+            "type": "number"
+          },
+          "questionId": {
+            "type": "string"
+          },
+          "questionText": {
+            "type": "string"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "questionId",
+          "questionText",
+          "answerType",
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "type": "object"
+      },
       "RejectNcnpReportBody": {
         "properties": {
           "notes": {
@@ -4029,6 +5608,144 @@
         ],
         "type": "object"
       },
+      "ReportLookupResultView": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ],
+        "type": "object"
+      },
+      "ReportSharingOrgLookupResultView": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "ReportSharingRequestView": {
+        "properties": {
+          "decidedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decidedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decisionNote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ownerOrgId": {
+            "type": "string"
+          },
+          "ownerOrgName": {
+            "type": "string"
+          },
+          "reportId": {
+            "type": "string"
+          },
+          "reportTitle": {
+            "type": "string"
+          },
+          "requestedAt": {
+            "type": "string"
+          },
+          "requestedBy": {
+            "type": "string"
+          },
+          "requestingOrgId": {
+            "type": "string"
+          },
+          "requestingOrgName": {
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "const": "pending",
+                "type": "string"
+              },
+              {
+                "const": "approved",
+                "type": "string"
+              },
+              {
+                "const": "rejected",
+                "type": "string"
+              },
+              {
+                "const": "expired",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "ownerOrgId",
+          "ownerOrgName",
+          "requestingOrgId",
+          "requestingOrgName",
+          "reportId",
+          "reportTitle",
+          "status",
+          "requestedBy",
+          "requestedAt",
+          "decidedBy",
+          "decidedAt",
+          "note",
+          "decisionNote"
+        ],
+        "type": "object"
+      },
       "RequestOtpBody": {
         "additionalProperties": false,
         "properties": {
@@ -4045,6 +5762,28 @@
         "required": [
           "contact",
           "mobile"
+        ],
+        "type": "object"
+      },
+      "RequestOtpResultView": {
+        "properties": {
+          "challengeId": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "codeTexted": {
+            "type": "boolean"
+          },
+          "expiresAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "challengeId",
+          "expiresAt",
+          "codeTexted"
         ],
         "type": "object"
       },
@@ -4066,6 +5805,151 @@
         "required": [
           "token",
           "password"
+        ],
+        "type": "object"
+      },
+      "ResolvedSurveyView": {
+        "properties": {
+          "estimatedMinutes": {
+            "type": "number"
+          },
+          "organizationName": {
+            "type": "string"
+          },
+          "questionCount": {
+            "type": "number"
+          },
+          "questions": {
+            "items": {
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "options": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "text",
+                "type",
+                "required"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "studyId": {
+            "type": "string"
+          },
+          "studyTitle": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "studyId",
+          "title",
+          "version",
+          "studyTitle",
+          "organizationName",
+          "questions",
+          "questionCount",
+          "estimatedMinutes"
+        ],
+        "type": "object"
+      },
+      "ResponseQualityResultView": {
+        "properties": {
+          "assessedAt": {
+            "type": "string"
+          },
+          "completenessScore": {
+            "type": "number"
+          },
+          "confidenceFlag": {
+            "anyOf": [
+              {
+                "const": "standard",
+                "type": "string"
+              },
+              {
+                "const": "low",
+                "type": "string"
+              }
+            ]
+          },
+          "duplicateOfId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "isDuplicate": {
+            "type": "boolean"
+          },
+          "missingFields": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "needId": {
+            "type": "string"
+          },
+          "studyId": {
+            "type": "string"
+          },
+          "surveyLinkId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "surveyResponseId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "needId",
+          "studyId",
+          "surveyLinkId",
+          "surveyResponseId",
+          "completenessScore",
+          "missingFields",
+          "confidenceFlag",
+          "isDuplicate",
+          "duplicateOfId",
+          "assessedAt"
         ],
         "type": "object"
       },
@@ -4798,6 +6682,244 @@
         ],
         "type": "object"
       },
+      "SharedReportSnapshotView": {
+        "properties": {
+          "content": {
+            "patternProperties": {
+              "^(.*)$": {}
+            },
+            "type": "object"
+          },
+          "generatedAt": {
+            "type": "string"
+          },
+          "generatedByName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "officerConfirmedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "officerConfirmedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ownerOrgName": {
+            "type": "string"
+          },
+          "reportId": {
+            "type": "string"
+          },
+          "reportType": {
+            "type": "string"
+          },
+          "reviewedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reviewedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reportId",
+          "title",
+          "reportType",
+          "content",
+          "generatedAt",
+          "ownerOrgName",
+          "generatedByName",
+          "officerConfirmedBy",
+          "officerConfirmedAt",
+          "reviewedBy",
+          "reviewedAt"
+        ],
+        "type": "object"
+      },
+      "SharedStudySnapshotView": {
+        "properties": {
+          "evidenceCount": {
+            "type": "number"
+          },
+          "needStatement": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "needVillages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          },
+          "studyId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "studyId",
+          "title",
+          "status",
+          "needStatement",
+          "needVillages",
+          "evidenceCount"
+        ],
+        "type": "object"
+      },
+      "SharingRequestView": {
+        "properties": {
+          "decidedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decidedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decisionNote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ownerOrgId": {
+            "type": "string"
+          },
+          "ownerOrgName": {
+            "type": "string"
+          },
+          "requestedAt": {
+            "type": "string"
+          },
+          "requestedBy": {
+            "type": "string"
+          },
+          "requestingOrgId": {
+            "type": "string"
+          },
+          "requestingOrgName": {
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "const": "pending",
+                "type": "string"
+              },
+              {
+                "const": "approved",
+                "type": "string"
+              },
+              {
+                "const": "rejected",
+                "type": "string"
+              },
+              {
+                "const": "expired",
+                "type": "string"
+              }
+            ]
+          },
+          "studyId": {
+            "type": "string"
+          },
+          "studyTitle": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "ownerOrgId",
+          "ownerOrgName",
+          "requestingOrgId",
+          "requestingOrgName",
+          "studyId",
+          "studyTitle",
+          "status",
+          "requestedBy",
+          "requestedAt",
+          "decidedBy",
+          "decidedAt",
+          "note",
+          "decisionNote"
+        ],
+        "type": "object"
+      },
       "SignupBody": {
         "additionalProperties": false,
         "properties": {
@@ -5262,6 +7384,21 @@
         ],
         "type": "object"
       },
+      "StudyLookupResultView": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ],
+        "type": "object"
+      },
       "SubmitAnswersResult": {
         "properties": {
           "id": {
@@ -5351,6 +7488,21 @@
           "challengeId",
           "ageBracket",
           "answers"
+        ],
+        "type": "object"
+      },
+      "SubmitResponseResultView": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "submittedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "submittedAt"
         ],
         "type": "object"
       },
@@ -5987,6 +8139,153 @@
           "studyId",
           "title",
           "status"
+        ],
+        "type": "object"
+      },
+      "SurveyResponseDetailView": {
+        "properties": {
+          "answers": {
+            "items": {
+              "properties": {
+                "answer": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "answerOptions": {
+                  "anyOf": [
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "answerType": {
+                  "type": "string"
+                },
+                "questionId": {
+                  "type": "string"
+                },
+                "questionText": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "questionId",
+                "questionText",
+                "answerType",
+                "answerOptions",
+                "answer"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "contact": {
+            "type": "string"
+          },
+          "contactName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "needId": {
+            "type": "string"
+          },
+          "submittedAt": {
+            "type": "string"
+          },
+          "surveyLinkId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "needId",
+          "surveyLinkId",
+          "contactName",
+          "contact",
+          "submittedAt",
+          "answers"
+        ],
+        "type": "object"
+      },
+      "SurveyResponseListResult": {
+        "properties": {
+          "items": {
+            "items": {
+              "properties": {
+                "contact": {
+                  "type": "string"
+                },
+                "contactName": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "needId": {
+                  "type": "string"
+                },
+                "submittedAt": {
+                  "type": "string"
+                },
+                "surveyLinkId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "needId",
+                "surveyLinkId",
+                "contactName",
+                "contact",
+                "submittedAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "offset": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
         ],
         "type": "object"
       },
@@ -7300,6 +9599,18 @@
         ],
         "type": "object"
       },
+      "VerifyOtpResultView": {
+        "properties": {
+          "verified": {
+            "const": true,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "verified"
+        ],
+        "type": "object"
+      },
       "VerifyRegistrationNumberBody": {
         "additionalProperties": false,
         "properties": {
@@ -8007,6 +10318,179 @@
         }
       }
     },
+    "/api/ncnp-report": {
+      "get": {
+        "description": "Requires archiveSharingAudit:read.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "periodDays",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dormantDays",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NcnpReportView"
+                }
+              }
+            },
+            "description": "NcnpReportView"
+          }
+        },
+        "summary": "Get the consolidated platform-wide NCNP report",
+        "tags": [
+          "NCNP Report"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "archiveSharingAudit"
+        }
+      }
+    },
+    "/api/ncnp-report/export": {
+      "get": {
+        "description": "Requires archiveSharingAudit:read.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "periodDays",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dormantDays",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "application/pdf | application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          }
+        },
+        "summary": "PDF/Excel export of the consolidated NCNP report",
+        "tags": [
+          "NCNP Report"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "archiveSharingAudit"
+        }
+      }
+    },
+    "/api/needs/{needId}/ai-summary": {
+      "get": {
+        "description": "Requires aiReview:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "needId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "surveyLinkId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiSummaryView"
+                }
+              }
+            },
+            "description": "AiSummaryView | null"
+          }
+        },
+        "summary": "Get the latest generated AI summary for a Need",
+        "tags": [
+          "Response Quality"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "aiReview"
+        }
+      }
+    },
+    "/api/needs/{needId}/ai-summary/generate": {
+      "post": {
+        "description": "Requires priorityScoring:create.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "needId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "surveyLinkId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiSummaryView"
+                }
+              }
+            },
+            "description": "AiSummaryView"
+          }
+        },
+        "summary": "Generate a new AI summary over a Need’s survey responses",
+        "tags": [
+          "Response Quality"
+        ],
+        "x-required-permission": {
+          "action": "create",
+          "module": "priorityScoring"
+        }
+      }
+    },
     "/api/needs/{needId}/priority-score": {
       "get": {
         "description": "Requires priorityScoring:read.",
@@ -8126,6 +10610,98 @@
         }
       }
     },
+    "/api/needs/{needId}/response-quality": {
+      "get": {
+        "description": "Requires aiReview:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "needId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "surveyLinkId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ResponseQualityResultView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "ResponseQualityResultView[]"
+          }
+        },
+        "summary": "List the latest response-quality assessment results for a Need",
+        "tags": [
+          "Response Quality"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "aiReview"
+        }
+      }
+    },
+    "/api/needs/{needId}/response-quality/assess": {
+      "post": {
+        "description": "Requires priorityScoring:create.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "needId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "surveyLinkId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ResponseQualityResultView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "ResponseQualityResultView[]"
+          }
+        },
+        "summary": "Run completeness/duplicate assessment over a Need’s survey responses",
+        "tags": [
+          "Response Quality"
+        ],
+        "x-required-permission": {
+          "action": "create",
+          "module": "priorityScoring"
+        }
+      }
+    },
     "/api/needs/{needId}/survey": {
       "get": {
         "description": "Requires surveyBuilder:read.",
@@ -8191,6 +10767,443 @@
         "x-required-permission": {
           "action": "write",
           "module": "surveyBuilder"
+        }
+      }
+    },
+    "/api/needs/{needId}/survey-links": {
+      "get": {
+        "description": "Requires studySurvey:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "needId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PublicSurveyLinkView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "PublicSurveyLinkView[]"
+          }
+        },
+        "summary": "List a Need's public survey links",
+        "tags": [
+          "Public Surveys"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "studySurvey"
+        }
+      },
+      "post": {
+        "description": "Requires studySurvey:create.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "needId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSurveyLinkBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicSurveyLinkView"
+                }
+              }
+            },
+            "description": "PublicSurveyLinkView"
+          }
+        },
+        "summary": "Create a new public survey link for a Need",
+        "tags": [
+          "Public Surveys"
+        ],
+        "x-required-permission": {
+          "action": "create",
+          "module": "studySurvey"
+        }
+      }
+    },
+    "/api/needs/{needId}/survey-links/{linkId}/deactivate": {
+      "patch": {
+        "description": "Requires studySurvey:write.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "needId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "linkId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicSurveyLinkView"
+                }
+              }
+            },
+            "description": "PublicSurveyLinkView"
+          }
+        },
+        "summary": "Deactivate a public survey link",
+        "tags": [
+          "Public Surveys"
+        ],
+        "x-required-permission": {
+          "action": "write",
+          "module": "studySurvey"
+        }
+      }
+    },
+    "/api/needs/{needId}/survey-links/{linkId}/share-email": {
+      "post": {
+        "description": "Requires studySurvey:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "needId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "linkId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShareSurveyLinkEmailBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "204 No Content"
+          }
+        },
+        "summary": "Email a survey link (with embedded QR) to the given address",
+        "tags": [
+          "Public Surveys"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "studySurvey"
+        }
+      }
+    },
+    "/api/needs/{needId}/survey-responses": {
+      "get": {
+        "description": "Requires studySurvey:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "needId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "surveyLinkId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SurveyResponseListResult"
+                }
+              }
+            },
+            "description": "SurveyResponseListResult ({ items: SurveyResponseSummary[], total, limit, offset })"
+          }
+        },
+        "summary": "List survey responses for a Need (paginated summary rows)",
+        "tags": [
+          "Public Surveys"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "studySurvey"
+        }
+      }
+    },
+    "/api/needs/{needId}/survey-responses-full": {
+      "get": {
+        "description": "Requires studySurvey:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "needId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "surveyLinkId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SurveyResponseDetailView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "SurveyResponseDetailView[]"
+          }
+        },
+        "summary": "Same rows as survey-responses, with each one’s answers already joined in",
+        "tags": [
+          "Public Surveys"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "studySurvey"
+        }
+      }
+    },
+    "/api/needs/{needId}/survey-responses/export": {
+      "get": {
+        "description": "Requires studySurvey:export.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "needId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "surveyLinkId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "text/csv | application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          }
+        },
+        "summary": "CSV/Excel export of a Need’s survey responses",
+        "tags": [
+          "Public Surveys"
+        ],
+        "x-required-permission": {
+          "action": "export",
+          "module": "studySurvey"
+        }
+      }
+    },
+    "/api/needs/{needId}/survey-responses/questions/{questionId}": {
+      "get": {
+        "description": "Requires studySurvey:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "needId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "questionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionResponseListResult"
+                }
+              }
+            },
+            "description": "QuestionResponseListResult ({ questionId, questionText, answerType, items: QuestionResponseRow[], total, limit, offset })"
+          }
+        },
+        "summary": "One question’s answers across every response (paginated)",
+        "tags": [
+          "Public Surveys"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "studySurvey"
+        }
+      }
+    },
+    "/api/needs/{needId}/survey-responses/{responseId}": {
+      "get": {
+        "description": "Requires studySurvey:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "needId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "responseId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SurveyResponseDetailView"
+                }
+              }
+            },
+            "description": "SurveyResponseDetailView"
+          }
+        },
+        "summary": "Get one survey response with its full answers",
+        "tags": [
+          "Public Surveys"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "studySurvey"
         }
       }
     },
@@ -8608,6 +11621,498 @@
         }
       }
     },
+    "/api/public/surveys/{token}": {
+      "get": {
+        "description": "No authentication required.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResolvedSurveyView"
+                }
+              }
+            },
+            "description": "ResolvedSurveyView"
+          }
+        },
+        "summary": "Resolve a public survey link token to its survey + Study/Org context",
+        "tags": [
+          "Citizen"
+        ]
+      }
+    },
+    "/api/public/surveys/{token}/check-duplicate": {
+      "post": {
+        "description": "No authentication required.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckDuplicateBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckDuplicateResultView"
+                }
+              }
+            },
+            "description": "CheckDuplicateResultView"
+          }
+        },
+        "summary": "Check whether this contact/mobile has already responded to this link",
+        "tags": [
+          "Citizen"
+        ]
+      }
+    },
+    "/api/public/surveys/{token}/otp/request": {
+      "post": {
+        "description": "No authentication required.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestOtpBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestOtpResultView"
+                }
+              }
+            },
+            "description": "RequestOtpResultView"
+          }
+        },
+        "summary": "Request an OTP code to the given mobile number",
+        "tags": [
+          "Citizen"
+        ]
+      }
+    },
+    "/api/public/surveys/{token}/otp/verify": {
+      "post": {
+        "description": "No authentication required.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyOtpBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifyOtpResultView"
+                }
+              }
+            },
+            "description": "VerifyOtpResultView"
+          }
+        },
+        "summary": "Verify the OTP code for a previously-requested challenge",
+        "tags": [
+          "Citizen"
+        ]
+      }
+    },
+    "/api/public/surveys/{token}/responses": {
+      "post": {
+        "description": "No authentication required.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitResponseBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmitResponseResultView"
+                }
+              }
+            },
+            "description": "SubmitResponseResultView"
+          }
+        },
+        "summary": "Submit the respondent’s answers for a verified OTP challenge",
+        "tags": [
+          "Citizen"
+        ]
+      }
+    },
+    "/api/report-sharing-requests": {
+      "get": {
+        "description": "Requires archiveSharingAudit:read.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ReportSharingRequestView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "ReportSharingRequestView[]"
+          }
+        },
+        "summary": "List the caller's organisation's Report sharing requests",
+        "tags": [
+          "Report Sharing"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "archiveSharingAudit"
+        }
+      },
+      "post": {
+        "description": "Requires archiveSharingAudit:create.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateReportSharingRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportSharingRequestView"
+                }
+              }
+            },
+            "description": "ReportSharingRequestView"
+          }
+        },
+        "summary": "Create a Report sharing request to another organisation",
+        "tags": [
+          "Report Sharing"
+        ],
+        "x-required-permission": {
+          "action": "create",
+          "module": "archiveSharingAudit"
+        }
+      }
+    },
+    "/api/report-sharing-requests/lookup/organizations": {
+      "get": {
+        "description": "Requires archiveSharingAudit:create.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ReportSharingOrgLookupResultView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "ReportSharingOrgLookupResultView[]"
+          }
+        },
+        "summary": "Search organisations to request a Report share from",
+        "tags": [
+          "Report Sharing"
+        ],
+        "x-required-permission": {
+          "action": "create",
+          "module": "archiveSharingAudit"
+        }
+      }
+    },
+    "/api/report-sharing-requests/lookup/organizations/{orgId}/reports": {
+      "get": {
+        "description": "Requires archiveSharingAudit:create.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orgId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ReportLookupResultView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "ReportLookupResultView[]"
+          }
+        },
+        "summary": "List an organisation's reports, for the create-request flow",
+        "tags": [
+          "Report Sharing"
+        ],
+        "x-required-permission": {
+          "action": "create",
+          "module": "archiveSharingAudit"
+        }
+      }
+    },
+    "/api/report-sharing-requests/{id}": {
+      "get": {
+        "description": "Requires archiveSharingAudit:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportSharingRequestView"
+                }
+              }
+            },
+            "description": "ReportSharingRequestView"
+          }
+        },
+        "summary": "Get a single Report sharing request",
+        "tags": [
+          "Report Sharing"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "archiveSharingAudit"
+        }
+      }
+    },
+    "/api/report-sharing-requests/{id}/approve": {
+      "patch": {
+        "description": "Requires archiveSharingAudit:approve.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideReportSharingRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportSharingRequestView"
+                }
+              }
+            },
+            "description": "ReportSharingRequestView"
+          }
+        },
+        "summary": "Approve a Report sharing request",
+        "tags": [
+          "Report Sharing"
+        ],
+        "x-required-permission": {
+          "action": "approve",
+          "module": "archiveSharingAudit"
+        }
+      }
+    },
+    "/api/report-sharing-requests/{id}/reject": {
+      "patch": {
+        "description": "Requires archiveSharingAudit:approve.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideReportSharingRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportSharingRequestView"
+                }
+              }
+            },
+            "description": "ReportSharingRequestView"
+          }
+        },
+        "summary": "Reject a Report sharing request",
+        "tags": [
+          "Report Sharing"
+        ],
+        "x-required-permission": {
+          "action": "approve",
+          "module": "archiveSharingAudit"
+        }
+      }
+    },
+    "/api/report-sharing-requests/{id}/shared-report": {
+      "get": {
+        "description": "Requires archiveSharingAudit:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedReportSnapshotView"
+                }
+              }
+            },
+            "description": "SharedReportSnapshotView"
+          }
+        },
+        "summary": "Get the shared Report snapshot for an approved sharing request",
+        "tags": [
+          "Report Sharing"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "archiveSharingAudit"
+        }
+      }
+    },
     "/api/roles": {
       "get": {
         "description": "Requires rolesPermissions:read.",
@@ -8633,6 +12138,321 @@
         "x-required-permission": {
           "action": "read",
           "module": "rolesPermissions"
+        }
+      }
+    },
+    "/api/sharing-requests": {
+      "get": {
+        "description": "Requires archiveSharingAudit:read.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SharingRequestView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "SharingRequestView[]"
+          }
+        },
+        "summary": "List the caller's organisation's Study sharing requests",
+        "tags": [
+          "Sharing"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "archiveSharingAudit"
+        }
+      },
+      "post": {
+        "description": "Requires archiveSharingAudit:create.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSharingRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharingRequestView"
+                }
+              }
+            },
+            "description": "SharingRequestView"
+          }
+        },
+        "summary": "Create a Study sharing request to another organisation",
+        "tags": [
+          "Sharing"
+        ],
+        "x-required-permission": {
+          "action": "create",
+          "module": "archiveSharingAudit"
+        }
+      }
+    },
+    "/api/sharing-requests/lookup/organizations": {
+      "get": {
+        "description": "Requires archiveSharingAudit:create.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OrgLookupResultView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OrgLookupResultView[]"
+          }
+        },
+        "summary": "Search organisations to request a Study share from",
+        "tags": [
+          "Sharing"
+        ],
+        "x-required-permission": {
+          "action": "create",
+          "module": "archiveSharingAudit"
+        }
+      }
+    },
+    "/api/sharing-requests/lookup/organizations/{orgId}/studies": {
+      "get": {
+        "description": "Requires archiveSharingAudit:create.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "orgId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StudyLookupResultView"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "StudyLookupResultView[]"
+          }
+        },
+        "summary": "List an organisation's studies, for the create-request flow",
+        "tags": [
+          "Sharing"
+        ],
+        "x-required-permission": {
+          "action": "create",
+          "module": "archiveSharingAudit"
+        }
+      }
+    },
+    "/api/sharing-requests/{id}": {
+      "get": {
+        "description": "Requires archiveSharingAudit:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharingRequestView"
+                }
+              }
+            },
+            "description": "SharingRequestView"
+          }
+        },
+        "summary": "Get a single Study sharing request",
+        "tags": [
+          "Sharing"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "archiveSharingAudit"
+        }
+      }
+    },
+    "/api/sharing-requests/{id}/approve": {
+      "patch": {
+        "description": "Requires archiveSharingAudit:approve.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideSharingRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharingRequestView"
+                }
+              }
+            },
+            "description": "SharingRequestView"
+          }
+        },
+        "summary": "Approve a Study sharing request",
+        "tags": [
+          "Sharing"
+        ],
+        "x-required-permission": {
+          "action": "approve",
+          "module": "archiveSharingAudit"
+        }
+      }
+    },
+    "/api/sharing-requests/{id}/reject": {
+      "patch": {
+        "description": "Requires archiveSharingAudit:approve.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecideSharingRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharingRequestView"
+                }
+              }
+            },
+            "description": "SharingRequestView"
+          }
+        },
+        "summary": "Reject a Study sharing request",
+        "tags": [
+          "Sharing"
+        ],
+        "x-required-permission": {
+          "action": "approve",
+          "module": "archiveSharingAudit"
+        }
+      }
+    },
+    "/api/sharing-requests/{id}/shared-study": {
+      "get": {
+        "description": "Requires archiveSharingAudit:read.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedStudySnapshotView"
+                }
+              }
+            },
+            "description": "SharedStudySnapshotView"
+          }
+        },
+        "summary": "Get the shared Study snapshot for an approved sharing request",
+        "tags": [
+          "Sharing"
+        ],
+        "x-required-permission": {
+          "action": "read",
+          "module": "archiveSharingAudit"
         }
       }
     },
@@ -10552,6 +14372,30 @@
     {
       "description": "RIO-NFR-016 — operational events and errors (read-only, System Admin).",
       "name": "System Logs"
+    },
+    {
+      "description": "Fully unauthenticated citizen-facing survey resolution, OTP, and response submission.",
+      "name": "Citizen"
+    },
+    {
+      "description": "Org-side management of public survey links and their collected responses.",
+      "name": "Public Surveys"
+    },
+    {
+      "description": "Completeness/duplicate scoring and AI-generated summaries over survey responses.",
+      "name": "Response Quality"
+    },
+    {
+      "description": "Cross-organisation Study sharing request workflow.",
+      "name": "Sharing"
+    },
+    {
+      "description": "Cross-organisation Report sharing request workflow.",
+      "name": "Report Sharing"
+    },
+    {
+      "description": "Platform-wide (kingdom-level) consolidated analytics report, cross-entity read-only.",
+      "name": "NCNP Report"
     },
     {
       "description": "Liveness/readiness probes.",
