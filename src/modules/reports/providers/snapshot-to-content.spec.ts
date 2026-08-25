@@ -10,6 +10,14 @@ import {
   snapshotToVillageContent,
 } from "./snapshot-to-content";
 
+const SCOPE_BASIS = {
+  surveyId: "srv-1",
+  surveyTitle: "Water Assessment Survey",
+  studySurveyCount: 1,
+  resolution: "LATEST_PUBLISHED" as const,
+  partialScopeNote: null,
+};
+
 function snapshot(): ReportDataSnapshot {
   return {
     snapshotId: "snap-1",
@@ -52,7 +60,16 @@ function snapshot(): ReportDataSnapshot {
       ],
       subDomainSeverityScores: [],
       indicatorSeverityScores: [],
-      kpiSeverityScores: [],
+      // EVERY KPI rollup, deliberately including two that outrank the topKpis
+      // list above — the no-masking max must be derived from these rows, not
+      // from the top ten, or a low-averaging domain can hide its worst KPI.
+      kpiSeverityScores: [
+        { entityId: "kpi-1", entityName: "Distance to Primary Health Facility", severityScore: 91, confidenceLevel: "STANDARD", validResponseCount: 36, dontKnowRate: 0.04, excludedResponseCount: 2, dontKnowCount: 1, notApplicableCount: 0, domainKey: "HEALTH", domainName: "Health" },
+        { entityId: "kpi-2", entityName: "Availability of Essential Medicines", severityScore: 78, confidenceLevel: "STANDARD", validResponseCount: 35, dontKnowRate: 0.05, excludedResponseCount: 3, dontKnowCount: 2, notApplicableCount: 0, domainKey: "HEALTH", domainName: "Health" },
+        { entityId: "kpi-3", entityName: "Daily Clean Water Access", severityScore: 94, confidenceLevel: "LOW", validResponseCount: 8, dontKnowRate: 0.25, excludedResponseCount: 12, dontKnowCount: 4, notApplicableCount: 0, domainKey: "WATER_SANITATION", domainName: "Water & Sanitation" },
+        // Unmeasured — must not pull the max down to 0.
+        { entityId: "kpi-4", entityName: "Latrine coverage", severityScore: null, confidenceLevel: "LOW", validResponseCount: 0, dontKnowRate: 0, excludedResponseCount: 0, dontKnowCount: 0, notApplicableCount: 0, domainKey: "WATER_SANITATION", domainName: "Water & Sanitation" },
+      ],
     },
     priority: {
       villagePriorityScore: 37.45,
@@ -159,8 +176,20 @@ describe("snapshot-to-content mappers", () => {
   });
 
   it("maps sector / region / executive scopes", () => {
-    const sector = snapshotToSectorContent({ snapshot: snapshot() });
-    expect(sector.domains.some((d) => d.name === "Health")).toBe(true);
+    const sector = snapshotToSectorContent({ snapshot: snapshot(), scopeBasis: SCOPE_BASIS });
+    // The no-masking columns come off the snapshot's OWN KPI rollups, so the
+    // mapper — not just the fixture — is what carries the rule.
+    const health = sector.severity.domains.find((d) => d.domainCode === "HEALTH");
+    expect(health?.maxKpiSeverity).toBe(91);
+    expect(health?.maxKpiName).toBe("Distance to Primary Health Facility");
+    // Health averages 72 (CRITICAL) — a CRITICAL KPI beneath it hides nothing.
+    expect(health?.masksCriticalFinding).toBe(false);
+    // Derived from EVERY KPI rollup, not the top-ten list: this KPI outranks
+    // both entries in topKpis and would be invisible if the max came from there.
+    expect(sector.severity.domains.find((d) => d.domainCode === "WATER_SANITATION")?.maxKpiSeverity).toBe(94);
+    // Under `severity`, the key both renderers read — see SectorReportContent.
+    expect(sector.severity.domains.some((d) => d.name === "Health")).toBe(true);
+    expect(sector.severity.overallVillageNeedsIndex).not.toBeUndefined();
     // No AI output → notes fall back to placeholders (never blank), and are
     // still present as first-class fields.
     expect(sector.dataQualityNote).toBe(DATA_QUALITY_NOTE_UNAVAILABLE);

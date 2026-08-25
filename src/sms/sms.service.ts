@@ -59,4 +59,39 @@ export class SmsService {
       return false;
     }
   }
+
+  /**
+   * Completion reminder for an unfinished citizen survey
+   * (SurveyReminderService), used only when the email channel is unavailable
+   * or failed. Same soft-fail contract as sendOtpCode.
+   *
+   * Says the answers were not kept, because they were not: no partial answer
+   * data is persisted (client answer, 24 Aug) and the respondent will start
+   * the question set again.
+   */
+  async sendSurveyReminder(phoneNumber: string, publicUrl: string): Promise<boolean> {
+    if (!this.client || !this.fromNumber) return false;
+    try {
+      await this.client.messages.create({
+        to: phoneNumber,
+        from: this.fromNumber,
+        body:
+          `You started a RIO survey but did not submit it. Earlier answers were not saved. ` +
+          `Finish it here: ${publicUrl}`,
+      });
+      return true;
+    } catch (err) {
+      this.logger.error(`Failed to text survey reminder to ${redactPhone(phoneNumber)}`, err as Error);
+      this.systemLogs?.record({
+        level: 'error',
+        category: 'integration',
+        source: SmsService.name,
+        eventCode: 'SMS_SEND_FAILED',
+        message: `Failed to text survey reminder to ${redactPhone(phoneNumber)}`,
+        error: err,
+        context: { provider: 'twilio', recipient: redactPhone(phoneNumber), kind: 'survey_reminder' },
+      });
+      return false;
+    }
+  }
 }

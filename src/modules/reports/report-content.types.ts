@@ -15,6 +15,15 @@ import type {
   UnifiedRpt01Sections,
 } from "./unified-report.types";
 import type { UnitGeo } from "./need-record.types";
+import type { DataCollectionCompletenessBlock } from "./providers/load-data-collection-completeness";
+
+export type {
+  AbandonmentBlock,
+  DataCollectionCompletenessBlock,
+  DataCollectionScope,
+  InvalidResponseBlock,
+  UnansweredRequiredBlock,
+} from "./providers/load-data-collection-completeness";
 
 /** Confidence banding carried through from ScoreRollup.confidenceLevel. */
 export type ConfidenceLevel = "LOW" | "STANDARD";
@@ -103,6 +112,22 @@ export interface DomainComponent {
   // assessment cycles exist (or a real per-domain AI note is produced).
   trendNote: string;
   isCriticalDomain: boolean;
+  // ── No-masking rule (METH — Domain Comparison) ──
+  // "A domain can average Low while hiding a Critical KPI; the max-KPI column
+  // surfaces it regardless of the average." severityScore above is the AVERAGE,
+  // so a domain-level rollup that prints it alone violates the rule. These three
+  // are the rule in table form and must be rendered beside the average wherever
+  // domains are tabulated — Village, Sector and Region alike.
+  // Null (not 0) when this domain has no measured KPI rollups: an unmeasured
+  // domain must not read as "worst KPI is 0", i.e. nothing wrong here.
+  maxKpiSeverity: number | null;
+  /** The KPI carrying maxKpiSeverity — names the finding the average hides. */
+  maxKpiName: string | null;
+  /** KPIs at or above the CRITICAL band within this domain. */
+  criticalKpiCount: number;
+  /** True when the domain's average bands milder than its worst KPI. Drives the
+   *  Domain Masking Alert note. */
+  masksCriticalFinding: boolean;
   // Present only for low-confidence domains (drives the data-quality note).
   validResponseCount?: number;
   dontKnowRate?: number;
@@ -378,10 +403,35 @@ export interface CombinedReportContent {
 
 // ── Aux shapes for the other core reports (fleshed out in Steps 2 & 5). ──
 
+/** What a study-scoped domain report actually covers. RPT04 is described as
+ *  study-wide, but the snapshot builder is survey-scoped — this block states the
+ *  resolved survey rather than leaving the reader to assume every survey in the
+ *  study is represented. */
+export interface SectorScopeBasis {
+  surveyId: string;
+  surveyTitle: string;
+  /** Total surveys in the study, so "1 of 3" is visible rather than implied. */
+  studySurveyCount: number;
+  /** How the survey was chosen — explicit filter, or the resolver's default. */
+  resolution: "EXPLICIT_FILTER" | "LATEST_PUBLISHED";
+  /** Set when the report covers fewer surveys than the study contains. */
+  partialScopeNote: string | null;
+}
+
 export interface SectorReportContent {
   header: ReportHeader;
-  domains: DomainComponent[];
-  overall: SeverityBlock;
+  /** Which survey the study-scoped figures were actually resolved from. Printed
+   *  on the report: `resolveSurveyId` picks ONE survey (latest published), so a
+   *  study with several surveys would otherwise report one of them under the
+   *  study's name with nothing saying which. */
+  scopeBasis: SectorScopeBasis;
+  /** Overall Needs Index + band, with the domain rows nested — the SAME key and
+   *  shape VillageReportContent uses. It was `overall` until 24 Aug 2026, and
+   *  both renderers look for `severity` (report-doc.ts, report-content-view
+   *  .tsx), so the gauge and the band were computed and then silently dropped:
+   *  `domains` at the top level satisfied `isCore`, which suppressed even the
+   *  flat key-value fallback. Do not rename it back. */
+  severity: SeverityBlock;
   aiSummary: AiSummaryBlock;
   // First-class Data Quality and Trend notes (see VillageReportContent).
   dataQualityNote: string;
@@ -607,6 +657,12 @@ export interface DataQualityReportContent {
     flag: string;
     reason: string;
   }>;
+  /** Data-collection completeness — unanswered required questions, survey
+   *  abandonment, and the combined invalid-response count (client Q14 answer
+   *  (a), and the 24 Aug follow-up settling how abandonment is captured and
+   *  counted). Null only for a report rendered from a stored snapshot written
+   *  before this block existed; every fresh RPT10 carries it. */
+  dataCollection: DataCollectionCompletenessBlock | null;
   responseQuality: ResponseQuality;
   aiSummary: AiSummaryBlock;
   dataQualityNote: string;

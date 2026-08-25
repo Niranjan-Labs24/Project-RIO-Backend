@@ -23,6 +23,7 @@ import {
   type ReportHeader,
   type ResponseQuality,
   type SectorReportContent,
+  type SectorScopeBasis,
   type SurveyIdentity,
   type SurveyReportBase,
   type TopKpi,
@@ -36,6 +37,7 @@ import {
 import { composeConfidenceReason, dontKnowBandOf, priorityStatusOf } from "./severity-bands";
 import { DEFAULT_THRESHOLDS } from "../need-record.types";
 import { deriveTrendNote } from "./derive-trend-note";
+import { NO_KPI_MASKING, deriveDomainMasking, groupKpisByDomain } from "./derive-domain-masking";
 import type { RegionBreakdown } from "./load-region-breakdown";
 
 export const EMPTY_APPROVAL: ApprovalBlock = {
@@ -128,6 +130,22 @@ function mapDomains(snapshot: ReportDataSnapshot): DomainComponent[] {
   const perf = snapshot.priority.domainPerformanceScores;
   const cycle = snapshot.study.assessmentCycle;
 
+  // No-masking rule: every domain row carries its worst KPI beside its average.
+  // Derived from kpiSeverityScores (EVERY KPI rollup), not topKpis — the top ten
+  // can miss the very KPI a low-averaging domain is hiding, which is precisely
+  // the case the rule exists for.
+  const kpisByDomain = groupKpisByDomain(
+    snapshot.severity.kpiSeverityScores.map((k) => ({
+      domainKey: k.domainKey,
+      kpiName: k.entityName,
+      severityScore: k.severityScore,
+    })),
+  );
+  const maskingFor = (domainKey: string, severity: number | null) => {
+    const kpis = kpisByDomain.get(domainKey);
+    return kpis ? deriveDomainMasking(severity, kpis) : NO_KPI_MASKING;
+  };
+
   // Cycle-aware. The old blanket SINGLE_CYCLE_TREND_NOTE asserted "trends cannot
   // be assessed from a single assessment cycle" on a Cycle 2 report, directly
   // contradicting its own header.
@@ -161,6 +179,7 @@ function mapDomains(snapshot: ReportDataSnapshot): DomainComponent[] {
         kpiCount: ds?.kpiCount ?? 0,
         trendNote: trendFor(severityScore),
         isCriticalDomain: dp.isCriticalDomain,
+        ...maskingFor(dp.domainKey, severityScore),
       };
       // Low-confidence domains surface their sample size (drives the data-quality note).
       return confidence === "LOW" && ds ? { ...base, validResponseCount: ds.validResponseCount } : base;
@@ -186,6 +205,7 @@ function mapDomains(snapshot: ReportDataSnapshot): DomainComponent[] {
       kpiCount: ds.kpiCount,
       trendNote: trendFor(ds.severityScore),
       isCriticalDomain: false,
+      ...maskingFor(ds.domainKey, ds.severityScore),
     };
     return confidence === "LOW" ? { ...base, validResponseCount: ds.validResponseCount } : base;
   });
@@ -432,16 +452,24 @@ export function snapshotToVillageContent(input: MapperInput): VillageReportConte
   };
 }
 
-export function snapshotToSectorContent(input: MapperInput): SectorReportContent {
+export interface SectorMapperInput extends MapperInput {
+  /** Which survey the study-scoped figures came from — resolved by the provider,
+   *  which is the only layer that can see the study's other surveys. */
+  scopeBasis: SectorScopeBasis;
+}
+
+export function snapshotToSectorContent(input: SectorMapperInput): SectorReportContent {
   const { snapshot } = input;
   const notes = promoteNotes(aiOutputToSummaryBlock(input.aiOutput));
   return {
     header: buildHeader(snapshot, input.methodologyVersion),
-    domains: mapDomains(snapshot),
-    overall: {
+    scopeBasis: input.scopeBasis,
+    // Keyed `severity`, with the domains NESTED — the shape Village uses and the
+    // one both renderers actually read. See SectorReportContent.severity.
+    severity: {
       overallVillageNeedsIndex: snapshot.severity.overallVillageNeedsIndex,
       label: snapshot.severity.severityBand,
-      domains: [],
+      domains: mapDomains(snapshot),
     },
     aiSummary: notes.aiSummary,
     dataQualityNote: notes.dataQualityNote,

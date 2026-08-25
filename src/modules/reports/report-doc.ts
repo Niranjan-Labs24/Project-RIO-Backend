@@ -402,7 +402,20 @@ const DOMAIN_TABLE_COLS: Col[] = [
   // Methodology domain code — maps the row back to the methodology indicators.
   { key: "domainCode", label: "Code" },
   // 2 decimals, matching the Calculation Basis working line for the same domain.
-  { key: "severityScore", label: "Severity", format: severityCell },
+  // This is the AVERAGE — the two columns after it are the no-masking rule
+  // (METH — Domain Comparison) and must not be dropped to save width. A domain
+  // averaging MEDIUM over a CRITICAL KPI reads as fine without them.
+  { key: "severityScore", label: "Avg Severity", format: severityCell },
+  {
+    key: "maxKpiSeverity",
+    label: "Max KPI Severity",
+    format: (o) => (typeof o.maxKpiSeverity === "number" ? o.maxKpiSeverity.toFixed(2) : "—"),
+  },
+  // `maxKpiName` is deliberately NOT a column: KPI names are long enough to
+  // wrap four lines deep and this table already carries eleven columns (see
+  // renderTable's "too many columns for the page" branch). The name is where it
+  // is actionable — in the Domain Masking Alert below the table, which names
+  // the worst KPI of every domain whose average hides one.
   {
     key: "performanceScore",
     label: "Performance",
@@ -418,6 +431,11 @@ const DOMAIN_TABLE_COLS: Col[] = [
   { key: "confidence", label: "Confidence" },
   { key: "validResponseRatePct", label: "Valid %" },
   { key: "isCriticalDomain", label: "Critical" },
+  {
+    key: "masksCriticalFinding",
+    label: "Masking?",
+    format: (o) => (o.masksCriticalFinding === true ? "YES — read Max, not Avg" : "No"),
+  },
 ];
 
 // ── RPT03 / RPT09 Top-Priority ──
@@ -472,6 +490,31 @@ const FLAGGED_RECORD_COLS: Col[] = [
   { key: "domain", label: "Domain" },
   { key: "indicatorName", label: "Indicator" },
   { key: "reason", label: "Reason" },
+];
+
+// Data-collection completeness (client Q14 (a) + the 24 Aug abandonment
+// answer). Three tables: which surveys the figures cover, where abandoned
+// sittings stopped, and which required questions came back blank.
+const SCOPE_SURVEY_COLS: Col[] = [
+  { key: "title", label: "Survey" },
+  { key: "version", label: "Version" },
+  { key: "status", label: "Status" },
+  { key: "responses", label: "Submitted Responses" },
+];
+
+const ABANDONMENT_STAGE_COLS: Col[] = [
+  { key: "stageLabel", label: "Stopped at" },
+  { key: "count", label: "Sessions" },
+  { key: "sharePct", label: "Share of abandoned", format: (o) => `${scalar(o.sharePct)}%` },
+];
+
+const UNANSWERED_REQUIRED_COLS: Col[] = [
+  { key: "questionText", label: "Required Question" },
+  { key: "domain", label: "Domain" },
+  { key: "surveyTitle", label: "Survey" },
+  { key: "unanswered", label: "Left Blank" },
+  { key: "ofResponses", label: "Of Responses" },
+  { key: "unansweredPct", label: "Rate", format: (o) => `${scalar(o.unansweredPct)}%` },
 ];
 
 // ── RPT06 Region ──
@@ -568,6 +611,67 @@ const NEED_RECORD_COLS_FULL: Col[] = [
   { key: "domain", label: "Domain" },
   { key: "subDomain", label: "Sub-domain" },
   ...NEED_RECORD_COLS,
+];
+
+// Where a need sits, compact enough for a table cell.
+//
+// `unitGeo.scopeLabel` is the full sentence ("Al-Badai, Al-Qassim — all 2
+// villages (consolidated)") — correct for the Geographic Scope block at the top
+// of the report, far too wide for a column that has eleven neighbours. So this
+// picks the most specific SINGLE place name available and lets the header carry
+// the full scope.
+function compactGeoLabel(o: Record<string, unknown>): string {
+  const g = o.unitGeo;
+  if (!isPlainObject(g)) return "—";
+  const villages = Array.isArray(g.villages) ? g.villages.filter((v) => typeof v === "string") : [];
+  const govs = Array.isArray(g.governorateNames) ? g.governorateNames.filter((v) => typeof v === "string") : [];
+  if (villages.length === 1) return String(villages[0]);
+  if (govs.length === 1) return String(govs[0]);
+  if (govs.length > 1) return `${String(govs[0])} +${govs.length - 1}`;
+  if (typeof g.regionName === "string" && g.regionName) return g.regionName;
+  return "—";
+}
+
+// The client's Top-Priority specification, in table form:
+//   "domain, sub-domain, location, priority score, severity, affected
+//    population, and ranking"
+//
+// Deliberately its own column set rather than NEED_RECORD_COLS_FULL + extras.
+// Location and Affected Population belong to THIS report — putting them on the
+// shared set would push every other need table over the page width, which is
+// the truncation the compact/full split exists to avoid.
+//
+// `relevanceScore` is labelled **Priority Score** because that is the client's
+// word for it: the priority-scoring mechanism's per-need output (severity ×
+// domain weight — see RANKING_BASIS, printed beneath the table). It was headed
+// "Relevance", which left the report using a term the specification does not,
+// while a DIFFERENT figure — the village-level score in the Village Priority
+// block — was the only thing on the page labelled "Priority Score".
+const PRIORITY_NEED_COLS: Col[] = [
+  { key: "rank", label: "#" },
+  { key: "domain", label: "Domain" },
+  { key: "subDomain", label: "Sub-domain" },
+  { key: "indicatorName", label: "Indicator" },
+  { key: "unitGeo", label: "Location", format: compactGeoLabel },
+  {
+    key: "relevanceScore",
+    label: "Priority Score",
+    format: (o) => (typeof o.relevanceScore === "number" ? o.relevanceScore.toFixed(2) : "—"),
+  },
+  { key: "severityScore", label: "Severity", format: severityCell },
+  { key: "severityBand", label: "Band" },
+  // The source Need's own recorded estimate (need-entry question, Option A).
+  // Null when it was never answered — rendered as a dash with the reason stated
+  // in a note beneath, never back-filled from the study-area figure. See
+  // NeedRecord.affectedPopulation.
+  {
+    key: "affectedPopulation",
+    label: "Affected Pop.",
+    format: (o) => (typeof o.affectedPopulation === "number" ? o.affectedPopulation.toLocaleString("en-GB") : "—"),
+  },
+  { key: "confidence", label: "Confidence" },
+  { key: "equityFlag", label: "Equity" },
+  { key: "validResponseCount", label: "Responses" },
 ];
 
 // The Not Measured table exists to state WHY a row carries no severity, so it
@@ -1192,8 +1296,20 @@ function priorityNeedsSections(pn: Record<string, unknown>, drillable = false, n
       heading: "Village Priority",
       rows: [
         {
-          label: "Priority Score",
-          value: vp.priorityScore === null ? "— (not calculable)" : scalar(vp.priorityScore, "priorityScore"),
+          // Named in full so it cannot be confused with the per-need Priority
+          // Score column above it, which runs in the opposite direction.
+          label: "Village Priority Score",
+          // 2dp, matching the Calculation Basis working line for this same
+          // figure. `scalar`'s WHOLE_NUMBER_KEY rounds anything named *score* to
+          // an integer, which printed 37 beside a working line ending "= 37.45"
+          // — the reader is then left deciding which of the two is the report's
+          // actual answer.
+          value:
+            typeof vp.priorityScore === "number"
+              ? vp.priorityScore.toFixed(2)
+              : vp.priorityScore === null
+                ? "— (not calculable)"
+                : scalar(vp.priorityScore),
         },
         { label: "Priority Status", value: scalar(vp.priorityStatus) },
         ...(vp.notCalculableReason ? [{ label: "Why", value: String(vp.notCalculableReason) }] : []),
@@ -1208,11 +1324,7 @@ function priorityNeedsSections(pn: Record<string, unknown>, drillable = false, n
       pickTableSection(
         "Priority Needs",
         pn.needs,
-        [
-          { key: "rank", label: "#" },
-          ...NEED_RECORD_COLS_FULL,
-          { key: "relevanceScore", label: "Relevance" },
-        ],
+        PRIORITY_NEED_COLS,
         // Each ranked need drills to its indicator's leaf page — the question
         // wording, response distribution and severity calculation behind the
         // number. That is the client's "click a priority need, see how it was
@@ -1220,12 +1332,142 @@ function priorityNeedsSections(pn: Record<string, unknown>, drillable = false, n
         drillable ? pn.needs.map((need) => indicatorAnchor(need.indicatorId, ns)) : undefined,
       ),
     );
+
+    // How the order was arrived at, printed directly beneath the order itself.
+    // The methodology's explainability requirement is that a reader can
+    // RECOMPUTE the ranking; a formula sitting in the payload where no reader
+    // ever sees it does not satisfy that.
+    if (typeof pn.rankingBasis === "string" && pn.rankingBasis) {
+      out.push({
+        kind: "note",
+        heading: "Priority Needs — How this ranking was produced",
+        text: `Ranked by ${pn.rankingBasis}. The Priority Score column is that calculation's output for each need.`,
+      });
+    }
+
+    // State the two granularity limits ON the table, so neither column can be
+    // read as claiming more than it does.
+    const caveats: string[] = [];
+    const locations = new Set(pn.needs.map((need) => compactGeoLabel(need)));
+    if (locations.size === 1) {
+      caveats.push(
+        `Location is the same for every row (${[...locations][0]}) because a need is measured as an ` +
+          "indicator-level aggregate across the whole assessed scope, not attributed to one village. " +
+          "The full scope is given under Geographic Scope.",
+      );
+    }
+    // Two different things to say about the same column, depending on whether
+    // an estimate was actually given. Neither is a general disclaimer: each
+    // states what THIS table's cells do and don't mean.
+    const populations = pn.needs.map((need) =>
+      typeof need.affectedPopulation === "number" ? need.affectedPopulation : null,
+    );
+    if (populations.every((p) => p === null)) {
+      caveats.push(
+        "Affected population was not recorded for these needs, so every row shows a dash. It is asked for " +
+          "on the need-entry form and cannot be filled in afterwards for needs recorded before the question " +
+          "existed. The population figure under Response Quality is the study AREA's population — it sizes " +
+          "the sample and is not the number of people affected by any individual need.",
+      );
+    } else {
+      caveats.push(
+        "Affected population is the estimate given when the need was recorded, in answer to “roughly how " +
+          "many people does this need affect?”. It describes the need as a whole, so it repeats across " +
+          "that need's indicator rows rather than varying by indicator. A dash means no estimate was given, " +
+          "not zero people.",
+      );
+    }
+    if (caveats.length) {
+      out.push({ kind: "note", heading: "Priority Needs — Reading these columns", text: caveats.join(" ") });
+    }
   }
   // Ranked out, but never dropped — an indicator nobody could answer is a
   // finding about the assessment, not an absence of need.
   if (isObjectArray(pn.notMeasured)) {
     out.push(pickTableSection("Not Measured (excluded from ranking)", pn.notMeasured, NOT_MEASURED_NEED_COLS));
   }
+  return out;
+}
+
+/**
+ * The Calculation Basis — the arithmetic behind the headline figures, printed
+ * with this report's own numbers.
+ *
+ * The block has always been built (`CalculationBasisBlock`, carried by RPT01 and
+ * by the Top-Priority projection) and it was rendered NOWHERE: the payload held
+ * the formulas, the working and the thresholds, and no reader ever saw any of
+ * it. The methodology's explainability requirement — "the components of every
+ * score are displayed" — is a requirement about the report a person reads, not
+ * about the JSON behind it.
+ *
+ * Heading text matters: "Calculation Basis" is what files this under the
+ * Methodology Hierarchy chapter (CHAPTER_SCHEME), which already anticipated it.
+ */
+function calculationBasisSections(cb: Record<string, unknown>): DocSection[] {
+  const out: DocSection[] = [];
+  const line = (v: unknown): string => (typeof v === "string" ? v : "");
+
+  // Each formula string starts by naming itself ("Needs Index = mean of …"), so
+  // printing it beside a label of the same name reads "Needs Index = Needs Index
+  // = mean of …". Strip the self-naming prefix rather than dropping the label —
+  // the label is what a reader scans for.
+  const rowFor = (
+    label: string,
+    value: unknown,
+    // The prefix the TEXT uses, when it differs from the label we display.
+    textPrefix = label,
+  ): { label: string; value: string } | null => {
+    const v = line(value);
+    if (!v) return null;
+    const escaped = textPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return { label, value: v.replace(new RegExp(`^${escaped}\\s*[=:]\\s*`, "i"), "") };
+  };
+
+  const formulas = [
+    rowFor("Needs Index", cb.needsIndexFormula),
+    // "Village Priority Score", not "Priority Score". This is the VILLAGE-level
+    // performance score (lower = more urgent); the Priority Needs table's
+    // Priority Score column is the per-need ranking figure (higher = more
+    // urgent). Two different numbers running in opposite directions must not
+    // share a name on the same page — which is exactly the confusion that
+    // renaming the need column to the client's vocabulary would otherwise have
+    // created.
+    rowFor("Village Priority Score", cb.priorityScoreFormula, "Priority Score"),
+    rowFor("Severity banding", cb.severityBandingRule),
+    rowFor("Confidence", cb.confidenceRule),
+    rowFor("Equity flag", cb.equityRule),
+    rowFor("Gap type", cb.gapTypeRule),
+  ].filter((r): r is { label: string; value: string } => r !== null);
+  if (formulas.length) out.push({ kind: "keyvalue", heading: "Calculation Basis", rows: formulas });
+
+  // The working, with this report's actual numbers substituted in — the part a
+  // reader recomputes against.
+  const working = (key: string, heading: string): void => {
+    const arr = cb[key];
+    if (Array.isArray(arr) && arr.length) {
+      out.push({ kind: "list", heading, items: arr.map(String) });
+    }
+  };
+  working("needsIndexWorking", "Calculation Basis — Needs Index working");
+  working("priorityScoreWorking", "Calculation Basis — Village Priority Score working");
+
+  // The trip points the rules above refer to. A rule that says "below the
+  // minimum sample" is only checkable next to the number that minimum is.
+  if (isPlainObject(cb.thresholds)) {
+    const t = cb.thresholds;
+    const rows = [
+      { label: "Minimum valid responses for STANDARD confidence", key: "confidenceMinSample" },
+      { label: "Don't-know rate that forces LOW confidence", key: "dontKnowLowThreshold" },
+      { label: "Severity spread that trips the equity flag", key: "equitySpreadThreshold" },
+      { label: "Minimum size of each compared group", key: "equityMinGroupN" },
+      { label: "Severity at or above which a gap is acute", key: "acuteSeverityFloor" },
+      { label: "Severity at or above which a sustained gap is chronic", key: "chronicSeverityFloor" },
+    ]
+      .filter((r) => t[r.key] !== undefined && t[r.key] !== null)
+      .map((r) => ({ label: r.label, value: scalar(t[r.key], r.key) }));
+    if (rows.length) out.push({ kind: "keyvalue", heading: "Calculation Basis — Thresholds Applied", rows });
+  }
+
   return out;
 }
 
@@ -1324,9 +1566,9 @@ function chapterSummary(sections: DocSection[]): string {
  * happened to push sections.
  */
 const CHAPTER_SCHEME: Array<{ name: string; match: RegExp }> = [
-  { name: "Overview", match: /report basis|^survey$|coverage|geographic scope|region \/ governorate|portfolio|response quality|needs index|organisation dashboard/i },
+  { name: "Overview", match: /report basis|^survey$|scope basis|partial scope|coverage|geographic scope|region \/ governorate|portfolio|response quality|needs index|organisation dashboard/i },
   { name: "Executive Summary", match: /executive summary|ai summary|key findings|summary of needs|critical needs/i },
-  { name: "Severity by Domain", match: /domain severity|domain profile|^domains$|scoring distribution|collective kpis/i },
+  { name: "Severity by Domain", match: /domain severity|domain profile|^domains$|^domains — |scoring distribution|collective kpis/i },
   // `domain masking` and `geographic masking` are deliberately distinct: the
   // same no-masking rule applies to domains and to geography, and each alert
   // belongs beside the table it is about, not both in whichever chapter is
@@ -1518,6 +1760,28 @@ function buildReportSections(
       });
     }
 
+    // What a study-scoped report actually read (RPT04). Placed with the other
+    // identity blocks, before any figure: "one of three surveys" changes how
+    // every number below it should be read.
+    if (isPlainObject(content.scopeBasis)) {
+      const sb = content.scopeBasis;
+      sections.push({
+        kind: "keyvalue",
+        heading: "Scope Basis",
+        rows: [
+          { label: "Survey", value: scalar(sb.surveyTitle) },
+          { label: "Surveys in study", value: scalar(sb.studySurveyCount) },
+          {
+            label: "Selected by",
+            value: sb.resolution === "EXPLICIT_FILTER" ? "Explicit filter" : "Latest published survey",
+          },
+        ],
+      });
+      if (typeof sb.partialScopeNote === "string" && sb.partialScopeNote) {
+        sections.push({ kind: "note", heading: "Partial Scope", text: sb.partialScopeNote });
+      }
+    }
+
     // Coverage / portfolio count bands — the volume context for everything
     // that follows.
     const surveyOnly =
@@ -1592,6 +1856,103 @@ function buildReportSections(
         rows: content.completeness.map((r) => ({ label: scalar(r.label), value: scalar(r.value) })),
       });
     }
+
+    // ── RPT10 data-collection completeness: what never arrived, beside what
+    // arrived and was excluded. Client Q14 answer (a), settled 24 Aug. ──
+    if (isPlainObject(content.dataCollection)) {
+      const dc = content.dataCollection as Record<string, unknown>;
+      const scope = isPlainObject(dc.scope) ? (dc.scope as Record<string, unknown>) : null;
+      const ab = isPlainObject(dc.abandonment) ? (dc.abandonment as Record<string, unknown>) : null;
+      const un = isPlainObject(dc.unansweredRequired) ? (dc.unansweredRequired as Record<string, unknown>) : null;
+      const inv = isPlainObject(dc.invalidResponses) ? (dc.invalidResponses as Record<string, unknown>) : null;
+
+      // Scope first. Every figure below it is only as wide as this section
+      // says — a study-level label over single-survey figures is the exact
+      // defect this block exists to make impossible.
+      if (scope) {
+        sections.push({
+          kind: "keyvalue",
+          heading: "Data-Collection Scope",
+          rows: [
+            { label: "Scope", value: scalar(scope.level) === "SURVEY" ? "Survey level" : "Study level" },
+            { label: "Surveys in study", value: scalar(scope.surveysInStudy) },
+            { label: "Surveys covered by these figures", value: scalar(isObjectArray(scope.coveredSurveys) ? scope.coveredSurveys.length : 0) },
+            { label: "Basis", value: scalar(scope.note) },
+          ],
+        });
+        if (isObjectArray(scope.coveredSurveys)) {
+          sections.push(pickTableSection("Surveys Covered", scope.coveredSurveys, SCOPE_SURVEY_COLS));
+        }
+        if (isObjectArray(scope.excludedSurveys)) {
+          sections.push(pickTableSection("Surveys NOT Covered", scope.excludedSurveys, SCOPE_SURVEY_COLS));
+        }
+      }
+
+      if (ab) {
+        sections.push({
+          kind: "keyvalue",
+          heading: "Survey Abandonment",
+          rows: [
+            { label: "Sessions started", value: scalar(ab.sessionsStarted) },
+            { label: "Submitted", value: scalar(ab.submitted) },
+            { label: "Abandoned", value: scalar(ab.abandoned) },
+            { label: "Still in progress", value: scalar(ab.inFlight) },
+            { label: "Abandonment rate", value: `${scalar(ab.abandonmentRatePct)}% of ${scalar(ab.resolvedSessions)} resolved session(s)` },
+            { label: "Completion rate", value: `${scalar(ab.completionRatePct)}%` },
+            { label: "Idle threshold", value: `${scalar(ab.idleThresholdMinutes)} minutes` },
+            {
+              label: "Mean progress when abandoned",
+              value: ab.meanProgressPct === null ? "—" : `${scalar(ab.meanProgressPct)}% of questions answered`,
+            },
+            { label: "Reminders sent", value: scalar(ab.remindersSent) },
+            { label: "Responses with no session record", value: scalar(ab.responsesWithoutSession) },
+          ],
+        });
+        // The note carries the tracking-coverage caveat: a 0% rate over zero
+        // sessions is an absence of measurement, not a measured zero.
+        sections.push({ kind: "note", heading: "Reading the Abandonment Figures", text: scalar(ab.note) });
+        if (isObjectArray(ab.byStage)) {
+          sections.push(pickTableSection("Where Respondents Stopped", ab.byStage, ABANDONMENT_STAGE_COLS));
+        }
+      }
+
+      // The client's counting rule, stated on the report itself: abandoned
+      // sittings are invalid responses, not their own category.
+      if (inv) {
+        sections.push({
+          kind: "keyvalue",
+          heading: "Invalid Responses",
+          rows: [
+            { label: "Excluded submitted responses", value: scalar(inv.excludedSubmitted) },
+            { label: "Abandoned / incomplete sessions", value: scalar(inv.abandonedSessions) },
+            { label: "Invalid responses (total)", value: scalar(inv.total) },
+            { label: "How this is counted", value: scalar(inv.basis) },
+          ],
+        });
+      }
+
+      if (un) {
+        sections.push({
+          kind: "keyvalue",
+          heading: "Unanswered Required Questions",
+          rows: [
+            { label: "Required questions in scope", value: scalar(un.requiredQuestionCount) },
+            { label: "Submitted responses", value: scalar(un.submittedResponses) },
+            { label: "Required answers expected", value: scalar(un.requiredAnswerSlots) },
+            { label: "Left blank", value: `${scalar(un.unansweredCount)} (${scalar(un.unansweredRatePct)}%)` },
+          ],
+        });
+        sections.push({ kind: "note", heading: "Required-Question Gaps", text: scalar(un.note) });
+        // Array.isArray, not isObjectArray — an empty list still prints its
+        // section, for the same reason Flagged Records does.
+        if (Array.isArray(un.byQuestion) && un.byQuestion.length) {
+          sections.push(
+            pickTableSection("Required Questions With Gaps", un.byQuestion as Record<string, unknown>[], UNANSWERED_REQUIRED_COLS),
+          );
+        }
+      }
+    }
+
     if (isObjectArray(content.domainConfidence)) {
       sections.push(pickTableSection("Confidence by Domain", content.domainConfidence, DOMAIN_CONFIDENCE_COLS));
     }
@@ -1695,6 +2056,26 @@ function buildReportSections(
     if (radar && bars) sections.push({ kind: "columns", children: [radar, bars] });
     else if (bars) sections.push(bars);
     if (domainsTable) sections.push(domainsTable);
+    // The no-masking rule, spelled out for the reader who skims the average
+    // column — which is precisely the reader it exists for. Same note the
+    // Top-Priority Domain Rollup prints, from the same derivation.
+    if (domains) {
+      const masked = domains.filter((d) => d.masksCriticalFinding === true);
+      if (masked.length) {
+        sections.push({
+          kind: "note",
+          // Prefixed so it chapters WITH the Domains table it annotates. The
+          // bare "Domain Masking Alert" heading is the Top-Priority rollup's,
+          // which belongs in the Priority Needs chapter — see CHAPTER_SCHEME.
+          heading: "Domains — Domain Masking Alert",
+          text:
+            `${masked.length} domain(s) average a milder band than their worst KPI: ` +
+            `${masked.map((d) => `${scalar(d.name)} (worst: ${scalar(d.maxKpiName)} at ${scalar(d.maxKpiSeverity)})`).join("; ")}. ` +
+            "Per the methodology, a critical need surfaces regardless of its domain average — " +
+            "read the Max KPI Severity column, not the average, for these domains.",
+        });
+      }
+    }
 
 
     // ── Section 3 — the full methodology hierarchy ──
@@ -1713,6 +2094,13 @@ function buildReportSections(
       sections.push(...priorityNeedsSections(content.priorityNeeds, drillable, ns));
     } else if (isPlainObject(content.priority)) {
       sections.push({ kind: "keyvalue", heading: "Priority", rows: kvRows(content.priority) });
+    }
+
+    // The arithmetic behind everything above. Placed after the findings, not
+    // before them — a reader wants the figures first and the derivation on
+    // demand, and the contents page lets them jump straight here.
+    if (isPlainObject(content.calculationBasis)) {
+      sections.push(...calculationBasisSections(content.calculationBasis));
     }
 
     // Data-collection funnel + questionnaire weighting, side by side — both are

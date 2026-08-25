@@ -33,6 +33,10 @@ export interface BulkImportNeedItem {
   statement: string;
   village?: string;
   referenceId?: string;
+  /** Whole number of people, or omitted — the need-entry form's "roughly how
+   *  many people does this need affect?" answer, carried through the bulk
+   *  path so an import isn't a way to lose the field. */
+  affectedPopulation?: number;
 }
 
 export interface BulkImportNeedsPayload {

@@ -162,7 +162,14 @@ export class ReportsService {
 
     const orgId = requireOrgId();
     const generatedBy = requireActor();
-    const filters = payload.filters ?? {};
+    // An optionally survey-scoped type (RPT10) expresses its scope through
+    // filters.surveyId — the one channel the provider reads — so a surveyId
+    // named on the payload is folded in here rather than travelling by a
+    // second route the provider would have to learn about.
+    const filters = {
+      ...(payload.filters ?? {}),
+      ...(meta.supportsSurveyId && payload.surveyId ? { surveyId: payload.surveyId } : {}),
+    };
 
     const { title, content } = await this.generateContent(
       payload.reportType,
@@ -180,7 +187,7 @@ export class ReportsService {
           studyId: payload.studyId ?? null,
           // Only persisted for survey-scoped types — a stray surveyId on a
           // study-scoped type would make the list column lie.
-          surveyId: meta.requiresSurveyId ? (payload.surveyId ?? null) : null,
+          surveyId: meta.requiresSurveyId || meta.supportsSurveyId ? (payload.surveyId ?? null) : null,
           filters: filters as unknown as Prisma.InputJsonValue,
           content: content as unknown as Prisma.InputJsonValue,
           generatedBy,

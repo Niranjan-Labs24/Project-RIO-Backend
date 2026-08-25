@@ -11,9 +11,17 @@ import { AiModule } from "../ai/ai.module";
 import { PriorityModule } from "../priority/priority.module";
 import { ReportSharingModule } from "../report-sharing/report-sharing.module";
 import { ReviewerSlaModule } from "../reviewer-sla/reviewer-sla.module";
+import { SurveySessionsModule } from '../survey-sessions/survey-sessions.module';
 
 @Module({
-  imports: [AiModule, PriorityModule, forwardRef(() => ReportSharingModule), ReviewerSlaModule],
+  imports: [
+    AiModule,
+    PriorityModule,
+    forwardRef(() => ReportSharingModule),
+    ReviewerSlaModule,
+    // RPT10 reads survey abandonment (see load-data-collection-completeness.ts).
+    SurveySessionsModule,
+  ],
   controllers: [ReportsController, PrioritySummaryController, CombinedReportSummaryController],
   providers: [
     ReportsService,

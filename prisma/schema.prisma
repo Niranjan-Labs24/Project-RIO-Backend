@@ -188,6 +188,8 @@ model Organisation {
   otpChallenges          CitizenOtpChallenge[]
   passwordResetTokens    PasswordResetToken[]
   surveyResponses        SurveyResponse[]
+  surveySessions         SurveySession[]
+  surveySessionEvents    SurveySessionEvent[]
   responseQualityResults ResponseQualityResult[]
   aiSummaries AiSummary[]
   priorityScores PriorityScore[]
@@ -476,6 +478,7 @@ model Study {
   aiDecisions AiDecision[]
   surveyLinks PublicSurveyLink[]
   surveyResponses SurveyResponse[]
+  surveySessions SurveySession[]
   responseQualityResults ResponseQualityResult[]
   aiSummaries AiSummary[]
   priorityScores PriorityScore[]
@@ -568,6 +571,17 @@ model Need {
   // application layer, not stored as a string, so there's one source of
   // truth for the number.
   internalRefSeq Int @default(autoincrement()) @map("internal_ref_seq")
+  // Roughly how many people this Need affects, as estimated by whoever
+  // recorded it (client-confirmed Option A, 24 Aug 2026 — the answer to the
+  // need-entry question "Roughly how many people does this need affect?").
+  // This is the ONLY per-need population figure in the system and the sole
+  // source for the Top-Priority Report's Affected Population column.
+  // Deliberately NOT derived from Study.population: that figure covers the
+  // whole study area and sizes the sample, so writing it here would claim
+  // every need affects everyone. Nullable and stays null forever for Needs
+  // recorded before this field existed — the estimate cannot be
+  // reconstructed after the fact, because nobody was asked at the time.
+  affectedPopulation Int? @map("affected_population")
   status    NeedStatus @default(draft)
   // The AUTHORITATIVE ("Approved") Domain + Sub-Domain for this Need —
   // ALWAYS mirrors the first row of `needDomains` below (the real,
@@ -636,6 +650,7 @@ model Need {
   surveys Survey[]
   surveyLinks PublicSurveyLink[]
   surveyResponses SurveyResponse[]
+  surveySessions SurveySession[]
   responseQualityResults ResponseQualityResult[]
   aiSummaries AiSummary[]
   priorityScores PriorityScore[]
@@ -1054,6 +1069,7 @@ model PublicSurveyLink {
   study                  Study                   @relation(fields: [studyId], references: [id], onDelete: Cascade)
   otpChallenges          CitizenOtpChallenge[]
   responses              SurveyResponse[]
+  sessions               SurveySession[]
   responseQualityResults ResponseQualityResult[]
   aiSummaries            AiSummary[]
   priorityScores         PriorityScore[]
@@ -1181,6 +1197,7 @@ model SurveyResponse {
   need       Need             @relation(fields: [needId], references: [id], onDelete: Cascade)
   surveyLink PublicSurveyLink @relation(fields: [surveyLinkId], references: [id], onDelete: Cascade)
   qualityResults ResponseQualityResult[]
+  session        SurveySession?
   responseAnswers        ResponseAnswer[]
   responseSeverityScores ResponseSeverityScore[]
 
@@ -1841,6 +1858,8 @@ model Survey {
   aiPrioritySummaries        AiPrioritySummary[]
   // Survey-scoped reports (RPT01 / RPT15) — see Report.surveyId.
   reports                    Report[]
+  // Abandonment tracking — the sessions opened against this survey version.
+  sessions                   SurveySession[]
 
   @@index([orgId])
   @@index([needId])
@@ -2295,3 +2314,140 @@ model CombinedReportEvidenceSource {
   @@map("combined_report_evidence_sources")
 }
 
+
+// ──────────────────────────────────────────────────────────────────────────
+// Survey abandonment tracking (client answer, 24 Aug — RPT10 Q-2)
+//
+// Three constraints from that answer shape every field below:
+//
+//   1. "Partially completed surveys are not saved as data records." Nothing
+//      here stores an answer. There is no answers column, no per-question
+//      row, no draft SurveyResponse. A submitted response is still the only
+//      place respondent data lives.
+//   2. "Track abandonment at the session/event level — that a survey was
+//      started and not completed, not the partial answer data itself." Hence
+//      a session row carrying timing/stage metadata plus a milestone event
+//      log, and `answeredCount` as a COUNT — never the answers it counts.
+//   3. "Abandoned/incomplete submissions are counted as invalid responses,
+//      not a separate category." That is a reporting rule, applied in RPT10
+//      (see load-data-collection-completeness.ts), not a storage rule.
+//
+// Contact/mobile are copied from the OTP challenge the respondent already
+// created — the same two values that table already holds — and exist for one
+// purpose: the completion reminder (SurveyReminderService). A session that
+// never reached the contact step has neither, and can never be reminded.
+// ──────────────────────────────────────────────────────────────────────────
+
+enum SurveySessionStatus {
+  // Opened the link; nothing further yet.
+  STARTED
+  // Past the welcome screen — details entered, OTP requested, or answering.
+  IN_PROGRESS
+  // OTP verified: the respondent is identified and is (or was) answering.
+  VERIFIED
+  // Reached a real SurveyResponse. The only non-abandoned terminal state.
+  SUBMITTED
+  // Idle past SURVEY_ABANDONMENT_IDLE_MINUTES without submitting. Written by
+  // the sweep (SurveySessionsService.sweepAbandoned); RPT10 also derives the
+  // same classification live, so a report is never wrong for the window
+  // between a session going stale and the next sweep running.
+  ABANDONED
+}
+
+// The furthest point a session reached — the "where do we lose people" axis
+// of the abandonment breakdown. Ordered; never moves backwards.
+enum SurveySessionStep {
+  OPENED
+  DETAILS
+  OTP_REQUESTED
+  OTP_VERIFIED
+  ANSWERING
+  REVIEW
+  SUBMITTED
+}
+
+model SurveySession {
+  id           String  @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId        String  @map("org_id") @db.Uuid
+  needId       String  @map("need_id") @db.Uuid
+  // Denormalized from Need.studyId — see Evidence.studyId's comment.
+  studyId      String  @map("study_id") @db.Uuid
+  surveyLinkId String  @map("survey_link_id") @db.Uuid
+  // The PUBLISHED Survey version resolved when the link was opened. Nullable
+  // for a session opened against a link whose survey was unpublished at the
+  // time. Study-level RPT10 groups by this so a session is never attributed
+  // to a survey version it did not actually see.
+  surveyId     String? @map("survey_id") @db.Uuid
+
+  status       SurveySessionStatus @default(STARTED)
+  furthestStep SurveySessionStep   @default(OPENED) @map("furthest_step")
+
+  // Denominators for the progress figure. `questionCount` is the survey's
+  // own length at open time; `answeredCount` is how many of them had a value
+  // when the respondent stopped — a count only, never the values.
+  questionCount Int @default(0) @map("question_count")
+  answeredCount Int @default(0) @map("answered_count")
+
+  // Copied from the CitizenOtpChallenge this session created (see the model
+  // comment) — the reminder channel, and nothing else. Null until the
+  // respondent reaches the details step.
+  contact        String? @db.VarChar(320)
+  mobile         String? @db.VarChar(32)
+  otpChallengeId String? @map("otp_challenge_id") @db.Uuid
+
+  // Set only on a real submission. @unique: one session can produce at most
+  // one response, and one response belongs to at most one session, so
+  // "sessions submitted" and "responses received" can never double-count.
+  surveyResponseId String? @unique @map("survey_response_id") @db.Uuid
+
+  startedAt   DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  lastEventAt DateTime  @default(now()) @map("last_event_at") @db.Timestamptz(6)
+  submittedAt DateTime? @map("submitted_at") @db.Timestamptz(6)
+  abandonedAt DateTime? @map("abandoned_at") @db.Timestamptz(6)
+
+  // Completion reminders (SurveyReminderService). `remindersSent` is capped
+  // by SURVEY_REMINDER_MAX so a respondent who stops on purpose is never
+  // chased indefinitely.
+  remindersSent  Int       @default(0) @map("reminders_sent")
+  lastReminderAt DateTime? @map("last_reminder_at") @db.Timestamptz(6)
+
+  org        Organisation        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  study      Study               @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  need       Need                @relation(fields: [needId], references: [id], onDelete: Cascade)
+  surveyLink PublicSurveyLink    @relation(fields: [surveyLinkId], references: [id], onDelete: Cascade)
+  survey     Survey?             @relation(fields: [surveyId], references: [id], onDelete: SetNull)
+  response   SurveyResponse?     @relation(fields: [surveyResponseId], references: [id], onDelete: SetNull)
+  events     SurveySessionEvent[]
+
+  @@index([orgId])
+  @@index([studyId])
+  @@index([surveyId])
+  @@index([surveyLinkId])
+  // The sweep's and the report's shared access path: unfinished sessions
+  // ordered by staleness.
+  @@index([status, lastEventAt])
+  @@map("survey_sessions")
+}
+
+// Milestone events only — one row per *advance*, never a heartbeat and never
+// a per-keystroke record, so a session's event count is bounded by the
+// survey's question count. This is the "event level" half of the client's
+// answer: it is what makes "abandoned at question 7 of 20" answerable
+// without storing what question 7 was answered with.
+model SurveySessionEvent {
+  id         String            @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId      String            @map("org_id") @db.Uuid
+  sessionId  String            @map("session_id") @db.Uuid
+  step       SurveySessionStep
+  // Position within the question set when the event fired (0 for the
+  // non-question steps). A position, not an answer.
+  position   Int               @default(0)
+  occurredAt DateTime          @default(now()) @map("occurred_at") @db.Timestamptz(6)
+
+  org     Organisation  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  session SurveySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([sessionId])
+  @@map("survey_session_events")
+}

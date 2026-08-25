@@ -91,6 +91,31 @@ export const EnvSchema = Type.Object({
   // process cwd). BACKUP_CRON_SCHEDULE is a standard 5-field cron
   // expression — defaults to weekly (Sundays at 03:00), confirmed working
   // end-to-end during testing at a faster interval first.
+  // ── Survey abandonment tracking + completion reminders (RPT10 Q-2) ──
+  // How long a started-but-unsubmitted session may sit idle before it counts
+  // as abandoned. A citizen survey is one sitting of a few minutes (see
+  // SECONDS_PER_QUESTION in CitizenService), and the OTP itself expires after
+  // 10 — 120 minutes is well past any realistic pause, so a session crossing
+  // it is genuinely gone rather than slow. Configurable because a longer
+  // survey may warrant a longer grace period; RPT10 prints the value it used.
+  SURVEY_ABANDONMENT_IDLE_MINUTES: Type.Number({ default: 120, minimum: 5, maximum: 10_080 }),
+  // Completion reminders. OFF by default: a reminder is an outbound message
+  // to a citizen who did not finish, and no environment should start sending
+  // those because it deployed a new build. Switch on per environment once the
+  // client confirms the wording and the cadence.
+  SURVEY_REMINDERS_ENABLED: Type.Boolean({ default: false }),
+  // A reminder goes out well before the abandonment threshold — the point is
+  // to recover the response, which means reaching the respondent while the
+  // link is still on their phone, not after they are already counted as lost.
+  SURVEY_REMINDER_IDLE_MINUTES: Type.Number({ default: 30, minimum: 5, maximum: 10_080 }),
+  // Hard cap per session. Two nudges is the outer edge of helpful; beyond
+  // that a respondent who stopped on purpose is being harassed.
+  SURVEY_REMINDER_MAX: Type.Number({ default: 2, minimum: 0, maximum: 5 }),
+  // Minimum gap between two reminders to the same session.
+  SURVEY_REMINDER_COOLDOWN_MINUTES: Type.Number({ default: 1440, minimum: 30, maximum: 20_160 }),
+  // Sweep cadence — classifies stale sessions as ABANDONED and sends any due
+  // reminders. Standard 5-field cron; every 15 minutes by default.
+  SURVEY_SESSION_SWEEP_CRON: Type.String({ default: '*/15 * * * *' }),
   BACKUP_DIR: Type.String({ default: './storage/backups' }),
   BACKUP_CRON_SCHEDULE: Type.String({ default: '0 3 * * 0' }),
   // Optional override for the pg_dump binary — the bare command name is

@@ -8,6 +8,8 @@ import { AuditService } from '../audit/audit.service';
 import { SurveysService } from '../surveys/surveys.service';
 import { DeterministicScoringService } from '../priority/scoring.service';
 import { ScoreRollupService } from '../priority/rollup.service';
+import { SurveySessionsService } from '../survey-sessions/survey-sessions.service';
+import type { RecordEventPayload, RecordEventResult, StartSessionResult } from '../survey-sessions/survey-sessions.types';
 import type {
   CheckDuplicatePayload, CheckDuplicateResult, CitizenOtpChallengeRow, PublicSurveyLinkRow, RequestOtpPayload,
   RequestOtpResult, ResolvedSurvey, SubmitResponsePayload, SubmitResponseResult, VerifyOtpPayload, VerifyOtpResult,
@@ -29,6 +31,9 @@ export class CitizenService {
     private readonly audit: AuditService,
     private readonly scoringEngine: DeterministicScoringService,
     private readonly rollupService: ScoreRollupService,
+    // Abandonment tracking (RPT10 Q-2). Best-effort throughout — every call
+    // into it is allowed to fail without affecting the citizen flow.
+    private readonly sessions: SurveySessionsService,
   ) {}
 
   // The published Survey Builder survey is the only source of questions for
@@ -102,6 +107,26 @@ export class CitizenService {
     }
   }
 
+  // ── Abandonment tracking (client answer, 24 Aug — RPT10 Q-2) ──
+  //
+  // "Partially completed surveys are not saved as data records … the system
+  // should track abandonment … at the session/event level." Both methods
+  // below write session metadata only; neither can persist an answer, and a
+  // response still becomes a data record exclusively through submitResponse.
+  async startSession(token: string): Promise<StartSessionResult | null> {
+    const link = await this.findActiveLinkOrThrow(token);
+    return this.sessions.start(link);
+  }
+
+  async recordSessionEvent(
+    token: string,
+    sessionId: string,
+    payload: RecordEventPayload,
+  ): Promise<RecordEventResult> {
+    const link = await this.findActiveLinkOrThrow(token);
+    return this.sessions.recordEvent(link, sessionId, payload);
+  }
+
   // Pre-flight check, called right after the participant enters their
   // contact details and before any OTP challenge is created — lets the
   // frontend reject an already-submitted contact without ever writing an
@@ -148,6 +173,16 @@ export class CitizenService {
     // challenge + throwing OTP_DELIVERY_FAILED), which stranded a citizen
     // respondent with no way to ever get a code whenever SMS wasn't
     // configured/working.
+    // Give the session the contact details it needs to be remindable —
+    // the same two values the challenge above already holds, and the only
+    // reason SurveySession carries them at all.
+    if (payload.sessionId) {
+      await this.sessions.linkChallenge(link.orgId, payload.sessionId, {
+        id: challenge.id,
+        contact,
+        mobile,
+      });
+    }
     const codeTexted = await this.sms.sendOtpCode(payload.mobile, code);
     // Dev only: surface the code in the response itself (below) so
     // local/test runs aren't blocked on a real phone when delivery fails —
@@ -193,6 +228,9 @@ export class CitizenService {
     }
     if (!matches) {
       throw new BadRequestException({ error: { code: 'OTP_INCORRECT', message: 'Incorrect verification code.' } });
+    }
+    if (payload.sessionId) {
+      await this.sessions.recordEvent(link, payload.sessionId, { step: 'OTP_VERIFIED' });
     }
     return { verified: true };
   }
@@ -336,6 +374,15 @@ export class CitizenService {
         { field: 'Need', before: null, after: needTitle },
       ],
     });
+
+    // Close the abandonment session against the response it produced —
+    // after the transaction, so a session is only ever SUBMITTED when a
+    // SurveyResponse row exists to point at. A submission made without a
+    // session (tracking failed, or an older client) simply has none; RPT10
+    // reports the tracking-coverage gap rather than assuming one.
+    if (payload.sessionId) {
+      await this.sessions.markSubmitted(link.orgId, payload.sessionId, row.id);
+    }
 
     // Score and rollup asynchronously. Both calls take `orgId` explicitly —
     // this continuation runs detached from the citizen's (unauthenticated)

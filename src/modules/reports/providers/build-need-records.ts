@@ -75,6 +75,18 @@ export interface BuildNeedRecordsInput {
   thresholds: Thresholds;
   surveyId: string;
   villageScope: string;
+  /**
+   * The source Need's own affected-population estimate (Survey.needId →
+   * Need.affectedPopulation), or null when it was never given.
+   *
+   * Every record built here is an indicator-level breakdown of that ONE need,
+   * so they all carry the same figure — it is the need's reach, not each
+   * indicator's. That is a much narrower claim than the study-area population
+   * would have made, but it is still not a per-indicator number, and the
+   * report says so beneath the table rather than leaving a reader to assume
+   * otherwise.
+   */
+  sourceNeedAffectedPopulation: number | null;
 }
 
 export function buildNeedRecords(input: BuildNeedRecordsInput): NeedRecord[] {
@@ -88,6 +100,7 @@ export function buildNeedRecords(input: BuildNeedRecordsInput): NeedRecord[] {
     thresholds,
     surveyId,
     villageScope,
+    sourceNeedAffectedPopulation,
   } = input;
 
   return kpiRollups.map((r) => {
@@ -145,6 +158,13 @@ export function buildNeedRecords(input: BuildNeedRecordsInput): NeedRecord[] {
       // Invariant for a survey source. The Merged Report populates these.
       supportingText: null,
       mergedWith: null,
+
+      // The source Need's own recorded estimate, the same for every indicator
+      // of that need — see sourceNeedAffectedPopulation on the input type.
+      // Null when it was never answered, never Study.population: that figure
+      // covers the whole study area and would read as "this one need affects
+      // all of them".
+      affectedPopulation: sourceNeedAffectedPopulation,
 
       unitGeo,
       sourceRef: { ...sourceRefBase, rollupEntityId: r.entityId },

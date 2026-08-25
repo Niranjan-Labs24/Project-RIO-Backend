@@ -46,6 +46,8 @@ const fakeTenant = {
 const noPriority = { listForOrg: async () => [] };
 const noSharing = { list: async () => [] };
 const noSla = { listAlerts: async () => [] };
+// RPT10 only — the village/sector/etc. paths under test never load sessions.
+const noSessions = { loadSessionsForReport: async () => [], idleMinutes: 120 };
 const query = { studyId: "study-1", villageId: "Ad-Dilam", orgId: "o", filters: {} };
 
 function makeProvider(
@@ -54,9 +56,11 @@ function makeProvider(
   priorityV2: unknown = noPriority,
   sharing: unknown = noSharing,
   sla: unknown = noSla,
+  sessions: unknown = noSessions,
 ): ReportSummaryDataProvider {
   return new ReportSummaryDataProvider(
     summary as never, tenant as never, priorityV2 as never, sharing as never, sla as never,
+    sessions as never,
   );
 }
 

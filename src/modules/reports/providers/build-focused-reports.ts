@@ -25,18 +25,14 @@ import type {
 import type { UnifiedRpt01Sections } from "../unified-report.types";
 import type { DomainComponent } from "../report-content.types";
 import type { NeedRecord, SeverityBand } from "../need-record.types";
+import type { DataCollectionCompletenessBlock } from "./load-data-collection-completeness";
 import { severityBandOf } from "./severity-bands";
+// The masking comparison itself lives in derive-domain-masking.ts, shared with
+// the Village/Sector/Region domain tables — see that file's header.
+import { bandRank, deriveDomainMasking } from "./derive-domain-masking";
 
-/** Band order, worst first — drives both the tier table's row order and the
- *  masking comparison. Index 0 is the most severe. */
+/** Band order, worst first — drives the tier table's row order. */
 const BAND_ORDER: SeverityBand[] = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
-
-function bandRank(band: SeverityBand | null): number {
-  const i = band ? BAND_ORDER.indexOf(band) : -1;
-  // An unbanded (unmeasured) domain must never compare as "worse than
-  // critical" — it sorts last, and the masking check below skips it entirely.
-  return i === -1 ? BAND_ORDER.length : i;
-}
 
 export interface FocusedMapperInput {
   header: ReportHeader;
@@ -50,6 +46,10 @@ export interface FocusedMapperInput {
   domains: DomainComponent[];
   scope?: { villages: string; governorate: string | null };
   filters?: Record<string, unknown>;
+  /** RPT10 only — data-collection completeness (unanswered required questions,
+   *  abandonment, and the combined invalid-response count). Optional so the
+   *  Top-Priority mapper, which shares this input type, is unaffected. */
+  dataCollection?: DataCollectionCompletenessBlock;
 }
 
 function focusedMeta(
@@ -117,29 +117,21 @@ export function buildDomainRollup(
 
   return domains.map((d) => {
     const records = byDomainKey.get(d.domainCode) ?? [];
-    const measured = records
-      .map((r) => r.severityScore)
-      .filter((s): s is number => s !== null);
-
-    // Null, never 0 — a domain nobody could measure is not a domain scoring
-    // zero. Same convention as DomainComponent.severityScore.
-    const maxKpiSeverity = measured.length ? Math.max(...measured) : null;
-    const domainBand = severityBandOf(d.severityScore);
-    const worstKpiBand = severityBandOf(maxKpiSeverity);
+    const masking = deriveDomainMasking(
+      d.severityScore,
+      records.map((r) => ({ domainKey: r.domainKey, kpiName: r.kpiName, severityScore: r.severityScore })),
+    );
 
     return {
       domain: d.name,
       domainKey: d.domainCode,
       averageSeverity: d.severityScore,
-      maxKpiSeverity,
-      criticalKpiCount: measured.filter((s) => severityBandOf(s) === "CRITICAL").length,
+      maxKpiSeverity: masking.maxKpiSeverity,
+      criticalKpiCount: masking.criticalKpiCount,
       // The methodology's KPI count for the domain, not the number we happened
       // to measure — the two differ, and the difference is itself a finding.
       kpiCount: d.kpiCount,
-      // Only meaningful when both bands exist; an unmeasured domain masks
-      // nothing, it simply says nothing.
-      masksCriticalFinding:
-        domainBand !== null && worstKpiBand !== null && bandRank(worstKpiBand) < bandRank(domainBand),
+      masksCriticalFinding: masking.masksCriticalFinding,
     };
   });
 }
@@ -201,6 +193,35 @@ export function buildDataQualityContent(input: FocusedMapperInput): DataQualityR
     { label: "Domains Not Assessed", value: String(dq.domainsNotAssessed.length) },
   ];
 
+  // Data-collection completeness (client Q14 answer (a), and the 24 Aug
+  // follow-up on abandonment). Appended to the same tile band rather than
+  // given a band of its own: a reader judging whether this dataset can be
+  // relied on needs "how much never arrived" beside "how much was excluded",
+  // not two screens apart.
+  const dc = input.dataCollection;
+  if (dc) {
+    completeness.push(
+      { label: "Scope of these figures", value: dc.scope.level === "SURVEY" ? "One survey" : `All ${dc.scope.surveysInStudy} survey(s) in study` },
+      { label: "Sessions Started", value: String(dc.abandonment.sessionsStarted) },
+      { label: "Sessions Submitted", value: String(dc.abandonment.submitted) },
+      { label: "Sessions Abandoned", value: String(dc.abandonment.abandoned) },
+      {
+        label: "Abandonment Rate",
+        // The threshold travels with the number. A rate whose definition is a
+        // config value must never be printed as a bare percentage.
+        value: `${dc.abandonment.abandonmentRatePct}% (of ${dc.abandonment.resolvedSessions} resolved session(s), abandoned after ${dc.abandonment.idleThresholdMinutes}m idle)`,
+      },
+      {
+        label: "Invalid Responses (incl. abandoned)",
+        value: `${dc.invalidResponses.total} — ${dc.invalidResponses.excludedSubmitted} excluded + ${dc.invalidResponses.abandonedSessions} abandoned`,
+      },
+      {
+        label: "Unanswered Required Questions",
+        value: `${dc.unansweredRequired.unansweredCount} of ${dc.unansweredRequired.requiredAnswerSlots} (${dc.unansweredRequired.unansweredRatePct}%)`,
+      },
+    );
+  }
+
   const dontKnowByDomain = new Map(dq.dontKnowRateByDomain.map((r) => [r.domain, r.rate]));
 
   const domainConfidence = input.domains.map((d) => ({
@@ -228,6 +249,24 @@ export function buildDataQualityContent(input: FocusedMapperInput): DataQualityR
       flag: "DOMAIN_NOT_ASSESSED",
       reason: "No survey question in this study covers this methodology domain.",
     })),
+    // Same AC-6 rule applied to the two new counts: every abandoned session
+    // and every required question with a gap becomes a row. A count without
+    // its rows is the silent exclusion the criterion prohibits, and that
+    // applies to the counts added on 24 Aug exactly as it did to the others.
+    ...(dc?.abandonment.detail ?? []).map((a) => ({
+      indicatorName: `Session ${a.sessionRef}`,
+      domain: "—",
+      flag: "ABANDONED_SESSION",
+      reason:
+        `Started ${a.startedAt}, last activity ${a.lastActivityAt}, stopped at: ${a.stageLabel} (${a.progress}). ` +
+        "Counted as an invalid response. No partial answers were stored.",
+    })),
+    ...(dc?.unansweredRequired.byQuestion ?? []).map((q) => ({
+      indicatorName: `Q${q.questionRef} — ${q.questionText}`,
+      domain: q.domain,
+      flag: "REQUIRED_QUESTION_UNANSWERED",
+      reason: `${q.unanswered} of ${q.ofResponses} submitted response(s) left this required question blank (${q.unansweredPct}%).`,
+    })),
   ];
 
   return {
@@ -238,6 +277,7 @@ export function buildDataQualityContent(input: FocusedMapperInput): DataQualityR
     completeness,
     domainConfidence,
     flaggedRecords,
+    dataCollection: dc ?? null,
     responseQuality: rq,
     aiSummary: input.aiSummary,
     dataQualityNote: input.dataQualityNote,

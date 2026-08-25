@@ -27,8 +27,18 @@ describe("sectorGenerator (RPT04)", () => {
     const { title, content } = await sectorGenerator(ctx());
     const c = content as unknown as SectorReportContent;
     expect(title).toContain("Domain-wise Needs Report");
-    expect(c.domains.some((d) => d.name === "Water & Sanitation")).toBe(true);
+    expect(c.severity.domains.some((d) => d.name === "Water & Sanitation")).toBe(true);
     expect(c.header.methodologyVersion).toBe("v1.0");
+    // The overall index lives under the key the renderers read, so the gauge and
+    // band actually reach the page — see SectorReportContent.severity.
+    expect(c.severity.overallVillageNeedsIndex).toBe(63.8);
+    // Every domain row carries the no-masking columns beside its average.
+    for (const d of c.severity.domains) {
+      expect(d).toHaveProperty("maxKpiSeverity");
+      expect(d).toHaveProperty("masksCriticalFinding");
+    }
+    // And the report says which survey it was built from.
+    expect(c.scopeBasis.surveyTitle).toBeTruthy();
   });
 
   it("snapshots filters", async () => {

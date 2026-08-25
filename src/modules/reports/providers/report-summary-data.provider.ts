@@ -11,6 +11,7 @@ import type {
   IndividualSurveyReportContent,
   RegionReportContent,
   SectorReportContent,
+  SectorScopeBasis,
   SharingStatusContent,
   SurveyIdentity,
   SurveyReportBase,
@@ -19,6 +20,8 @@ import type {
 } from "../report-content.types";
 import type { UnifiedRpt01Sections } from "../unified-report.types";
 import { buildDataQualityContent, buildTopPriorityContent } from "./build-focused-reports";
+import { loadDataCollectionCompleteness } from "./load-data-collection-completeness";
+import { SurveySessionsService } from "../../survey-sessions/survey-sessions.service";
 import {
   ReportSummaryService,
   type ReportDataSnapshot,
@@ -31,6 +34,7 @@ import { ReviewerSlaService } from "../../reviewer-sla/reviewer-sla.service";
 import { slaComplianceFromAlerts } from "../../reviewer-sla/sla-compliance";
 import { aggregateDemographics } from "./aggregate-demographics";
 import { loadRegionBreakdown } from "./load-region-breakdown";
+import { loadSectorScopeBasis } from "./load-sector-scope-basis";
 import {
   ReportDataProvider,
   type ScopedReportQuery,
@@ -80,6 +84,9 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
     private readonly sharing: ReportSharingService,
     // RPT02's SLA compliance figure — same source the dashboard screen uses.
     private readonly sla: ReviewerSlaService,
+    // RPT10's abandonment figures. Reads the session rows the citizen flow
+    // writes; see load-data-collection-completeness.ts.
+    private readonly sessions: SurveySessionsService,
   ) {
     super();
   }
@@ -244,11 +251,26 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
   async getDataQualityReport(query: ScopedReportQuery): Promise<DataQualityReportContent> {
     try {
       if (!query.studyId) throw new Error("studyId required");
+      // Whether the CALLER named a survey is the scope decision, and it has to
+      // be read before resolveSurveyId erases the distinction by picking one.
+      // RPT10 was labelled study-scoped while silently reporting on a single
+      // resolved survey; the completeness block now states which it is and
+      // names the surveys it does not cover.
+      const explicitSurvey = typeof query.filters.surveyId === "string" && query.filters.surveyId.length > 0;
       const surveyId = await this.resolveSurveyId(query.studyId, query.filters);
       const { base, unified, aiSummary } = await this.unifiedHalf(
         { ...query, studyId: query.studyId, surveyId },
         "EXECUTIVE",
       );
+
+      const dataCollection = await loadDataCollectionCompleteness(this.tenant, this.sessions, {
+        studyId: query.studyId,
+        resolvedSurveyId: surveyId,
+        explicitSurvey,
+        // The rollup is the authority on submitted-response exclusion, here as
+        // everywhere else — this figure is passed through, never recomputed.
+        excludedSubmitted: unified.dataQualityNotes.responseQuality.excluded,
+      });
 
       return buildDataQualityContent({
         header: base.header,
@@ -258,6 +280,7 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
         dataQualityNote: base.dataQualityNote,
         trendNote: base.trendNote,
         domains: base.severity.domains,
+        dataCollection,
         filters: query.filters,
       });
     } catch (err) {
@@ -370,13 +393,14 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
       if (!query.studyId) throw new Error("studyId required");
       const surveyId = await this.resolveSurveyId(query.studyId, query.filters);
       const domainKey = typeof query.filters.domainKey === "string" ? query.filters.domainKey : undefined;
+      const scopeBasis = await this.sectorScopeBasis(query.studyId, surveyId, query.filters);
       const { snapshot, aiOutput } = await this.realData(query.studyId, surveyId, "SECTOR", { domainKey });
       // Demographics (gender/settlement) aren't domain-scoped — same
       // study-wide (or village-scoped, if a village context was also picked)
       // aggregate as every other scope, not silently skipped.
       const villageId = typeof query.filters.villageId === "string" ? query.filters.villageId : "";
       const demographics = await aggregateDemographics(this.tenant, { studyId: query.studyId }, villageId);
-      return snapshotToSectorContent({ snapshot, aiOutput, filters: query.filters, demographics });
+      return snapshotToSectorContent({ snapshot, aiOutput, filters: query.filters, demographics, scopeBasis });
     } catch (err) {
       this.rethrow("Sector", err);
     }
@@ -630,6 +654,19 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
     return survey.id;
   }
 
+  /** See loadSectorScopeBasis — shared with the Insights save path. */
+  private sectorScopeBasis(
+    studyId: string,
+    surveyId: string,
+    filters: Record<string, unknown>,
+  ): Promise<SectorScopeBasis> {
+    return loadSectorScopeBasis(this.tenant, {
+      studyId,
+      surveyId,
+      explicitSurveyFilter: typeof filters.surveyId === "string" && filters.surveyId.length > 0,
+    });
+  }
+
   // Reuse an existing AI summary; otherwise build the snapshot and (best-effort)
   // generate one. Throws "no-data" when the study has no scores yet → fallback.
   private async realData(
@@ -638,7 +675,10 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
     scope: SummaryScopeType,
     scopeFilters: ScopeFilters,
   ): Promise<{ snapshot: ReportDataSnapshot; aiOutput: Record<string, unknown> | null }> {
-    const existing = await this.summary.getSummary(studyId, surveyId, scope, scopeFilters.villageId ?? "");
+    // The WHOLE filter set, not just the village: a SECTOR report filtered to
+    // one domain and an unfiltered one are different reports, and passing only
+    // villageId made them share a cached summary and snapshot.
+    const existing = await this.summary.getSummary(studyId, surveyId, scope, scopeFilters);
     // A summary written by an OLDER prompt is not reusable. The 28 Jul narrative
     // repeated a canned "high rate of Don't Know" premise that the snapshot no
     // longer supplies; reusing it would keep printing the corrected report with
@@ -754,6 +794,7 @@ function assembleUnifiedInput(input: {
     calculatedAt: snapshot.priority.calculatedAt,
     villageScope: villageId || "",
     unitGeo,
+    sourceNeedAffectedPopulation: reference.sourceNeedAffectedPopulation,
 
     kpiRollups: sev.kpiSeverityScores.map((k) => ({
       entityId: k.entityId,

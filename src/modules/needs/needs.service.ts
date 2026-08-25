@@ -8,7 +8,7 @@ import { GeographyService } from '../geography/geography.service';
 import { AiDecisionsService } from '../ai-decisions/ai-decisions.service';
 import { NEED_EDITABLE_STATUSES, type CreateNeedPayload, type Need, type NeedRow, type UpdateNeedPayload } from './needs.types';
 
-const DIFF_FIELDS = ['title', 'statement', 'village', 'referenceId'] as const;
+const DIFF_FIELDS = ['title', 'statement', 'village', 'referenceId', 'affectedPopulation'] as const;
 
 // RIO-DATA-003: system-generated internal reference, derived from the
 // `internalRefSeq` autoincrement column so there's a single source of
@@ -24,6 +24,7 @@ const DIFF_FIELD_LABELS: Record<(typeof DIFF_FIELDS)[number], string> = {
   statement: 'Statement',
   village: 'Village',
   referenceId: 'Reference ID',
+  affectedPopulation: 'Affected Population',
 };
 
 // Raw shape Prisma returns once `needGovernorates`/`needCenters` are
@@ -86,6 +87,7 @@ export class NeedsService {
           village: payload.village ?? [],
           source: 'manual_entry',
           referenceId: payload.referenceId ?? null,
+          affectedPopulation: payload.affectedPopulation ?? null,
           createdBy,
           status: 'pending_ai_classification',
           needGovernorates: {
@@ -116,6 +118,7 @@ export class NeedsService {
         { field: 'Title', before: null, after: created.title },
         { field: 'Statement', before: null, after: created.statement },
         { field: 'Village', before: null, after: created.village },
+        { field: 'Affected Population', before: null, after: created.affectedPopulation },
         { field: 'Source', before: null, after: created.source },
         { field: 'Status', before: null, after: created.status },
       ],
@@ -226,6 +229,7 @@ export class NeedsService {
           ...(patch.statement !== undefined ? { statement: patch.statement } : {}),
           ...(patch.village !== undefined ? { village: patch.village } : {}),
           ...(patch.referenceId !== undefined ? { referenceId: patch.referenceId } : {}),
+          ...(patch.affectedPopulation !== undefined ? { affectedPopulation: patch.affectedPopulation } : {}),
         },
       });
       if (patch.governorateIds !== undefined) {
@@ -303,6 +307,7 @@ export class NeedsService {
         { field: 'Title', before: removed.title, after: null },
         { field: 'Statement', before: removed.statement, after: null },
         { field: 'Village', before: removed.village, after: null },
+        { field: 'Affected Population', before: removed.affectedPopulation, after: null },
         { field: 'Source', before: removed.source, after: null },
         { field: 'Status', before: removed.status, after: null },
       ],
@@ -397,6 +402,7 @@ export class NeedsService {
       source: row.source,
       referenceId: row.referenceId,
       internalReferenceId: formatInternalReferenceId(row.internalRefSeq),
+      affectedPopulation: row.affectedPopulation,
       status: row.status,
       domain: row.domain,
       subDomain: row.subDomain,

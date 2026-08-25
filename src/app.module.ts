@@ -36,6 +36,7 @@ import { NcnpReportModule } from './modules/ncnp-report/ncnp-report.module';
 import { NcnpReportReviewModule } from './modules/ncnp-report-review/ncnp-report-review.module';
 import { PublicSurveysModule } from './modules/public-surveys/public-surveys.module';
 import { CitizenModule } from './modules/citizen/citizen.module';
+import { SurveySessionsModule } from './modules/survey-sessions/survey-sessions.module';
 import { ResponseQualityModule } from './modules/response-quality/response-quality.module';
 import { PriorityModule } from './modules/priority/priority.module';
 import { SharingModule } from './modules/sharing/sharing.module';
@@ -100,6 +101,7 @@ import { AppController } from './app.controller';
     NcnpReportReviewModule,
     PublicSurveysModule,
     CitizenModule,
+    SurveySessionsModule,
     ResponseQualityModule,
     PriorityModule,
     SharingModule,
