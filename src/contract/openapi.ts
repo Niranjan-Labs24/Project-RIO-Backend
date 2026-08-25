@@ -471,26 +471,40 @@ const ROUTES: RouteDoc[] = [
   {
     method: 'post', path: '/studies/{studyId}/surveys/{surveyId}/priority-summary/preview-snapshot', tag: 'Priority Summary', summary: 'Preview a priority-summary snapshot for a scope, without saving it',
     auth: { module: 'priorityScoring', action: 'read' }, requestSchema: 'SummaryScopeBody', response: 'PrioritySummaryPreview',
+    responseSchema: 'PrioritySummaryPreview',
   },
   {
+    // NOTE (discrepancy, fixed here): previously documented as returning a
+    // bare `PrioritySummary` — ReportSummaryService.generatePrioritySummary
+    // actually returns `{ summary: AiPrioritySummary, snapshot }`, matching
+    // the frontend's PrioritySummaryResponse envelope, not the record alone.
     method: 'post', path: '/studies/{studyId}/surveys/{surveyId}/priority-summary/generate', tag: 'Priority Summary', summary: 'Generate and save a priority summary for a scope',
-    auth: { module: 'priorityScoring', action: 'create' }, requestSchema: 'SummaryScopeBody', response: 'PrioritySummary',
+    auth: { module: 'priorityScoring', action: 'create' }, requestSchema: 'SummaryScopeBody', response: 'PrioritySummaryResponse ({ summary: PrioritySummary, snapshot })',
+    responseSchema: 'PrioritySummaryResponse',
   },
   {
+    // NOTE (discrepancy, fixed here): same envelope mismatch as generate
+    // above — ReportSummaryService.getSummary returns `{ summary:
+    // AiPrioritySummary | null, snapshot }` (or bare `null` if nothing has
+    // ever been generated for this scope), not a bare PrioritySummary.
     method: 'get', path: '/studies/{studyId}/surveys/{surveyId}/priority-summary', tag: 'Priority Summary', summary: 'Get the current priority summary for a scope',
-    auth: { module: 'priorityScoring', action: 'read' }, query: ['scope', 'villageId'], response: 'PrioritySummary',
+    auth: { module: 'priorityScoring', action: 'read' }, query: ['scope', 'villageId'], response: 'PrioritySummaryResponse | null ({ summary: PrioritySummary | null, snapshot })',
+    responseSchema: 'PrioritySummaryResponse',
   },
   {
     method: 'patch', path: '/priority-summaries/{summaryId}', tag: 'Priority Summary', summary: "Save a draft edit to a priority summary's output JSON",
     auth: { module: 'priorityScoring', action: 'write' }, requestSchema: 'SaveDraftEditsBody', response: 'PrioritySummary',
+    responseSchema: 'PrioritySummary',
   },
   {
     method: 'post', path: '/priority-summaries/{summaryId}/save', tag: 'Priority Summary', summary: 'Save (finalize a draft of) a priority summary',
     auth: { module: 'priorityScoring', action: 'write' }, requestSchema: 'SaveSummaryBody', response: 'PrioritySummary',
+    responseSchema: 'PrioritySummary',
   },
   {
     method: 'get', path: '/studies/{studyId}/surveys/{surveyId}/priority-summaries/saved', tag: 'Priority Summary', summary: 'List saved priority summaries for a study/survey',
     auth: { module: 'priorityScoring', action: 'read' }, response: 'PrioritySummary[]',
+    responseSchema: 'PrioritySummary', responseIsArray: true,
   },
   {
     method: 'delete', path: '/priority-summaries/{summaryId}', tag: 'Priority Summary', summary: 'Delete a saved priority summary',
@@ -499,16 +513,27 @@ const ROUTES: RouteDoc[] = [
   {
     method: 'post', path: '/priority-summaries/{summaryId}/confirm', tag: 'Priority Summary', summary: 'Confirm (approve) a priority summary',
     auth: { module: 'priorityScoring', action: 'approve' }, response: 'PrioritySummary',
+    responseSchema: 'PrioritySummary',
   },
   {
     method: 'get', path: '/studies/{studyId}/surveys/{surveyId}/priority-summary/history', tag: 'Priority Summary', summary: 'Priority-summary revision history for a scope',
     auth: { module: 'priorityScoring', action: 'read' }, query: ['scope'], response: 'PrioritySummary[]',
+    responseSchema: 'PrioritySummary', responseIsArray: true,
   },
   {
     method: 'patch', path: '/evidence/{evidenceId}/toggle-inclusion', tag: 'Priority Summary', summary: "Toggle an evidence item's inclusion in the generated report",
     auth: { module: 'studySurvey', action: 'write' }, requestSchema: 'ToggleEvidenceInclusionBody', response: 'Evidence',
+    responseSchema: 'Evidence',
   },
   {
+    // NOT wired to a responseSchema: ReportSummaryService.saveReportFromSummary
+    // returns a raw `Report` DB row, but no `Report` schema is registered
+    // anywhere in this file (the Reports tag itself is out of scope for
+    // this pass) and the frontend's saveReportFromSummary() types its
+    // result as an untyped `Record<string, unknown>` — there is no FE
+    // shape to match and registering a full Report schema belongs with the
+    // (separate, not-yet-done) Reports tag documentation. Left as
+    // free-text per the "no FE counterpart, out of batch scope" case.
     method: 'post', path: '/priority-summaries/{summaryId}/save-report', tag: 'Priority Summary', summary: 'Save a priority summary as a formal Report',
     auth: { module: 'reportsDashboards', action: 'create' }, response: 'Report',
   },
