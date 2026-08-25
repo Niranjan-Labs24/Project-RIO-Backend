@@ -25,6 +25,7 @@ import * as path from 'node:path';
 // keys below), but keep the list alphabetical by module for easy diffing
 // against `find src/modules -name '*.contract.ts'`.
 import '../src/modules/ai-decisions/ai-decisions.contract';
+import '../src/modules/audit/audit.contract';
 import '../src/modules/auth/auth.contract';
 import '../src/modules/citizen/citizen.contract';
 import '../src/modules/contact/contact.contract';

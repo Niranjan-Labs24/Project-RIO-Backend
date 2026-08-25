@@ -266,7 +266,8 @@ const ROUTES: RouteDoc[] = [
     method: 'get', path: '/audit', tag: 'Audit', summary: 'Immutable audit log — own organisation, or (cross-entity) any organisation via ?organizationId',
     auth: { module: 'auditLog', action: 'read' },
     query: ['organizationId', 'entityType', 'entityId', 'actorId', 'action', 'dateFrom', 'dateTo', 'search', 'limit', 'offset'],
-    response: '{ items: AuditEvent[], total, limit, offset }',
+    response: 'AuditListResult ({ items: AuditEvent[], total, limit, offset })',
+    responseSchema: 'AuditListResult',
   },
   // System Logs (RIO-NFR-016) — operational telemetry, read-only. Distinct
   // from /audit above: that is the business-event governance trail
