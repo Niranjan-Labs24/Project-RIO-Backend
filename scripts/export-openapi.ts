@@ -43,6 +43,7 @@ import '../src/modules/roles/roles.contract';
 import '../src/modules/sharing/sharing.contract';
 import '../src/modules/studies/studies.contract';
 import '../src/modules/surveys/surveys.contract';
+import '../src/modules/system-logs/system-logs.contract';
 import '../src/modules/users/users.contract';
 
 import { buildOpenApiDocument } from '../src/contract/openapi';

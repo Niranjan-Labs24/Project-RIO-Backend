@@ -279,13 +279,15 @@ const ROUTES: RouteDoc[] = [
     method: 'get', path: '/system-logs', tag: 'System Logs', summary: 'Operational events and errors, newest first',
     auth: { module: 'systemLogs', action: 'read' },
     query: ['level', 'minLevel', 'category', 'source', 'eventCode', 'requestId', 'organizationId', 'actorId', 'statusCode', 'dateFrom', 'dateTo', 'search', 'limit', 'offset'],
-    response: '{ items: SystemLogEntry[], total, limit, offset }',
+    response: 'SystemLogListResult ({ items: SystemLogEntry[], total, limit, offset })',
+    responseSchema: 'SystemLogListResult',
   },
   {
     method: 'get', path: '/system-logs/summary', tag: 'System Logs', summary: 'Level/category counts, top failures, and the hourly error trend',
     auth: { module: 'systemLogs', action: 'read' },
     query: ['window'],
     response: 'SystemLogSummary',
+    responseSchema: 'SystemLogSummary',
   },
   {
     method: 'get', path: '/system-logs/export', tag: 'System Logs', summary: 'CSV export of the current filter set (max 10000 rows)',
@@ -300,6 +302,7 @@ const ROUTES: RouteDoc[] = [
   {
     method: 'get', path: '/system-logs/{id}', tag: 'System Logs', summary: 'One entry with its full stack and context',
     auth: { module: 'systemLogs', action: 'read' }, response: 'SystemLogEntry',
+    responseSchema: 'SystemLogEntry',
   },
   {
     method: 'get', path: '/health', tag: 'Health', summary: 'Liveness probe',
