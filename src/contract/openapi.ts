@@ -99,14 +99,17 @@ const ROUTES: RouteDoc[] = [
   {
     method: 'post', path: '/auth/login', tag: 'Auth', summary: 'Sign in with email + password',
     auth: undefined, requestSchema: 'LoginBody', response: 'SessionContext',
+    responseSchema: 'SessionContext',
   },
   {
     method: 'post', path: '/auth/signup', tag: 'Auth', summary: 'Public NGO signup — creates the organisation + its first NGO Admin',
     auth: undefined, requestSchema: 'SignupBody', response: 'SignupPendingApprovalView (status: pending_approval — no session issued, requires Center approval first)',
+    responseSchema: 'SignupPendingApprovalView',
   },
   {
     method: 'get', path: '/auth/me', tag: 'Auth', summary: "Re-fetch the caller's current session",
     auth: 'session', response: 'SessionContext',
+    responseSchema: 'SessionContext',
   },
   {
     method: 'post', path: '/auth/logout', tag: 'Auth', summary: 'Sign out (clears the session/CSRF cookies)',
@@ -119,10 +122,18 @@ const ROUTES: RouteDoc[] = [
   {
     method: 'post', path: '/auth/change-password', tag: 'Auth', summary: "Replace the caller's own password",
     auth: 'session', requestSchema: 'ChangePasswordBody', response: 'SessionContext',
+    responseSchema: 'SessionContext',
   },
   {
+    // NOTE (discrepancy, flagged in auth.contract.ts): the real response is
+    // ActiveConsentPolicies ({ usePolicy, dataSharing }), confirmed against
+    // ConsentController#getActive and the frontend's consentService — not
+    // the singular ActiveConsentPolicy this route's `response` text
+    // originally named. Wired to the wrapper schema per the FE/actual-BE
+    // shape.
     method: 'get', path: '/consent-policy/active', tag: 'Consent', summary: 'The currently active consent policies (version + English and Arabic text)',
-    auth: undefined, response: 'ActiveConsentPolicy',
+    auth: undefined, response: 'ActiveConsentPolicies ({ usePolicy: ActiveConsentPolicy, dataSharing: ActiveConsentPolicy })',
+    responseSchema: 'ActiveConsentPolicies',
   },
   {
     method: 'post', path: '/studies', tag: 'Studies', summary: 'Create a study',
