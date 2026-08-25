@@ -1249,6 +1249,76 @@
         ],
         "type": "object"
       },
+      "CustomQuestion": {
+        "properties": {
+          "answerOptions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "answerType": {
+            "type": "string"
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "kpi": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "questionText": {
+            "type": "string"
+          },
+          "sourceSurveyTitle": {
+            "type": "string"
+          },
+          "subDomain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "questionText",
+          "answerType",
+          "answerOptions",
+          "domain",
+          "subDomain",
+          "kpi",
+          "sourceSurveyTitle"
+        ],
+        "type": "object"
+      },
       "DecideReportSharingRequestBody": {
         "additionalProperties": false,
         "properties": {
@@ -1457,6 +1527,44 @@
         "required": [
           "email",
           "password"
+        ],
+        "type": "object"
+      },
+      "MethodologyVersion": {
+        "properties": {
+          "createdAt": {
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "version",
+          "description",
+          "status",
+          "createdAt"
         ],
         "type": "object"
       },
@@ -2162,6 +2270,1689 @@
         ],
         "type": "object"
       },
+      "PriorityDashboardEntry": {
+        "properties": {
+          "needId": {
+            "type": "string"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "properties": {
+                  "gapType": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "level": {
+                    "anyOf": [
+                      {
+                        "const": "critical",
+                        "type": "string"
+                      },
+                      {
+                        "const": "high",
+                        "type": "string"
+                      },
+                      {
+                        "const": "medium",
+                        "type": "string"
+                      },
+                      {
+                        "const": "low",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "overallScore": {
+                    "type": "number"
+                  },
+                  "scoredAt": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "overallScore",
+                  "level",
+                  "gapType",
+                  "scoredAt"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "studyId": {
+            "type": "string"
+          },
+          "studyTitle": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "studyId",
+          "studyTitle",
+          "needId",
+          "score"
+        ],
+        "type": "object"
+      },
+      "PriorityScore": {
+        "properties": {
+          "approvedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cycleNote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "factors": {
+            "items": {
+              "properties": {
+                "indicator": {
+                  "type": "string"
+                },
+                "responseValue": {
+                  "type": "number"
+                },
+                "weight": {
+                  "type": "number"
+                },
+                "weightedContribution": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "indicator",
+                "weight",
+                "responseValue",
+                "weightedContribution"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "gapType": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "isApproved": {
+            "type": "boolean"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "const": "critical",
+                "type": "string"
+              },
+              {
+                "const": "high",
+                "type": "string"
+              },
+              {
+                "const": "medium",
+                "type": "string"
+              },
+              {
+                "const": "low",
+                "type": "string"
+              }
+            ]
+          },
+          "needId": {
+            "type": "string"
+          },
+          "overallScore": {
+            "type": "number"
+          },
+          "scoredAt": {
+            "type": "string"
+          },
+          "studyId": {
+            "type": "string"
+          },
+          "surveyLinkId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "needId",
+          "studyId",
+          "surveyLinkId",
+          "overallScore",
+          "level",
+          "gapType",
+          "factors",
+          "cycleNote",
+          "scoredAt",
+          "isApproved",
+          "approvedAt"
+        ],
+        "type": "object"
+      },
+      "PrioritySummary": {
+        "properties": {
+          "aiOutputJson": {
+            "properties": {
+              "criticalOverrideNote": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "dataQualityNote": {
+                "type": "string"
+              },
+              "domainInsights": {
+                "items": {
+                  "properties": {
+                    "confidence": {
+                      "type": "string"
+                    },
+                    "domain": {
+                      "type": "string"
+                    },
+                    "performanceScore": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "priorityContribution": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "severityScore": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "summary": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "domain",
+                    "severityScore",
+                    "performanceScore",
+                    "priorityContribution",
+                    "confidence",
+                    "summary"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "draftNextSteps": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "evidenceSummary": {
+                "items": {
+                  "properties": {
+                    "evidenceTitle": {
+                      "type": "string"
+                    },
+                    "linkedDomainOrKpi": {
+                      "type": "string"
+                    },
+                    "sourceReferenceId": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "evidenceTitle",
+                    "sourceReferenceId",
+                    "linkedDomainOrKpi",
+                    "summary"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "executiveSummary": {
+                "type": "string"
+              },
+              "keyFindings": {
+                "items": {
+                  "properties": {
+                    "confidence": {
+                      "type": "string"
+                    },
+                    "domain": {
+                      "type": "string"
+                    },
+                    "kpi": {
+                      "type": "string"
+                    },
+                    "severityScore": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "title",
+                    "domain",
+                    "kpi",
+                    "severityScore",
+                    "confidence",
+                    "summary"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "priorityExplanation": {
+                "type": "string"
+              },
+              "trendNote": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "executiveSummary",
+              "priorityExplanation",
+              "keyFindings",
+              "domainInsights",
+              "criticalOverrideNote",
+              "dataQualityNote",
+              "evidenceSummary",
+              "trendNote",
+              "draftNextSteps"
+            ],
+            "type": "object"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "generatedAt": {
+            "type": "string"
+          },
+          "generatedBy": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "inputEvidenceSnapshotHash": {
+            "type": "string"
+          },
+          "inputReportDataHash": {
+            "type": "string"
+          },
+          "modelName": {
+            "type": "string"
+          },
+          "modelVersion": {
+            "type": "string"
+          },
+          "officerConfirmedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "officerConfirmedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "officerEditedOutputJson": {
+            "anyOf": [
+              {
+                "properties": {
+                  "criticalOverrideNote": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "dataQualityNote": {
+                    "type": "string"
+                  },
+                  "domainInsights": {
+                    "items": {
+                      "properties": {
+                        "confidence": {
+                          "type": "string"
+                        },
+                        "domain": {
+                          "type": "string"
+                        },
+                        "performanceScore": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "priorityContribution": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "severityScore": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "summary": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "domain",
+                        "severityScore",
+                        "performanceScore",
+                        "priorityContribution",
+                        "confidence",
+                        "summary"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "draftNextSteps": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "evidenceSummary": {
+                    "items": {
+                      "properties": {
+                        "evidenceTitle": {
+                          "type": "string"
+                        },
+                        "linkedDomainOrKpi": {
+                          "type": "string"
+                        },
+                        "sourceReferenceId": {
+                          "type": "string"
+                        },
+                        "summary": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "evidenceTitle",
+                        "sourceReferenceId",
+                        "linkedDomainOrKpi",
+                        "summary"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "executiveSummary": {
+                    "type": "string"
+                  },
+                  "keyFindings": {
+                    "items": {
+                      "properties": {
+                        "confidence": {
+                          "type": "string"
+                        },
+                        "domain": {
+                          "type": "string"
+                        },
+                        "kpi": {
+                          "type": "string"
+                        },
+                        "severityScore": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "summary": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "title",
+                        "domain",
+                        "kpi",
+                        "severityScore",
+                        "confidence",
+                        "summary"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "priorityExplanation": {
+                    "type": "string"
+                  },
+                  "trendNote": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "executiveSummary",
+                  "priorityExplanation",
+                  "keyFindings",
+                  "domainInsights",
+                  "criticalOverrideNote",
+                  "dataQualityNote",
+                  "evidenceSummary",
+                  "trendNote",
+                  "draftNextSteps"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "orgId": {
+            "type": "string"
+          },
+          "promptHash": {
+            "type": "string"
+          },
+          "promptVersion": {
+            "type": "string"
+          },
+          "reportDataSnapshotId": {
+            "type": "string"
+          },
+          "scopeFilters": {
+            "additionalProperties": false,
+            "properties": {
+              "domainKey": {
+                "maxLength": 200,
+                "type": "string"
+              },
+              "regionId": {
+                "maxLength": 200,
+                "type": "string"
+              },
+              "villageId": {
+                "maxLength": 200,
+                "type": "string"
+              },
+              "villageIds": {
+                "items": {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                "maxItems": 500,
+                "type": "array"
+              }
+            },
+            "type": "object"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "const": "DRAFT",
+                "type": "string"
+              },
+              {
+                "const": "SAVED",
+                "type": "string"
+              },
+              {
+                "const": "OFFICER_CONFIRMED",
+                "type": "string"
+              },
+              {
+                "const": "STALE",
+                "type": "string"
+              },
+              {
+                "const": "SUPERSEDED",
+                "type": "string"
+              }
+            ]
+          },
+          "studyId": {
+            "type": "string"
+          },
+          "summaryScope": {
+            "anyOf": [
+              {
+                "const": "VILLAGE",
+                "type": "string"
+              },
+              {
+                "const": "SECTOR",
+                "type": "string"
+              },
+              {
+                "const": "REGION",
+                "type": "string"
+              },
+              {
+                "const": "EXECUTIVE",
+                "type": "string"
+              }
+            ]
+          },
+          "surveyId": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "villageId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "orgId",
+          "studyId",
+          "surveyId",
+          "villageId",
+          "reportDataSnapshotId",
+          "status",
+          "summaryScope",
+          "promptVersion",
+          "promptHash",
+          "modelName",
+          "modelVersion",
+          "inputReportDataHash",
+          "inputEvidenceSnapshotHash",
+          "aiOutputJson",
+          "officerEditedOutputJson",
+          "generatedBy",
+          "generatedAt",
+          "officerConfirmedBy",
+          "officerConfirmedAt",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "PrioritySummaryOutput": {
+        "properties": {
+          "criticalOverrideNote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dataQualityNote": {
+            "type": "string"
+          },
+          "domainInsights": {
+            "items": {
+              "properties": {
+                "confidence": {
+                  "type": "string"
+                },
+                "domain": {
+                  "type": "string"
+                },
+                "performanceScore": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "priorityContribution": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "severityScore": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "summary": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "domain",
+                "severityScore",
+                "performanceScore",
+                "priorityContribution",
+                "confidence",
+                "summary"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "draftNextSteps": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "evidenceSummary": {
+            "items": {
+              "properties": {
+                "evidenceTitle": {
+                  "type": "string"
+                },
+                "linkedDomainOrKpi": {
+                  "type": "string"
+                },
+                "sourceReferenceId": {
+                  "type": "string"
+                },
+                "summary": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "evidenceTitle",
+                "sourceReferenceId",
+                "linkedDomainOrKpi",
+                "summary"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "executiveSummary": {
+            "type": "string"
+          },
+          "keyFindings": {
+            "items": {
+              "properties": {
+                "confidence": {
+                  "type": "string"
+                },
+                "domain": {
+                  "type": "string"
+                },
+                "kpi": {
+                  "type": "string"
+                },
+                "severityScore": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "title",
+                "domain",
+                "kpi",
+                "severityScore",
+                "confidence",
+                "summary"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "priorityExplanation": {
+            "type": "string"
+          },
+          "trendNote": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "executiveSummary",
+          "priorityExplanation",
+          "keyFindings",
+          "domainInsights",
+          "criticalOverrideNote",
+          "dataQualityNote",
+          "evidenceSummary",
+          "trendNote",
+          "draftNextSteps"
+        ],
+        "type": "object"
+      },
+      "PrioritySummaryPreview": {
+        "properties": {
+          "snapshot": {
+            "patternProperties": {
+              "^(.*)$": {}
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "snapshot"
+        ],
+        "type": "object"
+      },
+      "PrioritySummaryResponse": {
+        "properties": {
+          "snapshot": {
+            "patternProperties": {
+              "^(.*)$": {}
+            },
+            "type": "object"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "properties": {
+                  "aiOutputJson": {
+                    "properties": {
+                      "criticalOverrideNote": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "dataQualityNote": {
+                        "type": "string"
+                      },
+                      "domainInsights": {
+                        "items": {
+                          "properties": {
+                            "confidence": {
+                              "type": "string"
+                            },
+                            "domain": {
+                              "type": "string"
+                            },
+                            "performanceScore": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "priorityContribution": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "severityScore": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "summary": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "domain",
+                            "severityScore",
+                            "performanceScore",
+                            "priorityContribution",
+                            "confidence",
+                            "summary"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "draftNextSteps": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "evidenceSummary": {
+                        "items": {
+                          "properties": {
+                            "evidenceTitle": {
+                              "type": "string"
+                            },
+                            "linkedDomainOrKpi": {
+                              "type": "string"
+                            },
+                            "sourceReferenceId": {
+                              "type": "string"
+                            },
+                            "summary": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "evidenceTitle",
+                            "sourceReferenceId",
+                            "linkedDomainOrKpi",
+                            "summary"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "executiveSummary": {
+                        "type": "string"
+                      },
+                      "keyFindings": {
+                        "items": {
+                          "properties": {
+                            "confidence": {
+                              "type": "string"
+                            },
+                            "domain": {
+                              "type": "string"
+                            },
+                            "kpi": {
+                              "type": "string"
+                            },
+                            "severityScore": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "summary": {
+                              "type": "string"
+                            },
+                            "title": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "title",
+                            "domain",
+                            "kpi",
+                            "severityScore",
+                            "confidence",
+                            "summary"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "priorityExplanation": {
+                        "type": "string"
+                      },
+                      "trendNote": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "executiveSummary",
+                      "priorityExplanation",
+                      "keyFindings",
+                      "domainInsights",
+                      "criticalOverrideNote",
+                      "dataQualityNote",
+                      "evidenceSummary",
+                      "trendNote",
+                      "draftNextSteps"
+                    ],
+                    "type": "object"
+                  },
+                  "createdAt": {
+                    "type": "string"
+                  },
+                  "generatedAt": {
+                    "type": "string"
+                  },
+                  "generatedBy": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "inputEvidenceSnapshotHash": {
+                    "type": "string"
+                  },
+                  "inputReportDataHash": {
+                    "type": "string"
+                  },
+                  "modelName": {
+                    "type": "string"
+                  },
+                  "modelVersion": {
+                    "type": "string"
+                  },
+                  "officerConfirmedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "officerConfirmedBy": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "officerEditedOutputJson": {
+                    "anyOf": [
+                      {
+                        "properties": {
+                          "criticalOverrideNote": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "dataQualityNote": {
+                            "type": "string"
+                          },
+                          "domainInsights": {
+                            "items": {
+                              "properties": {
+                                "confidence": {
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "type": "string"
+                                },
+                                "performanceScore": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "priorityContribution": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "severityScore": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "summary": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "domain",
+                                "severityScore",
+                                "performanceScore",
+                                "priorityContribution",
+                                "confidence",
+                                "summary"
+                              ],
+                              "type": "object"
+                            },
+                            "type": "array"
+                          },
+                          "draftNextSteps": {
+                            "items": {
+                              "type": "string"
+                            },
+                            "type": "array"
+                          },
+                          "evidenceSummary": {
+                            "items": {
+                              "properties": {
+                                "evidenceTitle": {
+                                  "type": "string"
+                                },
+                                "linkedDomainOrKpi": {
+                                  "type": "string"
+                                },
+                                "sourceReferenceId": {
+                                  "type": "string"
+                                },
+                                "summary": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "evidenceTitle",
+                                "sourceReferenceId",
+                                "linkedDomainOrKpi",
+                                "summary"
+                              ],
+                              "type": "object"
+                            },
+                            "type": "array"
+                          },
+                          "executiveSummary": {
+                            "type": "string"
+                          },
+                          "keyFindings": {
+                            "items": {
+                              "properties": {
+                                "confidence": {
+                                  "type": "string"
+                                },
+                                "domain": {
+                                  "type": "string"
+                                },
+                                "kpi": {
+                                  "type": "string"
+                                },
+                                "severityScore": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "summary": {
+                                  "type": "string"
+                                },
+                                "title": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "title",
+                                "domain",
+                                "kpi",
+                                "severityScore",
+                                "confidence",
+                                "summary"
+                              ],
+                              "type": "object"
+                            },
+                            "type": "array"
+                          },
+                          "priorityExplanation": {
+                            "type": "string"
+                          },
+                          "trendNote": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "executiveSummary",
+                          "priorityExplanation",
+                          "keyFindings",
+                          "domainInsights",
+                          "criticalOverrideNote",
+                          "dataQualityNote",
+                          "evidenceSummary",
+                          "trendNote",
+                          "draftNextSteps"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "orgId": {
+                    "type": "string"
+                  },
+                  "promptHash": {
+                    "type": "string"
+                  },
+                  "promptVersion": {
+                    "type": "string"
+                  },
+                  "reportDataSnapshotId": {
+                    "type": "string"
+                  },
+                  "scopeFilters": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "domainKey": {
+                        "maxLength": 200,
+                        "type": "string"
+                      },
+                      "regionId": {
+                        "maxLength": 200,
+                        "type": "string"
+                      },
+                      "villageId": {
+                        "maxLength": 200,
+                        "type": "string"
+                      },
+                      "villageIds": {
+                        "items": {
+                          "maxLength": 200,
+                          "type": "string"
+                        },
+                        "maxItems": 500,
+                        "type": "array"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "status": {
+                    "anyOf": [
+                      {
+                        "const": "DRAFT",
+                        "type": "string"
+                      },
+                      {
+                        "const": "SAVED",
+                        "type": "string"
+                      },
+                      {
+                        "const": "OFFICER_CONFIRMED",
+                        "type": "string"
+                      },
+                      {
+                        "const": "STALE",
+                        "type": "string"
+                      },
+                      {
+                        "const": "SUPERSEDED",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "studyId": {
+                    "type": "string"
+                  },
+                  "summaryScope": {
+                    "anyOf": [
+                      {
+                        "const": "VILLAGE",
+                        "type": "string"
+                      },
+                      {
+                        "const": "SECTOR",
+                        "type": "string"
+                      },
+                      {
+                        "const": "REGION",
+                        "type": "string"
+                      },
+                      {
+                        "const": "EXECUTIVE",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "surveyId": {
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "type": "string"
+                  },
+                  "villageId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "orgId",
+                  "studyId",
+                  "surveyId",
+                  "villageId",
+                  "reportDataSnapshotId",
+                  "status",
+                  "summaryScope",
+                  "promptVersion",
+                  "promptHash",
+                  "modelName",
+                  "modelVersion",
+                  "inputReportDataHash",
+                  "inputEvidenceSnapshotHash",
+                  "aiOutputJson",
+                  "officerEditedOutputJson",
+                  "generatedBy",
+                  "generatedAt",
+                  "officerConfirmedBy",
+                  "officerConfirmedAt",
+                  "createdAt",
+                  "updatedAt"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "summary",
+          "snapshot"
+        ],
+        "type": "object"
+      },
+      "PublicSurveyView": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "questions": {
+            "items": {
+              "properties": {
+                "answerOptions": {
+                  "anyOf": [
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "answerType": {
+                  "type": "string"
+                },
+                "bankQuestionId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "domain": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "indicator": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "isCustom": {
+                  "type": "boolean"
+                },
+                "isRequired": {
+                  "type": "boolean"
+                },
+                "kpi": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "order": {
+                  "type": "number"
+                },
+                "questionCode": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "questionText": {
+                  "type": "string"
+                },
+                "subDomain": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "bankQuestionId",
+                "questionCode",
+                "questionText",
+                "answerType",
+                "answerOptions",
+                "domain",
+                "subDomain",
+                "indicator",
+                "kpi",
+                "isCustom",
+                "order",
+                "isRequired"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "status",
+          "questions"
+        ],
+        "type": "object"
+      },
+      "QuestionDetailResult": {
+        "properties": {
+          "averageSeverity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "calculatedAt": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "string"
+          },
+          "dontKnowCount": {
+            "type": "number"
+          },
+          "excludedCount": {
+            "type": "number"
+          },
+          "indicator": {
+            "type": "string"
+          },
+          "isScoreable": {
+            "type": "boolean"
+          },
+          "kpi": {
+            "type": "string"
+          },
+          "lookups": {
+            "items": {
+              "properties": {
+                "exclusionReason": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "isExcluded": {
+                  "type": "boolean"
+                },
+                "lookupType": {
+                  "type": "string"
+                },
+                "optionId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "severityScore": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "optionId",
+                "lookupType",
+                "severityScore",
+                "isExcluded",
+                "exclusionReason"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "methodologyVersion": {
+            "type": "string"
+          },
+          "notApplicableCount": {
+            "type": "number"
+          },
+          "optionsDistribution": {
+            "items": {
+              "properties": {
+                "count": {
+                  "type": "number"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "optionId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "optionId",
+                "label",
+                "count"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "questionId": {
+            "type": "string"
+          },
+          "questionText": {
+            "type": "string"
+          },
+          "subDomain": {
+            "type": "string"
+          },
+          "validCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "questionId",
+          "questionText",
+          "isScoreable",
+          "domain",
+          "subDomain",
+          "kpi",
+          "indicator",
+          "averageSeverity",
+          "validCount",
+          "excludedCount",
+          "dontKnowCount",
+          "notApplicableCount",
+          "methodologyVersion",
+          "optionsDistribution",
+          "lookups",
+          "calculatedAt"
+        ],
+        "type": "object"
+      },
       "RejectNcnpReportBody": {
         "properties": {
           "notes": {
@@ -2754,6 +4545,245 @@
         ],
         "type": "object"
       },
+      "SeverityDashboardResult": {
+        "properties": {
+          "domains": {
+            "items": {
+              "properties": {
+                "confidenceLevel": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "severityScore": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "validResponseCount": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "severityScore",
+                "confidenceLevel",
+                "validResponseCount"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "indicators": {
+            "items": {
+              "properties": {
+                "confidenceLevel": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "severityScore": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "severityScore",
+                "confidenceLevel"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "kpis": {
+            "items": {
+              "properties": {
+                "confidenceLevel": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "severityScore": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "severityScore",
+                "confidenceLevel"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "methodologyVersion": {
+            "type": "string"
+          },
+          "overall": {
+            "anyOf": [
+              {
+                "properties": {
+                  "confidenceLevel": {
+                    "type": "string"
+                  },
+                  "dontKnowRate": {
+                    "type": "number"
+                  },
+                  "severityScore": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "validResponseCount": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "severityScore",
+                  "confidenceLevel",
+                  "validResponseCount",
+                  "dontKnowRate"
+                ],
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "subDomains": {
+            "items": {
+              "properties": {
+                "confidenceLevel": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "severityScore": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "severityScore",
+                "confidenceLevel"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "overall",
+          "domains",
+          "subDomains",
+          "indicators",
+          "kpis",
+          "methodologyVersion"
+        ],
+        "type": "object"
+      },
+      "SeverityKpiRankingEntry": {
+        "properties": {
+          "confidenceLevel": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "string"
+          },
+          "dontKnowRate": {
+            "type": "number"
+          },
+          "indicator": {
+            "type": "string"
+          },
+          "kpi": {
+            "type": "string"
+          },
+          "rank": {
+            "type": "number"
+          },
+          "severityScore": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "subDomain": {
+            "type": "string"
+          },
+          "validResponseCount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "rank",
+          "kpi",
+          "indicator",
+          "subDomain",
+          "domain",
+          "severityScore",
+          "validResponseCount",
+          "dontKnowRate",
+          "confidenceLevel"
+        ],
+        "type": "object"
+      },
       "ShareSurveyLinkEmailBody": {
         "additionalProperties": false,
         "properties": {
@@ -3232,6 +5262,21 @@
         ],
         "type": "object"
       },
+      "SubmitAnswersResult": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "submittedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "submittedAt"
+        ],
+        "type": "object"
+      },
       "SubmitResponseBody": {
         "additionalProperties": false,
         "properties": {
@@ -3378,6 +5423,650 @@
             "type": "object"
           }
         },
+        "type": "object"
+      },
+      "Survey": {
+        "properties": {
+          "approvedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "approvedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "approvedByName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "approverComments": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expectedSampleSize": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "geographicCoverage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "methodologyVersion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "needId": {
+            "type": "string"
+          },
+          "previousVersionId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "publishedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "publishedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "publishedByName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "questions": {
+            "items": {
+              "properties": {
+                "answerOptions": {
+                  "anyOf": [
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "answerType": {
+                  "type": "string"
+                },
+                "bankQuestionId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "domain": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "indicator": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "isCustom": {
+                  "type": "boolean"
+                },
+                "isRequired": {
+                  "type": "boolean"
+                },
+                "kpi": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "order": {
+                  "type": "number"
+                },
+                "questionCode": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "questionText": {
+                  "type": "string"
+                },
+                "subDomain": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "bankQuestionId",
+                "questionCode",
+                "questionText",
+                "answerType",
+                "answerOptions",
+                "domain",
+                "subDomain",
+                "indicator",
+                "kpi",
+                "isCustom",
+                "order",
+                "isRequired"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "rejectedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rejectedBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rejectedByName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rejectionReasonCode": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "const": "REJ_01",
+                    "type": "string"
+                  },
+                  {
+                    "const": "REJ_02",
+                    "type": "string"
+                  },
+                  {
+                    "const": "REJ_03",
+                    "type": "string"
+                  },
+                  {
+                    "const": "REJ_04",
+                    "type": "string"
+                  },
+                  {
+                    "const": "REJ_05",
+                    "type": "string"
+                  },
+                  {
+                    "const": "REJ_06",
+                    "type": "string"
+                  },
+                  {
+                    "const": "REJ_07",
+                    "type": "string"
+                  },
+                  {
+                    "const": "REJ_99",
+                    "type": "string"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "selectionApproach": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "anyOf": [
+              {
+                "const": "DRAFT",
+                "type": "string"
+              },
+              {
+                "const": "SUBMITTED",
+                "type": "string"
+              },
+              {
+                "const": "APPROVED",
+                "type": "string"
+              },
+              {
+                "const": "REJECTED",
+                "type": "string"
+              },
+              {
+                "const": "PUBLISHED",
+                "type": "string"
+              },
+              {
+                "const": "SUPERSEDED",
+                "type": "string"
+              }
+            ]
+          },
+          "studyId": {
+            "type": "string"
+          },
+          "submittedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "targetGroup": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "needId",
+          "studyId",
+          "title",
+          "status",
+          "methodologyVersion",
+          "targetGroup",
+          "expectedSampleSize",
+          "selectionApproach",
+          "geographicCoverage",
+          "submittedAt",
+          "approverComments",
+          "rejectionReasonCode",
+          "approvedAt",
+          "approvedBy",
+          "approvedByName",
+          "rejectedAt",
+          "rejectedBy",
+          "rejectedByName",
+          "publishedAt",
+          "publishedBy",
+          "publishedByName",
+          "questions",
+          "version",
+          "previousVersionId"
+        ],
+        "type": "object"
+      },
+      "SurveyQuestionItem": {
+        "properties": {
+          "answerOptions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "answerType": {
+            "type": "string"
+          },
+          "bankQuestionId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "indicator": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "isCustom": {
+            "type": "boolean"
+          },
+          "isRequired": {
+            "type": "boolean"
+          },
+          "kpi": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "order": {
+            "type": "number"
+          },
+          "questionCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "questionText": {
+            "type": "string"
+          },
+          "subDomain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "bankQuestionId",
+          "questionCode",
+          "questionText",
+          "answerType",
+          "answerOptions",
+          "domain",
+          "subDomain",
+          "indicator",
+          "kpi",
+          "isCustom",
+          "order",
+          "isRequired"
+        ],
+        "type": "object"
+      },
+      "SurveyRecord": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "needId": {
+            "type": "string"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "const": "DRAFT",
+                "type": "string"
+              },
+              {
+                "const": "SUBMITTED",
+                "type": "string"
+              },
+              {
+                "const": "APPROVED",
+                "type": "string"
+              },
+              {
+                "const": "REJECTED",
+                "type": "string"
+              },
+              {
+                "const": "PUBLISHED",
+                "type": "string"
+              },
+              {
+                "const": "SUPERSEDED",
+                "type": "string"
+              }
+            ]
+          },
+          "studyId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "needId",
+          "studyId",
+          "title",
+          "status"
+        ],
+        "type": "object"
+      },
+      "SurveyResponseStats": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "stats": {
+            "items": {
+              "properties": {
+                "answerType": {
+                  "type": "string"
+                },
+                "questionId": {
+                  "type": "string"
+                },
+                "questionText": {
+                  "type": "string"
+                },
+                "slices": {
+                  "items": {
+                    "properties": {
+                      "color": {
+                        "type": "string"
+                      },
+                      "count": {
+                        "type": "number"
+                      },
+                      "label": {
+                        "type": "string"
+                      },
+                      "percentage": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "count",
+                      "percentage",
+                      "color"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "textResponses": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "questionId",
+                "questionText",
+                "answerType",
+                "slices"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "totalRespondents": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "status",
+          "totalRespondents",
+          "stats"
+        ],
         "type": "object"
       },
       "SystemLogEntry": {
@@ -4581,6 +7270,17 @@
         ],
         "type": "object"
       },
+      "UploadLookupsResult": {
+        "properties": {
+          "imported": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "imported"
+        ],
+        "type": "object"
+      },
       "VerifyOtpBody": {
         "additionalProperties": false,
         "properties": {
@@ -4611,6 +7311,108 @@
         },
         "required": [
           "registrationNumber"
+        ],
+        "type": "object"
+      },
+      "VillagePriorityResult": {
+        "properties": {
+          "calculatedAt": {
+            "type": "string"
+          },
+          "calculationVersion": {
+            "type": "string"
+          },
+          "domainComponents": {
+            "items": {
+              "properties": {
+                "criticalThreshold": {
+                  "type": "number"
+                },
+                "domainKey": {
+                  "type": "string"
+                },
+                "domainNameSnapshot": {
+                  "type": "string"
+                },
+                "domainPerformanceScore": {
+                  "type": "number"
+                },
+                "domainSeverityScore": {
+                  "type": "number"
+                },
+                "domainWeight": {
+                  "type": "number"
+                },
+                "isCriticalDomain": {
+                  "type": "boolean"
+                },
+                "triggeredOverride": {
+                  "type": "boolean"
+                },
+                "weightedContribution": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "domainKey",
+                "domainNameSnapshot",
+                "domainSeverityScore",
+                "domainPerformanceScore",
+                "domainWeight",
+                "weightedContribution",
+                "isCriticalDomain",
+                "criticalThreshold",
+                "triggeredOverride"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "methodologyVersion": {
+            "type": "string"
+          },
+          "overrideApplied": {
+            "type": "boolean"
+          },
+          "overrideReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "priorityScore": {
+            "type": "number"
+          },
+          "priorityStatus": {
+            "anyOf": [
+              {
+                "const": "HIGH",
+                "type": "string"
+              },
+              {
+                "const": "MEDIUM",
+                "type": "string"
+              },
+              {
+                "const": "LOW",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "required": [
+          "priorityScore",
+          "priorityStatus",
+          "overrideApplied",
+          "overrideReason",
+          "domainComponents",
+          "calculatedAt",
+          "calculationVersion",
+          "methodologyVersion"
         ],
         "type": "object"
       }
@@ -4971,6 +7773,16 @@
         ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CustomQuestion"
+                  },
+                  "type": "array"
+                }
+              }
+            },
             "description": "CustomQuestion[]"
           }
         },
@@ -5009,6 +7821,13 @@
         },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Evidence"
+                }
+              }
+            },
             "description": "Evidence"
           }
         },
@@ -5097,6 +7916,16 @@
         "description": "Requires methodologyQuestionBank:read.",
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MethodologyVersion"
+                  },
+                  "type": "array"
+                }
+              }
+            },
             "description": "MethodologyVersion[]"
           }
         },
@@ -5123,6 +7952,13 @@
         },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MethodologyVersion"
+                }
+              }
+            },
             "description": "MethodologyVersion"
           }
         },
@@ -5151,7 +7987,14 @@
         ],
         "responses": {
           "200": {
-            "description": "MethodologyVersion"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadLookupsResult"
+                }
+              }
+            },
+            "description": "UploadLookupsResult ({ imported: number })"
           }
         },
         "summary": "Upload a scoring-lookup CSV for a methodology version",
@@ -5187,6 +8030,13 @@
         ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriorityScore"
+                }
+              }
+            },
             "description": "PriorityScore | null"
           }
         },
@@ -5221,6 +8071,13 @@
         ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriorityScore"
+                }
+              }
+            },
             "description": "PriorityScore"
           }
         },
@@ -5249,6 +8106,13 @@
         ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Survey"
+                }
+              }
+            },
             "description": "Survey"
           }
         },
@@ -5277,6 +8141,13 @@
         ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Survey"
+                }
+              }
+            },
             "description": "Survey"
           }
         },
@@ -5303,6 +8174,13 @@
         ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Survey"
+                }
+              }
+            },
             "description": "Survey"
           }
         },
@@ -5493,6 +8371,16 @@
         "description": "Requires priorityScoring:read.",
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PriorityDashboardEntry"
+                  },
+                  "type": "array"
+                }
+              }
+            },
             "description": "PriorityDashboardEntry[]"
           }
         },
@@ -5521,6 +8409,13 @@
         ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriorityScore"
+                }
+              }
+            },
             "description": "PriorityScore"
           }
         },
@@ -5585,6 +8480,13 @@
         },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrioritySummary"
+                }
+              }
+            },
             "description": "PrioritySummary"
           }
         },
@@ -5613,6 +8515,13 @@
         ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrioritySummary"
+                }
+              }
+            },
             "description": "PrioritySummary"
           }
         },
@@ -5651,6 +8560,13 @@
         },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrioritySummary"
+                }
+              }
+            },
             "description": "PrioritySummary"
           }
         },
@@ -6263,6 +9179,16 @@
         ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PrioritySummary"
+                  },
+                  "type": "array"
+                }
+              }
+            },
             "description": "PrioritySummary[]"
           }
         },
@@ -6315,7 +9241,14 @@
         ],
         "responses": {
           "200": {
-            "description": "PrioritySummary"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrioritySummaryResponse"
+                }
+              }
+            },
+            "description": "PrioritySummaryResponse | null ({ summary: PrioritySummary | null, snapshot })"
           }
         },
         "summary": "Get the current priority summary for a scope",
@@ -6361,7 +9294,14 @@
         },
         "responses": {
           "200": {
-            "description": "PrioritySummary"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrioritySummaryResponse"
+                }
+              }
+            },
+            "description": "PrioritySummaryResponse ({ summary: PrioritySummary, snapshot })"
           }
         },
         "summary": "Generate and save a priority summary for a scope",
@@ -6405,6 +9345,16 @@
         ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PrioritySummary"
+                  },
+                  "type": "array"
+                }
+              }
+            },
             "description": "PrioritySummary[]"
           }
         },
@@ -6451,6 +9401,13 @@
         },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrioritySummaryPreview"
+                }
+              }
+            },
             "description": "PrioritySummaryPreview"
           }
         },
@@ -6503,7 +9460,14 @@
         ],
         "responses": {
           "200": {
-            "description": "QuestionDetail"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionDetailResult"
+                }
+              }
+            },
+            "description": "QuestionDetailResult"
           }
         },
         "summary": "Per-question severity detail",
@@ -6583,7 +9547,14 @@
         ],
         "responses": {
           "200": {
-            "description": "SeverityDashboard"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SeverityDashboardResult"
+                }
+              }
+            },
+            "description": "SeverityDashboardResult"
           }
         },
         "summary": "Severity dashboard for a study/survey",
@@ -6627,7 +9598,17 @@
         ],
         "responses": {
           "200": {
-            "description": "KpiRanking[]"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SeverityKpiRankingEntry"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "SeverityKpiRankingEntry[]"
           }
         },
         "summary": "KPI severity ranking for a study/survey",
@@ -6671,7 +9652,14 @@
         ],
         "responses": {
           "200": {
-            "description": "VillagePriority"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VillagePriorityResult"
+                }
+              }
+            },
+            "description": "VillagePriorityResult | null"
           }
         },
         "summary": "Village-level priority ranking",
@@ -6699,6 +9687,13 @@
         ],
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicSurveyView"
+                }
+              }
+            },
             "description": "PublicSurveyView"
           }
         },
@@ -6733,7 +9728,14 @@
         },
         "responses": {
           "200": {
-            "description": "SurveyResponse"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmitAnswersResult"
+                }
+              }
+            },
+            "description": "SubmitAnswersResult ({ id, submittedAt } — the backend returns the full created response row, the frontend only reads these two fields)"
           }
         },
         "summary": "Citizen-facing: submit answers to a published survey",
@@ -6757,7 +9759,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Survey"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SurveyRecord"
+                }
+              }
+            },
+            "description": "SurveyRecord (raw Survey row; only id/needId/studyId/title/status are frontend-typed)"
           }
         },
         "summary": "Approver: approve and publish the survey",
@@ -6795,6 +9804,13 @@
         },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Survey"
+                }
+              }
+            },
             "description": "Survey"
           }
         },
@@ -6833,6 +9849,13 @@
         },
         "responses": {
           "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Survey"
+                }
+              }
+            },
             "description": "Survey"
           }
         },
@@ -6871,7 +9894,14 @@
         },
         "responses": {
           "200": {
-            "description": "Survey"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SurveyRecord"
+                }
+              }
+            },
+            "description": "SurveyRecord (raw Survey row; only id/needId/studyId/title/status are frontend-typed)"
           }
         },
         "summary": "Approver: reject the submitted survey back to draft",
@@ -6899,10 +9929,17 @@
         ],
         "responses": {
           "200": {
-            "description": "SurveyResponse[]"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SurveyResponseStats"
+                }
+              }
+            },
+            "description": "SurveyResponseStats"
           }
         },
-        "summary": "List a survey’s submitted responses",
+        "summary": "Get a survey’s response stats (one object: respondent count + per-question answer distributions)",
         "tags": [
           "Surveys"
         ],
@@ -6927,7 +9964,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Survey"
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SurveyRecord"
+                }
+              }
+            },
+            "description": "SurveyRecord (raw Survey row; only id/needId/studyId/title/status are frontend-typed)"
           }
         },
         "summary": "Researcher: submit the draft survey for Approver review",
