@@ -321,42 +321,58 @@ const ROUTES: RouteDoc[] = [
   {
     method: 'get', path: '/needs/{needId}/survey', tag: 'Surveys', summary: "Get a Need's survey (question set + status)",
     auth: { module: 'surveyBuilder', action: 'read' }, response: 'Survey',
+    responseSchema: 'Survey',
   },
   {
     method: 'post', path: '/needs/{needId}/survey', tag: 'Surveys', summary: 'Create an empty (hand-built) survey for a Need',
     auth: { module: 'surveyBuilder', action: 'write' }, response: 'Survey',
+    responseSchema: 'Survey',
   },
   {
     method: 'post', path: '/needs/{needId}/recommend-questions', tag: 'Surveys', summary: 'Auto-populate a survey from the Question Bank for this Need',
     auth: { module: 'surveyBuilder', action: 'write' }, response: 'Survey',
+    responseSchema: 'Survey',
   },
   {
     method: 'get', path: '/custom-questions', tag: 'Surveys', summary: 'Org-wide reusable custom questions, filtered by domain/subDomain',
     auth: { module: 'surveyBuilder', action: 'read' }, query: ['domain', 'subDomain'], response: 'CustomQuestion[]',
+    responseSchema: 'CustomQuestion', responseIsArray: true,
   },
   {
     method: 'patch', path: '/surveys/{id}/questions', tag: 'Surveys', summary: "Replace a draft survey's question set",
     auth: { module: 'surveyBuilder', action: 'write' }, requestSchema: 'UpdateSurveyQuestionsBody', response: 'Survey',
+    responseSchema: 'Survey',
   },
   {
     method: 'patch', path: '/surveys/{id}/methodology-version', tag: 'Surveys', summary: "Set the survey's methodology version",
     auth: { module: 'surveyBuilder', action: 'write' }, requestSchema: 'SetMethodologyVersionBody', response: 'Survey',
+    responseSchema: 'Survey',
   },
   {
     method: 'post', path: '/surveys/{id}/submit', tag: 'Surveys', summary: 'Researcher: submit the draft survey for Approver review',
-    auth: { module: 'surveyBuilder', action: 'write' }, response: 'Survey',
+    auth: { module: 'surveyBuilder', action: 'write' }, response: 'SurveyRecord (raw Survey row; only id/needId/studyId/title/status are frontend-typed)',
+    responseSchema: 'SurveyRecord',
   },
   {
     method: 'post', path: '/surveys/{id}/approve', tag: 'Surveys', summary: 'Approver: approve and publish the survey',
-    auth: { module: 'surveyBuilder', action: 'approve' }, response: 'Survey',
+    auth: { module: 'surveyBuilder', action: 'approve' }, response: 'SurveyRecord (raw Survey row; only id/needId/studyId/title/status are frontend-typed)',
+    responseSchema: 'SurveyRecord',
   },
   {
     method: 'post', path: '/surveys/{id}/reject', tag: 'Surveys', summary: 'Approver: reject the submitted survey back to draft',
-    auth: { module: 'surveyBuilder', action: 'approve' }, requestSchema: 'RejectSurveyBody', response: 'Survey',
+    auth: { module: 'surveyBuilder', action: 'approve' }, requestSchema: 'RejectSurveyBody', response: 'SurveyRecord (raw Survey row; only id/needId/studyId/title/status are frontend-typed)',
+    responseSchema: 'SurveyRecord',
   },
   {
+    // NOTE (discrepancy, flagged in surveys.contract.ts): the frontend
+    // types this route's result as `Survey`, but that's not what
+    // SurveysService.getPublicSurvey actually returns (`{ id, title,
+    // status, questions }` — no methodologyVersion/approvedAt/etc.). Wired
+    // to a best-effort PublicSurveyView schema built from the real backend
+    // shape, per the "no FE counterpart" fallback in the batch instructions.
     method: 'get', path: '/surveys/public/{id}', tag: 'Surveys', summary: 'Citizen-facing: get a published survey by its public link id',
     auth: undefined, response: 'PublicSurveyView',
+    responseSchema: 'PublicSurveyView',
   },
   {
     // NOTE: this route has neither a @RequirePermission nor an explicit
@@ -366,11 +382,17 @@ const ROUTES: RouteDoc[] = [
     // possible separate follow-up in the backend remediation pass (Task 5)
     // notes, not resolved in this pass.
     method: 'post', path: '/surveys/public/{id}/submit', tag: 'Surveys', summary: 'Citizen-facing: submit answers to a published survey',
-    auth: undefined, requestSchema: 'SubmitSurveyBody', response: 'SurveyResponse',
+    auth: undefined, requestSchema: 'SubmitSurveyBody', response: 'SubmitAnswersResult ({ id, submittedAt } — the backend returns the full created response row, the frontend only reads these two fields)',
+    responseSchema: 'SubmitAnswersResult',
   },
   {
-    method: 'get', path: '/surveys/{id}/responses', tag: 'Surveys', summary: 'List a survey’s submitted responses',
-    auth: { module: 'surveyBuilder', action: 'read' }, response: 'SurveyResponse[]',
+    // NOTE (discrepancy, fixed here): previously documented as
+    // `SurveyResponse[]` — SurveysService.getSurveyResponses actually
+    // returns ONE stats object per call (matches the frontend's
+    // SurveyResponseStats exactly), not an array of per-response records.
+    method: 'get', path: '/surveys/{id}/responses', tag: 'Surveys', summary: 'Get a survey’s response stats (one object: respondent count + per-question answer distributions)',
+    auth: { module: 'surveyBuilder', action: 'read' }, response: 'SurveyResponseStats',
+    responseSchema: 'SurveyResponseStats',
   },
   // Priority — deterministic severity scoring, dashboards, and
   // methodology-version/lookup management.
