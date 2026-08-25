@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "../src/generated/prisma";
+import { Prisma, PrismaClient } from "../src/generated/prisma";
 import { pgSslFromEnv } from "../src/prisma/pg-ssl";
 
 // Seeds the two things RPT10 (Data-Quality) reports on that no other seed
@@ -178,7 +178,16 @@ async function main(): Promise<void> {
           void id;
           void createdAt;
           void updatedAt;
-          await tx.villagePriorityAssessment.create({ data: { ...rest, villageId: "" } });
+          await tx.villagePriorityAssessment.create({
+            data: {
+              ...rest,
+              villageId: "",
+              // `domainComponents` is non-null in the schema, but a JSON column
+              // reads back as JsonValue (null included), which the create input
+              // rejects.
+              domainComponents: rest.domainComponents as Prisma.InputJsonValue,
+            },
+          });
         }
         console.log(`Mirrored ${villageRollups.length} rollup(s) + priority assessment to study-wide scope.`);
       }
