@@ -6,7 +6,7 @@ import { registerSchema, T } from '../../contract/typebox';
 // (Project-RIO-Frontend/src/services/roles/roles.service.ts's `ApiRole`
 // interface) and verified field-for-field identical to the backend's own
 // RoleDef/ModulePermission types (rbac/role-matrix.ts) — no discrepancies
-// found. `module`/`PermissionModule` is a fixed, closed set of 15 string
+// found. `module`/`PermissionModule` is a fixed, closed set of 16 string
 // literals (see PERMISSION_MODULES in role-matrix.ts) — modeled here as a
 // literal union rather than a free string so the generated frontend type
 // stays exact.
