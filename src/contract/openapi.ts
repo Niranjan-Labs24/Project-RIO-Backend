@@ -196,10 +196,12 @@ const ROUTES: RouteDoc[] = [
   {
     method: 'post', path: '/studies/{studyId}/ai-decisions/classify', tag: 'AI Decisions', summary: 'Run the (placeholder) need classification and store the AI suggestion (domains[]/subDomains[] — one Need, possibly several suggested domains). Requires evidence to have been submitted first.',
     auth: { module: 'aiReview', action: 'write' }, response: 'AiDecision',
+    responseSchema: 'AiDecision',
   },
   {
     method: 'get', path: '/studies/{studyId}/ai-decisions', tag: 'AI Decisions', summary: "List a study's AI decisions",
     auth: { module: 'aiReview', action: 'read' }, response: 'AiDecision[]',
+    responseSchema: 'AiDecision', responseIsArray: true,
   },
   {
     method: 'post', path: '/studies/{studyId}/ai-decisions/score', tag: 'AI Decisions', summary: 'Priority scoring stub — no DB write; scoring engine lands once methodology is approved',
@@ -208,6 +210,7 @@ const ROUTES: RouteDoc[] = [
   {
     method: 'patch', path: '/ai-decisions/{id}/review', tag: 'AI Decisions', summary: "Record a human reviewer's decision over an AI suggestion",
     auth: { module: 'aiReview', action: 'approve' }, requestSchema: 'ReviewDecisionBody', response: 'AiDecision',
+    responseSchema: 'AiDecision',
   },
   {
     method: 'get', path: '/users', tag: 'Users', summary: "List the caller's own organisation's users, or (cross-entity) another org's via ?organizationId",
