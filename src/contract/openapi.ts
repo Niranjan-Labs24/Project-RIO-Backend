@@ -18,6 +18,12 @@ type Tag =
   | 'Priority Summary'
   | 'Audit'
   | 'System Logs'
+  | 'Citizen'
+  | 'Public Surveys'
+  | 'Response Quality'
+  | 'Sharing'
+  | 'Report Sharing'
+  | 'NCNP Report'
   | 'Health';
 
 interface RouteDoc {
@@ -79,6 +85,12 @@ const TAGS: Array<{ name: Tag; description: string }> = [
   { name: 'Roles', description: 'The fixed 9-role permission matrix.' },
   { name: 'Audit', description: 'Immutable audit log of every write across the app.' },
   { name: 'System Logs', description: 'RIO-NFR-016 — operational events and errors (read-only, System Admin).' },
+  { name: 'Citizen', description: 'Fully unauthenticated citizen-facing survey resolution, OTP, and response submission.' },
+  { name: 'Public Surveys', description: 'Org-side management of public survey links and their collected responses.' },
+  { name: 'Response Quality', description: 'Completeness/duplicate scoring and AI-generated summaries over survey responses.' },
+  { name: 'Sharing', description: 'Cross-organisation Study sharing request workflow.' },
+  { name: 'Report Sharing', description: 'Cross-organisation Report sharing request workflow.' },
+  { name: 'NCNP Report', description: 'Platform-wide (kingdom-level) consolidated analytics report, cross-entity read-only.' },
   { name: 'Health', description: 'Liveness/readiness probes.' },
 ];
 
@@ -88,13 +100,15 @@ const TAGS: Array<{ name: Tag; description: string }> = [
 // *.controller.ts file, add/update its entry here too.
 //
 // NOTE: this file documents a curated subset of the API, not every
-// controller — e.g. public-surveys, sharing, report-sharing, response-
-// quality, studies-evidence-adjacent routes, and several others exist in
-// src/modules/** with no entry here at all. The Surveys/Priority/Priority
-// Summary tags below were added specifically to cover the routes given new
-// TypeBox/AJV request-body validation in the backend remediation pass
-// (2026-07-27) — not a full sweep of the whole controller surface, which
-// would be a materially larger, separate documentation task.
+// controller — several modules (e.g. ncnp-report-review, sharing-alerts,
+// reviewer-sla, geography, questions, evidence-adjacent admin routes) still
+// have no entry here at all. The Surveys/Priority/Priority Summary tags were
+// added to cover routes given new TypeBox/AJV request-body validation in the
+// backend remediation pass (2026-07-27); the Citizen/Public Surveys/Response
+// Quality/Sharing/Report Sharing/NCNP Report tags were added in the GAP-08
+// Phase 0 batch-4 response-schema pass (2026-08-25) — neither is a full
+// sweep of the whole controller surface, which would be a materially larger,
+// separate documentation task.
 const ROUTES: RouteDoc[] = [
   {
     method: 'post', path: '/auth/login', tag: 'Auth', summary: 'Sign in with email + password',
@@ -536,6 +550,212 @@ const ROUTES: RouteDoc[] = [
     // free-text per the "no FE counterpart, out of batch scope" case.
     method: 'post', path: '/priority-summaries/{summaryId}/save-report', tag: 'Priority Summary', summary: 'Save a priority summary as a formal Report',
     auth: { module: 'reportsDashboards', action: 'create' }, response: 'Report',
+  },
+  // Citizen — fully unauthenticated (CitizenController is @Public()), the
+  // respondent-facing survey resolution/OTP/response-submission flow.
+  // Mounted under public/surveys/:token — the survey link's own token is the
+  // only identifier, never a session.
+  {
+    method: 'get', path: '/public/surveys/{token}', tag: 'Citizen', summary: 'Resolve a public survey link token to its survey + Study/Org context',
+    auth: undefined, response: 'ResolvedSurveyView',
+    responseSchema: 'ResolvedSurveyView',
+  },
+  {
+    method: 'post', path: '/public/surveys/{token}/check-duplicate', tag: 'Citizen', summary: 'Check whether this contact/mobile has already responded to this link',
+    auth: undefined, requestSchema: 'CheckDuplicateBody', response: 'CheckDuplicateResultView',
+    responseSchema: 'CheckDuplicateResultView',
+  },
+  {
+    method: 'post', path: '/public/surveys/{token}/otp/request', tag: 'Citizen', summary: 'Request an OTP code to the given mobile number',
+    auth: undefined, requestSchema: 'RequestOtpBody', response: 'RequestOtpResultView',
+    responseSchema: 'RequestOtpResultView',
+  },
+  {
+    method: 'post', path: '/public/surveys/{token}/otp/verify', tag: 'Citizen', summary: 'Verify the OTP code for a previously-requested challenge',
+    auth: undefined, requestSchema: 'VerifyOtpBody', response: 'VerifyOtpResultView',
+    responseSchema: 'VerifyOtpResultView',
+  },
+  {
+    method: 'post', path: '/public/surveys/{token}/responses', tag: 'Citizen', summary: 'Submit the respondent’s answers for a verified OTP challenge',
+    auth: undefined, requestSchema: 'SubmitResponseBody', response: 'SubmitResponseResultView',
+    responseSchema: 'SubmitResponseResultView',
+  },
+  // Public Surveys — org-side management of public survey links (create/
+  // list/deactivate/share) and their collected responses. Mounted under
+  // needs/:needId/... — each Need runs its own independent survey/link set.
+  {
+    method: 'get', path: '/needs/{needId}/survey-links', tag: 'Public Surveys', summary: "List a Need's public survey links",
+    auth: { module: 'studySurvey', action: 'read' }, response: 'PublicSurveyLinkView[]',
+    responseSchema: 'PublicSurveyLinkView', responseIsArray: true,
+  },
+  {
+    method: 'post', path: '/needs/{needId}/survey-links', tag: 'Public Surveys', summary: 'Create a new public survey link for a Need',
+    auth: { module: 'studySurvey', action: 'create' }, requestSchema: 'CreateSurveyLinkBody', response: 'PublicSurveyLinkView',
+    responseSchema: 'PublicSurveyLinkView',
+  },
+  {
+    method: 'patch', path: '/needs/{needId}/survey-links/{linkId}/deactivate', tag: 'Public Surveys', summary: 'Deactivate a public survey link',
+    auth: { module: 'studySurvey', action: 'write' }, response: 'PublicSurveyLinkView',
+    responseSchema: 'PublicSurveyLinkView',
+  },
+  {
+    method: 'post', path: '/needs/{needId}/survey-links/{linkId}/share-email', tag: 'Public Surveys', summary: 'Email a survey link (with embedded QR) to the given address',
+    auth: { module: 'studySurvey', action: 'read' }, requestSchema: 'ShareSurveyLinkEmailBody', response: '204 No Content',
+  },
+  {
+    method: 'get', path: '/needs/{needId}/survey-responses', tag: 'Public Surveys', summary: 'List survey responses for a Need (paginated summary rows)',
+    auth: { module: 'studySurvey', action: 'read' }, query: ['surveyLinkId', 'limit', 'offset', 'search'],
+    response: 'SurveyResponseListResult ({ items: SurveyResponseSummary[], total, limit, offset })',
+    responseSchema: 'SurveyResponseListResult',
+  },
+  {
+    method: 'get', path: '/needs/{needId}/survey-responses-full', tag: 'Public Surveys', summary: 'Same rows as survey-responses, with each one’s answers already joined in',
+    auth: { module: 'studySurvey', action: 'read' }, query: ['surveyLinkId'], response: 'SurveyResponseDetailView[]',
+    responseSchema: 'SurveyResponseDetailView', responseIsArray: true,
+  },
+  {
+    method: 'get', path: '/needs/{needId}/survey-responses/export', tag: 'Public Surveys', summary: 'CSV/Excel export of a Need’s survey responses',
+    auth: { module: 'studySurvey', action: 'export' }, query: ['format', 'surveyLinkId'], response: 'text/csv | application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  },
+  {
+    method: 'get', path: '/needs/{needId}/survey-responses/questions/{questionId}', tag: 'Public Surveys', summary: 'One question’s answers across every response (paginated)',
+    auth: { module: 'studySurvey', action: 'read' }, query: ['limit', 'offset', 'search'],
+    response: 'QuestionResponseListResult ({ questionId, questionText, answerType, items: QuestionResponseRow[], total, limit, offset })',
+    responseSchema: 'QuestionResponseListResult',
+  },
+  {
+    method: 'get', path: '/needs/{needId}/survey-responses/{responseId}', tag: 'Public Surveys', summary: 'Get one survey response with its full answers',
+    auth: { module: 'studySurvey', action: 'read' }, response: 'SurveyResponseDetailView',
+    responseSchema: 'SurveyResponseDetailView',
+  },
+  // Response Quality — completeness/duplicate scoring and AI-generated
+  // summaries over a Need's survey responses. Mounted under needs/:needId/...;
+  // all four routes take an optional surveyLinkId scope (omitted = every
+  // link, "Consolidated").
+  {
+    method: 'post', path: '/needs/{needId}/response-quality/assess', tag: 'Response Quality', summary: 'Run completeness/duplicate assessment over a Need’s survey responses',
+    auth: { module: 'priorityScoring', action: 'create' }, query: ['surveyLinkId'], response: 'ResponseQualityResultView[]',
+    responseSchema: 'ResponseQualityResultView', responseIsArray: true,
+  },
+  {
+    method: 'get', path: '/needs/{needId}/response-quality', tag: 'Response Quality', summary: 'List the latest response-quality assessment results for a Need',
+    auth: { module: 'aiReview', action: 'read' }, query: ['surveyLinkId'], response: 'ResponseQualityResultView[]',
+    responseSchema: 'ResponseQualityResultView', responseIsArray: true,
+  },
+  {
+    method: 'post', path: '/needs/{needId}/ai-summary/generate', tag: 'Response Quality', summary: 'Generate a new AI summary over a Need’s survey responses',
+    auth: { module: 'priorityScoring', action: 'create' }, query: ['surveyLinkId'], response: 'AiSummaryView',
+    responseSchema: 'AiSummaryView',
+  },
+  {
+    // 200 body is `AiSummaryView | null` (none generated yet) — same
+    // nullable-GET convention as e.g. /needs/{needId}/priority-score.
+    method: 'get', path: '/needs/{needId}/ai-summary', tag: 'Response Quality', summary: 'Get the latest generated AI summary for a Need',
+    auth: { module: 'aiReview', action: 'read' }, query: ['surveyLinkId'], response: 'AiSummaryView | null',
+    responseSchema: 'AiSummaryView',
+  },
+  // Sharing — cross-organisation Study sharing request workflow
+  // (sharing-requests). Gated on archiveSharingAudit.
+  {
+    method: 'post', path: '/sharing-requests', tag: 'Sharing', summary: 'Create a Study sharing request to another organisation',
+    auth: { module: 'archiveSharingAudit', action: 'create' }, requestSchema: 'CreateSharingRequestBody', response: 'SharingRequestView',
+    responseSchema: 'SharingRequestView',
+  },
+  {
+    method: 'get', path: '/sharing-requests', tag: 'Sharing', summary: "List the caller's organisation's Study sharing requests",
+    auth: { module: 'archiveSharingAudit', action: 'read' }, query: ['limit', 'offset'], response: 'SharingRequestView[]',
+    responseSchema: 'SharingRequestView', responseIsArray: true,
+  },
+  {
+    method: 'get', path: '/sharing-requests/lookup/organizations', tag: 'Sharing', summary: 'Search organisations to request a Study share from',
+    auth: { module: 'archiveSharingAudit', action: 'create' }, query: ['query'], response: 'OrgLookupResultView[]',
+    responseSchema: 'OrgLookupResultView', responseIsArray: true,
+  },
+  {
+    method: 'get', path: '/sharing-requests/lookup/organizations/{orgId}/studies', tag: 'Sharing', summary: "List an organisation's studies, for the create-request flow",
+    auth: { module: 'archiveSharingAudit', action: 'create' }, response: 'StudyLookupResultView[]',
+    responseSchema: 'StudyLookupResultView', responseIsArray: true,
+  },
+  {
+    method: 'get', path: '/sharing-requests/{id}', tag: 'Sharing', summary: 'Get a single Study sharing request',
+    auth: { module: 'archiveSharingAudit', action: 'read' }, response: 'SharingRequestView',
+    responseSchema: 'SharingRequestView',
+  },
+  {
+    method: 'patch', path: '/sharing-requests/{id}/approve', tag: 'Sharing', summary: 'Approve a Study sharing request',
+    auth: { module: 'archiveSharingAudit', action: 'approve' }, requestSchema: 'DecideSharingRequestBody', response: 'SharingRequestView',
+    responseSchema: 'SharingRequestView',
+  },
+  {
+    method: 'patch', path: '/sharing-requests/{id}/reject', tag: 'Sharing', summary: 'Reject a Study sharing request',
+    auth: { module: 'archiveSharingAudit', action: 'approve' }, requestSchema: 'DecideSharingRequestBody', response: 'SharingRequestView',
+    responseSchema: 'SharingRequestView',
+  },
+  {
+    // NOTE (discrepancy, flagged in sharing.contract.ts): the frontend types
+    // this route's result as a flattened single-need SharedStudySnapshot
+    // ({ status, needStatement, needVillages }), but
+    // SharingService.getSharedSnapshot actually returns the backend's own
+    // SharedStudySnapshot shape ({ needs: SharedNeedSnapshot[] }). Wired to
+    // the FE-shaped schema per the "use the FE shape and flag it" rule.
+    method: 'get', path: '/sharing-requests/{id}/shared-study', tag: 'Sharing', summary: 'Get the shared Study snapshot for an approved sharing request',
+    auth: { module: 'archiveSharingAudit', action: 'read' }, response: 'SharedStudySnapshotView',
+    responseSchema: 'SharedStudySnapshotView',
+  },
+  // Report Sharing — cross-organisation Report sharing request workflow
+  // (report-sharing-requests). Same permission module as Sharing above.
+  {
+    method: 'post', path: '/report-sharing-requests', tag: 'Report Sharing', summary: 'Create a Report sharing request to another organisation',
+    auth: { module: 'archiveSharingAudit', action: 'create' }, requestSchema: 'CreateReportSharingRequestBody', response: 'ReportSharingRequestView',
+    responseSchema: 'ReportSharingRequestView',
+  },
+  {
+    method: 'get', path: '/report-sharing-requests', tag: 'Report Sharing', summary: "List the caller's organisation's Report sharing requests",
+    auth: { module: 'archiveSharingAudit', action: 'read' }, response: 'ReportSharingRequestView[]',
+    responseSchema: 'ReportSharingRequestView', responseIsArray: true,
+  },
+  {
+    method: 'get', path: '/report-sharing-requests/lookup/organizations', tag: 'Report Sharing', summary: 'Search organisations to request a Report share from',
+    auth: { module: 'archiveSharingAudit', action: 'create' }, query: ['query'], response: 'ReportSharingOrgLookupResultView[]',
+    responseSchema: 'ReportSharingOrgLookupResultView', responseIsArray: true,
+  },
+  {
+    method: 'get', path: '/report-sharing-requests/lookup/organizations/{orgId}/reports', tag: 'Report Sharing', summary: "List an organisation's reports, for the create-request flow",
+    auth: { module: 'archiveSharingAudit', action: 'create' }, response: 'ReportLookupResultView[]',
+    responseSchema: 'ReportLookupResultView', responseIsArray: true,
+  },
+  {
+    method: 'get', path: '/report-sharing-requests/{id}', tag: 'Report Sharing', summary: 'Get a single Report sharing request',
+    auth: { module: 'archiveSharingAudit', action: 'read' }, response: 'ReportSharingRequestView',
+    responseSchema: 'ReportSharingRequestView',
+  },
+  {
+    method: 'patch', path: '/report-sharing-requests/{id}/approve', tag: 'Report Sharing', summary: 'Approve a Report sharing request',
+    auth: { module: 'archiveSharingAudit', action: 'approve' }, requestSchema: 'DecideReportSharingRequestBody', response: 'ReportSharingRequestView',
+    responseSchema: 'ReportSharingRequestView',
+  },
+  {
+    method: 'patch', path: '/report-sharing-requests/{id}/reject', tag: 'Report Sharing', summary: 'Reject a Report sharing request',
+    auth: { module: 'archiveSharingAudit', action: 'approve' }, requestSchema: 'DecideReportSharingRequestBody', response: 'ReportSharingRequestView',
+    responseSchema: 'ReportSharingRequestView',
+  },
+  {
+    method: 'get', path: '/report-sharing-requests/{id}/shared-report', tag: 'Report Sharing', summary: 'Get the shared Report snapshot for an approved sharing request',
+    auth: { module: 'archiveSharingAudit', action: 'read' }, response: 'SharedReportSnapshotView',
+    responseSchema: 'SharedReportSnapshotView',
+  },
+  // NCNP Report — platform-wide (kingdom-level) consolidated analytics
+  // report, cross-entity read-only (same permission SupervisorOverview's
+  // cross-org read already uses).
+  {
+    method: 'get', path: '/ncnp-report', tag: 'NCNP Report', summary: 'Get the consolidated platform-wide NCNP report',
+    auth: { module: 'archiveSharingAudit', action: 'read' }, query: ['periodDays', 'dormantDays'], response: 'NcnpReportView',
+    responseSchema: 'NcnpReportView',
+  },
+  {
+    method: 'get', path: '/ncnp-report/export', tag: 'NCNP Report', summary: 'PDF/Excel export of the consolidated NCNP report',
+    auth: { module: 'archiveSharingAudit', action: 'read' }, query: ['format', 'periodDays', 'dormantDays'],
+    response: 'application/pdf | application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   },
 ];
 
