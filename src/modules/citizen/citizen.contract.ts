@@ -79,3 +79,64 @@ export const SubmitResponseBody = registerSchema(
   ),
 );
 export type SubmitResponseDto = Static<typeof SubmitResponseBody>;
+
+// Response schemas (GAP-08 Phase 0, batch 4) — shape sourced from the
+// frontend's ResolvedSurvey/CheckDuplicateResult/RequestOtpResult/
+// VerifyOtpResult/SubmitResponseResult
+// (Project-RIO-Frontend/src/services/citizen/citizen.types.ts). Verified
+// field-for-field against citizen.types.ts (backend) — identical shapes.
+const ResolvedSurveyQuestion = T.Object({
+  code: T.String(),
+  text: T.String(),
+  type: T.String(),
+  options: T.Optional(T.Array(T.String())),
+  required: T.Boolean(),
+});
+
+export const ResolvedSurveyView = registerSchema(
+  'ResolvedSurveyView',
+  T.Object({
+    studyId: T.String(),
+    title: T.String(),
+    version: T.String(),
+    studyTitle: T.String(),
+    organizationName: T.String(),
+    questions: T.Array(ResolvedSurveyQuestion),
+    questionCount: T.Number(),
+    estimatedMinutes: T.Number(),
+  }),
+);
+
+export const CheckDuplicateResultView = registerSchema(
+  'CheckDuplicateResultView',
+  T.Object({
+    isDuplicate: T.Boolean(),
+  }),
+);
+
+export const RequestOtpResultView = registerSchema(
+  'RequestOtpResultView',
+  T.Object({
+    challengeId: T.String(),
+    expiresAt: T.String(),
+    codeTexted: T.Boolean(),
+    // Only present when codeTexted is false and SMS isn't configured
+    // (dev/test) — see RequestOtpResult's own comment in citizen.types.ts.
+    code: T.Optional(T.String()),
+  }),
+);
+
+export const VerifyOtpResultView = registerSchema(
+  'VerifyOtpResultView',
+  T.Object({
+    verified: T.Literal(true),
+  }),
+);
+
+export const SubmitResponseResultView = registerSchema(
+  'SubmitResponseResultView',
+  T.Object({
+    id: T.String(),
+    submittedAt: T.String(),
+  }),
+);
