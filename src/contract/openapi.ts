@@ -399,50 +399,72 @@ const ROUTES: RouteDoc[] = [
   {
     method: 'post', path: '/needs/{needId}/priority-score', tag: 'Priority', summary: "Compute and save a Need's priority score",
     auth: { module: 'priorityScoring', action: 'create' }, query: ['surveyLinkId'], response: 'PriorityScore',
+    responseSchema: 'PriorityScore',
   },
   {
+    // 200 body is `PriorityScore | null` (no score computed yet) — the
+    // registered schema documents the non-null shape, same convention as
+    // every other nullable single-object GET in this file (e.g. StudyDetail).
     method: 'get', path: '/needs/{needId}/priority-score', tag: 'Priority', summary: "Get a Need's latest priority score",
     auth: { module: 'priorityScoring', action: 'read' }, query: ['surveyLinkId'], response: 'PriorityScore | null',
+    responseSchema: 'PriorityScore',
   },
   {
     method: 'get', path: '/studies/{studyId}/surveys/{surveyId}/severity-dashboard', tag: 'Priority', summary: 'Severity dashboard for a study/survey',
-    auth: { module: 'priorityScoring', action: 'read' }, query: ['villageId'], response: 'SeverityDashboard',
+    auth: { module: 'priorityScoring', action: 'read' }, query: ['villageId'], response: 'SeverityDashboardResult',
+    responseSchema: 'SeverityDashboardResult',
   },
   {
     method: 'get', path: '/studies/{studyId}/surveys/{surveyId}/severity-kpis', tag: 'Priority', summary: 'KPI severity ranking for a study/survey',
-    auth: { module: 'priorityScoring', action: 'read' }, query: ['villageId'], response: 'KpiRanking[]',
+    auth: { module: 'priorityScoring', action: 'read' }, query: ['villageId'], response: 'SeverityKpiRankingEntry[]',
+    responseSchema: 'SeverityKpiRankingEntry', responseIsArray: true,
   },
   {
     method: 'get', path: '/studies/{studyId}/surveys/{surveyId}/questions/{questionId}', tag: 'Priority', summary: 'Per-question severity detail',
-    auth: { module: 'priorityScoring', action: 'read' }, query: ['villageId'], response: 'QuestionDetail',
+    auth: { module: 'priorityScoring', action: 'read' }, query: ['villageId'], response: 'QuestionDetailResult',
+    responseSchema: 'QuestionDetailResult',
   },
   {
     method: 'post', path: '/studies/{studyId}/surveys/{surveyId}/recalculate', tag: 'Priority', summary: 'Recalculate KPI → Indicator → Sub-Domain → Domain rollups',
     auth: { module: 'priorityScoring', action: 'create' }, response: '{ success: true }',
   },
   {
+    // 200 body is `VillagePriorityResult | null` (no assessment computed
+    // yet) — same nullable-GET convention as /needs/{needId}/priority-score
+    // above.
     method: 'get', path: '/studies/{studyId}/surveys/{surveyId}/village-priority', tag: 'Priority', summary: 'Village-level priority ranking',
-    auth: { module: 'priorityScoring', action: 'read' }, query: ['villageId'], response: 'VillagePriority',
+    auth: { module: 'priorityScoring', action: 'read' }, query: ['villageId'], response: 'VillagePriorityResult | null',
+    responseSchema: 'VillagePriorityResult',
   },
   {
     method: 'get', path: '/methodology-versions', tag: 'Priority', summary: 'List methodology versions',
     auth: { module: 'methodologyQuestionBank', action: 'read' }, response: 'MethodologyVersion[]',
+    responseSchema: 'MethodologyVersion', responseIsArray: true,
   },
   {
     method: 'post', path: '/methodology-versions', tag: 'Priority', summary: 'Create a new methodology version',
     auth: { module: 'methodologyQuestionBank', action: 'create' }, requestSchema: 'CreateMethodologyVersionBody', response: 'MethodologyVersion',
+    responseSchema: 'MethodologyVersion',
   },
   {
+    // NOTE (discrepancy, fixed here): previously documented as returning
+    // `MethodologyVersion` — PriorityService.uploadLookups actually returns
+    // `{ imported: number }` (the CSV import count), matching the
+    // frontend's uploadLookups() return type exactly; it never re-fetches
+    // the MethodologyVersion row.
     method: 'post', path: '/methodology-versions/{id}/upload-lookups', tag: 'Priority', summary: 'Upload a scoring-lookup CSV for a methodology version',
-    auth: { module: 'methodologyQuestionBank', action: 'create' }, response: 'MethodologyVersion',
+    auth: { module: 'methodologyQuestionBank', action: 'create' }, response: 'UploadLookupsResult ({ imported: number })',
+    responseSchema: 'UploadLookupsResult',
   },
   {
     method: 'get', path: '/priority-scores', tag: 'Priority', summary: 'Cross-Need priority-score dashboard for the org',
     auth: { module: 'priorityScoring', action: 'read' }, response: 'PriorityDashboardEntry[]',
+    responseSchema: 'PriorityDashboardEntry', responseIsArray: true,
   },
   {
     method: 'patch', path: '/priority-scores/{id}/approve', tag: 'Priority', summary: 'Approve a computed priority score',
     auth: { module: 'priorityScoring', action: 'approve' }, response: 'PriorityScore',
+    responseSchema: 'PriorityScore',
   },
   // Priority Summary — the drafting/approval workflow feeding the Reports
   // module (see report-summary.service.ts).
