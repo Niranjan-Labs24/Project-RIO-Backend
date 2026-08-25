@@ -1524,15 +1524,9 @@ function dataQualitySections(dq: Record<string, unknown>): DocSection[] {
   return out;
 }
 
-// Sections that carry real weight — a chart or a table — earn their own page.
-// A one-line note or a short key/value block does not: a report where every
-// paragraph is its own page reads as padded, not as navigable.
+// Sections that carry real weight — a chart or a table. A one-line note or a
+// short key/value block does not count towards what a chapter box advertises.
 const HEAVY_KINDS = new Set(["table", "bars", "pie", "radar", "gauge", "stats", "groupedBars"]);
-
-function isHeavy(s: DocSection): boolean {
-  if (s.kind === "columns") return s.children.some(isHeavy);
-  return HEAVY_KINDS.has(s.kind);
-}
 
 /** Short, honest descriptor for a chapter box — what the reader will find. */
 function chapterSummary(sections: DocSection[]): string {

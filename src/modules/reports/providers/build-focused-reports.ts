@@ -29,7 +29,7 @@ import type { DataCollectionCompletenessBlock } from "./load-data-collection-com
 import { severityBandOf } from "./severity-bands";
 // The masking comparison itself lives in derive-domain-masking.ts, shared with
 // the Village/Sector/Region domain tables — see that file's header.
-import { bandRank, deriveDomainMasking } from "./derive-domain-masking";
+import { deriveDomainMasking } from "./derive-domain-masking";
 
 /** Band order, worst first — drives the tier table's row order. */
 const BAND_ORDER: SeverityBand[] = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
