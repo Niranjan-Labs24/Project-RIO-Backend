@@ -14,6 +14,7 @@ const auditMeta: ExportAuditMeta = {
   reviewedByRole: "Human Reviewer",
   reviewedAt: "2026-07-22T10:20:00Z",
   archivedAt: null,
+  methodologyVersion: "v1.0",
 };
 
 async function villageContent(): Promise<Record<string, unknown>> {

@@ -28,18 +28,35 @@ export const REPORT_TYPE_META: Record<
     // caller must name it — see ReportsService.create's SURVEY_ID_REQUIRED
     // check. Implies requiresStudyId (the survey is validated to belong to it).
     requiresSurveyId: boolean;
+    // OPTIONALLY survey-scoped (RPT10). The type reports on the whole study by
+    // default, but the caller may narrow it to one survey — the report then
+    // says which scope produced its figures instead of being labelled
+    // study-level while silently covering a single survey, which is exactly
+    // what RPT10 used to do. A chosen surveyId is folded into `filters` by
+    // ReportsService.create so the provider's existing filters.surveyId path
+    // stays the single way scope is expressed.
+    supportsSurveyId?: boolean;
   }
 > = {
   RPT01: { name: "Individual Survey Report", kind: "report", exportFormats: ["pdf", "excel"], requiresStudyId: true, requiresSurveyId: true },
   RPT02: { name: "Collective Report / Dashboard", kind: "dashboard", exportFormats: ["pdf", "excel"], requiresStudyId: false, requiresSurveyId: false },
-  RPT03: { name: "Top Needs View", kind: "dashboard", exportFormats: ["pdf", "excel"], requiresStudyId: false, requiresSurveyId: false },
+  // RPT03 and RPT09 are the BRD's two names for one ranked list (Top Needs
+  // View / Priority Ranking) and share topPriorityGenerator. Both require a
+  // study: "the highest-priority needs" is only answerable within one scored
+  // study, and the ranking basis is study-scoped.
+  RPT03: { name: "Top-Priority Report", kind: "report", exportFormats: ["pdf", "excel"], requiresStudyId: true, requiresSurveyId: false },
   RPT04: { name: "Domain-wise Needs", kind: "dashboard", exportFormats: ["pdf", "excel"], requiresStudyId: true, requiresSurveyId: false },
   RPT05: { name: "Governorate-wise Needs", kind: "dashboard", exportFormats: ["pdf", "excel"], requiresStudyId: false, requiresSurveyId: false },
   RPT06: { name: "Region/Governorate Filtering", kind: "dashboard", exportFormats: ["pdf", "excel"], requiresStudyId: true, requiresSurveyId: false },
   RPT07: { name: "Gender-wise Needs", kind: "report", exportFormats: ["pdf", "excel"], requiresStudyId: false, requiresSurveyId: false },
   RPT08: { name: "KPI Results", kind: "dashboard", exportFormats: ["excel"], requiresStudyId: false, requiresSurveyId: false },
-  RPT09: { name: "Priority Ranking", kind: "dashboard", exportFormats: ["pdf", "excel"], requiresStudyId: false, requiresSurveyId: false },
-  RPT10: { name: "Data Quality Indicators", kind: "dashboard", exportFormats: ["excel"], requiresStudyId: false, requiresSurveyId: false },
+  RPT09: { name: "Priority Ranking", kind: "report", exportFormats: ["pdf", "excel"], requiresStudyId: true, requiresSurveyId: false },
+  // Both formats, deliberately: the BRD's Reports & Dashboard sheet lists this
+  // one as Excel-only, but RIO-RPT-001's acceptance criterion 2 requires every
+  // report type to export to PDF *and* Excel with identical figures. The
+  // acceptance criteria are the later and stricter statement, so they win; the
+  // divergence is flagged for the client rather than silently resolved.
+  RPT10: { name: "Data-Quality Report", kind: "report", exportFormats: ["pdf", "excel"], requiresStudyId: true, requiresSurveyId: false, supportsSurveyId: true },
   RPT11: { name: "Previous Studies View", kind: "dashboard", exportFormats: [], requiresStudyId: false, requiresSurveyId: false },
   RPT12: { name: "Report Sharing Status", kind: "log", exportFormats: ["pdf", "excel"], requiresStudyId: false, requiresSurveyId: false },
   RPT13: { name: "Executive Summary", kind: "report", exportFormats: ["pdf", "excel"], requiresStudyId: true, requiresSurveyId: false },

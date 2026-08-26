@@ -4,12 +4,14 @@ import type {
   CollectiveReportContent,
   CombinedReportContent,
   CoverageBlock,
+  DataQualityReportContent,
   ExecutiveReportContent,
   IndividualSurveyReportContent,
   RegionReportContent,
   SectorReportContent,
   SharingStatusContent,
   SurveyIdentity,
+  TopPriorityReportContent,
   VillageReportContent,
 } from "../../report-content.types";
 import {
@@ -20,6 +22,10 @@ import {
 } from "../report-data.provider";
 import { buildComparisonBand, buildResponseFunnel } from "../survey-report-derivations";
 import { buildUnifiedRpt01, type UnifiedRpt01Input } from "../build-unified-rpt01";
+import { buildDataQualityContent, buildTopPriorityContent } from "../build-focused-reports";
+import type { DataCollectionCompletenessBlock } from "../load-data-collection-completeness";
+import { summariseAbandonment } from "../../../survey-sessions/abandonment";
+import { REGION_AGGREGATION_BASIS } from "../snapshot-to-content";
 import type { ClassificationRow, KpiRollupRow } from "../build-need-records";
 import type { DomainMeta, RollupLevelValue } from "../build-need-hierarchy";
 import { DEFAULT_THRESHOLDS } from "../../need-record.types";
@@ -33,6 +39,18 @@ import { DEFAULT_THRESHOLDS } from "../../need-record.types";
 // Exists so the generator and export specs have stable, fully-populated content
 // to assert against without standing up Prisma, Gemini and the priority engine.
 export class StubReportDataProvider extends ReportDataProvider {
+  /**
+   * The source Need's affected-population estimate, as the real provider would
+   * have read it from `Survey.needId → Need.affectedPopulation`.
+   *
+   * Null by default: a Need recorded before the need-entry question existed,
+   * which is the state most of these specs assert against (dashed column, note
+   * saying why). Construct with a number to exercise the populated column.
+   */
+  constructor(private readonly sourceNeedAffectedPopulation: number | null = null) {
+    super();
+  }
+
   async getVillageReport(query: VillageReportQuery): Promise<VillageReportContent> {
     // Mirrors RPT-2026-001 supplied by the team's AI summary.
     const villageName = query.villageId?.trim() || "Sample Village";
@@ -65,11 +83,11 @@ export class StubReportDataProvider extends ReportDataProvider {
         overallVillageNeedsIndex: 63.8,
         label: "Medium",
         domains: [
-          { name: "Health", domainCode: "HEALTH", severityScore: 72, performanceScore: 28, weight: 0.3, weightedContribution: 8.4, confidence: "STANDARD", confidenceReason: "High response completeness.", validResponseRatePct: 92, kpiCount: 6, trendNote: SINGLE_CYCLE_TREND_NOTE, isCriticalDomain: true },
-          { name: "Education", domainCode: "EDUCATION", severityScore: 48, performanceScore: 52, weight: 0.25, weightedContribution: 13, confidence: "STANDARD", confidenceReason: "High response completeness.", validResponseRatePct: 88, kpiCount: 5, trendNote: SINGLE_CYCLE_TREND_NOTE, isCriticalDomain: false },
-          { name: "Infrastructure", domainCode: "INFRASTRUCTURE", severityScore: 63, performanceScore: 37, weight: 0.2, weightedContribution: 7.4, confidence: "STANDARD", confidenceReason: "High response completeness.", validResponseRatePct: 90, kpiCount: 4, trendNote: SINGLE_CYCLE_TREND_NOTE, isCriticalDomain: false },
-          { name: "Livelihood", domainCode: "LIVELIHOOD", severityScore: 55, performanceScore: 45, weight: 0.15, weightedContribution: 6.75, confidence: "STANDARD", confidenceReason: "High response completeness.", validResponseRatePct: 85, kpiCount: 4, trendNote: SINGLE_CYCLE_TREND_NOTE, isCriticalDomain: false },
-          { name: "Water & Sanitation", domainCode: "WATER_SANITATION", severityScore: 81, performanceScore: 19, weight: 0.1, weightedContribution: 1.9, confidence: "LOW", confidenceReason: "Small sample: 8 valid response(s), below the 10 required for STANDARD confidence.", validResponseRatePct: 62, kpiCount: 5, trendNote: SINGLE_CYCLE_TREND_NOTE, validResponseCount: 8, dontKnowRate: 25, isCriticalDomain: true },
+          { name: "Health", domainCode: "HEALTH", severityScore: 72, performanceScore: 28, weight: 0.3, weightedContribution: 8.4, confidence: "STANDARD", confidenceReason: "High response completeness.", validResponseRatePct: 92, kpiCount: 6, trendNote: SINGLE_CYCLE_TREND_NOTE, isCriticalDomain: true, maxKpiSeverity: 86, maxKpiName: "Distance to nearest clinic", criticalKpiCount: 2, masksCriticalFinding: false },
+          { name: "Education", domainCode: "EDUCATION", severityScore: 48, performanceScore: 52, weight: 0.25, weightedContribution: 13, confidence: "STANDARD", confidenceReason: "High response completeness.", validResponseRatePct: 88, kpiCount: 5, trendNote: SINGLE_CYCLE_TREND_NOTE, isCriticalDomain: false, maxKpiSeverity: 74, maxKpiName: "Pupil-teacher ratio", criticalKpiCount: 1, masksCriticalFinding: true },
+          { name: "Infrastructure", domainCode: "INFRASTRUCTURE", severityScore: 63, performanceScore: 37, weight: 0.2, weightedContribution: 7.4, confidence: "STANDARD", confidenceReason: "High response completeness.", validResponseRatePct: 90, kpiCount: 4, trendNote: SINGLE_CYCLE_TREND_NOTE, isCriticalDomain: false, maxKpiSeverity: 68, maxKpiName: "Road access in wet season", criticalKpiCount: 0, masksCriticalFinding: false },
+          { name: "Livelihood", domainCode: "LIVELIHOOD", severityScore: 55, performanceScore: 45, weight: 0.15, weightedContribution: 6.75, confidence: "STANDARD", confidenceReason: "High response completeness.", validResponseRatePct: 85, kpiCount: 4, trendNote: SINGLE_CYCLE_TREND_NOTE, isCriticalDomain: false, maxKpiSeverity: 61, maxKpiName: "Household income adequacy", criticalKpiCount: 0, masksCriticalFinding: false },
+          { name: "Water & Sanitation", domainCode: "WATER_SANITATION", severityScore: 81, performanceScore: 19, weight: 0.1, weightedContribution: 1.9, confidence: "LOW", confidenceReason: "Small sample: 8 valid response(s), below the 10 required for STANDARD confidence.", validResponseRatePct: 62, kpiCount: 5, trendNote: SINGLE_CYCLE_TREND_NOTE, validResponseCount: 8, dontKnowRate: 25, isCriticalDomain: true, maxKpiSeverity: 88, maxKpiName: "Households with safe water access", criticalKpiCount: 3, masksCriticalFinding: false },
         ],
       },
       priority: {
@@ -219,6 +237,63 @@ export class StubReportDataProvider extends ReportDataProvider {
     };
   }
 
+  // RPT03/RPT09 and RPT10. Both go through the REAL pure mappers over the same
+  // unified sections the RPT01 fixture uses — so the specs assert the actual
+  // projection logic, and the three reports reconcile in the fixture exactly as
+  // they must in production.
+  private async stubUnified(query: ScopedReportQuery): Promise<{
+    village: VillageReportContent;
+    unified: ReturnType<typeof buildUnifiedRpt01>;
+  }> {
+    const village = await this.getVillageReport({
+      studyId: query.studyId ?? "study-1",
+      villageId: "Sample Village",
+      orgId: query.orgId,
+      studyTitle: query.studyTitle,
+      filters: query.filters,
+    });
+    return {
+      village,
+      unified: buildUnifiedRpt01(
+        stubUnifiedInput(village, this.stubCoverage(), this.sourceNeedAffectedPopulation),
+      ),
+    };
+  }
+
+  async getTopPriorityReport(query: ScopedReportQuery): Promise<TopPriorityReportContent> {
+    const { village, unified } = await this.stubUnified(query);
+    return buildTopPriorityContent({
+      header: village.header,
+      unified,
+      responseQuality: village.responseQuality,
+      aiSummary: village.aiSummary,
+      dataQualityNote: village.dataQualityNote,
+      trendNote: village.trendNote,
+      demographics: village.demographics,
+      domains: village.severity.domains,
+      scope: { villages: village.village.name, governorate: null },
+      filters: query.filters,
+    });
+  }
+
+  async getDataQualityReport(query: ScopedReportQuery): Promise<DataQualityReportContent> {
+    const { village, unified } = await this.stubUnified(query);
+    return buildDataQualityContent({
+      header: village.header,
+      unified,
+      responseQuality: village.responseQuality,
+      aiSummary: village.aiSummary,
+      dataQualityNote: village.dataQualityNote,
+      trendNote: village.trendNote,
+      domains: village.severity.domains,
+      // Built by the REAL summariser over stub session rows, so the fixture
+      // cannot drift from the production abandonment arithmetic — same rule
+      // as the unified builder above.
+      dataCollection: stubDataCollection(),
+      filters: query.filters,
+    });
+  }
+
   async getCombinedReport(query: SurveyReportQuery): Promise<CombinedReportContent> {
     const individual = await this.getIndividualSurveyReport(query);
     const dashboard = await this.getCollectiveDashboard({ orgId: query.orgId, filters: query.filters });
@@ -301,14 +376,25 @@ export class StubReportDataProvider extends ReportDataProvider {
         methodologyVersion: "v1.0",
         reportGeneratedAt: "2026-07-22T10:30:00Z",
       },
-      domains: [
-        { name: "Health", domainCode: "HEALTH", severityScore: 72, performanceScore: 28, weight: 0.3, weightedContribution: 8.4, confidence: "STANDARD", confidenceReason: "High response completeness.", validResponseRatePct: 92, kpiCount: 6, trendNote: SINGLE_CYCLE_TREND_NOTE, isCriticalDomain: true },
-        { name: "Water & Sanitation", domainCode: "WATER_SANITATION", severityScore: 81, performanceScore: 19, weight: 0.1, weightedContribution: 1.9, confidence: "LOW", confidenceReason: "Small sample: 8 valid response(s), below the 10 required for STANDARD confidence.", validResponseRatePct: 62, kpiCount: 5, trendNote: SINGLE_CYCLE_TREND_NOTE, validResponseCount: 8, dontKnowRate: 25, isCriticalDomain: true },
-      ],
-      overall: {
+      scopeBasis: {
+        surveyId: "survey-1",
+        surveyTitle: "Village Needs Survey — Cycle 1",
+        studySurveyCount: 1,
+        resolution: "LATEST_PUBLISHED",
+        partialScopeNote: null,
+      },
+      severity: {
         overallVillageNeedsIndex: 63.8,
         label: "Medium",
-        domains: [],
+        // Nested here, not at the top level: `severity` is the key both
+        // renderers read. See SectorReportContent.severity.
+        domains: [
+          // Averages MEDIUM (44) over a CRITICAL KPI (86) — the no-masking case
+          // the methodology exists for, so the fixture exercises the alert
+          // rather than only the happy path.
+          { name: "Health", domainCode: "HEALTH", severityScore: 44, performanceScore: 56, weight: 0.3, weightedContribution: 13.2, confidence: "STANDARD", confidenceReason: "High response completeness.", validResponseRatePct: 92, kpiCount: 6, trendNote: SINGLE_CYCLE_TREND_NOTE, isCriticalDomain: true, maxKpiSeverity: 86, maxKpiName: "Distance to nearest clinic", criticalKpiCount: 1, masksCriticalFinding: true },
+          { name: "Water & Sanitation", domainCode: "WATER_SANITATION", severityScore: 81, performanceScore: 19, weight: 0.1, weightedContribution: 1.9, confidence: "LOW", confidenceReason: "Small sample: 8 valid response(s), below the 10 required for STANDARD confidence.", validResponseRatePct: 62, kpiCount: 5, trendNote: SINGLE_CYCLE_TREND_NOTE, validResponseCount: 8, dontKnowRate: 25, isCriticalDomain: true, maxKpiSeverity: 88, maxKpiName: "Households with safe water access", criticalKpiCount: 3, masksCriticalFinding: false },
+        ],
       },
       aiSummary: {
         executiveSummary: "Health and Water & Sanitation are the highest-severity sectors across the study.",
@@ -333,8 +419,25 @@ export class StubReportDataProvider extends ReportDataProvider {
         methodologyVersion: "v1.0",
         reportGeneratedAt: "2026-07-22T10:30:00Z",
       },
+      // Two governorates with DIFFERENT figures — a fixture where both rows
+      // matched would pass even if the report went back to printing one
+      // study-wide number under every governorate's name.
+      regionScope: {
+        regionName: "Sample Region",
+        governorateCount: 2,
+        villageCount: 3,
+        unmappedNeedCount: 1,
+        unscoredVillages: ["Unscored Village"],
+        aggregationBasis: REGION_AGGREGATION_BASIS,
+      },
       regions: [
-        { needCount: 12, regionName: "Sample Region", governorate: "Sample Governorate", responseCount: 38, severityScore: 63, priorityScore: 37.45, priorityStatus: "HIGH" },
+        { needCount: 12, regionName: "Sample Region", governorate: "North Governorate", responseCount: 38, severityScore: 63, maxVillageSeverity: 81, priorityScore: 37.45, priorityStatus: "HIGH" },
+        { needCount: 5, regionName: "Sample Region", governorate: "South Governorate", responseCount: 14, severityScore: 41, maxVillageSeverity: 44, priorityScore: 62.1, priorityStatus: "MEDIUM" },
+      ],
+      villages: [
+        { village: "Sample Village", governorate: "North Governorate", needCount: 8, responseCount: 26, severityScore: 81, priorityScore: 31.2, priorityStatus: "HIGH" },
+        { village: "North Hamlet", governorate: "North Governorate", needCount: 4, responseCount: 12, severityScore: 45, priorityScore: 43.7, priorityStatus: "MEDIUM" },
+        { village: "Unscored Village", governorate: "South Governorate", needCount: 5, responseCount: 14, severityScore: null, priorityScore: null, priorityStatus: null },
       ],
       aiSummary: {
         executiveSummary: "Sample Region shows High priority driven by water and health needs.",
@@ -480,6 +583,11 @@ export class StubReportDataProvider extends ReportDataProvider {
 function stubUnifiedInput(
   village: VillageReportContent,
   coverage: CoverageBlock,
+  // The source Need's affected-population estimate. Defaults to null — the
+  // shape of a Need recorded before the question was asked, which is what most
+  // of these specs assert against. Pass a number to exercise the populated
+  // column.
+  sourceNeedAffectedPopulation: number | null = null,
 ): UnifiedRpt01Input {
   const kpiRollups: KpiRollupRow[] = [];
   const classificationByIndicator = new Map<string, ClassificationRow>();
@@ -555,6 +663,7 @@ function stubUnifiedInput(
       villages: coverage.villageNames,
       scopeLabel: "Al-Badai, Al-Qassim — all 2 village(s) (consolidated)",
     },
+    sourceNeedAffectedPopulation,
     kpiRollups,
     classificationByIndicator,
     segmentsByIndicator: new Map(),
@@ -593,5 +702,74 @@ function stubUnifiedInput(
       assessedWeightSum: 1,
     },
     thresholds: DEFAULT_THRESHOLDS,
+  };
+}
+
+// ── RPT10 data-collection completeness (client Q14 (a), settled 24 Aug) ──
+//
+// Two abandoned sittings, one still in flight, three submitted, and one
+// required question with gaps — enough for every branch of the rendering
+// (rate, stage breakdown, itemised rows, invalid-response arithmetic) to be
+// asserted against real output rather than an empty block.
+function stubDataCollection(): DataCollectionCompletenessBlock {
+  const now = new Date("2026-08-24T12:00:00.000Z");
+  const at = (minutesAgo: number) => new Date(now.getTime() - minutesAgo * 60_000);
+  const abandonment = summariseAbandonment(
+    [
+      // Submitted — the outcome the rate is measured against.
+      { id: "aaaaaaaa-0000-0000-0000-000000000001", surveyId: "srv-1", furthestStep: "SUBMITTED", questionCount: 10, answeredCount: 10, startedAt: at(300), lastEventAt: at(295), submittedAt: at(295), remindersSent: 0 },
+      { id: "aaaaaaaa-0000-0000-0000-000000000002", surveyId: "srv-1", furthestStep: "SUBMITTED", questionCount: 10, answeredCount: 10, startedAt: at(280), lastEventAt: at(276), submittedAt: at(276), remindersSent: 1 },
+      { id: "aaaaaaaa-0000-0000-0000-000000000003", surveyId: "srv-1", furthestStep: "SUBMITTED", questionCount: 10, answeredCount: 10, startedAt: at(200), lastEventAt: at(196), submittedAt: at(196), remindersSent: 0 },
+      // Abandoned — past the idle threshold, never submitted.
+      { id: "bbbbbbbb-0000-0000-0000-000000000001", surveyId: "srv-1", furthestStep: "ANSWERING", questionCount: 10, answeredCount: 4, startedAt: at(400), lastEventAt: at(380), submittedAt: null, remindersSent: 2 },
+      { id: "bbbbbbbb-0000-0000-0000-000000000002", surveyId: "srv-1", furthestStep: "DETAILS", questionCount: 10, answeredCount: 0, startedAt: at(500), lastEventAt: at(495), submittedAt: null, remindersSent: 0 },
+      // In flight — inside the window, so on neither side of the rate.
+      { id: "cccccccc-0000-0000-0000-000000000001", surveyId: "srv-1", furthestStep: "ANSWERING", questionCount: 10, answeredCount: 2, startedAt: at(10), lastEventAt: at(3), submittedAt: null, remindersSent: 0 },
+    ],
+    now,
+    120,
+  );
+
+  return {
+    scope: {
+      level: "STUDY",
+      surveyId: null,
+      surveysInStudy: 1,
+      coveredSurveys: [{ surveyId: "srv-1", title: "Baseline Survey", version: 1, status: "PUBLISHED", responses: 3 }],
+      excludedSurveys: [],
+      note: "Study-level report. These completeness figures aggregate all 1 survey(s) in this study.",
+    },
+    abandonment: {
+      ...abandonment,
+      submittedResponsesInScope: 3,
+      trackedResponses: abandonment.submitted,
+      responsesWithoutSession: 0,
+      note: "Stub scope: every submitted response has a session record behind it.",
+    },
+    unansweredRequired: {
+      requiredQuestionCount: 8,
+      submittedResponses: 3,
+      requiredAnswerSlots: 24,
+      unansweredCount: 2,
+      unansweredRatePct: 8.3,
+      byQuestion: [
+        {
+          questionRef: "q1",
+          questionText: "How many households lack a piped water connection?",
+          domain: "Water",
+          surveyTitle: "Baseline Survey",
+          unanswered: 2,
+          ofResponses: 3,
+          unansweredPct: 66.7,
+        },
+      ],
+      note: "2 of 24 required answers are missing across 3 submitted response(s).",
+    },
+    invalidResponses: {
+      excludedSubmitted: 1,
+      abandonedSessions: abandonment.abandoned,
+      total: 1 + abandonment.abandoned,
+      basis: "1 excluded submitted response(s) + 2 abandoned/incomplete session(s) = the invalid-response count.",
+    },
   };
 }

@@ -13,6 +13,10 @@ export const RequestOtpBody = registerSchema(
     {
       contact: T.String({ format: 'email' }),
       mobile: T.String({ minLength: 3, maxLength: 32 }),
+      // Abandonment tracking (RPT10 Q-2) — see RecordSessionEventBody. An
+      // id only: it attributes this step to a sitting and carries nothing
+      // about the response itself.
+      sessionId: T.Optional(T.String({ format: 'uuid' })),
     },
     { additionalProperties: false },
   ),
@@ -37,6 +41,7 @@ export const VerifyOtpBody = registerSchema(
     {
       challengeId: T.String({ format: 'uuid' }),
       code: T.String({ minLength: 4, maxLength: 8 }),
+      sessionId: T.Optional(T.String({ format: 'uuid' })),
     },
     { additionalProperties: false },
   ),
@@ -74,6 +79,7 @@ export const SubmitResponseBody = registerSchema(
       gender: T.Optional(Gender),
       ageBracket: AgeBracket,
       answers: T.Record(T.String(), T.Unknown()),
+      sessionId: T.Optional(T.String({ format: 'uuid' })),
     },
     { additionalProperties: false },
   ),

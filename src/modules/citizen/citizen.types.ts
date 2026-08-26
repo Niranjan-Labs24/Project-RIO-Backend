@@ -54,6 +54,11 @@ export interface CheckDuplicateResult {
 export interface RequestOtpPayload {
   contact: string;
   mobile: string;
+  /** Abandonment tracking (RPT10 Q-2) — the session the citizen page opened
+   *  on load, echoed back so this step can be attributed to that sitting.
+   *  Optional throughout: tracking is best-effort and must never be able to
+   *  block a submission (see SurveySessionsService). */
+  sessionId?: string;
 }
 
 export interface RequestOtpResult {
@@ -70,6 +75,11 @@ export interface RequestOtpResult {
 export interface VerifyOtpPayload {
   challengeId: string;
   code: string;
+  /** Abandonment tracking (RPT10 Q-2) — the session the citizen page opened
+   *  on load, echoed back so this step can be attributed to that sitting.
+   *  Optional throughout: tracking is best-effort and must never be able to
+   *  block a submission (see SurveySessionsService). */
+  sessionId?: string;
 }
 
 export interface VerifyOtpResult {
@@ -86,6 +96,11 @@ export interface SubmitResponsePayload {
   gender?: Gender;
   ageBracket: AgeBracket;
   answers: Record<string, unknown>;
+  /** Abandonment tracking (RPT10 Q-2) — the session the citizen page opened
+   *  on load, echoed back so this step can be attributed to that sitting.
+   *  Optional throughout: tracking is best-effort and must never be able to
+   *  block a submission (see SurveySessionsService). */
+  sessionId?: string;
 }
 
 export interface SubmitResponseResult {

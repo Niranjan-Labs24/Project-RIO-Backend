@@ -36,7 +36,7 @@ export function priorityStatusOf(score: number | null): "HIGH" | "MEDIUM" | "LOW
 /** Printed next to every Priority Score. Severity and priority run in opposite
  *  directions; saying so is cheaper than a reader drawing the wrong conclusion. */
 export const PRIORITY_DIRECTION_NOTE =
-  "Priority Score is performance-based: LOWER means more urgent. It is the inverse of the Severity scores on this page, where higher means worse.";
+  "The Village Priority Score is performance-based: LOWER means more urgent. It runs opposite to both the Severity scores and the per-need Priority Score column on this page, where HIGHER means more urgent.";
 
 /** Backend decides the adjective; the prompt must use it verbatim. */
 export function dontKnowBandOf(rate: number): DontKnowBand {

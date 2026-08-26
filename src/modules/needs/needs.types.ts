@@ -28,6 +28,7 @@ export interface NeedRow {
   // reference — see NeedsService.formatInternalReferenceId for the
   // human-legible "NEED-000123" form exposed on `Need` below.
   internalRefSeq: number;
+  affectedPopulation: number | null;
   status: NeedStatus;
   domain: string | null;
   subDomain: string | null;
@@ -76,6 +77,12 @@ export interface Need {
   // RIO-DATA-003: system-generated, never user-supplied or user-editable —
   // "NEED-000123" form, see NeedsService.formatInternalReferenceId.
   internalReferenceId: string;
+  // Roughly how many people this Need affects — the recorder's own estimate,
+  // asked for on the need-entry form (client-confirmed Option A). Null when
+  // it wasn't answered, and on every Need recorded before the question
+  // existed; the Top-Priority Report prints a dash and says why rather than
+  // substituting the study-area population. See schema.prisma's comment.
+  affectedPopulation: number | null;
   status: NeedStatus;
   // No longer set at creation — AI Classification runs automatically right
   // after a Need is saved (see NeedsService.create /
@@ -136,6 +143,7 @@ export interface CreateNeedPayload {
   governorateIds?: string[];
   centerIds?: string[];
   referenceId?: string;
+  affectedPopulation?: number;
   affectedPeople?: number;
   affectedHouseholds?: number;
 }
@@ -147,6 +155,8 @@ export interface UpdateNeedPayload {
   governorateIds?: string[];
   centerIds?: string[];
   referenceId?: string | null;
+  // Explicit null clears the estimate; omitted leaves it untouched.
+  affectedPopulation?: number | null;
   affectedPeople?: number | null;
   affectedHouseholds?: number | null;
 }

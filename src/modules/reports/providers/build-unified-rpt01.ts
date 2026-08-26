@@ -35,6 +35,9 @@ export interface UnifiedRpt01Input {
   /** '' for the consolidated scope, else the village id. Part of the need id. */
   villageScope: string;
   unitGeo: UnitGeo;
+  /** The source Need's own affected-population estimate — see
+   *  BuildNeedRecordsInput.sourceNeedAffectedPopulation. */
+  sourceNeedAffectedPopulation: number | null;
 
   kpiRollups: KpiRollupRow[];
   classificationByIndicator: Map<string, ClassificationRow>;
@@ -88,6 +91,7 @@ export function buildUnifiedRpt01(input: UnifiedRpt01Input): UnifiedRpt01Section
     calculatedAt,
     villageScope,
     unitGeo,
+    sourceNeedAffectedPopulation,
     kpiRollups,
     classificationByIndicator,
     segmentsByIndicator,
@@ -131,6 +135,7 @@ export function buildUnifiedRpt01(input: UnifiedRpt01Input): UnifiedRpt01Section
     thresholds,
     surveyId,
     villageScope,
+    sourceNeedAffectedPopulation,
   });
 
   // ── Section 3 — the domain → sub-domain → indicator tree ──

@@ -25,6 +25,19 @@ export interface Rpt01ReferenceData {
   /** ResponseSeverityScore.scoreStatus tallies — what "excluded" actually was. */
   exclusionBreakdown: Array<{ status: string; count: number }>;
   totalAnswers: number;
+  /**
+   * The recorded estimate of how many people the source Need affects — the
+   * answer to the need-entry question added for the Top-Priority Report's
+   * Affected Population column (client-confirmed Option A, 24 Aug 2026).
+   *
+   * Read from the Need this survey was built for (Survey.needId), because that
+   * is the only place the estimate exists: a survey's KPI rollups are
+   * indicator-level breakdowns OF that one need, and no indicator carries a
+   * reach figure of its own. Null when the question wasn't answered, and on
+   * every Need recorded before it was asked — the column then prints a dash
+   * with the reason, exactly as before.
+   */
+  sourceNeedAffectedPopulation: number | null;
 }
 
 export async function loadRpt01ReferenceData(
@@ -34,7 +47,7 @@ export async function loadRpt01ReferenceData(
   const { studyId, surveyId, methodologyVersionId } = query;
 
   return tenant.runInOrgContext(async (tx) => {
-    const [questions, weights, surveyQuestions, answerStatuses] = await Promise.all([
+    const [questions, weights, surveyQuestions, answerStatuses, survey] = await Promise.all([
       // Same selector the scoring pipeline uses, now version-scoped
       // (RIO-AI-005): `methodology_version_id` is NOT NULL as of
       // 20260812090000, so the old "bank questions may carry a null version"
@@ -54,6 +67,13 @@ export async function loadRpt01ReferenceData(
         by: ["scoreStatus"],
         where: { studyId, surveyId, methodologyVersionId },
         _count: true,
+      }),
+      // One hop to the source Need for its affected-population estimate. Read
+      // here rather than in the caller so it lands in the SAME org-scoped
+      // transaction as everything else this report needs (RIO-NFR-005).
+      tx.survey.findUnique({
+        where: { id: surveyId },
+        select: { need: { select: { affectedPopulation: true } } },
       }),
     ]);
 
@@ -132,6 +152,7 @@ export async function loadRpt01ReferenceData(
       questionsAskedByDomainKey,
       exclusionBreakdown,
       totalAnswers: exclusionBreakdown.reduce((n, e) => n + e.count, 0),
+      sourceNeedAffectedPopulation: survey?.need?.affectedPopulation ?? null,
     };
   });
 }

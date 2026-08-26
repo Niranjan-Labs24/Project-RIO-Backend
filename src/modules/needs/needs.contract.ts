@@ -13,6 +13,14 @@ const Villages = T.Array(T.String({ minLength: 1, maxLength: 200 }), { maxItems:
 const GovernorateIds = T.Array(T.String({ format: 'uuid' }), { maxItems: 150 });
 const CenterIds = T.Array(T.String({ format: 'uuid' }), { maxItems: 1404 });
 
+// "Roughly how many people does this need affect?" — the field researcher's
+// own estimate, captured at need entry (client-confirmed Option A). Optional:
+// an estimate nobody is confident in is worth less than an honest blank, and
+// the report prints a dash and says why rather than inventing a figure.
+// Integer >= 0; the upper bound is Saudi Arabia's population rounded up, which
+// catches a mistyped digit run without rejecting any real answer.
+const AffectedPopulation = T.Integer({ minimum: 0, maximum: 50_000_000 });
+
 export const CreateNeedBody = registerSchema(
   'CreateNeedBody',
   T.Object(
@@ -28,6 +36,7 @@ export const CreateNeedBody = registerSchema(
       // The submitter's own external tracking id (a field form number, a
       // partner org's case id, etc.) — free text, never validated.
       referenceId: T.Optional(T.String({ maxLength: 200 })),
+      affectedPopulation: T.Optional(AffectedPopulation),
       // RIO-FR-005 (Round 4, client-confirmed 2026-08-24) — "Roughly how
       // many people/households does this need affect?" This manually
       // entered figure is the PRIMARY Affected Population value (see
@@ -51,6 +60,9 @@ export const UpdateNeedBody = registerSchema(
       governorateIds: T.Optional(GovernorateIds),
       centerIds: T.Optional(CenterIds),
       referenceId: T.Optional(T.Union([T.String({ maxLength: 200 }), T.Null()])),
+      // Null is a real value here, not "leave alone" — it clears an estimate
+      // that turned out to be wrong. Omitting the key leaves it untouched.
+      affectedPopulation: T.Optional(T.Union([AffectedPopulation, T.Null()])),
       affectedPeople: T.Optional(T.Union([T.Integer({ minimum: 0 }), T.Null()])),
       affectedHouseholds: T.Optional(T.Union([T.Integer({ minimum: 0 }), T.Null()])),
     },
@@ -83,6 +95,7 @@ export const BulkImportNeedsBody = registerSchema(
           statement: T.String({ minLength: 1, maxLength: 5000 }),
           village: T.Optional(T.String({ maxLength: 500 })),
           referenceId: T.Optional(T.String({ maxLength: 200 })),
+          affectedPopulation: T.Optional(AffectedPopulation),
         }),
         { maxItems: 2000 },
       ),

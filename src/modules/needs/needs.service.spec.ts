@@ -16,6 +16,7 @@ function makeRow(overrides: Partial<NeedRow> = {}): NeedRow {
     source: 'manual_entry',
     referenceId: null,
     internalRefSeq: 1,
+    affectedPopulation: null,
     status: 'draft',
     domain: 'Water',
     subDomain: 'Access',
@@ -174,6 +175,33 @@ describe('NeedsService', () => {
       expect(classified).toEqual([need.id]);
     });
 
+    // RIO-RPT-001 Option A: the need-entry form's "roughly how many people does
+    // this need affect?" answer. This is the ONLY place the figure can enter the
+    // system, so a create path that silently dropped it would leave the
+    // Top-Priority column empty with no way to tell why.
+    it('stores the affected-population estimate when the form supplies one', async () => {
+      let createdData: Record<string, unknown> | undefined;
+      const svc = makeService(fakeTenant({ study: { id: 'study-1' }, onNeedCreate: (d) => { createdData = d; } }));
+      const need = await orgContext.run(ctx, () =>
+        svc.create('study-1', { title: 'T', statement: 'S', village: ['V'], affectedPopulation: 450 }),
+      );
+      expect(createdData?.affectedPopulation).toBe(450);
+      expect(need.affectedPopulation).toBe(450);
+    });
+
+    // Unanswered must reach the database as NULL, not 0 — the report says
+    // different things about the two, and 0 would assert that a recorded need
+    // affects nobody.
+    it('leaves the affected population null when the question was not answered', async () => {
+      let createdData: Record<string, unknown> | undefined;
+      const svc = makeService(fakeTenant({ study: { id: 'study-1' }, onNeedCreate: (d) => { createdData = d; } }));
+      const need = await orgContext.run(ctx, () =>
+        svc.create('study-1', { title: 'T', statement: 'S', village: ['V'] }),
+      );
+      expect(createdData?.affectedPopulation).toBeNull();
+      expect(need.affectedPopulation).toBeNull();
+    });
+
     it('stores referenceId when provided', async () => {
       let createdData: Record<string, unknown> | undefined;
       const svc = makeService(fakeTenant({ study: { id: 'study-1' }, onNeedCreate: (d) => { createdData = d; } }));
@@ -252,6 +280,39 @@ describe('NeedsService', () => {
       const svc = makeService(fakeTenant({ need: current, onNeedUpdate: (d) => { updateData = d; } }));
       await orgContext.run(ctx, () => svc.update('need-1', { referenceId: null }));
       expect(updateData).toEqual({ referenceId: null });
+    });
+
+    // Revising a first guess must be possible — and must show up in the audit
+    // trail under a label a reader recognises, since this figure ends up on a
+    // funding-facing report.
+    it('patches the affected-population estimate and audits it by name', async () => {
+      let updateData: Record<string, unknown> | undefined;
+      const recorded: { changes?: { field: string; before: unknown; after: unknown }[] }[] = [];
+      const audit = { record: async (i: unknown) => { recorded.push(i as never); } };
+      const current = makeRow({ affectedPopulation: 200 });
+      const svc = makeService(
+        fakeTenant({ need: current, onNeedUpdate: (d) => { updateData = d; }, users: [{ id: 'me', name: 'Me' }] }),
+        audit,
+      );
+
+      const updated = await orgContext.run(ctx, () => svc.update('need-1', { affectedPopulation: 450 }));
+
+      expect(updateData).toEqual({ affectedPopulation: 450 });
+      expect(updated.affectedPopulation).toBe(450);
+      expect(recorded[0]?.changes).toEqual([
+        { field: 'Affected Population', before: 200, after: 450 },
+      ]);
+    });
+
+    // An estimate that turns out to be unfounded has to be removable — back to
+    // "not known", which the report prints as a dash, NOT to 0.
+    it('allows clearing the affected-population estimate back to null', async () => {
+      let updateData: Record<string, unknown> | undefined;
+      const current = makeRow({ affectedPopulation: 200 });
+      const svc = makeService(fakeTenant({ need: current, onNeedUpdate: (d) => { updateData = d; } }));
+      const updated = await orgContext.run(ctx, () => svc.update('need-1', { affectedPopulation: null }));
+      expect(updateData).toEqual({ affectedPopulation: null });
+      expect(updated.affectedPopulation).toBeNull();
     });
 
     it('does not record an audit event when the patch changes nothing', async () => {

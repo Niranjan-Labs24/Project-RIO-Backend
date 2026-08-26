@@ -8,7 +8,22 @@
 // been removed now that the real provider is in place. "Body changes,
 // contract doesn't."
 
-import type { UnifiedRpt01Sections } from "./unified-report.types";
+import type {
+  CalculationBasisBlock,
+  DataQualityNotesBlock,
+  PriorityNeedsBlock,
+  UnifiedRpt01Sections,
+} from "./unified-report.types";
+import type { UnitGeo } from "./need-record.types";
+import type { DataCollectionCompletenessBlock } from "./providers/load-data-collection-completeness";
+
+export type {
+  AbandonmentBlock,
+  DataCollectionCompletenessBlock,
+  DataCollectionScope,
+  InvalidResponseBlock,
+  UnansweredRequiredBlock,
+} from "./providers/load-data-collection-completeness";
 
 /** Confidence banding carried through from ScoreRollup.confidenceLevel. */
 export type ConfidenceLevel = "LOW" | "STANDARD";
@@ -97,6 +112,22 @@ export interface DomainComponent {
   // assessment cycles exist (or a real per-domain AI note is produced).
   trendNote: string;
   isCriticalDomain: boolean;
+  // ── No-masking rule (METH — Domain Comparison) ──
+  // "A domain can average Low while hiding a Critical KPI; the max-KPI column
+  // surfaces it regardless of the average." severityScore above is the AVERAGE,
+  // so a domain-level rollup that prints it alone violates the rule. These three
+  // are the rule in table form and must be rendered beside the average wherever
+  // domains are tabulated — Village, Sector and Region alike.
+  // Null (not 0) when this domain has no measured KPI rollups: an unmeasured
+  // domain must not read as "worst KPI is 0", i.e. nothing wrong here.
+  maxKpiSeverity: number | null;
+  /** The KPI carrying maxKpiSeverity — names the finding the average hides. */
+  maxKpiName: string | null;
+  /** KPIs at or above the CRITICAL band within this domain. */
+  criticalKpiCount: number;
+  /** True when the domain's average bands milder than its worst KPI. Drives the
+   *  Domain Masking Alert note. */
+  masksCriticalFinding: boolean;
   // Present only for low-confidence domains (drives the data-quality note).
   validResponseCount?: number;
   dontKnowRate?: number;
@@ -372,10 +403,35 @@ export interface CombinedReportContent {
 
 // ── Aux shapes for the other core reports (fleshed out in Steps 2 & 5). ──
 
+/** What a study-scoped domain report actually covers. RPT04 is described as
+ *  study-wide, but the snapshot builder is survey-scoped — this block states the
+ *  resolved survey rather than leaving the reader to assume every survey in the
+ *  study is represented. */
+export interface SectorScopeBasis {
+  surveyId: string;
+  surveyTitle: string;
+  /** Total surveys in the study, so "1 of 3" is visible rather than implied. */
+  studySurveyCount: number;
+  /** How the survey was chosen — explicit filter, or the resolver's default. */
+  resolution: "EXPLICIT_FILTER" | "LATEST_PUBLISHED";
+  /** Set when the report covers fewer surveys than the study contains. */
+  partialScopeNote: string | null;
+}
+
 export interface SectorReportContent {
   header: ReportHeader;
-  domains: DomainComponent[];
-  overall: SeverityBlock;
+  /** Which survey the study-scoped figures were actually resolved from. Printed
+   *  on the report: `resolveSurveyId` picks ONE survey (latest published), so a
+   *  study with several surveys would otherwise report one of them under the
+   *  study's name with nothing saying which. */
+  scopeBasis: SectorScopeBasis;
+  /** Overall Needs Index + band, with the domain rows nested — the SAME key and
+   *  shape VillageReportContent uses. It was `overall` until 24 Aug 2026, and
+   *  both renderers look for `severity` (report-doc.ts, report-content-view
+   *  .tsx), so the gauge and the band were computed and then silently dropped:
+   *  `domains` at the top level satisfied `isCore`, which suppressed even the
+   *  flat key-value fallback. Do not rename it back. */
+  severity: SeverityBlock;
   aiSummary: AiSummaryBlock;
   // First-class Data Quality and Trend notes (see VillageReportContent).
   dataQualityNote: string;
@@ -389,6 +445,22 @@ export interface SectorReportContent {
 
 export interface RegionReportContent {
   header: ReportHeader;
+  /** Which region this report actually covers, and how much of it was
+   *  measurable. Present so a reader can tell a region with no scored villages
+   *  apart from a region that was never selected. */
+  regionScope: {
+    regionName: string | null;
+    governorateCount: number;
+    villageCount: number;
+    /** Needs in the study with no governorate link — counted, never dropped:
+     *  they are real needs that simply cannot be attributed to a region. */
+    unmappedNeedCount: number;
+    unscoredVillages: string[];
+    /** How the per-governorate figures were derived, printed on the report so
+     *  the aggregation is not something a reader has to infer. */
+    aggregationBasis: string;
+  };
+  /** One row per GOVERNORATE within the region. */
   regions: Array<{
     regionName: string;
     governorate: string | null;
@@ -398,8 +470,22 @@ export interface RegionReportContent {
     // Severity (Needs Index, 0–100) shown alongside the priority score so the
     // two are legible side by side. Null when nothing was scored.
     severityScore: number | null;
+    /** Worst single village beneath this governorate. Carried alongside the
+     *  average so the mean cannot hide a critical village — the methodology's
+     *  no-masking rule applied to geography. */
+    maxVillageSeverity?: number | null;
     priorityScore: number | null;
     priorityStatus: PriorityStatus | null;
+  }>;
+  /** The drill level beneath the governorate rows. */
+  villages: Array<{
+    village: string;
+    governorate: string;
+    needCount: number;
+    responseCount: number;
+    severityScore: number | null;
+    priorityScore: number | null;
+    priorityStatus: string | null;
   }>;
   aiSummary: AiSummaryBlock;
   // Data Quality and Trend notes are promoted to first-class report fields for
@@ -464,6 +550,136 @@ export interface SharingStatusContent {
     decidedAt: string | null;
   }>;
   filters: Record<string, unknown>;
+}
+
+// ──────── RPT03/RPT09 Top-Priority · RPT10 Data-Quality ────────
+//
+// Both are FOCUSED PROJECTIONS of the same unified pipeline RPT01 runs
+// (buildUnifiedRpt01) rather than independent aggregations. That is what makes
+// them reconcile with the Individual Survey Report and with each other by
+// construction — the same guarantee RPT15 gets from sharing surveyHalf(), and
+// what acceptance criterion 3 ("figures reconcile exactly") actually requires.
+// A second, parallel aggregation would satisfy the criterion only by luck.
+
+/** One row of the Top-Priority report's tier summary. Counts are over RANKED
+ *  needs only; unmeasured needs are reported separately and never banded. */
+export interface PriorityTierRow {
+  tier: string; // SeverityBand — "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"
+  count: number;
+  sharePct: number;
+  /** How many of this tier's needs carry the equity flag. The methodology
+   *  promotes an equity-flagged need a tier, so the count is shown rather than
+   *  left implicit in the banding. */
+  equityFlagged: number;
+}
+
+/** Per-domain rollup carrying BOTH the average and the maximum KPI severity.
+ *
+ *  The methodology's no-masking rule (METH — Domain Comparison): "a domain can
+ *  average Low while still hiding a critical KPI". Reporting the average alone
+ *  is the exact failure that rule exists to prevent, so `maxKpiSeverity` and
+ *  `criticalKpiCount` are mandatory columns, not optional extras. */
+export interface DomainPriorityRollupRow {
+  domain: string;
+  domainKey: string;
+  averageSeverity: number | null;
+  maxKpiSeverity: number | null;
+  /** KPIs at or above the CRITICAL band floor within this domain. */
+  criticalKpiCount: number;
+  kpiCount: number;
+  /** Set when the domain's average band is milder than its worst KPI's band —
+   *  i.e. the average is actively masking a more severe finding. */
+  masksCriticalFinding: boolean;
+}
+
+/** RPT03 / RPT09 — the ranked list of highest-priority needs.
+ *
+ *  `priorityNeeds` and `calculationBasis` are the SAME blocks RPT01 emits, so
+ *  report-doc.ts and the frontend viewer already know how to render them and
+ *  the figures are literally the same objects. */
+export interface TopPriorityReportContent {
+  header: ReportHeader;
+  reportMeta: FocusedReportMeta;
+  unitGeo: UnitGeo;
+  scope: {
+    villages: string;
+    governorate: string | null;
+  };
+  /** Distribution across severity bands — the headline of the report. */
+  tierSummary: PriorityTierRow[];
+  /** Domain rollup with the no-masking columns. */
+  domainRollup: DomainPriorityRollupRow[];
+  /** Ranked needs + the unmeasured ones, verbatim from the unified pipeline. */
+  priorityNeeds: PriorityNeedsBlock;
+  /** The domain → sub-domain → indicator hierarchy. Carried so the ranked rows
+   *  have somewhere to drill TO: report-doc builds one materialised detail page
+   *  per domain and indicator from this, and without it every ranked need would
+   *  be a dead end. */
+  needsByDomain: UnifiedRpt01Sections["needsByDomain"];
+  /** The arithmetic behind every figure above — the methodology's
+   *  explainability requirement ("the components of every score are displayed"). */
+  calculationBasis: CalculationBasisBlock;
+  responseQuality: ResponseQuality;
+  aiSummary: AiSummaryBlock;
+  dataQualityNote: string;
+  trendNote: string;
+  demographics: Demographics | null;
+  filters: Record<string, unknown>;
+}
+
+/** RPT10 — completeness, confidence and exclusion flags.
+ *
+ *  Acceptance criterion 6: this report FLAGS incomplete or unreviewed records,
+ *  it never silently excludes them. Every count below has a corresponding
+ *  itemised list so a reader can see the records behind the number. */
+export interface DataQualityReportContent {
+  header: ReportHeader;
+  reportMeta: FocusedReportMeta;
+  unitGeo: UnitGeo;
+  /** The mandatory Section 6 block, verbatim from the unified pipeline. */
+  dataQualityNotes: DataQualityNotesBlock;
+  /** Headline completeness tiles, in the order they should be read. */
+  completeness: Array<{ label: string; value: string }>;
+  /** Per-domain confidence with the condition that actually fired. */
+  domainConfidence: Array<{
+    domain: string;
+    confidence: ConfidenceLevel;
+    reason: string;
+    validResponseRatePct: number;
+    dontKnowRatePct: number;
+    kpiCount: number;
+  }>;
+  /** Indicators that produced no measurable severity — listed, not dropped.
+   *  This is the AC-6 core: `notMeasuredCount` must equal this array's length. */
+  flaggedRecords: Array<{
+    indicatorName: string;
+    domain: string;
+    flag: string;
+    reason: string;
+  }>;
+  /** Data-collection completeness — unanswered required questions, survey
+   *  abandonment, and the combined invalid-response count (client Q14 answer
+   *  (a), and the 24 Aug follow-up settling how abandonment is captured and
+   *  counted). Null only for a report rendered from a stored snapshot written
+   *  before this block existed; every fresh RPT10 carries it. */
+  dataCollection: DataCollectionCompletenessBlock | null;
+  responseQuality: ResponseQuality;
+  aiSummary: AiSummaryBlock;
+  dataQualityNote: string;
+  trendNote: string;
+  filters: Record<string, unknown>;
+}
+
+/** Cover badge for the focused reports — same shape as RPT01's ReportMeta so
+ *  report-doc.ts's reportBasisSection renders it unchanged. */
+export interface FocusedReportMeta {
+  reportType: string;
+  reportTypeName: string;
+  sourceBasis: string;
+  isQuantitative: boolean;
+  severityScorePolicy: string;
+  contentVersion: number;
+  generatedAt: string;
 }
 
 /** Gender/rural demographics — null until demographic capture ships, which is

@@ -5,10 +5,10 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  deepmerge-ts: '>=8.0.0'
   fast-uri: '>=3.1.5'
   find-my-way: '>=9.7.0'
   minimatch@10.2.5>brace-expansion: '>=5.0.9'
-  deepmerge-ts: '>=8.0.0'
 
 importers:
 

@@ -50,6 +50,7 @@ import {
   snapshotToSectorContent,
   snapshotToVillageContent,
 } from './providers/snapshot-to-content';
+import { loadSectorScopeBasis } from './providers/load-sector-scope-basis';
 
 // VILLAGE/SECTOR/REGION/EXECUTIVE are the Insights-page scopes. INDIVIDUAL and
 // COMBINED are the survey-scoped report scopes (RPT01 / RPT15) — same snapshot
@@ -75,6 +76,21 @@ export interface ScopeFilters {
   villageIds?: string[];
 }
 
+/** Canonical form for comparing two filter sets — absent, '' and undefined all
+ *  mean "not filtered", and `villageIds` order is not part of its meaning. */
+function canonicalScopeFilters(f: ScopeFilters): string {
+  return JSON.stringify({
+    villageId: f.villageId || '',
+    domainKey: f.domainKey || '',
+    regionId: f.regionId || '',
+    villageIds: [...(f.villageIds ?? [])].sort(),
+  });
+}
+
+export function scopeFiltersMatch(a: ScopeFilters, b: ScopeFilters): boolean {
+  return canonicalScopeFilters(a) === canonicalScopeFilters(b);
+}
+
 /** A SUB_DOMAIN or INDICATOR ScoreRollup row, narrowed to what a report needs. */
 export interface RollupLevelRow {
   entityId: string;
@@ -90,6 +106,13 @@ export interface KpiRollupSnapshotRow extends RollupLevelRow {
   excludedResponseCount: number;
   dontKnowCount: number;
   notApplicableCount: number;
+  /** The domain this KPI sits under, NORMALIZED so it joins onto
+   *  domainSeverityScores[].domainKey. ScoreRollup does not carry a KPI's parent
+   *  domain, so it is resolved from the Question set the same way topKpis does
+   *  (resolveKpiDomain). Carried on every KPI row — not just the top ten — so
+   *  the no-masking rule can be derived per domain across ALL its KPIs. */
+  domainKey: string;
+  domainName: string;
 }
 
 export interface ReportDataSnapshot {
@@ -201,7 +224,9 @@ export interface ReportDataSnapshot {
   questionsAskedByDomain: Array<{ domain: string; domainKey: string; count: number }>;
   /** Canonical geography — ONE resolver feeds the header, this AI snapshot and
    *  the coverage block, so the narrative cannot name a different set of
-   *  governorates than the report header does. Survey-level scopes only. */
+   *  governorates than the report header does. The NEED's geography at a
+   *  survey-level scope, the STUDY's at an aggregate one. Null only on a
+   *  snapshot cached before aggregate scopes carried it. */
   unitGeo: UnitGeo | null;
   evidence: Array<{
     id: string;
@@ -410,8 +435,16 @@ export class ReportSummaryService {
       // wrong one silently produced zero for every domain. Custom questions carry
       // their own domain on the SurveyQuestion row.
       // Canonical geography, read inside this same transaction so nothing opens
-      // a nested one. Survey-level scopes only: an aggregate scope spans many
-      // needs and has no single unit geography.
+      // a nested one. A survey-level scope takes the NEED's geography; an
+      // aggregate scope spans many needs, so it takes the STUDY's.
+      //
+      // Aggregate scopes used to leave this null, and the study-scoped reports
+      // built on the unified half (RPT03 Top-Priority, RPT10 Data-Quality, both
+      // of which ask for scope EXECUTIVE) fell back to EMPTY_UNIT_GEO — printing
+      // a Geographic Scope block of dashes under the sentence "No governorate or
+      // village is linked to this need." That was doubly wrong: those reports
+      // are not about one need, and the study's governorates were sitting right
+      // here, already loaded.
       let unitGeo: UnitGeo | null = null;
       if (SURVEY_LEVEL_SCOPES.includes(scope)) {
         const [need, governorateLinks, centerLinks] = await Promise.all([
@@ -432,6 +465,23 @@ export class ReportSummaryService {
             regionName: g.governorate.region.name,
           })),
           centers: centerLinks.map((c) => ({ id: c.centerId, name: c.center.name })),
+          villageId: villageId || undefined,
+        });
+      } else {
+        // Study-level: the same rows that produced `governorateName` /
+        // `regionName` above, so the block and the header cannot disagree.
+        // Centers are a Need-level link and have no study equivalent, so they
+        // stay empty rather than being borrowed from an arbitrary need.
+        unitGeo = buildUnitGeo({
+          needVillages: [],
+          studyVillages: study.villages ?? [],
+          governorates: study.studyGovernorates.map((sg) => ({
+            id: sg.governorateId,
+            name: sg.governorate.name,
+            regionId: sg.governorate.regionId,
+            regionName: sg.governorate.region.name,
+          })),
+          centers: [],
           villageId: villageId || undefined,
         });
       }
@@ -599,7 +649,9 @@ export class ReportSummaryService {
           // For a survey-scoped report these are the NEED's governorates, not
           // the whole study's. Handing the study's wider list to Gemini is how
           // the narrative came to name "Abha, Ahad Rufaydah" while the header
-          // beside it named only Abha. Aggregate scopes keep the study's list.
+          // beside it named only Abha. Aggregate scopes keep the study's list —
+          // unitGeo is built from the study's own governorate rows there, so
+          // this reads the same names either way (deduplicated).
           governorateName: unitGeo ? unitGeo.governorateNames.join(', ') || null : governorateName,
           regionName: unitGeo ? unitGeo.regionName : regionName,
           population: study.population,
@@ -656,12 +708,18 @@ export class ReportSummaryService {
           })),
           subDomainSeverityScores: subDomainRollups.map(toRollupLevelRow),
           indicatorSeverityScores: indicatorRollups.map(toRollupLevelRow),
-          kpiSeverityScores: allKpiRollups.map((k) => ({
-            ...toRollupLevelRow(k),
-            excludedResponseCount: k.excludedResponseCount,
-            dontKnowCount: k.dontKnowCount,
-            notApplicableCount: k.notApplicableCount,
-          })),
+          kpiSeverityScores: allKpiRollups.map((k) => {
+            // Same join as topKpis, by KPI name — see resolveKpiDomain.
+            const { domainName } = resolveKpiDomain(k, domainByKpi, indicatorByKpi);
+            return {
+              ...toRollupLevelRow(k),
+              excludedResponseCount: k.excludedResponseCount,
+              dontKnowCount: k.dontKnowCount,
+              notApplicableCount: k.notApplicableCount,
+              domainKey: normalizeDomainKey(domainName),
+              domainName,
+            };
+          }),
         },
         priority: {
           // No assessment → null, never 0. A 0 priority score banded as 'LOW'
@@ -848,16 +906,28 @@ ${extra}`;
 
   /**
    * Fetch current active priority summary for scope.
+   *
+   * `scopeFilters` is part of the IDENTITY of a summary, not decoration. Until
+   * 24 Aug 2026 the lookup keyed on villageId alone and then rebuilt the
+   * snapshot from whatever filters the STORED row happened to carry. For SECTOR
+   * (domainKey) and REGION (regionId) — neither of which touches villageId —
+   * that meant a request for one domain returned the summary AND the rollups of
+   * whichever domain was summarised first: the report's numbers changed subject
+   * without its heading changing. Matching on the filters is what stops that.
    */
   async getSummary(
     studyId: string,
     surveyId: string,
     scope: SummaryScopeType = 'VILLAGE',
-    villageId: string = '',
+    villageIdOrFilters: string | ScopeFilters = '',
   ) {
     const orgId = requireOrgId();
+    const filters: ScopeFilters =
+      typeof villageIdOrFilters === 'string' ? { villageId: villageIdOrFilters } : villageIdOrFilters;
+    const villageId = filters.villageId ?? '';
+
     return this.tenant.runInOrgContext(async (tx) => {
-      const summary = await tx.aiPrioritySummary.findFirst({
+      const candidates = await tx.aiPrioritySummary.findMany({
         where: {
           orgId,
           studyId,
@@ -869,9 +939,15 @@ ${extra}`;
         orderBy: { createdAt: 'desc' },
       });
 
+      // Compared canonically rather than with a Prisma JSON `equals`, which is
+      // key-order sensitive and would miss a row written by an older caller.
+      const summary = candidates.find((c) =>
+        scopeFiltersMatch((c.scopeFilters as ScopeFilters | null) ?? { villageId }, filters),
+      );
       if (!summary) return null;
 
-      const filters = (summary.scopeFilters as ScopeFilters) || { villageId };
+      // Built from the REQUESTED filters. Reading them back off the stored row
+      // is what let a mismatched summary drag its own snapshot along with it.
       const snapshotData = await this.buildReportDataSnapshot(studyId, surveyId, scope, filters);
       return {
         summary,
@@ -1035,7 +1111,16 @@ ${extra}`;
     const mapperArgs = { snapshot, aiOutput, demographics, filters: scopeFilters as Record<string, unknown> };
     const content =
       scope === 'SECTOR'
-        ? snapshotToSectorContent(mapperArgs)
+        ? snapshotToSectorContent({
+            ...mapperArgs,
+            // Saved from Insights, where the summary already names its survey —
+            // so the basis is EXPLICIT, not the resolver's default guess.
+            scopeBasis: await loadSectorScopeBasis(this.tenant, {
+              studyId: summary.studyId,
+              surveyId: summary.surveyId,
+              explicitSurveyFilter: true,
+            }),
+          })
         : scope === 'REGION'
           ? snapshotToRegionContent(mapperArgs)
           : scope === 'EXECUTIVE'
