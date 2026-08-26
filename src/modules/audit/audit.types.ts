@@ -2,6 +2,7 @@ export type AuditAction =
   | 'create'
   | 'edit'
   | 'approve'
+  | 'reject'
   | 'share'
   | 'delete'
   | 'login'
@@ -52,7 +53,9 @@ export type AuditEntityType =
   | 'evidence_document'
   | 'evidence_document_summary'
   | 'combined_report_summary'
-  | 'ncnp_report';
+  | 'ncnp_report'
+  | 'question'
+  | 'need_decision';
 
 export interface AuditChange {
   field: string;

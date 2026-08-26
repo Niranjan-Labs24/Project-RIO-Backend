@@ -32,6 +32,12 @@ export interface OrganizationSummary extends Organization {
   studyCount?: number;
   surveyCount?: number;
   reportCount?: number;
+  // Subset of `reportCount` whose status is `released` or `archived` — the
+  // closest real concept to "published" (there is no `published` value in
+  // ReportStatus itself). Powers the System Admin dashboard's "Published
+  // Reports" stat, which previously summed unfiltered `reportCount` across
+  // every org and so counted drafts/rejected/submitted reports too.
+  publishedReportCount?: number;
   ngoAdminName?: string | null;
   ngoAdminEmail?: string | null;
   deactivationReason?: string | null;

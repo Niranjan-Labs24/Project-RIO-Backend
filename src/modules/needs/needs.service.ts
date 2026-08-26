@@ -8,7 +8,7 @@ import { GeographyService } from '../geography/geography.service';
 import { AiDecisionsService } from '../ai-decisions/ai-decisions.service';
 import { NEED_EDITABLE_STATUSES, type CreateNeedPayload, type Need, type NeedRow, type UpdateNeedPayload } from './needs.types';
 
-const DIFF_FIELDS = ['title', 'statement', 'village', 'referenceId'] as const;
+const DIFF_FIELDS = ['title', 'statement', 'village', 'referenceId', 'affectedPeople', 'affectedHouseholds'] as const;
 
 // RIO-DATA-003: system-generated internal reference, derived from the
 // `internalRefSeq` autoincrement column so there's a single source of
@@ -24,6 +24,8 @@ const DIFF_FIELD_LABELS: Record<(typeof DIFF_FIELDS)[number], string> = {
   statement: 'Statement',
   village: 'Village',
   referenceId: 'Reference ID',
+  affectedPeople: 'Affected People',
+  affectedHouseholds: 'Affected Households',
 };
 
 // Raw shape Prisma returns once `needGovernorates`/`needCenters` are
@@ -86,6 +88,8 @@ export class NeedsService {
           village: payload.village ?? [],
           source: 'manual_entry',
           referenceId: payload.referenceId ?? null,
+          affectedPeople: payload.affectedPeople ?? null,
+          affectedHouseholds: payload.affectedHouseholds ?? null,
           createdBy,
           status: 'pending_ai_classification',
           needGovernorates: {
@@ -226,6 +230,8 @@ export class NeedsService {
           ...(patch.statement !== undefined ? { statement: patch.statement } : {}),
           ...(patch.village !== undefined ? { village: patch.village } : {}),
           ...(patch.referenceId !== undefined ? { referenceId: patch.referenceId } : {}),
+          ...(patch.affectedPeople !== undefined ? { affectedPeople: patch.affectedPeople } : {}),
+          ...(patch.affectedHouseholds !== undefined ? { affectedHouseholds: patch.affectedHouseholds } : {}),
         },
       });
       if (patch.governorateIds !== undefined) {
@@ -272,6 +278,36 @@ export class NeedsService {
       });
     }
 
+    return this.toNeed(updated, await this.resolveUserName(updated.createdBy));
+  }
+
+  // RIO-FR-005 (Q12) — analyst-entered, so deliberately NOT gated behind
+  // NEED_EDITABLE_STATUSES the way title/statement/geography are above:
+  // gap classification is a priority-scoring-stage judgment call that can
+  // legitimately be entered/revised any time after a Need exists, not just
+  // during the pre-classification editing window.
+  async setGapType(needId: string, gapType: string | null): Promise<Need> {
+    const updated = await this.tenant.runInOrgContext(async (tx) => {
+      const currentRaw = (await tx.need.findUnique({ where: { id: needId }, include: GEO_INCLUDE })) as RawNeedWithGeo | null;
+      if (!currentRaw) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+      const before = currentRaw.gapType;
+      const updatedRaw = (await tx.need.update({
+        where: { id: needId },
+        data: { gapType },
+        include: GEO_INCLUDE,
+      })) as RawNeedWithGeo;
+      if (before !== gapType) {
+        await this.audit.record({
+          action: 'edit',
+          entityType: 'need',
+          entityId: needId,
+          entityLabel: currentRaw.title.slice(0, 80),
+          changes: [{ field: 'gapType', before, after: gapType }],
+          sourceRef: currentRaw.referenceId,
+        });
+      }
+      return this.toNeedRow(updatedRaw);
+    });
     return this.toNeed(updated, await this.resolveUserName(updated.createdBy));
   }
 
@@ -410,6 +446,9 @@ export class NeedsService {
         ? (row.proposedDomains as Array<{ domain: string; subDomain: string }>)
         : null,
       proposedReason: row.proposedReason,
+      gapType: row.gapType,
+      affectedPeople: row.affectedPeople,
+      affectedHouseholds: row.affectedHouseholds,
       createdBy: row.createdBy,
       createdByName,
       createdAt: row.createdAt.toISOString(),

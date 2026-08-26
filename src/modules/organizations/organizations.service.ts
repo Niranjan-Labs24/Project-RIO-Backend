@@ -180,15 +180,33 @@ export class OrganizationsService {
         skip,
       }),
     );
-    return (rows as (RawOrgWithGeo & {
+    const typedRows = rows as (RawOrgWithGeo & {
       users: { name: string; email: string }[];
       _count: { users: number; studies: number; surveys: number; reports: number };
-    })[]).map((r) => ({
+    })[];
+
+    // Separate groupBy, not a second `_count.select` entry: Prisma's filtered
+    // relation count reuses the relation's own field name as the result key
+    // (there's no way to alias `reports` twice — once filtered, once not —
+    // in a single `_count.select`), so "published" (released or archived —
+    // ReportStatus has no `published` value of its own) has to be counted
+    // separately and merged in.
+    const publishedCounts = await this.tenant.runAsSupervisor((tx) =>
+      tx.report.groupBy({
+        by: ['orgId'],
+        where: { orgId: { in: typedRows.map((r) => r.id) }, status: { in: ['released', 'archived'] } },
+        _count: { _all: true },
+      }),
+    );
+    const publishedByOrgId = new Map(publishedCounts.map((p) => [p.orgId, p._count._all]));
+
+    return typedRows.map((r) => ({
       ...this.toOrganization(this.toOrgRow(r)),
       memberCount: r._count.users,
       studyCount: r._count.studies,
       surveyCount: r._count.surveys,
       reportCount: r._count.reports,
+      publishedReportCount: publishedByOrgId.get(r.id) ?? 0,
       ngoAdminName: r.users[0]?.name ?? null,
       ngoAdminEmail: r.users[0]?.email ?? null,
     }));

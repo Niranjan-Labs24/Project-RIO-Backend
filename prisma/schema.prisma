@@ -331,6 +331,38 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+// RIO-RBAC-002 (client-confirmed 2026-08-23) — the runtime permission-grant
+// mechanism: Center/NCNP Supervisor holds read-only access everywhere by
+// default (see role-matrix.ts's `center_supervisor` entry); this table is
+// the ONLY way that role ever gets a write/create/approve action, one
+// specific (module, action) pair at a time, applied across every entity,
+// and optionally time-limited.
+// Checked by PermissionGuard as a fallback only when the static role
+// matrix already says no — never widens any other role's static grants.
+// Read-only from the application's perspective otherwise: a grant is
+// revoked (revokedAt/revokedBy set), never deleted or edited in place, so
+// the full grant/revoke history stays intact for audit purposes.
+model PermissionGrant {
+  id          String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  granteeId   String    @map("grantee_id") @db.Uuid
+  module      String    @map("module") @db.VarChar(50)
+  action      String    @map("action") @db.VarChar(20)
+  // RIO-RBAC-002 (client-confirmed 2026-08-23, reconfirmed 2026-08-24) — a
+  // grant always applies across every entity; there is deliberately no
+  // per-entity scope column. (A `target_org_id` column existed briefly and
+  // was dropped in 20260824020000_drop_permission_grant_entity_scope —
+  // the client's answer never allowed scoping to a single entity.)
+  reason      String    @db.VarChar(1000)
+  grantedBy   String    @map("granted_by") @db.Uuid
+  grantedAt   DateTime  @default(now()) @map("granted_at") @db.Timestamptz(6)
+  expiresAt   DateTime? @map("expires_at") @db.Timestamptz(6)
+  revokedAt   DateTime? @map("revoked_at") @db.Timestamptz(6)
+  revokedBy   String?   @map("revoked_by") @db.Uuid
+
+  @@index([granteeId])
+  @@map("permission_grants")
+}
+
 // ──────── RIO-NFR-016: Operational logging ────────
 
 enum SystemLogLevel {
@@ -458,6 +490,21 @@ model Study {
   minimumDetectableEffect Float? @map("minimum_detectable_effect")
   status String @default("active") @db.VarChar(50)
   archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
+  // RIO-FR-012 (Sprint 2 clarification Q4/Q35) — the value is now sourced
+  // from StudyTypeOption via the Methodology Configuration admin screen
+  // rather than free text, but the client still hasn't confirmed the
+  // actual list of Study Type / Target Sector values (Q35, follow-up sent)
+  // or the mapping rule for how each value should restrict Survey
+  // Builder's recommended-questions filter — so this column stays a plain
+  // string (validated against StudyTypeOption.name at the API layer, not a
+  // DB-level FK) until that answer lands, and the filter itself stays the
+  // documented no-op in SurveysService.generateSuggestedQuestions.
+  studyType String? @map("study_type") @db.VarChar(100)
+  // Same status as studyType above — configurable via Methodology
+  // Configuration (TargetSectorOption), same Q35 blocker on real values.
+  // Confirmed (Q3/Q4) to be a distinct classification from methodology
+  // Domain/Sector, not an alias for it.
+  targetSector String? @map("target_sector") @db.VarChar(100)
   archivedBy String? @map("archived_by") @db.Uuid
   archiveReason String? @map("archive_reason") @db.VarChar(500)
   createdBy String      @map("created_by") @db.Uuid
@@ -622,6 +669,30 @@ model Need {
   // same shape as needDomains, since an override can span several.
   proposedDomains Json?   @map("proposed_domains")
   proposedReason  String? @map("proposed_reason")
+  // RIO-FR-005 (Q12, client-confirmed) — one of five fixed values: acute,
+  // chronic, structural, seasonal, equity. Client-confirmed as
+  // analyst-entered, NOT auto-calculated (a separate heuristic classifier
+  // exists in the Reports/RPT01 module for report generation only — see
+  // reports/providers/derive-gap-type.ts — deliberately not reused here,
+  // since that path computes a value, and this field's whole point per the
+  // client is that a human sets it). Optional — "keeps gap classification's
+  // already-confirmed optional status."
+  gapType String? @map("gap_type") @db.VarChar(20)
+  // RIO-FR-005 (Round 4, client-confirmed 2026-08-24) — "Roughly how many
+  // people/households does this need affect?" on the need-entry form. This
+  // manually entered figure is the PRIMARY Affected Population value (not
+  // a GASTAT-derived or survey-respondent-derived estimate — client was
+  // explicit the manual entry is primary and any reference dataset is only
+  // ever a cross-check displayed alongside it). Both fields are optional
+  // and independent — a Need may have one, both, or neither known.
+  //
+  // No GASTAT (Saudi General Authority for Statistics) integration exists
+  // yet — that requires the actual reference dataset/API from the client,
+  // which has not been provided. These two fields are the buildable half
+  // of the Round 4 answer; the GASTAT cross-check display is a separate,
+  // still-blocked follow-up once that dataset arrives.
+  affectedPeople     Int? @map("affected_people")
+  affectedHouseholds Int? @map("affected_households")
   createdBy String     @map("created_by") @db.Uuid
   createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -639,6 +710,7 @@ model Need {
   responseQualityResults ResponseQualityResult[]
   aiSummaries AiSummary[]
   priorityScores PriorityScore[]
+  decisions NeedDecision[]
   aiSuggestions AiSuggestion[]
   evidenceDocuments EvidenceDocument[]
 
@@ -866,6 +938,38 @@ model SubDomain {
 
   @@index([domainId])
   @@map("sub_domains")
+}
+
+// RIO-FR-012/NFR-014 — Study Type is a configurable list managed from
+// Methodology Configuration (client-confirmed: "should be configurable...
+// rather than hardcoded"), not a hardcoded enum. Same shape as
+// Domain/SubDomain — flat, global reference data, no orgId/RLS. Study.
+// studyType stays a plain string validated against this table's `name` at
+// the API layer rather than an FK, so an option can be renamed/retired
+// without a migration touching every Study row that used the old wording.
+model StudyTypeOption {
+  id           String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  name         String   @unique @db.VarChar(100)
+  displayOrder Int      @default(0) @map("display_order")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("study_type_options")
+}
+
+// Same pattern and reasoning as StudyTypeOption. Confirmed (Sprint 2
+// clarification Q3/Q4) to be a distinct classification from methodology
+// Domain/Sector, not an alias for it.
+model TargetSectorOption {
+  id           String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  name         String   @unique @db.VarChar(100)
+  displayOrder Int      @default(0) @map("display_order")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("target_sector_options")
 }
 
 // ──────── KSA Geographic Reference (global, seeded, read-only to cnap_app) ────────
@@ -1314,6 +1418,79 @@ model PriorityScore {
   @@map("priority_scores")
 }
 
+// RIO-FR-005 — Decision Types are a configurable list (client-confirmed,
+// Q10: "should be configurable via an admin screen rather than hardcoded —
+// starting with Intervention, Escalation, and Follow-up, and extensible").
+// Same shape/reasoning as StudyTypeOption — global reference data, no
+// orgId/RLS, name validated at the API layer rather than an FK so a type
+// can be renamed/retired without touching every NeedDecision row.
+model DecisionTypeOption {
+  id           String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  name         String   @unique @db.VarChar(100)
+  displayOrder Int      @default(0) @map("display_order")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("decision_type_options")
+}
+
+// RIO-FR-005 — Intervention/Follow-up decision logging against a Need.
+// Client-confirmed shape (Q10/Q11/Q34):
+//   - decisionType: configurable list (DecisionTypeOption), not hardcoded
+//   - responsibleParty: free text (person/organization) — NOT restricted
+//     to registered users, since decisions are often assigned to external
+//     bodies (ministries, partner NGOs, external field officers)
+//   - status: fixed set Open -> In Progress -> Completed / Cancelled
+//   - a decision cannot be logged against a Need with no *approved*
+//     priority score yet (a computed-but-unapproved score counts as "no
+//     score" for this rule — see PriorityScore.approvedAt)
+// Org-scoped, RLS-isolated — same pattern as need_domains.
+model NeedDecision {
+  id               String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  needId           String   @map("need_id") @db.Uuid
+  orgId            String   @map("org_id") @db.Uuid
+  decisionType     String   @map("decision_type") @db.VarChar(100)
+  responsibleParty String   @map("responsible_party") @db.VarChar(300)
+  status           String   @default("open") @db.VarChar(20) // open | in_progress | completed | cancelled
+  // RIO-FR-005 — the decision's own effective date (when the intervention/
+  // escalation/follow-up is dated to), distinct from `createdAt` (when the
+  // record was entered into the system, which may lag behind it).
+  decisionDate     DateTime @map("decision_date") @db.Date
+  notes            String?
+  createdBy        String   @map("created_by") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  need         Need                     @relation(fields: [needId], references: [id], onDelete: Cascade)
+  statusEvents NeedDecisionStatusEvent[]
+
+  @@index([orgId])
+  @@index([needId])
+  @@map("need_decisions")
+}
+
+// One row per status transition — "every status change is retained as part
+// of the decision history" (Q11). Also captures the create event itself
+// (fromStatus: null -> toStatus: "open") so the full history reads as one
+// consistent timeline, not create-plus-a-separate-history-table split.
+model NeedDecisionStatusEvent {
+  id         String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  decisionId String   @map("decision_id") @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  fromStatus String?  @map("from_status") @db.VarChar(20)
+  toStatus   String   @map("to_status") @db.VarChar(20)
+  changedBy  String   @map("changed_by") @db.Uuid
+  changedAt  DateTime @default(now()) @map("changed_at") @db.Timestamptz(6)
+  note       String?
+
+  decision NeedDecision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([decisionId])
+  @@map("need_decision_status_events")
+}
+
 // ──────── Sharing Requests, Approval, Shared Reports ────────
 // Deliberately NOT org-scoped RLS like every other tenant table: a sharing
 // request is inherently visible to TWO orgs (the owner being asked, and the
@@ -1562,6 +1739,32 @@ model MethodologyConfig {
   @@map("methodology_configs")
 }
 
+// RIO-NFR-017 (client-confirmed, Aug 4) — "retain full version history of
+// every methodology configuration change — never overwrite." MethodologyConfig
+// itself stays a single mutable row (its own id must stay stable — it's what
+// Survey/SurveyQuestion and every scoring read resolve against), so history
+// lives here instead: one immutable snapshot appended on every update() and
+// publish() call, capturing the resulting state plus who changed it and when.
+// Read-only from the application's own perspective — nothing ever updates or
+// deletes a row here.
+model MethodologyConfigHistory {
+  id                     String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  configId               String   @map("config_id") @db.Uuid
+  version                String   @db.VarChar(100)
+  status                 MethodologyStatus
+  // "edit" (update()) or "publish" (publish()) — which action produced this
+  // snapshot, so the timeline reads as a log of actions, not just states.
+  changeType             String   @db.VarChar(20)
+  priorityThresholds     Json     @map("priority_thresholds")
+  priorityFactorWeights  Json     @map("priority_factor_weights")
+  confidenceFlagSettings Json     @map("confidence_flag_settings")
+  changedBy              String?  @map("changed_by") @db.Uuid
+  changedAt              DateTime @default(now()) @map("changed_at") @db.Timestamptz(6)
+
+  @@index([configId])
+  @@map("methodology_config_history")
+}
+
 // UNUSED — superseded by sourcing the Survey Builder's "Methodology
 // Version" dropdown directly from `MethodologyConfig`'s own version/status
 // (see MethodologyConfigService.listVersionOptions): publishing a version in
@@ -1653,14 +1856,57 @@ model Question {
   // The roster iteration scope verbatim, e.g. "each child aged 0-59 months".
   rosterLoop                   String?  @map("roster_loop")
 
+  // RIO-FR-012 (Sprint 2) — Question Bank management. Deactivation is a soft
+  // hide, not a delete: a deactivated question disappears from new-survey
+  // question-bank browsing and AI recommendations (see
+  // QuestionsService.selectableWhere), but stays untouched on any survey
+  // that already included it — already-published surveys and their scored
+  // responses never change shape because a question was deactivated later.
+  // Reversible by design (reactivate = isActive: true again).
+  isActive          Boolean   @default(true) @map("is_active")
+  deactivatedAt     DateTime? @map("deactivated_at") @db.Timestamptz(6)
+  deactivatedBy     String?   @map("deactivated_by") @db.Uuid
+
+  // RIO-FR-012 — versioning + approval (client-confirmed Q30/Q31, 2026-08-20).
+  // Every edit/deactivate/reactivate creates a NEW row rather than mutating
+  // the existing one — this is what keeps already-published surveys pinned
+  // to the exact config active at their publish time: SurveyQuestion.
+  // questionId is a foreign key to one specific Question row's id, and rows
+  // are never deleted or mutated in place, so an already-published survey's
+  // reference is automatically frozen without needing any change on
+  // SurveyQuestion itself. `isCurrentVersion` marks which row governs new
+  // surveys/Question Bank browsing; only ever one true row per
+  // (methodologyVersionId, questionId), enforced in QuestionsService, not
+  // the DB, since Prisma's schema DSL has no partial-unique-index primitive.
+  version          Int      @default(1)
+  isCurrentVersion Boolean  @default(true) @map("is_current_version")
+  // 'approved' | 'pending_approval' | 'rejected'. Only an 'approved' AND
+  // isCurrentVersion row is ever selectable for a new survey — a pending
+  // edit does not replace the active version until a Human Reviewer
+  // approves it (client-confirmed: "previously-active version remains
+  // available for new surveys... new version only becomes available once
+  // approved").
+  approvalStatus   String   @default("approved") @map("approval_status") @db.VarChar(20)
+  // Self-relation: the row this version was created from, for audit trail.
+  // No onDelete action needed — Question rows are never deleted.
+  previousVersionId String? @map("previous_version_id") @db.Uuid
+  submittedBy       String? @map("submitted_by") @db.Uuid
+  submittedAt       DateTime? @map("submitted_at") @db.Timestamptz(6)
+  reviewedBy        String?   @map("reviewed_by") @db.Uuid
+  reviewedAt        DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  rejectionReason   String?   @map("rejection_reason")
+
   surveyQuestions    SurveyQuestion[]
   // RESTRICT, not SetNull: a version any question still belongs to must not be
   // deletable — retire it (status = 'RETIRED') instead.
   methodologyVersion MethodologyVersion @relation(fields: [methodologyVersionId], references: [id], onDelete: Restrict)
+  previousVersion    Question?  @relation("QuestionVersionHistory", fields: [previousVersionId], references: [id], onDelete: SetNull)
+  nextVersions       Question[] @relation("QuestionVersionHistory")
 
-  @@unique([methodologyVersionId, questionId])
+  @@unique([methodologyVersionId, questionId, version])
   @@index([domain, subDomain])
   @@index([methodologyVersionId])
+  @@index([methodologyVersionId, questionId, isCurrentVersion])
   @@map("questions")
 }
 

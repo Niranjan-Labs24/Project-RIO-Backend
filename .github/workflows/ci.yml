@@ -50,13 +50,22 @@ jobs:
       # Seed roles + demo org/admins so the login-based e2e specs (auth, users,
       # organizations, audit) have data to authenticate against.
       - run: pnpm prisma:seed
+      # import:methodology --publish creates the real, PUBLISHED v5.0
+      # MethodologyVersion — import:domain-priority-config and seed:scored
+      # both require one to exist and error out otherwise ("No PUBLISHED
+      # methodology version found"). Neither import:questions nor
+      # import:scoring-lookups (below) actually creates a PUBLISHED
+      # version themselves: import:questions only creates a RETIRED
+      # fallback row for its own legacy v1.0 import, and
+      # import:scoring-lookups doesn't touch MethodologyVersion at all —
+      # this step was previously missing from CI entirely (present only in
+      # the local `setup:local` script), which is why this job could reach
+      # import:domain-priority-config and still fail there.
+      - run: pnpm import:methodology -- --publish
       # Order matters: import:scoring-lookups looks up each CSV row's
-      # Question by questionId *before* it creates the MethodologyVersion
-      # row, so questions must be imported first — otherwise every lookup
-      # row is skipped (Question not found) and the MethodologyVersion
-      # (nested inside that same per-row loop) never gets created either,
-      # which then breaks import:domain-priority-config and seed:scored,
-      # which both require a PUBLISHED MethodologyVersion to exist.
+      # Question by questionId *before* it creates its own (legacy, v1.0)
+      # MethodologyVersion row, so questions must be imported first —
+      # otherwise every lookup row is skipped (Question not found).
       # geography is independent but still needed — auth-signup.e2e.spec.ts
       # reads real /api/regions data.
       #

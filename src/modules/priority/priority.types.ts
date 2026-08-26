@@ -47,10 +47,44 @@ export interface PriorityDashboardEntry {
   studyId: string;
   studyTitle: string;
   needId: string;
+  // RIO-FR-005 (Q12) — the Need's own analyst-entered Gap Type
+  // classification. Was previously conflated with `score.gapType` below,
+  // which was really always the critical-domain override reason string —
+  // that field is now correctly named `overrideReason`.
+  gapType: string | null;
   score: {
     overallScore: number;
     level: "critical" | "high" | "medium" | "low";
-    gapType: string | null;
+    overrideReason: string | null;
     scoredAt: string;
   } | null;
+}
+
+// RIO-FR-005 (Q9) — client-confirmed comparison metrics: "Priority Score,
+// Needs Index, Critical/High Priority counts, Domain-wise severity, need
+// type, and affected population."
+export interface VillageComparisonEntry {
+  village: string;
+  studyIds: string[];
+  /** Latest VillagePriorityAssessment for this village across the given
+   * studies — null if none has been calculated yet (e.g. no survey
+   * published/scored for that village). "Needs Index" in the client's own
+   * wording is this same figure — the methodology has one aggregate
+   * per-village score, not two separate ones. */
+  priorityScore: number | null;
+  priorityStatus: string | null;
+  domainComponents: unknown | null;
+  criticalNeedCount: number;
+  highNeedCount: number;
+  /** Need count grouped by its approved Domain — the closest existing
+   * equivalent to "need type" in the confirmed metric list. */
+  needTypeCounts: Record<string, number>;
+  totalNeedCount: number;
+  // RIO-FR-005 (Round 4, client-confirmed 2026-08-24) — sum of each Need's
+  // manually entered Need.affectedPeople/affectedHouseholds for this
+  // village. Null when none of the village's Needs have either value
+  // entered yet, rather than a fabricated 0 — see
+  // VillageAggregationService.aggregateByVillage.
+  affectedPeople: number | null;
+  affectedHouseholds: number | null;
 }
