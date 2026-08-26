@@ -28,6 +28,7 @@
     "import:geography": "tsx prisma/import-geography.ts",
     "import:nic-registry": "tsx prisma/import-nic-registry.ts",
     "grant:access": "tsx prisma/grant-access.ts",
+    "setup:local": "pnpm run prisma:generate && pnpm run prisma:deploy && pnpm run prisma:seed && pnpm run import:methodology -- --publish && pnpm run import:geography && pnpm run import:nic-registry && pnpm run grant:access",
     "seed:scored": "tsx prisma/seed-scored-study.ts",
     "seed:data-quality": "tsx prisma/seed-data-quality.ts",
     "fix:report-methodology": "tsx prisma/fix-report-methodology-label.ts",
@@ -45,7 +46,8 @@
       "deepmerge-ts": ">=8.0.0",
       "fast-uri": ">=3.1.5",
       "find-my-way": ">=9.7.0",
-      "minimatch@10.2.5>brace-expansion": ">=5.0.9"
+      "minimatch@10.2.5>brace-expansion": ">=5.0.9",
+      "deepmerge-ts": ">=8.0.0"
     }
   },
   "dependencies": {

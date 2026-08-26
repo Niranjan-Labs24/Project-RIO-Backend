@@ -29,6 +29,8 @@ import { NeedsModule } from './modules/needs/needs.module';
 import { EvidenceModule } from './modules/evidence/evidence.module';
 import { AiDecisionsModule } from './modules/ai-decisions/ai-decisions.module';
 import { DomainsModule } from './modules/domains/domains.module';
+import { StudyConfigModule } from './modules/study-config/study-config.module';
+import { NeedDecisionsModule } from './modules/need-decisions/need-decisions.module';
 import { GeographyModule } from './modules/geography/geography.module';
 import { MethodologyConfigModule } from './modules/methodology-config/methodology-config.module';
 import { SupervisorOverviewModule } from './modules/supervisor-overview/supervisor-overview.module';
@@ -48,6 +50,8 @@ import { ReviewerSlaModule } from './modules/reviewer-sla/reviewer-sla.module';
 import { CollectiveDashboardModule } from './modules/collective-dashboard/collective-dashboard.module';
 import { AiModule } from './modules/ai/ai.module';
 import { QuestionsModule } from './modules/questions/questions.module';
+import { QuestionBankAlertsModule } from './modules/question-bank-alerts/question-bank-alerts.module';
+import { PermissionGrantsModule } from './modules/permission-grants/permission-grants.module';
 import { SurveysModule } from './modules/surveys/surveys.module';
 import { BackupModule } from './modules/backup/backup.module';
 import { OperationalLogInterceptor } from './common/interceptors/operational-log.interceptor';
@@ -94,6 +98,8 @@ import { AppController } from './app.controller';
     EvidenceModule,
     AiDecisionsModule,
     DomainsModule,
+    StudyConfigModule,
+    NeedDecisionsModule,
     GeographyModule,
     MethodologyConfigModule,
     SupervisorOverviewModule,
@@ -113,8 +119,10 @@ import { AppController } from './app.controller';
     CollectiveDashboardModule,
     AiModule,
     QuestionsModule,
+    QuestionBankAlertsModule,
     SurveysModule,
     BackupModule,
+    PermissionGrantsModule,
   ],
   controllers: [AppController],
   providers: [

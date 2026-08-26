@@ -46,6 +46,16 @@ export class AuditService {
       if (input.changes && input.changes.length > 0) {
         metadata.changes = input.changes;
       }
+      // RIO-RBAC-002 (client-confirmed) — "any edit action performed by the
+      // Supervisor under a granted permission is logged in the audit trail
+      // with the permission basis cited." PermissionGuard stamps this onto
+      // the request's own store the moment it authorizes via a grant rather
+      // than the static role matrix; every audit.record() call downstream
+      // in that same request picks it up automatically, no caller-side
+      // plumbing needed.
+      if (store?.grantCitation) {
+        metadata.permissionGrant = store.grantCitation;
+      }
       // audit_logs.entity_id is a UUID column, and a non-UUID value makes
       // Postgres reject the whole INSERT — which the catch below then
       // swallows as a warning, losing the audit event entirely. Callers have

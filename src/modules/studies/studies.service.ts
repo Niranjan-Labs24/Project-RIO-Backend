@@ -5,6 +5,7 @@ import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-conte
 import { AuditService } from '../audit/audit.service';
 import type { AuditChange } from '../audit/audit.types';
 import { GeographyService } from '../geography/geography.service';
+import { StudyConfigService } from '../study-config/study-config.service';
 import { calculateSampleSize, DEFAULT_MARGIN_OF_ERROR } from './sample-size';
 import type {
   CreateStudyPayload,
@@ -45,11 +46,41 @@ export class StudiesService {
     private readonly tenant: TenantPrismaService,
     private readonly audit: AuditService,
     private readonly geography: GeographyService,
+    private readonly studyConfig: StudyConfigService,
   ) {}
+
+  // RIO-FR-012 (Q3/Q4) — Study Type/Target Sector are validated against the
+  // active option lists here, at the API boundary, rather than a DB-level
+  // FK (see study-config.service.ts's own comment on why). Undefined is
+  // always allowed (the field is optional); an empty active list means
+  // nothing validates yet, which is the correct behavior until a System
+  // Admin populates real values — it must never silently accept just
+  // anything once options do exist.
+  private async assertValidStudyType(value: string | undefined): Promise<void> {
+    if (value === undefined) return;
+    const names = await this.studyConfig.listActiveStudyTypeNames();
+    if (names.length > 0 && !names.includes(value)) {
+      throw new BadRequestException({
+        error: { code: 'INVALID_STUDY_TYPE', message: `"${value}" is not a configured Study Type.` },
+      });
+    }
+  }
+
+  private async assertValidTargetSector(value: string | undefined): Promise<void> {
+    if (value === undefined) return;
+    const names = await this.studyConfig.listActiveTargetSectorNames();
+    if (names.length > 0 && !names.includes(value)) {
+      throw new BadRequestException({
+        error: { code: 'INVALID_TARGET_SECTOR', message: `"${value}" is not a configured Target Sector.` },
+      });
+    }
+  }
 
   async create(payload: CreateStudyPayload): Promise<Study> {
     const orgId = requireOrgId();
     const createdBy = requireActor();
+    await this.assertValidStudyType(payload.studyType);
+    await this.assertValidTargetSector(payload.targetSector);
     // Resolved inside the transaction, read by the audit record after it commits.
     let methodologyLabel: string | null = null;
     const created = await this.tenant.runInOrgContext(async (tx) => {
@@ -102,6 +133,8 @@ export class StudiesService {
           minimumDetectableEffect: sampleSize.minimumDetectableEffect,
           cycleNumber,
           createdBy,
+          studyType: payload.studyType,
+          targetSector: payload.targetSector,
           studyGovernorates: { createMany: { data: payload.governorateIds.map((governorateId) => ({ orgId, governorateId })) } },
           studyCenters: { createMany: { data: payload.centerIds.map((centerId) => ({ orgId, centerId })) } },
         },
@@ -128,6 +161,8 @@ export class StudiesService {
             minimumDetectableEffect: sampleSize.minimumDetectableEffect,
             cycleNumber,
             createdBy,
+            studyType: payload.studyType,
+            targetSector: payload.targetSector,
             studyGovernorates: { createMany: { data: payload.governorateIds.map((governorateId) => ({ orgId, governorateId })) } },
             studyCenters: { createMany: { data: payload.centerIds.map((centerId) => ({ orgId, centerId })) } },
           },
@@ -192,7 +227,15 @@ export class StudiesService {
 
   async list(opts: ListStudiesQuery = {}): Promise<StudyListResult> {
     const store = getOrgStore();
-    const isSysAdmin = store?.role === 'system_admin';
+    // RIO-RBAC-002 (AC1, fixed 2026-08-23) — center_supervisor holds
+    // studySurvey:read with crossEntity:true in the role matrix, but this
+    // branch used to check `=== 'system_admin'` literally, so the grant
+    // never actually reached across orgs despite being held — every
+    // Supervisor was silently scoped to whatever single org they're
+    // provisioned under. This is the read path; archive/restore below stay
+    // system_admin-only unless a runtime grant (AC2) authorized this
+    // specific request.
+    const isCrossOrgReader = store?.role === 'system_admin' || store?.role === 'center_supervisor';
 
     const take = Math.min(Math.max(opts.limit ?? 100, 1), 200);
     const skip = Math.max(opts.offset ?? 0, 0);
@@ -205,7 +248,7 @@ export class StudiesService {
     let rows: (RawStudyWithGeo & { org?: { name: string } | null; _count?: { needs: number } })[] = [];
     let total = 0;
 
-    if (isSysAdmin) {
+    if (isCrossOrgReader) {
       const result = await this.tenant.runAsSupervisor((tx) =>
         Promise.all([
           tx.study.findMany({
@@ -225,20 +268,29 @@ export class StudiesService {
       rows = result[0] as (RawStudyWithGeo & { org?: { name: string } | null; _count?: { needs: number } })[];
       total = result[1];
 
-      await this.audit.record({
-        action: 'SYSTEM_ADMIN_VIEWED_STUDIES',
-        entityType: 'study',
-        // `null`, never the string 'all': audit_logs.entity_id is a UUID
-        // column, so a sentinel here made Postgres reject the INSERT
-        // ("invalid input syntax for type uuid") and AuditService.record()
-        // swallowed it as a warning — every cross-org study view silently
-        // went unaudited. The "all organisations" case is carried by
-        // entityLabel and `scope` below, matching SurveysService.list.
-        entityId: opts.organizationId ?? null,
-        entityLabel: opts.organizationId ? 'Organization Studies' : 'All Platform Studies',
-        organizationId: opts.organizationId,
-        metadata: { scope: opts.organizationId ? 'organization' : 'all' },
-      });
+      // RIO-RBAC-002 (Round 5, client-confirmed 2026-08-24) — Supervisor
+      // view/read access does not require dedicated audit logging; the
+      // NGO's own onboarding consent already covers Center/NCNP's right to
+      // see and preview their data. Only System Admin's cross-org view is
+      // still logged here — logging was never about System Admin's own
+      // access in the first place, this branch just happens to be shared
+      // between both cross-org-reading roles.
+      if (store?.role === 'system_admin') {
+        await this.audit.record({
+          action: 'SYSTEM_ADMIN_VIEWED_STUDIES',
+          entityType: 'study',
+          // `null`, never the string 'all': audit_logs.entity_id is a UUID
+          // column, so a sentinel here made Postgres reject the INSERT
+          // ("invalid input syntax for type uuid") and AuditService.record()
+          // swallowed it as a warning — every cross-org study view silently
+          // went unaudited. The "all organisations" case is carried by
+          // entityLabel and `scope` below, matching SurveysService.list.
+          entityId: opts.organizationId ?? null,
+          entityLabel: opts.organizationId ? 'Organization Studies' : 'All Platform Studies',
+          organizationId: opts.organizationId,
+          metadata: { scope: opts.organizationId ? 'organization' : 'all' },
+        });
+      }
     } else {
       const result = await this.tenant.runInOrgContext((tx) =>
         Promise.all([
@@ -274,14 +326,15 @@ export class StudiesService {
 
   async getById(id: string): Promise<StudyDetail> {
     const store = getOrgStore();
-    const isSysAdmin = store?.role === 'system_admin';
+    // RIO-RBAC-002 (AC1, fixed 2026-08-23) — see list()'s comment above.
+    const isCrossOrgReader = store?.role === 'system_admin' || store?.role === 'center_supervisor';
 
     let row: (RawStudyWithGeo & { org?: { name: string } | null }) | null = null;
     let evidenceCount = 0;
     let needCount = 0;
     let needsList: NeedWithSurveyMeta[] = [];
 
-    if (isSysAdmin) {
+    if (isCrossOrgReader) {
       const result = await this.tenant.runAsSupervisor((tx) =>
         Promise.all([
           tx.study.findUnique({
@@ -310,7 +363,9 @@ export class StudiesService {
       needCount = result[2];
       needsList = result[3];
 
-      if (row) {
+      // RIO-RBAC-002 (Round 5, client-confirmed 2026-08-24) — Supervisor
+      // view access isn't logged; see the list() method's comment above.
+      if (row && store?.role === 'system_admin') {
         await this.audit.record({
           action: 'SYSTEM_ADMIN_VIEWED_STUDIES',
           entityType: 'study',
@@ -378,6 +433,8 @@ export class StudiesService {
 
   async update(id: string, payload: UpdateStudyPayload): Promise<Study> {
     const orgId = requireOrgId();
+    await this.assertValidStudyType(payload.studyType);
+    await this.assertValidTargetSector(payload.targetSector);
     const { updated, changes } = await this.tenant.runInOrgContext(async (tx) => {
       const currentRaw = (await tx.study.findUnique({ where: { id }, include: GEO_INCLUDE })) as RawStudyWithGeo | null;
       if (!currentRaw) throw new NotFoundException({ error: { code: 'STUDY_NOT_FOUND', message: 'Study not found' } });
@@ -400,6 +457,8 @@ export class StudiesService {
           ...(payload.title !== undefined ? { title: payload.title } : {}),
           ...(payload.villages !== undefined ? { villages: payload.villages } : {}),
           ...(payload.methodologyVersionId !== undefined ? { methodologyVersionId: payload.methodologyVersionId } : {}),
+          ...(payload.studyType !== undefined ? { studyType: payload.studyType } : {}),
+          ...(payload.targetSector !== undefined ? { targetSector: payload.targetSector } : {}),
         },
       });
 
@@ -531,15 +590,22 @@ export class StudiesService {
       createdBy: row.createdBy,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
+      studyType: row.studyType,
+      targetSector: row.targetSector,
     };
   }
 
   async archive(id: string, reason?: string): Promise<Study> {
     const actorId = requireActor();
     const store = getOrgStore();
-    const isSysAdmin = store?.role === 'system_admin';
+    // RIO-RBAC-002 (AC2) — a write action, so center_supervisor only takes
+    // the cross-org path when PermissionGuard just authorized THIS request
+    // via an active grant (store.grantCitation set) — never unconditionally
+    // like the read paths above. No grant, no cross-org write, exactly the
+    // "cannot edit unless an explicit approved grant exists" rule.
+    const isCrossOrgWriter = store?.role === 'system_admin' || (store?.role === 'center_supervisor' && !!store.grantCitation);
 
-    const raw = isSysAdmin
+    const raw = isCrossOrgWriter
       ? await this.tenant.runAsSupervisor((tx) => tx.study.findUnique({ where: { id }, include: { needs: true, reports: true, ...GEO_INCLUDE } }))
       : await this.tenant.runInOrgContext((tx) => tx.study.findUnique({ where: { id }, include: { needs: true, reports: true, ...GEO_INCLUDE } }));
 
@@ -567,7 +633,7 @@ export class StudiesService {
     }
 
     const now = new Date();
-    const updated = isSysAdmin
+    const updated = isCrossOrgWriter
       ? await this.tenant.runAsOrg(raw.orgId, (tx) =>
           tx.study.update({
             where: { id },
@@ -598,9 +664,10 @@ export class StudiesService {
   async restore(id: string): Promise<Study> {
     requireActor();
     const store = getOrgStore();
-    const isSysAdmin = store?.role === 'system_admin';
+    // RIO-RBAC-002 (AC2) — same rule as archive() above.
+    const isCrossOrgWriter = store?.role === 'system_admin' || (store?.role === 'center_supervisor' && !!store.grantCitation);
 
-    const raw = isSysAdmin
+    const raw = isCrossOrgWriter
       ? await this.tenant.runAsSupervisor((tx) => tx.study.findUnique({ where: { id }, include: GEO_INCLUDE }))
       : await this.tenant.runInOrgContext((tx) => tx.study.findUnique({ where: { id }, include: GEO_INCLUDE }));
 
@@ -612,7 +679,7 @@ export class StudiesService {
       throw new BadRequestException({ error: { code: 'STUDY_NOT_ARCHIVED', message: 'Only an archived study can be restored.' } });
     }
 
-    const updated = isSysAdmin
+    const updated = isCrossOrgWriter
       ? await this.tenant.runAsOrg(raw.orgId, (tx) =>
           tx.study.update({
             where: { id },

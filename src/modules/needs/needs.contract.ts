@@ -37,6 +37,13 @@ export const CreateNeedBody = registerSchema(
       // partner org's case id, etc.) — free text, never validated.
       referenceId: T.Optional(T.String({ maxLength: 200 })),
       affectedPopulation: T.Optional(AffectedPopulation),
+      // RIO-FR-005 (Round 4, client-confirmed 2026-08-24) — "Roughly how
+      // many people/households does this need affect?" This manually
+      // entered figure is the PRIMARY Affected Population value (see
+      // schema.prisma's comment on Need.affectedPeople/affectedHouseholds
+      // for why no GASTAT-derived value is offered here yet).
+      affectedPeople: T.Optional(T.Integer({ minimum: 0 })),
+      affectedHouseholds: T.Optional(T.Integer({ minimum: 0 })),
     },
     { additionalProperties: false },
   ),
@@ -56,11 +63,27 @@ export const UpdateNeedBody = registerSchema(
       // Null is a real value here, not "leave alone" — it clears an estimate
       // that turned out to be wrong. Omitting the key leaves it untouched.
       affectedPopulation: T.Optional(T.Union([AffectedPopulation, T.Null()])),
+      affectedPeople: T.Optional(T.Union([T.Integer({ minimum: 0 }), T.Null()])),
+      affectedHouseholds: T.Optional(T.Union([T.Integer({ minimum: 0 }), T.Null()])),
     },
     { additionalProperties: false },
   ),
 );
 export type UpdateNeedDto = Static<typeof UpdateNeedBody>;
+
+// RIO-FR-005 (Q12, client-confirmed) — five fixed values, final, no
+// additions. Analyst-entered, never auto-calculated (see schema.prisma's
+// comment on Need.gapType).
+export const GAP_TYPES = ['acute', 'chronic', 'structural', 'seasonal', 'equity'] as const;
+
+export const SetNeedGapTypeBody = registerSchema(
+  'SetNeedGapTypeBody',
+  T.Object(
+    { gapType: T.Union([T.Literal('acute'), T.Literal('chronic'), T.Literal('structural'), T.Literal('seasonal'), T.Literal('equity'), T.Null()]) },
+    { additionalProperties: false },
+  ),
+);
+export type SetNeedGapTypeDto = Static<typeof SetNeedGapTypeBody>;
 
 export const BulkImportNeedsBody = registerSchema(
   'BulkImportNeedsBody',
