@@ -55,7 +55,12 @@ export type AuditEntityType =
   | 'combined_report_summary'
   | 'ncnp_report'
   | 'question'
-  | 'need_decision';
+  | 'need_decision'
+  // Client-confirmed (2026-08-27), requirement 5 — "update this in audit log
+  // too": every draft/edit/approve/reject/publish of a Terms of Use or Data
+  // Sharing Policy version is an auditable governance event in its own right,
+  // distinct from `user`-scoped consent acceptance (action: 'consent').
+  | 'consent_policy';
 
 export interface AuditChange {
   field: string;

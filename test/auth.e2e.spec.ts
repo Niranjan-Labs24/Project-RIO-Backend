@@ -68,7 +68,17 @@ describe('Auth (e2e)', () => {
       .set('Authorization', `Bearer ${login.body.token}`)
       .expect(201);
     expect(typeof res.body.consentedAt).toBe('string');
-    expect(res.body.policyVersion).toBe('v1');
+    // Compared against whatever is live rather than a literal 'v1'.
+    // Client-confirmed (2026-08-27): consent wording is versioned and managed
+    // by a System Admin through Methodology Configuration, so the active
+    // version is deployment state, not a constant this test can know. What
+    // matters — and what this now actually asserts — is that the acceptance
+    // is stamped with the version that was active at the moment it was given.
+    const active = await request(app.getHttpServer())
+      .get('/api/consent-policy/active')
+      .expect(200);
+    expect(res.body.policyVersion).toBe(active.body.usePolicy.version);
+    expect(res.body.sharingPolicyVersion).toBe(active.body.dataSharing.version);
   });
 
   it('rejects a wrong password with 401 + top-level message', async () => {

@@ -101,6 +101,10 @@ export interface SubmitResponsePayload {
    *  Optional throughout: tracking is best-effort and must never be able to
    *  block a submission (see SurveySessionsService). */
   sessionId?: string;
+  /** RIO-NFR-002 — the citizen-consent version accepted, and the language it
+   *  was read in. Verified against the live policy before anything is written
+   *  (see CitizenService.submitResponse). */
+  consent: { version: string; locale: 'en' | 'ar' };
 }
 
 export interface SubmitResponseResult {

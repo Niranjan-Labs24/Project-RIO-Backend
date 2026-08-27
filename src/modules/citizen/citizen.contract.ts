@@ -80,6 +80,19 @@ export const SubmitResponseBody = registerSchema(
       ageBracket: AgeBracket,
       answers: T.Record(T.String(), T.Unknown()),
       sessionId: T.Optional(T.String({ format: 'uuid' })),
+      // RIO-NFR-002 — which citizen-consent version this respondent read and
+      // accepted, and in which language. Required, and the version is checked
+      // against the live policy server-side: a submission that cannot name
+      // the notice it agreed to is not a consented submission. The text is
+      // never accepted from the client, only the pointer to it — same rule as
+      // signup's own consent block.
+      consent: T.Object(
+        {
+          version: T.String({ minLength: 1, maxLength: 64 }),
+          locale: T.Union([T.Literal('en'), T.Literal('ar')]),
+        },
+        { additionalProperties: false },
+      ),
     },
     { additionalProperties: false },
   ),
