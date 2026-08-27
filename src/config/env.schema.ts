@@ -44,6 +44,21 @@ export const EnvSchema = Type.Object({
   DB_SSL_REJECT_UNAUTHORIZED: Type.Boolean({ default: false }),
   // Optional CA/chain PEM path to trust when verifying a non-system-CA cert.
   DB_SSL_CA: Type.Optional(Type.String()),
+  // pg.Pool `max` for the two runtime pools (PrismaService / SupervisorPrismaService).
+  // Undocumented pg default is 10 — far too small once every request (even a
+  // read) opens its own interactive transaction for the per-request RLS org
+  // context (see TenantPrismaService). Reproduced directly under real
+  // concurrency: RIO-NFR-005's 2026-08-27 500-concurrent-session re-test
+  // failed 94% of virtual users with "Unable to start a transaction in the
+  // given time" once queueing exceeded Prisma's ~2s transaction maxWait.
+  // Bounded above by Postgres's own max_connections, shared across both
+  // pools plus migrations/admin/background-worker connections — raising
+  // these does not substitute for right-sizing Postgres itself, and in a
+  // multi-instance deployment each instance needs its own budget out of the
+  // same shared ceiling (a connection pooler like PgBouncer is the real
+  // production answer once there's more than one app instance).
+  DB_POOL_MAX_APP: Type.Number({ default: 60, minimum: 1, maximum: 500 }),
+  DB_POOL_MAX_SUPERVISOR: Type.Number({ default: 15, minimum: 1, maximum: 500 }),
   // Frontend origin allowed to send credentialed (cookie) requests. Single
   // explicit origin — credentials mode forbids a wildcard.
   CORS_ORIGIN: Type.String({ default: 'http://localhost:3000' }),

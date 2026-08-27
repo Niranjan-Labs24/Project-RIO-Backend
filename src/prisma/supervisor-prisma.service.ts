@@ -11,7 +11,16 @@ import { pgSslOption } from './pg-ssl';
 @Injectable()
 export class SupervisorPrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   constructor(config: ConfigService) {
-    super({ adapter: new PrismaPg({ connectionString: config.supervisorDatabaseUrl, ssl: pgSslOption({ enabled: config.dbSsl, rejectUnauthorized: config.dbSslRejectUnauthorized, caPath: config.dbSslCaPath }) }) });
+    // See PrismaService's comment on `max` — same pg.Pool default-of-10
+    // concern, sized smaller here since this pool only ever serves
+    // crossEntity roles' read path, not every request.
+    super({
+      adapter: new PrismaPg({
+        connectionString: config.supervisorDatabaseUrl,
+        max: config.dbPoolMaxSupervisor,
+        ssl: pgSslOption({ enabled: config.dbSsl, rejectUnauthorized: config.dbSslRejectUnauthorized, caPath: config.dbSslCaPath }),
+      }),
+    });
   }
 
   async onModuleInit(): Promise<void> {

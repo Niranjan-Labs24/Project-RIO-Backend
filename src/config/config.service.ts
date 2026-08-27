@@ -51,6 +51,12 @@ export class ConfigService {
   get dbSslCaPath(): string | undefined {
     return this.config.DB_SSL_CA;
   }
+  get dbPoolMaxApp(): number {
+    return this.config.DB_POOL_MAX_APP;
+  }
+  get dbPoolMaxSupervisor(): number {
+    return this.config.DB_POOL_MAX_SUPERVISOR;
+  }
   get port(): number {
     return this.config.PORT;
   }

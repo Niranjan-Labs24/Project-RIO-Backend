@@ -30,6 +30,7 @@
     "grant:access": "tsx prisma/grant-access.ts",
     "setup:local": "pnpm run prisma:generate && pnpm run prisma:deploy && pnpm run prisma:seed && pnpm run import:methodology -- --publish && pnpm run import:geography && pnpm run import:nic-registry && pnpm run grant:access",
     "seed:scored": "tsx prisma/seed-scored-study.ts",
+    "seed:report-perf": "tsx prisma/seed-report-perf.ts",
     "seed:data-quality": "tsx prisma/seed-data-quality.ts",
     "fix:report-methodology": "tsx prisma/fix-report-methodology-label.ts",
     "score:study": "tsx prisma/score-study.ts",
