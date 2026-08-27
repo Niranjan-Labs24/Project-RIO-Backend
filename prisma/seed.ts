@@ -370,6 +370,10 @@ async function main(): Promise<void> {
       { roleId: 'role_ngo_admin', name: 'Sarah', email: 'admin@demo-ngo.org' },
       { roleId: 'role_ngo_research_officer', name: 'Amira', email: 'officer@demo-ngo.org' },
       { roleId: 'role_human_reviewer', name: 'Priya', email: 'reviewer@demo-ngo.org' },
+      // RIO-FR-003 — Data Analyst is the only role holding priorityScoring
+      // write/create/approve, so without a seeded one the whole scoring path
+      // (run, override, sign off) cannot be exercised on a fresh database.
+      { roleId: 'role_data_analyst', name: 'Rashid', email: 'analyst@demo-ngo.org' },
     ],
   });
   const riversideOrgId = await seedOrg({

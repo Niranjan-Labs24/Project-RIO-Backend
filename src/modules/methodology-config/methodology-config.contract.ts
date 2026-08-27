@@ -31,6 +31,12 @@ export const UpdateMethodologyConfigBody = registerSchema(
       // AiClassificationSettings. Ordering (veryLow < low) is enforced in the
       // service, next to validateThresholds, not here: TypeBox can range-check
       // each field but not their relationship.
+      // RIO-FR-003 — the raw-to-0-100 conversion rules. Loosely typed on
+      // purpose: the strategic axis list is a nested array the methodology
+      // owner curates, and the service validates the parts that must hold
+      // (ceiling above floor, urgency values within 0-100) where it can
+      // check them against each other.
+      priorityFactorScales: T.Optional(T.Record(T.String(), T.Unknown())),
       aiClassificationSettings: T.Optional(
         T.Object({
           lowConfidenceThreshold: T.Optional(T.Number({ minimum: 0, maximum: 1 })),

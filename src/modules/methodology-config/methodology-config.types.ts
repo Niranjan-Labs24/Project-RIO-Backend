@@ -47,6 +47,49 @@ export interface AiSummarySettings {
   maxSummaryChars: number;
 }
 
+/** RIO-FR-003 — how a raw figure becomes the 0-100 value a factor weight
+ * multiplies. `priorityFactorWeights` says a factor is worth 12%; this says
+ * what "450 affected people" is worth out of 100.
+ *
+ * Mirrors ScoringLookup's numericFloor/numericCeiling, which already does this
+ * for numeric survey questions: at or below the floor scores 0, at or above
+ * the ceiling scores 100, linear in between. */
+export interface FactorRange {
+  floor: number;
+  ceiling: number;
+}
+
+/** One strategic axis from the workbook's METH — Factors & Multipliers sheet.
+ *
+ * `domains` is the default link. `questionIds` are the exceptions the workbook
+ * names individually — KPIs that belong to this axis even though they sit in
+ * another domain — and they win over the domain match. */
+export interface StrategicAxis {
+  key: string;
+  label: string;
+  /** 0-100, normalised from the workbook's multiplier over its own x1.30
+   *  ceiling. See the migration for the derivation. */
+  value: number;
+  domains: string[];
+  questionIds: string[];
+}
+
+export interface PriorityFactorScales {
+  /** Urgency is a human-chosen level, so it maps by name rather than by range. */
+  urgency: Record<string, number>;
+  affectedPopulation: FactorRange;
+  geographicCoverage: FactorRange;
+  /** How many other needs share a theme with this one. */
+  frequency: FactorRange;
+  strategicAxes: StrategicAxis[];
+  /** RIO-FR-003 — how wide a spread between respondent segments counts as
+   *  inequity, on the same 0-100 scale as the spread itself. The methodology
+   *  says results must differ "materially" between sex / age / disability but
+   *  never gives a number, so this is the methodology owner's to set rather
+   *  than ours to invent. */
+  equitySpreadThreshold: number;
+}
+
 export type MethodologyStatus = "draft" | "published";
 
 export interface MethodologyConfigRow {
@@ -60,6 +103,7 @@ export interface MethodologyConfigRow {
   confidenceFlagSettings: unknown;
   aiClassificationSettings: unknown;
   aiSummarySettings: unknown;
+  priorityFactorScales: unknown;
   updatedAt: Date;
   updatedBy: string | null;
 }
@@ -75,6 +119,7 @@ export interface MethodologyConfig {
   confidenceFlagSettings: ConfidenceFlagSettings;
   aiClassificationSettings: AiClassificationSettings;
   aiSummarySettings: AiSummarySettings;
+  priorityFactorScales: PriorityFactorScales;
   updatedAt: string;
   updatedByName: string | null;
 }
@@ -91,6 +136,7 @@ export interface MethodologyConfigHistoryEntry {
   confidenceFlagSettings: ConfidenceFlagSettings;
   aiClassificationSettings: AiClassificationSettings;
   aiSummarySettings: AiSummarySettings;
+  priorityFactorScales: PriorityFactorScales;
   changedByName: string | null;
   changedAt: string;
 }
@@ -102,6 +148,7 @@ export interface UpdateMethodologyConfigPayload {
   confidenceFlagSettings?: Partial<ConfidenceFlagSettings>;
   aiClassificationSettings?: Partial<AiClassificationSettings>;
   aiSummarySettings?: Partial<AiSummarySettings>;
+  priorityFactorScales?: Partial<PriorityFactorScales>;
 }
 
 // The Survey Builder's "Methodology Version" dropdown option shape — sourced

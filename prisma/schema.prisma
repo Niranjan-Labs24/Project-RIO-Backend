@@ -678,6 +678,24 @@ model Need {
   // client is that a human sets it). Optional — "keeps gap classification's
   // already-confirmed optional status."
   gapType String? @map("gap_type") @db.VarChar(20)
+  // RIO-FR-003 AC 1 -- "every classified need has a sector, an URGENCY LEVEL,
+  // and a computed priority score". Severity says how bad a need is; urgency
+  // says how soon it must be acted on, and nothing else in the model carries
+  // that. A leaking school roof and a dried-up water source can both score 78.
+  //
+  // Set by a human, never inferred: the methodology names urgency as factor 4
+  // but gives no measurement rule, so guessing one from gapType or severity
+  // would be inventing methodology. Nullable because it is optional in v1 --
+  // an unset urgency is reported as "not set", never scored as zero.
+  urgency String? @map("urgency") @db.VarChar(30)
+  // RIO-FR-003 AC 6 -- recurring themes, extracted per need and used to
+  // filter/group. A real TEXT[] following the `village` precedent above.
+  //
+  // Themes are also what makes the methodology's "recurrence of similar
+  // needs" factor computable without RIO-AI-004: two needs that share a theme
+  // are the same underlying problem for counting purposes, which is a far
+  // weaker (and far cheaper) claim than AI-004's need-to-need merge.
+  themes String[] @map("themes")
   // RIO-FR-005 (Round 4, client-confirmed 2026-08-24) — "Roughly how many
   // people/households does this need affect?" on the need-entry form. This
   // manually entered figure is the PRIMARY Affected Population value (not
@@ -964,6 +982,25 @@ model StudyTypeOption {
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("study_type_options")
+}
+
+// RIO-FR-003 AC 6 — the closed vocabulary the theme extractor may pick from.
+// Same global-reference pattern as StudyTypeOption above, so it inherits the
+// existing Methodology Configuration CRUD screen unchanged.
+//
+// Closed rather than free text on purpose: AC 6 requires filtering and
+// grouping BY theme, and free text would split "water shortage", "Water
+// Shortage" and "lack of water" into three groups within a week. It would also
+// corrupt the recurrence factor, which counts how many needs share a theme.
+model NeedThemeOption {
+  id           String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  name         String   @unique @db.VarChar(100)
+  displayOrder Int      @default(0) @map("display_order")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("need_theme_options")
 }
 
 // Same pattern and reasoning as StudyTypeOption. Confirmed (Sprint 2
@@ -1480,6 +1517,15 @@ model PriorityScore {
   // this score — { indicator, weight, responseValue, weightedContribution }
   // — plus the equity-flag/normalization inputs. See priority/scoring.ts.
   factors      Json
+  // RIO-FR-003 AC 5 -- "reviewer overrides are captured with a reason and are
+  // DISTINGUISHABLE from the original system-computed value". Same shape as
+  // NeedStatementSummary's ai/reviewer text pair: `overallScore` above always
+  // keeps what the engine computed and is never rewritten, so the trail never
+  // loses the original once a reviewer disagrees with it.
+  overrideScore  Int?      @map("override_score")
+  overrideReason String?   @map("override_reason")
+  overriddenBy   String?   @map("overridden_by") @db.Uuid
+  overriddenAt   DateTime? @map("overridden_at") @db.Timestamptz(6)
   cycleNote    String?       @map("cycle_note") @db.VarChar(200)
   scoredAt     DateTime      @default(now()) @map("scored_at") @db.Timestamptz(6)
   // Priority Scoring stays subject to reviewer approval, same as AI
@@ -1830,6 +1876,15 @@ model MethodologyConfig {
   // every language) — a word count would behave very differently in Arabic,
   // which is more compact per character than English.
   aiSummarySettings      Json              @map("ai_summary_settings")
+  // RIO-FR-003 -- the conversion rules that turn raw data into the 0-100
+  // scale the factor weights multiply. `priorityFactorWeights` above says a
+  // factor is worth 12%; this says what "450 affected people" is worth out of
+  // 100. Both halves are needed and both are the methodology owner's to set,
+  // so both live here rather than in code.
+  //
+  // Deliberately mirrors ScoringLookup's numericFloor/numericCeiling pattern,
+  // which already does exactly this job for numeric survey questions.
+  priorityFactorScales   Json              @map("priority_factor_scales")
   updatedAt              DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
   updatedBy              String?           @map("updated_by") @db.Uuid
 
@@ -1865,6 +1920,7 @@ model MethodologyConfigHistory {
   aiClassificationSettings Json   @map("ai_classification_settings")
   // Snapshotted for the same reason as aiClassificationSettings above.
   aiSummarySettings      Json     @map("ai_summary_settings")
+  priorityFactorScales   Json     @map("priority_factor_scales")
   changedBy              String?  @map("changed_by") @db.Uuid
   changedAt              DateTime @default(now()) @map("changed_at") @db.Timestamptz(6)
 

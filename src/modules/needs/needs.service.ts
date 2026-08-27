@@ -8,6 +8,7 @@ import { GeographyService } from '../geography/geography.service';
 import { AiDecisionsService } from '../ai-decisions/ai-decisions.service';
 import { resolveConfidenceBand, type ConfidenceBand } from '../ai-decisions/confidence-band';
 import { MethodologyConfigService } from '../methodology-config/methodology-config.service';
+import { NeedThemesService } from './need-themes.service';
 import { NeedSummaryService } from './need-summary.service';
 import { NEED_EDITABLE_STATUSES, type CreateNeedPayload, type Need, type NeedRow, type UpdateNeedPayload } from './needs.types';
 
@@ -60,6 +61,7 @@ export class NeedsService {
     private readonly geography: GeographyService,
     private readonly aiDecisions: AiDecisionsService,
     private readonly methodologyConfig: MethodologyConfigService,
+    private readonly needThemes: NeedThemesService,
     private readonly needSummaries: NeedSummaryService,
   ) {}
 
@@ -152,6 +154,14 @@ export class NeedsService {
     // its own failures, so this catch only covers the promise itself.
     this.needSummaries.maybeGenerateForNeed(created.id, 'manual_entry').catch((err: Error) => {
       this.logger.warn(`Need summary generation failed for need ${created.id}: ${err.message}`);
+    });
+
+    // RIO-FR-003 AC 6. Fire-and-forget for the same reason as the two above,
+    // and additionally because the recurrence factor reads themes at SCORING
+    // time — a need created before extraction finishes simply scores without
+    // them, and picks them up on its next scoring run.
+    this.needThemes.maybeExtractForNeed(created.id).catch((err: Error) => {
+      this.logger.warn(`Theme extraction failed for need ${created.id}: ${err.message}`);
     });
 
     return this.toNeed(this.toNeedRow(created), await this.resolveUserName(created.createdBy));
@@ -309,6 +319,11 @@ export class NeedsService {
     // does not invalidate a description summary.
     if (changes.some((c) => c.field === DIFF_FIELD_LABELS.statement)) {
       await this.needSummaries.markStaleForNeed(updated.id);
+      // The statement is what themes are derived from, so a rewrite can change
+      // what the need is about — and therefore its recurrence count.
+      this.needThemes.maybeExtractForNeed(updated.id).catch((err: Error) => {
+        this.logger.warn(`Theme re-extraction failed for need ${updated.id}: ${err.message}`);
+      });
       this.needSummaries.maybeGenerateForNeed(updated.id, 'manual_entry').catch((err: Error) => {
         this.logger.warn(`Need summary regeneration failed for need ${updated.id}: ${err.message}`);
       });
@@ -339,6 +354,40 @@ export class NeedsService {
           entityId: needId,
           entityLabel: currentRaw.title.slice(0, 80),
           changes: [{ field: 'gapType', before, after: gapType }],
+          sourceRef: currentRaw.referenceId,
+        });
+      }
+      return this.toNeedRow(updatedRaw);
+    });
+    return this.toNeed(updated, await this.resolveUserName(updated.createdBy));
+  }
+
+  /**
+   * RIO-FR-003 AC 1 — the urgency level a human assigns.
+   *
+   * Deliberately its own action rather than a field on update(): urgency is a
+   * priority judgement, not Need data, so it carries the same
+   * priorityScoring:write gate as gap type above rather than
+   * dataCollection:write. It is also settable after a Need is locked for
+   * editing, because the judgement can change while the facts do not.
+   */
+  async setUrgency(needId: string, urgency: string | null): Promise<Need> {
+    const updated = await this.tenant.runInOrgContext(async (tx) => {
+      const currentRaw = (await tx.need.findUnique({ where: { id: needId }, include: GEO_INCLUDE })) as RawNeedWithGeo | null;
+      if (!currentRaw) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+      const before = currentRaw.urgency;
+      const updatedRaw = (await tx.need.update({
+        where: { id: needId },
+        data: { urgency },
+        include: GEO_INCLUDE,
+      })) as RawNeedWithGeo;
+      if (before !== urgency) {
+        await this.audit.record({
+          action: 'edit',
+          entityType: 'need',
+          entityId: needId,
+          entityLabel: currentRaw.title.slice(0, 80),
+          changes: [{ field: 'urgency', before, after: urgency }],
           sourceRef: currentRaw.referenceId,
         });
       }
@@ -531,6 +580,8 @@ export class NeedsService {
         : null,
       proposedReason: row.proposedReason,
       gapType: row.gapType,
+      urgency: row.urgency ?? null,
+      themes: row.themes ?? [],
       affectedPeople: row.affectedPeople,
       affectedHouseholds: row.affectedHouseholds,
       createdBy: row.createdBy,

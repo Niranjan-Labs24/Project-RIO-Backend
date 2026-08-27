@@ -57,6 +57,10 @@ export type AuditAction =
   | 'generate_need_summary'
   | 'edit_need_summary'
   | 'confirm_need_summary'
+  // RIO-FR-003. Theme extraction rewrites what a need is filed under and feeds
+  // the recurrence factor, so a change here moves priority rankings.
+  | 'extract_need_themes'
+  | 'override_priority_score'
   | 'export';
 export type AuditEntityType =
   | 'organization'
@@ -76,6 +80,10 @@ export type AuditEntityType =
   | 'ncnp_report'
   | 'question'
   | 'need_decision'
+  // RIO-FR-003 — a reviewer's override of a computed priority score. Its own
+  // entity type rather than folded into 'need': the audit reader filters on
+  // what was changed, and a score decision is not a change to the need.
+  | 'priority_score'
   // RIO-AI-003 — one row per suggested summary of a Need's description.
   | 'need_statement_summary';
 

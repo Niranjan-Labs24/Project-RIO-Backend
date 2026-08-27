@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { BadRequestException } from '@nestjs/common';
-import { MethodologyConfigService, DEFAULT_AI_CLASSIFICATION_SETTINGS } from './methodology-config.service';
+import {
+  MethodologyConfigService,
+  DEFAULT_AI_CLASSIFICATION_SETTINGS,
+  DEFAULT_PRIORITY_FACTOR_SCALES,
+} from './methodology-config.service';
 import { orgContext } from '../../tenancy/org-context';
 import type { MethodologyConfigRow } from './methodology-config.types';
 
@@ -15,6 +19,7 @@ const BASE_ROW: MethodologyConfigRow = {
   confidenceFlagSettings: { dontKnowRatioThreshold: 0.2, minRespondentsForStandardConfidence: 10 },
   aiClassificationSettings: { lowConfidenceThreshold: 0.7, veryLowConfidenceThreshold: 0.4 },
   aiSummarySettings: { statementLengthThreshold: 1500, maxSummaryChars: 600 },
+  priorityFactorScales: DEFAULT_PRIORITY_FACTOR_SCALES,
   updatedAt: new Date('2026-08-24T00:00:00Z'),
   updatedBy: null,
 };

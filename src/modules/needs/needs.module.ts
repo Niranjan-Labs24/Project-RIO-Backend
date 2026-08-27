@@ -8,9 +8,10 @@ import { NeedSummaryController } from './need-summary.controller';
 import { NeedsImportService } from './needs-import.service';
 import { NeedSummaryService } from './need-summary.service';
 import { NeedsService } from './needs.service';
+import { NeedThemesModule } from './need-themes.module';
 
 @Module({
-  imports: [GeographyModule, AiDecisionsModule, AiModule, MethodologyConfigModule],
+  imports: [GeographyModule, AiDecisionsModule, AiModule, MethodologyConfigModule, NeedThemesModule],
   controllers: [NeedsController, NeedSummaryController],
   providers: [NeedsService, NeedsImportService, NeedSummaryService],
   // Exported so the Reports module can resolve a Need's confirmed summary when

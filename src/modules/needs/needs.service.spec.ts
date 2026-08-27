@@ -28,6 +28,8 @@ function makeRow(overrides: Partial<NeedRow> = {}): NeedRow {
     proposedDomains: null,
     proposedReason: null,
     gapType: null,
+    urgency: null,
+    themes: [],
     affectedPeople: null,
     affectedHouseholds: null,
     createdBy: 'me',
@@ -136,12 +138,16 @@ function makeService(
     maybeGenerateForNeed: async () => null,
     markStaleForNeed: async () => undefined,
   };
+  // RIO-FR-003's theme extraction is fire-and-forget on the same paths, and
+  // has its own spec — the stub only has to resolve.
+  const needThemes = { maybeExtractForNeed: async () => null };
   return new NeedsService(
     tenant as never,
     audit as never,
     {} as never,
     aiDecisions as never,
     methodologyConfig as never,
+    needThemes as never,
     needSummaries as never,
   );
 }

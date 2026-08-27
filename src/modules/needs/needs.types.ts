@@ -51,6 +51,11 @@ export interface NeedRow {
   proposedDomains: unknown;
   proposedReason: string | null;
   gapType: string | null;
+  // RIO-FR-003 AC 1 — the human-assigned urgency level, and AC 6's extracted
+  // themes. Urgency is null until someone sets it; themes are [] until
+  // extraction has run.
+  urgency: string | null;
+  themes: string[];
   affectedPeople: number | null;
   affectedHouseholds: number | null;
   createdBy: string;
@@ -127,6 +132,11 @@ export interface Need {
   // Need.gapType for why the Reports module's separate heuristic isn't
   // reused here).
   gapType: string | null;
+  // RIO-FR-003 AC 1 — the human-assigned urgency level, and AC 6's extracted
+  // themes. Urgency is null until someone sets it; themes are [] until
+  // extraction has run.
+  urgency: string | null;
+  themes: string[];
   // RIO-FR-005 (Round 4, client-confirmed 2026-08-24) — "Roughly how many
   // people/households does this need affect?", entered on the need-entry
   // form. This is the PRIMARY Affected Population value — see

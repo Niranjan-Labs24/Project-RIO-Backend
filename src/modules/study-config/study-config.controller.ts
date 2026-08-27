@@ -122,4 +122,42 @@ export class StudyConfigController {
   deactivateDecisionType(@Param('id', new UuidParamPipe()) id: string): Promise<StudyConfigOption> {
     return this.studyConfig.setDecisionTypeActive(id, false);
   }
+  // RIO-FR-003 AC 6 — the closed vocabulary the theme extractor picks from.
+  // Same methodologyQuestionBank gate as the option lists above: editing the
+  // theme list changes what needs get filed under and therefore what the
+  // recurrence factor counts, which is a methodology decision.
+  @Get('need-themes')
+  @RequirePermission('methodologyQuestionBank', 'read')
+  listNeedThemes(): Promise<StudyConfigOption[]> {
+    return this.studyConfig.listNeedThemes();
+  }
+
+  @Post('need-themes')
+  @RequirePermission('methodologyQuestionBank', 'write')
+  createNeedTheme(
+    @Body(new TypeBoxValidationPipe(CreateStudyConfigOptionBody)) body: CreateStudyConfigOptionDto,
+  ): Promise<StudyConfigOption> {
+    return this.studyConfig.createNeedTheme(body);
+  }
+
+  @Patch('need-themes/:id')
+  @RequirePermission('methodologyQuestionBank', 'write')
+  updateNeedTheme(
+    @Param('id', new UuidParamPipe()) id: string,
+    @Body(new TypeBoxValidationPipe(UpdateStudyConfigOptionBody)) body: UpdateStudyConfigOptionDto,
+  ): Promise<StudyConfigOption> {
+    return this.studyConfig.updateNeedTheme(id, body);
+  }
+
+  @Patch('need-themes/:id/activate')
+  @RequirePermission('methodologyQuestionBank', 'write')
+  activateNeedTheme(@Param('id', new UuidParamPipe()) id: string): Promise<StudyConfigOption> {
+    return this.studyConfig.setNeedThemeActive(id, true);
+  }
+
+  @Patch('need-themes/:id/deactivate')
+  @RequirePermission('methodologyQuestionBank', 'write')
+  deactivateNeedTheme(@Param('id', new UuidParamPipe()) id: string): Promise<StudyConfigOption> {
+    return this.studyConfig.setNeedThemeActive(id, false);
+  }
 }
