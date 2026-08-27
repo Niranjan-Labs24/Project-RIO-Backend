@@ -71,15 +71,20 @@ export const UpdateNeedBody = registerSchema(
 );
 export type UpdateNeedDto = Static<typeof UpdateNeedBody>;
 
-// RIO-FR-005 (Q12, client-confirmed) — five fixed values, final, no
-// additions. Analyst-entered, never auto-calculated (see schema.prisma's
-// comment on Need.gapType).
+// RIO-FR-005 (Q12) originally confirmed five fixed, final values — the
+// client's later correction (2026-08-27) moved Gap Types into the
+// configurable-list family alongside Study Type/Target Sector/Decision
+// Type (see GapTypeOption in schema.prisma and StudyConfigService). The
+// actual set of valid names is no longer fixed at this layer: it's
+// validated against GapTypeOption at the API layer (see
+// NeedsService.assertValidGapType), the same pattern as studyType. This
+// export is kept only as the seed's default 5 values, not an enforced enum.
 export const GAP_TYPES = ['acute', 'chronic', 'structural', 'seasonal', 'equity'] as const;
 
 export const SetNeedGapTypeBody = registerSchema(
   'SetNeedGapTypeBody',
   T.Object(
-    { gapType: T.Union([T.Literal('acute'), T.Literal('chronic'), T.Literal('structural'), T.Literal('seasonal'), T.Literal('equity'), T.Null()]) },
+    { gapType: T.Union([T.String({ minLength: 1, maxLength: 100 }), T.Null()]) },
     { additionalProperties: false },
   ),
 );

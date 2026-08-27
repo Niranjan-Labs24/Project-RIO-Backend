@@ -32,3 +32,24 @@ export const UpdateMethodologyConfigBody = registerSchema(
   ),
 );
 export type UpdateMethodologyConfigDto = Static<typeof UpdateMethodologyConfigBody>;
+
+// Reviewer notes are mandatory on both Approve and Reject — same
+// requirement and same shape as ApproveSurveyBody/RejectSurveyBody and
+// ApproveNcnpReportBody/RejectNcnpReportBody. Whitespace-only strings pass
+// minLength:1 (it counts raw characters), so MethodologyConfigService also
+// runs the shared requireNonBlank() trim-check.
+export const ApproveMethodologyConfigBody = registerSchema(
+  "ApproveMethodologyConfigBody",
+  T.Object({
+    notes: T.String({ minLength: 1, maxLength: 2000 }),
+  }),
+);
+export type ApproveMethodologyConfigDto = Static<typeof ApproveMethodologyConfigBody>;
+
+export const RejectMethodologyConfigBody = registerSchema(
+  "RejectMethodologyConfigBody",
+  T.Object({
+    notes: T.String({ minLength: 1, maxLength: 2000 }),
+  }),
+);
+export type RejectMethodologyConfigDto = Static<typeof RejectMethodologyConfigBody>;

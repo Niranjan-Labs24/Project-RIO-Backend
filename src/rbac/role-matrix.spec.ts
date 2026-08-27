@@ -8,7 +8,7 @@ describe('ROLE_MATRIX', () => {
     expect(ROLE_MATRIX.find((r) => r.key === 'system_admin')?.crossEntity).toBe(true);
   });
 
-  it('system_reviewer reviews the NCNP Compiled Report only — cross-entity, read-only everywhere else', () => {
+  it('system_reviewer reviews the NCNP Compiled Report and holds a narrow governance-approval gate — no NCNP Admin role exists', () => {
     const role = ROLE_MATRIX.find((r) => r.key === 'system_reviewer');
     expect(role?.id).toBe('role_system_reviewer');
     expect(role?.crossEntity).toBe(true);
@@ -16,24 +16,48 @@ describe('ROLE_MATRIX', () => {
     expect(can('system_reviewer', 'ncnpReport', 'approve')).toBe(true);
     // Cannot generate/publish (that's System Admin's `write`, not held here).
     expect(can('system_reviewer', 'ncnpReport', 'write')).toBe(false);
-    // Read-only on Needs/Surveys/Documents; no approve/write/create anywhere.
+    // Read-only on Needs/Surveys/Data Collection/Import; no approve/write/create.
     expect(can('system_reviewer', 'studySurvey', 'read')).toBe(true);
     expect(can('system_reviewer', 'dataCollection', 'read')).toBe(true);
     expect(can('system_reviewer', 'dataImport', 'read')).toBe(true);
     expect(can('system_reviewer', 'surveyBuilder', 'approve')).toBe(false);
     expect(can('system_reviewer', 'surveyBuilder', 'write')).toBe(false);
-    // Documents (the client's "Documents" menu, reusing the RPT01-14
-    // Reports module): view + download, no approve/write.
+    // General RPT01-14 Reports: view + download, no approve — client-confirmed
+    // this stays outside the governance-approval gate (that's ncnpReport above).
     expect(can('system_reviewer', 'reportsDashboards', 'read')).toBe(true);
     expect(can('system_reviewer', 'reportsDashboards', 'export')).toBe(true);
     expect(can('system_reviewer', 'reportsDashboards', 'write')).toBe(false);
     expect(can('system_reviewer', 'reportsDashboards', 'approve')).toBe(false);
-    // RIO-RBAC-001 matrix (Aug 11): view-only on Organization/Users now.
-    // Roles & Permissions and the Audit Log stay out of reach entirely.
+    // RIO-RBAC-002 (client-confirmed, no separate NCNP Admin role — this
+    // role absorbs that governance/final-authority level instead, so the
+    // matrix stays at 10 roles): View + Approve on Users/Orgs, Roles &
+    // Permissions, Onboarding Consent, Methodology/Question Bank
+    // publication, and the citizen consent form specifically — never
+    // Create/Edit on any of these, that stays System Admin's.
     expect(can('system_reviewer', 'entityTeam', 'read')).toBe(true);
+    expect(can('system_reviewer', 'entityTeam', 'approve')).toBe(true);
     expect(can('system_reviewer', 'entityTeam', 'write')).toBe(false);
-    expect(can('system_reviewer', 'rolesPermissions', 'read')).toBe(false);
-    expect(can('system_reviewer', 'archiveSharingAudit', 'read')).toBe(false);
+    expect(can('system_reviewer', 'entityTeam', 'create')).toBe(false);
+    expect(can('system_reviewer', 'rolesPermissions', 'read')).toBe(true);
+    expect(can('system_reviewer', 'rolesPermissions', 'approve')).toBe(true);
+    expect(can('system_reviewer', 'rolesPermissions', 'write')).toBe(false);
+    expect(can('system_reviewer', 'onboardingConsent', 'read')).toBe(true);
+    expect(can('system_reviewer', 'onboardingConsent', 'approve')).toBe(true);
+    expect(can('system_reviewer', 'onboardingConsent', 'write')).toBe(false);
+    expect(can('system_reviewer', 'methodologyQuestionBank', 'read')).toBe(true);
+    expect(can('system_reviewer', 'methodologyQuestionBank', 'approve')).toBe(true);
+    expect(can('system_reviewer', 'methodologyQuestionBank', 'write')).toBe(false);
+    expect(can('system_reviewer', 'citizenChannel', 'read')).toBe(true);
+    expect(can('system_reviewer', 'citizenChannel', 'approve')).toBe(true);
+    // Audit Log: view only, no export — stays System Admin's alone to export.
+    expect(can('system_reviewer', 'archiveSharingAudit', 'read')).toBe(true);
+    expect(can('system_reviewer', 'archiveSharingAudit', 'export')).toBe(false);
+
+    // No separate "NCNP Admin" role exists in the matrix — the client
+    // explicitly corrected this: the governance level is System Reviewer,
+    // not an 11th role.
+    expect(ROLE_MATRIX.find((r) => r.key === 'ncnp_admin')).toBeUndefined();
+    expect(ROLE_MATRIX).toHaveLength(10);
   });
 
   it('system_admin can generate and publish the NCNP Compiled Report, not approve/reject it', () => {
@@ -66,9 +90,12 @@ describe('ROLE_MATRIX', () => {
       expect(can(key, 'archiveSharingAudit', 'export')).toBe(false);
     }
     expect(can('center_supervisor', 'archiveSharingAudit', 'export')).toBe(true);
-    // No audit access whatsoever for these two.
+    // No audit access whatsoever for this one.
     expect(can('field_researcher', 'archiveSharingAudit', 'read')).toBe(false);
-    expect(can('system_reviewer', 'archiveSharingAudit', 'read')).toBe(false);
+    // system_reviewer gained view-only access (RIO-RBAC-002 governance
+    // scope, asserted in full above) — export stays exclusive to
+    // system_admin regardless.
+    expect(can('system_reviewer', 'archiveSharingAudit', 'export')).toBe(false);
   });
 
   // RIO-RBAC-001 (client-confirmed): "Center supervisor / NCNP supervisor"

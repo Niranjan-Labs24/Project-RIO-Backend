@@ -122,4 +122,39 @@ export class StudyConfigController {
   deactivateDecisionType(@Param('id', new UuidParamPipe()) id: string): Promise<StudyConfigOption> {
     return this.studyConfig.setDecisionTypeActive(id, false);
   }
+
+  @Get('gap-types')
+  @RequirePermission('methodologyQuestionBank', 'read')
+  listGapTypes(): Promise<StudyConfigOption[]> {
+    return this.studyConfig.listGapTypes();
+  }
+
+  @Post('gap-types')
+  @RequirePermission('methodologyQuestionBank', 'write')
+  createGapType(
+    @Body(new TypeBoxValidationPipe(CreateStudyConfigOptionBody)) body: CreateStudyConfigOptionDto,
+  ): Promise<StudyConfigOption> {
+    return this.studyConfig.createGapType(body);
+  }
+
+  @Patch('gap-types/:id')
+  @RequirePermission('methodologyQuestionBank', 'write')
+  updateGapType(
+    @Param('id', new UuidParamPipe()) id: string,
+    @Body(new TypeBoxValidationPipe(UpdateStudyConfigOptionBody)) body: UpdateStudyConfigOptionDto,
+  ): Promise<StudyConfigOption> {
+    return this.studyConfig.updateGapType(id, body);
+  }
+
+  @Patch('gap-types/:id/activate')
+  @RequirePermission('methodologyQuestionBank', 'write')
+  activateGapType(@Param('id', new UuidParamPipe()) id: string): Promise<StudyConfigOption> {
+    return this.studyConfig.setGapTypeActive(id, true);
+  }
+
+  @Patch('gap-types/:id/deactivate')
+  @RequirePermission('methodologyQuestionBank', 'write')
+  deactivateGapType(@Param('id', new UuidParamPipe()) id: string): Promise<StudyConfigOption> {
+    return this.studyConfig.setGapTypeActive(id, false);
+  }
 }

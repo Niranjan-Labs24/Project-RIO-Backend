@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { orgContext } from '../../tenancy/org-context';
 import { NeedsService } from './needs.service';
 import type { NeedRow } from './needs.types';
@@ -78,6 +78,7 @@ function fakeTenant(opts: {
       update: async ({ data }: { data: Record<string, unknown> }) => {
         opts.onNeedUpdate?.(data);
         if (opts.need) Object.assign(opts.need, data);
+        return opts.need ? withGeo(opts.need) : undefined;
       },
       delete: async ({ where }: { where: unknown }) => {
         opts.onNeedDelete?.(where);
@@ -110,11 +111,15 @@ function makeService(
   tenant: ReturnType<typeof fakeTenant>,
   audit: unknown = { record: async () => {} },
   aiDecisions: unknown = fakeAiDecisions(),
+  studyConfig: unknown = { listActiveGapTypeNames: async () => [] },
 ) {
   // geography is only consulted when a payload carries governorateIds/
   // centerIds (see assertGeographyInStudyScope's early return) — none of
-  // these tests do, so an empty stub is enough.
-  return new NeedsService(tenant as never, audit as never, {} as never, aiDecisions as never);
+  // these tests do, so an empty stub is enough. Same for studyConfig: an
+  // empty active list means assertValidGapType() never rejects, matching
+  // most tests' use of arbitrary gapType values — the setGapType describe
+  // block below overrides it with a real active list.
+  return new NeedsService(tenant as never, audit as never, {} as never, aiDecisions as never, studyConfig as never);
 }
 
 const ctx = { requestId: 'r', orgId: 'o1', actorId: 'me' };
@@ -365,5 +370,37 @@ describe('NeedsService', () => {
         expect(deleted).toBe(false);
       },
     );
+  });
+
+  // Gap Types (client correction 2026-08-27, superseding RIO-FR-005 Q12's
+  // "five fixed values, final") — validated against GapTypeOption's active
+  // names, same pattern as StudiesService.assertValidStudyType.
+  describe('setGapType', () => {
+    const activeGapTypes = { listActiveGapTypeNames: async () => ['acute', 'chronic', 'structural', 'seasonal', 'equity'] };
+
+    it('accepts a configured gap type', async () => {
+      const svc = makeService(fakeTenant({ need: makeRow() }), undefined, undefined, activeGapTypes);
+      const result = await orgContext.run(ctx, () => svc.setGapType('need-1', 'acute'));
+      expect(result.gapType).toBe('acute');
+    });
+
+    it('rejects a gap type that is not in the configured active list', async () => {
+      const svc = makeService(fakeTenant({ need: makeRow() }), undefined, undefined, activeGapTypes);
+      await expect(
+        orgContext.run(ctx, () => svc.setGapType('need-1', 'totally-made-up')),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('always accepts null (clearing the gap type)', async () => {
+      const svc = makeService(fakeTenant({ need: makeRow({ gapType: 'acute' }) }), undefined, undefined, activeGapTypes);
+      const result = await orgContext.run(ctx, () => svc.setGapType('need-1', null));
+      expect(result.gapType).toBeNull();
+    });
+
+    it('accepts anything when the active list is empty (nothing configured yet)', async () => {
+      const svc = makeService(fakeTenant({ need: makeRow() }));
+      const result = await orgContext.run(ctx, () => svc.setGapType('need-1', 'anything'));
+      expect(result.gapType).toBe('anything');
+    });
   });
 });

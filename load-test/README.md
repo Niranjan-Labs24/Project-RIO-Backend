@@ -48,16 +48,97 @@ No numeric target for this NFR exists anywhere in the BRD, Annex A, or Build
 Instruction Pack — its own acceptance criteria says "target to be confirmed
 during technical design," and that confirmation never happened (checked
 again against all 34 answered Sprint 2 clarification questions — none cover
-it). The targets below are **internally set working targets, not yet
-client-confirmed** — proceeding with these so the story isn't blocked, to be
-verified with the client once possible.
+it). **Decision (2026-08-27): proceeding with our own internal working
+targets rather than blocking on client confirmation.** These are explicitly
+open to revision if the client specifies different numbers later — not
+presented to them as final, just adopted so this story isn't stuck waiting.
 
-| Metric | Internal target | Basis |
+**Superseded by Round 5 (2026-08-24, client-confirmed) and the 2026-08-27 re-test below:** the
+pilot scale is 500 *concurrent* sessions, not 500 total registered accounts — and at that real
+scale, the system fails functionally (94% VU failure rate, see the 2026-08-27 result below) well
+before a response-time target is even meaningful to propose against real traffic. The dashboard
+target below is retained as our own working number regardless — it was never contingent on the
+load-test result, and there's no reason to withhold it while the connection-pool/CPU work
+continues in parallel.
+
+| Metric | Internal target (ours, not client-confirmed — revisable) | Basis |
 |---|---|---|
-| Dashboard load (Priority Dashboard, System Admin Dashboard, etc.) | < 3 seconds | Standard web-app responsiveness bar; the `p95 latency < 500 ms` API threshold above is the main contributor and is already enforced automatically — the remaining budget is frontend render time |
-| Report generation (PDF/Excel, non-AI content) | 10–15 seconds | Observed typical generation time for the existing report types |
+| Dashboard load (Priority Dashboard, System Admin Dashboard, etc.) | **< 3 seconds** | Standard web-app responsiveness bar |
+| Report generation (PDF/Excel, non-AI content) | 10–15 seconds | Superseded by the real measurement below — kept only as the pre-measurement estimate |
 | Report generation involving an AI-generated summary (executive/combined summaries) | up to 60 seconds | LLM-call latency dominates; not meaningfully reducible without changing the summarization approach |
-| Pilot data-volume assumption these targets are tested against | 50 orgs × 500 users | Same scale already established and seeded by `load-seed.ts` for the NFR-006 run above — reused rather than inventing a second scale |
+| Report-generation test data volume | **1 study, 1 survey, ~200 submitted responses** (see note below) | Our own working assumption, not client-confirmed — see note |
+| Pilot data-volume assumption the *load test itself* was run against | 50 orgs × 500 accounts (old), then real 500-*concurrent* sessions (2026-08-27 re-test) | Client-confirmed scale, separate from the report-content-volume assumption above |
+
+**Report-generation data-volume assumption, explained:** the only seeded fixture that exercised
+the real report pipeline before this (`prisma/seed-scored-study.ts`, reused by
+`prisma/seed-data-quality.ts`) has **38 submitted responses** for one study/survey — a small
+illustrative fixture, not a deliberate "pilot-scale" figure. Rather than block this story on the
+client for their actual typical study size, we adopted **~200 responses for one study/survey** as
+our own stand-in "representative pilot-scale" assumption (roughly 5x the existing fixture) —
+explicitly a guess, not derived from any real operational number, and should be replaced the
+moment the client provides an actual figure. **Now seeded**: `prisma/seed-report-perf.ts`
+(`pnpm seed:report-perf`) creates a dedicated study/survey at this volume, kept entirely separate
+from `seed-scored-study.ts` since several specs hardcode assertions against that fixture's exact
+38-response count.
+
+### Report-generation timing — real measurement, 2026-08-27
+
+Ran RPT14 (Village Report) generation and both export formats against the 200-response fixture
+above, on the built API (single dev-box instance):
+
+| Step | First call after server start | Second call onward (steady state) |
+|---|---|---|
+| Report content generation (`POST /api/reports`) | 22.5 s | **150 ms** |
+| PDF export (`GET .../export?format=pdf`, 34.8 KB) | not separately isolated | **124 ms** |
+| Excel export (`GET .../export?format=excel`, 14.9 KB) | not separately isolated | **78 ms** |
+
+For comparison, the same sequence against the older 38-response fixture: first call **17.4 s**,
+steady-state **127 ms** — confirming the slow number is a one-time cost, not something that scales
+with response count (200 responses added ~5x the data for only ~20ms more steady-state time).
+
+**Steady-state report generation is fast — well inside the 10–15s estimate, not close to it.**
+The real finding here isn't slowness; it's the **~17-22 second cost on the first report-generation
+request after the server starts**, regardless of which study or response count. Not yet
+root-caused (this codebase has no request-internal timing/tracing — see the Notes section below)
+but consistent with a one-time lazy-initialization cost somewhere in the report-generation code
+path (e.g. a heavy module's first dynamic import, or a query planner compiling a rarely-hit query
+for the first time). **Worth flagging as a production consideration**: if this reproduces in a
+real deployment, the *first* report any user requests after a fresh deploy/restart could appear to
+hang for ~20 seconds — a warm-up request fired automatically right after each deploy (hitting
+`POST /api/reports` once against known-good seed data) would absorb this cost before a real user
+ever sees it, rather than trying to eliminate the underlying one-time cost itself.
+
+The previous "10–15 seconds" figure in the table above was an informal "observed typical" guess,
+not a real measurement — it happened to land in the same order of magnitude as the *cold-start*
+number, not the real steady-state number, which is over 100x faster. It's superseded by this
+measurement.
+
+### Automated as a real regression test (2026-08-27, same day)
+
+The manual timing above is now `test/report-perf-regression.e2e.spec.ts` — runs in `pnpm test`
+(and therefore in CI, which now runs `pnpm seed:report-perf` before the test step). It does one
+untimed warm-up call to absorb the cold-start cost documented above, then times the real,
+steady-state RPT14 generation + PDF export + Excel export, asserting each against the story's own
+documented targets (10s / 15s — the pre-measurement estimates, not the much tighter numbers
+actually observed, so this fails loudly on a real regression without being flaky over normal CI
+variance). **AC4 ("a performance regression test is run before the issue is closed") is now
+satisfied for report generation** — it runs automatically on every CI run, not manually.
+
+A companion test, `test/dashboard-perf-regression.e2e.spec.ts`, does the same for **AC1**
+(dashboard load) — but only partially: there's no browser in this environment, so full dashboard
+load (API + frontend render) can't be measured end-to-end. What it does measure: the real backend
+call the Priority Dashboard makes on load (`GET /api/priority-scores`), budgeted at 1.5s (half the
+3s total target, leaving headroom for the untested frontend-render half). **Known gap, not
+silently covered**: the System Admin Dashboard and main Dashboard's `studiesService.getPlatformStats()`
+call is frontend mock data (a hardcoded array with an artificial delay) — there is no real backend
+endpoint yet to time for those two dashboards' initial load.
+
+**Both tests use the synthetic `seed-report-perf.ts` fixture, not real computed scoring** — the
+domain/KPI severity numbers are fixed values carried over from `seed-scored-study.ts`, not
+produced by RIO-FR-003's weighting-factor wiring (still not done — see the master log). **Once
+FR-003 lands, these regression tests should be re-pointed at real computed data** rather than this
+synthetic fixture, so "representative pilot-scale data" (the AC's own wording) is actually true,
+not just a stand-in.
 
 **Not yet automated**: report-generation timing (unlike the API p95 above)
 has no Artillery scenario or regression test today — PDF/Excel/AI-summary
@@ -206,6 +287,111 @@ were a downstream symptom of DB contention. Follow-up investigation this session
   back to 320/320. This is itself worth fixing before Redis is wired into local dev by default
   (e.g. distinct seeded logins per e2e spec file, or a global test-setup hook that flushes
   rate-limit keys).
+
+## Result (2026-08-27, real 500-*concurrent*-session re-test — RIO-NFR-005 Round 5)
+
+Every result above tested 50 orgs × 500 *total registered* accounts under light arrival-rate
+traffic (peak concurrency well under 100 VUs) — not what the client actually confirmed as the
+pilot target. Round 5 (2026-08-24) corrected this: the real target is **500 concurrent
+users/sessions**. `pilot.yml`'s phases were re-sized (`arrivalRate` × average session length ≈
+500 concurrent) to `warmup(10s@15/s) → ramp(20s, 15→210/s) → sustained(60s@210/s)`, same
+50-org/500-account seed, same two scenarios/weights, same thresholds. Single dev-box instance,
+same as every run above — this is not a production-sized deployment.
+
+| Metric | Result | Budget | Verdict |
+|---|---|---|---|
+| VUs created | 15,000 | — | — |
+| VUs completed / failed | 860 / 14,140 | — | ❌ **94% of virtual users failed to complete** |
+| Requests | 21,534 | — | — |
+| HTTP 200 | 2,946 (14% of requests) | — | ❌ |
+| HTTP 500 | 6,032 | — | ❌ |
+| HTTP 429 (rate-limited) | 303 | — | — |
+| HTTP 403 | 258 | — | — |
+| `ETIMEDOUT` errors | 11,995 | — | ❌ |
+| Latency p95 | 9,416.8 ms | < 500 ms | ❌ (19x over budget) |
+| Latency p99 | 11,050.8 ms | < 1000 ms | ❌ |
+| Error rate | ≈ 69% of responses non-200 | < 1 % | ❌ |
+
+**The system does not hold up at the real confirmed pilot scale.** Every prior run on this page
+found the connection-pool-exhaustion (`PrismaClientKnownRequestError: Transaction API error:
+Unable to start a transaction in the given time`) failure mode confined mostly to the *write*
+path under light concurrency. At real 500-concurrent load, the server log shows the identical
+error now hitting **read-only endpoints just as hard** — `AuthService.me`,
+`OrganizationsService.getCurrent`, `UsersService.list`, and `AuditService.list` all failed with
+it repeatedly (12,400+ matching log lines during the run). Root cause is unchanged from earlier
+findings — Prisma's default connection-pool size vs. Postgres `max_connections` (100 on this dev
+box) — but the *severity* is materially worse than anything measured before: at the old
+light-arrival scale, reads passed cleanly at ~211ms p95 with zero errors; at genuine 500-concurrent
+scale, the same read endpoints collapse alongside the write path.
+
+**No response-time target can responsibly be proposed from this result** — the system fails
+functionally (94% VU failure) long before latency becomes the binding constraint. **What this
+confirms, concretely, for the client conversation:**
+1. Connection-pool sizing must be fixed (and re-tested) before any pilot deployment at this scale,
+   not treated as a nice-to-have — this is not a hypothetical concern, it's reproduced here.
+2. The 7,000+ target-NGO figure the client separately flagged is **more than an order of magnitude
+   beyond a scale this dev-box configuration already fails at** — the connection-pool fix and the
+   production sizing/architecture conversation are not two separate follow-ups, they're the same
+   one, and it needs to happen before either number is treated as achievable.
+3. This dev-box run (single Postgres instance, default pool settings, no PgBouncer/connection
+   pooler in front of it) is not evidence of what a properly sized production deployment would do
+   — but it is real evidence that the *current default configuration* cannot be assumed to scale
+   linearly from the old light-traffic numbers.
+
+## Fix attempt (2026-08-27, same day) — pool-size fix applied, real but partial improvement; a deeper bottleneck found
+
+**Root cause identified:** `PrismaService`/`SupervisorPrismaService` (`src/prisma/*.ts`) each wrap
+a `pg.Pool` via `@prisma/adapter-pg` without setting `max` — `pg.Pool`'s undocumented default is
+**10 connections**. Every request, even a plain read, opens its own interactive transaction
+(`TenantPrismaService.runInOrgContext`, for the per-request RLS `app.current_org_id`), so this
+10-connection ceiling was the app's real concurrency limit regardless of Postgres's own
+`max_connections=100`.
+
+**Fix applied:** added `DB_POOL_MAX_APP` (default 60) / `DB_POOL_MAX_SUPERVISOR` (default 15) env
+vars (`env.schema.ts`), wired into both pools' `PrismaPg({ max: ... })` config. Re-ran the exact
+same 500-concurrent scenario:
+
+| Metric | Before fix | After pool fix | Budget |
+|---|---|---|---|
+| HTTP 200 | 2,946 | 4,951–5,890 (varied by run) | — |
+| `Unable to start a transaction` errors | 6,032 | 3,980–4,263 | — |
+| VUs failed (of 15,000) | 14,140 (94%) | 13,856–14,068 (~92–93%) | — |
+| Latency p95 | 9,417 ms | 7,866–9,048 ms | < 500 ms |
+
+**Real improvement, not nothing** — roughly 30% fewer connection-pool-timeout errors and up to 2x
+more successful requests. **But the system still fails at real 500-concurrent scale after this
+fix.** Investigated why: `/api/auth/login` itself was taking a **~2.2 second median** response
+time (should be ~50–150ms for a single argon2id verify) — a sign of severe queueing on the login
+path specifically, independent of the DB pool. Hypothesis: `argon2`'s async verify runs on
+libuv's threadpool (default size 4), so 15,000 concurrent fresh logins queue on very few worker
+threads. Tested by re-running with `UV_THREADPOOL_SIZE=32` (8x default) — **no measurable
+improvement** (median login latency unchanged at ~2.17s, VU failures unchanged at ~93%). This
+rules out thread-pool size as the bottleneck; **`UV_THREADPOOL_SIZE` was not committed to the
+codebase** since it demonstrably didn't help.
+
+**Conclusion: the remaining bottleneck is raw CPU capacity for argon2id password hashing under a
+15,000-concurrent-fresh-login storm, on this dev box's 8 physical cores** — argon2id is
+deliberately memory-hard and CPU-expensive (that's the point, for password security), and no
+amount of thread-count tuning changes how many hashes 8 cores can compute per second. This is a
+genuine hardware/capacity constraint, not an application misconfiguration:
+- It is very likely to look materially better on real production-grade server hardware with more
+  cores, and/or with the auth-path work spread across multiple horizontally-scaled app instances.
+- Artillery's scenario (every one of 15,000 VUs performs a **brand-new** login) is a legitimate
+  worst case, but is harsher than most real usage, where an already-authenticated user's session
+  token is reused across requests rather than re-logging in — so "500 concurrent users" in
+  practice generates far fewer fresh logins per second than this test does. This doesn't erase the
+  finding (the read/write collapse under real concurrency is still real signal, and the pool fix
+  was still necessary and correct), but it means the specific 500-concurrent-*login-storm* number
+  overstates one dimension of the real-world load shape.
+- **Not yet tried**: capping/queuing concurrent argon2 work explicitly (e.g., a small worker pool
+  with backpressure) rather than lettings 15,000 requests all hit `argon2.verify` at once, and
+  re-testing on cloud-grade multi-core hardware instead of this dev laptop. Both are legitimate
+  next steps before concluding the *application* still fails at scale — this run only proves this
+  *dev-box configuration* does.
+
+**Kept in the codebase:** the pool-size fix (`DB_POOL_MAX_APP`/`DB_POOL_MAX_SUPERVISOR`) — it is
+correct and necessary regardless of the deeper CPU finding, and measurably reduced one real
+failure mode. **Not kept:** the `UV_THREADPOOL_SIZE` experiment — no evidence it helps.
 
 ## Notes / next steps
 - This is a functional pilot-scale load test on a single app instance + one Postgres.

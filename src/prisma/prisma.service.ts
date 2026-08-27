@@ -11,7 +11,20 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     // driver adapter, overriding the schema's owner connection used by the
     // CLI (configured separately in prisma.config.ts). Prisma 7 requires an
     // explicit adapter instead of a bare datasourceUrl string.
-    super({ adapter: new PrismaPg({ connectionString: config.appDatabaseUrl, ssl: pgSslOption({ enabled: config.dbSsl, rejectUnauthorized: config.dbSslRejectUnauthorized, caPath: config.dbSslCaPath }) }) });
+    //
+    // `max` matters: every request (even a read) opens its own interactive
+    // transaction here for the per-request RLS org context (see
+    // TenantPrismaService), so pg.Pool's undocumented default of 10 becomes
+    // the app's real concurrency ceiling — reproduced directly by
+    // RIO-NFR-005's 500-concurrent-session load test (see DB_POOL_MAX_APP's
+    // comment in env.schema.ts).
+    super({
+      adapter: new PrismaPg({
+        connectionString: config.appDatabaseUrl,
+        max: config.dbPoolMaxApp,
+        ssl: pgSslOption({ enabled: config.dbSsl, rejectUnauthorized: config.dbSslRejectUnauthorized, caPath: config.dbSslCaPath }),
+      }),
+    });
   }
 
   async onModuleInit(): Promise<void> {

@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import { ROLE_MATRIX } from '../rbac/role-matrix';
@@ -7,6 +7,15 @@ import { TenantPrismaService } from '../tenancy/tenant-prisma.service';
 import { PUBLIC_ROUTE_KEY } from './public.decorator';
 import { SESSION_COOKIE_NAME } from './session-cookie';
 import { TokenService } from './token.service';
+
+// Header a crossEntity caller (System Admin) uses to act on behalf of a
+// specific organisation for one request — e.g. creating a Study/Need/User
+// under an org other than their own. Read here and nowhere else: this is
+// the single place store.orgId is set, so gating it here means every
+// existing org-scoped mechanism (RLS, geography-scope checks, audit
+// records) picks it up automatically, with no changes needed in the
+// individual services that call requireOrgId().
+const ACT_AS_ORG_HEADER = 'x-act-as-org';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -60,8 +69,29 @@ export class JwtAuthGuard implements CanActivate {
     const store = getOrgStore();
     if (store) {
       store.actorId = claims.sub;
-      store.orgId = current.orgId;
       store.role = currentRole.key;
+      store.orgId = current.orgId;
+
+      // Only a crossEntity role may act on behalf of a different org, and
+      // only when it actually sends the header — an ordinary tenant user
+      // sending this header is silently ignored, never trusted.
+      const actAsOrgId = req.headers[ACT_AS_ORG_HEADER];
+      if (currentRole.crossEntity && typeof actAsOrgId === 'string' && actAsOrgId.length > 0) {
+        const targetOrg = await this.tenant.runAsSupervisor((tx) =>
+          tx.organisation.findUnique({ where: { id: actAsOrgId }, select: { isActive: true } }),
+        );
+        if (!targetOrg) {
+          throw new ForbiddenException({
+            error: { code: 'ACT_AS_ORG_NOT_FOUND', message: 'The selected organisation does not exist.' },
+          });
+        }
+        if (!targetOrg.isActive) {
+          throw new ForbiddenException({
+            error: { code: 'ACT_AS_ORG_INACTIVE', message: 'The selected organisation is not active.' },
+          });
+        }
+        store.orgId = actAsOrgId;
+      }
     }
     return true;
   }

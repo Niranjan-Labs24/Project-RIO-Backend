@@ -80,10 +80,13 @@ describe('UsersService', () => {
 
   it('forbids a tenant admin (non-crossEntity) from assigning a crossEntity role (privilege escalation)', async () => {
     const svc = makeService(fakeTenant({}));
-    // ngo_admin trying to mint a system_admin (crossEntity) must be blocked.
+    // ngo_admin trying to mint a center_supervisor (crossEntity) must be
+    // blocked. Uses center_supervisor rather than system_admin/
+    // system_reviewer here since those are now platform-seeded-only
+    // (rejected earlier, as INVALID_ROLE, regardless of caller).
     await expect(
       orgContext.run({ requestId: 'r', orgId: 'o1', role: 'ngo_admin' }, () =>
-        svc.invite({ name: 'X', email: 'x@x.org', roleId: 'role_system_admin' })),
+        svc.invite({ name: 'X', email: 'x@x.org', roleId: 'role_center_supervisor' })),
     ).rejects.toBeInstanceOf(ForbiddenException);
 
     const current: UserRow = { id: 'u1', orgId: 'o1', name: 'Me', email: 'me@x.org', roleId: 'role_ngo_admin', status: 'active', createdAt: new Date('2026-01-01T00:00:00Z') };
@@ -91,6 +94,18 @@ describe('UsersService', () => {
       orgContext.run({ requestId: 'r', orgId: 'o1', role: 'ngo_admin' }, () =>
         makeService(fakeTenant({ current })).update('u1', { roleId: 'role_center_supervisor' })),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('blocks even a crossEntity caller (system_admin) from minting system_admin/system_reviewer accounts — platform-seeded only', async () => {
+    const svc = makeService(fakeTenant({}));
+    await expect(
+      orgContext.run({ requestId: 'r', orgId: 'o1', role: 'system_admin' }, () =>
+        svc.invite({ name: 'X', email: 'x@x.org', roleId: 'role_system_admin' })),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      orgContext.run({ requestId: 'r', orgId: 'o1', role: 'system_admin' }, () =>
+        svc.invite({ name: 'Y', email: 'y@x.org', roleId: 'role_system_reviewer' })),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('allows a crossEntity admin (system_admin) to assign a crossEntity role', async () => {

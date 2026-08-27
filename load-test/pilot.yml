@@ -1,8 +1,17 @@
-# RIO-NFR-006 — pilot-volume load test.
+# RIO-NFR-006 / RIO-NFR-005 — pilot-volume load test.
 #
 # Proves the scalability claim (row-per-entity multitenancy + per-request RLS +
 # bounded pagination hold up at pilot volume) by driving realistic
 # login -> read/write traffic against a running API seeded with ~50 orgs / ~500 users.
+#
+# RIO-NFR-005 (Round 5, client-confirmed 2026-08-24): the pilot target is 500
+# *concurrent* sessions, not 500 total registered accounts. The phases below
+# are sized so Artillery's own steady-state concurrent-VU count (reported as
+# `vusers.active` in the run summary / report.json) reaches ~500 during the
+# sustained phase — arrivalRate x average-session-duration, not just the
+# arrival rate on its own. The 500 seeded accounts (load-seed.ts) are reused
+# across concurrent sessions, same as a real deployment reusing a fixed set
+# of NGO accounts.
 #
 # Run:  pnpm load:seed          # seed pilot volume + write users.csv
 #       PORT=4100 node dist/main.js   # start the API (built) on :4100
@@ -43,12 +52,16 @@ config:
     order: random
     skipHeader: true
   phases:
-    - duration: 15
-      arrivalRate: 3
+    - duration: 10
+      arrivalRate: 15
       name: warmup
-    - duration: 120
-      arrivalRate: 8
-      name: sustained-pilot
+    - duration: 20
+      arrivalRate: 15
+      rampTo: 210
+      name: ramp-to-500-concurrent
+    - duration: 60
+      arrivalRate: 210
+      name: sustained-500-concurrent
   ensure:
     thresholds:
       - http.response_time.p95: 500

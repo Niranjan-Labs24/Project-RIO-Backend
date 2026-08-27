@@ -79,6 +79,11 @@ jobs:
       - run: pnpm import:nic-registry
       - run: pnpm grant:access
       - run: pnpm seed:scored
+      # RIO-NFR-005 performance regression tests (test/report-perf-regression.e2e.spec.ts,
+      # test/dashboard-perf-regression.e2e.spec.ts) need this ~200-response
+      # study/survey fixture — see load-test/README.md for why 38 (seed:scored's
+      # own fixture) isn't used for these instead.
+      - run: pnpm seed:report-perf
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm build
