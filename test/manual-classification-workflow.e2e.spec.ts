@@ -136,11 +136,30 @@ describe("Need -> AI classification unclear -> allDomainsSelected (e2e)", () => 
     // pairs array for the allDomainsSelected case (multi-domain Phase 4),
     // matching every active, usedInMvp Question Bank entry rather than
     // filtering by a domain/subDomain this Need doesn't have.
-    const survey = await request(server)
+    //
+    // Poll for it, exactly as step 1 polls for the classification itself and
+    // for the same reason: the Need reaches ai_classified inside the
+    // persisting transaction, and question generation is a deliberate
+    // best-effort step that runs AFTER that transaction commits (a failure
+    // there must not undo a classification that succeeded). So there is a
+    // real window in which the status says ai_classified and the survey does
+    // not exist yet - the endpoint answers 200 with a null body - and reading
+    // once immediately after the status flips fails on timing rather than on
+    // behaviour, which is what it did on slower CI hardware.
+    let survey = await request(server)
       .get(`/api/needs/${needId}/survey`)
       .set("Cookie", officerCookies)
       .expect(200);
-    expect(survey.body.status).toBe("DRAFT");
+    for (let attempt = 0; attempt < 20 && !survey.body?.status; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      survey = await request(server)
+        .get(`/api/needs/${needId}/survey`)
+        .set("Cookie", officerCookies)
+        .expect(200);
+    }
+    // Named, so a future failure here reads as "generation never ran" rather
+    // than as the bare "expected undefined to be DRAFT" this used to print.
+    expect(survey.body?.status, "no survey was generated for the classified need").toBe("DRAFT");
     expect(Array.isArray(survey.body.questions)).toBe(true);
   }, 30_000);
 });

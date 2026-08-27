@@ -43,36 +43,85 @@ function normalizeAscii(s: string): string {
     .replace(/≤/g, "<=")
     .replace(/≠/g, "!=")
     .replace(/[Σ∑]/g, "Sum")
+    // "+/-8.4 pts" printed as "??8.4 pts": the plus-minus sign survived this
+    // fold, then the UTF-8 -> Latin-1 round-trip below turned its two bytes
+    // into two question marks. Every symbol these reports actually use is
+    // folded here, and esc() no longer multiplies one stray character into a
+    // run of question marks.
+    .replace(/±/g, "+/-")
+    .replace(/≈/g, "~")
+    .replace(/√/g, "sqrt")
+    .replace(/°/g, " deg")
     .replace(/[⚑✓✗]/g, "")
     .replace(/[   ]/g, " ");
 }
 function esc(raw: string): string {
-  const latin1 = Buffer.from(normalizeAscii(raw), "utf-8").toString("latin1").replace(/[^\x20-\x7e]/g, "?");
-  return latin1.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+  // Per CODE POINT, not per byte. Base Helvetica is WinAnsi and this renderer
+  // restricts itself to ASCII, so anything left after the folds above costs
+  // exactly one "?" - never a run of them that reads like part of the value.
+  let out = "";
+  for (const ch of normalizeAscii(raw)) {
+    const code = ch.codePointAt(0) ?? 0;
+    out += code >= 0x20 && code <= 0x7e ? ch : "?";
+  }
+  return out.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
 }
 
-function fits(str: string, size: number, width: number): boolean {
-  return str.length * size * 0.52 <= width;
+// ── Text metrics ────────────────────────────────────────────────────────────
+//
+// Real Helvetica advance widths (1/1000 em, from the base-14 AFMs), for
+// printable ASCII 32-126. A flat "0.52 em per character" average used to stand
+// in for these, and it is wrong in exactly the direction that breaks a layout:
+// capitals are 0.61-0.94 em, so an all-caps cell ("DOMAIN_NOT_ASSESSED") was
+// measured ~25% narrower than it draws and spilled over the next column.
+// Everything that reserves space for text - column widths, truncation, wrapping,
+// right-alignment - goes through these, so measuring right fixes all of them.
+const HELV_W: readonly number[] = [
+  278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278,
+  556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556,
+  1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778,
+  667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556,
+  333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556,
+  556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584,
+];
+const HELV_BOLD_W: readonly number[] = [
+  278, 333, 474, 556, 556, 889, 722, 238, 333, 333, 389, 584, 278, 333, 278, 278,
+  556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 333, 333, 584, 584, 584, 611,
+  975, 722, 722, 722, 722, 667, 611, 778, 722, 278, 556, 722, 611, 833, 722, 778,
+  667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 333, 278, 333, 584, 556,
+  333, 556, 611, 556, 611, 556, 333, 611, 611, 278, 278, 556, 278, 889, 611, 611,
+  611, 611, 389, 556, 333, 611, 556, 778, 556, 556, 500, 389, 280, 389, 584,
+];
+
+export function textWidth(str: string, size: number, bold = false): number {
+  const table = bold ? HELV_BOLD_W : HELV_W;
+  let units = 0;
+  for (let i = 0; i < str.length; i++) {
+    const code = str.charCodeAt(i);
+    // Anything off the table is drawn as "?" by esc(), so measure it as one.
+    units += (code >= 32 && code <= 126 ? table[code - 32] : table[31]) ?? 556;
+  }
+  return (units * size) / 1000;
 }
-export function truncate(str: string, size: number, width: number): string {
-  if (fits(str, size, width)) return str;
+function fits(str: string, size: number, width: number, bold = false): boolean {
+  return textWidth(str, size, bold) <= width;
+}
+export function truncate(str: string, size: number, width: number, bold = false): string {
+  if (fits(str, size, width, bold)) return str;
   let s = str;
-  while (s.length > 1 && !fits(s + "..", size, width)) s = s.slice(0, -1);
+  while (s.length > 1 && !fits(s + "..", size, width, bold)) s = s.slice(0, -1);
   return s + "..";
 }
-export function textWidth(str: string, size: number): number {
-  return str.length * size * 0.52;
-}
-export function wrap(str: string, size: number, width: number): string[] {
+export function wrap(str: string, size: number, width: number, bold = false): string[] {
   const words = str.split(/\s+/);
   const lines: string[] = [];
   let cur = "";
   for (const w of words) {
     const next = cur ? `${cur} ${w}` : w;
-    if (fits(next, size, width)) cur = next;
+    if (fits(next, size, width, bold)) cur = next;
     else {
       if (cur) lines.push(cur);
-      cur = fits(w, size, width) ? w : truncate(w, size, width);
+      cur = fits(w, size, width, bold) ? w : truncate(w, size, width, bold);
     }
   }
   if (cur) lines.push(cur);
@@ -494,29 +543,54 @@ export function heading(pdf: Pdf, text: string): void {
 }
 
 function renderKeyValue(pdf: Pdf, rows: Array<{ label: string; value: string }>): void {
-  const valX = pdf.rx + Math.min(150, pdf.rw * 0.42);
+  const size = 8.5;
+  const LINE = 11;
+  const GAP = 10;
+  // The label column is measured from the labels themselves rather than fixed
+  // at 150pt. A fixed column truncated every long label in "Calculation Basis
+  // - Thresholds Applied" ("Severity at or above which a sust..") while its
+  // two-digit value sat alone in half a page of white space. Bounded at 62% of
+  // the region so one very long label still cannot squeeze the values out, and
+  // labels now WRAP rather than truncate - a threshold a reader cannot finish
+  // reading is, to them, a threshold that was never stated.
+  const labelNeed = Math.max(0, ...rows.map((r) => textWidth(r.label, size, true))) + GAP;
+  const valueNeed = Math.max(0, ...rows.map((r) => textWidth(r.value, size)));
+  const labelW =
+    labelNeed + valueNeed <= pdf.rw
+      ? Math.max(60, labelNeed)
+      : Math.max(60, Math.min(labelNeed, pdf.rw * 0.62));
+  const valX = pdf.rx + labelW;
   const valW = pdf.rx + pdf.rw - valX;
   for (const { label, value } of rows) {
-    const lines = wrap(value, 8.5, valW);
-    pdf.ensure(lines.length * 11 + 2);
-    pdf.text(pdf.rx + 1, 8.5, true, truncate(label, 8.5, valX - pdf.rx - 6));
-    lines.forEach((ln, i) => {
-      if (i > 0) pdf.y += 11;
-      pdf.text(valX, 8.5, false, ln);
+    const labelLines = wrap(label, size, labelW - GAP, true);
+    const valueLines = wrap(value, size, valW);
+    const lineCount = Math.max(labelLines.length, valueLines.length);
+    pdf.ensure(lineCount * LINE + 2);
+    // Both columns are drawn from the SAME top, so a wrapped label and a
+    // wrapped value stay on the rows they belong to.
+    const top = pdf.y;
+    labelLines.forEach((ln, i) => {
+      pdf.y = top + i * LINE;
+      pdf.text(pdf.rx + 1, size, true, ln);
     });
-    pdf.y += 12.5;
+    valueLines.forEach((ln, i) => {
+      pdf.y = top + i * LINE;
+      pdf.text(valX, size, false, ln);
+    });
+    pdf.y = top + lineCount * LINE + 1.5;
   }
 }
 
+
 /** The widest single word in a cell — text that cannot be wrapped, so a column
  *  narrower than this must truncate mid-word ("Livelihood" → "Livel.."). */
-function widestWord(str: string, size: number): number {
+function widestWord(str: string, size: number, bold = false): number {
   // The hierarchy's indent is part of the first word's unbreakable width.
   const indent = /^\s+/.exec(str)?.[0] ?? "";
   return str
     .trim()
     .split(/\s+/)
-    .reduce((max, w, i) => Math.max(max, textWidth((i === 0 ? indent : "") + w, size)), 0);
+    .reduce((max, w, i) => Math.max(max, textWidth((i === 0 ? indent : "") + w, size, bold)), 0);
 }
 
 function renderTable(
@@ -534,12 +608,19 @@ function renderTable(
   // "Domain" 32pt wide, so every "Livelihood" printed as "Livel.." — the column
   // was legally full while its only value was unreadable.
   const minW = columns.map((c, i) => {
-    const header = textWidth(c, size);
+    const header = textWidth(c, size, true);
     const word = Math.max(0, ...rows.map((r) => widestWord(r[i] ?? "", size)));
-    return Math.max(header, word) + 10;
+    // +12 is the cell's own padding (3pt in, 3pt out) plus a hair of gutter, so
+    // two adjacent columns never read as one run of text.
+    return Math.max(header, word) + 12;
   });
   const minSum = minW.reduce((a, b) => a + b, 0) || 1;
-  const chars = columns.map((c, i) => Math.max(c.length, ...rows.map((r) => (r[i] ?? "").length), 3));
+  // How much room each column's FULL content wants, measured the same way it
+  // is drawn - character-width totals, not a character count, or a prose column
+  // of narrow lowercase claims slack that an all-caps column actually needs.
+  const wantW = columns.map((c, i) =>
+    Math.max(textWidth(c, size, true), ...rows.map((r) => textWidth(r[i] ?? "", size))),
+  );
 
   let widths: number[];
   if (minSum <= pdf.rw) {
@@ -547,7 +628,7 @@ function renderTable(
     // each column's full content still overflows, so a long prose column (Notes)
     // takes most of it without starving the short ones.
     const extra = pdf.rw - minSum;
-    const overflow = chars.map((ch, i) => Math.max(0, ch * size * 0.52 - minW[i]!));
+    const overflow = wantW.map((want, i) => Math.max(0, want - minW[i]!));
     const totalOverflow = overflow.reduce((a, b) => a + b, 0);
     widths = minW.map((w, i) => w + (totalOverflow > 0 ? (overflow[i]! / totalOverflow) * extra : extra / n));
   } else {
@@ -569,13 +650,13 @@ function renderTable(
   // Prose cells (a Notes column) wrap over several lines rather than being cut
   // off — a reason a reader cannot finish reading is no reason at all.
   const MAX_LINES = 4;
-  const rowHeight = (cells: string[], wrapCells: boolean): number => {
+  const rowHeight = (cells: string[], wrapCells: boolean, bold = false): number => {
     const cellLines = cells.map((c, i) => {
       const w = widths[i] ?? 40;
-      if (!wrapCells) return [truncate(c, size, w - 6)];
-      const lines = wrap(c, size, w - 6);
+      if (!wrapCells) return [truncate(c, size, w - 6, bold)];
+      const lines = wrap(c, size, w - 6, bold);
       if (lines.length <= MAX_LINES) return lines;
-      return [...lines.slice(0, MAX_LINES - 1), truncate(lines.slice(MAX_LINES - 1).join(" "), size, w - 6)];
+      return [...lines.slice(0, MAX_LINES - 1), truncate(lines.slice(MAX_LINES - 1).join(" "), size, w - 6, bold)];
     });
     const lineCount = Math.max(1, ...cellLines.map((l) => l.length));
     return size + 5 + (lineCount - 1) * (size + 1);
@@ -583,10 +664,10 @@ function renderTable(
   const drawRow = (cells: string[], bold: boolean, wrapCells: boolean) => {
     const cellLines = cells.map((c, i) => {
       const w = widths[i] ?? 40;
-      if (!wrapCells) return [truncate(c, size, w - 6)];
-      const lines = wrap(c, size, w - 6);
+      if (!wrapCells) return [truncate(c, size, w - 6, bold)];
+      const lines = wrap(c, size, w - 6, bold);
       if (lines.length <= MAX_LINES) return lines;
-      return [...lines.slice(0, MAX_LINES - 1), truncate(lines.slice(MAX_LINES - 1).join(" "), size, w - 6)];
+      return [...lines.slice(0, MAX_LINES - 1), truncate(lines.slice(MAX_LINES - 1).join(" "), size, w - 6, bold)];
     });
     const lineCount = Math.max(1, ...cellLines.map((l) => l.length));
     const h = size + 5 + (lineCount - 1) * (size + 1);
@@ -596,7 +677,7 @@ function renderTable(
       const cx = xs[i] ?? pdf.rx;
       lines.forEach((ln, li) => {
         pdf.y = top + li * (size + 1);
-        pdf.text(numeric[i] ? cx + w - 4 - textWidth(ln, size) : cx + 3, size, bold, ln);
+        pdf.text(numeric[i] ? cx + w - 4 - textWidth(ln, size, bold) : cx + 3, size, bold, ln);
       });
     });
     pdf.y = top + h;
@@ -607,7 +688,7 @@ function renderTable(
     pdf.rule(GRAY, 0.5);
     pdf.y += 2;
   };
-  const headerH = rowHeight(columns, false);
+  const headerH = rowHeight(columns, false, true);
   // Small tables (the "top N" / "Showing N of Total" summary tables this
   // report is built from — see this file's own header comment) are placed
   // as one atomic block: header + every row reserved together upfront. Without
