@@ -129,12 +129,20 @@ function makeService(
       aiClassificationSettings: { lowConfidenceThreshold: 0.7, veryLowConfidenceThreshold: 0.4 },
     }),
   };
+  // RIO-AI-003's auto-suggest is fire-and-forget on create/update. These tests
+  // assert on the Need write itself, so the stub only has to not reject —
+  // NeedSummaryService's own behaviour is covered in need-summary.service.spec.
+  const needSummaries = {
+    maybeGenerateForNeed: async () => null,
+    markStaleForNeed: async () => undefined,
+  };
   return new NeedsService(
     tenant as never,
     audit as never,
     {} as never,
     aiDecisions as never,
     methodologyConfig as never,
+    needSummaries as never,
   );
 }
 

@@ -4,7 +4,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { requireActor } from "../../tenancy/org-context";
 import type {
-  AiClassificationSettings, ConfidenceFlagSettings, MethodologyConfig,
+  AiClassificationSettings, AiSummarySettings, ConfidenceFlagSettings, MethodologyConfig,
   MethodologyConfigHistoryEntry, MethodologyConfigRow,
   MethodologyVersionOption, PriorityFactorWeight, PriorityThresholds, UpdateMethodologyConfigPayload,
 } from "./methodology-config.types";
@@ -16,6 +16,14 @@ import type {
 export const DEFAULT_AI_CLASSIFICATION_SETTINGS: AiClassificationSettings = {
   lowConfidenceThreshold: 0.7,
   veryLowConfidenceThreshold: 0.4,
+};
+
+/** RIO-AI-003's threshold, client-decided (25 Aug 2026): 1,500 characters for
+ * every language. Mirrors the migration's column DEFAULT and backs the read
+ * path for rows written before that column existed. */
+export const DEFAULT_AI_SUMMARY_SETTINGS: AiSummarySettings = {
+  statementLengthThreshold: 1500,
+  maxSummaryChars: 600,
 };
 
 // Global reference/master data (no orgId, no RLS — same pattern as
@@ -75,6 +83,10 @@ export class MethodologyConfigService {
       ...this.readAiClassificationSettings(existing),
       ...(payload.aiClassificationSettings ?? {}),
     };
+    const aiSummarySettings: AiSummarySettings = {
+      ...this.readAiSummarySettings(existing),
+      ...(payload.aiSummarySettings ?? {}),
+    };
     const priorityFactorWeights: PriorityFactorWeight[] = payload.priorityFactorWeights
       ? (existing.priorityFactorWeights as PriorityFactorWeight[]).map((factor) => {
           const override = payload.priorityFactorWeights?.find((w) => w.key === factor.key);
@@ -84,6 +96,7 @@ export class MethodologyConfigService {
 
     this.validateThresholds(priorityThresholds);
     this.validateAiClassificationSettings(aiClassificationSettings);
+    this.validateAiSummarySettings(aiSummarySettings);
 
     const row = await this.prisma.methodologyConfig.update({
       where: { id: existing.id },
@@ -93,6 +106,7 @@ export class MethodologyConfigService {
         priorityFactorWeights: priorityFactorWeights as unknown as Prisma.InputJsonValue,
         confidenceFlagSettings: confidenceFlagSettings as unknown as Prisma.InputJsonValue,
         aiClassificationSettings: aiClassificationSettings as unknown as Prisma.InputJsonValue,
+        aiSummarySettings: aiSummarySettings as unknown as Prisma.InputJsonValue,
         updatedBy,
       },
     });
@@ -134,6 +148,7 @@ export class MethodologyConfigService {
       aiClassificationSettings: this.readAiClassificationSettings(
         r as unknown as MethodologyConfigRow,
       ),
+      aiSummarySettings: this.readAiSummarySettings(r as unknown as MethodologyConfigRow),
       changedByName: names[i] ?? null,
       changedAt: r.changedAt.toISOString(),
     }));
@@ -158,6 +173,8 @@ export class MethodologyConfigService {
         // defaults rather than a null the history reader would choke on.
         aiClassificationSettings:
           this.readAiClassificationSettings(row) as unknown as Prisma.InputJsonValue,
+        aiSummarySettings:
+          this.readAiSummarySettings(row) as unknown as Prisma.InputJsonValue,
         changedBy,
       },
     });
@@ -170,6 +187,7 @@ export class MethodologyConfigService {
     priorityFactorWeights: PriorityFactorWeight[];
     confidenceFlagSettings: ConfidenceFlagSettings;
     aiClassificationSettings: AiClassificationSettings;
+    aiSummarySettings: AiSummarySettings;
   }> {
     const row = await this.findRowOrThrow();
     return {
@@ -177,6 +195,7 @@ export class MethodologyConfigService {
       priorityFactorWeights: row.priorityFactorWeights as PriorityFactorWeight[],
       confidenceFlagSettings: row.confidenceFlagSettings as ConfidenceFlagSettings,
       aiClassificationSettings: this.readAiClassificationSettings(row),
+      aiSummarySettings: this.readAiSummarySettings(row),
     };
   }
 
@@ -195,6 +214,43 @@ export class MethodologyConfigService {
         },
       });
     }
+  }
+
+  // A maxSummaryChars at or above the trigger threshold makes the feature a
+  // no-op that still looks configured: every statement long enough to be
+  // summarised would be allowed to come back at its original length. Rejected
+  // before it can be saved, for the same reason as the confidence bands above.
+  private validateAiSummarySettings(settings: AiSummarySettings): void {
+    const { statementLengthThreshold, maxSummaryChars } = settings;
+    if (!(maxSummaryChars < statementLengthThreshold)) {
+      throw new BadRequestException({
+        error: {
+          code: "INVALID_SUMMARY_LENGTH_ORDER",
+          message:
+            "The maximum summary length must be below the statement length threshold that triggers summarisation.",
+        },
+      });
+    }
+  }
+
+  // Same fallback contract as readAiClassificationSettings below: a row
+  // written before the ai_summary_settings column existed reads back as the
+  // documented defaults, never as NaN — a NaN threshold would compare false
+  // against every length and silently disable summarisation everywhere.
+  private readAiSummarySettings(row: MethodologyConfigRow): AiSummarySettings {
+    const raw = row.aiSummarySettings as Partial<AiSummarySettings> | null | undefined;
+    const threshold = raw?.statementLengthThreshold;
+    const maxChars = raw?.maxSummaryChars;
+    return {
+      statementLengthThreshold:
+        typeof threshold === "number" && Number.isFinite(threshold)
+          ? threshold
+          : DEFAULT_AI_SUMMARY_SETTINGS.statementLengthThreshold,
+      maxSummaryChars:
+        typeof maxChars === "number" && Number.isFinite(maxChars)
+          ? maxChars
+          : DEFAULT_AI_SUMMARY_SETTINGS.maxSummaryChars,
+    };
   }
 
   // Rows written before the ai_classification_settings column existed (and
@@ -279,6 +335,7 @@ export class MethodologyConfigService {
         } satisfies ConfidenceFlagSettings as unknown as Prisma.InputJsonValue,
         aiClassificationSettings:
           DEFAULT_AI_CLASSIFICATION_SETTINGS as unknown as Prisma.InputJsonValue,
+        aiSummarySettings: DEFAULT_AI_SUMMARY_SETTINGS as unknown as Prisma.InputJsonValue,
       },
     });
     return created as unknown as MethodologyConfigRow;
@@ -309,6 +366,7 @@ export class MethodologyConfigService {
       priorityFactorWeights: row.priorityFactorWeights as PriorityFactorWeight[],
       confidenceFlagSettings: row.confidenceFlagSettings as ConfidenceFlagSettings,
       aiClassificationSettings: this.readAiClassificationSettings(row),
+      aiSummarySettings: this.readAiSummarySettings(row),
       updatedAt: row.updatedAt.toISOString(),
       updatedByName,
     };

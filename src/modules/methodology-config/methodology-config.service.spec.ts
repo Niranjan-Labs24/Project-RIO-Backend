@@ -14,6 +14,7 @@ const BASE_ROW: MethodologyConfigRow = {
   priorityFactorWeights: [{ key: 'severity', label: 'Severity', weight: 0.2 }],
   confidenceFlagSettings: { dontKnowRatioThreshold: 0.2, minRespondentsForStandardConfidence: 10 },
   aiClassificationSettings: { lowConfidenceThreshold: 0.7, veryLowConfidenceThreshold: 0.4 },
+  aiSummarySettings: { statementLengthThreshold: 1500, maxSummaryChars: 600 },
   updatedAt: new Date('2026-08-24T00:00:00Z'),
   updatedBy: null,
 };

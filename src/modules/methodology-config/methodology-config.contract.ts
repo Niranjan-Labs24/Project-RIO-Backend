@@ -37,6 +37,17 @@ export const UpdateMethodologyConfigBody = registerSchema(
           veryLowConfidenceThreshold: T.Optional(T.Number({ minimum: 0, maximum: 1 })),
         }),
       ),
+      // Bounds, not preferences. The floor of 200 stops an administrator
+      // setting a threshold so low that every need is summarised (which would
+      // spend a model call on two-line statements); the ceiling matches
+      // needs.contract.ts's own 5,000-character cap on `statement`, above
+      // which the threshold could never be reached at all.
+      aiSummarySettings: T.Optional(
+        T.Object({
+          statementLengthThreshold: T.Optional(T.Integer({ minimum: 200, maximum: 5000 })),
+          maxSummaryChars: T.Optional(T.Integer({ minimum: 100, maximum: 2000 })),
+        }),
+      ),
     },
     { additionalProperties: false },
   ),

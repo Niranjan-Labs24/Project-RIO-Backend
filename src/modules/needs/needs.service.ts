@@ -8,6 +8,7 @@ import { GeographyService } from '../geography/geography.service';
 import { AiDecisionsService } from '../ai-decisions/ai-decisions.service';
 import { resolveConfidenceBand, type ConfidenceBand } from '../ai-decisions/confidence-band';
 import { MethodologyConfigService } from '../methodology-config/methodology-config.service';
+import { NeedSummaryService } from './need-summary.service';
 import { NEED_EDITABLE_STATUSES, type CreateNeedPayload, type Need, type NeedRow, type UpdateNeedPayload } from './needs.types';
 
 const DIFF_FIELDS = ['title', 'statement', 'village', 'referenceId', 'affectedPeople', 'affectedHouseholds'] as const;
@@ -59,6 +60,7 @@ export class NeedsService {
     private readonly geography: GeographyService,
     private readonly aiDecisions: AiDecisionsService,
     private readonly methodologyConfig: MethodologyConfigService,
+    private readonly needSummaries: NeedSummaryService,
   ) {}
 
   // A Study can hold many Needs — each one runs its own independent
@@ -141,6 +143,15 @@ export class NeedsService {
     // catch only needs to log.
     this.aiDecisions.classifyAutomatically(created.id).catch((err: Error) => {
       this.logger.warn(`Automatic classification failed for need ${created.id}: ${err.message}`);
+    });
+
+    // RIO-AI-003's auto-suggest, for the manual-entry path. Fire-and-forget for
+    // the same reason as classification above, and additionally because
+    // summarisation is assistive: the Need is already persisted and must not be
+    // rolled back if the model is unavailable. maybeGenerateForNeed swallows
+    // its own failures, so this catch only covers the promise itself.
+    this.needSummaries.maybeGenerateForNeed(created.id, 'manual_entry').catch((err: Error) => {
+      this.logger.warn(`Need summary generation failed for need ${created.id}: ${err.message}`);
     });
 
     return this.toNeed(this.toNeedRow(created), await this.resolveUserName(created.createdBy));
@@ -287,6 +298,19 @@ export class NeedsService {
     if (changes.length > 0 && (updated.status === 'pending_ai_classification' || updated.status === 'ai_classification_failed')) {
       this.aiDecisions.classifyAutomatically(updated.id).catch((err: Error) => {
         this.logger.warn(`Automatic re-classification failed for need ${updated.id}: ${err.message}`);
+      });
+    }
+
+    // RIO-AI-003: a summary of the OLD statement is not a summary of this Need
+    // any more. Awaited, unlike the fire-and-forget generation below it,
+    // because leaving a superseded summary marked CONFIRMED for even a moment
+    // is what would let a stale wording reach a report generated in that
+    // window. Only the statement matters here — retitling or moving geography
+    // does not invalidate a description summary.
+    if (changes.some((c) => c.field === DIFF_FIELD_LABELS.statement)) {
+      await this.needSummaries.markStaleForNeed(updated.id);
+      this.needSummaries.maybeGenerateForNeed(updated.id, 'manual_entry').catch((err: Error) => {
+        this.logger.warn(`Need summary regeneration failed for need ${updated.id}: ${err.message}`);
       });
     }
 

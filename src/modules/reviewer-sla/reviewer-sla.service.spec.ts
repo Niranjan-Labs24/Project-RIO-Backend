@@ -34,6 +34,14 @@ interface FakeEvidenceDocument {
   linkedNeedId: string | null;
   createdAt: Date;
 }
+interface FakeNeedSummary {
+  id: string;
+  needId: string;
+  studyId: string;
+  status: string;
+  generatedAt: Date;
+  need?: { statement: string | null };
+}
 
 function fakeTenant(opts: {
   surveys?: FakeSurvey[];
@@ -41,6 +49,7 @@ function fakeTenant(opts: {
   studies?: FakeStudy[];
   needs?: FakeNeed[];
   evidenceDocuments?: FakeEvidenceDocument[];
+  needSummaries?: FakeNeedSummary[];
 }) {
   const tx = {
     survey: { findMany: async () => opts.surveys ?? [] },
@@ -48,6 +57,12 @@ function fakeTenant(opts: {
     study: { findMany: async () => opts.studies ?? [] },
     need: { findMany: async () => opts.needs ?? [] },
     evidenceDocument: { findMany: async () => opts.evidenceDocuments ?? [] },
+    // The service filters on status DRAFT — apply it here too, so a fixture
+    // carrying a CONFIRMED row proves the filter rather than the fixture.
+    needStatementSummary: {
+      findMany: async ({ where }: { where: { status: string } }) =>
+        (opts.needSummaries ?? []).filter((r) => r.status === where.status),
+    },
   };
   return {
     runInOrgContext: async (fn: (tx: unknown) => unknown) => fn(tx),
@@ -192,6 +207,74 @@ describe('ReviewerSlaService', () => {
       () => svc.listAlerts(),
     );
     expect(alerts.some((a) => a.type === 'evidence_document_uploaded')).toBe(false);
+  });
+
+  it('RIO-AI-003 — the Reviewer sees DRAFT need summaries as one queue entry each, oldest first', async () => {
+    const older = new Date('2026-01-01T00:00:00Z');
+    const newer = new Date('2026-01-02T00:00:00Z');
+    const svc = makeService(
+      fakeTenant({
+        studies: [{ id: 'st1', title: 'Water study' }],
+        needSummaries: [
+          { id: 'sum2', needId: 'n2', studyId: 'st1', status: 'DRAFT', generatedAt: newer, need: { statement: 'Second need.' } },
+          { id: 'sum1', needId: 'n1', studyId: 'st1', status: 'DRAFT', generatedAt: older, need: { statement: 'First need.' } },
+          // Already decided — must not reappear as work to do.
+          { id: 'sum3', needId: 'n3', studyId: 'st1', status: 'CONFIRMED', generatedAt: older, need: { statement: 'Done.' } },
+        ],
+      }),
+    );
+
+    const alerts = await orgContext.run(
+      { requestId: 'r', actorId: 'me', role: 'human_reviewer' },
+      () => svc.listAlerts(),
+    );
+    const summaryAlerts = alerts.filter((a) => a.type === 'need_summary_approval');
+
+    expect(summaryAlerts.map((a) => a.id)).toEqual(['sum1', 'sum2']);
+    expect(summaryAlerts[0]?.studyTitle).toBe('Water study');
+    expect(summaryAlerts[0]?.needId).toBe('n1');
+  });
+
+  it('RIO-AI-003 — summary alerts carry no SLA clock, so they cannot breach', async () => {
+    // An unconfirmed summary blocks nothing (reports fall back to the original
+    // statement), and these alerts feed the SLA compliance percentage RPT02
+    // publishes — a breach here would move a client-facing number.
+    const longAgo = new Date('2020-01-01T00:00:00Z');
+    const svc = makeService(
+      fakeTenant({
+        studies: [{ id: 'st1', title: 'Water study' }],
+        needSummaries: [
+          { id: 'sum1', needId: 'n1', studyId: 'st1', status: 'DRAFT', generatedAt: longAgo, need: { statement: 'Old.' } },
+        ],
+      }),
+    );
+
+    const alerts = await orgContext.run(
+      { requestId: 'r', actorId: 'me', role: 'human_reviewer' },
+      () => svc.listAlerts(),
+    );
+    const alert = alerts.find((a) => a.type === 'need_summary_approval');
+
+    expect(alert?.status).toBe('pending');
+    expect(alert?.dueAt).toBe(alert?.createdAt);
+  });
+
+  it('RIO-AI-003 — a role without aiReview:approve gets no summary alerts', async () => {
+    // The Research Officer who wrote the need holds aiReview:write, not
+    // :approve — they must not see a to-do they cannot complete.
+    const svc = makeService(
+      fakeTenant({
+        studies: [{ id: 'st1', title: 'Water study' }],
+        needSummaries: [
+          { id: 'sum1', needId: 'n1', studyId: 'st1', status: 'DRAFT', generatedAt: new Date(), need: { statement: 'X.' } },
+        ],
+      }),
+    );
+    const alerts = await orgContext.run(
+      { requestId: 'r', actorId: 'me', role: 'ngo_research_officer' },
+      () => svc.listAlerts(),
+    );
+    expect(alerts.some((a) => a.type === 'need_summary_approval')).toBe(false);
   });
 
   it('getConfig returns the configured SLA hours and poll interval', () => {

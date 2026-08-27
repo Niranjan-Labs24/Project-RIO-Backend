@@ -30,6 +30,23 @@ export interface AiClassificationSettings {
   veryLowConfidenceThreshold: number;
 }
 
+/**
+ * RIO-AI-003's "above a DEFINED length threshold" rule.
+ *
+ * `statementLengthThreshold` is a character count on the raw statement, and is
+ * language-neutral by client decision (25 Aug 2026): one number for Arabic and
+ * English alike. A word count was rejected because Arabic is materially more
+ * compact per character, so a single word threshold would behave as two
+ * different rules depending on the language.
+ *
+ * `maxSummaryChars` caps the OUTPUT. Without it, a statement that only just
+ * crosses the threshold can come back with a "summary" longer than its source.
+ */
+export interface AiSummarySettings {
+  statementLengthThreshold: number;
+  maxSummaryChars: number;
+}
+
 export type MethodologyStatus = "draft" | "published";
 
 export interface MethodologyConfigRow {
@@ -42,6 +59,7 @@ export interface MethodologyConfigRow {
   priorityFactorWeights: unknown;
   confidenceFlagSettings: unknown;
   aiClassificationSettings: unknown;
+  aiSummarySettings: unknown;
   updatedAt: Date;
   updatedBy: string | null;
 }
@@ -56,6 +74,7 @@ export interface MethodologyConfig {
   priorityFactorWeights: PriorityFactorWeight[];
   confidenceFlagSettings: ConfidenceFlagSettings;
   aiClassificationSettings: AiClassificationSettings;
+  aiSummarySettings: AiSummarySettings;
   updatedAt: string;
   updatedByName: string | null;
 }
@@ -71,6 +90,7 @@ export interface MethodologyConfigHistoryEntry {
   priorityFactorWeights: PriorityFactorWeight[];
   confidenceFlagSettings: ConfidenceFlagSettings;
   aiClassificationSettings: AiClassificationSettings;
+  aiSummarySettings: AiSummarySettings;
   changedByName: string | null;
   changedAt: string;
 }
@@ -81,6 +101,7 @@ export interface UpdateMethodologyConfigPayload {
   priorityFactorWeights?: Array<{ key: string; weight: number }>;
   confidenceFlagSettings?: Partial<ConfidenceFlagSettings>;
   aiClassificationSettings?: Partial<AiClassificationSettings>;
+  aiSummarySettings?: Partial<AiSummarySettings>;
 }
 
 // The Survey Builder's "Methodology Version" dropdown option shape — sourced

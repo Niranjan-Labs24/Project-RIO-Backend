@@ -190,6 +190,7 @@ model Organisation {
   surveyResponses        SurveyResponse[]
   responseQualityResults ResponseQualityResult[]
   aiSummaries AiSummary[]
+  needStatementSummaries NeedStatementSummary[]
   priorityScores PriorityScore[]
   sharingRequestsOwned SharingRequest[] @relation("SharingRequestsOwned")
   sharingRequestsMade  SharingRequest[] @relation("SharingRequestsMade")
@@ -523,6 +524,7 @@ model Study {
   surveyResponses SurveyResponse[]
   responseQualityResults ResponseQualityResult[]
   aiSummaries AiSummary[]
+  needStatementSummaries NeedStatementSummary[]
   priorityScores PriorityScore[]
   sharingRequests SharingRequest[]
   reports Report[]
@@ -707,6 +709,7 @@ model Need {
   surveyResponses SurveyResponse[]
   responseQualityResults ResponseQualityResult[]
   aiSummaries AiSummary[]
+  needStatementSummaries NeedStatementSummary[]
   priorityScores PriorityScore[]
   decisions NeedDecision[]
   aiSuggestions AiSuggestion[]
@@ -1376,6 +1379,80 @@ model AiSummary {
   @@map("ai_summaries")
 }
 
+// ──────── RIO-AI-003 — Need statement summarisation ────────
+//
+// Distinct from AiSummary above (which narrates SURVEY RESPONSES) and from
+// EvidenceDocumentSummary (which analyses an uploaded DOCUMENT into findings,
+// themes and cited statements). This one does exactly one thing: shorten a
+// long Need *description* so it is readable in review and in reports.
+//
+// Two rules from the client's 25 Aug 2026 answers shape the columns:
+//
+//  1. "Standardised" means the STRUCTURED facts must survive untouched —
+//     centre, village, governorate, problem title, domain. The model is never
+//     asked to reproduce them, so it cannot corrupt them: they are read from
+//     the Need record itself at display time. Only the narrative is rewritten.
+//  2. Keep BOTH texts. Classification and scoring keep reading
+//     Need.statement; the confirmed summary is what reports and lists show.
+//     Hence sourceStatement is snapshotted here rather than only referenced —
+//     a later edit to Need.statement must not silently re-caption an already
+//     confirmed summary (it marks it STALE instead).
+model NeedStatementSummary {
+  id                 String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId              String    @map("org_id") @db.Uuid
+  needId             String    @map("need_id") @db.Uuid
+  // Denormalized from Need.studyId — see Evidence.studyId's comment.
+  studyId            String    @map("study_id") @db.Uuid
+  // DRAFT | CONFIRMED | SUPERSEDED | STALE. Deliberately a String, matching
+  // EvidenceDocumentSummary.status rather than a new enum, so the two summary
+  // families stay comparable in queries and in the reviewer queue.
+  status             String    @default("DRAFT") @db.VarChar(50)
+  promptVersion      String    @map("prompt_version") @db.VarChar(100)
+  modelName          String    @map("model_name") @db.VarChar(100)
+  modelVersion       String    @map("model_version") @db.VarChar(50)
+  // AC "the original full text remains accessible alongside the summary".
+  // Snapshotted, not derived: see rule 2 in this model's header comment.
+  sourceStatement    String    @map("source_statement")
+  sourceLength       Int       @map("source_length")
+  inputTextHash      String    @map("input_text_hash") @db.VarChar(64)
+  // The model's own output. NEVER overwritten by an edit — the AC requires the
+  // AI suggestion and the human decision to be stored together, which is only
+  // provable if the two live in separate columns.
+  aiSummaryText      String    @map("ai_summary_text")
+  // The reviewer's edit, when they made one. Null means "confirmed the AI text
+  // unchanged", which is itself a meaningful decision and must stay
+  // distinguishable from "edited it to the same string".
+  reviewerEditedText String?   @map("reviewer_edited_text")
+  // Which entry point produced the Need this summarises: manual_entry |
+  // bulk_import | pdf_import | citizen_input. Mirrors NeedSource's vocabulary
+  // so a report can group by it without a translation table.
+  triggerSource      String    @map("trigger_source") @db.VarChar(40)
+  // RIO-AI-003 AC 5, made mechanical — see need-summary.verify.ts. Each entry
+  // is "CODE:detail" for one provably-wrong thing found in the generated
+  // summary (a fact the model invented, a fact it dropped, a number that is in
+  // the summary but not the source). Empty is the normal case. Stored rather
+  // than recomputed so the reviewer queue can sort risky summaries to the top
+  // without re-running the checks on every read.
+  verificationWarnings String[] @map("verification_warnings")
+  generatedBy        String?   @map("generated_by") @db.Uuid
+  generatedAt        DateTime  @default(now()) @map("generated_at") @db.Timestamptz(6)
+  confirmedBy        String?   @map("confirmed_by") @db.Uuid
+  confirmedAt        DateTime? @map("confirmed_at") @db.Timestamptz(6)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org   Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  need  Need         @relation(fields: [needId], references: [id], onDelete: Cascade)
+  study Study        @relation(fields: [studyId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([needId])
+  @@index([studyId])
+  // The reviewer queue reads "every DRAFT in my org, oldest first".
+  @@index([orgId, status])
+  @@map("need_statement_summaries")
+}
+
 // ──────── Priority Dashboard + Explainable Score ────────
 // TODO(RIO-Priority): placeholder scoring only — see
 // priority/priority.placeholder.ts. Real methodology scoring workbook
@@ -1746,6 +1823,13 @@ model MethodologyConfig {
   // could not be met at all; they live here so the Methodology Configuration
   // screen owns them like every other methodology threshold.
   aiClassificationSettings Json            @map("ai_classification_settings")
+  // RIO-AI-003's "a summary is suggested for any need above a DEFINED length
+  // threshold" rule. Shape: { statementLengthThreshold, maxSummaryChars }.
+  // statementLengthThreshold is a character count on the raw statement and is
+  // deliberately language-neutral (client decision, 25 Aug 2026: 1,500 for
+  // every language) — a word count would behave very differently in Arabic,
+  // which is more compact per character than English.
+  aiSummarySettings      Json              @map("ai_summary_settings")
   updatedAt              DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
   updatedBy              String?           @map("updated_by") @db.Uuid
 
@@ -1779,6 +1863,8 @@ model MethodologyConfigHistory {
   // produce history rows that silently omit the only thing that changed
   // when an AI confidence threshold is edited.
   aiClassificationSettings Json   @map("ai_classification_settings")
+  // Snapshotted for the same reason as aiClassificationSettings above.
+  aiSummarySettings      Json     @map("ai_summary_settings")
   changedBy              String?  @map("changed_by") @db.Uuid
   changedAt              DateTime @default(now()) @map("changed_at") @db.Timestamptz(6)
 
