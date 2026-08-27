@@ -258,10 +258,25 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
       // names the surveys it does not cover.
       const explicitSurvey = typeof query.filters.surveyId === "string" && query.filters.surveyId.length > 0;
       const surveyId = await this.resolveSurveyId(query.studyId, query.filters);
-      const { base, unified, aiSummary } = await this.unifiedHalf(
+      // `demographics` is aggregated by the same half RPT01/RPT09 use, so the
+      // breakdown here is the one those reports show - it was being computed
+      // and then dropped on the floor, which is why RPT10 rendered a permanent
+      // "demographic capture is pending" placeholder over real captured data.
+      const { base, unified, aiSummary, demographics } = await this.unifiedHalf(
         { ...query, studyId: query.studyId, surveyId },
         "EXECUTIVE",
       );
+
+      // Scope the breakdown to whatever this report claims to cover. The shared
+      // half aggregates by the RESOLVED survey's Need - right for RPT01, wrong
+      // here whenever the caller named no survey, since the completeness block
+      // above then reports on every survey in the study. A gender split drawn
+      // from one of them under a study-wide heading is the same scope leak the
+      // Need-scoping was introduced to stop, pointing the other way.
+      const villageId = typeof query.filters.villageId === "string" ? query.filters.villageId : "";
+      const scopedDemographics = explicitSurvey
+        ? demographics
+        : await aggregateDemographics(this.tenant, { studyId: query.studyId }, villageId);
 
       const dataCollection = await loadDataCollectionCompleteness(this.tenant, this.sessions, {
         studyId: query.studyId,
@@ -281,6 +296,7 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
         trendNote: base.trendNote,
         domains: base.severity.domains,
         dataCollection,
+        demographics: scopedDemographics,
         filters: query.filters,
       });
     } catch (err) {

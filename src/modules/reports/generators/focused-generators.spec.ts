@@ -202,6 +202,19 @@ describe("RPT10 Data-Quality Report", () => {
     ]);
   });
 
+  it("renders the real demographic breakdown instead of the pending placeholder", async () => {
+    // RPT10 aggregated demographics and then dropped them, so the chapter
+    // printed "demographic capture is pending" over data that had in fact been
+    // captured — a data-quality report understating the data it holds.
+    const c = await dataQuality();
+    expect(c.demographics?.gender.length).toBeGreaterThan(0);
+
+    const doc = buildReportDoc("Data-Quality", c as unknown as Record<string, unknown>, []);
+    const headings = doc.sections.map((s) => ("heading" in s ? s.heading : ""));
+    expect(headings).toContain("Gender Breakdown");
+    expect(headings).not.toContain("Demographic Breakdown");
+  });
+
   it("shows every abandoned sitting and required-question gap as a flagged row", async () => {
     const c = await dataQuality();
     const doc = buildReportDoc("Data-Quality", c as unknown as Record<string, unknown>, []);

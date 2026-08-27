@@ -285,6 +285,7 @@ export class StubReportDataProvider extends ReportDataProvider {
       aiSummary: village.aiSummary,
       dataQualityNote: village.dataQualityNote,
       trendNote: village.trendNote,
+      demographics: village.demographics,
       domains: village.severity.domains,
       // Built by the REAL summariser over stub session rows, so the fixture
       // cannot drift from the production abandonment arithmetic — same rule

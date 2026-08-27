@@ -282,6 +282,7 @@ export function buildDataQualityContent(input: FocusedMapperInput): DataQualityR
     aiSummary: input.aiSummary,
     dataQualityNote: input.dataQualityNote,
     trendNote: input.trendNote,
+    demographics: input.demographics ?? null,
     filters: input.filters ?? {},
   };
 }

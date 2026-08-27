@@ -667,6 +667,13 @@ export interface DataQualityReportContent {
   aiSummary: AiSummaryBlock;
   dataQualityNote: string;
   trendNote: string;
+  /** Who the responses came from. RPT10 is the report that judges whether this
+   *  dataset can be relied on, and "which respondents does it actually
+   *  represent" is part of that judgement — a gender or rural/urban split
+   *  skewed to one group is a data-quality finding, not a side note. Null when
+   *  nothing was captured, which renders the same "Not available" placeholder
+   *  every other report shows. */
+  demographics: Demographics | null;
   filters: Record<string, unknown>;
 }
 
