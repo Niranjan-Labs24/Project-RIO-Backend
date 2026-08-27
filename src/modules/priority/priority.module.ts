@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { MethodologyConfigModule } from "../methodology-config/methodology-config.module";
+import { NeedThemesModule } from "../needs/need-themes.module";
 import { PriorityController, PriorityDashboardController } from "./priority.controller";
 import { PriorityService } from "./priority.service";
 import { DeterministicScoringService } from "./scoring.service";
@@ -8,7 +9,7 @@ import { PriorityV2Service } from "./priority-v2.service";
 import { VillageAggregationService } from "./village-aggregation.service";
 
 @Module({
-  imports: [MethodologyConfigModule],
+  imports: [MethodologyConfigModule, NeedThemesModule],
   controllers: [PriorityController, PriorityDashboardController],
   providers: [
     PriorityService,

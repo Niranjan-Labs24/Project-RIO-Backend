@@ -12,8 +12,11 @@ import { PriorityModule } from "../priority/priority.module";
 import { ReportSharingModule } from "../report-sharing/report-sharing.module";
 import { ReviewerSlaModule } from "../reviewer-sla/reviewer-sla.module";
 import { SurveySessionsModule } from '../survey-sessions/survey-sessions.module';
+import { NeedsModule } from '../needs/needs.module';
 
 @Module({
+  // NeedsModule exports NeedSummaryService so RPT01/RPT15 can substitute a
+  // reviewer-confirmed need summary for the raw statement (RIO-AI-003).
   imports: [
     AiModule,
     PriorityModule,
@@ -21,6 +24,7 @@ import { SurveySessionsModule } from '../survey-sessions/survey-sessions.module'
     ReviewerSlaModule,
     // RPT10 reads survey abandonment (see load-data-collection-completeness.ts).
     SurveySessionsModule,
+    NeedsModule,
   ],
   controllers: [ReportsController, PrioritySummaryController, CombinedReportSummaryController],
   providers: [

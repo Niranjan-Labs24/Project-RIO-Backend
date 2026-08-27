@@ -3,7 +3,10 @@ import { Controller, Get, Param, Patch, Post, Query, Body, UseInterceptors, Uplo
 import { FileInterceptor } from "@nestjs/platform-express";
 import { RequirePermission } from "../../common/guards/permission.guard";
 import { TypeBoxValidationPipe } from "../../contract/validation.pipe";
-import { CreateMethodologyVersionBody, type CreateMethodologyVersionDto } from "./priority.contract";
+import {
+  CreateMethodologyVersionBody, type CreateMethodologyVersionDto,
+  OverridePriorityScoreBody, type OverridePriorityScoreDto,
+} from "./priority.contract";
 import { PriorityService } from "./priority.service";
 import { ScoreRollupService } from "./rollup.service";
 import { PriorityV2Service } from "./priority-v2.service";
@@ -28,6 +31,21 @@ export class PriorityController {
   @RequirePermission("priorityScoring", "read")
   getLatest(@Param("needId", new UuidParamPipe()) needId: string, @Query("surveyLinkId") surveyLinkId?: string): Promise<PriorityScore | null> {
     return this.priority.getLatest(needId, surveyLinkId);
+  }
+
+  /**
+   * RIO-FR-003 AC 5. Gated on `priorityScoring:approve`, not `write`: an
+   * override is a reviewer decision about the number, the same class of act as
+   * approving it. Whoever can only run the scoring engine should not be able
+   * to overrule what it produced.
+   */
+  @Patch("priority-scores/:id/override")
+  @RequirePermission("priorityScoring", "approve")
+  override(
+    @Param("id", new UuidParamPipe()) id: string,
+    @Body(new TypeBoxValidationPipe(OverridePriorityScoreBody)) body: OverridePriorityScoreDto,
+  ): Promise<PriorityScore> {
+    return this.priority.override(id, body.overrideScore, body.reason);
   }
 
   @Get("studies/:studyId/surveys/:surveyId/severity-dashboard")

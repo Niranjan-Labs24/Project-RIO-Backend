@@ -53,6 +53,15 @@ ${JSON.stringify(candidates)}`;
       redactedStatement,
       village: subject.village.join(', '),
     },
-    confidence: response.confidence ?? 0,
+    // NOT `?? 0`. Zero is a real, distinct value on this column — the
+    // "AI declined to classify" path stores it to mean "no confidence at
+    // all" — so coercing an unreported confidence to 0 made a perfectly
+    // good classification render as the worst possible one, in red, at 0%.
+    // `null` means "not reported"; the reviewer UI flags that for closer
+    // review instead of showing a fabricated number. NEED_CLASSIFICATION_TASK
+    // now lists confidence as required, so this should be rare.
+    confidence: typeof response.confidence === 'number' && Number.isFinite(response.confidence)
+      ? response.confidence
+      : null,
   };
 }

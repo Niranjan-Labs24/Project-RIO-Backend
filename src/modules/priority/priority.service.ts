@@ -1,8 +1,11 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "../../generated/prisma";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { requireActor, requireOrgId } from "../../tenancy/org-context";
 import { MethodologyConfigService } from "../methodology-config/methodology-config.service";
+import { NeedThemesService } from "../needs/need-themes.service";
+import { AuditService } from "../audit/audit.service";
+import { computePriority, type FactorInputs } from "./priority-factors";
 import {
   DEFAULT_THRESHOLDS,
   mapPriorityLevel,
@@ -17,50 +20,129 @@ export class PriorityService {
   constructor(
     private readonly tenant: TenantPrismaService,
     private readonly methodologyConfig: MethodologyConfigService,
+    private readonly themes: NeedThemesService,
+    private readonly audit: AuditService,
   ) {}
 
+  /**
+   * RIO-FR-003 — the explainable priority score.
+   *
+   * Every number here comes from methodology config: the weights from
+   * `priorityFactorWeights`, the raw-to-0-100 conversions from
+   * `priorityFactorScales`. Nothing is hardcoded, so an edit on the Config
+   * screen changes what this produces with no code change.
+   *
+   * The result keeps the methodology severity polarity (AC 7) — higher means
+   * more urgent — deliberately NOT PriorityV2's inverted performance scale.
+   */
   async score(needId: string, surveyLinkId?: string): Promise<PriorityScore> {
     const need = await this.findNeedOrThrow(needId);
     if (surveyLinkId) await this.findLinkOrThrow(needId, surveyLinkId);
     const orgId = requireOrgId();
     const thresholds = await this.loadThresholds();
+    const { priorityFactorWeights, priorityFactorScales } =
+      await this.methodologyConfig.getRaw();
+
+    // Counted outside the transaction below: it reads every other need in the
+    // org, which has nothing to do with this need's own write.
+    const themeMatchCount = await this.themes.countSharingThemes(needId, need.themes ?? []);
 
     const row = await this.tenant.runInOrgContext(async (tx) => {
-      // Resolve study → survey to find the OVERALL ScoreRollup written by
-      // DeterministicScoringService (the real scoring engine). The old
-      // scoreNeed() heuristic has been removed — severity now comes entirely
-      // from the ScoringLookup-based engine.
-      const survey = await tx.survey.findFirst({
-        where: { needId, status: 'PUBLISHED' },
-      });
-      if (!survey) throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'No published survey found for this need.' } });
+      const survey = await tx.survey.findFirst({ where: { needId, status: "PUBLISHED" } });
+      if (!survey) {
+        throw new NotFoundException({
+          error: { code: "SURVEY_NOT_FOUND", message: "No published survey found for this need." },
+        });
+      }
 
-      // Determine methodology version
       const mv = await tx.methodologyVersion.findFirst({
-        where: survey.methodologyVersion ? { version: survey.methodologyVersion } : { status: 'PUBLISHED' },
-        orderBy: { createdAt: 'desc' },
+        where: survey.methodologyVersion
+          ? { version: survey.methodologyVersion }
+          : { status: "PUBLISHED" },
+        orderBy: { createdAt: "desc" },
       });
 
-      // Read the consolidated OVERALL rollup (villageId='') as the top-level score
-      const overallRollup = mv ? await tx.scoreRollup.findFirst({
-        where: {
-          studyId: need.studyId,
-          surveyId: survey.id,
-          villageId: '',
-          methodologyVersionId: mv.id,
-          rollupLevel: 'OVERALL',
-        }
-      }) : null;
+      const rollupWhere = {
+        studyId: need.studyId,
+        surveyId: survey.id,
+        villageId: "",
+        methodologyVersionId: mv?.id ?? "",
+      };
 
-      const severity = overallRollup?.severityScore !== null && overallRollup?.severityScore !== undefined
-        ? Number(overallRollup.severityScore)
-        : 0;
+      const overallRollup = mv
+        ? await tx.scoreRollup.findFirst({ where: { ...rollupWhere, rollupLevel: "OVERALL" } })
+        : null;
 
-      const qualityRows = await tx.responseQualityResult.findMany({
-        where: { needId, surveyLinkId: surveyLinkId ?? null },
+      // The service-availability gap factor. The methodology defines it as the
+      // access/availability analytical dimension, so it is the QUESTION-level
+      // rollups for questions in those categories — not a separate metric.
+      const questionRollups = mv
+        ? await tx.scoreRollup.findMany({ where: { ...rollupWhere, rollupLevel: "QUESTION" } })
+        : [];
+      const accessQuestions = mv
+        ? await tx.question.findMany({
+            where: {
+              methodologyVersionId: mv.id,
+              analyticalCategory: { in: ["Access", "Availability"] },
+            },
+            select: { questionId: true },
+          })
+        : [];
+      const accessSet = new Set(accessQuestions.map((q) => q.questionId));
+      const accessScores = questionRollups
+        .filter((r) => accessSet.has(r.entityId) && r.severityScore !== null)
+        .map((r) => Number(r.severityScore));
+      const serviceGapSeverity =
+        accessScores.length > 0
+          ? accessScores.reduce((a, b) => a + b, 0) / accessScores.length
+          : null;
+
+      // Equity, at last measured rather than proxied: the spread between the
+      // best- and worst-scoring respondent segments on the same survey. A wide
+      // spread is what the methodology means by "results differ materially
+      // between sex / age / disability segments".
+      const equityRows = await tx.responseSeverityScore.findMany({
+        where: { surveyId: survey.id, scoreStatus: "SCORED" },
+        select: {
+          severityScore: true,
+          surveyResponse: { select: { gender: true, ageBracket: true } },
+        },
       });
-      const hasEquityFlag = this.determineEquityFlag(qualityRows);
-      const level = mapPriorityLevel(severity, hasEquityFlag, thresholds);
+      const equitySpread = this.computeEquitySpread(equityRows);
+
+      const severity =
+        overallRollup?.severityScore !== null && overallRollup?.severityScore !== undefined
+          ? Number(overallRollup.severityScore)
+          : null;
+
+      const inputs: FactorInputs = {
+        severity,
+        serviceGapSeverity,
+        affectedPeople: need.affectedPeople ?? null,
+        urgency: need.urgency ?? null,
+        dontKnowRate:
+          overallRollup?.dontKnowRate !== null && overallRollup?.dontKnowRate !== undefined
+            ? Number(overallRollup.dontKnowRate)
+            : null,
+        themeMatchCount,
+        villageCount: (need.village ?? []).length || null,
+        equitySpread,
+        domain: need.domain ?? null,
+        questionIds: questionRollups.map((r) => r.entityId),
+      };
+
+      const computed = computePriority(priorityFactorWeights, priorityFactorScales, inputs);
+
+      // The tier still comes from the methodology's own bands, driven by the
+      // same configured thresholds — the composite score is what gets ranked,
+      // the tier is what gets read.
+      // Threshold from config, never a literal here — the methodology owner
+      // decides what counts as "materially different" between segments, and a
+      // number baked in at this line would silently disagree with the Config
+      // screen the moment anyone edited it.
+      const equityFlagged =
+        equitySpread !== null && equitySpread >= priorityFactorScales.equitySpreadThreshold;
+      const level = mapPriorityLevel(computed.score, equityFlagged, thresholds);
 
       return tx.priorityScore.create({
         data: {
@@ -68,19 +150,63 @@ export class PriorityService {
           needId,
           studyId: need.studyId,
           surveyLinkId: surveyLinkId ?? null,
-          overallScore: severity,
+          overallScore: Math.round(computed.score),
           level,
-          gapType: 'acute',
-          factors: (overallRollup ? {
-            source: 'ScoreRollup/OVERALL',
-            validResponseCount: overallRollup.validResponseCount,
-            confidenceLevel: overallRollup.confidenceLevel,
-          } : { source: 'no_rollup' }) as unknown as Prisma.InputJsonValue,
-          cycleNote: level === 'critical' || level === 'high' ? 'Acute — Cycle 1, awaiting trend' : null,
+          gapType: need.gapType ?? "acute",
+          factors: {
+            model: "nine-factor-weighted-mean",
+            methodologyVersion: survey.methodologyVersion ?? null,
+            coverage: computed.coverage,
+            score: computed.score,
+            components: computed.components,
+          } as unknown as Prisma.InputJsonValue,
+          cycleNote:
+            level === "critical" || level === "high"
+              ? "Acute — Cycle 1, awaiting trend"
+              : null,
         },
       });
     });
+
     return this.toScore(row as unknown as PriorityScoreRow);
+  }
+
+  /**
+   * 0-100 spread between the best- and worst-served respondent segments on one
+   * survey, or null when the survey has too few segments to compare.
+   *
+   * Segments are gender and age bracket — the two the survey actually collects.
+   * The methodology also names disability, which is not captured today, so the
+   * spread is a partial measure and is documented as such rather than
+   * presented as the complete equity picture.
+   */
+  private computeEquitySpread(
+    rows: Array<{
+      severityScore: unknown;
+      surveyResponse: { gender: string | null; ageBracket: string | null } | null;
+    }>,
+  ): number | null {
+    const buckets = new Map<string, { sum: number; count: number }>();
+    for (const row of rows) {
+      const severity = Number(row.severityScore);
+      if (!Number.isFinite(severity)) continue;
+      for (const segment of [row.surveyResponse?.gender, row.surveyResponse?.ageBracket]) {
+        if (!segment) continue;
+        const bucket = buckets.get(segment) ?? { sum: 0, count: 0 };
+        bucket.sum += severity;
+        bucket.count += 1;
+        buckets.set(segment, bucket);
+      }
+    }
+
+    // One segment cannot differ from anything, and a segment with a handful of
+    // responses is noise rather than inequity.
+    const means = [...buckets.values()]
+      .filter((b) => b.count >= 5)
+      .map((b) => b.sum / b.count);
+    if (means.length < 2) return null;
+
+    return Math.min(Math.max(Math.max(...means) - Math.min(...means), 0), 100);
   }
 
   // Reviewer approval gate — a Priority Score is never publicly visible
@@ -91,6 +217,79 @@ export class PriorityService {
       tx.priorityScore.update({ where: { id }, data: { approvedBy, approvedAt: new Date() } }),
     );
     return this.toScore(row as unknown as PriorityScoreRow);
+  }
+
+  /**
+   * RIO-FR-003 AC 5 — a reviewer disagreeing with the computed number.
+   *
+   * The computed value stays in `overallScore` untouched; the reviewer's
+   * number and reason go to their own columns. That is what makes the two
+   * DISTINGUISHABLE, which the AC asks for by name — an in-place update would
+   * lose the original the moment anyone disagreed with it.
+   *
+   * A reason is mandatory. The database enforces it too (see the migration's
+   * CHECK constraint), so no future write path can produce a bare override.
+   */
+  async override(id: string, overrideScore: number, reason: string): Promise<PriorityScore> {
+    const overriddenBy = requireActor();
+    const trimmed = reason.trim();
+    if (trimmed.length === 0) {
+      throw new BadRequestException({
+        error: {
+          code: 'PRIORITY_OVERRIDE_REASON_REQUIRED',
+          message: 'A reason is required when overriding a computed priority score.',
+        },
+      });
+    }
+
+    const existing = await this.findScoreOrThrow(id);
+    if (existing.approvedAt !== null) {
+      // AC 4's sign-off is the end of the line. Rewriting an approved score
+      // would leave a published number nobody signed for.
+      throw new BadRequestException({
+        error: {
+          code: 'PRIORITY_SCORE_ALREADY_APPROVED',
+          message: 'An approved priority score cannot be overridden. Re-score the need instead.',
+        },
+      });
+    }
+
+    const row = await this.tenant.runInOrgContext((tx) =>
+      tx.priorityScore.update({
+        where: { id },
+        data: {
+          overrideScore: Math.round(overrideScore),
+          overrideReason: trimmed,
+          overriddenBy,
+          overriddenAt: new Date(),
+        },
+      }),
+    );
+
+    await this.audit.record({
+      action: 'override_priority_score',
+      entityType: 'priority_score',
+      entityId: id,
+      entityLabel: existing.needId,
+      changes: [
+        { field: 'score', before: existing.overallScore, after: Math.round(overrideScore) },
+        { field: 'overrideReason', before: existing.overrideReason, after: trimmed },
+      ],
+    });
+
+    return this.toScore(row as unknown as PriorityScoreRow);
+  }
+
+  private async findScoreOrThrow(id: string): Promise<PriorityScoreRow> {
+    const row = await this.tenant.runInOrgContext((tx) =>
+      tx.priorityScore.findUnique({ where: { id } }),
+    );
+    if (!row) {
+      throw new NotFoundException({
+        error: { code: 'PRIORITY_SCORE_NOT_FOUND', message: 'Priority score not found.' },
+      });
+    }
+    return row as unknown as PriorityScoreRow;
   }
 
   // Internal/review use: shows the latest score regardless of approval
@@ -136,6 +335,8 @@ export class PriorityService {
         studyTitle: studyTitleById.get(need.studyId) ?? need.studyId,
         needId: need.id,
         gapType: need.gapType,
+        themes: need.themes ?? [],
+        urgency: need.urgency ?? null,
         // This v1 path (unused by any UI — see PriorityDashboardEntry's own
         // comment) has no override-reason concept of its own.
         score: score ? { ...score, overrideReason: null } : null,
@@ -158,16 +359,6 @@ export class PriorityService {
     }
   }
 
-  // TODO(RIO-Priority): the real equity-flag determination (e.g. does this
-  // gap disproportionately affect a vulnerable group?) isn't defined by the
-  // methodology package yet. Placeholder: a high proportion of low-
-  // confidence responses (see Response Quality) is treated as a proxy
-  // signal worth flagging, not a real equity determination.
-  private determineEquityFlag(qualityRows: { confidenceFlag: string }[]): boolean {
-    if (qualityRows.length === 0) return false;
-    const lowCount = qualityRows.filter((r) => r.confidenceFlag === "low").length;
-    return lowCount / qualityRows.length >= 0.3;
-  }
 
   private async findNeedOrThrow(needId: string) {
     const need = await this.tenant.runInOrgContext((tx) => tx.need.findUnique({ where: { id: needId } }));
@@ -189,6 +380,13 @@ export class PriorityService {
       studyId: row.studyId,
       surveyLinkId: row.surveyLinkId,
       overallScore: row.overallScore,
+      // AC 5 — both numbers travel together. `computedScore` is always the
+      // engine's; `effectiveScore` is what a list or report should rank on.
+      computedScore: row.overallScore,
+      overrideScore: row.overrideScore,
+      overrideReason: row.overrideReason,
+      overriddenAt: row.overriddenAt ? row.overriddenAt.toISOString() : null,
+      effectiveScore: row.overrideScore ?? row.overallScore,
       level: row.level,
       gapType: row.gapType,
       factors: row.factors as PriorityScore["factors"],

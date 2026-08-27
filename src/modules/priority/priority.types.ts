@@ -10,6 +10,12 @@ export interface PriorityScoreRow {
   level: "critical" | "high" | "medium" | "low";
   gapType: string;
   factors: unknown;
+  // RIO-FR-003 AC 5 — the reviewer's own number, kept beside the computed one
+  // rather than replacing it. Null until someone disagrees.
+  overrideScore: number | null;
+  overrideReason: string | null;
+  overriddenBy: string | null;
+  overriddenAt: Date | null;
   cycleNote: string | null;
   scoredAt: Date;
   approvedBy: string | null;
@@ -31,6 +37,15 @@ export interface PriorityScore {
   // without recomputing anything.
   factors: Array<{ indicator: string; weight: number; responseValue: number; weightedContribution: number }>;
   cycleNote: string | null;
+  /** What the engine computed. Never rewritten by an override. */
+  computedScore: number;
+  overrideScore: number | null;
+  overrideReason: string | null;
+  overriddenAt: string | null;
+  /** What consumers should rank and display — the override when a reviewer
+   *  set one, otherwise the computed value. Resolved server-side so every
+   *  caller applies the same precedence. */
+  effectiveScore: number;
   scoredAt: string;
   // Priority Scoring stays subject to reviewer approval — never publicly
   // visible (dashboard/reports) until approved. See PriorityService.approve.
@@ -52,6 +67,11 @@ export interface PriorityDashboardEntry {
   // which was really always the critical-domain override reason string —
   // that field is now correctly named `overrideReason`.
   gapType: string | null;
+  // RIO-FR-003 AC 6 — filter and group by theme without a second fetch.
+  themes: string[];
+  // RIO-FR-003 AC 1 — shown in the list so an unset urgency is visible as a
+  // gap in the score rather than only on the need page.
+  urgency: string | null;
   score: {
     overallScore: number;
     level: "critical" | "high" | "medium" | "low";

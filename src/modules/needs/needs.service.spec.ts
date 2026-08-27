@@ -29,6 +29,8 @@ function makeRow(overrides: Partial<NeedRow> = {}): NeedRow {
     proposedDomains: null,
     proposedReason: null,
     gapType: null,
+    urgency: null,
+    themes: [],
     affectedPeople: null,
     affectedHouseholds: null,
     createdBy: 'me',
@@ -60,6 +62,10 @@ function fakeTenant(opts: {
   onNeedCreate?: (data: Record<string, unknown>) => void;
   onNeedUpdate?: (data: Record<string, unknown>) => void;
   onNeedDelete?: (where: unknown) => void;
+  // RIO-AI-001: the latest need_classification AiDecision per Need, backing
+  // resolveAiConfidence. Defaults to none, i.e. "no classification has run",
+  // which is what most of these fixtures represent.
+  aiDecisions?: { needId: string; confidence: number | null }[];
 }) {
   const tx = {
     study: {
@@ -95,6 +101,9 @@ function fakeTenant(opts: {
     user: {
       findMany: async () => opts.users ?? [],
     },
+    aiDecision: {
+      findMany: async () => opts.aiDecisions ?? [],
+    },
   };
   return { runInOrgContext: async (fn: (tx: unknown) => unknown) => fn(tx) };
 }
@@ -113,13 +122,39 @@ function makeService(
   aiDecisions: unknown = fakeAiDecisions(),
   studyConfig: unknown = { listActiveGapTypeNames: async () => [] },
 ) {
-  // geography is only consulted when a payload carries governorateIds/
-  // centerIds (see assertGeographyInStudyScope's early return) — none of
   // these tests do, so an empty stub is enough. Same for studyConfig: an
   // empty active list means assertValidGapType() never rejects, matching
   // most tests' use of arbitrary gapType values — the setGapType describe
   // block below overrides it with a real active list.
-  return new NeedsService(tenant as never, audit as never, {} as never, aiDecisions as never, studyConfig as never);
+  //
+  // methodologyConfig backs resolveAiConfidence's banding. The defaults are
+  // named explicitly rather than imported so a future change to the shipped
+  // defaults can't silently move what these tests assert against.
+  const methodologyConfig = {
+    getRaw: async () => ({
+      aiClassificationSettings: { lowConfidenceThreshold: 0.7, veryLowConfidenceThreshold: 0.4 },
+    }),
+  };
+  // RIO-AI-003's auto-suggest is fire-and-forget on create/update. These tests
+  // assert on the Need write itself, so the stub only has to not reject —
+  // NeedSummaryService's own behaviour is covered in need-summary.service.spec.
+  const needSummaries = {
+    maybeGenerateForNeed: async () => null,
+    markStaleForNeed: async () => undefined,
+  };
+  // RIO-FR-003's theme extraction is fire-and-forget on the same paths, and
+  // has its own spec — the stub only has to resolve.
+  const needThemes = { maybeExtractForNeed: async () => null };
+  return new NeedsService(
+    tenant as never,
+    audit as never,
+    {} as never,
+    aiDecisions as never,
+    studyConfig as never,
+    methodologyConfig as never,
+    needThemes as never,
+    needSummaries as never,
+  );
 }
 
 const ctx = { requestId: 'r', orgId: 'o1', actorId: 'me' };
@@ -237,6 +272,61 @@ describe('NeedsService', () => {
       const svc = makeService(fakeTenant({ need: row, users: [{ id: 'me', name: 'Me' }] }));
       const need = await orgContext.run(ctx, () => svc.getById('need-1'));
       expect(need).toMatchObject({ domain: 'Water', subDomain: 'Access', aiSuggestedDomain: 'Health', aiSuggestedSubDomain: 'Nutrition' });
+    });
+  });
+
+  // RIO-AI-001 — the Needs list is where a reviewer decides which Need to
+  // open, so the confidence has to be visible (and filterable) there rather
+  // than only inside each Need.
+  describe('AI confidence banding', () => {
+    it('reports no band at all when no classification has run', async () => {
+      // Distinct from 'not_reported': nothing has been suggested yet, so
+      // there is nothing to flag.
+      const svc = makeService(fakeTenant({ need: makeRow(), users: [{ id: 'me', name: 'Me' }] }));
+      const need = await orgContext.run(ctx, () => svc.getById('need-1'));
+      expect(need.aiConfidence).toBeNull();
+      expect(need.aiConfidenceBand).toBeNull();
+    });
+
+    it('bands a confident classification as standard', async () => {
+      const svc = makeService(
+        fakeTenant({ need: makeRow(), users: [{ id: 'me', name: 'Me' }], aiDecisions: [{ needId: 'need-1', confidence: 0.91 }] }),
+      );
+      const need = await orgContext.run(ctx, () => svc.getById('need-1'));
+      expect(need).toMatchObject({ aiConfidence: 0.91, aiConfidenceBand: 'standard' });
+    });
+
+    it('bands a below-threshold classification as low', async () => {
+      const svc = makeService(
+        fakeTenant({ need: makeRow(), users: [{ id: 'me', name: 'Me' }], aiDecisions: [{ needId: 'need-1', confidence: 0.55 }] }),
+      );
+      const need = await orgContext.run(ctx, () => svc.getById('need-1'));
+      expect(need).toMatchObject({ aiConfidence: 0.55, aiConfidenceBand: 'low' });
+    });
+
+    it('bands an unreported confidence as not_reported rather than 0', async () => {
+      const svc = makeService(
+        fakeTenant({ need: makeRow(), users: [{ id: 'me', name: 'Me' }], aiDecisions: [{ needId: 'need-1', confidence: null }] }),
+      );
+      const need = await orgContext.run(ctx, () => svc.getById('need-1'));
+      expect(need).toMatchObject({ aiConfidence: null, aiConfidenceBand: 'not_reported' });
+    });
+
+    it('uses the newest decision when a Need has been re-classified', async () => {
+      // Rows arrive oldest-first; the last write per Need must win, otherwise
+      // a Retry would keep showing the confidence of the attempt it replaced.
+      const svc = makeService(
+        fakeTenant({
+          need: makeRow(),
+          users: [{ id: 'me', name: 'Me' }],
+          aiDecisions: [
+            { needId: 'need-1', confidence: 0.2 },
+            { needId: 'need-1', confidence: 0.88 },
+          ],
+        }),
+      );
+      const need = await orgContext.run(ctx, () => svc.getById('need-1'));
+      expect(need).toMatchObject({ aiConfidence: 0.88, aiConfidenceBand: 'standard' });
     });
   });
 

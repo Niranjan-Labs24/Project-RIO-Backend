@@ -302,6 +302,10 @@ export class PriorityV2Service {
       // of this method conflated the two under one `gapType` key, which
       // was really always the critical-domain override reason string.
       gapType: string | null;
+      // RIO-FR-003 AC 6 — the dashboard filters and groups by theme, so the
+      // themes travel with the row rather than needing a second fetch per need.
+      themes: string[];
+      urgency: string | null;
       score: {
         overallScore: number;
         level: 'critical' | 'high' | 'medium' | 'low';
@@ -354,6 +358,8 @@ export class PriorityV2Service {
             studyTitle: studyTitleById.get(need.studyId) ?? need.studyId,
             needId: need.id,
             gapType: need.gapType,
+            themes: need.themes ?? [],
+            urgency: need.urgency ?? null,
             score: assessment
               ? {
                   overallScore: Math.round(Number(assessment.priorityScore) * 10) / 10,
