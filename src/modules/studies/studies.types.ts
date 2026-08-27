@@ -56,6 +56,13 @@ export interface Study {
   studyType: string | null;
   targetSector: string | null;
   orgName?: string;
+  // RIO-RBAC-002 (client-confirmed, 2026-08-27 round) — System Admin is
+  // platform-wide, so acting on a Study it's viewing (e.g. adding a Need)
+  // needs to know which org to send as X-Act-As-Org; Study never exposed
+  // this before since a non-crossEntity caller only ever sees their own
+  // org's Studies anyway, making it redundant for them. Always present —
+  // harmless for those callers, load-bearing for crossEntity ones.
+  orgId: string;
   surveysCount?: number;
 }
 

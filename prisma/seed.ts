@@ -235,8 +235,13 @@ async function seedOrg(input: {
       // hit the consent gate on their first login.
       await tx.user.upsert({
         where: { email: user.email },
+        // `orgId` is in the update branch too, not just create: an existing
+        // dev database re-seeded after this file moves a user to a
+        // different org (e.g. sysadmin@platform.local off Demo NGO onto its
+        // own platform org, below) needs that move to actually apply, not
+        // silently leave the row on its old org forever.
         update: {
-          name: user.name, roleId: user.roleId, status: UserStatus.active,
+          orgId, name: user.name, roleId: user.roleId, status: UserStatus.active,
           passwordHash, consentedAt: new Date(),
         },
         create: {
@@ -321,6 +326,20 @@ async function seedStudyConfigOptions(): Promise<void> {
   const decisionTypes = ['Intervention', 'Escalation', 'Follow-up'];
   for (const [index, name] of decisionTypes.entries()) {
     await prisma.decisionTypeOption.upsert({
+      where: { name },
+      update: { displayOrder: index, isActive: true },
+      create: { name, displayOrder: index, isActive: true },
+    });
+  }
+
+  // The 5 original RIO-FR-005 Q12 values — seeded here (rather than left
+  // empty like Study Type/Target Sector) since they're already real,
+  // in-use data (existing Need.gapType values, frontend i18n keys), not
+  // placeholders. This just makes the existing list editable going
+  // forward; it isn't a data migration.
+  const gapTypes = ['acute', 'chronic', 'structural', 'seasonal', 'equity'];
+  for (const [index, name] of gapTypes.entries()) {
+    await prisma.gapTypeOption.upsert({
       where: { name },
       update: { displayOrder: index, isActive: true },
       create: { name, displayOrder: index, isActive: true },
@@ -426,6 +445,34 @@ async function main(): Promise<void> {
     users: [{ roleId: 'role_ngo_admin', name: 'Riverside Admin', email: 'admin@riverside-ngo.org' }],
   });
 
+  // RIO-RBAC-002 (client-confirmed, 2026-08-27 round) — System Admin and
+  // System Reviewer are platform-wide, cross-entity roles; they must not be
+  // tied to a real NGO tenant. Previously both were seeded under Demo NGO
+  // (`demoOrgId`) despite a comment on that very code claiming otherwise —
+  // that meant every geography-scope check on Study/Need creation silently
+  // restricted them to Demo NGO's own governorates/centers. `User.orgId` is
+  // a required, non-nullable column (schema-wide RLS and every service
+  // that reads it assume a real org), so "no organisation" isn't
+  // achievable without a much larger migration — this dedicated,
+  // obviously-non-operational org is the home row the schema requires,
+  // while the real fix for "act on behalf of any organisation" is the new
+  // `X-Act-As-Org` mechanism in JwtAuthGuard (crossEntity-only, validated
+  // server-side), not this org's identity. This org has no real
+  // governorates/centers linked and is never a Study's owner in practice.
+  const platformOrgId = await seedOrg({
+    registrationNumber: '8000000000',
+    name: 'Platform Administration (System Accounts Only)',
+    purpose: 'Technical home organisation for platform-wide system accounts — not a real NGO tenant.',
+    region: [],
+    email: 'platform-admin@rio.internal',
+    sector: 'other',
+    villages: [],
+    users: [
+      { roleId: 'role_system_admin', name: 'System Admin', email: 'sysadmin@platform.local' },
+      { roleId: 'role_system_reviewer', name: 'System Reviewer', email: 'sysreviewer@platform.local' },
+    ],
+  });
+
   // RIO-FR-001 demo fixtures: one Study + its Need per demo org, so the
   // frontend isn't blocked waiting on manual data entry. Idempotent by
   // title (Study has no other natural key) — skip creation if it's
@@ -520,49 +567,11 @@ async function main(): Promise<void> {
     }
   });
 
-  // Platform-wide System Admin — not scoped to either org above.
-  const passwordHash = await argon2.hash(DEV_PASSWORD, { type: argon2.argon2id });
-  await prisma.$transaction(async (tx) => {
-    await setOrg(tx as never, demoOrgId);
-    await tx.user.upsert({
-      where: { email: 'sysadmin@platform.local' },
-      update: {
-        name: 'System Admin', roleId: 'role_system_admin', status: UserStatus.active,
-        passwordHash, consentedAt: new Date(),
-      },
-      create: {
-        orgId: demoOrgId, roleId: 'role_system_admin', name: 'System Admin',
-        email: 'sysadmin@platform.local', status: UserStatus.active, passwordHash,
-        consentedAt: new Date(),
-      },
-    });
-  });
-
-  // Platform-wide System Reviewer — the NCNP Compiled Report's approve/
-  // reject counterpart to System Admin above, same "not scoped to either
-  // org" shape.
-  await prisma.$transaction(async (tx) => {
-    await setOrg(tx as never, demoOrgId);
-    await tx.user.upsert({
-      where: { email: 'sysreviewer@platform.local' },
-      update: {
-        name: 'System Reviewer', roleId: 'role_system_reviewer', status: UserStatus.active,
-        passwordHash, consentedAt: new Date(),
-      },
-      create: {
-        orgId: demoOrgId, roleId: 'role_system_reviewer', name: 'System Reviewer',
-        email: 'sysreviewer@platform.local', status: UserStatus.active, passwordHash,
-        consentedAt: new Date(),
-      },
-    });
-  });
-
   console.log(`Seeded ${ROLE_MATRIX.length} roles, consent v1, 9 domains from question-bank-v1.json.`);
   console.log(`Seeded Demo NGO: ${demoOrgId} (admin@demo-ngo.org, officer@demo-ngo.org)`);
   console.log(`Seeded Riverside Community Trust: ${riversideOrgId} (admin@riverside-ngo.org)`);
+  console.log(`Seeded Platform Administration: ${platformOrgId} (sysadmin@platform.local, sysreviewer@platform.local — home org only, not a real tenant; both roles are crossEntity and act platform-wide via X-Act-As-Org)`);
   console.log(`Dev login password for all seeded accounts: ${DEV_PASSWORD}`);
-  console.log('Also seeded: sysadmin@platform.local (system_admin, platform-wide)');
-  console.log('Also seeded: sysreviewer@platform.local (system_reviewer, platform-wide)');
 }
 
 async function disconnectAll(): Promise<void> {

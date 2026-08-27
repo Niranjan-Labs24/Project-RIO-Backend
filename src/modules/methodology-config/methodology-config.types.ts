@@ -16,7 +16,7 @@ export interface ConfidenceFlagSettings {
   minRespondentsForStandardConfidence: number;
 }
 
-export type MethodologyStatus = "draft" | "published";
+export type MethodologyStatus = "draft" | "pending_approval" | "approved" | "published";
 
 export interface MethodologyConfigRow {
   id: string;
@@ -24,6 +24,9 @@ export interface MethodologyConfigRow {
   status: MethodologyStatus;
   publishedBy: string | null;
   publishedAt: Date | null;
+  reviewedBy: string | null;
+  reviewedAt: Date | null;
+  reviewNotes: string | null;
   priorityThresholds: unknown;
   priorityFactorWeights: unknown;
   confidenceFlagSettings: unknown;
@@ -37,6 +40,9 @@ export interface MethodologyConfig {
   status: MethodologyStatus;
   publishedByName: string | null;
   publishedAt: string | null;
+  reviewedByName: string | null;
+  reviewedAt: string | null;
+  reviewNotes: string | null;
   priorityThresholds: PriorityThresholds;
   priorityFactorWeights: PriorityFactorWeight[];
   confidenceFlagSettings: ConfidenceFlagSettings;
@@ -50,7 +56,7 @@ export interface MethodologyConfigHistoryEntry {
   id: string;
   version: string;
   status: MethodologyStatus;
-  changeType: "edit" | "publish";
+  changeType: "edit" | "approve" | "reject" | "publish";
   priorityThresholds: PriorityThresholds;
   priorityFactorWeights: PriorityFactorWeight[];
   confidenceFlagSettings: ConfidenceFlagSettings;

@@ -1,11 +1,12 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
-import { requireActor, requireOrgId } from '../../tenancy/org-context';
+import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { AuditService } from '../audit/audit.service';
 import type { AuditChange } from '../audit/audit.types';
 import { GeographyService } from '../geography/geography.service';
 import { AiDecisionsService } from '../ai-decisions/ai-decisions.service';
+import { StudyConfigService } from '../study-config/study-config.service';
 import { NEED_EDITABLE_STATUSES, type CreateNeedPayload, type Need, type NeedRow, type UpdateNeedPayload } from './needs.types';
 
 
@@ -58,6 +59,7 @@ export class NeedsService {
     private readonly audit: AuditService,
     private readonly geography: GeographyService,
     private readonly aiDecisions: AiDecisionsService,
+    private readonly studyConfig: StudyConfigService,
   ) {}
 
   // A Study can hold many Needs — each one runs its own independent
@@ -205,11 +207,20 @@ export class NeedsService {
   }
 
   async getById(needId: string): Promise<Need> {
-    const row = (await this.tenant.runInOrgContext((tx) =>
-      tx.need.findUnique({ where: { id: needId }, include: GEO_INCLUDE }),
-    )) as RawNeedWithGeo | null;
+    // RIO-RBAC-002 (client-confirmed, 2026-08-27 round) — System Admin is
+    // platform-wide and Center Supervisor is cross-entity read; mirrors
+    // StudiesService.getById's identical isCrossOrgReader split. Without
+    // this, a System Admin following a link into a Need outside its own
+    // org (e.g. to create a Public Survey Link there) got a 404 before
+    // ever reaching that action's own X-Act-As-Org check.
+    const store = getOrgStore();
+    const isCrossOrgReader = store?.role === 'system_admin' || store?.role === 'center_supervisor';
+    const row = (isCrossOrgReader
+      ? await this.tenant.runAsSupervisor((tx) => tx.need.findUnique({ where: { id: needId }, include: GEO_INCLUDE }))
+      : await this.tenant.runInOrgContext((tx) => tx.need.findUnique({ where: { id: needId }, include: GEO_INCLUDE }))
+    ) as RawNeedWithGeo | null;
     if (!row) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
-    return this.toNeed(this.toNeedRow(row), await this.resolveUserName(row.createdBy));
+    return this.toNeed(this.toNeedRow(row), await this.resolveUserName(row.createdBy, isCrossOrgReader));
   }
 
   async update(needId: string, patch: UpdateNeedPayload): Promise<Need> {
@@ -291,7 +302,22 @@ export class NeedsService {
   // gap classification is a priority-scoring-stage judgment call that can
   // legitimately be entered/revised any time after a Need exists, not just
   // during the pre-classification editing window.
+  // Same pattern as StudiesService.assertValidStudyType — an empty active
+  // list means nothing validates yet (never true here since GapTypeOption
+  // is seeded with 5 defaults, but kept consistent with the shared
+  // convention rather than a special case).
+  private async assertValidGapType(value: string | null): Promise<void> {
+    if (value === null) return;
+    const names = await this.studyConfig.listActiveGapTypeNames();
+    if (names.length > 0 && !names.includes(value)) {
+      throw new BadRequestException({
+        error: { code: 'INVALID_GAP_TYPE', message: `"${value}" is not a configured Gap Type.` },
+      });
+    }
+  }
+
   async setGapType(needId: string, gapType: string | null): Promise<Need> {
+    await this.assertValidGapType(gapType);
     const updated = await this.tenant.runInOrgContext(async (tx) => {
       const currentRaw = (await tx.need.findUnique({ where: { id: needId }, include: GEO_INCLUDE })) as RawNeedWithGeo | null;
       if (!currentRaw) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
@@ -389,17 +415,25 @@ export class NeedsService {
 
   // Same pattern as EvidenceService's own actor-name resolution — the
   // creator is always in the same org as the Need (RLS-scoped lookup).
-  private async resolveUserName(userId: string): Promise<string | null> {
-    const names = await this.resolveUserNames([userId]);
+  private async resolveUserName(userId: string, crossOrg = false): Promise<string | null> {
+    const names = await this.resolveUserNames([userId], crossOrg);
     return names.get(userId) ?? null;
   }
 
-  private async resolveUserNames(userIds: string[]): Promise<Map<string, string>> {
+  // `crossOrg` — RIO-RBAC-002: the creator of a Need read via the
+  // cross-org-reader path below (System Admin/Center Supervisor viewing a
+  // Need outside their own org) belongs to THAT org, not the ambient one —
+  // `runInOrgContext` would RLS-filter them out entirely, silently
+  // resolving to no name. `runAsSupervisor` (SELECT-only, no RLS) is the
+  // same bypass Studies' getById already uses for its own cross-org read.
+  private async resolveUserNames(userIds: string[], crossOrg = false): Promise<Map<string, string>> {
     const distinctIds = [...new Set(userIds)];
     if (distinctIds.length === 0) return new Map();
-    const users = await this.tenant.runInOrgContext((tx) =>
-      tx.user.findMany({ where: { id: { in: distinctIds } }, select: { id: true, name: true } }),
-    );
+    const query = (tx: Prisma.TransactionClient) =>
+      tx.user.findMany({ where: { id: { in: distinctIds } }, select: { id: true, name: true } });
+    const users = crossOrg
+      ? await this.tenant.runAsSupervisor(query)
+      : await this.tenant.runInOrgContext(query);
     return new Map(users.map((u) => [u.id, u.name]));
   }
 
@@ -431,6 +465,7 @@ export class NeedsService {
     return {
       id: row.id,
       studyId: row.studyId,
+      orgId: row.orgId,
       title: row.title,
       statement: row.statement,
       village: row.village,

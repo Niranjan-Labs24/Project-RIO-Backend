@@ -112,6 +112,38 @@ export class StudyConfigService {
     return this.toOption(row);
   }
 
+  // Gap Types — client correction (2026-08-27) superseding RIO-FR-005 Q12's
+  // "five fixed values, final, no additions". Same configurable-list shape
+  // as Study Type/Target Sector/Decision Type above.
+  async listGapTypes(): Promise<StudyConfigOption[]> {
+    const rows = await this.prisma.gapTypeOption.findMany({ orderBy: { displayOrder: 'asc' } });
+    return rows.map((r) => this.toOption(r));
+  }
+
+  async listActiveGapTypeNames(): Promise<string[]> {
+    const rows = await this.prisma.gapTypeOption.findMany({
+      where: { isActive: true },
+      orderBy: { displayOrder: 'asc' },
+      select: { name: true },
+    });
+    return rows.map((r) => r.name);
+  }
+
+  async createGapType(payload: CreateStudyConfigOptionPayload): Promise<StudyConfigOption> {
+    const row = await this.createOption(this.prisma.gapTypeOption, payload);
+    return this.toOption(row);
+  }
+
+  async updateGapType(id: string, payload: UpdateStudyConfigOptionPayload): Promise<StudyConfigOption> {
+    const row = await this.updateOption(this.prisma.gapTypeOption, id, payload);
+    return this.toOption(row);
+  }
+
+  async setGapTypeActive(id: string, isActive: boolean): Promise<StudyConfigOption> {
+    const row = await this.setActive(this.prisma.gapTypeOption, id, isActive);
+    return this.toOption(row);
+  }
+
   // Shared CRUD body for both option tables — identical shape (id, name,
   // displayOrder, isActive), so one implementation parametrized on the
   // Prisma delegate avoids maintaining two copies of the same try/catch and

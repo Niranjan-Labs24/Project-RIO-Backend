@@ -1,8 +1,9 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable } from "@nestjs/common";
 import { Prisma } from "../../generated/prisma";
 import { PrismaService } from "../../prisma/prisma.service";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { requireActor } from "../../tenancy/org-context";
+import { requireNonBlank } from "../../common/validation/require-non-blank";
 import type {
   ConfidenceFlagSettings, MethodologyConfig, MethodologyConfigHistoryEntry, MethodologyConfigRow,
   MethodologyVersionOption, PriorityFactorWeight, PriorityThresholds, UpdateMethodologyConfigPayload,
@@ -70,10 +71,17 @@ export class MethodologyConfigService {
 
     this.validateThresholds(priorityThresholds);
 
+    // Any edit invalidates a prior approval and needs its own review —
+    // client requirement: methodology weight/threshold changes go through
+    // the same System Reviewer approval gate as Question Bank changes.
     const row = await this.prisma.methodologyConfig.update({
       where: { id: existing.id },
       data: {
         version: payload.version ?? existing.version,
+        status: "pending_approval",
+        reviewedBy: null,
+        reviewedAt: null,
+        reviewNotes: null,
         priorityThresholds: priorityThresholds as unknown as Prisma.InputJsonValue,
         priorityFactorWeights: priorityFactorWeights as unknown as Prisma.InputJsonValue,
         confidenceFlagSettings: confidenceFlagSettings as unknown as Prisma.InputJsonValue,
@@ -84,8 +92,56 @@ export class MethodologyConfigService {
     return this.toConfig(row as unknown as MethodologyConfigRow);
   }
 
+  // System Reviewer only (methodologyQuestionBank:approve) — required
+  // before System Admin can publish. Mandatory notes, same pattern as
+  // NcnpReportReviewService.approve/reject and SurveysService's
+  // approveSurvey/rejectSurvey.
+  async approve(notes: string): Promise<MethodologyConfig> {
+    requireNonBlank(notes, "REVIEWER_NOTES_REQUIRED", "Reviewer notes are required.");
+    const existing = await this.findRowOrThrow();
+    if (existing.status !== "pending_approval") {
+      throw new ConflictException({
+        error: { code: "METHODOLOGY_NOT_PENDING_APPROVAL", message: "This configuration is not currently awaiting approval." },
+      });
+    }
+    const reviewedBy = requireActor();
+    const row = await this.prisma.methodologyConfig.update({
+      where: { id: existing.id },
+      data: { status: "approved", reviewedBy, reviewedAt: new Date(), reviewNotes: notes },
+    });
+    await this.recordHistory(row as unknown as MethodologyConfigRow, "approve", reviewedBy);
+    return this.toConfig(row as unknown as MethodologyConfigRow);
+  }
+
+  // Kicks the config back to draft — System Admin must revise and
+  // resubmit (the next update() call moves it to pending_approval again).
+  async reject(notes: string): Promise<MethodologyConfig> {
+    requireNonBlank(notes, "REVIEWER_NOTES_REQUIRED", "Reviewer notes are required.");
+    const existing = await this.findRowOrThrow();
+    if (existing.status !== "pending_approval") {
+      throw new ConflictException({
+        error: { code: "METHODOLOGY_NOT_PENDING_APPROVAL", message: "This configuration is not currently awaiting approval." },
+      });
+    }
+    const reviewedBy = requireActor();
+    const row = await this.prisma.methodologyConfig.update({
+      where: { id: existing.id },
+      data: { status: "draft", reviewedBy, reviewedAt: new Date(), reviewNotes: notes },
+    });
+    await this.recordHistory(row as unknown as MethodologyConfigRow, "reject", reviewedBy);
+    return this.toConfig(row as unknown as MethodologyConfigRow);
+  }
+
   async publish(): Promise<MethodologyConfig> {
     const existing = await this.findRowOrThrow();
+    if (existing.status !== "approved") {
+      throw new ConflictException({
+        error: {
+          code: "METHODOLOGY_NOT_APPROVED",
+          message: "This configuration must be approved by a System Reviewer before it can be published.",
+        },
+      });
+    }
     const publishedBy = requireActor();
     const row = await this.prisma.methodologyConfig.update({
       where: { id: existing.id },
@@ -109,7 +165,7 @@ export class MethodologyConfigService {
       id: r.id,
       version: r.version,
       status: r.status,
-      changeType: r.changeType as "edit" | "publish",
+      changeType: r.changeType as "edit" | "approve" | "reject" | "publish",
       priorityThresholds: r.priorityThresholds as unknown as PriorityThresholds,
       priorityFactorWeights: r.priorityFactorWeights as unknown as PriorityFactorWeight[],
       confidenceFlagSettings: r.confidenceFlagSettings as unknown as ConfidenceFlagSettings,
@@ -120,7 +176,7 @@ export class MethodologyConfigService {
 
   private async recordHistory(
     row: MethodologyConfigRow,
-    changeType: "edit" | "publish",
+    changeType: "edit" | "approve" | "reject" | "publish",
     changedBy: string | null,
   ): Promise<void> {
     await this.prisma.methodologyConfigHistory.create({
@@ -228,9 +284,10 @@ export class MethodologyConfigService {
   }
 
   private async toConfig(row: MethodologyConfigRow): Promise<MethodologyConfig> {
-    const [publishedByName, updatedByName] = await Promise.all([
+    const [publishedByName, updatedByName, reviewedByName] = await Promise.all([
       this.resolveActorName(row.publishedBy),
       this.resolveActorName(row.updatedBy),
+      this.resolveActorName(row.reviewedBy),
     ]);
     return {
       id: row.id,
@@ -238,6 +295,9 @@ export class MethodologyConfigService {
       status: row.status,
       publishedByName,
       publishedAt: row.publishedAt ? row.publishedAt.toISOString() : null,
+      reviewedByName,
+      reviewedAt: row.reviewedAt ? row.reviewedAt.toISOString() : null,
+      reviewNotes: row.reviewNotes,
       priorityThresholds: row.priorityThresholds as PriorityThresholds,
       priorityFactorWeights: row.priorityFactorWeights as PriorityFactorWeight[],
       confidenceFlagSettings: row.confidenceFlagSettings as ConfidenceFlagSettings,

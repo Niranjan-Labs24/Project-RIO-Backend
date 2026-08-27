@@ -60,6 +60,11 @@ export interface NeedRow {
 export interface Need {
   id: string;
   studyId: string;
+  // RIO-RBAC-002 (client-confirmed, 2026-08-27 round) — same reasoning as
+  // Study.orgId: System Admin acting on a Need it's viewing (e.g. creating
+  // a Public Survey Link) needs to know which org to send as
+  // X-Act-As-Org. Always present.
+  orgId: string;
   title: string;
   statement: string;
   village: string[];

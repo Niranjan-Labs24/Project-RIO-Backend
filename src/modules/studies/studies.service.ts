@@ -577,6 +577,7 @@ export class StudiesService {
   private toStudy(row: StudyRow): Study {
     return {
       id: row.id,
+      orgId: row.orgId,
       title: row.title,
       villages: row.villages,
       governorateIds: row.governorateIds,
