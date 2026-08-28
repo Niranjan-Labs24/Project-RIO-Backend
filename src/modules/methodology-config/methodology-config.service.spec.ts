@@ -4,6 +4,7 @@ import {
   MethodologyConfigService,
   DEFAULT_AI_CLASSIFICATION_SETTINGS,
   DEFAULT_PRIORITY_FACTOR_SCALES,
+  DEFAULT_PRIORITY_THRESHOLDS,
 } from './methodology-config.service';
 import { orgContext } from '../../tenancy/org-context';
 import type { MethodologyConfigRow } from './methodology-config.types';
@@ -59,6 +60,15 @@ function makeService(row: Partial<MethodologyConfigRow> = {}) {
         return data;
       },
       findMany: async () => history,
+      // getRaw()'s published-snapshot lookup — mirrors real Prisma's
+      // `where` + `orderBy: desc` + implicit take-1 against insertion
+      // order, since every push here already happens in chronological order.
+      findFirst: async ({ where }: { where?: { changeType?: string } } = {}) => {
+        const matches = where?.changeType
+          ? history.filter((h) => h.changeType === where.changeType)
+          : history;
+        return matches.length > 0 ? matches[matches.length - 1] : null;
+      },
     },
   };
   // resolveActorName's cross-org user lookup — no user rows needed here.
@@ -140,8 +150,18 @@ describe('MethodologyConfigService.publish', () => {
 });
 
 describe('MethodologyConfigService — aiClassificationSettings (RIO-AI-001)', () => {
+  // getRaw() now only ever reads a published snapshot (see the governance-
+  // isolation suite below for why) — these tests publish first so they
+  // exercise readAiClassificationSettings() against a real published row,
+  // not the never-reached live-row fallback.
+  async function publishWith(overrides: Partial<MethodologyConfigRow>) {
+    const { service } = makeService({ status: 'approved', ...overrides });
+    await runAsAdmin(() => service.publish());
+    return service;
+  }
+
   it('exposes the configured thresholds through getRaw', async () => {
-    const { service } = makeService();
+    const service = await publishWith({});
     const raw = await service.getRaw();
     expect(raw.aiClassificationSettings).toEqual({ lowConfidenceThreshold: 0.7, veryLowConfidenceThreshold: 0.4 });
   });
@@ -149,13 +169,13 @@ describe('MethodologyConfigService — aiClassificationSettings (RIO-AI-001)', (
   it('falls back to the documented defaults for a row written before the column existed', async () => {
     // Rows predating the migration read back as undefined — they must not
     // produce NaN thresholds, which would band every suggestion as low.
-    const { service } = makeService({ aiClassificationSettings: undefined });
+    const service = await publishWith({ aiClassificationSettings: undefined });
     const raw = await service.getRaw();
     expect(raw.aiClassificationSettings).toEqual(DEFAULT_AI_CLASSIFICATION_SETTINGS);
   });
 
   it('falls back per-field when the stored JSON is partial', async () => {
-    const { service } = makeService({ aiClassificationSettings: { lowConfidenceThreshold: 0.6 } });
+    const service = await publishWith({ aiClassificationSettings: { lowConfidenceThreshold: 0.6 } });
     const raw = await service.getRaw();
     expect(raw.aiClassificationSettings).toEqual({
       lowConfidenceThreshold: 0.6,
@@ -207,5 +227,67 @@ describe('MethodologyConfigService — aiClassificationSettings (RIO-AI-001)', (
     );
     expect(writes[0]?.priorityThresholds).toEqual(BASE_ROW.priorityThresholds);
     expect(writes[0]?.confidenceFlagSettings).toEqual(BASE_ROW.confidenceFlagSettings);
+  });
+});
+
+// Regression test for a real bug found during a methodology-governance
+// audit: getRaw() used to read the live editable row directly, so an
+// edit sitting in pending_approval (or freshly rejected) was already live
+// for real scoring before System Reviewer ever saw it. getRaw() must
+// always prefer the last published snapshot over whatever the live row
+// currently holds.
+describe('MethodologyConfigService.getRaw — governance isolation', () => {
+  // A real prior publish (80) exists in history; the live row is then
+  // edited to a different value (99) and left pending_approval. getRaw()
+  // must keep returning 80 until that edit is actually approved+published.
+  async function makePublishedThenEditedFixture() {
+    const { service } = makeService({ status: 'published', priorityThresholds: { highSeverity: 70, mediumSeverity: 40, equityHighSeverity: 50, criticalSeverity: 80 } });
+    // Seed a real "publish" history snapshot — service.publish() requires
+    // status: 'approved' first, so drive it through the real flow rather
+    // than hand-crafting the history row.
+    await runAsAdmin(() => service.update({ priorityThresholds: { criticalSeverity: 80 } }));
+    await runAsReviewer(() => service.approve('Baseline verified.'));
+    await runAsAdmin(() => service.publish());
+
+    await runAsAdmin(() => service.update({ priorityThresholds: { criticalSeverity: 99 } }));
+    return service;
+  }
+
+  it('an edited-but-unapproved threshold is NOT visible to getRaw() while a prior publish exists', async () => {
+    const service = await makePublishedThenEditedFixture();
+    const raw = await service.getRaw();
+    expect(raw.priorityThresholds.criticalSeverity).toBe(80);
+  });
+
+  it('a rejected edit is NOT visible to getRaw() either', async () => {
+    const service = await makePublishedThenEditedFixture();
+    await runAsReviewer(() => service.reject('Not ready, please revise.'));
+
+    const raw = await service.getRaw();
+    expect(raw.priorityThresholds.criticalSeverity).toBe(80);
+  });
+
+  it('once approved and published, the new value IS visible to getRaw()', async () => {
+    const service = await makePublishedThenEditedFixture();
+    await runAsReviewer(() => service.approve('Verified against baseline.'));
+    await runAsAdmin(() => service.publish());
+
+    const raw = await service.getRaw();
+    expect(raw.priorityThresholds.criticalSeverity).toBe(99);
+  });
+
+  it('falls back to safe seed defaults — NOT the live row — when nothing has ever been published', async () => {
+    // The live row already holds an edited, never-published value. If
+    // getRaw() fell back to the row instead of hardcoded defaults, this
+    // unpublished 999 would leak straight into real scoring.
+    const { service } = makeService({
+      status: 'pending_approval',
+      priorityThresholds: { highSeverity: 70, mediumSeverity: 40, equityHighSeverity: 50, criticalSeverity: 999 },
+    });
+    const raw = await service.getRaw();
+    expect(raw.priorityThresholds.criticalSeverity).toBe(
+      DEFAULT_PRIORITY_THRESHOLDS.criticalSeverity,
+    );
+    expect(raw.priorityThresholds.criticalSeverity).not.toBe(999);
   });
 });

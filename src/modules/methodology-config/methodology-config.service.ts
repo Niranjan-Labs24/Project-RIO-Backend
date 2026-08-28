@@ -52,6 +52,33 @@ export const DEFAULT_PRIORITY_FACTOR_SCALES: PriorityFactorScales = {
   ],
 };
 
+/** The methodology baseline's starting thresholds/weights/confidence rule —
+ * used both to self-heal a missing MethodologyConfig row and as getRaw()'s
+ * safe fallback for a genuinely fresh environment that has never published
+ * anything yet (see getRaw()'s own comment for why it must never fall back
+ * to the live, possibly-pending-approval row instead). */
+export const DEFAULT_PRIORITY_THRESHOLDS: PriorityThresholds = {
+  criticalSeverity: 80,
+  highSeverity: 70,
+  mediumSeverity: 40,
+  equityHighSeverity: 50,
+};
+export const DEFAULT_PRIORITY_FACTOR_WEIGHTS: PriorityFactorWeight[] = [
+  { key: "severity", label: "Severity", weight: 0.2 },
+  { key: "affected_population", label: "Affected population", weight: 0.15 },
+  { key: "service_availability_gap", label: "Service availability gap", weight: 0.12 },
+  { key: "urgency", label: "Urgency", weight: 0.12 },
+  { key: "data_confidence", label: "Data confidence", weight: 0.1 },
+  { key: "frequency", label: "Frequency of similar needs", weight: 0.1 },
+  { key: "geographic_coverage", label: "Geographic coverage", weight: 0.08 },
+  { key: "vulnerable_groups", label: "Vulnerable groups (equity)", weight: 0.08 },
+  { key: "strategic_alignment", label: "Strategic alignment", weight: 0.05 },
+];
+export const DEFAULT_CONFIDENCE_FLAG_SETTINGS: ConfidenceFlagSettings = {
+  dontKnowRatioThreshold: 0.2,
+  minRespondentsForStandardConfidence: 10,
+};
+
 // Global reference/master data (no orgId, no RLS — same pattern as
 // Domain/SubDomain) — single row, seeded by migration. Read via the bare
 // PrismaService like the rest of this family of tables.
@@ -270,8 +297,34 @@ export class MethodologyConfigService {
     });
   }
 
-  /** Internal accessor for other services (Priority/Response Quality) that
-   * need the raw thresholds/weights without going through the controller/DTO shape. */
+  /** Internal accessor for other services (Priority/Response Quality/AI
+   * Classification/Need Summary) that need the raw thresholds/weights
+   * without going through the controller/DTO shape.
+   *
+   * Bug fix (found during a methodology-governance audit): this used to read
+   * `findRowOrThrow()` directly — the live, editable row `update()` writes
+   * to. Since that row's `status` was never filtered on, a System Admin
+   * edit sitting in `pending_approval` (or freshly `rejected`) was already
+   * live for every real score calculation the instant it was saved, with
+   * zero System Reviewer involvement — the approval gate only blocked the
+   * `publish()` call and hid the Publish button, it never protected the
+   * actual computation. Verified live: edited a threshold, left it
+   * unapproved, and `getRaw()` returned the edited value immediately.
+   *
+   * Fixed by always preferring the last successfully **published**
+   * snapshot (`MethodologyConfigHistory` where `changeType: 'publish'`,
+   * newest first) over the live row. The live row is still what
+   * `get()`/`update()`/`approve()`/`reject()`/`publish()` read and write —
+   * System Admin/Reviewer need to see and act on the pending edit — only
+   * this read-only accessor, the one every scoring/classification/
+   * summarization consumer calls, is isolated from unpublished changes.
+   * Falls back to the safe seed defaults — never the live row — when
+   * nothing has ever been published yet (a fresh environment before its
+   * first publish action). This deliberately does NOT fall back to the
+   * live row's current values: that row could itself be sitting in
+   * `pending_approval` with no prior publish to fall back to, which would
+   * silently reopen the exact leak this fix closes.
+   */
   async getRaw(): Promise<{
     priorityThresholds: PriorityThresholds;
     priorityFactorWeights: PriorityFactorWeight[];
@@ -280,14 +333,31 @@ export class MethodologyConfigService {
     aiSummarySettings: AiSummarySettings;
     priorityFactorScales: PriorityFactorScales;
   }> {
-    const row = await this.findRowOrThrow();
+    // Ensures the row exists (self-heals a missing one) — its VALUES are
+    // deliberately never read below; see the comment above.
+    await this.findRowOrThrow();
+    const published = await this.prisma.methodologyConfigHistory.findFirst({
+      where: { changeType: "publish" },
+      orderBy: { changedAt: "desc" },
+    });
+    if (!published) {
+      return {
+        priorityThresholds: DEFAULT_PRIORITY_THRESHOLDS,
+        priorityFactorWeights: DEFAULT_PRIORITY_FACTOR_WEIGHTS,
+        confidenceFlagSettings: DEFAULT_CONFIDENCE_FLAG_SETTINGS,
+        aiClassificationSettings: DEFAULT_AI_CLASSIFICATION_SETTINGS,
+        aiSummarySettings: DEFAULT_AI_SUMMARY_SETTINGS,
+        priorityFactorScales: DEFAULT_PRIORITY_FACTOR_SCALES,
+      };
+    }
+    const source = published as unknown as MethodologyConfigRow;
     return {
-      priorityThresholds: row.priorityThresholds as PriorityThresholds,
-      priorityFactorWeights: row.priorityFactorWeights as PriorityFactorWeight[],
-      confidenceFlagSettings: row.confidenceFlagSettings as ConfidenceFlagSettings,
-      aiClassificationSettings: this.readAiClassificationSettings(row),
-      aiSummarySettings: this.readAiSummarySettings(row),
-      priorityFactorScales: this.readPriorityFactorScales(row),
+      priorityThresholds: source.priorityThresholds as PriorityThresholds,
+      priorityFactorWeights: source.priorityFactorWeights as PriorityFactorWeight[],
+      confidenceFlagSettings: source.confidenceFlagSettings as ConfidenceFlagSettings,
+      aiClassificationSettings: this.readAiClassificationSettings(source),
+      aiSummarySettings: this.readAiSummarySettings(source),
+      priorityFactorScales: this.readPriorityFactorScales(source),
     };
   }
 
@@ -475,27 +545,9 @@ export class MethodologyConfigService {
     const created = await this.prisma.methodologyConfig.create({
       data: {
         version: "v5.0 - Approved methodology baseline",
-        priorityThresholds: {
-          criticalSeverity: 80,
-          highSeverity: 70,
-          mediumSeverity: 40,
-          equityHighSeverity: 50,
-        } satisfies PriorityThresholds as unknown as Prisma.InputJsonValue,
-        priorityFactorWeights: [
-          { key: "severity", label: "Severity", weight: 0.2 },
-          { key: "affected_population", label: "Affected population", weight: 0.15 },
-          { key: "service_availability_gap", label: "Service availability gap", weight: 0.12 },
-          { key: "urgency", label: "Urgency", weight: 0.12 },
-          { key: "data_confidence", label: "Data confidence", weight: 0.1 },
-          { key: "frequency", label: "Frequency of similar needs", weight: 0.1 },
-          { key: "geographic_coverage", label: "Geographic coverage", weight: 0.08 },
-          { key: "vulnerable_groups", label: "Vulnerable groups (equity)", weight: 0.08 },
-          { key: "strategic_alignment", label: "Strategic alignment", weight: 0.05 },
-        ] satisfies PriorityFactorWeight[] as unknown as Prisma.InputJsonValue,
-        confidenceFlagSettings: {
-          dontKnowRatioThreshold: 0.2,
-          minRespondentsForStandardConfidence: 10,
-        } satisfies ConfidenceFlagSettings as unknown as Prisma.InputJsonValue,
+        priorityThresholds: DEFAULT_PRIORITY_THRESHOLDS as unknown as Prisma.InputJsonValue,
+        priorityFactorWeights: DEFAULT_PRIORITY_FACTOR_WEIGHTS as unknown as Prisma.InputJsonValue,
+        confidenceFlagSettings: DEFAULT_CONFIDENCE_FLAG_SETTINGS as unknown as Prisma.InputJsonValue,
         aiClassificationSettings:
           DEFAULT_AI_CLASSIFICATION_SETTINGS as unknown as Prisma.InputJsonValue,
         aiSummarySettings: DEFAULT_AI_SUMMARY_SETTINGS as unknown as Prisma.InputJsonValue,
