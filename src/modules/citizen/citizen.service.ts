@@ -9,6 +9,8 @@ import { SurveysService } from '../surveys/surveys.service';
 import { DeterministicScoringService } from '../priority/scoring.service';
 import { ScoreRollupService } from '../priority/rollup.service';
 import { SurveySessionsService } from '../survey-sessions/survey-sessions.service';
+import { ConsentService } from '../consent/consent.service';
+import { resolveConsentLocale } from '../consent/consent.types';
 import type { RecordEventPayload, RecordEventResult, StartSessionResult } from '../survey-sessions/survey-sessions.types';
 import type {
   CheckDuplicatePayload, CheckDuplicateResult, CitizenOtpChallengeRow, PublicSurveyLinkRow, RequestOtpPayload,
@@ -34,6 +36,9 @@ export class CitizenService {
     // Abandonment tracking (RPT10 Q-2). Best-effort throughout — every call
     // into it is allowed to fail without affecting the citizen flow.
     private readonly sessions: SurveySessionsService,
+    // RIO-NFR-002 — resolves the live citizen-consent notice so a submission
+    // can be pinned to the exact version its respondent read.
+    private readonly consent: ConsentService,
   ) {}
 
   // The published Survey Builder survey is the only source of questions for
@@ -251,6 +256,38 @@ export class CitizenService {
       });
     }
 
+    // RIO-NFR-002 — resolved before anything is written, and before the OTP
+    // challenge is consumed: a submission whose consent can't be pinned to
+    // the live notice must fail without burning the respondent's verification
+    // (they retry after reloading, rather than needing a fresh code).
+    //
+    // Throws NO_ACTIVE_CONSENT_POLICY (404) when no citizen notice is
+    // published at all. That is deliberately loud: collecting personal data
+    // with no consent policy configured is exactly what RIO-NFR-002 forbids,
+    // so it fails at the point of misconfiguration instead of quietly
+    // recording an unconsented response.
+    const activeConsent = await this.consent.getActiveCitizenPolicy();
+    if (activeConsent.version !== payload.consent.version) {
+      // The citizen's page loaded the notice once and they answered over some
+      // minutes; if a System Admin published a new version in that window,
+      // this submission agreed to superseded wording. Same reasoning — and
+      // the same error code — as signup's stale-consent check.
+      throw new BadRequestException({
+        error: {
+          code: 'CONSENT_VERSION_STALE',
+          message:
+            'The consent notice was updated while you were answering. Please reload the page, review it, and submit again.',
+          details: {
+            submittedVersion: payload.consent.version,
+            currentVersion: activeConsent.version,
+          },
+        },
+      });
+    }
+    // Resolved, not echoed: asking for Arabic against an untranslated notice
+    // yields the English text, and the record has to say so.
+    const consentLocale = resolveConsentLocale(activeConsent, payload.consent.locale);
+
     const { row, needTitle } = await this.tenant.runAsOrg(link.orgId, async (tx) => {
       // Atomic claim, before any other work — closes a race the plain
       // `if (challenge.consumedAt)` check above can't: two concurrent
@@ -344,6 +381,9 @@ export class CitizenService {
           centerIds: need?.needCenters.map((c) => c.centerId) ?? [],
           village: need?.village ?? [],
           answers: payload.answers as unknown as Prisma.InputJsonValue,
+          consentPolicyVersion: activeConsent.version,
+          consentPolicyLocale: consentLocale,
+          consentedAt: new Date(),
         },
       });
       // Challenge was already atomically claimed (consumedAt set) above —
@@ -372,7 +412,11 @@ export class CitizenService {
         { field: 'Survey response', before: null, after: 'submitted' },
         { field: 'Answers submitted', before: null, after: Array.isArray(payload.answers) ? payload.answers.length : null },
         { field: 'Need', before: null, after: needTitle },
+        // The consent version is safe to log where the answers are not: it
+        // names a published policy, not anything about the respondent.
+        { field: 'Consent version', before: null, after: activeConsent.version },
       ],
+      metadata: { consentPolicyVersion: activeConsent.version, consentPolicyLocale: consentLocale },
     });
 
     // Close the abandonment session against the response it produced —

@@ -78,7 +78,16 @@ export type AuditEntityType =
   // what was changed, and a score decision is not a change to the need.
   | 'priority_score'
   // RIO-AI-003 — one row per suggested summary of a Need's description.
-  | 'need_statement_summary';
+  | 'need_statement_summary'
+  // Client-confirmed (2026-08-27), requirement 5 — "update this in audit log
+  // too": every draft/edit/approve/reject/publish of a Terms of Use or Data
+  // Sharing Policy version is an auditable governance event in its own right,
+  // distinct from `user`-scoped consent acceptance (action: 'consent').
+  | 'consent_policy';
+
+  
+  // RIO-AI-003 — one row per suggested summary of a Need's description.
+  
 
 export interface AuditChange {
   field: string;

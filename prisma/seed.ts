@@ -23,135 +23,65 @@ interface QuestionBankHierarchyEntry {
 // Dev-only credential seeded on every demo account so login is testable.
 const DEV_PASSWORD = 'Passw0rd!';
 
-// RIO-DATA-001 — the copy of the two consents a registrant accepts. Kept here
-// (and mirrored by the migration that backfills deployed environments) so the
-// policy table is the single source of truth: the signup screen, the
-// post-login re-prompt, and every immutable ConsentAcceptance snapshot all
-// read this same text rather than carrying their own copy in the UI bundle.
-const USE_POLICY_TEXT = `Terms of Use
+// RIO-DATA-001 + client-confirmed (2026-08-27) — consent wording is NOT
+// defined here any more.
+//
+// The client's answer was "dynamically managed and versioned consent policies
+// in V2, not hard-coded", with a System Reviewer signing each version off
+// before it reaches signup. Real policy text sitting in this file broke that
+// twice over: it was authored by whoever edited the repo rather than by the
+// System Admin, and — because the old upserts passed `text` in `update:` as
+// well as `create:` — every `prisma:seed` run silently overwrote whatever had
+// been published through Methodology Configuration → Consent Policies, and
+// reset which version was active. A reviewer-approved policy could be
+// reverted by a routine reseed, with nothing in the audit log to show it.
+//
+// What remains below is a placeholder, not a policy: enough for an empty
+// database to have *something* active (signup 404s outright without one, so a
+// fresh dev/CI environment could not register anyone at all), and worded so
+// nobody could mistake it for real terms. It is written once, only when a
+// kind has no rows whatsoever — see bootstrapConsentPolicies(). Existing
+// environments, including every deployed one, keep exactly the text they
+// already have, and from here on the only way any of it changes is through
+// the Consent Policies tab.
+const CONSENT_BOOTSTRAP = {
+  use_policy: {
+    version: 'v0-placeholder',
+    heading: 'Terms of Use',
+    headingAr: 'شروط الاستخدام',
+  },
+  data_sharing: {
+    version: 'v0-placeholder',
+    heading: 'Data Sharing Policy',
+    headingAr: 'سياسة مشاركة البيانات',
+  },
+  // RIO-NFR-002 — the citizen survey notice. In practice this branch never
+  // fires: the 20260828010001 migration inserts the real notice (lifted out
+  // of the frontend's message catalogues) on every database, fresh ones
+  // included. It exists so a kind can never be silently missing — a citizen
+  // policy that does not exist blocks every public survey submission.
+  citizen_consent: {
+    version: 'v0-placeholder',
+    heading: 'Citizen Consent',
+    headingAr: 'موافقة المواطن',
+  },
+} as const;
 
-Welcome to this RIO application. By accessing or using this platform, you agree to the following terms:
+function bootstrapText(heading: string): string {
+  return `${heading} — not yet published.
 
-This application is provided solely for demonstration, testing, and evaluation purposes.
-Any information entered into the application should be fictitious or non-sensitive unless explicitly authorized.
-Users are responsible for ensuring that any content they submit complies with applicable laws and organizational policies.
-Unauthorized access, misuse, or attempts to disrupt the application are prohibited.
-The application owner may modify, suspend, or discontinue any feature without prior notice.
-Features, workflows, and reports displayed in this demo may not represent the final production version.
-Continued use of the application indicates your acceptance of these terms.`;
+No ${heading} has been published on this platform yet. A System Admin drafts one under Settings → Methodology Configuration → Consent Policies, a System Reviewer approves it, and the System Admin then publishes it. Until that happens, this placeholder is what the signup screen shows.
 
-// v1 — kept exactly as originally seeded, immutable (see the comment on the
-// upsert block below for why: a policy's already-recorded acceptances
-// snapshot the wording their user actually saw, so this text can never be
-// edited in place, only superseded by a new version).
-const DATA_SHARING_TEXT = `Data Sharing Policy
+This placeholder is not a legal agreement and confers no rights or obligations on anyone.`;
+}
 
-We value your privacy and are committed to handling your information responsibly.
+function bootstrapTextAr(headingAr: string): string {
+  return `${headingAr} — لم تُنشر بعد.
 
-Information entered into this Rio application is used only for demonstration, testing, and evaluation purposes.
-We do not sell or share your information with third parties for marketing purposes.
-Data may be accessed by authorized administrators or support personnel solely to maintain and improve the application.
-Aggregated and anonymized information may be used to evaluate system performance and enhance user experience.
-Users should avoid entering confidential, personal, financial, or regulated information into this demonstration environment.
-Appropriate security measures are implemented to help protect data; however, no electronic system can guarantee absolute security.
-By using this application, you acknowledge and consent to the collection and processing of information as described in this policy.`;
+لم يتم نشر «${headingAr}» على هذه المنصة بعد. يقوم مسؤول النظام بصياغتها ضمن الإعدادات ← إعدادات المنهجية ← سياسات الموافقة، ويعتمدها مراجع النظام، ثم ينشرها مسؤول النظام. وإلى أن يحدث ذلك، يعرض هذا النص المؤقت في شاشة التسجيل.
 
-// v2 (RIO-RBAC-002, RIO-DATA-001 dependency, 2026-08-23) — adds the
-// Center/NCNP Supervisor's cross-entity supervisory scope, previously
-// undocumented in this policy despite RBAC-002 depending on it being
-// captured here. Re-acceptance is a hard block on version bump (client-
-// confirmed) — every user re-accepts on next login once this activates.
-const DATA_SHARING_TEXT_V2 = `Data Sharing Policy
-
-We value your privacy and are committed to handling your information responsibly.
-
-Information entered into this Rio application is used only for demonstration, testing, and evaluation purposes.
-We do not sell or share your information with third parties for marketing purposes.
-Data may be accessed by authorized administrators or support personnel solely to maintain and improve the application.
-The Center/NCNP Supervisor role holds cross-entity supervisory visibility — it may view studies, data, and reports across every entity on the platform for oversight purposes, but cannot edit an entity's data unless a specific, time-limited permission grant for that action has been approved by a System Administrator. Every such view and every granted edit is recorded in the audit trail.
-Aggregated and anonymized information may be used to evaluate system performance and enhance user experience.
-Users should avoid entering confidential, personal, financial, or regulated information into this demonstration environment.
-Appropriate security measures are implemented to help protect data; however, no electronic system can guarantee absolute security.
-By using this application, you acknowledge and consent to the collection and processing of information as described in this policy.`;
-
-// RIO-RBAC-002 (Round 5, client-confirmed 2026-08-24) — v3 corrects v2's
-// "every such view... is recorded in the audit trail" claim, which stopped
-// being true once Supervisor view-access logging was removed per this
-// answer: "under the consent NGOs approve when joining the platform, the
-// Center/NCNP already has the right to see and preview their data —
-// Supervisor read/view access does not require separate logging." v3 makes
-// that consent basis explicit and drops the no-longer-true logging claim
-// for views (edits are still logged, unchanged).
-const DATA_SHARING_TEXT_V3 = `Data Sharing Policy
-
-We value your privacy and are committed to handling your information responsibly.
-
-Information entered into this Rio application is used only for demonstration, testing, and evaluation purposes.
-We do not sell or share your information with third parties for marketing purposes.
-Data may be accessed by authorized administrators or support personnel solely to maintain and improve the application.
-By agreeing to this policy, you acknowledge and agree that the Center/NCNP Supervisor role holds cross-entity supervisory visibility under this consent — it may view and preview studies, data, and reports across every entity on the platform for oversight purposes. The Supervisor cannot edit an entity's data unless a specific, time-limited permission grant for that action has been approved by a System Administrator; every granted edit is recorded in the audit trail.
-Aggregated and anonymized information may be used to evaluate system performance and enhance user experience.
-Users should avoid entering confidential, personal, financial, or regulated information into this demonstration environment.
-Appropriate security measures are implemented to help protect data; however, no electronic system can guarantee absolute security.
-By using this application, you acknowledge and consent to the collection and processing of information as described in this policy.`;
-
-// The same two consents in Arabic (RIO-NFR-007). Same row, same version — a
-// translation is not a separate policy, so these travel with the English copy
-// above rather than as their own `v1-ar`, and the signup screen picks between
-// them by the reader's locale.
-const USE_POLICY_TEXT_AR = `شروط الاستخدام
-
-مرحبًا بك في تطبيق RIO. بدخولك إلى هذه المنصة أو استخدامك لها، فإنك توافق على الشروط التالية:
-
-يُقدَّم هذا التطبيق لأغراض العرض التوضيحي والاختبار والتقييم فقط.
-يجب أن تكون أي معلومات تُدخل في التطبيق وهمية أو غير حساسة ما لم يُصرَّح بغير ذلك صراحةً.
-يتحمل المستخدمون مسؤولية التأكد من أن أي محتوى يقدمونه يمتثل للأنظمة المعمول بها وسياسات الجهة.
-يُحظر الوصول غير المصرح به إلى التطبيق أو إساءة استخدامه أو محاولة تعطيله.
-يجوز لمالك التطبيق تعديل أي ميزة أو تعليقها أو إيقافها دون إشعار مسبق.
-قد لا تمثل الميزات وسير العمل والتقارير المعروضة في هذا العرض التوضيحي النسخة الإنتاجية النهائية.
-يشير استمرارك في استخدام التطبيق إلى قبولك لهذه الشروط.`;
-
-// v1 Arabic — kept exactly as originally seeded, immutable (see
-// DATA_SHARING_TEXT's comment above).
-const DATA_SHARING_TEXT_AR = `سياسة مشاركة البيانات
-
-نحن نقدّر خصوصيتك ونلتزم بالتعامل مع معلوماتك بمسؤولية.
-
-تُستخدم المعلومات المُدخلة في تطبيق Rio لأغراض العرض التوضيحي والاختبار والتقييم فقط.
-لا نبيع معلوماتك ولا نشاركها مع أطراف ثالثة لأغراض تسويقية.
-قد يطّلع على البيانات مسؤولون مصرَّح لهم أو موظفو الدعم لغرض صيانة التطبيق وتحسينه فقط.
-قد تُستخدم المعلومات المجمّعة ومجهولة الهوية لتقييم أداء النظام وتحسين تجربة المستخدم.
-ينبغي على المستخدمين تجنب إدخال معلومات سرية أو شخصية أو مالية أو خاضعة للتنظيم في هذه البيئة التجريبية.
-تُطبَّق تدابير أمنية مناسبة للمساعدة في حماية البيانات؛ ومع ذلك، لا يمكن لأي نظام إلكتروني أن يضمن أمانًا مطلقًا.
-باستخدامك هذا التطبيق، فإنك تقر وتوافق على جمع المعلومات ومعالجتها على النحو الموضح في هذه السياسة.`;
-
-// v2 Arabic (RIO-RBAC-002, RIO-DATA-001 dependency, 2026-08-23).
-const DATA_SHARING_TEXT_AR_V2 = `سياسة مشاركة البيانات
-
-نحن نقدّر خصوصيتك ونلتزم بالتعامل مع معلوماتك بمسؤولية.
-
-تُستخدم المعلومات المُدخلة في تطبيق Rio لأغراض العرض التوضيحي والاختبار والتقييم فقط.
-لا نبيع معلوماتك ولا نشاركها مع أطراف ثالثة لأغراض تسويقية.
-قد يطّلع على البيانات مسؤولون مصرَّح لهم أو موظفو الدعم لغرض صيانة التطبيق وتحسينه فقط.
-يتمتع دور مشرف المركز/الهيئة الوطنية للأعمال الخيرية (NCNP) بصلاحية إشراف عابرة للكيانات — يجوز له الاطلاع على الدراسات والبيانات والتقارير عبر جميع الكيانات في المنصة لأغراض الرقابة، لكن لا يجوز له تعديل بيانات أي كيان إلا بموجب إذن صلاحية محدد ومحدود المدة يوافق عليه مسؤول النظام لذلك الإجراء تحديدًا. يُسجَّل كل اطلاع وكل تعديل ممنوح في سجل التدقيق.
-قد تُستخدم المعلومات المجمّعة ومجهولة الهوية لتقييم أداء النظام وتحسين تجربة المستخدم.
-ينبغي على المستخدمين تجنب إدخال معلومات سرية أو شخصية أو مالية أو خاضعة للتنظيم في هذه البيئة التجريبية.
-تُطبَّق تدابير أمنية مناسبة للمساعدة في حماية البيانات؛ ومع ذلك، لا يمكن لأي نظام إلكتروني أن يضمن أمانًا مطلقًا.
-باستخدامك هذا التطبيق، فإنك تقر وتوافق على جمع المعلومات ومعالجتها على النحو الموضح في هذه السياسة.`;
-
-// v3 Arabic — see DATA_SHARING_TEXT_V3's comment above.
-const DATA_SHARING_TEXT_AR_V3 = `سياسة مشاركة البيانات
-
-نحن نقدّر خصوصيتك ونلتزم بالتعامل مع معلوماتك بمسؤولية.
-
-تُستخدم المعلومات المُدخلة في تطبيق Rio لأغراض العرض التوضيحي والاختبار والتقييم فقط.
-لا نبيع معلوماتك ولا نشاركها مع أطراف ثالثة لأغراض تسويقية.
-قد يطّلع على البيانات مسؤولون مصرَّح لهم أو موظفو الدعم لغرض صيانة التطبيق وتحسينه فقط.
-بموافقتك على هذه السياسة، فإنك تقرّ وتوافق على أن دور مشرف المركز/الهيئة الوطنية للأعمال الخيرية (NCNP) يتمتع بصلاحية إشراف عابرة للكيانات بموجب هذه الموافقة — يجوز له الاطلاع على الدراسات والبيانات والتقارير ومعاينتها عبر جميع الكيانات في المنصة لأغراض الرقابة. لا يجوز للمشرف تعديل بيانات أي كيان إلا بموجب إذن صلاحية محدد ومحدود المدة يوافق عليه مسؤول النظام لذلك الإجراء تحديدًا؛ ويُسجَّل كل تعديل ممنوح في سجل التدقيق.
-قد تُستخدم المعلومات المجمّعة ومجهولة الهوية لتقييم أداء النظام وتحسين تجربة المستخدم.
-ينبغي على المستخدمين تجنب إدخال معلومات سرية أو شخصية أو مالية أو خاضعة للتنظيم في هذه البيئة التجريبية.
-تُطبَّق تدابير أمنية مناسبة للمساعدة في حماية البيانات؛ ومع ذلك، لا يمكن لأي نظام إلكتروني أن يضمن أمانًا مطلقًا.
-باستخدامك هذا التطبيق، فإنك تقر وتوافق على جمع المعلومات ومعالجتها على النحو الموضح في هذه السياسة.`;
+هذا النص المؤقت ليس اتفاقية قانونية ولا يترتب عليه أي حقوق أو التزامات.`;
+}
 
 // Seed runs as cnap_owner (DATABASE_URL) — reference tables have no RLS; tenant
 // tables are FORCE-RLS even for the owner, so tenant inserts set org context.
@@ -263,6 +193,45 @@ async function seedOrg(input: {
  * upsert keyed by each row's unique `code`; `displayOrder` follows the
  * dataset's own array order.
  */
+/**
+ * Creates the placeholder consent policies, and only on a database that has
+ * none — the one-time bootstrap described on CONSENT_BOOTSTRAP.
+ *
+ * The guard is per kind and deliberately checks for ANY row, not for the
+ * placeholder's own version: an environment whose policies were published
+ * through Methodology Configuration → Consent Policies has rows this seed has
+ * never seen, and re-inserting a placeholder beside them (worse, an active
+ * one) would put "not yet published" back in front of registrants whose terms
+ * were signed off weeks earlier.
+ *
+ * Nothing is ever updated here. That is the whole point: after this runs once,
+ * consent wording is owned by the two roles the client named, and a reseed
+ * cannot touch it.
+ */
+async function bootstrapConsentPolicies(): Promise<void> {
+  for (const kind of ['use_policy', 'data_sharing', 'citizen_consent'] as const) {
+    const existing = await prisma.consentPolicy.findFirst({ where: { kind }, select: { id: true } });
+    if (existing) continue;
+    const bootstrap = CONSENT_BOOTSTRAP[kind];
+    await prisma.consentPolicy.create({
+      data: {
+        kind,
+        version: bootstrap.version,
+        text: bootstrapText(bootstrap.heading),
+        textAr: bootstrapTextAr(bootstrap.headingAr),
+        // Published + active so signup works out of the box, but with no
+        // publishedBy/reviewedBy: nobody approved this, and the Consent
+        // Policies tab shows those columns as "—" accordingly, which is the
+        // honest record and a visible prompt to publish something real.
+        status: 'published',
+        active: true,
+      },
+    });
+    console.log(`Seeded placeholder ${kind} consent policy (${bootstrap.version}) — publish a real one via Methodology Configuration.`);
+  }
+}
+
+
 async function seedDomainsAndSubdomains(): Promise<void> {
   const raw = fs.readFileSync(path.join(__dirname, '..', 'question-bank-v1.json'), 'utf-8');
   const bank = JSON.parse(raw) as { hierarchy: QuestionBankHierarchyEntry[] };
@@ -363,45 +332,11 @@ async function main(): Promise<void> {
     }
   }
 
-  // RIO-DATA-001 — two separately-versioned consents, both active. Signup
-  // validates the submitted version against the active policy of each kind,
-  // so BOTH must exist or every registration fails its consent check.
-  //
-  // `text` is in `update` as well as `create`: re-seeding an existing
-  // environment has to pick up revised copy, otherwise the first seed run
-  // would pin the wording forever. Acceptance rows are unaffected either way
-  // — each snapshots the text it was accepted under (ConsentAcceptance
-  // .policyText), so already-recorded consents keep the wording their user
-  // actually saw.
-  await prisma.consentPolicy.upsert({
-    where: { kind_version: { kind: 'use_policy', version: 'v1' } },
-    update: { active: true, text: USE_POLICY_TEXT, textAr: USE_POLICY_TEXT_AR },
-    create: { kind: 'use_policy', version: 'v1', active: true, text: USE_POLICY_TEXT, textAr: USE_POLICY_TEXT_AR },
-  });
-  // RIO-RBAC-002 (2026-08-23) — v2 supersedes v1 as the active data-sharing
-  // policy (adds the Center/NCNP Supervisor supervisory-scope clause). v1
-  // stays in place, deactivated, not deleted or edited in place —
-  // ConsentService only ever reads `where: { kind, active: true }`, so
-  // exactly one row per kind must carry active:true at a time.
-  await prisma.consentPolicy.upsert({
-    where: { kind_version: { kind: 'data_sharing', version: 'v1' } },
-    update: { active: false, text: DATA_SHARING_TEXT, textAr: DATA_SHARING_TEXT_AR },
-    create: { kind: 'data_sharing', version: 'v1', active: false, text: DATA_SHARING_TEXT, textAr: DATA_SHARING_TEXT_AR },
-  });
-  await prisma.consentPolicy.upsert({
-    where: { kind_version: { kind: 'data_sharing', version: 'v2' } },
-    update: { active: false, text: DATA_SHARING_TEXT_V2, textAr: DATA_SHARING_TEXT_AR_V2 },
-    create: { kind: 'data_sharing', version: 'v2', active: false, text: DATA_SHARING_TEXT_V2, textAr: DATA_SHARING_TEXT_AR_V2 },
-  });
-  // RIO-RBAC-002 (Round 5, 2026-08-24) — v3 supersedes v2: drops the
-  // "every view is logged" claim (no longer true) and makes explicit that
-  // this consent is the basis for the Supervisor's view/preview right.
-  await prisma.consentPolicy.upsert({
-    where: { kind_version: { kind: 'data_sharing', version: 'v3' } },
-    update: { active: true, text: DATA_SHARING_TEXT_V3, textAr: DATA_SHARING_TEXT_AR_V3 },
-    create: { kind: 'data_sharing', version: 'v3', active: true, text: DATA_SHARING_TEXT_V3, textAr: DATA_SHARING_TEXT_AR_V3 },
-  });
-
+  // RIO-DATA-001 — signup validates the submitted version against the active
+  // policy of each kind and 404s when a kind has none, so BOTH must exist for
+  // any registration to succeed. Bootstrapped, never re-imposed: see
+  // CONSENT_BOOTSTRAP's note above for why this stopped being an upsert.
+  await bootstrapConsentPolicies();
   await seedDomainsAndSubdomains();
   await seedStudyConfigOptions();
 

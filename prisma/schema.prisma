@@ -95,6 +95,32 @@ model RolePermission {
 enum ConsentPolicyKind {
   use_policy
   data_sharing
+  // The notice a citizen respondent accepts before a public survey collects
+  // anything (RIO-NFR-002). A third `kind` rather than its own table for the
+  // same reason the first two share one: it is drafted, versioned, reviewed,
+  // published and accepted through identical machinery — only the audience
+  // and the wording differ. Its acceptance lands on SurveyResponse rather
+  // than ConsentAcceptance, since a citizen has no account to attach one to.
+  citizen_consent
+}
+
+// The draft → review → publish lifecycle a consent policy version moves
+// through before it is ever shown at signup. Client-confirmed (2026-08-27):
+// consent text is dynamically managed and versioned rather than hardcoded,
+// with System Admin drafting and System Reviewer holding the sign-off gate —
+// deliberately the same four states as MethodologyStatus, because this is
+// the same governance pattern applied to a different body of configured
+// content, and a second vocabulary for it would only invite divergence.
+//
+// `published` is the only state the signup screen ever reads (see
+// ConsentPolicy.active): a draft or an approved-but-unpublished version is
+// invisible to registrants by construction, not by a filter someone has to
+// remember to write.
+enum ConsentPolicyStatus {
+  draft
+  pending_approval
+  approved
+  published
 }
 
 model ConsentPolicy {
@@ -118,15 +144,42 @@ model ConsentPolicy {
   // published before its Arabic copy is ready still has to be servable.
   // Readers fall back to `text` (see consentPolicyTextFor) rather than
   // showing an Arabic reader an empty consent.
-  textAr    String?  @map("text_ar")
+  textAr String? @map("text_ar")
+  // Where this version sits in the draft → review → publish workflow. Rows
+  // predating the workflow are backfilled to `published` (see the migration):
+  // they were live text, and calling them drafts would have hidden the
+  // currently-active policy behind an approval that never happened.
+  status ConsentPolicyStatus @default(draft)
+  // "Currently shown at signup", set only by publish(). Kept as its own
+  // column rather than derived from `status = published` because the two
+  // genuinely differ: every superseded version stays `published` (it *was*
+  // published, and the acceptances filed against it remain valid — the
+  // client was explicit that a prior version is not silently upgraded), but
+  // only one per kind is active.
   active    Boolean  @default(false)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Actor columns are plain UUIDs rather than relations, exactly like
+  // MethodologyConfig's: `users` is RLS-scoped per org and this is a global
+  // reference table with no ambient org context, so names are resolved
+  // through the cross-org supervisor path instead of a join.
+  createdBy   String?   @map("created_by") @db.Uuid
+  updatedBy   String?   @map("updated_by") @db.Uuid
+  reviewedBy  String?   @map("reviewed_by") @db.Uuid
+  reviewedAt  DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  reviewNotes String?   @map("review_notes")
+  publishedBy String?   @map("published_by") @db.Uuid
+  publishedAt DateTime? @map("published_at") @db.Timestamptz(6)
 
   @@unique([kind, version])
   // Exactly one row per kind is expected to be active at a time; this index
   // serves the `where: { kind, active: true }` lookup both signup and the
   // public policy endpoint make on every call.
   @@index([kind, active])
+  // The admin screen lists every version of a kind newest-first, and the
+  // review queue looks up "the one version of this kind awaiting sign-off".
+  @@index([kind, status])
   @@map("consent_policies")
 }
 
@@ -1341,6 +1394,22 @@ model SurveyResponse {
   centerIds      String[] @default([]) @map("center_ids") @db.Uuid
   village        String[] @default([])
   answers      Json
+  // RIO-NFR-002 — which citizen-consent version this respondent accepted, and
+  // in which language they read it. Nullable only because responses collected
+  // before the consent notice became a versioned, admin-managed policy have
+  // no version to name; every new submission is required to carry one (see
+  // CitizenService.submitResponse, which rejects a stale or absent version the
+  // same way signup does).
+  //
+  // The version is stored rather than a copy of the wording — unlike
+  // ConsentAcceptance, which snapshots `policyText`. A published
+  // ConsentPolicy row is immutable (ConsentService.updateDraft refuses to
+  // touch one), so the version is a stable pointer to exactly the text that
+  // was shown, and duplicating a long notice onto every response row would
+  // add nothing an auditor could not already resolve.
+  consentPolicyVersion String?   @map("consent_policy_version") @db.VarChar(64)
+  consentPolicyLocale  String?   @map("consent_policy_locale") @db.VarChar(8)
+  consentedAt          DateTime? @map("consented_at") @db.Timestamptz(6)
   submittedAt  DateTime @default(now()) @map("submitted_at") @db.Timestamptz(6)
 
   org        Organisation     @relation(fields: [orgId], references: [id], onDelete: Cascade)
