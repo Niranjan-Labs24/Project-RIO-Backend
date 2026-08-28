@@ -4,6 +4,7 @@ import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { requireActor, requireOrgId } from '../../tenancy/org-context';
 import { AuditService } from '../audit/audit.service';
 import { AiDecisionsService } from '../ai-decisions/ai-decisions.service';
+import { NeedSummaryService } from './need-summary.service';
 import { AiService } from '../ai/ai.service';
 import { parseCsvNeeds, parseExcelNeeds, parsePdfNeeds, parseSurveyDocumentNeeds, type ParsedNeedRow } from './needs-import.parser';
 import type { BulkImportNeedsPayload, ImportNeedsResult, PdfPreviewResult } from './needs-import.types';
@@ -69,6 +70,7 @@ export class NeedsImportService {
     private readonly tenant: TenantPrismaService,
     private readonly audit: AuditService,
     private readonly aiDecisions: AiDecisionsService,
+    private readonly needSummaries: NeedSummaryService,
     @Optional() @Inject(AiService) private readonly aiService?: AiService,
   ) {}
 
@@ -240,6 +242,13 @@ export class NeedsImportService {
         this.aiDecisions.classifyAutomatically(created.id).catch((err: Error) => {
           this.logger.warn(`Automatic classification failed for imported need ${created.id}: ${err.message}`);
         });
+        // RIO-AI-003 auto-suggest. Fire-and-forget per row: one import of 50
+        // needs must not become 50 serial model calls the HTTP request waits
+        // on, and a row whose summary fails is still a successfully imported
+        // Need. maybeGenerateForNeed swallows its own failures.
+        this.needSummaries.maybeGenerateForNeed(created.id, 'pdf_import').catch((err: Error) => {
+          this.logger.warn(`Need summary generation failed for imported need ${created.id}: ${err.message}`);
+        });
       } catch {
         errors.push({
           row: rowNum,
@@ -367,6 +376,10 @@ export class NeedsImportService {
         imported += 1;
         this.aiDecisions.classifyAutomatically(created.id).catch((err: Error) => {
           this.logger.warn(`Automatic classification failed for imported need ${created.id}: ${err.message}`);
+        });
+        // RIO-AI-003 auto-suggest — see the sibling call in importBulk above.
+        this.needSummaries.maybeGenerateForNeed(created.id, 'bulk_import').catch((err: Error) => {
+          this.logger.warn(`Need summary generation failed for imported need ${created.id}: ${err.message}`);
         });
       } catch {
         errors.push({

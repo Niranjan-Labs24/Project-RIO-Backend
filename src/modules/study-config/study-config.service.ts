@@ -36,6 +36,35 @@ export class StudyConfigService {
     return rows.map((r) => r.name);
   }
 
+  // RIO-FR-003 AC 6 — the closed vocabulary the theme extractor picks from.
+  // Rides the same option CRUD as Study Types above, so Methodology
+  // Configuration gets a Need Themes card with no new plumbing.
+  async listNeedThemes(): Promise<StudyConfigOption[]> {
+    const rows = await this.prisma.needThemeOption.findMany({ orderBy: { displayOrder: 'asc' } });
+    return rows.map((r) => this.toOption(r));
+  }
+
+  async listActiveNeedThemeNames(): Promise<string[]> {
+    const rows = await this.prisma.needThemeOption.findMany({
+      where: { isActive: true },
+      orderBy: { displayOrder: 'asc' },
+      select: { name: true },
+    });
+    return rows.map((r) => r.name);
+  }
+
+  async createNeedTheme(payload: CreateStudyConfigOptionPayload): Promise<StudyConfigOption> {
+    return this.toOption(await this.createOption(this.prisma.needThemeOption, payload));
+  }
+
+  async updateNeedTheme(id: string, payload: UpdateStudyConfigOptionPayload): Promise<StudyConfigOption> {
+    return this.toOption(await this.updateOption(this.prisma.needThemeOption, id, payload));
+  }
+
+  async setNeedThemeActive(id: string, isActive: boolean): Promise<StudyConfigOption> {
+    return this.toOption(await this.setActive(this.prisma.needThemeOption, id, isActive));
+  }
+
   async createStudyType(payload: CreateStudyConfigOptionPayload): Promise<StudyConfigOption> {
     const row = await this.createOption(this.prisma.studyTypeOption, payload);
     return this.toOption(row);

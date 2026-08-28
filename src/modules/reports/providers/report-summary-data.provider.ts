@@ -31,6 +31,7 @@ import {
 import { PriorityV2Service } from "../../priority/priority-v2.service";
 import { ReportSharingService } from "../../report-sharing/report-sharing.service";
 import { ReviewerSlaService } from "../../reviewer-sla/reviewer-sla.service";
+import { NeedSummaryService } from '../../needs/need-summary.service';
 import { slaComplianceFromAlerts } from "../../reviewer-sla/sla-compliance";
 import { aggregateDemographics } from "./aggregate-demographics";
 import { loadRegionBreakdown } from "./load-region-breakdown";
@@ -87,6 +88,9 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
     // RPT10's abandonment figures. Reads the session rows the citizen flow
     // writes; see load-data-collection-completeness.ts.
     private readonly sessions: SurveySessionsService,
+    // RIO-AI-003 — a Need whose long description has a CONFIRMED summary shows
+    // that summary here instead of the raw statement. See the call site below.
+    private readonly needSummaries: NeedSummaryService,
   ) {
     super();
   }
@@ -258,10 +262,25 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
       // names the surveys it does not cover.
       const explicitSurvey = typeof query.filters.surveyId === "string" && query.filters.surveyId.length > 0;
       const surveyId = await this.resolveSurveyId(query.studyId, query.filters);
-      const { base, unified, aiSummary } = await this.unifiedHalf(
+      // `demographics` is aggregated by the same half RPT01/RPT09 use, so the
+      // breakdown here is the one those reports show - it was being computed
+      // and then dropped on the floor, which is why RPT10 rendered a permanent
+      // "demographic capture is pending" placeholder over real captured data.
+      const { base, unified, aiSummary, demographics } = await this.unifiedHalf(
         { ...query, studyId: query.studyId, surveyId },
         "EXECUTIVE",
       );
+
+      // Scope the breakdown to whatever this report claims to cover. The shared
+      // half aggregates by the RESOLVED survey's Need - right for RPT01, wrong
+      // here whenever the caller named no survey, since the completeness block
+      // above then reports on every survey in the study. A gender split drawn
+      // from one of them under a study-wide heading is the same scope leak the
+      // Need-scoping was introduced to stop, pointing the other way.
+      const villageId = typeof query.filters.villageId === "string" ? query.filters.villageId : "";
+      const scopedDemographics = explicitSurvey
+        ? demographics
+        : await aggregateDemographics(this.tenant, { studyId: query.studyId }, villageId);
 
       const dataCollection = await loadDataCollectionCompleteness(this.tenant, this.sessions, {
         studyId: query.studyId,
@@ -281,6 +300,7 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
         trendNote: base.trendNote,
         domains: base.severity.domains,
         dataCollection,
+        demographics: scopedDemographics,
         filters: query.filters,
       });
     } catch (err) {
@@ -372,11 +392,22 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
     // surveys' respondents into this survey's gender breakdown.
     const demographics = await aggregateDemographics(this.tenant, { needId: survey.needId }, villageId);
 
+    // RIO-AI-003. `needStatement` renders as one row in the report's Survey
+    // key-value band, beside values like "Published" and "Cycle 1" — a 5,000
+    // character statement there breaks the PDF layout and produces an
+    // unreadable Excel cell. A reviewer-CONFIRMED summary replaces it.
+    //
+    // Falls back to the raw statement, deliberately: most needs are short
+    // enough never to be summarised, and a draft nobody has confirmed must
+    // never reach a published report (getConfirmedTextForNeed returns null for
+    // DRAFT/STALE/SUPERSEDED rows, which is what makes that gate real).
+    const confirmedSummary = await this.needSummaries.getConfirmedTextForNeed(survey.needId);
+
     const identity: SurveyIdentity = {
       surveyId: survey.id,
       surveyTitle: survey.title,
       surveyStatus: survey.status,
-      needStatement: survey.need.statement,
+      needStatement: confirmedSummary ?? survey.need.statement,
       needStatus: survey.need.status,
       villageName: snapshot.study.villageName,
       assessmentCycle: snapshot.study.assessmentCycle,

@@ -6,6 +6,9 @@ import { AuditService } from '../audit/audit.service';
 import { AiService } from '../ai/ai.service';
 import { DomainsService } from '../domains/domains.service';
 import { SurveysService } from '../surveys/surveys.service';
+import { MethodologyConfigService } from '../methodology-config/methodology-config.service';
+import type { AiClassificationSettings } from '../methodology-config/methodology-config.types';
+import { resolveConfidenceBand } from './confidence-band';
 import { AiClassificationDeclinedError, classifyNeedWithAi } from './classification.ai';
 import { redactPii, type ClassificationCandidate, type ClassificationResult } from './classification.placeholder';
 import { scoreStub } from './scoring.placeholder';
@@ -40,6 +43,7 @@ export class AiDecisionsService {
     private readonly ai: AiService,
     private readonly domains: DomainsService,
     private readonly surveys: SurveysService,
+    private readonly methodologyConfig: MethodologyConfigService,
   ) {}
 
   // Called once, synchronously, right after NeedsService.create() commits
@@ -288,7 +292,7 @@ export class AiDecisionsService {
       this.logger.warn(`Suggested-question generation failed for need ${needId}: ${(err as Error).message}`);
     }
 
-    return this.toAiDecision(created);
+    return this.toAiDecision(created, await this.aiClassificationSettings());
   }
 
   // No fallback tier of its own — still just AI-succeeds-or-throws. The
@@ -328,7 +332,8 @@ export class AiDecisionsService {
     const rows = (await this.tenant.runInOrgContext((tx) =>
       tx.aiDecision.findMany({ where: { needId }, orderBy: { createdAt: 'desc' } }),
     )) as unknown as AiDecisionRow[];
-    return rows.map((r) => this.toAiDecision(r));
+    const settings = await this.aiClassificationSettings();
+    return rows.map((r) => this.toAiDecision(r, settings));
   }
 
   async review(id: string, payload: ReviewDecisionPayload): Promise<AiDecision> {
@@ -477,7 +482,7 @@ export class AiDecisionsService {
         { field: 'Reviewer notes', before: null, after: payload.notes ?? null },
       ],
     });
-    return this.toAiDecision(updated);
+    return this.toAiDecision(updated, await this.aiClassificationSettings());
   }
 
   // Approver's classification decision — Override (optional) + Approve.
@@ -497,6 +502,37 @@ export class AiDecisionsService {
       notes: payload.domainOverride?.reason,
       overrideValue: payload.domainOverride ? { pairs: payload.domainOverride.pairs } : undefined,
     });
+
+    // RIO-AI-001 asks for approve/modify/reject in a SINGLE action, so a
+    // reviewer can now send {pairs, reason} straight here without first
+    // calling overrideDomainPreview. That preview call is what used to
+    // regenerate the Suggested Questions for the new pairs — skipping it
+    // would leave the Survey Builder showing questions matched against the
+    // AI's original domain, silently contradicting the classification that
+    // was just approved.
+    //
+    // Idempotent by construction (generateSuggestedQuestions replaces the
+    // suggested set), so the two-step Preview-then-Approve flow simply
+    // regenerates the same list a second time.
+    //
+    // Best-effort, exactly like the post-classification call in
+    // runAndPersistClassification: the classification decision is committed
+    // and audited above, and must not be undone because question generation
+    // failed. `allowWhileSubmitted` mirrors overrideDomainPreview's rule —
+    // an Approver deciding a SUBMITTED survey's classification is precisely
+    // the person reviewing it.
+    if (payload.domainOverride) {
+      const allowWhileSubmitted = getOrgStore()?.role !== 'ngo_research_officer';
+      try {
+        await this.surveys.generateSuggestedQuestions(needId, payload.domainOverride.pairs, {
+          allowWhileSubmitted,
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Suggested-question regeneration after override-approve failed for need ${needId}: ${(err as Error).message}`,
+        );
+      }
+    }
   }
 
   // Mirrors today's Survey rejection, but also resets the Need itself back
@@ -576,7 +612,15 @@ export class AiDecisionsService {
     return scoreStub();
   }
 
-  private toAiDecision(row: AiDecisionRow): AiDecision {
+  private async aiClassificationSettings(): Promise<AiClassificationSettings> {
+    return (await this.methodologyConfig.getRaw()).aiClassificationSettings;
+  }
+
+  // Settings are read once per request by the caller and threaded in, rather
+  // than fetched inside here — listByNeedId maps a whole list, and a config
+  // read per row would turn one query into N.
+  private toAiDecision(row: AiDecisionRow, settings: AiClassificationSettings): AiDecision {
+    const confidence = row.confidence === null ? null : Number(row.confidence);
     return {
       id: row.id,
       needId: row.needId,
@@ -587,7 +631,16 @@ export class AiDecisionsService {
       modelName: row.modelName,
       modelVersion: row.modelVersion,
       suggestion: row.suggestion,
-      confidence: Number(row.confidence),
+      // `Number(null)` is 0, which would erase the very distinction this
+      // column was made nullable for — an unreported confidence would come
+      // back over HTTP as a confident-looking `0`, indistinguishable from a
+      // genuine AI decline.
+      confidence,
+      confidenceBand: resolveConfidenceBand(confidence, settings),
+      confidenceThresholds: {
+        low: settings.lowConfidenceThreshold,
+        veryLow: settings.veryLowConfidenceThreshold,
+      },
       humanDecision: row.humanDecision,
       decidedBy: row.decidedBy,
       decidedAt: row.decidedAt ? row.decidedAt.toISOString() : null,

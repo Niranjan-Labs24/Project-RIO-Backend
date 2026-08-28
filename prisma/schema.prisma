@@ -245,6 +245,7 @@ model Organisation {
   surveySessionEvents    SurveySessionEvent[]
   responseQualityResults ResponseQualityResult[]
   aiSummaries AiSummary[]
+  needStatementSummaries NeedStatementSummary[]
   priorityScores PriorityScore[]
   sharingRequestsOwned SharingRequest[] @relation("SharingRequestsOwned")
   sharingRequestsMade  SharingRequest[] @relation("SharingRequestsMade")
@@ -581,6 +582,7 @@ model Study {
   surveySessions SurveySession[]
   responseQualityResults ResponseQualityResult[]
   aiSummaries AiSummary[]
+  needStatementSummaries NeedStatementSummary[]
   priorityScores PriorityScore[]
   sharingRequests SharingRequest[]
   reports Report[]
@@ -745,6 +747,24 @@ model Need {
   // client is that a human sets it). Optional — "keeps gap classification's
   // already-confirmed optional status."
   gapType String? @map("gap_type") @db.VarChar(20)
+  // RIO-FR-003 AC 1 -- "every classified need has a sector, an URGENCY LEVEL,
+  // and a computed priority score". Severity says how bad a need is; urgency
+  // says how soon it must be acted on, and nothing else in the model carries
+  // that. A leaking school roof and a dried-up water source can both score 78.
+  //
+  // Set by a human, never inferred: the methodology names urgency as factor 4
+  // but gives no measurement rule, so guessing one from gapType or severity
+  // would be inventing methodology. Nullable because it is optional in v1 --
+  // an unset urgency is reported as "not set", never scored as zero.
+  urgency String? @map("urgency") @db.VarChar(30)
+  // RIO-FR-003 AC 6 -- recurring themes, extracted per need and used to
+  // filter/group. A real TEXT[] following the `village` precedent above.
+  //
+  // Themes are also what makes the methodology's "recurrence of similar
+  // needs" factor computable without RIO-AI-004: two needs that share a theme
+  // are the same underlying problem for counting purposes, which is a far
+  // weaker (and far cheaper) claim than AI-004's need-to-need merge.
+  themes String[] @map("themes")
   // RIO-FR-005 (Round 4, client-confirmed 2026-08-24) — "Roughly how many
   // people/households does this need affect?" on the need-entry form. This
   // manually entered figure is the PRIMARY Affected Population value (not
@@ -777,6 +797,7 @@ model Need {
   surveySessions SurveySession[]
   responseQualityResults ResponseQualityResult[]
   aiSummaries AiSummary[]
+  needStatementSummaries NeedStatementSummary[]
   priorityScores PriorityScore[]
   decisions NeedDecision[]
   aiSuggestions AiSuggestion[]
@@ -954,7 +975,14 @@ model AiDecision {
   modelName     String       @map("model_name") @db.VarChar(150)
   modelVersion  String       @map("model_version") @db.VarChar(100)
   suggestion    Json
-  confidence    Decimal
+  // Nullable on purpose. `0` is a REAL value here — the "AI ran and declined
+  // to classify" path (see AiDecisionsService.runAndPersistClassification)
+  // stores 0 to mean "no confidence at all". A model that classified but
+  // omitted its confidence is a different thing entirely, and coercing that
+  // to 0 used to make a good classification look like the worst possible one.
+  // NULL means "not reported" and the reviewer UI flags it for closer review
+  // rather than showing a fabricated number.
+  confidence    Decimal?
   humanDecision Json?        @map("human_decision")
   decidedBy     String?      @map("decided_by") @db.Uuid
   decidedAt     DateTime?    @map("decided_at") @db.Timestamptz(6)
@@ -1024,6 +1052,25 @@ model StudyTypeOption {
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("study_type_options")
+}
+
+// RIO-FR-003 AC 6 — the closed vocabulary the theme extractor may pick from.
+// Same global-reference pattern as StudyTypeOption above, so it inherits the
+// existing Methodology Configuration CRUD screen unchanged.
+//
+// Closed rather than free text on purpose: AC 6 requires filtering and
+// grouping BY theme, and free text would split "water shortage", "Water
+// Shortage" and "lack of water" into three groups within a week. It would also
+// corrupt the recurrence factor, which counts how many needs share a theme.
+model NeedThemeOption {
+  id           String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  name         String   @unique @db.VarChar(100)
+  displayOrder Int      @default(0) @map("display_order")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("need_theme_options")
 }
 
 // Same pattern and reasoning as StudyTypeOption. Confirmed (Sprint 2
@@ -1457,6 +1504,80 @@ model AiSummary {
   @@map("ai_summaries")
 }
 
+// ──────── RIO-AI-003 — Need statement summarisation ────────
+//
+// Distinct from AiSummary above (which narrates SURVEY RESPONSES) and from
+// EvidenceDocumentSummary (which analyses an uploaded DOCUMENT into findings,
+// themes and cited statements). This one does exactly one thing: shorten a
+// long Need *description* so it is readable in review and in reports.
+//
+// Two rules from the client's 25 Aug 2026 answers shape the columns:
+//
+//  1. "Standardised" means the STRUCTURED facts must survive untouched —
+//     centre, village, governorate, problem title, domain. The model is never
+//     asked to reproduce them, so it cannot corrupt them: they are read from
+//     the Need record itself at display time. Only the narrative is rewritten.
+//  2. Keep BOTH texts. Classification and scoring keep reading
+//     Need.statement; the confirmed summary is what reports and lists show.
+//     Hence sourceStatement is snapshotted here rather than only referenced —
+//     a later edit to Need.statement must not silently re-caption an already
+//     confirmed summary (it marks it STALE instead).
+model NeedStatementSummary {
+  id                 String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId              String    @map("org_id") @db.Uuid
+  needId             String    @map("need_id") @db.Uuid
+  // Denormalized from Need.studyId — see Evidence.studyId's comment.
+  studyId            String    @map("study_id") @db.Uuid
+  // DRAFT | CONFIRMED | SUPERSEDED | STALE. Deliberately a String, matching
+  // EvidenceDocumentSummary.status rather than a new enum, so the two summary
+  // families stay comparable in queries and in the reviewer queue.
+  status             String    @default("DRAFT") @db.VarChar(50)
+  promptVersion      String    @map("prompt_version") @db.VarChar(100)
+  modelName          String    @map("model_name") @db.VarChar(100)
+  modelVersion       String    @map("model_version") @db.VarChar(50)
+  // AC "the original full text remains accessible alongside the summary".
+  // Snapshotted, not derived: see rule 2 in this model's header comment.
+  sourceStatement    String    @map("source_statement")
+  sourceLength       Int       @map("source_length")
+  inputTextHash      String    @map("input_text_hash") @db.VarChar(64)
+  // The model's own output. NEVER overwritten by an edit — the AC requires the
+  // AI suggestion and the human decision to be stored together, which is only
+  // provable if the two live in separate columns.
+  aiSummaryText      String    @map("ai_summary_text")
+  // The reviewer's edit, when they made one. Null means "confirmed the AI text
+  // unchanged", which is itself a meaningful decision and must stay
+  // distinguishable from "edited it to the same string".
+  reviewerEditedText String?   @map("reviewer_edited_text")
+  // Which entry point produced the Need this summarises: manual_entry |
+  // bulk_import | pdf_import | citizen_input. Mirrors NeedSource's vocabulary
+  // so a report can group by it without a translation table.
+  triggerSource      String    @map("trigger_source") @db.VarChar(40)
+  // RIO-AI-003 AC 5, made mechanical — see need-summary.verify.ts. Each entry
+  // is "CODE:detail" for one provably-wrong thing found in the generated
+  // summary (a fact the model invented, a fact it dropped, a number that is in
+  // the summary but not the source). Empty is the normal case. Stored rather
+  // than recomputed so the reviewer queue can sort risky summaries to the top
+  // without re-running the checks on every read.
+  verificationWarnings String[] @map("verification_warnings")
+  generatedBy        String?   @map("generated_by") @db.Uuid
+  generatedAt        DateTime  @default(now()) @map("generated_at") @db.Timestamptz(6)
+  confirmedBy        String?   @map("confirmed_by") @db.Uuid
+  confirmedAt        DateTime? @map("confirmed_at") @db.Timestamptz(6)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org   Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  need  Need         @relation(fields: [needId], references: [id], onDelete: Cascade)
+  study Study        @relation(fields: [studyId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([needId])
+  @@index([studyId])
+  // The reviewer queue reads "every DRAFT in my org, oldest first".
+  @@index([orgId, status])
+  @@map("need_statement_summaries")
+}
+
 // ──────── Priority Dashboard + Explainable Score ────────
 // TODO(RIO-Priority): placeholder scoring only — see
 // priority/priority.placeholder.ts. Real methodology scoring workbook
@@ -1484,6 +1605,15 @@ model PriorityScore {
   // this score — { indicator, weight, responseValue, weightedContribution }
   // — plus the equity-flag/normalization inputs. See priority/scoring.ts.
   factors      Json
+  // RIO-FR-003 AC 5 -- "reviewer overrides are captured with a reason and are
+  // DISTINGUISHABLE from the original system-computed value". Same shape as
+  // NeedStatementSummary's ai/reviewer text pair: `overallScore` above always
+  // keeps what the engine computed and is never rewritten, so the trail never
+  // loses the original once a reviewer disagrees with it.
+  overrideScore  Int?      @map("override_score")
+  overrideReason String?   @map("override_reason")
+  overriddenBy   String?   @map("overridden_by") @db.Uuid
+  overriddenAt   DateTime? @map("overridden_at") @db.Timestamptz(6)
   cycleNote    String?       @map("cycle_note") @db.VarChar(200)
   scoredAt     DateTime      @default(now()) @map("scored_at") @db.Timestamptz(6)
   // Priority Scoring stays subject to reviewer approval, same as AI
@@ -1858,6 +1988,30 @@ model MethodologyConfig {
   // response-quality.placeholder.ts. Shape: { dontKnowRatioThreshold,
   // minRespondentsForStandardConfidence }.
   confidenceFlagSettings Json              @map("confidence_flag_settings")
+  // RIO-AI-001's "low-confidence suggestions below a CONFIGURABLE threshold
+  // are visually flagged" rule. Shape: { lowConfidenceThreshold,
+  // veryLowConfidenceThreshold } — both 0..1, matching AiDecision.confidence's
+  // own 0..1 scale (not 0-100). These were hardcoded in the frontend
+  // component before, which meant the acceptance criterion's "configurable"
+  // could not be met at all; they live here so the Methodology Configuration
+  // screen owns them like every other methodology threshold.
+  aiClassificationSettings Json            @map("ai_classification_settings")
+  // RIO-AI-003's "a summary is suggested for any need above a DEFINED length
+  // threshold" rule. Shape: { statementLengthThreshold, maxSummaryChars }.
+  // statementLengthThreshold is a character count on the raw statement and is
+  // deliberately language-neutral (client decision, 25 Aug 2026: 1,500 for
+  // every language) — a word count would behave very differently in Arabic,
+  // which is more compact per character than English.
+  aiSummarySettings      Json              @map("ai_summary_settings")
+  // RIO-FR-003 -- the conversion rules that turn raw data into the 0-100
+  // scale the factor weights multiply. `priorityFactorWeights` above says a
+  // factor is worth 12%; this says what "450 affected people" is worth out of
+  // 100. Both halves are needed and both are the methodology owner's to set,
+  // so both live here rather than in code.
+  //
+  // Deliberately mirrors ScoringLookup's numericFloor/numericCeiling pattern,
+  // which already does exactly this job for numeric survey questions.
+  priorityFactorScales   Json              @map("priority_factor_scales")
   updatedAt              DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
   updatedBy              String?           @map("updated_by") @db.Uuid
 
@@ -1879,14 +2033,24 @@ model MethodologyConfigHistory {
   status                 MethodologyStatus
   // "edit" (update()) / "approve" / "reject" / "publish" — which action
   // produced this snapshot, so the timeline reads as a log of actions, not
-  // just states. Bug fix: this was missing @map("change_type") — the real
-  // column (from this table's own migration) is snake_case, so every
-  // recordHistory() call has 500'd since this table was created; caught
-  // live-testing the new approve/reject flow, not introduced by it.
+  // just states. @map is required: this table's migration creates the
+  // column as `change_type`, and without the mapping Prisma queries a
+  // `changeType` column that does not exist — every GET
+  // /methodology-config/history 500s. Bug fix found and fixed
+  // independently on both branches; caught live-testing the approve/reject
+  // flow, not introduced by it.
   changeType             String   @map("change_type") @db.VarChar(20)
   priorityThresholds     Json     @map("priority_thresholds")
   priorityFactorWeights  Json     @map("priority_factor_weights")
   confidenceFlagSettings Json     @map("confidence_flag_settings")
+  // Snapshotted alongside the other three families — RIO-NFR-017 asks for a
+  // history of EVERY configuration change, and leaving this one out would
+  // produce history rows that silently omit the only thing that changed
+  // when an AI confidence threshold is edited.
+  aiClassificationSettings Json   @map("ai_classification_settings")
+  // Snapshotted for the same reason as aiClassificationSettings above.
+  aiSummarySettings      Json     @map("ai_summary_settings")
+  priorityFactorScales   Json     @map("priority_factor_scales")
   changedBy              String?  @map("changed_by") @db.Uuid
   changedAt              DateTime @default(now()) @map("changed_at") @db.Timestamptz(6)
 
