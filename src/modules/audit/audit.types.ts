@@ -37,6 +37,23 @@ export type AuditAction =
   | 'confirm_document_summary'
   | 'generate_combined_summary'
   | 'confirm_combined_summary'
+  // RIO-AI-003 — need statement summarisation. Deliberately distinct from the
+  // document/combined summary actions above: those summarise an uploaded
+  // document or a whole report, while these shorten the description of one
+  // Need. An auditor filtering for who signed off the wording that reached a
+  // report must not have the three collapsed together.
+  //
+  // NOTE: keep apostrophes out of comments inside this union. The frontend
+  // contract test (audit-action-labels.test.ts) extracts the members with a
+  // single-quoted-string regex, so a stray apostrophe in a comment silently
+  // shifts every quote pair after it and the two lists appear to have drifted.
+  | 'generate_need_summary'
+  | 'edit_need_summary'
+  | 'confirm_need_summary'
+  // RIO-FR-003. Theme extraction rewrites what a need is filed under and feeds
+  // the recurrence factor, so a change here moves priority rankings.
+  | 'extract_need_themes'
+  | 'override_priority_score'
   | 'export';
 export type AuditEntityType =
   | 'organization'
@@ -55,7 +72,13 @@ export type AuditEntityType =
   | 'combined_report_summary'
   | 'ncnp_report'
   | 'question'
-  | 'need_decision';
+  | 'need_decision'
+  // RIO-FR-003 — a reviewer's override of a computed priority score. Its own
+  // entity type rather than folded into 'need': the audit reader filters on
+  // what was changed, and a score decision is not a change to the need.
+  | 'priority_score'
+  // RIO-AI-003 — one row per suggested summary of a Need's description.
+  | 'need_statement_summary';
 
 export interface AuditChange {
   field: string;

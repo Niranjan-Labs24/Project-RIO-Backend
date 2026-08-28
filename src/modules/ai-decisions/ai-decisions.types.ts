@@ -1,3 +1,5 @@
+import type { ConfidenceBand } from './confidence-band';
+
 export type AiTouchpoint = 'need_classification' | 'priority_scoring';
 
 export interface AiDecisionRow {
@@ -11,7 +13,7 @@ export interface AiDecisionRow {
   modelName: string;
   modelVersion: string;
   suggestion: unknown;
-  confidence: number;
+  confidence: number | null;
   humanDecision: unknown;
   decidedBy: string | null;
   decidedAt: Date | null;
@@ -28,7 +30,16 @@ export interface AiDecision {
   modelName: string;
   modelVersion: string;
   suggestion: unknown;
-  confidence: number;
+  /** 0..1, or `null` when the model reported none — see AiDecision.confidence
+   * in schema.prisma. Consumers must distinguish `null` ("not reported") from
+   * `0` ("AI declined to classify"); rendering both as 0% is a bug. */
+  confidence: number | null;
+  /** RIO-AI-001. Resolved server-side from the configured thresholds so the
+   * reviewer UI never re-derives (and never re-hardcodes) them. */
+  confidenceBand: ConfidenceBand;
+  /** The thresholds this band was resolved against, echoed so the UI can say
+   * "below 70%" without a second round trip to the methodology config. */
+  confidenceThresholds: { low: number; veryLow: number };
   humanDecision: unknown;
   decidedBy: string | null;
   decidedAt: string | null;

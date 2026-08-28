@@ -31,6 +31,7 @@ import {
 import { PriorityV2Service } from "../../priority/priority-v2.service";
 import { ReportSharingService } from "../../report-sharing/report-sharing.service";
 import { ReviewerSlaService } from "../../reviewer-sla/reviewer-sla.service";
+import { NeedSummaryService } from '../../needs/need-summary.service';
 import { slaComplianceFromAlerts } from "../../reviewer-sla/sla-compliance";
 import { aggregateDemographics } from "./aggregate-demographics";
 import { loadRegionBreakdown } from "./load-region-breakdown";
@@ -87,6 +88,9 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
     // RPT10's abandonment figures. Reads the session rows the citizen flow
     // writes; see load-data-collection-completeness.ts.
     private readonly sessions: SurveySessionsService,
+    // RIO-AI-003 — a Need whose long description has a CONFIRMED summary shows
+    // that summary here instead of the raw statement. See the call site below.
+    private readonly needSummaries: NeedSummaryService,
   ) {
     super();
   }
@@ -388,11 +392,22 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
     // surveys' respondents into this survey's gender breakdown.
     const demographics = await aggregateDemographics(this.tenant, { needId: survey.needId }, villageId);
 
+    // RIO-AI-003. `needStatement` renders as one row in the report's Survey
+    // key-value band, beside values like "Published" and "Cycle 1" — a 5,000
+    // character statement there breaks the PDF layout and produces an
+    // unreadable Excel cell. A reviewer-CONFIRMED summary replaces it.
+    //
+    // Falls back to the raw statement, deliberately: most needs are short
+    // enough never to be summarised, and a draft nobody has confirmed must
+    // never reach a published report (getConfirmedTextForNeed returns null for
+    // DRAFT/STALE/SUPERSEDED rows, which is what makes that gate real).
+    const confirmedSummary = await this.needSummaries.getConfirmedTextForNeed(survey.needId);
+
     const identity: SurveyIdentity = {
       surveyId: survey.id,
       surveyTitle: survey.title,
       surveyStatus: survey.status,
-      needStatement: survey.need.statement,
+      needStatement: confirmedSummary ?? survey.need.statement,
       needStatus: survey.need.status,
       villageName: snapshot.study.villageName,
       assessmentCycle: snapshot.study.assessmentCycle,

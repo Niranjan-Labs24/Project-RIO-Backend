@@ -34,7 +34,9 @@ export interface ClassificationResult {
   modelName: string;
   modelVersion: string;
   suggestion: ClassificationSuggestion;
-  confidence: number;
+  /** 0..1, or `null` when the model classified but reported no confidence.
+   * `0` is NOT that case — it is the real "AI declined to classify" value. */
+  confidence: number | null;
 }
 
 export function redactPii(text: string): string {

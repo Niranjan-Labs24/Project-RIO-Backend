@@ -48,6 +48,9 @@ const noSharing = { list: async () => [] };
 const noSla = { listAlerts: async () => [] };
 // RPT10 only — the village/sector/etc. paths under test never load sessions.
 const noSessions = { loadSessionsForReport: async () => [], idleMinutes: 120 };
+// RIO-AI-003: no confirmed summary, so RPT01/RPT15 fall back to the raw
+// statement — which is what every assertion in this file already expects.
+const noNeedSummary = { getConfirmedTextForNeed: async () => null };
 const query = { studyId: "study-1", villageId: "Ad-Dilam", orgId: "o", filters: {} };
 
 function makeProvider(
@@ -57,10 +60,11 @@ function makeProvider(
   sharing: unknown = noSharing,
   sla: unknown = noSla,
   sessions: unknown = noSessions,
+  needSummaries: unknown = noNeedSummary,
 ): ReportSummaryDataProvider {
   return new ReportSummaryDataProvider(
     summary as never, tenant as never, priorityV2 as never, sharing as never, sla as never,
-    sessions as never,
+    sessions as never, needSummaries as never,
   );
 }
 

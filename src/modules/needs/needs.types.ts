@@ -1,3 +1,5 @@
+import type { ConfidenceBand } from '../ai-decisions/confidence-band';
+
 export type NeedStatus =
   | 'draft'
   | 'pending_ai_classification'
@@ -50,6 +52,11 @@ export interface NeedRow {
   proposedDomains: unknown;
   proposedReason: string | null;
   gapType: string | null;
+  // RIO-FR-003 AC 1 — the human-assigned urgency level, and AC 6's extracted
+  // themes. Urgency is null until someone sets it; themes are [] until
+  // extraction has run.
+  urgency: string | null;
+  themes: string[];
   affectedPeople: number | null;
   affectedHouseholds: number | null;
   createdBy: string;
@@ -112,6 +119,18 @@ export interface Need {
   // predicted. See AiDecisionsService.classifyAutomatically/review.
   aiSuggestedDomain: string | null;
   aiSuggestedSubDomain: string | null;
+  // RIO-AI-001 — the latest classification's self-reported confidence and its
+  // resolved band, surfaced on the Need itself so the Needs list can show and
+  // filter on it. Without this a reviewer had to open every Need one at a time
+  // to discover which ones the AI was unsure about, which is the opposite of
+  // "flagged for closer reviewer attention".
+  //
+  // `null` band means no classification has run yet (a draft /
+  // pending_ai_classification / ai_classification_failed Need) — distinct from
+  // the 'not_reported' band, which means one DID run and returned no
+  // confidence.
+  aiConfidence: number | null;
+  aiConfidenceBand: ConfidenceBand | null;
   classifiedAt: string | null;
   classificationError: string | null;
   // A staged (not-yet-decided) Override, visible to anyone reviewing this
@@ -125,6 +144,11 @@ export interface Need {
   // Need.gapType for why the Reports module's separate heuristic isn't
   // reused here).
   gapType: string | null;
+  // RIO-FR-003 AC 1 — the human-assigned urgency level, and AC 6's extracted
+  // themes. Urgency is null until someone sets it; themes are [] until
+  // extraction has run.
+  urgency: string | null;
+  themes: string[];
   // RIO-FR-005 (Round 4, client-confirmed 2026-08-24) — "Roughly how many
   // people/households does this need affect?", entered on the need-entry
   // form. This is the PRIMARY Affected Population value — see

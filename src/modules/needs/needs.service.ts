@@ -7,6 +7,10 @@ import type { AuditChange } from '../audit/audit.types';
 import { GeographyService } from '../geography/geography.service';
 import { AiDecisionsService } from '../ai-decisions/ai-decisions.service';
 import { StudyConfigService } from '../study-config/study-config.service';
+import { resolveConfidenceBand, type ConfidenceBand } from '../ai-decisions/confidence-band';
+import { MethodologyConfigService } from '../methodology-config/methodology-config.service';
+import { NeedThemesService } from './need-themes.service';
+import { NeedSummaryService } from './need-summary.service';
 import { NEED_EDITABLE_STATUSES, type CreateNeedPayload, type Need, type NeedRow, type UpdateNeedPayload } from './needs.types';
 
 
@@ -60,6 +64,9 @@ export class NeedsService {
     private readonly geography: GeographyService,
     private readonly aiDecisions: AiDecisionsService,
     private readonly studyConfig: StudyConfigService,
+    private readonly methodologyConfig: MethodologyConfigService,
+    private readonly needThemes: NeedThemesService,
+    private readonly needSummaries: NeedSummaryService,
   ) {}
 
   // A Study can hold many Needs — each one runs its own independent
@@ -146,6 +153,23 @@ export class NeedsService {
       this.logger.warn(`Automatic classification failed for need ${created.id}: ${err.message}`);
     });
 
+    // RIO-AI-003's auto-suggest, for the manual-entry path. Fire-and-forget for
+    // the same reason as classification above, and additionally because
+    // summarisation is assistive: the Need is already persisted and must not be
+    // rolled back if the model is unavailable. maybeGenerateForNeed swallows
+    // its own failures, so this catch only covers the promise itself.
+    this.needSummaries.maybeGenerateForNeed(created.id, 'manual_entry').catch((err: Error) => {
+      this.logger.warn(`Need summary generation failed for need ${created.id}: ${err.message}`);
+    });
+
+    // RIO-FR-003 AC 6. Fire-and-forget for the same reason as the two above,
+    // and additionally because the recurrence factor reads themes at SCORING
+    // time — a need created before extraction finishes simply scores without
+    // them, and picks them up on its next scoring run.
+    this.needThemes.maybeExtractForNeed(created.id).catch((err: Error) => {
+      this.logger.warn(`Theme extraction failed for need ${created.id}: ${err.message}`);
+    });
+
     return this.toNeed(this.toNeedRow(created), await this.resolveUserName(created.createdBy));
   }
 
@@ -202,8 +226,13 @@ export class NeedsService {
     const rows = (await this.tenant.runInOrgContext((tx) =>
       tx.need.findMany({ where: { studyId }, orderBy: { createdAt: 'asc' }, include: GEO_INCLUDE }),
     )) as RawNeedWithGeo[];
-    const names = await this.resolveUserNames(rows.map((r) => r.createdBy));
-    return rows.map((row) => this.toNeed(this.toNeedRow(row), names.get(row.createdBy) ?? null));
+    const [names, confidences] = await Promise.all([
+      this.resolveUserNames(rows.map((r) => r.createdBy)),
+      this.resolveAiConfidence(rows.map((r) => r.id)),
+    ]);
+    return rows.map((row) =>
+      this.toNeed(this.toNeedRow(row), names.get(row.createdBy) ?? null, confidences.get(row.id) ?? null),
+    );
   }
 
   async getById(needId: string): Promise<Need> {
@@ -220,7 +249,11 @@ export class NeedsService {
       : await this.tenant.runInOrgContext((tx) => tx.need.findUnique({ where: { id: needId }, include: GEO_INCLUDE }))
     ) as RawNeedWithGeo | null;
     if (!row) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
-    return this.toNeed(this.toNeedRow(row), await this.resolveUserName(row.createdBy, isCrossOrgReader));
+    const [createdByName, confidences] = await Promise.all([
+      this.resolveUserName(row.createdBy, isCrossOrgReader),
+      this.resolveAiConfidence([row.id]),
+    ]);
+    return this.toNeed(this.toNeedRow(row), createdByName, confidences.get(row.id) ?? null);
   }
 
   async update(needId: string, patch: UpdateNeedPayload): Promise<Need> {
@@ -294,6 +327,24 @@ export class NeedsService {
       });
     }
 
+    // RIO-AI-003: a summary of the OLD statement is not a summary of this Need
+    // any more. Awaited, unlike the fire-and-forget generation below it,
+    // because leaving a superseded summary marked CONFIRMED for even a moment
+    // is what would let a stale wording reach a report generated in that
+    // window. Only the statement matters here — retitling or moving geography
+    // does not invalidate a description summary.
+    if (changes.some((c) => c.field === DIFF_FIELD_LABELS.statement)) {
+      await this.needSummaries.markStaleForNeed(updated.id);
+      // The statement is what themes are derived from, so a rewrite can change
+      // what the need is about — and therefore its recurrence count.
+      this.needThemes.maybeExtractForNeed(updated.id).catch((err: Error) => {
+        this.logger.warn(`Theme re-extraction failed for need ${updated.id}: ${err.message}`);
+      });
+      this.needSummaries.maybeGenerateForNeed(updated.id, 'manual_entry').catch((err: Error) => {
+        this.logger.warn(`Need summary regeneration failed for need ${updated.id}: ${err.message}`);
+      });
+    }
+
     return this.toNeed(updated, await this.resolveUserName(updated.createdBy));
   }
 
@@ -334,6 +385,40 @@ export class NeedsService {
           entityId: needId,
           entityLabel: currentRaw.title.slice(0, 80),
           changes: [{ field: 'gapType', before, after: gapType }],
+          sourceRef: currentRaw.referenceId,
+        });
+      }
+      return this.toNeedRow(updatedRaw);
+    });
+    return this.toNeed(updated, await this.resolveUserName(updated.createdBy));
+  }
+
+  /**
+   * RIO-FR-003 AC 1 — the urgency level a human assigns.
+   *
+   * Deliberately its own action rather than a field on update(): urgency is a
+   * priority judgement, not Need data, so it carries the same
+   * priorityScoring:write gate as gap type above rather than
+   * dataCollection:write. It is also settable after a Need is locked for
+   * editing, because the judgement can change while the facts do not.
+   */
+  async setUrgency(needId: string, urgency: string | null): Promise<Need> {
+    const updated = await this.tenant.runInOrgContext(async (tx) => {
+      const currentRaw = (await tx.need.findUnique({ where: { id: needId }, include: GEO_INCLUDE })) as RawNeedWithGeo | null;
+      if (!currentRaw) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+      const before = currentRaw.urgency;
+      const updatedRaw = (await tx.need.update({
+        where: { id: needId },
+        data: { urgency },
+        include: GEO_INCLUDE,
+      })) as RawNeedWithGeo;
+      if (before !== urgency) {
+        await this.audit.record({
+          action: 'edit',
+          entityType: 'need',
+          entityId: needId,
+          entityLabel: currentRaw.title.slice(0, 80),
+          changes: [{ field: 'urgency', before, after: urgency }],
           sourceRef: currentRaw.referenceId,
         });
       }
@@ -420,6 +505,44 @@ export class NeedsService {
     return names.get(userId) ?? null;
   }
 
+  /**
+   * RIO-AI-001 — the latest `need_classification` AiDecision's confidence for
+   * each of `needIds`, already banded.
+   *
+   * One query for the whole page rather than one per Need: the Needs list
+   * renders this for every row, and a per-row lookup would turn a single list
+   * request into N+1. Ordered ascending and written into the map as it goes,
+   * so the LAST write per need wins — i.e. the newest decision, which is the
+   * one a re-classification produced.
+   */
+  private async resolveAiConfidence(
+    needIds: string[],
+  ): Promise<Map<string, { confidence: number | null; band: ConfidenceBand }>> {
+    const distinct = [...new Set(needIds)];
+    const out = new Map<string, { confidence: number | null; band: ConfidenceBand }>();
+    if (distinct.length === 0) return out;
+
+    const [rows, settings] = await Promise.all([
+      this.tenant.runInOrgContext((tx) =>
+        tx.aiDecision.findMany({
+          where: { needId: { in: distinct }, touchpoint: 'need_classification' },
+          orderBy: { createdAt: 'asc' },
+          select: { needId: true, confidence: true },
+        }),
+      ),
+      this.methodologyConfig.getRaw(),
+    ]);
+
+    for (const row of rows) {
+      const confidence = row.confidence === null ? null : Number(row.confidence);
+      out.set(row.needId, {
+        confidence,
+        band: resolveConfidenceBand(confidence, settings.aiClassificationSettings),
+      });
+    }
+    return out;
+  }
+
   // `crossOrg` — RIO-RBAC-002: the creator of a Need read via the
   // cross-org-reader path below (System Admin/Center Supervisor viewing a
   // Need outside their own org) belongs to THAT org, not the ambient one —
@@ -461,7 +584,11 @@ export class NeedsService {
     };
   }
 
-  private toNeed(row: NeedRow, createdByName: string | null): Need {
+  private toNeed(
+    row: NeedRow,
+    createdByName: string | null,
+    aiConfidence: { confidence: number | null; band: ConfidenceBand } | null = null,
+  ): Need {
     return {
       id: row.id,
       studyId: row.studyId,
@@ -482,6 +609,12 @@ export class NeedsService {
       needDomains: row.needDomains,
       aiSuggestedDomain: row.aiSuggestedDomain,
       aiSuggestedSubDomain: row.aiSuggestedSubDomain,
+      // Null band = no classification has run for this Need at all. Callers
+      // that don't resolve it (create/update, where the caller already knows
+      // no new decision exists) pass nothing and get null — never a
+      // default-banded 'standard', which would read as "the AI was confident".
+      aiConfidence: aiConfidence?.confidence ?? null,
+      aiConfidenceBand: aiConfidence?.band ?? null,
       classifiedAt: row.classifiedAt ? row.classifiedAt.toISOString() : null,
       classificationError: row.classificationError,
       proposedDomains: Array.isArray(row.proposedDomains)
@@ -489,6 +622,8 @@ export class NeedsService {
         : null,
       proposedReason: row.proposedReason,
       gapType: row.gapType,
+      urgency: row.urgency ?? null,
+      themes: row.themes ?? [],
       affectedPeople: row.affectedPeople,
       affectedHouseholds: row.affectedHouseholds,
       createdBy: row.createdBy,

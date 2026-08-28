@@ -126,7 +126,16 @@ describe("Need -> AI classification unclear -> allDomainsSelected (e2e)", () => 
       .expect(200);
     expect(decisions.body).toHaveLength(1);
     const [decision] = decisions.body;
+    // 0, NOT null: this is the "AI ran and declined" path, which reports a
+    // real zero confidence. `null` is reserved for a classification that
+    // succeeded without reporting one (see AiDecision.confidence).
     expect(decision.confidence).toBe(0);
+    // RIO-AI-001 — the band is resolved server-side from the configured
+    // thresholds, so the reviewer UI never re-derives them.
+    expect(decision.confidenceBand).toBe("very_low");
+    expect(decision.confidenceThresholds.low).toBeGreaterThan(
+      decision.confidenceThresholds.veryLow,
+    );
     expect(decision.suggestion.domains).toEqual([]);
     expect(decision.suggestion.subDomains).toEqual([]);
     expect(typeof decision.suggestion.rationale).toBe("string");
