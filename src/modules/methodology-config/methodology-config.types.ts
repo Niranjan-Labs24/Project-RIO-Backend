@@ -161,7 +161,16 @@ export interface UpdateMethodologyConfigPayload {
 // from the single MethodologyConfig row's id/version now (see
 // MethodologyConfigService.listVersionOptions), not the old, disconnected
 // MethodologyVersionOption Prisma model.
+//
+// `name` added alongside `version` so this dropdown can show the same
+// human-readable label ("Village Needs Methodology v5.0 - ...") the New
+// Study screen already shows for the identical published MethodologyVersion
+// row — previously this screen showed the bare `version` field instead,
+// which read as a different methodology even though it was the same one.
+// `version` stays the field actually persisted onto Survey.methodologyVersion
+// (unchanged), `name` is display-only.
 export interface MethodologyVersionOption {
   id: string;
   version: string;
+  name: string;
 }

@@ -113,11 +113,14 @@ export class MethodologyConfigService {
       }),
     );
     if (versions.length > 0) {
-      return versions.map((v) => ({ id: v.id, version: v.version }));
+      return versions.map((v) => ({ id: v.id, version: v.version, name: v.name }));
     }
     const row = await this.findRowOrThrow();
     if (row.status !== "published") return [];
-    return [{ id: row.id, version: row.version }];
+    // No separate MethodologyVersion row to source a name from in this
+    // fallback path — the single MethodologyConfig row's version string is
+    // the only label available, so it doubles as both fields here.
+    return [{ id: row.id, version: row.version, name: row.version }];
   }
 
   async update(payload: UpdateMethodologyConfigPayload): Promise<MethodologyConfig> {

@@ -14,12 +14,25 @@ import type { StudyConfigOption } from './study-config.types';
 // whoever holds methodologyQuestionBank:write — System Admin only, per
 // Sprint 2 clarification Q31 ("only NCNP Admin may initiate methodology
 // configuration changes").
+//
+// NGO Admin is the one exception: its methodologyQuestionBank grant was
+// deliberately zeroed out (client-confirmed 2026-08-20 — Methodology
+// Configuration governance belongs at System Admin level only), but NGO
+// Admin still holds studySurvey:create and is a real path for creating a
+// Study — which needs Study Type/Target Sector to populate its own form.
+// Gating "read the picklist" behind the same flag as "govern Methodology
+// Configuration" conflated two different concerns; found live when a
+// freshly-approved org's NGO Admin hit an empty Study Type/Target Sector
+// dropdown. Same fix DomainsController already uses for its own read/write
+// split (see its `public` endpoint's comment) — these two list reads carry
+// no @RequirePermission at all now (still requires a valid session via the
+// global JwtAuthGuard, just no RBAC module check), while every write stays
+// on methodologyQuestionBank:write, unchanged.
 @Controller('study-config')
 export class StudyConfigController {
   constructor(private readonly studyConfig: StudyConfigService) {}
 
   @Get('study-types')
-  @RequirePermission('methodologyQuestionBank', 'read')
   listStudyTypes(): Promise<StudyConfigOption[]> {
     return this.studyConfig.listStudyTypes();
   }
@@ -54,7 +67,6 @@ export class StudyConfigController {
   }
 
   @Get('target-sectors')
-  @RequirePermission('methodologyQuestionBank', 'read')
   listTargetSectors(): Promise<StudyConfigOption[]> {
     return this.studyConfig.listTargetSectors();
   }

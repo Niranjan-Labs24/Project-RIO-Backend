@@ -171,7 +171,15 @@ export const ROLE_MATRIX: RoleDef[] = [
     // specifically. This role never triggers classification/Retry itself
     // (no `write`) — that's still the Researcher's own action.
     perm('aiReview', { read: true, approve: true }),
-    perm('priorityScoring', RO),
+    // `approve` ADDED per Q28 (client-confirmed): "Human Reviewer should
+    // hold this [priority score approval] authority, per the approved
+    // Roles & Permissions baseline ('approves or amends the AI's
+    // classification/priority/duplicate detection before publication')."
+    // No `write`/`create` — per Q27, this role doesn't directly edit the
+    // computed score/tier/components, only approves it (or attaches a note/
+    // flags low-confidence, routing it back to Data Analyst — a separate,
+    // already-built flow, not gated on this permission).
+    perm('priorityScoring', { read: true, approve: true }),
     // Reviewer's work starts at Studies/Reviewer-SLA, not an executive
     // dashboard, but they still need read access to Reports/Archive/Sharing
     // once a study's classification/review work is done. `export` —
@@ -221,11 +229,20 @@ export const ROLE_MATRIX: RoleDef[] = [
     // flag covering three distinct actions, not something separately asked
     // for but accepted as harmless overlap.
     perm('aiReview', { read: true, write: true }),
-    // Confirmed (Jagannathan, Aug 12): Data Analyst "reviews and validates"
-    // the Priority Score (PriorityDashboardController's :id/approve) and
-    // generates the AI Summary (PrioritySummaryController's
-    // generate/save/confirm) — both require create/write/approve on this
-    // module, superseding the module table's narrower View/Export-only row.
+    // `approve` KEPT here despite Q28 (client-confirmed) saying approval
+    // authority belongs to Human Reviewer — see that role's own
+    // priorityScoring grant, which now also holds `approve`. The code
+    // gates two different actions on this one flag: PATCH .../override
+    // (Data Analyst investigating/adjusting a score, per Q27 — "routes it
+    // to NCNP Admin/Data Analyst for investigation") and PATCH .../approve
+    // (Human Reviewer signing off, per Q28). There's no separate permission
+    // action to split these cleanly today, so both roles hold `approve` —
+    // Data Analyst keeps Override working (confirmed by
+    // fr003-priority-scoring.e2e.spec's AC 4/AC 5), Human Reviewer gains
+    // the ability to actually approve. Not a fully exclusive split per
+    // either client answer, but the closest fit without introducing a new
+    // permission action — flagged as a follow-up if the client wants a
+    // stricter separation later.
     perm('priorityScoring', { read: true, write: true, create: true, approve: true, export: true }),
     // Confirmed matrix: Reports = View/Create/Edit/Export/Share — `share`
     // added (was missing), no `approve` (matches the confirmed row exactly).
