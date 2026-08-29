@@ -78,6 +78,11 @@ jobs:
       - run: pnpm import:geography
       - run: pnpm import:nic-registry
       - run: pnpm grant:access
+      # seed.ts was split into core reference data + this demo-org fixture
+      # (Demo NGO, admin@demo-ngo.org and its other role logins) — seed:scored
+      # and seed:report-perf both require admin@demo-ngo.org to already exist
+      # and error out otherwise.
+      - run: pnpm seed:demo
       - run: pnpm seed:scored
       # RIO-NFR-005 performance regression tests (test/report-perf-regression.e2e.spec.ts,
       # test/dashboard-perf-regression.e2e.spec.ts) need this ~200-response
