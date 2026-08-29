@@ -22,11 +22,20 @@ export class MethodologyConfigController {
     return this.methodologyConfig.get();
   }
 
-  // Read-only for both Researcher (surveyBuilder/write, picks a version)
-  // and Approver (surveyBuilder/approve, reviews it) — both roles already
-  // have methodologyQuestionBank/read (see role-matrix.ts).
+  // Deliberately ungated: every published version's id/version/name label
+  // only — no thresholds, weights, or other configuration content. The
+  // comment this replaced assumed only "Researcher" (surveyBuilder/write)
+  // and "Approver" (surveyBuilder/approve) roles ever view this, and that
+  // both already hold methodologyQuestionBank/read — true for NGO Research
+  // Officer and Human Reviewer, but NOT for NGO Admin, who also holds
+  // surveyBuilder/write (creates/edits surveys) yet has methodologyQuestionBank
+  // fully zeroed (client-confirmed 2026-08-20: Methodology Configuration is
+  // NCNP-Admin-level only). Any NGO Admin opening a published Survey saw a
+  // permanently blank Methodology Version field as a result — the survey's
+  // own stored `methodologyVersion` was always correct, but the dropdown had
+  // no options to match it against once the versions call 403'd. Same fix
+  // pattern as StudyConfigController's Study Type/Target Sector reads.
   @Get("versions")
-  @RequirePermission("methodologyQuestionBank", "read")
   listVersionOptions(): Promise<MethodologyVersionOption[]> {
     return this.methodologyConfig.listVersionOptions();
   }

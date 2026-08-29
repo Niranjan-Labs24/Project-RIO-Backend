@@ -1468,7 +1468,16 @@ Eligible Questions: ${JSON.stringify(
 
   async listSurveys(opts: { organizationId?: string; studyId?: string; status?: string; search?: string; limit?: number; offset?: number }) {
     const store = getOrgStore();
-    const isSysAdmin = store?.role === 'system_admin';
+    // RIO-RBAC-002 (client-confirmed 2026-08-29) — widened from
+    // system_admin-only to every crossEntity, no-tenant-org role, mirroring
+    // StudiesService.list()'s isCrossOrgReader. Audit logging below stays
+    // system_admin-only (see that same file's identical split) — Reviewer/
+    // Supervisor read access isn't dedicated-audit-logged per RBAC-002
+    // Round 5.
+    const isCrossOrgReader =
+      store?.role === 'system_admin' ||
+      store?.role === 'system_reviewer' ||
+      store?.role === 'center_supervisor';
 
     const take = Math.min(Math.max(opts.limit ?? 100, 1), 200);
     const skip = Math.max(opts.offset ?? 0, 0);
@@ -1497,7 +1506,7 @@ Eligible Questions: ${JSON.stringify(
     let items: SurveyListItem[] = [];
     let total = 0;
 
-    if (isSysAdmin) {
+    if (isCrossOrgReader) {
       const result = await this.tenant.runAsSupervisor((tx) =>
         Promise.all([
           tx.survey.findMany({ where, orderBy: { createdAt: 'desc' }, take, skip, include }),
@@ -1507,14 +1516,16 @@ Eligible Questions: ${JSON.stringify(
       items = result[0];
       total = result[1];
 
-      await this.audit.record({
-        action: 'SYSTEM_ADMIN_VIEWED_SURVEY',
-        entityType: 'survey',
-        entityId: opts.organizationId ?? null,
-        entityLabel: opts.organizationId ? 'Organization Surveys' : 'All Platform Surveys',
-        organizationId: opts.organizationId,
-        metadata: { scope: opts.organizationId ? 'organization' : 'all' },
-      });
+      if (store?.role === 'system_admin') {
+        await this.audit.record({
+          action: 'SYSTEM_ADMIN_VIEWED_SURVEY',
+          entityType: 'survey',
+          entityId: opts.organizationId ?? null,
+          entityLabel: opts.organizationId ? 'Organization Surveys' : 'All Platform Surveys',
+          organizationId: opts.organizationId,
+          metadata: { scope: opts.organizationId ? 'organization' : 'all' },
+        });
+      }
     } else {
       const result = await this.tenant.runInOrgContext((tx) =>
         Promise.all([

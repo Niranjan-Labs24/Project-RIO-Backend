@@ -4,10 +4,12 @@ import { getOrgStore } from '../../tenancy/org-context';
 import type { PriorityScoreRow, VillageComparisonEntry } from './priority.types';
 
 // RIO-FR-005 (Q9) — cross-entity comparison scope, same convention as
-// StudiesService's isSysAdmin branch: system_admin and center_supervisor
-// (the confirmed "NCNP" role) read across every org via the supervisor
-// client; every other role stays inside their own org's RLS-scoped data.
-const CROSS_ENTITY_COMPARISON_ROLES = new Set(['system_admin', 'center_supervisor']);
+// StudiesService's isCrossOrgReader branch: system_admin, system_reviewer
+// (added 2026-08-29 — also platform-wide, no tenant org of its own), and
+// center_supervisor (the confirmed "NCNP" role) read across every org via
+// the supervisor client; every other role stays inside their own org's
+// RLS-scoped data.
+const CROSS_ENTITY_COMPARISON_ROLES = new Set(['system_admin', 'system_reviewer', 'center_supervisor']);
 
 // Extracted out of PriorityService (2026-08-22) — RIO-FR-005's own village
 // comparison and RIO-FR-008's Sprint 3 interactive map are both, at bottom,

@@ -223,9 +223,27 @@ export class NeedsService {
   }
 
   async listByStudyId(studyId: string): Promise<Need[]> {
-    const rows = (await this.tenant.runInOrgContext((tx) =>
-      tx.need.findMany({ where: { studyId }, orderBy: { createdAt: 'asc' }, include: GEO_INCLUDE }),
-    )) as RawNeedWithGeo[];
+    // RIO-RBAC-002 (client-confirmed 2026-08-29) — same isCrossOrgReader
+    // split as getById below, extended to system_reviewer (also
+    // crossEntity:true, also platform-wide with no tenant org of its own).
+    // Without this, StudiesService.list()'s cross-org branch could return a
+    // study belonging to another org, but this call — always RLS-scoped —
+    // then silently found zero needs for it. That's what was actually
+    // breaking the needs-count column on /studies, and blocking Public
+    // Surveys and Survey Builder entirely for these roles, since both chain
+    // through this same per-study needs lookup.
+    const store = getOrgStore();
+    const isCrossOrgReader =
+      store?.role === 'system_admin' ||
+      store?.role === 'system_reviewer' ||
+      store?.role === 'center_supervisor';
+    const rows = (isCrossOrgReader
+      ? await this.tenant.runAsSupervisor((tx) =>
+          tx.need.findMany({ where: { studyId }, orderBy: { createdAt: 'asc' }, include: GEO_INCLUDE }),
+        )
+      : await this.tenant.runInOrgContext((tx) =>
+          tx.need.findMany({ where: { studyId }, orderBy: { createdAt: 'asc' }, include: GEO_INCLUDE }),
+        )) as RawNeedWithGeo[];
     const [names, confidences] = await Promise.all([
       this.resolveUserNames(rows.map((r) => r.createdBy)),
       this.resolveAiConfidence(rows.map((r) => r.id)),
@@ -236,14 +254,18 @@ export class NeedsService {
   }
 
   async getById(needId: string): Promise<Need> {
-    // RIO-RBAC-002 (client-confirmed, 2026-08-27 round) — System Admin is
-    // platform-wide and Center Supervisor is cross-entity read; mirrors
-    // StudiesService.getById's identical isCrossOrgReader split. Without
-    // this, a System Admin following a link into a Need outside its own
-    // org (e.g. to create a Public Survey Link there) got a 404 before
-    // ever reaching that action's own X-Act-As-Org check.
+    // RIO-RBAC-002 (client-confirmed, 2026-08-27 round; system_reviewer
+    // added 2026-08-29) — System Admin and System Reviewer are both
+    // platform-wide with no tenant org of their own, and Center Supervisor
+    // is cross-entity read; mirrors StudiesService.getById's identical
+    // isCrossOrgReader split. Without this, following a link into a Need
+    // outside one's own org (e.g. to create a Public Survey Link there) got
+    // a 404 before ever reaching that action's own X-Act-As-Org check.
     const store = getOrgStore();
-    const isCrossOrgReader = store?.role === 'system_admin' || store?.role === 'center_supervisor';
+    const isCrossOrgReader =
+      store?.role === 'system_admin' ||
+      store?.role === 'system_reviewer' ||
+      store?.role === 'center_supervisor';
     const row = (isCrossOrgReader
       ? await this.tenant.runAsSupervisor((tx) => tx.need.findUnique({ where: { id: needId }, include: GEO_INCLUDE }))
       : await this.tenant.runInOrgContext((tx) => tx.need.findUnique({ where: { id: needId }, include: GEO_INCLUDE }))
