@@ -14,7 +14,8 @@ import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { PasswordService } from '../../auth/password.service';
 import { TokenService } from '../../auth/token.service';
-import { ROLE_MATRIX, type RoleDef } from '../../rbac/role-matrix';
+import { ROLE_MATRIX, type ModulePermission, type PermissionAction, type PermissionModule, type RoleDef } from '../../rbac/role-matrix';
+import { PermissionGrantsService } from '../permission-grants/permission-grants.service';
 import { AuditService } from '../audit/audit.service';
 import { ConfigService } from '../../config/config.service';
 import { MailerService } from '../../mailer/mailer.service';
@@ -78,6 +79,7 @@ export class AuthService {
     // RIO-DATA-001 — resolves/validates the active policy of each consent
     // kind during signup and the post-login re-prompt.
     private readonly consentPolicies: ConsentService,
+    private readonly permissionGrants: PermissionGrantsService,
   ) {}
 
   async login(email: string, password: string): Promise<SessionContext> {
@@ -612,7 +614,33 @@ export class AuthService {
     return role;
   }
 
-  private buildSession(u: UserWithOrg, role: RoleDef, token: string): SessionContext {
+  // Folds this user's active PermissionGrants into a copy of their role's
+  // static permissions — grants exist only for center_supervisor (enforced
+  // in PermissionGrantsService.create), so this is a no-op read for every
+  // other role. Clones rather than mutates: `role.permissions` is the same
+  // array object shared by every session built from this RoleDef.
+  private async withActiveGrants(u: UserWithOrg, role: RoleDef): Promise<ModulePermission[]> {
+    if (role.key !== 'center_supervisor') return role.permissions;
+    const grants = await this.permissionGrants.listActiveGrantsForUser(u.id);
+    if (grants.length === 0) return role.permissions;
+
+    const byModule = new Map<PermissionModule, ModulePermission>(
+      role.permissions.map((p) => [p.module, { ...p }]),
+    );
+    for (const g of grants) {
+      const module = g.module as PermissionModule;
+      const action = g.action as PermissionAction;
+      const existing = byModule.get(module) ?? {
+        module, read: false, write: false, create: false, approve: false, export: false, share: false,
+      };
+      existing[action] = true;
+      byModule.set(module, existing);
+    }
+    return [...byModule.values()];
+  }
+
+  private async buildSession(u: UserWithOrg, role: RoleDef, token: string): Promise<SessionContext> {
+    const effectiveRole: RoleDef = { ...role, permissions: await this.withActiveGrants(u, role) };
     const user: SessionUser = {
       id: u.id, name: u.name, email: u.email,
       consentedAt: u.consentedAt ? u.consentedAt.toISOString() : null,
@@ -632,6 +660,6 @@ export class AuthService {
       isActive: u.org.isActive, createdAt: u.org.createdAt.toISOString(),
       purpose: u.org.purpose, registrationNumber: u.org.registrationNumber,
     };
-    return { token, user, organization, role, mustChangePassword: u.mustChangePassword };
+    return { token, user, organization, role: effectiveRole, mustChangePassword: u.mustChangePassword };
   }
 }

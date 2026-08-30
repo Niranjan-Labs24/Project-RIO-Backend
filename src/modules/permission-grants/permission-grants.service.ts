@@ -60,6 +60,25 @@ export class PermissionGrantsService {
     };
   }
 
+  // Used by AuthService to fold active grants into a Supervisor's session
+  // permissions — every (module, action) pair currently unlocked for this
+  // grantee, so the frontend's static role.permissions can reflect it
+  // without the client needing to know grants exist as a separate concept.
+  async listActiveGrantsForUser(
+    granteeId: string,
+  ): Promise<Array<{ module: string; action: string }>> {
+    const now = new Date();
+    const rows = await this.prisma.permissionGrant.findMany({
+      where: {
+        granteeId,
+        revokedAt: null,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+      },
+      select: { module: true, action: true },
+    });
+    return rows;
+  }
+
   async list(): Promise<PermissionGrant[]> {
     const rows = await this.prisma.permissionGrant.findMany({ orderBy: { grantedAt: 'desc' } });
     const userIds = new Set<string>();

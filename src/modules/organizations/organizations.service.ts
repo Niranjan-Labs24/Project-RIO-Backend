@@ -21,6 +21,14 @@ const DIFF_FIELDS = [
   'regionId', 'isActive',
 ] as const;
 
+// The technical home organisation for System Admin/System Reviewer (see
+// prisma/seed-helpers.ts and RIO-RBAC-002's platform-wide scoping) — not a
+// real NGO tenant, so it's excluded from the Organizations list a real
+// entity-management screen shows. Matched by its fixed registration number
+// (client-confirmed sentinel, same one the seed script uses), not by name,
+// since a display name is editable and shouldn't be load-bearing.
+const PLATFORM_ADMIN_REGISTRATION_NUMBER = '8000000000';
+
 // Shape Prisma actually returns once the join tables are included — the raw
 // input to toOrgRow() below. Kept separate from OrgRow (this module's own
 // flattened shape) since the join rows need to be reduced to plain id
@@ -170,6 +178,7 @@ export class OrganizationsService {
     const skip = Math.max(opts.offset ?? 0, 0);
     const rows = await this.tenant.runAsSupervisor((tx) =>
       tx.organisation.findMany({
+        where: { registrationNumber: { not: PLATFORM_ADMIN_REGISTRATION_NUMBER } },
         include: {
           ...GEO_INCLUDE,
           users: { where: { roleId: 'role_ngo_admin' }, take: 1, select: { name: true, email: true } },

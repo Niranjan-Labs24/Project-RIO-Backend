@@ -11,6 +11,11 @@ import type { QuestionBankAlert, QuestionBankAlertChangeKind } from "./question-
 // filter. This is the actual gate on who gets the feed.
 const ALERT_VISIBLE_ROLES = new Set(["human_reviewer", "system_reviewer"]);
 
+// How far back a System Admin's own resolved submissions stay visible —
+// long enough to notice without becoming an unbounded audit feed.
+const RESOLVED_ALERT_WINDOW_DAYS = 14;
+const RESOLVED_ALERT_LIMIT = 20;
+
 // Human Reviewer (methodologyQuestionBank:approve) and System Reviewer
 // (methodologyQuestionBank: read-only) both land on this single feed — every
 // Question Bank mutation (create/edit/deactivate/reactivate) already goes
@@ -24,9 +29,19 @@ export class QuestionBankAlertsService {
   constructor(private readonly tenant: TenantPrismaService) {}
 
   async listAlerts(): Promise<QuestionBankAlert[]> {
-    const role = getOrgStore()?.role;
-    if (!role || !ALERT_VISIBLE_ROLES.has(role)) return [];
+    const store = getOrgStore();
+    const role = store?.role;
 
+    if (role && ALERT_VISIBLE_ROLES.has(role)) {
+      return this.listPendingAlerts();
+    }
+    if (role === "system_admin" && store?.actorId) {
+      return this.listResolvedAlerts(store.actorId);
+    }
+    return [];
+  }
+
+  private async listPendingAlerts(): Promise<QuestionBankAlert[]> {
     const rows = await this.tenant.runAsSupervisor((tx) =>
       tx.question.findMany({
         where: { approvalStatus: "pending_approval" },
@@ -46,6 +61,39 @@ export class QuestionBankAlertsService {
       // submittedAt is always set once a row enters pending_approval (see
       // createPendingVersion/create) — no fallback needed.
       submittedAt: r.submittedAt!.toISOString(),
+    }));
+  }
+
+  // The reverse direction: notify the System Admin who submitted a change
+  // once a Human Reviewer has approved or rejected it. Derived the same way
+  // as the pending feed — no separate notification log, just a query over
+  // Question's own resolution fields, scoped to this admin's own
+  // submissions and a recent time window.
+  private async listResolvedAlerts(actorId: string): Promise<QuestionBankAlert[]> {
+    const since = new Date(Date.now() - RESOLVED_ALERT_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+    const rows = await this.tenant.runAsSupervisor((tx) =>
+      tx.question.findMany({
+        where: {
+          submittedBy: actorId,
+          approvalStatus: { in: ["approved", "rejected"] },
+          reviewedAt: { gte: since },
+        },
+        orderBy: { reviewedAt: "desc" },
+        take: RESOLVED_ALERT_LIMIT,
+      }),
+    );
+
+    return rows.map((r) => ({
+      id: `${r.id}:resolved:${r.reviewedAt!.toISOString()}`,
+      type: "question_resolved" as const,
+      resolution: r.approvalStatus as "approved" | "rejected",
+      questionRowId: r.id,
+      questionId: r.questionId,
+      questionText: r.questionText,
+      domain: r.domain,
+      subDomain: r.subDomain,
+      reviewedAt: r.reviewedAt!.toISOString(),
+      rejectionReason: r.rejectionReason,
     }));
   }
 

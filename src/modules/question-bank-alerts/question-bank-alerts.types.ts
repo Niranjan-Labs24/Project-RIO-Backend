@@ -4,7 +4,7 @@
 // "edited", which is accurate as far as it goes.
 export type QuestionBankAlertChangeKind = "created" | "edited" | "deactivated";
 
-export interface QuestionBankAlert {
+export interface QuestionBankPendingAlert {
   id: string;
   type: "question_pending_approval";
   changeKind: QuestionBankAlertChangeKind;
@@ -15,3 +15,21 @@ export interface QuestionBankAlert {
   subDomain: string;
   submittedAt: string;
 }
+
+// The reverse direction — a System Admin's own submitted change has been
+// resolved. Only shown to the admin who submitted it (submittedBy), so it
+// reads as "your change was decided", not a general audit feed.
+export interface QuestionBankResolvedAlert {
+  id: string;
+  type: "question_resolved";
+  resolution: "approved" | "rejected";
+  questionRowId: string;
+  questionId: string;
+  questionText: string;
+  domain: string;
+  subDomain: string;
+  reviewedAt: string;
+  rejectionReason: string | null;
+}
+
+export type QuestionBankAlert = QuestionBankPendingAlert | QuestionBankResolvedAlert;

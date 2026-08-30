@@ -235,7 +235,18 @@ export class StudiesService {
     // provisioned under. This is the read path; archive/restore below stay
     // system_admin-only unless a runtime grant (AC2) authorized this
     // specific request.
-    const isCrossOrgReader = store?.role === 'system_admin' || store?.role === 'center_supervisor';
+    //
+    // system_reviewer added 2026-08-29: same crossEntity:true role, holds
+    // studySurvey:read, and — like System Admin — has no tenant org of its
+    // own (home org is Platform Administration), so without this branch
+    // its own Studies page always showed "no studies yet" regardless of
+    // what any real org had. Client-confirmed: System Admin/Reviewer are
+    // platform-wide accounts and should see every org's data on these main
+    // nav screens, not just their own (empty) one.
+    const isCrossOrgReader =
+      store?.role === 'system_admin' ||
+      store?.role === 'system_reviewer' ||
+      store?.role === 'center_supervisor';
 
     const take = Math.min(Math.max(opts.limit ?? 100, 1), 200);
     const skip = Math.max(opts.offset ?? 0, 0);

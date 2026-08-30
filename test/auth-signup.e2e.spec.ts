@@ -115,10 +115,13 @@ describe('signup -> pending approval -> System Admin approves -> entity logs in'
       .expect(403)
       .expect((r) => expect(r.body.error.code).toBe('ORG_INACTIVE'));
 
-    // System Admin logs in and approves the pending entity.
+    // System Reviewer logs in and approves the pending entity — org approval
+    // is a governance sign-off (entityTeam:approve), held by System Reviewer,
+    // not System Admin's edit authority (entityTeam:write). See
+    // organizations.controller.ts's `:id/approve` guard.
     const adminLogin = await request(server)
       .post('/api/auth/login')
-      .send({ email: 'sysadmin@platform.local', password: 'Passw0rd!' })
+      .send({ email: 'sysreviewer@platform.local', password: 'Passw0rd!' })
       .expect(200);
     const adminCookies = adminLogin.headers['set-cookie'] as unknown as string[];
     const adminCsrf = adminCookies.find((c) => c.startsWith('rio_csrf='))?.match(/rio_csrf=([^;]*)/)?.[1] ?? '';

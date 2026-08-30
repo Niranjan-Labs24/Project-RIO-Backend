@@ -1,13 +1,13 @@
-import 'dotenv/config';
-import * as argon2 from 'argon2';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { randomBytes } from 'node:crypto';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { Prisma, PrismaClient, UserStatus } from '../src/generated/prisma';
 import { ROLE_MATRIX } from '../src/rbac/role-matrix';
-import { pgSslFromEnv } from '../src/prisma/pg-ssl';
-import { buildPlaceholderReport, PLACEHOLDER_REPORT_TYPES, type PlaceholderReportType } from '../src/modules/reports/reports.placeholder';
+import { prisma, seedOrg, disconnectAll } from './seed-helpers';
+
+// Core reference/config data only — the platform-wide accounts and lookup
+// tables every real deployment needs, safe to run against a genuine
+// client's environment ("renting a seat"). Fake demo organizations/studies/
+// surveys/reports live in prisma/seed-demo.ts instead, local dev + QA only
+// — see that file's header for why they were split out.
 
 // The "OPEN"/General entry in question-bank-v1.json's hierarchy is a
 // pseudo-domain for open-ended questions, not a real methodology Domain —
@@ -19,9 +19,6 @@ interface QuestionBankHierarchyEntry {
   name: string;
   subDomains: Array<{ code: string; name: string }>;
 }
-
-// Dev-only credential seeded on every demo account so login is testable.
-const DEV_PASSWORD = 'Passw0rd!';
 
 // RIO-DATA-001 + client-confirmed (2026-08-27) — consent wording is NOT
 // defined here any more.
@@ -83,116 +80,6 @@ function bootstrapTextAr(headingAr: string): string {
 هذا النص المؤقت ليس اتفاقية قانونية ولا يترتب عليه أي حقوق أو التزامات.`;
 }
 
-// Seed runs as cnap_owner (DATABASE_URL) — reference tables have no RLS; tenant
-// tables are FORCE-RLS even for the owner, so tenant inserts set org context.
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL, ssl: pgSslFromEnv() }) });
-
-// `organisations_isolation` requires id = app.current_org_id for every
-// operation — including a plain SELECT — so cnap_owner can't look up
-// "does an org with this registration number already exist" without
-// already knowing its id first. The supervisor connection has its own
-// cross-org read policy (`organisations_supervisor_read USING (true)`,
-// same one TenantPrismaService.runAsSupervisor uses at runtime) — reused
-// here purely to make re-running this seed idempotent.
-const supervisor = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.SUPERVISOR_DATABASE_URL, ssl: pgSslFromEnv() }) });
-
-async function setOrg(tx: { $executeRawUnsafe: (s: string) => Promise<number> }, orgId: string) {
-  await tx.$executeRawUnsafe(`SELECT set_config('app.current_org_id', '${orgId}', true)`);
-}
-
-// Realistic-looking generation criteria per report type, stored in Report.filters
-// — same fields a real "generate report" form would collect (region/village/
-// date range), not used for any actual query since content is placeholder.
-// RPT06/RPT12/RPT13 used to be handled here too, back when they were still
-// placeholder types — they've since graduated to real generators (see
-// reports.placeholder.ts's PlaceholderReportType exclusion list) and are no
-// longer reachable through this function; `studyId` is accordingly unused
-// now (it was only ever read for the since-removed RPT13 case).
-function buildPlaceholderReportFilters(reportType: PlaceholderReportType): Record<string, unknown> {
-  const dateFrom = '2026-01-01';
-  const dateTo = '2026-06-30';
-  switch (reportType) {
-    case 'RPT05':
-      return { region: 'North', village: 'Village A', dateFrom, dateTo };
-    case 'RPT07':
-    case 'RPT11':
-      return { dateFrom, dateTo };
-    default:
-      return { dateFrom, dateTo };
-  }
-}
-
-/**
- * Idempotent org + user seeding, keyed by the org's `registrationNumber`
- * and each user's `email` (both unique) — re-running the seed (e.g. after
- * a local DB reset) converges back to the same fixtures instead of
- * throwing a duplicate-key error on the second run.
- */
-async function seedOrg(input: {
-  registrationNumber: string;
-  name: string;
-  purpose: string;
-  region: string[];
-  email: string;
-  sector: string;
-  villages: string[];
-  users: Array<{ roleId: string; name: string; email: string }>;
-}): Promise<string> {
-  const passwordHash = await argon2.hash(DEV_PASSWORD, { type: argon2.argon2id });
-  const existing = await supervisor.organisation.findUnique({
-    where: { registrationNumber: input.registrationNumber },
-  });
-  const orgId = existing?.id ?? (await prisma.$queryRaw<{ uuidv7: string }[]>`SELECT uuidv7() AS uuidv7`)[0]!.uuidv7;
-
-  await prisma.$transaction(async (tx) => {
-    await setOrg(tx as never, orgId);
-    await tx.organisation.upsert({
-      where: { registrationNumber: input.registrationNumber },
-      update: {
-        name: input.name, purpose: input.purpose, region: input.region, email: input.email,
-        sector: input.sector, villages: input.villages, isActive: true,
-      },
-      create: {
-        id: orgId, registrationNumber: input.registrationNumber, name: input.name,
-        purpose: input.purpose, region: input.region, email: input.email, sector: input.sector,
-        villages: input.villages, isActive: true,
-      },
-    });
-    for (const user of input.users) {
-      // Seeded demo accounts start pre-consented — they're meant to be
-      // immediately usable for local testing/demos, unlike a real
-      // admin-invited user, who genuinely hasn't consented yet and must
-      // hit the consent gate on their first login.
-      await tx.user.upsert({
-        where: { email: user.email },
-        // `orgId` is in the update branch too, not just create: an existing
-        // dev database re-seeded after this file moves a user to a
-        // different org (e.g. sysadmin@platform.local off Demo NGO onto its
-        // own platform org, below) needs that move to actually apply, not
-        // silently leave the row on its old org forever.
-        update: {
-          orgId, name: user.name, roleId: user.roleId, status: UserStatus.active,
-          passwordHash, consentedAt: new Date(),
-        },
-        create: {
-          orgId, roleId: user.roleId, name: user.name, email: user.email,
-          status: UserStatus.active, passwordHash, consentedAt: new Date(),
-        },
-      });
-    }
-  });
-
-  return orgId;
-}
-
-/**
- * Domain/Sub-Domain Master Module seed: sourced only from
- * question-bank-v1.json's Domain/Sub-Domain hierarchy (never its
- * Indicators/KPIs/Questions — those are out of scope per the Question Bank
- * Baseline rule). Global reference table, no org context needed. Idempotent
- * upsert keyed by each row's unique `code`; `displayOrder` follows the
- * dataset's own array order.
- */
 /**
  * Creates the placeholder consent policies, and only on a database that has
  * none — the one-time bootstrap described on CONSENT_BOOTSTRAP.
@@ -231,7 +118,14 @@ async function bootstrapConsentPolicies(): Promise<void> {
   }
 }
 
-
+/**
+ * Domain/Sub-Domain Master Module seed: sourced only from
+ * question-bank-v1.json's Domain/Sub-Domain hierarchy (never its
+ * Indicators/KPIs/Questions — those are out of scope per the Question Bank
+ * Baseline rule). Global reference table, no org context needed. Idempotent
+ * upsert keyed by each row's unique `code`; `displayOrder` follows the
+ * dataset's own array order.
+ */
 async function seedDomainsAndSubdomains(): Promise<void> {
   const raw = fs.readFileSync(path.join(__dirname, '..', 'question-bank-v1.json'), 'utf-8');
   const bank = JSON.parse(raw) as { hierarchy: QuestionBankHierarchyEntry[] };
@@ -340,64 +234,19 @@ async function main(): Promise<void> {
   await seedDomainsAndSubdomains();
   await seedStudyConfigOptions();
 
-  // Two orgs, each with an NGO Admin — needed to prove entity separation
-  // (RIO-NFR-003 / RIO-RBAC-001's "cross-entity access prevented"), plus a
-  // Research Officer in the first org — a role with no entityTeam/
-  // rolesPermissions access, needed to prove "unauthorized roles blocked".
-  // The two registration numbers below are real NIC numbers from
-  // `nic_registry` (see prisma/import-nic-registry.ts), not the old
-  // REG-DEMO-000n placeholders: signup only accepts a number the registry
-  // knows, so demo orgs carrying a shape no registrant could ever submit made
-  // the fixtures misleading — and e2e coverage of the duplicate-registration
-  // path needs a seeded org whose number can actually be typed into the form.
-  //
-  // NOTE for existing dev databases: seedOrg is idempotent on
-  // registrationNumber, so changing it leaves any previously seeded
-  // "Demo NGO"/"Riverside Community Trust" row behind rather than renaming
-  // it. Drop those two orgs (or re-create the database) before re-seeding.
-  const demoOrgId = await seedOrg({
-    registrationNumber: '8000005890',
-    name: 'Demo NGO',
-    purpose: 'Water, sanitation, and hygiene access for underserved villages.',
-    region: ['North'],
-    email: 'admin@demo-ngo.org',
-    sector: 'Water & Sanitation',
-    villages: ['Village A', 'Village B'],
-    users: [
-      { roleId: 'role_ngo_admin', name: 'Sarah', email: 'admin@demo-ngo.org' },
-      { roleId: 'role_ngo_research_officer', name: 'Amira', email: 'officer@demo-ngo.org' },
-      { roleId: 'role_human_reviewer', name: 'Priya', email: 'reviewer@demo-ngo.org' },
-      // RIO-FR-003 — Data Analyst is the only role holding priorityScoring
-      // write/create/approve, so without a seeded one the whole scoring path
-      // (run, override, sign off) cannot be exercised on a fresh database.
-      { roleId: 'role_data_analyst', name: 'Rashid', email: 'analyst@demo-ngo.org' },
-    ],
-  });
-  const riversideOrgId = await seedOrg({
-    registrationNumber: '8000005887',
-    name: 'Riverside Community Trust',
-    purpose: 'Livelihoods and economic development along the riverside communities.',
-    region: ['South'],
-    email: 'admin@riverside-ngo.org',
-    sector: 'Livelihood',
-    villages: ['Riverside Village'],
-    users: [{ roleId: 'role_ngo_admin', name: 'Riverside Admin', email: 'admin@riverside-ngo.org' }],
-  });
-
   // RIO-RBAC-002 (client-confirmed, 2026-08-27 round) — System Admin and
   // System Reviewer are platform-wide, cross-entity roles; they must not be
-  // tied to a real NGO tenant. Previously both were seeded under Demo NGO
-  // (`demoOrgId`) despite a comment on that very code claiming otherwise —
-  // that meant every geography-scope check on Study/Need creation silently
-  // restricted them to Demo NGO's own governorates/centers. `User.orgId` is
-  // a required, non-nullable column (schema-wide RLS and every service
-  // that reads it assume a real org), so "no organisation" isn't
-  // achievable without a much larger migration — this dedicated,
-  // obviously-non-operational org is the home row the schema requires,
-  // while the real fix for "act on behalf of any organisation" is the new
-  // `X-Act-As-Org` mechanism in JwtAuthGuard (crossEntity-only, validated
-  // server-side), not this org's identity. This org has no real
-  // governorates/centers linked and is never a Study's owner in practice.
+  // tied to a real NGO tenant. `User.orgId` is a required, non-nullable
+  // column (schema-wide RLS and every service that reads it assume a real
+  // org), so "no organisation" isn't achievable without a much larger
+  // migration — this dedicated, obviously-non-operational org is the home
+  // row the schema requires, while the real fix for "act on behalf of any
+  // organisation" is the `X-Act-As-Org` mechanism in JwtAuthGuard
+  // (crossEntity-only, validated server-side), not this org's identity.
+  // This org has no real governorates/centers linked and is never a
+  // Study's owner in practice. Real deployments still need this: it's the
+  // only way a System Admin/Reviewer account can exist at all, not a demo
+  // fixture — unlike Demo NGO/Riverside (see seed-demo.ts).
   const platformOrgId = await seedOrg({
     registrationNumber: '8000000000',
     name: 'Platform Administration (System Accounts Only)',
@@ -412,109 +261,9 @@ async function main(): Promise<void> {
     ],
   });
 
-  // RIO-FR-001 demo fixtures: one Study + its Need per demo org, so the
-  // frontend isn't blocked waiting on manual data entry. Idempotent by
-  // title (Study has no other natural key) — skip creation if it's
-  // already there from a prior seed run.
-  let demoStudyId: string | undefined;
-  let demoNeedId: string | undefined;
-  await prisma.$transaction(async (tx) => {
-    await setOrg(tx as never, demoOrgId);
-    const officer = await tx.user.findUnique({ where: { email: 'officer@demo-ngo.org' } });
-    const title = 'Village A water access assessment';
-    const existingStudy = await tx.study.findFirst({ where: { title } });
-    if (existingStudy) {
-      demoStudyId = existingStudy.id;
-      const existingNeed = await tx.need.findFirst({ where: { studyId: existingStudy.id } });
-      demoNeedId = existingNeed?.id;
-    } else if (officer) {
-      const study = await tx.study.create({
-        data: {
-          orgId: demoOrgId,
-          title,
-          createdBy: officer.id,
-          // First Study ever seeded for this demo org.
-          cycleNumber: 1,
-        },
-      });
-      const need = await tx.need.create({
-        data: {
-          studyId: study.id,
-          orgId: demoOrgId,
-          title: 'Unreliable dry-season water access in Village A',
-          statement: 'Households in Village A report unreliable access to safe drinking water during the dry season.',
-          village: ['Village A'],
-          source: 'manual_entry',
-          createdBy: officer.id,
-        },
-      });
-      demoStudyId = study.id;
-      demoNeedId = need.id;
-    }
-  });
-
-  // Demo Survey Links — labelled per the Public Survey module's plan
-  // examples, so Manage Survey Links / Study Insights have more than one
-  // link to distinguish between locally. Idempotent by (studyId, label),
-  // the same uniqueness the DB itself enforces.
-  await prisma.$transaction(async (tx) => {
-    await setOrg(tx as never, demoOrgId);
-    if (!demoStudyId || !demoNeedId) return;
-    const officer = await tx.user.findUnique({ where: { email: 'officer@demo-ngo.org' } });
-    if (!officer) return;
-    for (const label of ['Baseline Survey', 'Village A Outreach']) {
-      const existing = await tx.publicSurveyLink.findFirst({ where: { needId: demoNeedId, label } });
-      if (existing) continue;
-      await tx.publicSurveyLink.create({
-        data: {
-          orgId: demoOrgId,
-          needId: demoNeedId,
-          studyId: demoStudyId,
-          label,
-          token: randomBytes(24).toString('base64url'),
-          createdBy: officer.id,
-        },
-      });
-    }
-  });
-
-  // RPT-02..13 placeholder reports (RPT-01 excluded — it gets its own table
-  // in a future task) so the approve/reject review workflow has something
-  // to work against before the real AI report generation engine lands. One
-  // DRAFT report per type, idempotent by (orgId, reportType) — re-running
-  // the seed doesn't pile up duplicates.
-  await prisma.$transaction(async (tx) => {
-    await setOrg(tx as never, demoOrgId);
-    const officer = await tx.user.findUnique({ where: { email: 'officer@demo-ngo.org' } });
-    if (!officer) return;
-    for (const reportType of PLACEHOLDER_REPORT_TYPES) {
-      const existing = await tx.report.findFirst({ where: { orgId: demoOrgId, reportType } });
-      if (existing) continue;
-      const { title, content } = buildPlaceholderReport(reportType);
-      await tx.report.create({
-        data: {
-          orgId: demoOrgId,
-          reportType,
-          status: 'draft',
-          title,
-          studyId: null,
-          filters: buildPlaceholderReportFilters(reportType) as Prisma.InputJsonValue,
-          content: content as Prisma.InputJsonValue,
-          generatedBy: officer.id,
-        },
-      });
-    }
-  });
-
-  console.log(`Seeded ${ROLE_MATRIX.length} roles, consent v1, 9 domains from question-bank-v1.json.`);
-  console.log(`Seeded Demo NGO: ${demoOrgId} (admin@demo-ngo.org, officer@demo-ngo.org)`);
-  console.log(`Seeded Riverside Community Trust: ${riversideOrgId} (admin@riverside-ngo.org)`);
+  console.log(`Seeded ${ROLE_MATRIX.length} roles, consent placeholders, 9 domains from question-bank-v1.json, and Study/Target Sector/Decision/Gap Type options.`);
   console.log(`Seeded Platform Administration: ${platformOrgId} (sysadmin@platform.local, sysreviewer@platform.local — home org only, not a real tenant; both roles are crossEntity and act platform-wide via X-Act-As-Org)`);
-  console.log(`Dev login password for all seeded accounts: ${DEV_PASSWORD}`);
-}
-
-async function disconnectAll(): Promise<void> {
-  await Promise.all([prisma.$disconnect(), supervisor.$disconnect()]);
+  console.log('No demo organizations seeded here — run `pnpm seed:demo` for local dev/QA fixtures (Demo NGO, Riverside Community Trust, sample studies/needs/reports).');
 }
 
 main()

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { Prisma } from '../../generated/prisma';
-import { requireOrgId } from '../../tenancy/org-context';
+import { getOrgStore, requireOrgId } from '../../tenancy/org-context';
 
 /**
  * Per-domain snapshot stored in VillagePriorityAssessment.domainComponents.
@@ -314,7 +314,27 @@ export class PriorityV2Service {
       } | null;
     }>
   > {
-    return this.tenant.runInOrgContext(async (tx) => {
+    // RIO-RBAC-002 (client-confirmed 2026-08-29) — System Admin, System
+    // Reviewer, and Center Supervisor are all crossEntity roles with no
+    // tenant org of their own (System Admin/Reviewer's home org is Platform
+    // Administration), so the Priority Dashboard must show every org's
+    // Needs for them, not just whatever their own (empty) org has. None of
+    // the queries below carry an explicit org filter either way — under
+    // runInOrgContext that's implicit (RLS scopes it to the caller's own
+    // org); under runAsSupervisor (RLS bypassed) the exact same unfiltered
+    // queries naturally return every org's rows instead. No dedicated audit
+    // logging here, matching StudiesService/SurveysService's identical
+    // Reviewer/Supervisor read-access exemption (RBAC-002 Round 5).
+    const store = getOrgStore();
+    const isCrossOrgReader =
+      store?.role === 'system_admin' ||
+      store?.role === 'system_reviewer' ||
+      store?.role === 'center_supervisor';
+    const runner = isCrossOrgReader
+      ? this.tenant.runAsSupervisor.bind(this.tenant)
+      : this.tenant.runInOrgContext.bind(this.tenant);
+
+    return runner(async (tx) => {
       const [studies, needs, surveys, assessments] = await Promise.all([
         tx.study.findMany(),
         tx.need.findMany({ orderBy: { updatedAt: 'desc' } }),
