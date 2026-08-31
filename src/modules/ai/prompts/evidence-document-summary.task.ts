@@ -1,4 +1,5 @@
 import type { AiTask } from '../ai.task';
+import { LANGUAGE_RULE } from './language-rule';
 import type { DocumentSummaryOutputJson } from '../../evidence/document-summary.service';
 
 /** Every cited item carries the document reference it came from. */
@@ -25,7 +26,7 @@ const CITED_ITEM = (valueKey: string) => ({
  */
 export const EVIDENCE_DOCUMENT_SUMMARY_TASK: AiTask<DocumentSummaryOutputJson> = {
   name: 'evidence-document-summary',
-  promptVersion: 'evidence-doc-summary-v2',
+  promptVersion: 'evidence-doc-summary-v3',
   model: 'gemini-2.5-flash',
   modelVersion: 'v1',
   temperature: 0.2,
@@ -48,11 +49,11 @@ IMPORTANT RULES:
 5. Do not claim improvement, decline, trend, cause, or impact unless it is explicitly stated in the document.
 6. Do not expose PII, names, phone numbers, email addresses, or individual respondent details.
 7. Do not invent facts, dates, locations, sources, recommendations, or references.
-8. If information is missing, write: “Data not available in this document.”
+8. If information is missing, write the exact string supplied as DOCUMENT_DATA_UNAVAILABLE_TEXT in the input
 9. Clearly state that this is qualitative evidence and does not alter survey-based Severity or Priority Scores.
 10. Every supporting statement must include the supplied document reference ID and page/section reference when available.
 11. Do not include testing/mock-document wording in the final summary unless it is explicitly required by the supplied document metadata.
-12. Return valid JSON only. Do not return Markdown or additional explanation.`,
+12. Return valid JSON only. Do not return Markdown or additional explanation.` + LANGUAGE_RULE,
   responseSchema: {
     type: 'OBJECT',
     properties: {

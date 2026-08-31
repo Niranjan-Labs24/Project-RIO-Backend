@@ -10,6 +10,10 @@ export const CreateDomainBody = registerSchema(
     {
       code: T.String({ minLength: 1, maxLength: 64 }),
       name: T.String({ minLength: 1, maxLength: 200 }),
+      // The client's Arabic wording. Nullable AND optional: null is an
+      // explicit "no translation yet", which a Methodology Configuration
+      // screen must be able to send in order to clear a wrong one.
+      nameAr: T.Optional(T.Union([T.String({ maxLength: 200 }), T.Null()])),
       displayOrder: T.Optional(T.Integer({ minimum: 0 })),
     },
     { additionalProperties: false },
@@ -23,6 +27,10 @@ export const UpdateDomainBody = registerSchema(
     {
       code: T.Optional(T.String({ minLength: 1, maxLength: 64 })),
       name: T.Optional(T.String({ minLength: 1, maxLength: 200 })),
+      // The client's Arabic wording. Nullable AND optional: null is an
+      // explicit "no translation yet", which a Methodology Configuration
+      // screen must be able to send in order to clear a wrong one.
+      nameAr: T.Optional(T.Union([T.String({ maxLength: 200 }), T.Null()])),
       displayOrder: T.Optional(T.Integer({ minimum: 0 })),
     },
     { additionalProperties: false },
@@ -36,6 +44,10 @@ export const CreateSubDomainBody = registerSchema(
     {
       code: T.String({ minLength: 1, maxLength: 64 }),
       name: T.String({ minLength: 1, maxLength: 200 }),
+      // The client's Arabic wording. Nullable AND optional: null is an
+      // explicit "no translation yet", which a Methodology Configuration
+      // screen must be able to send in order to clear a wrong one.
+      nameAr: T.Optional(T.Union([T.String({ maxLength: 200 }), T.Null()])),
       displayOrder: T.Optional(T.Integer({ minimum: 0 })),
     },
     { additionalProperties: false },
@@ -49,6 +61,10 @@ export const UpdateSubDomainBody = registerSchema(
     {
       code: T.Optional(T.String({ minLength: 1, maxLength: 64 })),
       name: T.Optional(T.String({ minLength: 1, maxLength: 200 })),
+      // The client's Arabic wording. Nullable AND optional: null is an
+      // explicit "no translation yet", which a Methodology Configuration
+      // screen must be able to send in order to clear a wrong one.
+      nameAr: T.Optional(T.Union([T.String({ maxLength: 200 }), T.Null()])),
       displayOrder: T.Optional(T.Integer({ minimum: 0 })),
     },
     { additionalProperties: false },

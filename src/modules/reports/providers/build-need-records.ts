@@ -8,6 +8,7 @@ import type {
   UnitGeo,
 } from "../need-record.types";
 import { composeConfidenceReason, severityBandOf } from "./severity-bands";
+import { currentLocale } from "../../../tenancy/org-context";
 import { deriveEquityFlag, type SegmentRow } from "./derive-equity-flag";
 import { deriveGapType } from "./derive-gap-type";
 
@@ -141,10 +142,15 @@ export function buildNeedRecords(input: BuildNeedRecordsInput): NeedRecord[] {
       severityScore: r.severityScore,
       severityBand: severityBandOf(r.severityScore),
       confidence,
+      // In the caller's language. This sentence is quoted VERBATIM by the
+      // report prompts and rendered directly into the report, so composing it
+      // in English left a full English paragraph in the most-read part of an
+      // Arabic report (RIO-I18N-003 §6.1).
       confidenceReason: composeConfidenceReason({
         validResponseCount: r.validResponseCount,
         dontKnowRate: r.dontKnowRate,
         thresholds,
+        locale: currentLocale(),
       }),
       validResponseCount: r.validResponseCount,
       excludedResponseCount: r.excludedResponseCount,

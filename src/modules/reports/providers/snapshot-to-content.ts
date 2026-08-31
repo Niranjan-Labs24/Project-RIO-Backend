@@ -1,3 +1,4 @@
+import { currentLocale } from '../../../tenancy/org-context';
 // Pure mappers: Ayush's real `ReportDataSnapshot` (+ the Gemini `aiOutputJson`)
 // → our report content shapes. No DB / AI / I/O here — this is the seam where
 // the real data is reshaped into what the generators, PDF/Excel export, and the
@@ -118,6 +119,7 @@ function domainConfidenceReason(ds: DomainSeverityScore | undefined): string {
     validResponseCount: ds.validResponseCount,
     dontKnowRate: ds.dontKnowRate,
     thresholds: DEFAULT_THRESHOLDS,
+    locale: currentLocale(),
   });
 }
 

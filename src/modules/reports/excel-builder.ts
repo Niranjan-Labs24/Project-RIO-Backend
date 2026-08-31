@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import ExcelJS from "exceljs";
 import type { DocSection, ReportDoc } from "./report-doc";
+import { DEFAULT_APP_LOCALE } from "../../i18n/locale";
+import { translator, type Translator } from "../../i18n/translate";
 
 const ACCENT = "FF1F5A99";
 const LIGHT = "FFE6EEF7";
@@ -47,6 +49,7 @@ function styleHeaderRow(row: ExcelJS.Row): void {
 
 function addTableSheet(
   wb: ExcelJS.Workbook,
+  t: Translator,
   heading: string,
   columns: string[],
   rows: string[][],
@@ -61,7 +64,7 @@ function addTableSheet(
     // The drill column is what carries the PDF's clickable row into the
     // workbook. Without it the spreadsheet silently loses the interaction and
     // the two exports stop being the same report.
-    ...(hasLinks ? [{ header: "Detail", key: "__drill", width: 14 }] : []),
+    ...(hasLinks ? [{ header: t("label.detail"), key: "__drill", width: 14 }] : []),
   ];
   styleHeaderRow(sheet.getRow(1));
   rows.forEach((r, i) => {
@@ -74,17 +77,17 @@ function addTableSheet(
     const target = rowLinkSheets?.[i] ?? null;
     if (hasLinks && target) {
       const cell = row.getCell(columns.length + 1);
-      cell.value = sheetLink(target, "View detail");
+      cell.value = sheetLink(target, t("label.viewDetail"));
       cell.font = { color: { argb: LINK_BLUE }, underline: true };
     }
   });
 }
 
-function addBarsSheet(wb: ExcelJS.Workbook, s: Extract<DocSection, { kind: "bars" }>): void {
+function addBarsSheet(wb: ExcelJS.Workbook, t: Translator, s: Extract<DocSection, { kind: "bars" }>): void {
   const sheet = wb.addWorksheet(uniqueSheetName(wb, s.heading));
   sheet.columns = [
-    { header: "Item", key: "label", width: 34 },
-    { header: "Value", key: "value", width: 16 },
+    { header: t("label.item"), key: "label", width: 34 },
+    { header: t("label.value"), key: "value", width: 16 },
   ];
   styleHeaderRow(sheet.getRow(1));
   for (const b of s.bars) sheet.addRow({ label: b.label, value: b.value });
@@ -109,10 +112,16 @@ export async function renderReportExcel(doc: ReportDoc): Promise<Buffer> {
   wb.creator = "RIO";
   wb.created = new Date();
 
-  const summary = wb.addWorksheet("Summary");
+  const t = translator(doc.locale ?? DEFAULT_APP_LOCALE);
+  // Held in a variable rather than repeated as a literal: the back-links below
+  // reference this sheet BY NAME, so a translated name and a hardcoded
+  // "Summary" would produce a workbook whose every "back" link is broken.
+  const summaryName = t("sheet.summary");
+
+  const summary = wb.addWorksheet(summaryName);
   summary.columns = [
-    { header: "Field", key: "field", width: 34 },
-    { header: "Value", key: "value", width: 70 },
+    { header: t("label.field"), key: "field", width: 34 },
+    { header: t("label.value"), key: "value", width: 70 },
   ];
 
   // Title band across both columns.
@@ -187,14 +196,14 @@ export async function renderReportExcel(doc: ReportDoc): Promise<Buffer> {
         const name = anchorSheets.get(s.anchorId) ?? drillSheetName(s.anchorId, s.heading);
         detail = wb.getWorksheet(name) ?? wb.addWorksheet(name);
         detail.columns = [
-          { header: "Field", key: "field", width: 34 },
-          { header: "Value", key: "value", width: 70 },
+          { header: t("label.field"), key: "field", width: 34 },
+          { header: t("label.value"), key: "value", width: 70 },
         ];
         styleHeaderRow(detail.getRow(1));
         if (s.heading) detail.addRow([`— ${s.heading} —`, ""]).font = { bold: true };
         // Every detail sheet gets a way back, or the reader is stranded on it.
         const back = detail.addRow(["", ""]);
-        back.getCell(1).value = sheetLink("Summary", "← Back to Summary");
+        back.getCell(1).value = sheetLink(summaryName, t("label.backToSummary"));
         back.getCell(1).font = { color: { argb: LINK_BLUE }, underline: true };
         break;
       }
@@ -218,9 +227,9 @@ export async function renderReportExcel(doc: ReportDoc): Promise<Buffer> {
         // the PDF's tiles offer.
         const sheet = wb.addWorksheet(uniqueSheetName(wb, s.heading));
         sheet.columns = [
-          { header: "Item", key: "label", width: 40 },
-          { header: "Summary", key: "sub", width: 46 },
-          { header: "Detail", key: "link", width: 18 },
+          { header: t("label.item"), key: "label", width: 40 },
+          { header: t("label.summary"), key: "sub", width: 46 },
+          { header: t("label.detail"), key: "link", width: 18 },
         ];
         styleHeaderRow(sheet.getRow(1));
         for (const tile of s.tiles) {
@@ -228,7 +237,7 @@ export async function renderReportExcel(doc: ReportDoc): Promise<Buffer> {
           const target = sheetFor(tile.to);
           if (target) {
             const cell = row.getCell(3);
-            cell.value = sheetLink(target, "View detail");
+            cell.value = sheetLink(target, t("label.viewDetail"));
             cell.font = { color: { argb: LINK_BLUE }, underline: true };
           }
         }
@@ -237,18 +246,21 @@ export async function renderReportExcel(doc: ReportDoc): Promise<Buffer> {
       case "table":
         addTableSheet(
           wb,
+          t,
           s.heading,
           s.columns,
           s.rows,
-          s.rowLinks?.map((t) => sheetFor(t)),
+          // Named `anchor`, not `t` — `t` is the translator in this scope now,
+          // and shadowing it here would be a trap for the next edit.
+          s.rowLinks?.map((anchor) => sheetFor(anchor)),
         );
         break;
       case "bars":
-        addBarsSheet(wb, s);
+        addBarsSheet(wb, t, s);
         break;
       case "pie": {
         const total = s.slices.reduce((a, b) => a + b.value, 0) || 1;
-        addBarsSheet(wb, {
+        addBarsSheet(wb, t, {
           kind: "bars",
           heading: s.heading,
           max: Math.max(1, ...s.slices.map((sl) => sl.value)),
@@ -320,6 +332,22 @@ export async function renderReportExcel(doc: ReportDoc): Promise<Buffer> {
   if (doc.audit.length) {
     summary.addRow({ field: "— Audit Trail —", value: "" }).font = { bold: true };
     for (const a of doc.audit) kv(a.label, a.value, true);
+  }
+
+  // Sheet direction, applied to EVERY worksheet in one pass at the end rather
+  // than at each `addWorksheet` call. There are eight creation sites and more
+  // will be added; setting it here means a new sheet cannot be born
+  // left-to-right inside an Arabic workbook by omission.
+  //
+  // `rightToLeft` flips column order and cell alignment. It does NOT reverse
+  // the characters inside a cell — Excel does its own bidi on cell text, which
+  // is why Arabic works here and does not in the PDF renderer.
+  if (doc.rtl) {
+    for (const ws of wb.worksheets) {
+      ws.views = ws.views?.length
+        ? ws.views.map((v) => ({ ...v, rightToLeft: true }))
+        : [{ rightToLeft: true }];
+    }
   }
 
   const buf = await wb.xlsx.writeBuffer();

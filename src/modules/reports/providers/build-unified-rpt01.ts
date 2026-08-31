@@ -1,4 +1,13 @@
-import type { ConfidenceFlag, Thresholds, UnitGeo } from "../need-record.types";
+import type { ConfidenceFlag, SeverityBand, Thresholds, UnitGeo } from "../need-record.types";
+import { DEFAULT_APP_LOCALE, type AppLocale } from "../../../i18n/locale";
+import { translator } from "../../../i18n/translate";
+import { currentLocale } from "../../../tenancy/org-context";
+import {
+  confidenceFlagLabel,
+  priorityDirectionNote,
+  priorityStatusLabel,
+  severityBandLabel,
+} from "./severity-bands";
 import type { UnifiedRpt01Sections } from "../unified-report.types";
 import { buildNeedRecords, type ClassificationRow, type KpiRollupRow } from "./build-need-records";
 import { buildNeedHierarchy, type DomainMeta, type RollupLevelValue } from "./build-need-hierarchy";
@@ -9,7 +18,7 @@ import { deriveTrendNote } from "./derive-trend-note";
 import { gapTypeBasis } from "./derive-gap-type";
 import { RANKING_BASIS, rankPriorityNeeds } from "./rank-priority-needs";
 import type { SegmentRow } from "./derive-equity-flag";
-import { PRIORITY_DIRECTION_NOTE, priorityStatusOf, severityBandOf } from "./severity-bands";
+import { priorityStatusOf, severityBandOf } from "./severity-bands";
 
 // Composes sections 2–6 of the Unified Narrative Report Structure for RPT01.
 //
@@ -79,6 +88,12 @@ export interface UnifiedRpt01Input {
 }
 
 export function buildUnifiedRpt01(input: UnifiedRpt01Input): UnifiedRpt01Sections {
+  // The caller's language, for the methodology explanations this function
+  // composes. Read from the request context rather than passed in: every call
+  // site is inside a request, and threading it through UnifiedRpt01Input would
+  // touch every fixture that builds one.
+  const locale = currentLocale();
+  const t = translator(locale);
   const {
     generatedAt,
     surveyId,
@@ -213,8 +228,11 @@ export function buildUnifiedRpt01(input: UnifiedRpt01Input): UnifiedRpt01Section
   const priorityScore = villagePriority.priorityScore;
   const coverageBasis =
     villagePriority.assessedWeightSum !== null
-      ? `Computed over the ${needsByDomain.length} assessed domain(s), whose methodology weights sum to ${villagePriority.assessedWeightSum.toFixed(2)} of 1.00. The weighted mean is renormalised across those domains; unassessed domains contribute nothing and are not treated as scoring well.`
-      : `Coverage basis unavailable — no domain priority weights are configured for this methodology version, so no weighted score could be produced.`;
+      ? t("calc.coverageBasis", {
+          domains: needsByDomain.length,
+          weight: villagePriority.assessedWeightSum.toFixed(2),
+        })
+      : t("calc.coverageBasisUnavailable");
 
   return {
     reportMeta: {
@@ -243,7 +261,7 @@ export function buildUnifiedRpt01(input: UnifiedRpt01Input): UnifiedRpt01Section
         overrideApplied: villagePriority.overrideApplied,
         overrideReason: villagePriority.overrideReason,
         coverageBasis,
-        scoreDirectionNote: PRIORITY_DIRECTION_NOTE,
+        scoreDirectionNote: priorityDirectionNote(locale),
       },
       notMeasured,
     },
@@ -268,7 +286,19 @@ export function buildUnifiedRpt01(input: UnifiedRpt01Input): UnifiedRpt01Section
  * narrative at all is a worse outcome than a plain one, and reusing a stale
  * narrative is worse than both.
  */
-export function composeDeterministicNarrative(sections: UnifiedRpt01Sections): {
+export function composeDeterministicNarrative(
+  sections: UnifiedRpt01Sections,
+  /**
+   * Language to compose in. Defaults to English so every existing caller is
+   * unchanged.
+   *
+   * This narrative is prose, so unlike a label it cannot be substituted at
+   * export time — it has to be built in the right language from the start. It
+   * is also the ONLY narrative that can be produced without the model, which
+   * makes it the one an Arabic report falls back to when the AI is unavailable.
+   */
+  locale: AppLocale = DEFAULT_APP_LOCALE,
+): {
   executiveSummary: string;
   keyFindings: string;
 } {
@@ -276,27 +306,57 @@ export function composeDeterministicNarrative(sections: UnifiedRpt01Sections): {
   const top = es.topThreeCriticalNeeds;
   const measured = sections.needsByDomain.filter((d) => d.severityScore !== null);
   const vp = sections.priorityNeeds.villagePriority;
+  const t = translator(locale);
 
   const executiveSummary = [
-    `This survey-only assessment scored ${es.measuredCount} of ${es.totalNeedsExtracted} indicator(s) across ${es.domainsAssessed} of the methodology's ${es.domainsInMethodology} domains.`,
+    t("narrative.det.scored", {
+      measured: es.measuredCount,
+      total: es.totalNeedsExtracted,
+      domains: es.domainsAssessed,
+      allDomains: es.domainsInMethodology,
+    }),
     measured.length
-      ? `Assessed domains: ${measured.map((d) => `${d.domain} ${d.severityScore!.toFixed(2)}`).join(", ")}.`
-      : `No domain returned a measurable severity.`,
+      ? // Domain names are reference data and stay in the language the
+        // catalogue holds them in — the sentence around them is translated,
+        // the names are not invented here.
+        t("narrative.det.assessedDomains", {
+          list: measured.map((d) => `${d.domain} ${d.severityScore!.toFixed(2)}`).join(", "),
+        })
+      : t("narrative.det.noMeasurableSeverity"),
     vp.priorityScore === null
-      ? `Village Priority Score is not calculable. ${vp.notCalculableReason}`
-      : `Village Priority Score is ${vp.priorityScore.toFixed(2)} (${vp.priorityStatus}). ${vp.scoreDirectionNote}`,
-    `Confidence is ${sections.dataQualityNotes.confidence.flag}. ${sections.dataQualityNotes.confidence.reason}`,
-    `Domains that were not assessed carry no score; their absence is not a finding of low need.`,
+      ? // `notCalculableReason` is nullable. The previous template literal
+        // interpolated it directly, so a null reason printed the word "null"
+        // into the narrative; an empty string leaves the sentence complete
+        // without it.
+        t("narrative.det.priorityNotCalculable", { reason: vp.notCalculableReason ?? "" }).trim()
+      : t("narrative.det.priorityScore", {
+          score: vp.priorityScore.toFixed(2),
+          status: priorityStatusLabel(vp.priorityStatus as "HIGH" | "MEDIUM" | "LOW", locale),
+          note: priorityDirectionNote(locale),
+        }),
+    t("narrative.det.confidence", {
+      flag: confidenceFlagLabel(sections.dataQualityNotes.confidence.flag as "LOW" | "STANDARD", locale),
+      reason: sections.dataQualityNotes.confidence.reason,
+    }),
+    t("narrative.det.unassessedNote"),
   ].join(" ");
 
   const keyFindings = top.length
     ? top
-        .map(
-          (n) =>
-            `${n.rank}. ${n.indicatorName} (${n.domain} → ${n.subDomain}) — severity ${n.severityScore!.toFixed(2)} ${n.severityBand}, confidence ${n.confidence}, gap type ${n.gapType ?? "not classified"}.`,
+        .map((n) =>
+          t("narrative.det.finding", {
+            rank: n.rank,
+            indicator: n.indicatorName,
+            domain: n.domain,
+            subDomain: n.subDomain,
+            score: n.severityScore!.toFixed(2),
+            band: severityBandLabel(n.severityBand as SeverityBand, locale),
+            confidence: confidenceFlagLabel(n.confidence as "LOW" | "STANDARD", locale),
+            gapType: n.gapType ?? t("narrative.det.notClassified"),
+          }),
         )
         .join(" ")
-    : "No indicator returned a measurable severity, so no findings can be ranked.";
+    : t("narrative.det.noFindings");
 
   return { executiveSummary, keyFindings };
 }
@@ -310,6 +370,9 @@ function buildCalculationBasis(input: {
   thresholds: Thresholds;
 }): UnifiedRpt01Sections["calculationBasis"] {
   const { needsByDomain, overallNeedsIndex, priorityScore, assessedWeightSum, thresholds: t } = input;
+  // Named `tr`, not `t`: `t` is the THRESHOLDS in this function, and shadowing
+  // it with a translator here would silently break every threshold reference.
+  const tr = translator(currentLocale());
 
   const needsIndexWorking = needsByDomain.map((d) =>
     d.severityScore === null
@@ -330,20 +393,27 @@ function buildCalculationBasis(input: {
   );
   priorityScoreWorking.push(
     priorityScore === null
-      ? "Priority Score: not calculable — no stored village priority assessment."
-      : `Priority Score = Σ weighted contributions${assessedWeightSum ? ` / ${assessedWeightSum.toFixed(2)} (renormalised over assessed domains)` : ""} = ${priorityScore.toFixed(2)}`,
+      ? tr("calc.priorityNotCalculable")
+      : // The working itself stays symbolic — "Σ ... = 66.67" is arithmetic a
+        // reader checks against the figures, not prose to translate. Only the
+        // sentence around it is language-dependent.
+        `Σ${assessedWeightSum ? ` / ${assessedWeightSum.toFixed(2)}` : ""} = ${priorityScore.toFixed(2)}`,
   );
 
   return {
-    needsIndexFormula:
-      "Needs Index = mean of the measured DOMAIN severities. A domain is the mean of its measured sub-domains, a sub-domain the mean of its measured indicators, an indicator the mean of its measured KPIs, a KPI the mean of its scored answers. Unmeasured levels are skipped at every step, never counted as 0.",
+    needsIndexFormula: tr("calc.needsIndexFormula"),
     needsIndexWorking,
-    priorityScoreFormula:
-      "Priority Score = Σ((100 − domain severity) × domain weight) renormalised over the assessed domains' weight sum. Performance-based, so LOWER means more urgent.",
+    priorityScoreFormula: tr("calc.priorityScoreFormula"),
     priorityScoreWorking,
-    severityBandingRule: "Severity 0–100 (higher = worse): ≥70 CRITICAL, ≥50 HIGH, ≥30 MEDIUM, <30 LOW. A measured 0 is LOW; an unmeasured indicator is null and shown as '—'.",
-    confidenceRule: `Confidence is LOW when valid responses < ${t.confidenceMinSample} OR the don't-know rate > ${(t.dontKnowLowThreshold * 100).toFixed(0)}%; otherwise STANDARD. The stated reason names only the condition that actually fired.`,
-    equityRule: `Equity flag fires when the severity spread (max − min) across a dimension's groups ≥ ${t.equitySpreadThreshold} points AND every compared group has n ≥ ${t.equityMinGroupN}. When no dimension clears the group minimum the flag is false and the reason says the sample was too small — it is not a finding of no inequity.`,
+    severityBandingRule: tr("calc.severityBandingRule"),
+    confidenceRule: tr("calc.confidenceRule", {
+      minSample: t.confidenceMinSample,
+      dkThreshold: (t.dontKnowLowThreshold * 100).toFixed(0),
+    }),
+    equityRule: tr("calc.equityRule", {
+      spread: t.equitySpreadThreshold,
+      minGroup: t.equityMinGroupN,
+    }),
     gapTypeRule: gapTypeBasis(t),
     thresholds: t,
   };

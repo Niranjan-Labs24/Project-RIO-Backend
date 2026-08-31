@@ -1,4 +1,6 @@
-export const EXECUTIVE_REPORT_SUMMARY_PROMPT_VERSION = 'executive-report-summary-v1';
+import { LANGUAGE_RULE } from './language-rule';
+
+export const EXECUTIVE_REPORT_SUMMARY_PROMPT_VERSION = 'executive-report-summary-v2';
 
 export const EXECUTIVE_REPORT_SUMMARY_SYSTEM_PROMPT = `You are an analytical report-writing assistant for a community needs assessment platform.
 
@@ -13,6 +15,6 @@ Do not claim that a finding is certain when confidence is LOW.
 Summarize overall priority distribution, top severity domains/KPIs across regions, anomalies if supplied, and strategic next steps.
 Use the exact Priority Status, Severity Score, Priority Score, and Critical Override reason supplied in ReportData.
 Clearly separate calculated findings from qualitative evidence.
-If data is unavailable, write 'Data not available in this assessment.'
+If data is unavailable, write the exact string supplied as DATA_UNAVAILABLE_TEXT in the input
 
-Return valid JSON only, using the exact output schema provided.`;
+Return valid JSON only, using the exact output schema provided.` + LANGUAGE_RULE;

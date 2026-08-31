@@ -155,7 +155,7 @@ describe("RPT04 — export parity", () => {
     const text = body.toString("latin1");
 
     expect(contentType).toBe("application/pdf");
-    expect(filename).toBe("RPT04-rpt-4.pdf");
+    expect(filename).toBe("RPT04-rpt-4-en.pdf");
     expect(text.startsWith("%PDF-1.")).toBe(true);
     expect(text.trimEnd().endsWith("%%EOF")).toBe(true);
     for (const needle of ["Domain-wise Needs", "Domains", "Max KPI Severity", "Scope Basis", "Audit Trail"]) {

@@ -1,0 +1,76 @@
+entity,name_en,name_ar,confidence
+region,Riyadh,الرياض,canonical
+region,Makkah Al-Mukarramah,مكة المكرمة,canonical
+region,Madinah Al-Munawwarah,المدينة المنورة,canonical
+region,Al-Qassim,القصيم,canonical
+region,Eastern Province,المنطقة الشرقية,canonical
+region,Aseer,عسير,canonical
+region,Tabuk,تبوك,canonical
+region,Hail,حائل,canonical
+region,Northern Borders,الحدود الشمالية,canonical
+region,Jazan,جازان,canonical
+region,Najran,نجران,canonical
+region,Al-Baha,الباحة,canonical
+region,Al-Jouf,الجوف,canonical
+domain,Health,الصحة,draft
+domain,Education,التعليم,draft
+domain,Water & Sanitation,المياه والصرف الصحي,draft
+domain,Energy & Environment,الطاقة والبيئة,draft
+domain,Livelihood,سبل العيش,draft
+domain,Infrastructure,البنية التحتية,draft
+domain,Social Development,التنمية الاجتماعية,draft
+domain,Culture,الثقافة,draft
+domain,Governance & Services,الحوكمة والخدمات,draft
+subDomain,Access to Basic Education,الوصول إلى التعليم الأساسي,draft
+subDomain,Access to Basic Healthcare,الوصول إلى الرعاية الصحية الأساسية,draft
+subDomain,Access to Government Services,الوصول إلى الخدمات الحكومية,draft
+subDomain,Accountability & Institutional Trust,المساءلة والثقة المؤسسية,draft
+subDomain,Accountability & Trust,المساءلة والثقة,draft
+subDomain,Agriculture & Primary Production,الزراعة والإنتاج الأولي,draft
+subDomain,Basic Education Access,الوصول إلى التعليم الأساسي,draft
+subDomain,Child & Youth Protection,حماية الأطفال والشباب,draft
+subDomain,Clean Cooking,الطهي النظيف,draft
+subDomain,Communications & Digital Connectivity,الاتصالات والربط الرقمي,draft
+subDomain,Community Identity,الهوية المجتمعية,draft
+subDomain,Community Participation,المشاركة المجتمعية,draft
+subDomain,Cultural Heritage,التراث الثقافي,draft
+subDomain,Cultural Programmes & Participation,البرامج الثقافية والمشاركة,draft
+subDomain,Cultural Programs & Participation,البرامج الثقافية والمشاركة,draft
+subDomain,Culture,الثقافة,draft
+subDomain,Digital Connectivity,الربط الرقمي,draft
+subDomain,Digital Government,الحكومة الرقمية,draft
+subDomain,Disease Burden,عبء الأمراض,draft
+subDomain,Drinking Water Access,الوصول إلى مياه الشرب,draft
+subDomain,Education Equity,الإنصاف في التعليم,draft
+subDomain,Education Quality,جودة التعليم,draft
+subDomain,Electricity Access,الوصول إلى الكهرباء,draft
+subDomain,Emergency Preparedness,الجاهزية للطوارئ,draft
+subDomain,Employment & Income,التوظيف والدخل,draft
+subDomain,Entrepreneurship,ريادة الأعمال,draft
+subDomain,Environmental Awareness,الوعي البيئي,draft
+subDomain,Environmental Quality,جودة البيئة,draft
+subDomain,Gender Equity in Education,الإنصاف بين الجنسين في التعليم,draft
+subDomain,Governance & Services,الحوكمة والخدمات,draft
+subDomain,Government Service Access,الوصول إلى الخدمات الحكومية,draft
+subDomain,Housing & Built Environment,الإسكان والبيئة العمرانية,draft
+subDomain,Hygiene & Waste,النظافة والنفايات,draft
+subDomain,Hygiene & Waste Management,النظافة وإدارة النفايات,draft
+subDomain,Infrastructure,البنية التحتية,draft
+subDomain,Livelihood,سبل العيش,draft
+subDomain,Maternal & Child Health,صحة الأم والطفل,draft
+subDomain,Mental Health,الصحة النفسية,draft
+subDomain,Primary Healthcare Access,الوصول إلى الرعاية الصحية الأولية,draft
+subDomain,Public & Community Facilities,المرافق العامة والمجتمعية,draft
+subDomain,Roads & Transport,الطرق والنقل,draft
+subDomain,Safety & Social Security,السلامة والأمن الاجتماعي,draft
+subDomain,Sanitation Access,الوصول إلى الصرف الصحي,draft
+subDomain,School Infrastructure,البنية التحتية للمدارس,draft
+subDomain,Service Quality,جودة الخدمات,draft
+subDomain,Skills & Employability,المهارات وقابلية التوظيف,draft
+subDomain,Social Cohesion,التماسك الاجتماعي,draft
+subDomain,Social Safety,الأمان الاجتماعي,draft
+subDomain,Vocational & Adult Education,التعليم المهني وتعليم الكبار,draft
+subDomain,Vocational Skills & Capacity,المهارات المهنية والقدرات,draft
+subDomain,Vulnerable Groups,الفئات الضعيفة,draft
+subDomain,Water Quality,جودة المياه,draft
+subDomain,Women's Economic Empowerment,التمكين الاقتصادي للمرأة,draft

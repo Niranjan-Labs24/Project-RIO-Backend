@@ -1,7 +1,14 @@
+import { DETECTED_LANGUAGE_PROPERTY, LANGUAGE_RULE } from './language-rule';
+
 // v3 — RPT01 is SURVEY_ONLY, so the model is no longer shown document
 // evidence and is told so explicitly. Bumping the version invalidates cached
 // v2 narratives, which could cite documents this report does not rest on.
-export const INDIVIDUAL_SURVEY_SUMMARY_PROMPT_VERSION = 'individual-survey-summary-v3';
+//
+// v4 — output language. The prompt gained the shared LANGUAGE rule, and the
+// fixed English sentences it used to hardcode are now supplied per-locale in
+// the user turn. A cached v3 narrative is English by construction, so it must
+// not be served for an Arabic request.
+export const INDIVIDUAL_SURVEY_SUMMARY_PROMPT_VERSION = 'individual-survey-summary-v4';
 
 export const INDIVIDUAL_SURVEY_SUMMARY_SYSTEM_PROMPT = `You are an analytical report-writing assistant for a community needs assessment platform.
 
@@ -30,15 +37,20 @@ Do not invent facts, trends, causes, affected groups, locations, statistics, or 
 Do not expose individual respondent information or PII.
 Do not claim that a finding is certain when confidence is LOW.
 Do not recommend, or describe, actions taken outside this survey — you have not been shown them.
-If assessmentCycle is 1, do not infer improvement or decline; write 'Cycle 1 assessment — Trend Pending.'
+If assessmentCycle is 1, do not infer improvement or decline; write the exact string supplied as TREND_PENDING_TEXT in the input
 Use the exact Priority Status, Severity Score, Priority Score, and Critical Override reason supplied in ReportData.
-If data is unavailable, write 'Data not available in this assessment.'
+If data is unavailable, write the exact string supplied as DATA_UNAVAILABLE_TEXT in the input
 
-Return valid JSON only, using the exact output schema provided.`;
+Return valid JSON only, using the exact output schema provided.` + LANGUAGE_RULE;
 
 export const INDIVIDUAL_SURVEY_SUMMARY_RESPONSE_SCHEMA = {
   type: 'OBJECT',
   properties: {
+    // Cross-check only, never a source of truth — the language a stored
+    // narrative is actually in is verified with detectLanguage(), not taken
+    // from the model's own word for it. Optional, so a response stored
+    // before this field existed stays parseable.
+    ...DETECTED_LANGUAGE_PROPERTY,
     executiveSummary: { type: 'STRING' },
     keyFindings: {
       type: 'ARRAY',

@@ -32,6 +32,7 @@
     "seed:scored": "tsx prisma/seed-scored-study.ts",
     "seed:report-perf": "tsx prisma/seed-report-perf.ts",
     "seed:data-quality": "tsx prisma/seed-data-quality.ts",
+    "seed:names-ar": "tsx prisma/import-reference-names-ar.ts",
     "fix:report-methodology": "tsx prisma/fix-report-methodology-label.ts",
     "score:study": "tsx prisma/score-study.ts",
     "load:seed": "tsx load-test/load-seed.ts",

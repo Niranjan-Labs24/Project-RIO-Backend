@@ -2,6 +2,7 @@ import { Injectable, NestMiddleware } from '@nestjs/common';
 import { NextFunction, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { ConfigService } from '../config/config.service';
+import { localeFromAcceptLanguage } from '../i18n/locale';
 import { orgContext, type OrgStore } from './org-context';
 
 @Injectable()
@@ -31,7 +32,14 @@ export class OrgContextMiddleware implements NestMiddleware {
     const ip = req.ip || undefined;
     const ua = req.headers['user-agent'];
     const userAgent = typeof ua === 'string' ? ua : undefined;
-    const store: OrgStore = { requestId, orgId, role, ip, userAgent };
+    // The UI locale the caller is reading in. Unlike x-org-id/x-role above this
+    // is NOT a security seam — it selects wording, never data — so it is read
+    // in production too. The frontend sends its active locale segment; a client
+    // that sends nothing falls back to English.
+    const locale = localeFromAcceptLanguage(
+      typeof req.headers['accept-language'] === 'string' ? req.headers['accept-language'] : undefined,
+    );
+    const store: OrgStore = { requestId, orgId, role, ip, userAgent, locale };
     res.setHeader('x-request-id', requestId);
     orgContext.run(store, () => next());
   }

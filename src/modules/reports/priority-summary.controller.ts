@@ -1,5 +1,6 @@
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
-import { Controller, Get, Post, Patch, Delete, Param, Body, Query } from '@nestjs/common';
+import { localeFromAcceptLanguage } from '../../i18n/locale';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Headers, Query } from '@nestjs/common';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import {
@@ -35,16 +36,28 @@ export class PrioritySummaryController {
 
   @Post('studies/:studyId/surveys/:surveyId/priority-summary/generate')
   @RequirePermission('priorityScoring', 'create')
+  /**
+   * `Accept-Language` chooses the narrative's language.
+   *
+   * Unlike the export endpoint, this one CANNOT be re-run cheaply per language:
+   * generated prose is written once and stored, and regenerating would move
+   * `generatedAt` and invalidate the reviewer's approval (RIO-I18N-003 §10.5).
+   * So the language of the request that generates the summary is the language
+   * that summary stays in.
+   */
   async generateSummary(
     @Param('studyId', new UuidParamPipe()) studyId: string,
     @Param('surveyId', new UuidParamPipe()) surveyId: string,
     @Body(new TypeBoxValidationPipe(SummaryScopeBody)) body: SummaryScopeDto,
+    @Headers('accept-language') acceptLanguage?: string,
   ) {
     return this.summaryService.generatePrioritySummary(
       studyId,
       surveyId,
       body.scope || 'VILLAGE',
       body.scopeFilters || {},
+      undefined,
+      localeFromAcceptLanguage(acceptLanguage),
     );
   }
 

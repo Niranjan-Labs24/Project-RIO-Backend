@@ -35,7 +35,9 @@ describe("report export rendering (Step 4)", () => {
     const text = body.toString("latin1");
 
     expect(contentType).toBe("application/pdf");
-    expect(filename).toBe("RPT14-rpt-1.pdf");
+    // The locale suffix keeps the two language editions of one report from
+    // colliding in a downloads folder — both used to be named identically.
+    expect(filename).toBe("RPT14-rpt-1-en.pdf");
     expect(text.startsWith("%PDF-1.")).toBe(true);
     expect(text.trimEnd().endsWith("%%EOF")).toBe(true);
     // Vector bar-chart fills are present (rectangle fill operator).

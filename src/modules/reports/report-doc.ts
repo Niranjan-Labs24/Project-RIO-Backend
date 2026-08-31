@@ -1,3 +1,6 @@
+import { DEFAULT_APP_LOCALE, type AppLocale } from "../../i18n/locale";
+import { translate, type MessageParams } from "../../i18n/translate";
+import type { MessageKey } from "../../i18n/messages";
 import { flattenReportContent } from "./report-content-flatten";
 import { severityBandOf } from "./providers/severity-bands";
 
@@ -108,6 +111,17 @@ export interface ReportDoc {
    * reading order, so Excel and the on-screen viewer are unaffected.
    */
   chapters?: DocChapter[];
+  /**
+   * Which language edition this document is being rendered as, and whether that
+   * language reads right-to-left.
+   *
+   * Set by buildExportStub at export time, not by the generators — the stored
+   * report content is language-neutral, and only the render layer differs
+   * (RIO-I18N-003 §10.5). Optional so every existing caller and fixture keeps
+   * working: absent means the English, left-to-right default.
+   */
+  locale?: AppLocale;
+  rtl?: boolean;
 }
 
 function titleCase(key: string): string {
@@ -1134,11 +1148,14 @@ function combinedSummarySections(combined: Record<string, unknown>): DocSection[
   return out;
 }
 
-const DEMOGRAPHICS_NOTE: DocSection = {
+// A function, not a constant: its text is now language-dependent, and a
+// module-level constant would be frozen in whichever language happened to be
+// active when the module first loaded.
+const demographicsNote = (): DocSection => ({
   kind: "note",
   heading: "Demographic Breakdown",
-  text: "Not available — demographic (gender / rural) capture is pending. This chart will populate once demographic data is collected.",
-};
+  text: t("note.demographicsPending"),
+});
 
 // ── The six Unified Narrative sections (RPT01) ──
 //
@@ -1541,9 +1558,12 @@ function chapterSummary(sections: DocSection[]): string {
   };
   walk(sections);
   const parts: string[] = [];
-  if (rows) parts.push(`${rows} row${rows === 1 ? "" : "s"}`);
-  if (charts) parts.push(`${charts} chart${charts === 1 ? "" : "s"}`);
-  return parts.join(" · ") || "Summary";
+  // Arabic has a DUAL form, so "2" is not simply the plural of "1" — hence a
+  // key per grammatical number rather than an English-shaped "s" suffix.
+  const countKey = (n: number) => (n === 1 ? "one" : n === 2 ? "two" : "many");
+  if (rows) parts.push(t(`chapter.rows.${countKey(rows)}` as MessageKey, { count: rows }));
+  if (charts) parts.push(t(`chapter.charts.${countKey(charts)}` as MessageKey, { count: charts }));
+  return parts.join(" · ") || t("chapter.summary");
 }
 
 /**
@@ -1630,11 +1650,37 @@ function chapterize(sections: DocSection[]): Array<{ name: string; sections: Doc
  * reference artefact: the interactivity is built from PDF link annotations, so
  * it survives being exported, shared and opened offline.
  */
+
+/**
+ * The language this document is being built in, and the lookup that uses it.
+ *
+ * A MODULE-LEVEL variable rather than a parameter threaded through the file:
+ * `buildReportDoc` composes a handful of sentences from the report's own
+ * figures (the masking alerts), and those are produced several helpers deep in
+ * ~2,400 lines that otherwise have no reason to know about language. Passing a
+ * translator through every one of them would be a large edit for three
+ * strings.
+ *
+ * Safe because `buildReportDoc` is SYNCHRONOUS end to end — it contains no
+ * await, so no second document can begin building between the assignment below
+ * and the last read of it. If this file ever gains an async path, this has to
+ * become a parameter.
+ */
+let docLocale: AppLocale = DEFAULT_APP_LOCALE;
+
+function t(key: MessageKey, params?: MessageParams): string {
+  return translate(docLocale, key, params);
+}
+
 export function buildReportDoc(
   title: string,
   content: Record<string, unknown>,
   audit: Array<{ label: string; value: string }>,
+  /** Language for the sentences this file composes itself (the masking alerts).
+   *  Labels and reference names are translated later, by localiseReportDoc. */
+  locale: AppLocale = DEFAULT_APP_LOCALE,
 ): ReportDoc {
+  docLocale = locale;
   const { headerBand, sections: body, drillSections } = buildReportSections(content);
   const chapters = chapterize(body);
 
@@ -1832,11 +1878,10 @@ function buildReportSections(
         sections.push({
           kind: "note",
           heading: "Domain Masking Alert",
-          text:
-            `${masking.length} domain(s) average a milder band than their worst KPI: ` +
-            `${masking.map((r) => scalar(r.domain)).join(", ")}. ` +
-            "Per the methodology, a critical need surfaces regardless of its domain average — " +
-            "read the Max KPI Severity column, not the average, for these domains.",
+          text: t("note.domainMasking", {
+            count: masking.length,
+            domains: masking.map((r) => scalar(r.domain)).join(", "),
+          }),
         });
       }
     }
@@ -2062,11 +2107,21 @@ function buildReportSections(
           // bare "Domain Masking Alert" heading is the Top-Priority rollup's,
           // which belongs in the Priority Needs chapter — see CHAPTER_SCHEME.
           heading: "Domains — Domain Masking Alert",
-          text:
-            `${masked.length} domain(s) average a milder band than their worst KPI: ` +
-            `${masked.map((d) => `${scalar(d.name)} (worst: ${scalar(d.maxKpiName)} at ${scalar(d.maxKpiSeverity)})`).join("; ")}. ` +
-            "Per the methodology, a critical need surfaces regardless of its domain average — " +
-            "read the Max KPI Severity column, not the average, for these domains.",
+          text: t("note.domainMasking", {
+            count: masked.length,
+            // The per-domain detail is itself a sentence fragment, so it is
+            // composed from the catalogue too rather than glued together in
+            // English around translated parts.
+            domains: masked
+              .map((d) =>
+                t("note.domainMaskingWorst", {
+                  domain: scalar(d.name),
+                  kpi: scalar(d.maxKpiName),
+                  severity: scalar(d.maxKpiSeverity),
+                }),
+              )
+              .join("; "),
+          }),
         });
       }
     }
@@ -2218,10 +2273,10 @@ function buildReportSections(
         sections.push({
           kind: "note",
           heading: "Geographic Masking Alert",
-          text:
-            `${masking.length} governorate(s) average a milder band than their worst village: ` +
-            `${masking.map((r) => scalar(r.governorate)).join(", ")}. ` +
-            "Read the Worst Village column, not the average, for these rows.",
+          text: t("note.geographicMasking", {
+            count: masking.length,
+            governorates: masking.map((r) => scalar(r.governorate)).join(", "),
+          }),
         });
       }
     }
@@ -2255,7 +2310,7 @@ function buildReportSections(
       demo && isObjectArray(demo.rural) ? { kind: "pie", heading: "Rural / Urban Breakdown", slices: toSlices(demo.rural) } : null;
     if (genderPie) sections.push(genderPie);
     if (ruralPie) sections.push(ruralPie);
-    if (!genderPie && !ruralPie && isNeedsReport) sections.push(DEMOGRAPHICS_NOTE);
+    if (!genderPie && !ruralPie && isNeedsReport) sections.push(demographicsNote());
 
 
     if (isPlainObject(content.aiSummary)) sections.push(...aiSummarySections(content.aiSummary));

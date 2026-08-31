@@ -2,6 +2,9 @@ export interface DomainRow {
   id: string;
   code: string;
   name: string;
+  /** The client's Arabic wording, supplied through Methodology Configuration.
+   *  Null until NCNP provides it; an Arabic report falls back to `name`. */
+  nameAr: string | null;
   displayOrder: number;
   isActive: boolean;
   createdAt: Date;
@@ -13,6 +16,9 @@ export interface SubDomainRow {
   domainId: string;
   code: string;
   name: string;
+  /** The client's Arabic wording, supplied through Methodology Configuration.
+   *  Null until NCNP provides it; an Arabic report falls back to `name`. */
+  nameAr: string | null;
   displayOrder: number;
   isActive: boolean;
   createdAt: Date;
@@ -23,6 +29,9 @@ export interface Domain {
   id: string;
   code: string;
   name: string;
+  /** The client's Arabic wording, supplied through Methodology Configuration.
+   *  Null until NCNP provides it; an Arabic report falls back to `name`. */
+  nameAr: string | null;
   displayOrder: number;
   isActive: boolean;
 }
@@ -32,6 +41,9 @@ export interface SubDomain {
   domainId: string;
   code: string;
   name: string;
+  /** The client's Arabic wording, supplied through Methodology Configuration.
+   *  Null until NCNP provides it; an Arabic report falls back to `name`. */
+  nameAr: string | null;
   displayOrder: number;
   isActive: boolean;
 }
@@ -53,23 +65,27 @@ export interface PublicDomainOption {
 export interface CreateDomainPayload {
   code: string;
   name: string;
+  nameAr?: string | null;
   displayOrder?: number;
 }
 
 export interface UpdateDomainPayload {
   code?: string;
   name?: string;
+  nameAr?: string | null;
   displayOrder?: number;
 }
 
 export interface CreateSubDomainPayload {
   code: string;
   name: string;
+  nameAr?: string | null;
   displayOrder?: number;
 }
 
 export interface UpdateSubDomainPayload {
   code?: string;
   name?: string;
+  nameAr?: string | null;
   displayOrder?: number;
 }

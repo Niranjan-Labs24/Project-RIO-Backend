@@ -124,14 +124,14 @@ enum ConsentPolicyStatus {
 }
 
 model ConsentPolicy {
-  id   String            @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  kind ConsentPolicyKind @default(use_policy)
+  id        String              @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  kind      ConsentPolicyKind   @default(use_policy)
   // Versions are per-kind, so `v1` of the use policy and `v1` of the
   // data-sharing consent are two different rows — hence the compound unique
   // below rather than the global `@unique` this column carried when only one
   // policy kind existed.
-  version String @db.VarChar(64)
-  text    String
+  version   String              @db.VarChar(64)
+  text      String
   // The same policy, same version, in Arabic — a sibling column rather than a
   // `locale` row (which would have meant widening the unique key to
   // [kind, version, locale] and teaching every "the active policy" lookup to
@@ -144,21 +144,21 @@ model ConsentPolicy {
   // published before its Arabic copy is ready still has to be servable.
   // Readers fall back to `text` (see consentPolicyTextFor) rather than
   // showing an Arabic reader an empty consent.
-  textAr String? @map("text_ar")
+  textAr    String?             @map("text_ar")
   // Where this version sits in the draft → review → publish workflow. Rows
   // predating the workflow are backfilled to `published` (see the migration):
   // they were live text, and calling them drafts would have hidden the
   // currently-active policy behind an approval that never happened.
-  status ConsentPolicyStatus @default(draft)
+  status    ConsentPolicyStatus @default(draft)
   // "Currently shown at signup", set only by publish(). Kept as its own
   // column rather than derived from `status = published` because the two
   // genuinely differ: every superseded version stays `published` (it *was*
   // published, and the acceptances filed against it remain valid — the
   // client was explicit that a prior version is not silently upgraded), but
   // only one per kind is active.
-  active    Boolean  @default(false)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  active    Boolean             @default(false)
+  createdAt DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   // Actor columns are plain UUIDs rather than relations, exactly like
   // MethodologyConfig's: `users` is RLS-scoped per org and this is a global
@@ -185,33 +185,33 @@ model ConsentPolicy {
 
 // ──────── Tenancy & identity ────────
 model Organisation {
-  id                 String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  name               String   @db.VarChar(200)
-  purpose            String?  @db.VarChar(500)
-  registrationNumber String?  @unique @map("registration_number") @db.VarChar(100)
+  id                 String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  name               String    @db.VarChar(200)
+  purpose            String?   @db.VarChar(500)
+  registrationNumber String?   @unique @map("registration_number") @db.VarChar(100)
   // A org can span more than one region — same array-of-strings shape as
   // `villages` below, not a single free-text field (was `String?` — a
   // comma-separated "Region A, Region B" entry used to be stored as one
   // literal string instead of being treated as multiple regions). This is
   // unrelated free text, not the KSA Geographic Reference link below.
-  region             String[] @default([])
-  email              String?  @db.VarChar(320)
+  region             String[]  @default([])
+  email              String?   @db.VarChar(320)
   // A Domain's `name` from the Methodology Configuration screen (e.g.
   // "Health", "Water & Sanitation") — never a fixed enum, since the whole
   // point is this stays in lockstep with whatever domains are actually
   // configured there. `"other"` is a deliberate escape hatch (paired with
   // `purpose` for the free-text detail), not a methodology domain.
-  sector             String?  @db.VarChar(200)
-  logoUrl            String?  @map("logo_url")
-  villages           String[] @default([])
+  sector             String?   @db.VarChar(200)
+  logoUrl            String?   @map("logo_url")
+  villages           String[]  @default([])
   // Optional link into the KSA Geographic Reference master data — additive,
   // alongside the existing free-text `region`/`villages` arrays above, not a
   // replacement for them. An org has exactly *one* Region (single-select,
   // hence a plain scalar FK, not a join table), but can span *many*
   // Governorates and *many* Centers — see OrganisationGovernorate/
   // OrganisationCenter below.
-  regionId           String?  @map("region_id") @db.Uuid
-  isActive           Boolean  @default(true) @map("is_active")
+  regionId           String?   @map("region_id") @db.Uuid
+  isActive           Boolean   @default(true) @map("is_active")
   // RIO-FR-010 (client-confirmed): self-registered entities require Center
   // approval before activation. Separate from `isActive` deliberately —
   // `isActive` alone can't distinguish "never yet approved" (pending, first
@@ -222,39 +222,39 @@ model Organisation {
   // which is inherently pre-approved and skips this gate entirely.
   approvedAt         DateTime? @map("approved_at") @db.Timestamptz(6)
   approvedBy         String?   @map("approved_by") @db.Uuid
-  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   regionRef Region? @relation(fields: [regionId], references: [id], onDelete: Restrict)
 
   orgGovernorates OrganisationGovernorate[]
   orgCenters      OrganisationCenter[]
 
-  users                  User[]
-  consents               ConsentAcceptance[]
-  auditLogs              AuditLog[]
-  studies                Study[]
-  needs                  Need[]
-  evidence               Evidence[]
-  aiDecisions            AiDecision[]
-  surveyLinks            PublicSurveyLink[]
-  otpChallenges          CitizenOtpChallenge[]
-  passwordResetTokens    PasswordResetToken[]
-  surveyResponses        SurveyResponse[]
-  surveySessions         SurveySession[]
-  surveySessionEvents    SurveySessionEvent[]
-  responseQualityResults ResponseQualityResult[]
-  aiSummaries AiSummary[]
-  needStatementSummaries NeedStatementSummary[]
-  priorityScores PriorityScore[]
-  sharingRequestsOwned SharingRequest[] @relation("SharingRequestsOwned")
-  sharingRequestsMade  SharingRequest[] @relation("SharingRequestsMade")
-  reportSharingRequestsOwned ReportSharingRequest[] @relation("ReportSharingRequestsOwned")
-  reportSharingRequestsMade  ReportSharingRequest[] @relation("ReportSharingRequestsMade")
-  reports Report[]
-  aiSuggestions AiSuggestion[]
-  humanDecisions HumanDecision[]
-  surveys Survey[]
+  users                      User[]
+  consents                   ConsentAcceptance[]
+  auditLogs                  AuditLog[]
+  studies                    Study[]
+  needs                      Need[]
+  evidence                   Evidence[]
+  aiDecisions                AiDecision[]
+  surveyLinks                PublicSurveyLink[]
+  otpChallenges              CitizenOtpChallenge[]
+  passwordResetTokens        PasswordResetToken[]
+  surveyResponses            SurveyResponse[]
+  surveySessions             SurveySession[]
+  surveySessionEvents        SurveySessionEvent[]
+  responseQualityResults     ResponseQualityResult[]
+  aiSummaries                AiSummary[]
+  needStatementSummaries     NeedStatementSummary[]
+  priorityScores             PriorityScore[]
+  sharingRequestsOwned       SharingRequest[]            @relation("SharingRequestsOwned")
+  sharingRequestsMade        SharingRequest[]            @relation("SharingRequestsMade")
+  reportSharingRequestsOwned ReportSharingRequest[]      @relation("ReportSharingRequestsOwned")
+  reportSharingRequestsMade  ReportSharingRequest[]      @relation("ReportSharingRequestsMade")
+  reports                    Report[]
+  aiSuggestions              AiSuggestion[]
+  humanDecisions             HumanDecision[]
+  surveys                    Survey[]
   responseAnswers            ResponseAnswer[]
   responseSeverityScores     ResponseSeverityScore[]
   scoreRollups               ScoreRollup[]
@@ -268,38 +268,39 @@ model Organisation {
 }
 
 model User {
-  id                     String     @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  orgId                  String     @map("org_id") @db.Uuid
-  roleId                 String     @map("role_id") @db.VarChar(64)
-  name                   String     @db.VarChar(200)
-  email                  String     @unique @db.VarChar(320)
-  status                 UserStatus @default(invited)
-  passwordHash           String?    @map("password_hash") @db.VarChar(255)
-  mustChangePassword     Boolean    @default(false) @map("must_change_password")
-  consentedAt            DateTime?  @map("consented_at") @db.Timestamptz(6)
+  id                            String     @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId                         String     @map("org_id") @db.Uuid
+  roleId                        String     @map("role_id") @db.VarChar(64)
+  name                          String     @db.VarChar(200)
+  email                         String     @unique @db.VarChar(320)
+  status                        UserStatus @default(invited)
+  passwordHash                  String?    @map("password_hash") @db.VarChar(255)
+  mustChangePassword            Boolean    @default(false) @map("must_change_password")
+  consentedAt                   DateTime?  @map("consented_at") @db.Timestamptz(6)
   // The policy version accepted at `consentedAt` — kept alongside the
   // timestamp (denormalized from ConsentAcceptance) so a version bump can be
   // detected on every login/me() without an extra join. The full acceptance
   // history still lives in ConsentAcceptance; this is just "what's current."
-  consentedPolicyVersion String?    @map("consented_policy_version") @db.VarChar(64)
+  consentedPolicyVersion        String?    @map("consented_policy_version") @db.VarChar(64)
   // RIO-DATA-001's second consent, denormalized for exactly the same reason
   // as the pair above: the session needs to know whether BOTH consents are
   // current on every login/me() without joining ConsentAcceptance twice. The
   // two pairs move independently — each policy kind versions on its own
   // schedule, so an org can be current on one and stale on the other.
-  sharingConsentedAt            DateTime? @map("sharing_consented_at") @db.Timestamptz(6)
-  sharingConsentedPolicyVersion String?   @map("sharing_consented_policy_version") @db.VarChar(64)
-  failedLoginAttempts    Int        @default(0) @map("failed_login_attempts")
-  sessionVersion         Int        @default(0) @map("session_version")
-  lockedUntil            DateTime?  @map("locked_until") @db.Timestamptz(6)
-  lastLoginAt            DateTime?  @map("last_login_at") @db.Timestamptz(6)
-  createdAt              DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt              DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  sharingConsentedAt            DateTime?  @map("sharing_consented_at") @db.Timestamptz(6)
+  sharingConsentedPolicyVersion String?    @map("sharing_consented_policy_version") @db.VarChar(64)
+  failedLoginAttempts           Int        @default(0) @map("failed_login_attempts")
+  sessionVersion                Int        @default(0) @map("session_version")
+  lockedUntil                   DateTime?  @map("locked_until") @db.Timestamptz(6)
+  lastLoginAt                   DateTime?  @map("last_login_at") @db.Timestamptz(6)
+  createdAt                     DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                     DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org              Organisation        @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  role             Role                @relation(fields: [roleId], references: [id])
-  consents         ConsentAcceptance[]
+  org                 Organisation         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  role                Role                 @relation(fields: [roleId], references: [id])
+  consents            ConsentAcceptance[]
   passwordResetTokens PasswordResetToken[]
+
   @@index([orgId])
   @@index([roleId])
   @@map("users")
@@ -330,7 +331,7 @@ model PasswordResetToken {
 }
 
 model ConsentAcceptance {
-  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  id            String            @id @default(dbgenerated("uuidv7()")) @db.Uuid
   // Which of the two RIO-DATA-001 consents this row records. Every
   // acceptance predating that split was the use policy, so `use_policy` is
   // the backfill default — see the accompanying migration.
@@ -399,21 +400,21 @@ model AuditLog {
 // revoked (revokedAt/revokedBy set), never deleted or edited in place, so
 // the full grant/revoke history stays intact for audit purposes.
 model PermissionGrant {
-  id          String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  granteeId   String    @map("grantee_id") @db.Uuid
-  module      String    @map("module") @db.VarChar(50)
-  action      String    @map("action") @db.VarChar(20)
+  id        String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  granteeId String    @map("grantee_id") @db.Uuid
+  module    String    @map("module") @db.VarChar(50)
+  action    String    @map("action") @db.VarChar(20)
   // RIO-RBAC-002 (client-confirmed 2026-08-23, reconfirmed 2026-08-24) — a
   // grant always applies across every entity; there is deliberately no
   // per-entity scope column. (A `target_org_id` column existed briefly and
   // was dropped in 20260824020000_drop_permission_grant_entity_scope —
   // the client's answer never allowed scoping to a single entity.)
-  reason      String    @db.VarChar(1000)
-  grantedBy   String    @map("granted_by") @db.Uuid
-  grantedAt   DateTime  @default(now()) @map("granted_at") @db.Timestamptz(6)
-  expiresAt   DateTime? @map("expires_at") @db.Timestamptz(6)
-  revokedAt   DateTime? @map("revoked_at") @db.Timestamptz(6)
-  revokedBy   String?   @map("revoked_by") @db.Uuid
+  reason    String    @db.VarChar(1000)
+  grantedBy String    @map("granted_by") @db.Uuid
+  grantedAt DateTime  @default(now()) @map("granted_at") @db.Timestamptz(6)
+  expiresAt DateTime? @map("expires_at") @db.Timestamptz(6)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
+  revokedBy String?   @map("revoked_by") @db.Uuid
 
   @@index([granteeId])
   @@map("permission_grants")
@@ -507,15 +508,15 @@ model SystemLog {
 // Study stays open for new Needs regardless of how far along its existing
 // ones are.
 model Study {
-  id                 String      @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  orgId              String      @map("org_id") @db.Uuid
-  title              String      @db.VarChar(300)
+  id                      String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId                   String    @map("org_id") @db.Uuid
+  title                   String    @db.VarChar(300)
   // Selected from (or added alongside) the org's own configured villages
   // list — same array-of-strings shape as Organisation.villages, not a
   // master-data table, per the same "don't promote to master data" call
   // made for Need.village. Kept as-is, additive alongside the structured
   // KSA Geographic Reference field below.
-  villages  String[]    @default([])
+  villages                String[]  @default([])
   // Optional link into the KSA Geographic Reference master data — a Study
   // selects a *subset* of the owning Org's own selected Governorates/Centers
   // (see StudyGovernorate/StudyCenter below), validated in
@@ -526,12 +527,12 @@ model Study {
   //
   // Sequential per-org counter (1, 2, 3... across every Study the org has
   // ever created), assigned server-side at creation, never client-writable.
-  cycleNumber Int @map("cycle_number")
+  cycleNumber             Int       @map("cycle_number")
   // Optional link to the real, status-gated MethodologyVersion master data
   // (the same model Priority Scoring/Question Bank use) — only a PUBLISHED
   // version may be selected (checked in StudiesService, not enforceable by
   // the FK itself). Nullable: can be set later, not required at creation.
-  methodologyVersionId String? @map("methodology_version_id") @db.Uuid
+  methodologyVersionId    String?   @map("methodology_version_id") @db.Uuid
   // RIO-FR-024: Sample Size Calculator — signed-off mechanism (Methodology
   // workbook's Sample Size Reference sheet). Entered by the association at
   // creation ("What is the population of your area?"); requiredSampleSize
@@ -540,12 +541,12 @@ model Study {
   // report always shows the figures that applied when the study was set up.
   // Nullable: studies created before this feature shipped have none of the
   // four; the coverage confidence criterion below simply doesn't apply to them.
-  population Int? @map("population")
-  marginOfError Float? @default(0.10) @map("margin_of_error")
-  requiredSampleSize Int? @map("required_sample_size")
-  minimumDetectableEffect Float? @map("minimum_detectable_effect")
-  status String @default("active") @db.VarChar(50)
-  archivedAt DateTime? @map("archived_at") @db.Timestamptz(6)
+  population              Int?      @map("population")
+  marginOfError           Float?    @default(0.10) @map("margin_of_error")
+  requiredSampleSize      Int?      @map("required_sample_size")
+  minimumDetectableEffect Float?    @map("minimum_detectable_effect")
+  status                  String    @default("active") @db.VarChar(50)
+  archivedAt              DateTime? @map("archived_at") @db.Timestamptz(6)
   // RIO-FR-012 (Sprint 2 clarification Q4/Q35) — the value is now sourced
   // from StudyTypeOption via the Methodology Configuration admin screen
   // rather than free text, but the client still hasn't confirmed the
@@ -555,40 +556,40 @@ model Study {
   // string (validated against StudyTypeOption.name at the API layer, not a
   // DB-level FK) until that answer lands, and the filter itself stays the
   // documented no-op in SurveysService.generateSuggestedQuestions.
-  studyType String? @map("study_type") @db.VarChar(100)
+  studyType               String?   @map("study_type") @db.VarChar(100)
   // Same status as studyType above — configurable via Methodology
   // Configuration (TargetSectorOption), same Q35 blocker on real values.
   // Confirmed (Q3/Q4) to be a distinct classification from methodology
   // Domain/Sector, not an alias for it.
-  targetSector String? @map("target_sector") @db.VarChar(100)
-  archivedBy String? @map("archived_by") @db.Uuid
-  archiveReason String? @map("archive_reason") @db.VarChar(500)
-  createdBy String      @map("created_by") @db.Uuid
-  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  targetSector            String?   @map("target_sector") @db.VarChar(100)
+  archivedBy              String?   @map("archived_by") @db.Uuid
+  archiveReason           String?   @map("archive_reason") @db.VarChar(500)
+  createdBy               String    @map("created_by") @db.Uuid
+  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org      Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  methodologyVersion MethodologyVersion? @relation(fields: [methodologyVersionId], references: [id], onDelete: SetNull)
-  studyGovernorates StudyGovernorate[]
-  studyCenters      StudyCenter[]
-  needs    Need[]
+  org                        Organisation                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  methodologyVersion         MethodologyVersion?         @relation(fields: [methodologyVersionId], references: [id], onDelete: SetNull)
+  studyGovernorates          StudyGovernorate[]
+  studyCenters               StudyCenter[]
+  needs                      Need[]
   // Denormalized studyId FK kept on these (see each model's own comment) —
   // Study still needs the Prisma back-relation array even though `needId` is
   // now the real scoping key.
-  evidence Evidence[]
-  aiDecisions AiDecision[]
-  surveyLinks PublicSurveyLink[]
-  surveyResponses SurveyResponse[]
-  surveySessions SurveySession[]
-  responseQualityResults ResponseQualityResult[]
-  aiSummaries AiSummary[]
-  needStatementSummaries NeedStatementSummary[]
-  priorityScores PriorityScore[]
-  sharingRequests SharingRequest[]
-  reports Report[]
-  aiSuggestions AiSuggestion[]
-  humanDecisions HumanDecision[]
-  surveys Survey[]
+  evidence                   Evidence[]
+  aiDecisions                AiDecision[]
+  surveyLinks                PublicSurveyLink[]
+  surveyResponses            SurveyResponse[]
+  surveySessions             SurveySession[]
+  responseQualityResults     ResponseQualityResult[]
+  aiSummaries                AiSummary[]
+  needStatementSummaries     NeedStatementSummary[]
+  priorityScores             PriorityScore[]
+  sharingRequests            SharingRequest[]
+  reports                    Report[]
+  aiSuggestions              AiSuggestion[]
+  humanDecisions             HumanDecision[]
+  surveys                    Survey[]
   responseAnswers            ResponseAnswer[]
   responseSeverityScores     ResponseSeverityScore[]
   scoreRollups               ScoreRollup[]
@@ -636,17 +637,17 @@ enum NeedSource {
 }
 
 model Need {
-  id        String     @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  studyId   String     @map("study_id") @db.Uuid
-  orgId     String     @map("org_id") @db.Uuid
-  title     String     @db.VarChar(300)
-  statement String
+  id                   String     @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  studyId              String     @map("study_id") @db.Uuid
+  orgId                String     @map("org_id") @db.Uuid
+  title                String     @db.VarChar(300)
+  statement            String
   // A Need can name more than one village — same array-of-strings shape as
   // Organisation.villages (was `String` — a comma-separated "Village A,
   // Village B" entry used to be stored as one literal string instead of
   // being treated as multiple villages). Do not promote this to a
   // master-data table without an explicit ticket.
-  village   String[]   @default([])
+  village              String[]   @default([])
   // Optional link into the KSA Geographic Reference master data — multi-
   // select Governorates and Centers (see NeedGovernorate/NeedCenter below):
   // a single Need can span multiple geographic areas. Must be a subset of
@@ -657,11 +658,11 @@ model Need {
   // client-writable (RIO-FR-001). `citizen_input` and `field_survey` are
   // valid values with no producing code path yet — no feature creates a
   // Need through either route today.
-  source    NeedSource
+  source               NeedSource
   // The submitter's own external tracking id for this Need (e.g. a field
   // form number or a partner org's case id) — free text, never validated
   // against anything, purely a cross-reference back to their own records.
-  referenceId String?  @map("reference_id") @db.VarChar(200)
+  referenceId          String?    @map("reference_id") @db.VarChar(200)
   // System-generated internal reference, assigned to every Need on
   // creation regardless of entry method (manual or bulk import) — never
   // user-supplied, never edited. Distinct from `referenceId` above, which
@@ -672,7 +673,7 @@ model Need {
   // UI — format as "NEED-<internalRefSeq zero-padded to 6 digits>" at the
   // application layer, not stored as a string, so there's one source of
   // truth for the number.
-  internalRefSeq Int @default(autoincrement()) @map("internal_ref_seq")
+  internalRefSeq       Int        @default(autoincrement()) @map("internal_ref_seq")
   // Roughly how many people this Need affects, as estimated by whoever
   // recorded it (client-confirmed Option A, 24 Aug 2026 — the answer to the
   // need-entry question "Roughly how many people does this need affect?").
@@ -683,8 +684,8 @@ model Need {
   // every need affects everyone. Nullable and stays null forever for Needs
   // recorded before this field existed — the estimate cannot be
   // reconstructed after the fact, because nobody was asked at the time.
-  affectedPopulation Int? @map("affected_population")
-  status    NeedStatus @default(draft)
+  affectedPopulation   Int?       @map("affected_population")
+  status               NeedStatus @default(draft)
   // The AUTHORITATIVE ("Approved") Domain + Sub-Domain for this Need —
   // ALWAYS mirrors the first row of `needDomains` below (the real,
   // multi-valued source of truth) so any reader not yet migrated to the
@@ -696,8 +697,8 @@ model Need {
   // never overwritten once classification runs — domain/subDomain (and
   // needDomains) are the human's final decision, which may differ from
   // the AI's suggestion.
-  domain    String?    @db.VarChar(120)
-  subDomain String?    @map("sub_domain") @db.VarChar(120)
+  domain               String?    @db.VarChar(120)
+  subDomain            String?    @map("sub_domain") @db.VarChar(120)
   // True when AI could not confidently classify this Need at all (an
   // "unclear need" outcome, not a hard failure — see
   // AiDecisionsService.runAndPersistClassification) and every active
@@ -707,7 +708,7 @@ model Need {
   // this flag first and skips filtering entirely rather than iterating a
   // real list. Cleared the moment a human (Researcher or Approver)
   // narrows it down via Override, which populates needDomains for real.
-  allDomainsSelected Boolean @default(false) @map("all_domains_selected")
+  allDomainsSelected   Boolean    @default(false) @map("all_domains_selected")
   // AI Classification's own suggestion — stored for transparency/future
   // reference only, never read by anything downstream (Survey Builder's
   // Question Bank matching, reporting, scoring all use `domain`/`subDomain`
@@ -715,16 +716,16 @@ model Need {
   // Classification decision (see AiDecisionsService.review) — the human's
   // own review of the AI's suggestion still happens exactly as before, it
   // just no longer writes onto the authoritative field.
-  aiSuggestedDomain    String? @map("ai_suggested_domain") @db.VarChar(120)
-  aiSuggestedSubDomain String? @map("ai_suggested_sub_domain") @db.VarChar(120)
+  aiSuggestedDomain    String?    @map("ai_suggested_domain") @db.VarChar(120)
+  aiSuggestedSubDomain String?    @map("ai_suggested_sub_domain") @db.VarChar(120)
   // When the most recent classification attempt completed (success or
   // failure) — cleared back to null and re-set on every retry, so it
   // always reflects the latest attempt only, never a stale earlier one.
-  classifiedAt DateTime? @map("classified_at") @db.Timestamptz(6)
+  classifiedAt         DateTime?  @map("classified_at") @db.Timestamptz(6)
   // Populated only when status = ai_classification_failed; cleared on
   // retry before the next attempt runs. Never shown to citizens, only to
   // Researchers/Approvers on the Need workspace / AI Review screens.
-  classificationError String? @map("classification_error")
+  classificationError  String?    @map("classification_error")
   // A staged (not-yet-decided) Override — set when a Researcher or Approver
   // clicks "Preview Override" (see AiDecisionsService.overrideDomainPreview),
   // cleared the moment it's consumed (approved-into-domain/needDomains, or
@@ -736,8 +737,8 @@ model Need {
   // replacing an earlier sessionStorage-only draft that only the browser
   // tab that staged it could ever see. Array of {domain, subDomain} pairs,
   // same shape as needDomains, since an override can span several.
-  proposedDomains Json?   @map("proposed_domains")
-  proposedReason  String? @map("proposed_reason")
+  proposedDomains      Json?      @map("proposed_domains")
+  proposedReason       String?    @map("proposed_reason")
   // RIO-FR-005 (Q12, client-confirmed) — one of five fixed values: acute,
   // chronic, structural, seasonal, equity. Client-confirmed as
   // analyst-entered, NOT auto-calculated (a separate heuristic classifier
@@ -746,7 +747,7 @@ model Need {
   // since that path computes a value, and this field's whole point per the
   // client is that a human sets it). Optional — "keeps gap classification's
   // already-confirmed optional status."
-  gapType String? @map("gap_type") @db.VarChar(20)
+  gapType              String?    @map("gap_type") @db.VarChar(20)
   // RIO-FR-003 AC 1 -- "every classified need has a sector, an URGENCY LEVEL,
   // and a computed priority score". Severity says how bad a need is; urgency
   // says how soon it must be acted on, and nothing else in the model carries
@@ -756,7 +757,7 @@ model Need {
   // but gives no measurement rule, so guessing one from gapType or severity
   // would be inventing methodology. Nullable because it is optional in v1 --
   // an unset urgency is reported as "not set", never scored as zero.
-  urgency String? @map("urgency") @db.VarChar(30)
+  urgency              String?    @map("urgency") @db.VarChar(30)
   // RIO-FR-003 AC 6 -- recurring themes, extracted per need and used to
   // filter/group. A real TEXT[] following the `village` precedent above.
   //
@@ -764,7 +765,7 @@ model Need {
   // needs" factor computable without RIO-AI-004: two needs that share a theme
   // are the same underlying problem for counting purposes, which is a far
   // weaker (and far cheaper) claim than AI-004's need-to-need merge.
-  themes String[] @map("themes")
+  themes               String[]   @map("themes")
   // RIO-FR-005 (Round 4, client-confirmed 2026-08-24) — "Roughly how many
   // people/households does this need affect?" on the need-entry form. This
   // manually entered figure is the PRIMARY Affected Population value (not
@@ -778,30 +779,30 @@ model Need {
   // which has not been provided. These two fields are the buildable half
   // of the Round 4 answer; the GASTAT cross-check display is a separate,
   // still-blocked follow-up once that dataset arrives.
-  affectedPeople     Int? @map("affected_people")
-  affectedHouseholds Int? @map("affected_households")
-  createdBy String     @map("created_by") @db.Uuid
-  createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  affectedPeople       Int?       @map("affected_people")
+  affectedHouseholds   Int?       @map("affected_households")
+  createdBy            String     @map("created_by") @db.Uuid
+  createdAt            DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  study Study        @relation(fields: [studyId], references: [id], onDelete: Cascade)
-  org   Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  needGovernorates NeedGovernorate[]
-  needCenters NeedCenter[]
-  needDomains NeedDomain[]
-  evidence Evidence[]
-  aiDecisions AiDecision[]
-  surveys Survey[]
-  surveyLinks PublicSurveyLink[]
-  surveyResponses SurveyResponse[]
-  surveySessions SurveySession[]
+  study                  Study                   @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  org                    Organisation            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  needGovernorates       NeedGovernorate[]
+  needCenters            NeedCenter[]
+  needDomains            NeedDomain[]
+  evidence               Evidence[]
+  aiDecisions            AiDecision[]
+  surveys                Survey[]
+  surveyLinks            PublicSurveyLink[]
+  surveyResponses        SurveyResponse[]
+  surveySessions         SurveySession[]
   responseQualityResults ResponseQualityResult[]
-  aiSummaries AiSummary[]
+  aiSummaries            AiSummary[]
   needStatementSummaries NeedStatementSummary[]
-  priorityScores PriorityScore[]
-  decisions NeedDecision[]
-  aiSuggestions AiSuggestion[]
-  evidenceDocuments EvidenceDocument[]
+  priorityScores         PriorityScore[]
+  decisions              NeedDecision[]
+  aiSuggestions          AiSuggestion[]
+  evidenceDocuments      EvidenceDocument[]
 
   @@index([orgId])
   @@index([studyId])
@@ -1010,6 +1011,20 @@ model Domain {
   id           String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   code         String   @unique @db.VarChar(64)
   name         String   @db.VarChar(200)
+  // The client's authoritative Arabic wording for this name.
+  //
+  // A SEPARATE COLUMN, not a translation of `name` computed anywhere: this is
+  // methodology and geography vocabulary owned by NCNP, and a report that
+  // invents it is worse than one that leaves it in English. `name` stays the
+  // canonical key that scoring, prompts and stored report content all agree
+  // on — only the RENDER layer substitutes this, so translating a label can
+  // never change which record a figure belongs to (RIO-I18N-003 §6).
+  //
+  // Nullable, and null is the normal state until the vocabulary is supplied.
+  // An Arabic report renders the English `name` for anything still missing,
+  // which is visibly incomplete rather than silently wrong — and §10's
+  // readiness gate counts exactly these.
+  nameAr       String?  @map("name_ar") @db.VarChar(200)
   displayOrder Int      @default(0) @map("display_order")
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -1025,6 +1040,20 @@ model SubDomain {
   domainId     String   @map("domain_id") @db.Uuid
   code         String   @unique @db.VarChar(64)
   name         String   @db.VarChar(200)
+  // The client's authoritative Arabic wording for this name.
+  //
+  // A SEPARATE COLUMN, not a translation of `name` computed anywhere: this is
+  // methodology and geography vocabulary owned by NCNP, and a report that
+  // invents it is worse than one that leaves it in English. `name` stays the
+  // canonical key that scoring, prompts and stored report content all agree
+  // on — only the RENDER layer substitutes this, so translating a label can
+  // never change which record a figure belongs to (RIO-I18N-003 §6).
+  //
+  // Nullable, and null is the normal state until the vocabulary is supplied.
+  // An Arabic report renders the English `name` for anything still missing,
+  // which is visibly incomplete rather than silently wrong — and §10's
+  // readiness gate counts exactly these.
+  nameAr       String?  @map("name_ar") @db.VarChar(200)
   displayOrder Int      @default(0) @map("display_order")
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -1098,14 +1127,28 @@ model TargetSectorOption {
 // Methodology admin curates over time), this hierarchy is a fixed external
 // standard, not something the app edits.
 model Region {
-  id      String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  id      String  @id @default(dbgenerated("uuidv7()")) @db.Uuid
   // The spreadsheet's own numeric region code (1-13), not a UUID — this is
   // what the source data and any future re-import key off of.
-  code    Int    @unique
-  name    String @db.VarChar(150)
+  code    Int     @unique
+  name    String  @db.VarChar(150)
+  // The client's authoritative Arabic wording for this name.
+  //
+  // A SEPARATE COLUMN, not a translation of `name` computed anywhere: this is
+  // methodology and geography vocabulary owned by NCNP, and a report that
+  // invents it is worse than one that leaves it in English. `name` stays the
+  // canonical key that scoring, prompts and stored report content all agree
+  // on — only the RENDER layer substitutes this, so translating a label can
+  // never change which record a figure belongs to (RIO-I18N-003 §6).
+  //
+  // Nullable, and null is the normal state until the vocabulary is supplied.
+  // An Arabic report renders the English `name` for anything still missing,
+  // which is visibly incomplete rather than silently wrong — and §10's
+  // readiness gate counts exactly these.
+  nameAr  String? @map("name_ar") @db.VarChar(150)
   // ISO 3166-2 subdivision code, e.g. "SA-01".
-  isoCode String @unique @map("iso_code") @db.VarChar(10)
-  capital String @db.VarChar(150)
+  isoCode String  @unique @map("iso_code") @db.VarChar(10)
+  capital String  @db.VarChar(150)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -1117,45 +1160,73 @@ model Region {
 }
 
 model Governorate {
-  id       String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  id       String  @id @default(dbgenerated("uuidv7()")) @db.Uuid
   // The spreadsheet's own "Gov Code", e.g. "0101" — a zero-padded string,
   // not numeric (some codes carry meaningful leading zeros).
-  code     String @unique @db.VarChar(10)
-  regionId String @map("region_id") @db.Uuid
-  name     String @db.VarChar(150)
+  code     String  @unique @db.VarChar(10)
+  regionId String  @map("region_id") @db.Uuid
+  name     String  @db.VarChar(150)
+  // The client's authoritative Arabic wording for this name.
+  //
+  // A SEPARATE COLUMN, not a translation of `name` computed anywhere: this is
+  // methodology and geography vocabulary owned by NCNP, and a report that
+  // invents it is worse than one that leaves it in English. `name` stays the
+  // canonical key that scoring, prompts and stored report content all agree
+  // on — only the RENDER layer substitutes this, so translating a label can
+  // never change which record a figure belongs to (RIO-I18N-003 §6).
+  //
+  // Nullable, and null is the normal state until the vocabulary is supplied.
+  // An Arabic report renders the English `name` for anything still missing,
+  // which is visibly incomplete rather than silently wrong — and §10's
+  // readiness gate counts exactly these.
+  nameAr   String? @map("name_ar") @db.VarChar(150)
   // "Amanah (Region capital)" | "Category A" | "Category B" — free text
   // exactly as the source spreadsheet labels it, not a fixed enum, since
   // the source is the sole authority on what categories exist.
-  category String @db.VarChar(50)
+  category String  @db.VarChar(50)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  region          Region                    @relation(fields: [regionId], references: [id], onDelete: Restrict)
-  centers         Center[]
-  orgGovernorates OrganisationGovernorate[]
+  region            Region                    @relation(fields: [regionId], references: [id], onDelete: Restrict)
+  centers           Center[]
+  orgGovernorates   OrganisationGovernorate[]
   studyGovernorates StudyGovernorate[]
-  needGovernorates NeedGovernorate[]
+  needGovernorates  NeedGovernorate[]
 
   @@index([regionId])
   @@map("governorates")
 }
 
 model Center {
-  id            String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  id            String  @id @default(dbgenerated("uuidv7()")) @db.Uuid
   // The spreadsheet's own "Center Code", e.g. "0101-001".
-  code          String @unique @db.VarChar(20)
-  governorateId String @map("governorate_id") @db.Uuid
-  name          String @db.VarChar(150)
+  code          String  @unique @db.VarChar(20)
+  governorateId String  @map("governorate_id") @db.Uuid
+  name          String  @db.VarChar(150)
+  // The client's authoritative Arabic wording for this name.
+  //
+  // A SEPARATE COLUMN, not a translation of `name` computed anywhere: this is
+  // methodology and geography vocabulary owned by NCNP, and a report that
+  // invents it is worse than one that leaves it in English. `name` stays the
+  // canonical key that scoring, prompts and stored report content all agree
+  // on — only the RENDER layer substitutes this, so translating a label can
+  // never change which record a figure belongs to (RIO-I18N-003 §6).
+  //
+  // Nullable, and null is the normal state until the vocabulary is supplied.
+  // An Arabic report renders the English `name` for anything still missing,
+  // which is visibly incomplete rather than silently wrong — and §10's
+  // readiness gate counts exactly these.
+  nameAr        String? @map("name_ar") @db.VarChar(150)
   // "Category A" | "Category B".
-  category      String @db.VarChar(50)
+  category      String  @db.VarChar(50)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  governorate Governorate          @relation(fields: [governorateId], references: [id], onDelete: Restrict)
-  orgCenters  OrganisationCenter[]
-  needCenters NeedCenter[]
+  governorate  Governorate          @relation(fields: [governorateId], references: [id], onDelete: Restrict)
+  orgCenters   OrganisationCenter[]
+  needCenters  NeedCenter[]
   studyCenters StudyCenter[]
 
   @@index([governorateId])
@@ -1178,7 +1249,7 @@ model Center {
 // descriptive column must not be able to fail the import that keeps the gate
 // current.
 model NicRegistry {
-  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  id        String @id @default(dbgenerated("uuidv7()")) @db.Uuid
   // The entity's unified national number — 10 digits in every row of the
   // source workbook (all 7,840 distinct), stored normalized (ASCII digits,
   // no separators) so the comparison in assertRegistered is a plain equality
@@ -1347,29 +1418,29 @@ enum SettlementType {
 // value, and that absence must never be treated as zero or backfilled — see
 // NcnpReportService's age-bracket aggregation for the historical-data note.
 enum AgeBracket {
-  age_15_24   @map("15-24")
-  age_25_34   @map("25-34")
-  age_35_44   @map("35-44")
-  age_45_54   @map("45-54")
-  age_55_64   @map("55-64")
-  age_65_plus @map("65+")
+  age_15_24         @map("15-24")
+  age_25_34         @map("25-34")
+  age_35_44         @map("35-44")
+  age_45_54         @map("45-54")
+  age_55_64         @map("55-64")
+  age_65_plus       @map("65+")
   prefer_not_to_say
 }
 
 // Generic response row — Response Quality, AI Summary, and Priority
 // Dashboard all read from this same table, seeded or real alike.
 model SurveyResponse {
-  id           String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  orgId        String   @map("org_id") @db.Uuid
-  needId       String   @map("need_id") @db.Uuid
+  id                   String          @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId                String          @map("org_id") @db.Uuid
+  needId               String          @map("need_id") @db.Uuid
   // Denormalized from Need.studyId — see Evidence.studyId's comment.
-  studyId      String   @map("study_id") @db.Uuid
-  surveyLinkId String   @map("survey_link_id") @db.Uuid
-  contactName  String?  @map("contact_name") @db.VarChar(200)
+  studyId              String          @map("study_id") @db.Uuid
+  surveyLinkId         String          @map("survey_link_id") @db.Uuid
+  contactName          String?         @map("contact_name") @db.VarChar(200)
   // Email — see CitizenOtpChallenge.contact's comment; every downstream
   // reader (reports, scoring, respondent dedup) already treats this as the
   // respondent's email identity, so it keeps its existing name.
-  contact      String   @db.VarChar(320)
+  contact              String          @db.VarChar(320)
   // Mobile number — new, alongside `contact`. Both are copied from the
   // CitizenOtpChallenge that verified this submission (see
   // CitizenService.submitResponse); either one matching a prior response
@@ -1378,10 +1449,10 @@ model SurveyResponse {
   // only so pre-this-feature rows don't need a backfill — Postgres treats
   // multiple NULLs as distinct under a unique index, so this doesn't weaken
   // the dedup guarantee for any row that does have one.
-  mobile       String?  @db.VarChar(32)
-  gender       Gender?
-  settlementType SettlementType? @map("settlement_type")
-  ageBracket     AgeBracket?     @map("age_bracket")
+  mobile               String?         @db.VarChar(32)
+  gender               Gender?
+  settlementType       SettlementType? @map("settlement_type")
+  ageBracket           AgeBracket?     @map("age_bracket")
   // Geography snapshot — copied from the Need (its own multi-select
   // Governorates/Centers, village) and the Organization (regionId) at
   // submission time, not asked of the citizen directly. A pure denormalized
@@ -1389,11 +1460,11 @@ model SurveyResponse {
   // Need.needGovernorates/NeedCenter/Need.village and
   // Organisation.regionId) — never independently edited, so plain array
   // columns rather than a join table are enough here.
-  regionId       String?  @map("region_id") @db.Uuid
-  governorateIds String[] @default([]) @map("governorate_ids") @db.Uuid
-  centerIds      String[] @default([]) @map("center_ids") @db.Uuid
-  village        String[] @default([])
-  answers      Json
+  regionId             String?         @map("region_id") @db.Uuid
+  governorateIds       String[]        @default([]) @map("governorate_ids") @db.Uuid
+  centerIds            String[]        @default([]) @map("center_ids") @db.Uuid
+  village              String[]        @default([])
+  answers              Json
   // RIO-NFR-002 — which citizen-consent version this respondent accepted, and
   // in which language they read it. Nullable only because responses collected
   // before the consent notice became a versioned, admin-managed policy have
@@ -1407,17 +1478,17 @@ model SurveyResponse {
   // touch one), so the version is a stable pointer to exactly the text that
   // was shown, and duplicating a long notice onto every response row would
   // add nothing an auditor could not already resolve.
-  consentPolicyVersion String?   @map("consent_policy_version") @db.VarChar(64)
-  consentPolicyLocale  String?   @map("consent_policy_locale") @db.VarChar(8)
-  consentedAt          DateTime? @map("consented_at") @db.Timestamptz(6)
-  submittedAt  DateTime @default(now()) @map("submitted_at") @db.Timestamptz(6)
+  consentPolicyVersion String?         @map("consent_policy_version") @db.VarChar(64)
+  consentPolicyLocale  String?         @map("consent_policy_locale") @db.VarChar(8)
+  consentedAt          DateTime?       @map("consented_at") @db.Timestamptz(6)
+  submittedAt          DateTime        @default(now()) @map("submitted_at") @db.Timestamptz(6)
 
-  org        Organisation     @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  study      Study            @relation(fields: [studyId], references: [id], onDelete: Cascade)
-  need       Need             @relation(fields: [needId], references: [id], onDelete: Cascade)
-  surveyLink PublicSurveyLink @relation(fields: [surveyLinkId], references: [id], onDelete: Cascade)
-  qualityResults ResponseQualityResult[]
-  session        SurveySession?
+  org                    Organisation            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  study                  Study                   @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  need                   Need                    @relation(fields: [needId], references: [id], onDelete: Cascade)
+  surveyLink             PublicSurveyLink        @relation(fields: [surveyLinkId], references: [id], onDelete: Cascade)
+  qualityResults         ResponseQualityResult[]
+  session                SurveySession?
   responseAnswers        ResponseAnswer[]
   responseSeverityScores ResponseSeverityScore[]
 
@@ -1523,48 +1594,48 @@ model AiSummary {
 //     a later edit to Need.statement must not silently re-caption an already
 //     confirmed summary (it marks it STALE instead).
 model NeedStatementSummary {
-  id                 String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  orgId              String    @map("org_id") @db.Uuid
-  needId             String    @map("need_id") @db.Uuid
+  id                   String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId                String    @map("org_id") @db.Uuid
+  needId               String    @map("need_id") @db.Uuid
   // Denormalized from Need.studyId — see Evidence.studyId's comment.
-  studyId            String    @map("study_id") @db.Uuid
+  studyId              String    @map("study_id") @db.Uuid
   // DRAFT | CONFIRMED | SUPERSEDED | STALE. Deliberately a String, matching
   // EvidenceDocumentSummary.status rather than a new enum, so the two summary
   // families stay comparable in queries and in the reviewer queue.
-  status             String    @default("DRAFT") @db.VarChar(50)
-  promptVersion      String    @map("prompt_version") @db.VarChar(100)
-  modelName          String    @map("model_name") @db.VarChar(100)
-  modelVersion       String    @map("model_version") @db.VarChar(50)
+  status               String    @default("DRAFT") @db.VarChar(50)
+  promptVersion        String    @map("prompt_version") @db.VarChar(100)
+  modelName            String    @map("model_name") @db.VarChar(100)
+  modelVersion         String    @map("model_version") @db.VarChar(50)
   // AC "the original full text remains accessible alongside the summary".
   // Snapshotted, not derived: see rule 2 in this model's header comment.
-  sourceStatement    String    @map("source_statement")
-  sourceLength       Int       @map("source_length")
-  inputTextHash      String    @map("input_text_hash") @db.VarChar(64)
+  sourceStatement      String    @map("source_statement")
+  sourceLength         Int       @map("source_length")
+  inputTextHash        String    @map("input_text_hash") @db.VarChar(64)
   // The model's own output. NEVER overwritten by an edit — the AC requires the
   // AI suggestion and the human decision to be stored together, which is only
   // provable if the two live in separate columns.
-  aiSummaryText      String    @map("ai_summary_text")
+  aiSummaryText        String    @map("ai_summary_text")
   // The reviewer's edit, when they made one. Null means "confirmed the AI text
   // unchanged", which is itself a meaningful decision and must stay
   // distinguishable from "edited it to the same string".
-  reviewerEditedText String?   @map("reviewer_edited_text")
+  reviewerEditedText   String?   @map("reviewer_edited_text")
   // Which entry point produced the Need this summarises: manual_entry |
   // bulk_import | pdf_import | citizen_input. Mirrors NeedSource's vocabulary
   // so a report can group by it without a translation table.
-  triggerSource      String    @map("trigger_source") @db.VarChar(40)
+  triggerSource        String    @map("trigger_source") @db.VarChar(40)
   // RIO-AI-003 AC 5, made mechanical — see need-summary.verify.ts. Each entry
   // is "CODE:detail" for one provably-wrong thing found in the generated
   // summary (a fact the model invented, a fact it dropped, a number that is in
   // the summary but not the source). Empty is the normal case. Stored rather
   // than recomputed so the reviewer queue can sort risky summaries to the top
   // without re-running the checks on every read.
-  verificationWarnings String[] @map("verification_warnings")
-  generatedBy        String?   @map("generated_by") @db.Uuid
-  generatedAt        DateTime  @default(now()) @map("generated_at") @db.Timestamptz(6)
-  confirmedBy        String?   @map("confirmed_by") @db.Uuid
-  confirmedAt        DateTime? @map("confirmed_at") @db.Timestamptz(6)
-  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  verificationWarnings String[]  @map("verification_warnings")
+  generatedBy          String?   @map("generated_by") @db.Uuid
+  generatedAt          DateTime  @default(now()) @map("generated_at") @db.Timestamptz(6)
+  confirmedBy          String?   @map("confirmed_by") @db.Uuid
+  confirmedAt          DateTime? @map("confirmed_at") @db.Timestamptz(6)
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   org   Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
   need  Need         @relation(fields: [needId], references: [id], onDelete: Cascade)
@@ -1590,37 +1661,37 @@ enum PriorityLevel {
 }
 
 model PriorityScore {
-  id           String        @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  orgId        String        @map("org_id") @db.Uuid
-  needId       String        @map("need_id") @db.Uuid
+  id             String        @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId          String        @map("org_id") @db.Uuid
+  needId         String        @map("need_id") @db.Uuid
   // Denormalized from Need.studyId — see Evidence.studyId's comment.
-  studyId      String        @map("study_id") @db.Uuid
+  studyId        String        @map("study_id") @db.Uuid
   // Same null = Consolidated (within this Need) / set = single-link
   // convention as ResponseQualityResult.surveyLinkId above.
-  surveyLinkId String?       @map("survey_link_id") @db.Uuid
-  overallScore Int           @map("overall_score")
-  level        PriorityLevel
-  gapType      String        @map("gap_type") @db.VarChar(50)
+  surveyLinkId   String?       @map("survey_link_id") @db.Uuid
+  overallScore   Int           @map("overall_score")
+  level          PriorityLevel
+  gapType        String        @map("gap_type") @db.VarChar(50)
   // Explainable breakdown: one entry per Question Bank indicator that fed
   // this score — { indicator, weight, responseValue, weightedContribution }
   // — plus the equity-flag/normalization inputs. See priority/scoring.ts.
-  factors      Json
+  factors        Json
   // RIO-FR-003 AC 5 -- "reviewer overrides are captured with a reason and are
   // DISTINGUISHABLE from the original system-computed value". Same shape as
   // NeedStatementSummary's ai/reviewer text pair: `overallScore` above always
   // keeps what the engine computed and is never rewritten, so the trail never
   // loses the original once a reviewer disagrees with it.
-  overrideScore  Int?      @map("override_score")
-  overrideReason String?   @map("override_reason")
-  overriddenBy   String?   @map("overridden_by") @db.Uuid
-  overriddenAt   DateTime? @map("overridden_at") @db.Timestamptz(6)
-  cycleNote    String?       @map("cycle_note") @db.VarChar(200)
-  scoredAt     DateTime      @default(now()) @map("scored_at") @db.Timestamptz(6)
+  overrideScore  Int?          @map("override_score")
+  overrideReason String?       @map("override_reason")
+  overriddenBy   String?       @map("overridden_by") @db.Uuid
+  overriddenAt   DateTime?     @map("overridden_at") @db.Timestamptz(6)
+  cycleNote      String?       @map("cycle_note") @db.VarChar(200)
+  scoredAt       DateTime      @default(now()) @map("scored_at") @db.Timestamptz(6)
   // Priority Scoring stays subject to reviewer approval, same as AI
   // Classification — never publicly visible (e.g. Priority Dashboard) until
   // approved. Nullable/false until a reviewer acts (see PriorityService.approve).
-  approvedBy   String?       @map("approved_by") @db.Uuid
-  approvedAt   DateTime?     @map("approved_at") @db.Timestamptz(6)
+  approvedBy     String?       @map("approved_by") @db.Uuid
+  approvedAt     DateTime?     @map("approved_at") @db.Timestamptz(6)
 
   org        Organisation      @relation(fields: [orgId], references: [id], onDelete: Cascade)
   need       Need              @relation(fields: [needId], references: [id], onDelete: Cascade)
@@ -1704,7 +1775,7 @@ model NeedDecision {
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  need         Need                     @relation(fields: [needId], references: [id], onDelete: Cascade)
+  need         Need                      @relation(fields: [needId], references: [id], onDelete: Cascade)
   statusEvents NeedDecisionStatusEvent[]
 
   @@index([orgId])
@@ -1750,19 +1821,19 @@ enum SharingStatus {
 }
 
 model SharingRequest {
-  id               String        @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  ownerOrgId       String        @map("owner_org_id") @db.Uuid
-  requestingOrgId  String        @map("requesting_org_id") @db.Uuid
-  studyId          String        @map("study_id") @db.Uuid
-  status           SharingStatus @default(pending)
-  requestedBy      String        @map("requested_by") @db.Uuid
-  requestedAt      DateTime      @default(now()) @map("requested_at") @db.Timestamptz(6)
-  decidedBy        String?       @map("decided_by") @db.Uuid
-  decidedAt        DateTime?     @map("decided_at") @db.Timestamptz(6)
-  note             String?       @db.VarChar(1000)
+  id              String        @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  ownerOrgId      String        @map("owner_org_id") @db.Uuid
+  requestingOrgId String        @map("requesting_org_id") @db.Uuid
+  studyId         String        @map("study_id") @db.Uuid
+  status          SharingStatus @default(pending)
+  requestedBy     String        @map("requested_by") @db.Uuid
+  requestedAt     DateTime      @default(now()) @map("requested_at") @db.Timestamptz(6)
+  decidedBy       String?       @map("decided_by") @db.Uuid
+  decidedAt       DateTime?     @map("decided_at") @db.Timestamptz(6)
+  note            String?       @db.VarChar(1000)
   // Optional reason the owner org gives when rejecting (or, less commonly,
   // approving with a caveat) — same field shape as ReportSharingRequest.
-  decisionNote     String?       @map("decision_note") @db.VarChar(1000)
+  decisionNote    String?       @map("decision_note") @db.VarChar(1000)
 
   ownerOrg      Organisation @relation("SharingRequestsOwned", fields: [ownerOrgId], references: [id], onDelete: Cascade)
   requestingOrg Organisation @relation("SharingRequestsMade", fields: [requestingOrgId], references: [id], onDelete: Cascade)
@@ -1788,17 +1859,17 @@ model SharingRequest {
 // shared base type and the shared `<SharingRequestsPage>` frontend
 // component, not this schema.
 model ReportSharingRequest {
-  id               String        @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  ownerOrgId       String        @map("owner_org_id") @db.Uuid
-  requestingOrgId  String        @map("requesting_org_id") @db.Uuid
-  reportId         String        @map("report_id") @db.Uuid
-  status           SharingStatus @default(pending)
-  requestedBy      String        @map("requested_by") @db.Uuid
-  requestedAt      DateTime      @default(now()) @map("requested_at") @db.Timestamptz(6)
-  decidedBy        String?       @map("decided_by") @db.Uuid
-  decidedAt        DateTime?     @map("decided_at") @db.Timestamptz(6)
-  note             String?       @db.VarChar(1000)
-  decisionNote     String?       @map("decision_note") @db.VarChar(1000)
+  id              String        @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  ownerOrgId      String        @map("owner_org_id") @db.Uuid
+  requestingOrgId String        @map("requesting_org_id") @db.Uuid
+  reportId        String        @map("report_id") @db.Uuid
+  status          SharingStatus @default(pending)
+  requestedBy     String        @map("requested_by") @db.Uuid
+  requestedAt     DateTime      @default(now()) @map("requested_at") @db.Timestamptz(6)
+  decidedBy       String?       @map("decided_by") @db.Uuid
+  decidedAt       DateTime?     @map("decided_at") @db.Timestamptz(6)
+  note            String?       @db.VarChar(1000)
+  decisionNote    String?       @map("decision_note") @db.VarChar(1000)
 
   ownerOrg      Organisation @relation("ReportSharingRequestsOwned", fields: [ownerOrgId], references: [id], onDelete: Cascade)
   requestingOrg Organisation @relation("ReportSharingRequestsMade", fields: [requestingOrgId], references: [id], onDelete: Cascade)
@@ -1851,41 +1922,41 @@ enum ReportStatus {
 }
 
 model Report {
-  id          String       @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  orgId       String       @map("org_id") @db.Uuid
-  reportType  ReportType   @map("report_type")
-  status      ReportStatus @default(draft)
-  title       String       @db.VarChar(300)
+  id                 String       @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId              String       @map("org_id") @db.Uuid
+  reportType         ReportType   @map("report_type")
+  status             ReportStatus @default(draft)
+  title              String       @db.VarChar(300)
   // Only set for study-scoped types (e.g. RPT-04 Domain-wise Needs);
   // null for org-wide aggregate types (e.g. RPT-02 Collective Dashboard).
-  studyId      String?      @map("study_id") @db.Uuid
+  studyId            String?      @map("study_id") @db.Uuid
   // Only set for survey-scoped types — RPT-01 (Individual Survey Report) and
   // RPT-15 (Combined Survey + Dashboard Report) are generated from ONE survey,
   // so without this two surveys under the same study produce two reports that
   // can't be told apart. Null for study-scoped and org-wide types.
   // onDelete: SetNull — a released report is an archival record and outlives
   // the survey it was generated from.
-  surveyId     String?      @map("survey_id") @db.Uuid
-  filters      Json
-  content      Json
-  generatedBy  String       @map("generated_by") @db.Uuid
-  generatedAt  DateTime     @default(now()) @map("generated_at") @db.Timestamptz(6)
+  surveyId           String?      @map("survey_id") @db.Uuid
+  filters            Json
+  content            Json
+  generatedBy        String       @map("generated_by") @db.Uuid
+  generatedAt        DateTime     @default(now()) @map("generated_at") @db.Timestamptz(6)
   // Two-step approval: Officer confirms a draft first, then a Reviewer
   // approves (see ReportsService.confirm/approve) — reviewedBy/At is the
   // second (Reviewer) step, officerConfirmedBy/At is the first.
-  officerConfirmedBy String?   @map("officer_confirmed_by") @db.Uuid
-  officerConfirmedAt DateTime? @map("officer_confirmed_at") @db.Timestamptz(6)
-  reviewedBy   String?      @map("reviewed_by") @db.Uuid
-  reviewedAt   DateTime?    @map("reviewed_at") @db.Timestamptz(6)
+  officerConfirmedBy String?      @map("officer_confirmed_by") @db.Uuid
+  officerConfirmedAt DateTime?    @map("officer_confirmed_at") @db.Timestamptz(6)
+  reviewedBy         String?      @map("reviewed_by") @db.Uuid
+  reviewedAt         DateTime?    @map("reviewed_at") @db.Timestamptz(6)
   // Mandatory on both approve and reject (RIO-FR-007 clarification: the
   // notes requirement extends to all four report categories, not just the
   // NCNP Compiled Report) — see ReportsService.approve/reject.
-  reviewerNotes String?     @map("reviewer_notes")
-  archivedAt   DateTime?    @map("archived_at") @db.Timestamptz(6)
+  reviewerNotes      String?      @map("reviewer_notes")
+  archivedAt         DateTime?    @map("archived_at") @db.Timestamptz(6)
 
-  org    Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  study  Study?       @relation(fields: [studyId], references: [id], onDelete: Cascade)
-  survey Survey?      @relation(fields: [surveyId], references: [id], onDelete: SetNull)
+  org             Organisation           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  study           Study?                 @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  survey          Survey?                @relation(fields: [surveyId], references: [id], onDelete: SetNull)
   sharingRequests ReportSharingRequest[]
 
   @@index([orgId])
@@ -1961,33 +2032,33 @@ enum MethodologyStatus {
 }
 
 model MethodologyConfig {
-  id                     String            @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  id                       String            @id @default(dbgenerated("uuidv7()")) @db.Uuid
   // Free-text version label the reviewer sets (e.g. "v1.0 - Approved
   // implementation baseline") — mirrors question-bank-v1.json's own
   // _meta.versionLabel convention, not a semver the app enforces.
-  version                String            @db.VarChar(100)
-  status                 MethodologyStatus @default(draft)
-  publishedBy            String?           @map("published_by") @db.Uuid
-  publishedAt            DateTime?         @map("published_at") @db.Timestamptz(6)
+  version                  String            @db.VarChar(100)
+  status                   MethodologyStatus @default(draft)
+  publishedBy              String?           @map("published_by") @db.Uuid
+  publishedAt              DateTime?         @map("published_at") @db.Timestamptz(6)
   // System Reviewer's decision on the current pending_approval submission —
   // cleared back to null on every edit, since a new edit invalidates any
   // prior approval and needs its own review.
-  reviewedBy             String?           @map("reviewed_by") @db.Uuid
-  reviewedAt             DateTime?         @map("reviewed_at") @db.Timestamptz(6)
-  reviewNotes            String?           @map("review_notes")
+  reviewedBy               String?           @map("reviewed_by") @db.Uuid
+  reviewedAt               DateTime?         @map("reviewed_at") @db.Timestamptz(6)
+  reviewNotes              String?           @map("review_notes")
   // Priority Dashboard's placeholder scoring thresholds — see
   // priority.placeholder.ts. Shape: { criticalSeverity, highSeverity,
   // mediumSeverity, equityHighSeverity }.
-  priorityThresholds     Json              @map("priority_thresholds")
+  priorityThresholds       Json              @map("priority_thresholds")
   // The 9 configurable Priority Scoring factors from scope.md §8 — each
   // { key, label, weight }. `key`/`label` are the methodology's fixed
   // vocabulary (scorePriority keys off `key`); only `weight` is meant to be
   // edited from the Methodology Configuration screen.
-  priorityFactorWeights  Json              @map("priority_factor_weights")
+  priorityFactorWeights    Json              @map("priority_factor_weights")
   // Response Quality's confidence-flag rule — see
   // response-quality.placeholder.ts. Shape: { dontKnowRatioThreshold,
   // minRespondentsForStandardConfidence }.
-  confidenceFlagSettings Json              @map("confidence_flag_settings")
+  confidenceFlagSettings   Json              @map("confidence_flag_settings")
   // RIO-AI-001's "low-confidence suggestions below a CONFIGURABLE threshold
   // are visually flagged" rule. Shape: { lowConfidenceThreshold,
   // veryLowConfidenceThreshold } — both 0..1, matching AiDecision.confidence's
@@ -1995,14 +2066,14 @@ model MethodologyConfig {
   // component before, which meant the acceptance criterion's "configurable"
   // could not be met at all; they live here so the Methodology Configuration
   // screen owns them like every other methodology threshold.
-  aiClassificationSettings Json            @map("ai_classification_settings")
+  aiClassificationSettings Json              @map("ai_classification_settings")
   // RIO-AI-003's "a summary is suggested for any need above a DEFINED length
   // threshold" rule. Shape: { statementLengthThreshold, maxSummaryChars }.
   // statementLengthThreshold is a character count on the raw statement and is
   // deliberately language-neutral (client decision, 25 Aug 2026: 1,500 for
   // every language) — a word count would behave very differently in Arabic,
   // which is more compact per character than English.
-  aiSummarySettings      Json              @map("ai_summary_settings")
+  aiSummarySettings        Json              @map("ai_summary_settings")
   // RIO-FR-003 -- the conversion rules that turn raw data into the 0-100
   // scale the factor weights multiply. `priorityFactorWeights` above says a
   // factor is worth 12%; this says what "450 affected people" is worth out of
@@ -2011,9 +2082,9 @@ model MethodologyConfig {
   //
   // Deliberately mirrors ScoringLookup's numericFloor/numericCeiling pattern,
   // which already does exactly this job for numeric survey questions.
-  priorityFactorScales   Json              @map("priority_factor_scales")
-  updatedAt              DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
-  updatedBy              String?           @map("updated_by") @db.Uuid
+  priorityFactorScales     Json              @map("priority_factor_scales")
+  updatedAt                DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy                String?           @map("updated_by") @db.Uuid
 
   @@map("methodology_configs")
 }
@@ -2027,10 +2098,10 @@ model MethodologyConfig {
 // Read-only from the application's own perspective — nothing ever updates or
 // deletes a row here.
 model MethodologyConfigHistory {
-  id                     String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  configId               String   @map("config_id") @db.Uuid
-  version                String   @db.VarChar(100)
-  status                 MethodologyStatus
+  id                       String            @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  configId                 String            @map("config_id") @db.Uuid
+  version                  String            @db.VarChar(100)
+  status                   MethodologyStatus
   // "edit" (update()) / "approve" / "reject" / "publish" — which action
   // produced this snapshot, so the timeline reads as a log of actions, not
   // just states. @map is required: this table's migration creates the
@@ -2039,20 +2110,20 @@ model MethodologyConfigHistory {
   // /methodology-config/history 500s. Bug fix found and fixed
   // independently on both branches; caught live-testing the approve/reject
   // flow, not introduced by it.
-  changeType             String   @map("change_type") @db.VarChar(20)
-  priorityThresholds     Json     @map("priority_thresholds")
-  priorityFactorWeights  Json     @map("priority_factor_weights")
-  confidenceFlagSettings Json     @map("confidence_flag_settings")
+  changeType               String            @map("change_type") @db.VarChar(20)
+  priorityThresholds       Json              @map("priority_thresholds")
+  priorityFactorWeights    Json              @map("priority_factor_weights")
+  confidenceFlagSettings   Json              @map("confidence_flag_settings")
   // Snapshotted alongside the other three families — RIO-NFR-017 asks for a
   // history of EVERY configuration change, and leaving this one out would
   // produce history rows that silently omit the only thing that changed
   // when an AI confidence threshold is edited.
-  aiClassificationSettings Json   @map("ai_classification_settings")
+  aiClassificationSettings Json              @map("ai_classification_settings")
   // Snapshotted for the same reason as aiClassificationSettings above.
-  aiSummarySettings      Json     @map("ai_summary_settings")
-  priorityFactorScales   Json     @map("priority_factor_scales")
-  changedBy              String?  @map("changed_by") @db.Uuid
-  changedAt              DateTime @default(now()) @map("changed_at") @db.Timestamptz(6)
+  aiSummarySettings        Json              @map("ai_summary_settings")
+  priorityFactorScales     Json              @map("priority_factor_scales")
+  changedBy                String?           @map("changed_by") @db.Uuid
+  changedAt                DateTime          @default(now()) @map("changed_at") @db.Timestamptz(6)
 
   @@index([configId])
   @@map("methodology_config_history")
@@ -2126,28 +2197,28 @@ model Question {
   // ──────── v5.0 methodology attributes (RIO-AI-005) ────────
   // The workbook's verbatim Answer Type label, kept for traceability alongside
   // the decomposed `measurementMode` above.
-  answerTypeRaw                String?  @map("answer_type_raw") @db.VarChar(120)
+  answerTypeRaw               String? @map("answer_type_raw") @db.VarChar(120)
   // "person" | "child" | "woman" | "youth" when administered once per eligible
   // individual; null otherwise.
-  rosterScope                  String?  @map("roster_scope") @db.VarChar(20)
-  isCompound                   Boolean  @default(false) @map("is_compound")
-  isAdminRecord                Boolean  @default(false) @map("is_admin_record")
+  rosterScope                 String? @map("roster_scope") @db.VarChar(20)
+  isCompound                  Boolean @default(false) @map("is_compound")
+  isAdminRecord               Boolean @default(false) @map("is_admin_record")
   // False for the 7 questionnaire-structure/roster/template modules
   // (XDM-01..07) — instrument scaffolding, not fielded questions. 193 - 7 = 186.
-  isFielded                    Boolean  @default(true) @map("is_fielded")
+  isFielded                   Boolean @default(true) @map("is_fielded")
   // 186 - WSH-15 (administrative record) - SOC-08 (on hold under the
   // sensitivity protocol) = the 184 actually asked of a household.
-  isHouseholdFielded           Boolean  @default(true) @map("is_household_fielded")
+  isHouseholdFielded          Boolean @default(true) @map("is_household_fielded")
   // XDM-08 is scored but excluded by design from the nine-domain Village
   // Development Needs Index; it feeds the vulnerability classification.
-  excludedFromNineDomainIndex  Boolean  @default(false) @map("excluded_from_nine_domain_index")
+  excludedFromNineDomainIndex Boolean @default(false) @map("excluded_from_nine_domain_index")
   // The anchor KPI's question code this feeder item enriches (20 items).
-  feedsKpiAnchor               String?  @map("feeds_kpi_anchor") @db.VarChar(64)
+  feedsKpiAnchor              String? @map("feeds_kpi_anchor") @db.VarChar(64)
   // The v1.0 -> v5.0 code map ("Former code: H01"). All 193 v5.0 items carry one.
-  formerCode                   String?  @map("former_code") @db.VarChar(64)
-  targetRespondent             String?  @map("target_respondent")
+  formerCode                  String? @map("former_code") @db.VarChar(64)
+  targetRespondent            String? @map("target_respondent")
   // The roster iteration scope verbatim, e.g. "each child aged 0-59 months".
-  rosterLoop                   String?  @map("roster_loop")
+  rosterLoop                  String? @map("roster_loop")
 
   // RIO-FR-012 (Sprint 2) — Question Bank management. Deactivation is a soft
   // hide, not a delete: a deactivated question disappears from new-survey
@@ -2156,9 +2227,9 @@ model Question {
   // that already included it — already-published surveys and their scored
   // responses never change shape because a question was deactivated later.
   // Reversible by design (reactivate = isActive: true again).
-  isActive          Boolean   @default(true) @map("is_active")
-  deactivatedAt     DateTime? @map("deactivated_at") @db.Timestamptz(6)
-  deactivatedBy     String?   @map("deactivated_by") @db.Uuid
+  isActive      Boolean   @default(true) @map("is_active")
+  deactivatedAt DateTime? @map("deactivated_at") @db.Timestamptz(6)
+  deactivatedBy String?   @map("deactivated_by") @db.Uuid
 
   // RIO-FR-012 — versioning + approval (client-confirmed Q30/Q31, 2026-08-20).
   // Every edit/deactivate/reactivate creates a NEW row rather than mutating
@@ -2171,19 +2242,19 @@ model Question {
   // surveys/Question Bank browsing; only ever one true row per
   // (methodologyVersionId, questionId), enforced in QuestionsService, not
   // the DB, since Prisma's schema DSL has no partial-unique-index primitive.
-  version          Int      @default(1)
-  isCurrentVersion Boolean  @default(true) @map("is_current_version")
+  version           Int       @default(1)
+  isCurrentVersion  Boolean   @default(true) @map("is_current_version")
   // 'approved' | 'pending_approval' | 'rejected'. Only an 'approved' AND
   // isCurrentVersion row is ever selectable for a new survey — a pending
   // edit does not replace the active version until a Human Reviewer
   // approves it (client-confirmed: "previously-active version remains
   // available for new surveys... new version only becomes available once
   // approved").
-  approvalStatus   String   @default("approved") @map("approval_status") @db.VarChar(20)
+  approvalStatus    String    @default("approved") @map("approval_status") @db.VarChar(20)
   // Self-relation: the row this version was created from, for audit trail.
   // No onDelete action needed — Question rows are never deleted.
-  previousVersionId String? @map("previous_version_id") @db.Uuid
-  submittedBy       String? @map("submitted_by") @db.Uuid
+  previousVersionId String?   @map("previous_version_id") @db.Uuid
+  submittedBy       String?   @map("submitted_by") @db.Uuid
   submittedAt       DateTime? @map("submitted_at") @db.Timestamptz(6)
   reviewedBy        String?   @map("reviewed_by") @db.Uuid
   reviewedAt        DateTime? @map("reviewed_at") @db.Timestamptz(6)
@@ -2193,8 +2264,8 @@ model Question {
   // RESTRICT, not SetNull: a version any question still belongs to must not be
   // deletable — retire it (status = 'RETIRED') instead.
   methodologyVersion MethodologyVersion @relation(fields: [methodologyVersionId], references: [id], onDelete: Restrict)
-  previousVersion    Question?  @relation("QuestionVersionHistory", fields: [previousVersionId], references: [id], onDelete: SetNull)
-  nextVersions       Question[] @relation("QuestionVersionHistory")
+  previousVersion    Question?          @relation("QuestionVersionHistory", fields: [previousVersionId], references: [id], onDelete: SetNull)
+  nextVersions       Question[]         @relation("QuestionVersionHistory")
 
   @@unique([methodologyVersionId, questionId, version])
   @@index([domain, subDomain])
@@ -2226,9 +2297,9 @@ model AiSuggestion {
   createdBy            String   @map("created_by") @db.Uuid
   createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  org           Organisation    @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  need          Need            @relation(fields: [needId], references: [id], onDelete: Cascade)
-  study         Study           @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  org            Organisation    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  need           Need            @relation(fields: [needId], references: [id], onDelete: Cascade)
+  study          Study           @relation(fields: [studyId], references: [id], onDelete: Cascade)
   humanDecisions HumanDecision[]
 
   @@index([orgId])
@@ -2283,13 +2354,13 @@ enum RejectionReasonCode {
 // (that flow is the placeholder fixed-question-set QR flow; this is the
 // eventual real per-Study question set once a human finalizes it).
 model Survey {
-  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  orgId     String   @map("org_id") @db.Uuid
-  needId    String   @map("need_id") @db.Uuid
+  id                 String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId              String   @map("org_id") @db.Uuid
+  needId             String   @map("need_id") @db.Uuid
   // Denormalized from Need.studyId — see Evidence.studyId's comment.
-  studyId   String   @map("study_id") @db.Uuid
-  title     String   @db.VarChar(300)
-  status    String   @db.VarChar(64)
+  studyId            String   @map("study_id") @db.Uuid
+  title              String   @db.VarChar(300)
+  status             String   @db.VarChar(64)
   // Snapshot of MethodologyConfig.version at the moment this Survey was
   // (most recently) published — never a live reference, so a later
   // Methodology/Question Bank change can't silently change what an
@@ -2297,7 +2368,7 @@ model Survey {
   // PUBLISHED transition (see SurveysService.saveDraft); null for a Survey
   // that has never been published, or one published before this column
   // existed.
-  methodologyVersion String? @map("methodology_version") @db.VarChar(100)
+  methodologyVersion String?  @map("methodology_version") @db.VarChar(100)
   // RIO-FR-011 (client-confirmed): once PUBLISHED with responses collected,
   // a survey is never edited in place — SurveysService.createNewVersion
   // creates a new DRAFT row instead, incrementing `version` and pointing
@@ -2307,11 +2378,11 @@ model Survey {
   // under" is true by construction, not by any special-case logic.
   // `@unique` on previousVersionId: a given version can be superseded by at
   // most one newer version, never branched.
-  version            Int     @default(1)
-  previousVersionId  String? @unique @map("previous_version_id") @db.Uuid
-  createdBy String   @map("created_by") @db.Uuid
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  version            Int      @default(1)
+  previousVersionId  String?  @unique @map("previous_version_id") @db.Uuid
+  createdBy          String   @map("created_by") @db.Uuid
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   // ──────── Sample Description ────────
   // A Survey Design step, completed by the Researcher before Submit for
@@ -2321,10 +2392,10 @@ model Survey {
   // surveyed and how. All four nullable because a DRAFT survey created
   // before this step is filled (or before this feature existed) has none
   // yet.
-  targetGroup         String? @map("target_group") @db.VarChar(500)
-  expectedSampleSize  Int?    @map("expected_sample_size")
-  selectionApproach   String? @map("selection_approach") @db.VarChar(1000)
-  geographicCoverage  String? @map("geographic_coverage") @db.VarChar(500)
+  targetGroup        String? @map("target_group") @db.VarChar(500)
+  expectedSampleSize Int?    @map("expected_sample_size")
+  selectionApproach  String? @map("selection_approach") @db.VarChar(1000)
+  geographicCoverage String? @map("geographic_coverage") @db.VarChar(500)
 
   // ──────── Survey Approval workflow ────────
   // status also takes SUBMITTED and REJECTED now, alongside the existing
@@ -2334,7 +2405,7 @@ model Survey {
   // SUBMITTED->REJECTED. No relation to User here — same "plain UUID,
   // resolved by app code" convention as `createdBy` above, not a Prisma
   // relation.
-  submittedAt      DateTime? @map("submitted_at") @db.Timestamptz(6)
+  submittedAt         DateTime?            @map("submitted_at") @db.Timestamptz(6)
   // The Approver's reviewer notes for the most recent decision — mandatory
   // on both Approve & Publish and Reject (client requirement: reviewer
   // notes must be captured before publishing). Shown prominently to the
@@ -2346,7 +2417,7 @@ model Survey {
   // history regardless; this column is only "the current outstanding note."
   // Nullable only because surveys approved/rejected before this requirement
   // existed have no value.
-  approverComments String?   @map("approver_comments")
+  approverComments    String?              @map("approver_comments")
   // Structured reason for the most recent rejection, alongside the free-text
   // approverComments above — mandatory whenever a survey is rejected (see
   // SurveysService.rejectSurvey), required so "Rejected Surveys — Reason
@@ -2355,22 +2426,22 @@ model Survey {
   // for Approval, same lifecycle as approverComments. Nullable here only
   // because surveys rejected before this field existed have no value.
   rejectionReasonCode RejectionReasonCode? @map("rejection_reason_code")
-  approvedAt       DateTime? @map("approved_at") @db.Timestamptz(6)
-  approvedBy       String?   @map("approved_by") @db.Uuid
-  rejectedAt       DateTime? @map("rejected_at") @db.Timestamptz(6)
-  rejectedBy       String?   @map("rejected_by") @db.Uuid
-  publishedAt      DateTime? @map("published_at") @db.Timestamptz(6)
-  publishedBy      String?   @map("published_by") @db.Uuid
+  approvedAt          DateTime?            @map("approved_at") @db.Timestamptz(6)
+  approvedBy          String?              @map("approved_by") @db.Uuid
+  rejectedAt          DateTime?            @map("rejected_at") @db.Timestamptz(6)
+  rejectedBy          String?              @map("rejected_by") @db.Uuid
+  publishedAt         DateTime?            @map("published_at") @db.Timestamptz(6)
+  publishedBy         String?              @map("published_by") @db.Uuid
 
-  org             Organisation           @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  need            Need                   @relation(fields: [needId], references: [id], onDelete: Cascade)
-  study           Study                  @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  org                        Organisation                @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  need                       Need                        @relation(fields: [needId], references: [id], onDelete: Cascade)
+  study                      Study                       @relation(fields: [studyId], references: [id], onDelete: Cascade)
   // RIO-FR-011 self-relation: previousVersion is null for the first-ever
   // version of a Need's survey. onDelete: SetNull (not Cascade) — deleting a
   // newer draft version must never cascade into deleting the published
   // version it was drafted from.
-  previousVersion Survey?                @relation("SurveyVersionChain", fields: [previousVersionId], references: [id], onDelete: SetNull)
-  nextVersion     Survey?                @relation("SurveyVersionChain")
+  previousVersion            Survey?                     @relation("SurveyVersionChain", fields: [previousVersionId], references: [id], onDelete: SetNull)
+  nextVersion                Survey?                     @relation("SurveyVersionChain")
   surveyQuestions            SurveyQuestion[]
   builderResponses           SurveyBuilderResponse[]
   responseAnswers            ResponseAnswer[]
@@ -2456,16 +2527,16 @@ model SurveyBuilderResponse {
 }
 
 model MethodologyVersion {
-  id          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  name        String   @db.VarChar(200)
-  version     String   @unique @db.VarChar(100)
-  status      String   @default("DRAFT") @db.VarChar(64) // DRAFT | PUBLISHED | RETIRED
+  id          String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  name        String    @db.VarChar(200)
+  version     String    @unique @db.VarChar(100)
+  status      String    @default("DRAFT") @db.VarChar(64) // DRAFT | PUBLISHED | RETIRED
   description String?
-  createdBy   String   @map("created_by") @db.Uuid
-  approvedBy  String?  @map("approved_by") @db.Uuid
+  createdBy   String    @map("created_by") @db.Uuid
+  approvedBy  String?   @map("approved_by") @db.Uuid
   approvedAt  DateTime? @map("approved_at") @db.Timestamptz(6)
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   scoringLookups             ScoringLookup[]
   questions                  Question[]
@@ -2479,23 +2550,23 @@ model MethodologyVersion {
 }
 
 model ScoringLookup {
-  id                   String             @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  methodologyVersionId String             @map("methodology_version_id") @db.Uuid
-  questionId           String             @map("question_id") @db.VarChar(64)
-  lookupType           String             @map("lookup_type") @db.VarChar(64) // OPTION | LIKERT | NUMERIC | MULTI_SELECT
-  optionId             String?            @map("option_id") @db.VarChar(100)
-  optionOrder          Int?               @map("option_order")
-  severityScore        Decimal?           @map("severity_score") @db.Decimal(5, 2)
-  numericFloor         Decimal?           @map("numeric_floor") @db.Decimal(10, 2)
-  numericCeiling       Decimal?           @map("numeric_ceiling") @db.Decimal(10, 2)
-  severityDirection    String?            @map("severity_direction") @db.VarChar(64)
-  isExcluded           Boolean            @default(false) @map("is_excluded")
-  exclusionReason      String?            @map("exclusion_reason") @db.VarChar(64)
-  isActive             Boolean            @default(true) @map("is_active")
-  createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt            DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                   String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  methodologyVersionId String   @map("methodology_version_id") @db.Uuid
+  questionId           String   @map("question_id") @db.VarChar(64)
+  lookupType           String   @map("lookup_type") @db.VarChar(64) // OPTION | LIKERT | NUMERIC | MULTI_SELECT
+  optionId             String?  @map("option_id") @db.VarChar(100)
+  optionOrder          Int?     @map("option_order")
+  severityScore        Decimal? @map("severity_score") @db.Decimal(5, 2)
+  numericFloor         Decimal? @map("numeric_floor") @db.Decimal(10, 2)
+  numericCeiling       Decimal? @map("numeric_ceiling") @db.Decimal(10, 2)
+  severityDirection    String?  @map("severity_direction") @db.VarChar(64)
+  isExcluded           Boolean  @default(false) @map("is_excluded")
+  exclusionReason      String?  @map("exclusion_reason") @db.VarChar(64)
+  isActive             Boolean  @default(true) @map("is_active")
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  methodologyVersion   MethodologyVersion @relation(fields: [methodologyVersionId], references: [id], onDelete: Cascade)
+  methodologyVersion     MethodologyVersion      @relation(fields: [methodologyVersionId], references: [id], onDelete: Cascade)
   responseSeverityScores ResponseSeverityScore[]
 
   @@index([methodologyVersionId])
@@ -2520,10 +2591,10 @@ model ResponseAnswer {
   submittedAt        DateTime @map("submitted_at") @db.Timestamptz(6)
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  org            Organisation    @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  surveyResponse SurveyResponse  @relation(fields: [surveyResponseId], references: [id], onDelete: Cascade)
-  survey         Survey          @relation(fields: [surveyId], references: [id], onDelete: Cascade)
-  study          Study           @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  org            Organisation            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  surveyResponse SurveyResponse          @relation(fields: [surveyResponseId], references: [id], onDelete: Cascade)
+  survey         Survey                  @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  study          Study                   @relation(fields: [studyId], references: [id], onDelete: Cascade)
   severityScores ResponseSeverityScore[]
 
   @@index([orgId])
@@ -2534,22 +2605,22 @@ model ResponseAnswer {
 }
 
 model ResponseSeverityScore {
-  id                   String             @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  orgId                String             @map("org_id") @db.Uuid
-  responseAnswerId     String             @map("response_answer_id") @db.Uuid
-  surveyResponseId     String             @map("survey_response_id") @db.Uuid
-  surveyId             String             @map("survey_id") @db.Uuid
-  studyId              String             @map("study_id") @db.Uuid
-  villageId            String?            @map("village_id") @db.VarChar(150)
-  questionId           String             @map("question_id") @db.VarChar(64)
-  methodologyVersionId String             @map("methodology_version_id") @db.Uuid
-  scoringLookupId      String?            @map("scoring_lookup_id") @db.Uuid
-  rawAnswerSnapshot    Json               @map("raw_answer_snapshot")
-  severityScore        Decimal?           @map("severity_score") @db.Decimal(5, 2)
-  scoreStatus          String             @map("score_status") @db.VarChar(64) // SCORED | EXCLUDED | NOT_APPLICABLE | NOT_SCOREABLE | ERROR
-  exclusionReason      String?            @map("exclusion_reason") @db.VarChar(64)
-  calculatedAt         DateTime           @default(now()) @map("calculated_at") @db.Timestamptz(6)
-  calculationVersion   String             @map("calculation_version") @db.VarChar(64)
+  id                   String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId                String   @map("org_id") @db.Uuid
+  responseAnswerId     String   @map("response_answer_id") @db.Uuid
+  surveyResponseId     String   @map("survey_response_id") @db.Uuid
+  surveyId             String   @map("survey_id") @db.Uuid
+  studyId              String   @map("study_id") @db.Uuid
+  villageId            String?  @map("village_id") @db.VarChar(150)
+  questionId           String   @map("question_id") @db.VarChar(64)
+  methodologyVersionId String   @map("methodology_version_id") @db.Uuid
+  scoringLookupId      String?  @map("scoring_lookup_id") @db.Uuid
+  rawAnswerSnapshot    Json     @map("raw_answer_snapshot")
+  severityScore        Decimal? @map("severity_score") @db.Decimal(5, 2)
+  scoreStatus          String   @map("score_status") @db.VarChar(64) // SCORED | EXCLUDED | NOT_APPLICABLE | NOT_SCOREABLE | ERROR
+  exclusionReason      String?  @map("exclusion_reason") @db.VarChar(64)
+  calculatedAt         DateTime @default(now()) @map("calculated_at") @db.Timestamptz(6)
+  calculationVersion   String   @map("calculation_version") @db.VarChar(64)
 
   org                Organisation       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   responseAnswer     ResponseAnswer     @relation(fields: [responseAnswerId], references: [id], onDelete: Cascade)
@@ -2568,24 +2639,24 @@ model ResponseSeverityScore {
 }
 
 model ScoreRollup {
-  id                    String             @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  orgId                 String             @map("org_id") @db.Uuid
-  studyId               String             @map("study_id") @db.Uuid
-  surveyId              String             @map("survey_id") @db.Uuid
-  villageId             String?            @map("village_id") @db.VarChar(150)
-  methodologyVersionId  String             @map("methodology_version_id") @db.Uuid
-  rollupLevel           String             @map("rollup_level") @db.VarChar(64) // QUESTION | KPI | INDICATOR | SUB_DOMAIN | DOMAIN | OVERALL
-  entityId              String             @map("entity_id") @db.VarChar(150) // questionId, kpiId, etc.
-  entityNameSnapshot    String             @map("entity_name_snapshot") @db.VarChar(300)
-  severityScore         Decimal?           @map("severity_score") @db.Decimal(5, 2)
-  validResponseCount    Int                @map("valid_response_count")
-  excludedResponseCount Int                @map("excluded_response_count")
-  dontKnowCount         Int                @map("dont_know_count")
-  dontKnowRate          Decimal            @map("dont_know_rate") @db.Decimal(5, 4)
-  notApplicableCount    Int                @map("not_applicable_count")
-  confidenceLevel       String             @map("confidence_level") @db.VarChar(64) // LOW | STANDARD
-  calculatedAt          DateTime           @default(now()) @map("calculated_at") @db.Timestamptz(6)
-  calculationVersion    String             @map("calculation_version") @db.VarChar(64)
+  id                    String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId                 String   @map("org_id") @db.Uuid
+  studyId               String   @map("study_id") @db.Uuid
+  surveyId              String   @map("survey_id") @db.Uuid
+  villageId             String?  @map("village_id") @db.VarChar(150)
+  methodologyVersionId  String   @map("methodology_version_id") @db.Uuid
+  rollupLevel           String   @map("rollup_level") @db.VarChar(64) // QUESTION | KPI | INDICATOR | SUB_DOMAIN | DOMAIN | OVERALL
+  entityId              String   @map("entity_id") @db.VarChar(150) // questionId, kpiId, etc.
+  entityNameSnapshot    String   @map("entity_name_snapshot") @db.VarChar(300)
+  severityScore         Decimal? @map("severity_score") @db.Decimal(5, 2)
+  validResponseCount    Int      @map("valid_response_count")
+  excludedResponseCount Int      @map("excluded_response_count")
+  dontKnowCount         Int      @map("dont_know_count")
+  dontKnowRate          Decimal  @map("dont_know_rate") @db.Decimal(5, 4)
+  notApplicableCount    Int      @map("not_applicable_count")
+  confidenceLevel       String   @map("confidence_level") @db.VarChar(64) // LOW | STANDARD
+  calculatedAt          DateTime @default(now()) @map("calculated_at") @db.Timestamptz(6)
+  calculationVersion    String   @map("calculation_version") @db.VarChar(64)
 
   org                Organisation       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   study              Study              @relation(fields: [studyId], references: [id], onDelete: Cascade)
@@ -2618,7 +2689,7 @@ model DomainPriorityConfig {
   createdAt                    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  methodologyVersion   MethodologyVersion @relation(fields: [methodologyVersionId], references: [id], onDelete: Cascade)
+  methodologyVersion MethodologyVersion @relation(fields: [methodologyVersionId], references: [id], onDelete: Cascade)
 
   @@unique([methodologyVersionId, domainKey])
   @@index([methodologyVersionId])
@@ -2686,6 +2757,27 @@ model AiPrioritySummary {
   inputReportDataHash       String                  @map("input_report_data_hash") @db.VarChar(64)
   inputEvidenceSnapshotHash String                  @map("input_evidence_snapshot_hash") @db.VarChar(64)
   aiOutputJson              Json                    @map("ai_output_json")
+  // Which language the stored narrative is actually in, verified against the
+  // generated text rather than taken from the request (RIO-I18N-003 §6).
+  //
+  // Part of the identity of a summary, not a display detail: report LABELS and
+  // FIGURES are translated at export time, so one approved report yields both
+  // editions with identical numbers — but generated prose cannot be
+  // substituted after the fact, so each language is a separate generated
+  // artefact. That is why this column joins the "which summary is live"
+  // predicates below: without it, generating Arabic SUPERSEDED the English
+  // summary instead of sitting beside it, and one officer's language choice
+  // silently invalidated another officer's confirmed work.
+  //
+  // Nullable with no default: rows written before this shipped genuinely do
+  // not know, and defaulting them to 'en' would assert something untrue about
+  // every one of them.
+  outputLanguage            String?                 @map("output_language") @db.VarChar(8)
+  // Set when the model was asked for one language and answered in another, and
+  // did so again on the single quality retry. The narrative is KEPT and flagged
+  // rather than discarded — a usable summary in the wrong language beats no
+  // summary, and every one of these is reviewed by a human before release.
+  languageMismatch          Boolean                 @default(false) @map("language_mismatch")
   officerEditedOutputJson   Json?                   @map("officer_edited_output_json")
   generatedBy               String                  @map("generated_by") @db.Uuid
   generatedAt               DateTime                @default(now()) @map("generated_at") @db.Timestamptz(6)
@@ -2694,48 +2786,50 @@ model AiPrioritySummary {
   createdAt                 DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                 DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org   Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  study Study        @relation(fields: [studyId], references: [id], onDelete: Cascade)
-  survey Survey       @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  org                     Organisation            @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  study                   Study                   @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  survey                  Survey                  @relation(fields: [surveyId], references: [id], onDelete: Cascade)
   combinedReportSummaries CombinedReportSummary[]
 
   @@index([orgId])
   @@index([studyId])
   @@index([surveyId])
   @@index([studyId, surveyId, villageId, status])
+  // The reuse/supersede lookup now filters on language too.
+  @@index([studyId, surveyId, villageId, summaryScope, outputLanguage, status])
   @@map("ai_priority_summaries")
 }
 
 model EvidenceDocument {
-  id                         String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  orgId                      String   @map("org_id") @db.Uuid
-  studyId                    String   @map("study_id") @db.Uuid
-  uploadedBy                 String   @map("uploaded_by") @db.Uuid
-  title                      String   @db.VarChar(200)
-  fileName                   String   @map("file_name") @db.VarChar(255)
-  fileType                   String   @map("file_type") @db.VarChar(100)
-  storageKey                 String   @map("storage_key") @db.VarChar(500)
-  documentType               String   @map("document_type") @db.VarChar(100)
-  sourceReferenceId          String   @map("source_reference_id") @db.VarChar(100)
-  collectedDate              DateTime @map("collected_date") @db.Timestamptz(6)
-  description                String?  @db.VarChar(1000)
-  linkedNeedId               String?  @map("linked_need_id") @db.Uuid
-  linkedDomainId             String?  @map("linked_domain_id") @db.VarChar(120)
-  linkedKpiId                String?  @map("linked_kpi_id") @db.VarChar(200)
-  parsingStatus              String   @default("UPLOADED") @map("parsing_status") @db.VarChar(50)
-  extractedText              String?  @map("extracted_text") @db.Text
+  id                         String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId                      String    @map("org_id") @db.Uuid
+  studyId                    String    @map("study_id") @db.Uuid
+  uploadedBy                 String    @map("uploaded_by") @db.Uuid
+  title                      String    @db.VarChar(200)
+  fileName                   String    @map("file_name") @db.VarChar(255)
+  fileType                   String    @map("file_type") @db.VarChar(100)
+  storageKey                 String    @map("storage_key") @db.VarChar(500)
+  documentType               String    @map("document_type") @db.VarChar(100)
+  sourceReferenceId          String    @map("source_reference_id") @db.VarChar(100)
+  collectedDate              DateTime  @map("collected_date") @db.Timestamptz(6)
+  description                String?   @db.VarChar(1000)
+  linkedNeedId               String?   @map("linked_need_id") @db.Uuid
+  linkedDomainId             String?   @map("linked_domain_id") @db.VarChar(120)
+  linkedKpiId                String?   @map("linked_kpi_id") @db.VarChar(200)
+  parsingStatus              String    @default("UPLOADED") @map("parsing_status") @db.VarChar(50)
+  extractedText              String?   @map("extracted_text") @db.Text
   parsedAt                   DateTime? @map("parsed_at") @db.Timestamptz(6)
-  parseError                 String?  @map("parse_error") @db.Text
-  isIncludedInCombinedReport Boolean  @default(true) @map("is_included_in_combined_report")
-  createdAt                  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                  DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  parseError                 String?   @map("parse_error") @db.Text
+  isIncludedInCombinedReport Boolean   @default(true) @map("is_included_in_combined_report")
+  createdAt                  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  org                Organisation              @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  study              Study                     @relation(fields: [studyId], references: [id], onDelete: Cascade)
-  need               Need?                     @relation(fields: [linkedNeedId], references: [id], onDelete: SetNull)
-  chunks             EvidenceDocumentChunk[]
-  summaries          EvidenceDocumentSummary[]
-  combinedSources    CombinedReportEvidenceSource[]
+  org             Organisation                   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  study           Study                          @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  need            Need?                          @relation(fields: [linkedNeedId], references: [id], onDelete: SetNull)
+  chunks          EvidenceDocumentChunk[]
+  summaries       EvidenceDocumentSummary[]
+  combinedSources CombinedReportEvidenceSource[]
 
   @@index([orgId])
   @@index([studyId])
@@ -2836,7 +2930,6 @@ model CombinedReportEvidenceSource {
   @@map("combined_report_evidence_sources")
 }
 
-
 // ──────────────────────────────────────────────────────────────────────────
 // Survey abandonment tracking (client answer, 24 Aug — RPT10 Q-2)
 //
@@ -2933,12 +3026,12 @@ model SurveySession {
   remindersSent  Int       @default(0) @map("reminders_sent")
   lastReminderAt DateTime? @map("last_reminder_at") @db.Timestamptz(6)
 
-  org        Organisation        @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  study      Study               @relation(fields: [studyId], references: [id], onDelete: Cascade)
-  need       Need                @relation(fields: [needId], references: [id], onDelete: Cascade)
-  surveyLink PublicSurveyLink    @relation(fields: [surveyLinkId], references: [id], onDelete: Cascade)
-  survey     Survey?             @relation(fields: [surveyId], references: [id], onDelete: SetNull)
-  response   SurveyResponse?     @relation(fields: [surveyResponseId], references: [id], onDelete: SetNull)
+  org        Organisation         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  study      Study                @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  need       Need                 @relation(fields: [needId], references: [id], onDelete: Cascade)
+  surveyLink PublicSurveyLink     @relation(fields: [surveyLinkId], references: [id], onDelete: Cascade)
+  survey     Survey?              @relation(fields: [surveyId], references: [id], onDelete: SetNull)
+  response   SurveyResponse?      @relation(fields: [surveyResponseId], references: [id], onDelete: SetNull)
   events     SurveySessionEvent[]
 
   @@index([orgId])

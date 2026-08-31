@@ -2,9 +2,12 @@ import { Injectable, Logger, BadRequestException, NotFoundException } from '@nes
 import { createHash } from 'node:crypto';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { Prisma } from '../../generated/prisma';
-import { requireOrgId, getOrgStore } from '../../tenancy/org-context';
+import { requireOrgId, getOrgStore, currentLocale } from '../../tenancy/org-context';
 import { AiService } from '../ai/ai.service';
 import type { AiTask } from '../ai/ai.task';
+import { DEFAULT_APP_LOCALE, type AppLocale } from '../../i18n/locale';
+import { detectLanguage } from '../ai/language/detect-script';
+import { languageDirective } from '../ai/prompts/language-rule';
 import {
   PRIORITY_DASHBOARD_SUMMARY_RESPONSE_SCHEMA,
 } from '../ai/prompts/priority-dashboard-summary.system';
@@ -674,7 +677,8 @@ export class ReportSummaryService {
             dontKnowRate,
             thresholds: DEFAULT_THRESHOLDS,
             requiredSampleSize: study.requiredSampleSize,
-          }),
+    locale: currentLocale(),
+  }),
           dontKnowBand: dontKnowBandOf(dontKnowRate),
         },
         severity: {
@@ -807,6 +811,16 @@ export class ReportSummaryService {
     scopeFilters: ScopeFilters = {},
     /** Extra JSON the scope's prompt is written against — see `extra` below. */
     aiContext?: Record<string, unknown>,
+    /**
+     * Which language the narrative is written in.
+     *
+     * Unlike the report's labels and figures — translated at EXPORT time, so
+     * one approved report yields both editions with identical numbers
+     * (RIO-RPT-001 AC 2/AC 3) — generated prose cannot be substituted after the
+     * fact. The model writes it once, in one language, so the choice has to be
+     * made here (RIO-I18N-003 §10.5).
+     */
+    locale: AppLocale = DEFAULT_APP_LOCALE,
   ) {
     const orgId = requireOrgId();
     const store = getOrgStore();
@@ -842,7 +856,12 @@ export class ReportSummaryService {
     // comparison). Passed through by the caller rather than re-queried here, so
     // the narrative can only ever describe the same numbers the report renders.
     const extra = aiContext ? `\n\nAdditional context JSON:\n${JSON.stringify(aiContext, null, 2)}\n` : '';
-    const promptText = `Generate the ${scope} SUMMARY narrative strictly using this ReportData JSON:
+    // The language block leads the user turn: the model reads the instruction
+    // before the data, and a stored prompt shows at a glance which language
+    // edition it produced. It carries the fixed sentences too, so the prompt
+    // never hands the model an English phrase to copy into Arabic prose.
+    const promptText = `${languageDirective(locale)}
+Generate the ${scope} SUMMARY narrative strictly using this ReportData JSON:
 ${JSON.stringify(snapshot, null, 2)}
 ${extra}`;
 
@@ -861,9 +880,44 @@ ${extra}`;
       maxRetries: 1,
     };
 
-    const { response: aiOutputJson } = await this.aiService.run(task, promptText);
+    let aiOutputJson = (await this.aiService.run(task, promptText)).response;
+
+    // The model does not always comply, most often on short or heavily numeric
+    // input — which describes a lot of these snapshots. Verify rather than
+    // trust, and retry ONCE.
+    //
+    // This retry deliberately lives outside AiService.run's own loop: that
+    // budget exists for transient upstream failures (429/5xx/timeout), and
+    // spending it on a quality retry would mask a real rate limit.
+    if (!narrativeMatchesLocale(aiOutputJson, locale)) {
+      this.logger.warn(
+        `[report-summary:${scope}] narrative came back in the wrong language (wanted ${locale}) — retrying once`,
+      );
+      aiOutputJson = (await this.aiService.run(task, promptText)).response;
+    }
+    // Still wrong: keep the narrative and flag it. A usable summary in the
+    // wrong language beats no summary, and every one of these is reviewed by a
+    // human before release — the same principle NeedStatementSummary applies by
+    // storing verification warnings rather than discarding the model's work.
+    const languageMismatch = !narrativeMatchesLocale(aiOutputJson, locale);
+    if (languageMismatch) {
+      this.logger.warn(
+        `[report-summary:${scope}] narrative still not in ${locale} after one retry — storing with a mismatch flag`,
+      );
+    }
 
     return this.tenant.runInOrgContext(async (tx) => {
+      // Supersede only the SAME LANGUAGE edition. Without the language filter
+      // this replaced the English summary the moment an Arabic one was
+      // generated — one officer's language choice silently invalidating
+      // another officer's confirmed work, and making a language switch a
+      // regeneration rather than a read (RIO-I18N-003 §9.2).
+      //
+      // `null` is included deliberately: rows written before output_language
+      // existed have no language recorded, and leaving them live alongside a
+      // new edition would show two summaries for one scope with no way to tell
+      // them apart. Superseding them when the same scope is regenerated is the
+      // behaviour those rows had before this column existed.
       await tx.aiPrioritySummary.updateMany({
         where: {
           orgId,
@@ -871,6 +925,7 @@ ${extra}`;
           surveyId,
           villageId: villageId || '',
           summaryScope: scope,
+          OR: [{ outputLanguage: locale }, { outputLanguage: null }],
           status: { in: ['DRAFT', 'STALE'] },
         },
         data: { status: 'SUPERSEDED' },
@@ -893,6 +948,11 @@ ${extra}`;
           inputReportDataHash: reportDataHash,
           inputEvidenceSnapshotHash: evidenceHash,
           aiOutputJson: aiOutputJson as Prisma.InputJsonValue,
+          // The language the narrative is VERIFIED to be in, not the one that
+          // was requested — those differ exactly when languageMismatch is set,
+          // and recording the request would make the flag unreadable.
+          outputLanguage: languageMismatch ? detectNarrativeLanguage(aiOutputJson) : locale,
+          languageMismatch,
           generatedBy: actorId,
         },
       });
@@ -941,9 +1001,22 @@ ${extra}`;
 
       // Compared canonically rather than with a Prisma JSON `equals`, which is
       // key-order sensitive and would miss a row written by an older caller.
-      const summary = candidates.find((c) =>
+      const matching = candidates.filter((c) =>
         scopeFiltersMatch((c.scopeFilters as ScopeFilters | null) ?? { villageId }, filters),
       );
+      // Both language editions of a scope can now be live at once, so "newest
+      // matching row" is no longer specific enough — it would hand an Arabic
+      // narrative to an English reader half the time, depending only on which
+      // was generated last. Prefer the caller's own language; fall back to the
+      // newest of any language so a reader still gets a summary rather than
+      // nothing when only the other edition exists.
+      //
+      // A row with no recorded language predates the column, and every
+      // narrative written then was produced by a prompt naming no language —
+      // which answered in English.
+      const wanted = currentLocale();
+      const summary =
+        matching.find((c) => (c.outputLanguage ?? DEFAULT_APP_LOCALE) === wanted) ?? matching[0];
       if (!summary) return null;
 
       // Built from the REQUESTED filters. Reading them back off the stored row
@@ -1213,4 +1286,74 @@ ${extra}`;
       });
     });
   }
+}
+
+
+/**
+ * Whether a generated narrative is actually in the language it was asked for.
+ *
+ * Checks the model's PROSE only. Domain names, village names and figures inside
+ * the response are supplied data that the prompt requires be reproduced
+ * verbatim — an Arabic narrative legitimately carries English domain names
+ * until the reference catalogue grows `nameAr`, so including them in the sample
+ * would report a false mismatch on every correct Arabic report.
+ *
+ * Deliberately lenient: it concatenates the long free-text fields and asks the
+ * script detector for the dominant script. A narrative is only rejected when it
+ * is dominantly the wrong script, not when it quotes a few foreign words.
+ */
+export function narrativeMatchesLocale(
+  output: Record<string, unknown>,
+  locale: AppLocale,
+): boolean {
+  const prose = collectNarrativeProse(output);
+  // Nothing long enough to judge — treat as a match rather than invent a
+  // failure and burn a retry on an empty narrative.
+  if (prose.length === 0) return true;
+  return detectLanguage(prose) === locale;
+}
+
+/**
+ * The model's own prose, flattened out of a response of any shape.
+ *
+ * Only strings of real length are collected. Short ones are labels, ids and
+ * band names — and band names are English BY DESIGN even in an Arabic report,
+ * so counting them would fail every correct Arabic narrative.
+ *
+ * The depth limit is a runaway guard, not a schema assumption: it was 3, which
+ * is shallower than the real response shapes (`keyFindings[].evidence[].text`
+ * reaches 4) and silently skipped verification on anything deeper — the check
+ * reported "matches" because it had found nothing to look at.
+ */
+function collectNarrativeProse(output: Record<string, unknown>): string {
+  const parts: string[] = [];
+  const walk = (value: unknown, depth: number): void => {
+    if (depth > 8) return;
+    if (typeof value === 'string') {
+      if (value.length >= 40) parts.push(value);
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item, depth + 1);
+      return;
+    }
+    if (value && typeof value === 'object') {
+      for (const item of Object.values(value)) walk(item, depth + 1);
+    }
+  };
+  walk(output, 0);
+  return parts.join(' ');
+}
+
+
+/**
+ * The language a narrative actually came back in.
+ *
+ * Only consulted when verification failed: on the happy path the requested
+ * locale IS the stored language, and asking the detector again would be a
+ * second chance to disagree with itself. Falls back to the detector's own
+ * default for an empty narrative.
+ */
+export function detectNarrativeLanguage(output: Record<string, unknown>): AppLocale {
+  return detectLanguage(collectNarrativeProse(output));
 }

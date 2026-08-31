@@ -6,6 +6,8 @@ import { getOrgStore, requireActor, requireOrgId } from "../../tenancy/org-conte
 import { can, ROLE_MATRIX } from "../../rbac/role-matrix";
 import { AuditService } from "../audit/audit.service";
 import { requireNonBlank } from "../../common/validation/require-non-blank";
+import { DEFAULT_APP_LOCALE, type AppLocale } from "../../i18n/locale";
+import { loadReferenceNames } from "./reference-names";
 import {
   buildPlaceholderReport,
   buildExportStub,
@@ -438,7 +440,17 @@ export class ReportsService {
     return this.hydrateOne(row as unknown as ReportRow);
   }
 
-  async export(id: string, format: ExportFormat): Promise<{ filename: string; contentType: string; body: Buffer }> {
+  /**
+   * Renders an already-approved report as a file, in `locale`.
+   *
+   * The locale selects a LANGUAGE EDITION, never a regeneration: the stored
+   * `content` is untouched and only the rendering layer differs, so both
+   * editions carry identical figures under one approval and one `generatedAt`
+   * (RIO-RPT-001 AC 2/AC 3). Defaulting rather than requiring the argument
+   * keeps every existing caller — including the cross-org supervisor path
+   * below — behaving exactly as before.
+   */
+  async export(id: string, format: ExportFormat, locale: AppLocale = DEFAULT_APP_LOCALE): Promise<{ filename: string; contentType: string; body: Buffer }> {
     const store = getOrgStore();
     // RIO-RBAC-002 (AC1, fixed 2026-08-23) — export is a download of
     // already-released content, not a data mutation, so this extends
@@ -479,7 +491,7 @@ export class ReportsService {
           entityId: row.id,
           entityLabel: row.title,
           organizationId: row.orgId,
-          metadata: { format },
+          metadata: { format, locale },
         });
       }
       const auditMeta = await this.tenant.runAsSupervisor((tx) => this.resolveExportAuditMeta(row!, tx));
@@ -487,27 +499,38 @@ export class ReportsService {
         format,
         { id: row.id, title: row.title, reportType: row.reportType, content: row.content as Record<string, unknown> },
         auditMeta,
+        locale,
+        await loadReferenceNames(this.tenant, locale),
       );
     }
 
     await this.audit.record({
       action: "share", entityType: "report", entityId: row.id, entityLabel: row.title,
-      metadata: { format },
+      metadata: { format, locale },
       // A share does not mutate the report, so there is no field that moved.
       // The pair records what was released and in what form — before: null
       // reads as "not previously exported in this action", which is what the
       // detail view needs to show something meaningful instead of nothing.
       changes: [
         { field: "Exported format", before: null, after: format },
+        // Which language edition left the building. Two files can now come from
+        // one approval, so "they downloaded the report" is no longer a complete
+        // record of what was shared.
+        { field: "Export language", before: null, after: locale },
         { field: "Report status at export", before: null, after: row.status },
         { field: "Scope", before: null, after: "own organization" },
       ],
     });
     const auditMeta = await this.tenant.runInOrgContext((tx) => this.resolveExportAuditMeta(row!, tx));
+    // Loaded once per export rather than per label: the catalogue is small and
+    // global, and a per-name query inside the render loop would issue hundreds
+    // of round trips for one PDF.
     return buildExportStub(
       format,
       { id: row.id, title: row.title, reportType: row.reportType, content: row.content as Record<string, unknown> },
       auditMeta,
+      locale,
+      await loadReferenceNames(this.tenant, locale),
     );
   }
 
