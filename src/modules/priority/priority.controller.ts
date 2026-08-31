@@ -99,8 +99,15 @@ export class PriorityController {
     return this.priorityV2.getVillagePriority(studyId, surveyId, villageId || null);
   }
 
+  // Gated on studySurvey:read, not methodologyQuestionBank:read — this list
+  // only feeds the Study create/edit form's mandatory Methodology Version
+  // picklist. NGO Admin (and every other role that can view/create a
+  // Study) has no methodologyQuestionBank access by design, which left the
+  // picklist permanently empty and Study creation permanently blocked for
+  // them. methodologyQuestionBank:read stays the gate for anything that
+  // manages methodology content itself (create/edit versions).
   @Get("methodology-versions")
-  @RequirePermission("methodologyQuestionBank", "read")
+  @RequirePermission("studySurvey", "read")
   async getMethodologyVersions() {
     return this.priority.listMethodologyVersions();
   }

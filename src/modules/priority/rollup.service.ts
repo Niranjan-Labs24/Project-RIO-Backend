@@ -118,8 +118,19 @@ export class ScoreRollupService {
         }
 
         const orgId = r.orgId;
-        const resolvedVillageId = r.need.village?.[0] || null;
+        // A Need (and its responses) can name more than one village — every
+        // village named gets full credit for this response, not just the
+        // first. Previously took only `village?.[0]`, so a second (or
+        // third) village on the same Need silently got zero
+        // ResponseAnswer/ResponseSeverityScore rows and therefore no
+        // rollup or VillagePriorityAssessment at all — it just sat at
+        // "not yet scored" forever with no error, even though the
+        // response that should have scored it existed. `[null]` preserves
+        // the original no-village (study-wide-only) behavior when a Need
+        // names none.
+        const resolvedVillageIds = r.need.village.length > 0 ? r.need.village : [null];
 
+        for (const resolvedVillageId of resolvedVillageIds) {
         for (const { question, rawAnswer } of questionMappings) {
           const qId = question.questionId;
           // Guaranteed present: questionMappings and answersMap are built from
@@ -274,6 +285,7 @@ export class ScoreRollupService {
             });
           }
         }
+        }
       }
 
       // Re-run rollups for all distinct villages and also study-wide.
@@ -281,7 +293,10 @@ export class ScoreRollupService {
       // own transaction — nesting a second `$transaction` inside this
       // still-open one meant its reads couldn't see the rows just written
       // above (not yet committed), so rollups silently came back empty.
-      const distinctVillages = Array.from(new Set(responses.map(r => r.need.village?.[0]).filter(Boolean))) as string[];
+      // Flattened across every village a response's Need names, not just
+      // the first (see resolvedVillageIds above) — a second village here
+      // previously never got its own rollup computed at all.
+      const distinctVillages = Array.from(new Set(responses.flatMap(r => r.need.village))) as string[];
       for (const v of distinctVillages) {
         await this.calculateRollups(studyId, surveyId, v, { tx, orgId: survey.orgId });
       }
