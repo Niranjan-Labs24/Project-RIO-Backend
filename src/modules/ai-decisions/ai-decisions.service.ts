@@ -515,21 +515,40 @@ export class AiDecisionsService {
     // suggested set), so the two-step Preview-then-Approve flow simply
     // regenerates the same list a second time.
     //
+    // Regenerate on a PLAIN approve too (no domainOverride), not just an
+    // override — overrideDomainPreview persists its merged/deduped question
+    // set for *candidate* pairs so a browser refresh mid-override doesn't
+    // lose progress (see its own comment above), but a reviewer can preview
+    // a candidate, decide against it, and approve the AI's original
+    // suggestion instead. Without this, that abandoned preview's wider
+    // question set would silently stick to the Survey even though the
+    // Need's own approved classification correctly stayed narrow — a real
+    // gap found while testing RIO-AI-002. Falling back to the AI's own
+    // suggested pair (same source review() itself uses for a plain approve)
+    // keeps this self-correcting regardless of what a prior preview left
+    // behind.
+    //
     // Best-effort, exactly like the post-classification call in
     // runAndPersistClassification: the classification decision is committed
     // and audited above, and must not be undone because question generation
     // failed. `allowWhileSubmitted` mirrors overrideDomainPreview's rule —
     // an Approver deciding a SUBMITTED survey's classification is precisely
     // the person reviewing it.
-    if (payload.domainOverride) {
+    const suggestion = latest.suggestion as { domains?: string[]; subDomains?: string[] } | null;
+    const pairs =
+      payload.domainOverride?.pairs ??
+      (suggestion?.domains?.[0] && suggestion?.subDomains?.[0]
+        ? [{ domain: suggestion.domains[0], subDomain: suggestion.subDomains[0] }]
+        : []);
+    if (pairs.length > 0) {
       const allowWhileSubmitted = getOrgStore()?.role !== 'ngo_research_officer';
       try {
-        await this.surveys.generateSuggestedQuestions(needId, payload.domainOverride.pairs, {
+        await this.surveys.generateSuggestedQuestions(needId, pairs, {
           allowWhileSubmitted,
         });
       } catch (err) {
         this.logger.warn(
-          `Suggested-question regeneration after override-approve failed for need ${needId}: ${(err as Error).message}`,
+          `Suggested-question regeneration after approve failed for need ${needId}: ${(err as Error).message}`,
         );
       }
     }
