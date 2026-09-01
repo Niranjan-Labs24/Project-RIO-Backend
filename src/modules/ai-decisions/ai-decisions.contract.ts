@@ -72,3 +72,42 @@ export const AiReviewOverrideDomainBody = registerSchema(
   ),
 );
 export type AiReviewOverrideDomainDto = Static<typeof AiReviewOverrideDomainBody>;
+
+// Response schema (GAP-08 Phase 0) — shape sourced from the frontend's
+// AiDecision/ClassificationSuggestion
+// (Project-RIO-Frontend/src/services/ai-decisions/ai-decisions.types.ts).
+//
+// NOTE (discrepancy, not fixed here): the backend's actual AiDecision
+// (ai-decisions.types.ts) additionally carries subjectType, subjectId,
+// modelName, modelVersion, decidedBy, decidedAt, and types `suggestion` /
+// `humanDecision` as `unknown` rather than the frontend's structured
+// ClassificationSuggestion / `{decision, notes?, overrideValue?}` shape.
+// Registered here per the frontend shape as instructed (source of truth
+// for Phase 3) — flagged for reconciliation.
+const ClassificationSuggestion = T.Object({
+  domains: T.Array(T.String()),
+  subDomains: T.Array(T.String()),
+  rationale: T.Optional(T.String()),
+  redactedStatement: T.Optional(T.String()),
+  village: T.Optional(T.String()),
+});
+
+const HumanDecision = T.Object({
+  decision: T.String(),
+  notes: T.Optional(T.String()),
+  overrideValue: T.Optional(T.Unknown()),
+});
+
+export const AiDecision = registerSchema(
+  'AiDecision',
+  T.Object({
+    id: T.String(),
+    needId: T.String(),
+    studyId: T.String(),
+    touchpoint: T.Union([T.Literal('need_classification'), T.Literal('priority_scoring')]),
+    suggestion: ClassificationSuggestion,
+    confidence: T.Number(),
+    humanDecision: T.Union([HumanDecision, T.Null()]),
+    createdAt: T.String(),
+  }),
+);

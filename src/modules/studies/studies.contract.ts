@@ -60,3 +60,69 @@ export const UpdateStudyBody = registerSchema(
   ),
 );
 export type UpdateStudyDto = Static<typeof UpdateStudyBody>;
+
+// Response schemas (GAP-08 Phase 0) — shape sourced from the frontend's
+// Study/StudyDetail/StudyListResult
+// (Project-RIO-Frontend/src/services/studies/studies.types.ts).
+//
+// NOTE (discrepancy, not fixed here): the backend's actual Study type
+// (studies.types.ts) additionally carries optional `orgName?: string` and
+// `surveysCount?: number` fields not present on the frontend's Study type,
+// and StudyDetail additionally carries an optional `needs?:
+// StudyAssociatedNeed[]`. Not registered here — following the frontend
+// shape as instructed (source of truth for Phase 3's generated types) —
+// flagged for reconciliation.
+export const Study = registerSchema(
+  'Study',
+  T.Object({
+    id: T.String(),
+    title: T.String(),
+    villages: T.Array(T.String()),
+    governorateIds: T.Array(T.String()),
+    centerIds: T.Array(T.String()),
+    methodologyVersionId: T.Union([T.String(), T.Null()]),
+    population: T.Union([T.Number(), T.Null()]),
+    marginOfError: T.Union([T.Number(), T.Null()]),
+    requiredSampleSize: T.Union([T.Number(), T.Null()]),
+    minimumDetectableEffect: T.Union([T.Number(), T.Null()]),
+    cycleNumber: T.Number(),
+    createdBy: T.String(),
+    createdAt: T.String(),
+    updatedAt: T.String(),
+  }),
+);
+
+// GET /studies/{id} only — the list endpoint doesn't compute this per row.
+export const StudyDetail = registerSchema(
+  'StudyDetail',
+  T.Object({
+    id: T.String(),
+    title: T.String(),
+    villages: T.Array(T.String()),
+    governorateIds: T.Array(T.String()),
+    centerIds: T.Array(T.String()),
+    methodologyVersionId: T.Union([T.String(), T.Null()]),
+    population: T.Union([T.Number(), T.Null()]),
+    marginOfError: T.Union([T.Number(), T.Null()]),
+    requiredSampleSize: T.Union([T.Number(), T.Null()]),
+    minimumDetectableEffect: T.Union([T.Number(), T.Null()]),
+    cycleNumber: T.Number(),
+    createdBy: T.String(),
+    createdAt: T.String(),
+    updatedAt: T.String(),
+    evidenceCount: T.Number(),
+    needCount: T.Number(),
+  }),
+);
+
+// Paginated envelope — registered as one wrapper schema (GAP-08 P0
+// convention, see RouteDoc.responseSchema doc in src/contract/openapi.ts).
+export const StudyListResult = registerSchema(
+  'StudyListResult',
+  T.Object({
+    items: T.Array(Study),
+    total: T.Number(),
+    limit: T.Number(),
+    offset: T.Number(),
+  }),
+);

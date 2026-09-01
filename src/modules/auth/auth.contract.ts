@@ -185,3 +185,109 @@ export const ResetPasswordBody = registerSchema(
   ),
 );
 export type ResetPasswordDto = Static<typeof ResetPasswordBody>;
+
+// Response schemas (GAP-08 Phase 0) — shape sourced from the frontend's
+// SessionContext/AuthUser/AuthOrganization/AuthRole
+// (Project-RIO-Frontend/src/services/auth/auth.types.ts) and ModulePermission
+// (Project-RIO-Frontend/src/types/permissions.ts).
+
+const AuthPermission = T.Object({
+  module: T.String(),
+  read: T.Boolean(),
+  write: T.Boolean(),
+  create: T.Boolean(),
+  approve: T.Boolean(),
+  export: T.Boolean(),
+  share: T.Boolean(),
+});
+
+const SessionUser = T.Object({
+  id: T.String(),
+  name: T.String(),
+  email: T.String(),
+  consentedAt: T.Union([T.String(), T.Null()]),
+  consentedPolicyVersion: T.Union([T.String(), T.Null()]),
+  sharingConsentedAt: T.Union([T.String(), T.Null()]),
+  sharingConsentedPolicyVersion: T.Union([T.String(), T.Null()]),
+});
+
+const SessionOrg = T.Object({
+  id: T.String(),
+  name: T.String(),
+  purpose: T.String(),
+  registrationNumber: T.String(),
+  logoUrl: T.Union([T.String(), T.Null()]),
+  region: T.Array(T.String()),
+  email: T.String(),
+  sector: T.Union([T.String(), T.Null()]),
+  villages: T.Array(T.String()),
+  regionId: T.Union([T.String(), T.Null()]),
+  governorateIds: T.Array(T.String()),
+  centerIds: T.Array(T.String()),
+  isActive: T.Boolean(),
+  createdAt: T.String(),
+});
+
+const SessionRole = T.Object({
+  id: T.String(),
+  key: T.String(),
+  name: T.String(),
+  crossEntity: T.Boolean(),
+  enabled: T.Boolean(),
+  permissions: T.Array(AuthPermission),
+});
+
+// NOTE (discrepancy, not fixed here): the backend's actual SessionOrg
+// (session.types.ts) has `purpose: string | null` and `registrationNumber:
+// string | null`, and the backend's RoleDef (role-matrix.ts, what /auth/*
+// actually serializes as `role`) has no `enabled` field but does carry an
+// extra `description: string`. Registered here per the frontend's
+// AuthUser/AuthOrganization/AuthRole shape as instructed (source of truth
+// for Phase 3) — flagged for reconciliation.
+export const SessionContext = registerSchema(
+  'SessionContext',
+  T.Object({
+    token: T.String(),
+    user: SessionUser,
+    organization: SessionOrg,
+    role: SessionRole,
+    mustChangePassword: T.Boolean(),
+  }),
+);
+
+export const SignupPendingApprovalView = registerSchema(
+  'SignupPendingApprovalView',
+  T.Object({
+    status: T.Literal('pending_approval'),
+    organizationName: T.String(),
+    email: T.String(),
+  }),
+);
+
+// Per-policy shape (used inside ActiveConsentPolicies below) — matches the
+// frontend's ActiveConsentPolicy (services/consent/consent.types.ts).
+export const ActiveConsentPolicy = registerSchema(
+  'ActiveConsentPolicy',
+  T.Object({
+    kind: T.Union([T.Literal('use_policy'), T.Literal('data_sharing')]),
+    version: T.String(),
+    text: T.String(),
+    textAr: T.Union([T.String(), T.Null()]),
+  }),
+);
+
+// NOTE (discrepancy, not fixed here): GET /consent-policy/active actually
+// returns ActiveConsentPolicies (this wrapper), not the bare
+// ActiveConsentPolicy named in openapi.ts's ROUTES entry for that route —
+// confirmed against ConsentController#getActive's return type
+// (Promise<ActiveConsentPolicies>) and the frontend's own
+// consentService.getActivePolicies() (typed ActiveConsentPolicies). Wiring
+// the route to this wrapper schema instead of the singular, per the "use the
+// FE shape, flag it" instruction.
+export const ActiveConsentPolicies = registerSchema(
+  'ActiveConsentPolicies',
+  T.Object({
+    usePolicy: ActiveConsentPolicy,
+    dataSharing: ActiveConsentPolicy,
+  }),
+);
