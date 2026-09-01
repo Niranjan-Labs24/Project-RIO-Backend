@@ -10,6 +10,7 @@ import {
   buildPlaceholderReport,
   buildExportStub,
   isPlaceholderReportType,
+  isPlaceholderReport,
   type ExportAuditMeta,
 } from "./reports.placeholder";
 import { individualSurveyGenerator } from "./generators/individual-survey.generator";
@@ -323,6 +324,14 @@ export class ReportsService {
         error: { code: "REPORT_NOT_DRAFT", message: "Only a submitted report can be approved." },
       });
     }
+    if (isPlaceholderReport(existing.content)) {
+      throw new ForbiddenException({
+        error: {
+          code: "REPORT_NOT_AVAILABLE",
+          message: "This report type is not yet available — its content is a placeholder and cannot be released.",
+        },
+      });
+    }
     const row = await this.tenant.runInOrgContext((tx) =>
       tx.report.update({
         where: { id },
@@ -399,6 +408,15 @@ export class ReportsService {
       if (!row) throw new NotFoundException({ error: { code: "REPORT_NOT_FOUND", message: "Report not found" } });
     } else {
       row = await this.findOrThrow(id);
+    }
+
+    if (isPlaceholderReport(row.content)) {
+      throw new ForbiddenException({
+        error: {
+          code: "REPORT_NOT_AVAILABLE",
+          message: "This report type is not yet available — its content is a placeholder and cannot be exported.",
+        },
+      });
     }
 
     const meta = REPORT_TYPE_META[row.reportType];
@@ -499,6 +517,14 @@ export class ReportsService {
       tx.report.findUnique({ where: { id } }),
     )) as unknown as ReportRow | null;
     if (!row) throw new NotFoundException({ error: { code: "REPORT_NOT_FOUND", message: "Report not found" } });
+    if (isPlaceholderReport(row.content)) {
+      throw new ForbiddenException({
+        error: {
+          code: "REPORT_NOT_AVAILABLE",
+          message: "This report type is not yet available — its content is a placeholder and cannot be exported.",
+        },
+      });
+    }
     const meta = REPORT_TYPE_META[row.reportType];
     if (!EXPORTABLE_STATUSES.includes(row.status)) {
       throw new ForbiddenException({

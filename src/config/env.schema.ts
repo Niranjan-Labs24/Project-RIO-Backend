@@ -191,5 +191,19 @@ export function validateEnv(raw: Record<string, unknown>): AppConfig {
   if (candidate.NODE_ENV === 'production' && candidate.ENCRYPTION_KEY === DEV_ONLY_ENCRYPTION_KEY) {
     throw new Error('Invalid environment configuration: ENCRYPTION_KEY must be set to a real value in production');
   }
+  // RIO-NFR-001 — in production the DB connection must be encrypted AND the
+  // server certificate verified; a deploy that forgets these would run over
+  // plaintext (or MITM-able) TLS. The schema defaults are false for dev
+  // self-signed convenience, so this is the only thing stopping that state
+  // from silently reaching production.
+  if (
+    candidate.NODE_ENV === 'production' &&
+    (candidate.DB_SSL !== true || candidate.DB_SSL_REJECT_UNAUTHORIZED !== true)
+  ) {
+    throw new Error(
+      'Invalid environment configuration: production requires verified DB TLS ' +
+        '(set DB_SSL=true and DB_SSL_REJECT_UNAUTHORIZED=true; provide DB_SSL_CA if needed)',
+    );
+  }
   return candidate as AppConfig;
 }

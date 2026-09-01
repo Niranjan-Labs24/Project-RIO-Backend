@@ -564,22 +564,32 @@ export class AuthService {
     const row = await this.tenant.runAsSupervisor((tx) =>
       tx.passwordResetToken.findUnique({ where: { tokenHash } }),
     );
-    if (!row || row.consumedAt || row.expiresAt.getTime() < Date.now()) {
+    if (!row) {
       throw new BadRequestException({
         error: { code: 'INVALID_RESET_TOKEN', message: 'This reset link is invalid or has expired.' },
       });
     }
-
     const passwordHash = await this.passwords.hash(dto.password);
     const updated = await this.tenant.runAsOrg(row.orgId, async (tx) => {
-      const user = await tx.user.update({
+      // GAP-06: atomically claim the token — only the request that flips
+      // consumedAt from null (and finds it unexpired) proceeds. A second
+      // concurrent reset with the same token matches zero rows here and is
+      // rejected, so a token can reset a password at most once.
+      const claimed = await tx.passwordResetToken.updateMany({
+        where: { id: row.id, consumedAt: null, expiresAt: { gt: new Date() } },
+        data: { consumedAt: new Date() },
+      });
+      if (claimed.count !== 1) {
+        throw new BadRequestException({
+          error: { code: 'INVALID_RESET_TOKEN', message: 'This reset link is invalid or has expired.' },
+        });
+      }
+      return tx.user.update({
         where: { id: row.userId },
         // sessionVersion increments so any session signed in under the old
         // password is invalidated, same as changePassword().
         data: { passwordHash, mustChangePassword: false, sessionVersion: { increment: 1 } },
       });
-      await tx.passwordResetToken.update({ where: { id: row.id }, data: { consumedAt: new Date() } });
-      return user;
     });
     await this.audit.record({
       action: 'edit', entityType: 'user', entityId: updated.id, entityLabel: updated.email,

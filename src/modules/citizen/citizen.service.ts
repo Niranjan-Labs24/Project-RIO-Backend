@@ -222,8 +222,15 @@ export class CitizenService {
         error: { code: 'OTP_ALREADY_USED', message: 'This verification code has already been used to submit a response.' },
       });
     }
+    // GAP-10: a challenge verified before it expired must not stay usable
+    // indefinitely — re-validate expiry at submission, same as verifyOtp.
+    if (challenge.expiresAt.getTime() < Date.now()) {
+      throw new GoneException({
+        error: { code: 'OTP_EXPIRED', message: 'This verification code has expired.' },
+      });
+    }
 
-    const { row, needTitle } = await this.tenant.runAsOrg(link.orgId, async (tx) => {
+    const row = await this.tenant.runAsOrg(link.orgId, async (tx) => {
       // Atomic claim, before any other work — closes a race the plain
       // `if (challenge.consumedAt)` check above can't: two concurrent
       // submits could both pass that check before either write lands.
@@ -231,7 +238,7 @@ export class CitizenService {
       // match, so a second concurrent request is rejected here instead of
       // both creating a SurveyResponse row.
       const claimed = await tx.citizenOtpChallenge.updateMany({
-        where: { id: challenge.id, verifiedAt: { not: null }, consumedAt: null },
+        where: { id: challenge.id, verifiedAt: { not: null }, consumedAt: null, expiresAt: { gt: new Date() } },
         data: { consumedAt: new Date() },
       });
       if (claimed.count !== 1) {
@@ -321,33 +328,43 @@ export class CitizenService {
           consentVersion: payload.consentVersion ?? null,
         },
       });
+      // GAP-11: write the audit event on this SAME transaction, right after
+      // the response row is created. Previously this was a separate
+      // `audit.record(...)` call issued after the transaction committed,
+      // which meant an audit-write failure could never roll back an already
+      // -committed SurveyResponse — the two could silently diverge. Using
+      // `recordWithTx` here means a failed audit insert aborts the whole
+      // transaction instead, so the response and its audit entry commit or
+      // roll back together.
+      //
+      // RIO-NFR-002 privacy audit: no signed-in actor exists for this
+      // request (citizen submissions are unauthenticated), so this is filed
+      // under the owning org explicitly with a null actor — the same
+      // "explicit org, no ambient context" path AuditService already
+      // supports for cross-org admin actions. Contact/answers are never
+      // logged in the metadata; only that a submission happened, when, and
+      // for which Need. Label the Need by its own title, not its id — the
+      // Audit Log is a human-facing screen and a raw UUID tells a reader
+      // nothing.
+      await this.audit.recordWithTx(tx, {
+        action: 'create',
+        entityType: 'survey_response',
+        entityId: created.id,
+        entityLabel: `Survey response submitted for need "${need?.title ?? link.needId}"`,
+        organizationId: link.orgId,
+        // Deliberately metadata-shaped, NOT the submitted content: RIO-NFR-002
+        // forbids logging a citizen's answers or contact details. The pair
+        // records that a submission arrived and how large it was, which is what
+        // an auditor needs, without putting respondent data in the audit log.
+        changes: [
+          { field: 'Survey response', before: null, after: 'submitted' },
+          { field: 'Answers submitted', before: null, after: Array.isArray(payload.answers) ? payload.answers.length : null },
+          { field: 'Need', before: null, after: need?.title ?? link.needId },
+        ],
+      });
       // Challenge was already atomically claimed (consumedAt set) above —
       // no second write needed here.
-      return { row: created, needTitle: need?.title ?? link.needId };
-    });
-    // RIO-NFR-002 privacy audit: no signed-in actor exists for this request
-    // (citizen submissions are unauthenticated), so this is filed under the
-    // owning org explicitly with a null actor — the same "explicit org,
-    // no ambient context" path AuditService already supports for
-    // cross-org admin actions. Contact/answers are never logged in the
-    // metadata; only that a submission happened, when, and for which Need.
-    // Label the Need by its own title, not its id — the Audit Log is a
-    // human-facing screen and a raw UUID tells a reader nothing.
-    await this.audit.record({
-      action: 'create',
-      entityType: 'survey_response',
-      entityId: row.id,
-      entityLabel: `Survey response submitted for need "${needTitle}"`,
-      organizationId: link.orgId,
-      // Deliberately metadata-shaped, NOT the submitted content: RIO-NFR-002
-      // forbids logging a citizen's answers or contact details. The pair
-      // records that a submission arrived and how large it was, which is what
-      // an auditor needs, without putting respondent data in the audit log.
-      changes: [
-        { field: 'Survey response', before: null, after: 'submitted' },
-        { field: 'Answers submitted', before: null, after: Array.isArray(payload.answers) ? payload.answers.length : null },
-        { field: 'Need', before: null, after: needTitle },
-      ],
+      return created;
     });
 
     // Score and rollup asynchronously. Both calls take `orgId` explicitly —

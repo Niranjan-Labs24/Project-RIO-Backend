@@ -65,6 +65,27 @@ function fakeTenant(user: unknown) {
   };
 }
 
+// Minimal AuthService factory reusing this file's shared stubs (real
+// PasswordService/TokenService, no-op audit, stub repo/mailer/config/domains/
+// geography/nicRegistry/consent). Only `tenant` is meaningfully overridable —
+// GAP-06's resetPassword cases need per-case control over
+// runAsSupervisor/runAsOrg without duplicating the other ten constructor args.
+function makeAuthService(overrides: { tenant: unknown }): AuthService {
+  return new AuthService(
+    overrides.tenant as never,
+    passwords,
+    tokens,
+    auditStub as never,
+    repoStub as never,
+    mailerStub as never,
+    configStub,
+    domainsStub as never,
+    geographyStub as never,
+    nicRegistryStub as never,
+    consentStub as never,
+  );
+}
+
 describe('AuthService.login', () => {
   let user: Record<string, unknown>;
 
@@ -490,5 +511,37 @@ describe('AuthService.changePassword', () => {
     // that the (mocked) response happened to say so.
     expect(updateArgs).toHaveLength(1);
     expect(updateArgs[0]).toMatchObject({ data: { mustChangePassword: false, passwordHash: 'h2' } });
+  });
+});
+
+describe('resetPassword atomic claim (GAP-06)', () => {
+  it('resets when the atomic claim affects exactly one row', async () => {
+    const tx = {
+      passwordResetToken: { updateMany: vi.fn().mockResolvedValue({ count: 1 }) },
+      user: { update: vi.fn().mockResolvedValue({ id: 'u1', email: 'a@b.co' }) },
+    };
+    const tenant = {
+      runAsSupervisor: vi.fn().mockResolvedValue({ id: 'tok1', orgId: 'org1', userId: 'u1' }),
+      runAsOrg: vi.fn((_org: string, cb: (t: unknown) => unknown) => cb(tx)),
+    };
+    const svc = makeAuthService({ tenant });
+    await expect(svc.resetPassword({ token: 'raw', password: 'New-Passw0rd!' } as never))
+      .resolves.toMatchObject({ message: expect.any(String) });
+    expect(tx.user.update).toHaveBeenCalledOnce();
+  });
+
+  it('rejects and does not update the user when the token was already claimed', async () => {
+    const tx = {
+      passwordResetToken: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+      user: { update: vi.fn() },
+    };
+    const tenant = {
+      runAsSupervisor: vi.fn().mockResolvedValue({ id: 'tok1', orgId: 'org1', userId: 'u1' }),
+      runAsOrg: vi.fn((_org: string, cb: (t: unknown) => unknown) => cb(tx)),
+    };
+    const svc = makeAuthService({ tenant });
+    await expect(svc.resetPassword({ token: 'raw', password: 'New-Passw0rd!' } as never))
+      .rejects.toMatchObject({ response: { error: { code: 'INVALID_RESET_TOKEN' } } });
+    expect(tx.user.update).not.toHaveBeenCalled();
   });
 });
