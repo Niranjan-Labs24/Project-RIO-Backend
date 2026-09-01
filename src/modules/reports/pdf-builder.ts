@@ -1,4 +1,5 @@
 import type { DocSection, DocTile, ReportDoc } from "./report-doc";
+import { hasArabic, shapeArabicAware, shapedWidth, getArabicFont, type ShapedChunk } from "./arabic-text";
 
 // Dependency-free vector PDF renderer for a ReportDoc: a compact, professional
 // 1–2 page layout — masthead, section headings, key/value blocks, tables, and
@@ -6,8 +7,13 @@ import type { DocSection, DocTile, ReportDoc } from "./report-doc";
 // related figures sit side by side.
 //
 // Text is Latin-1/WinAnsi — base Helvetica has no Arabic glyphs; common Unicode
-// punctuation is folded to ASCII first. Arabic RTL (RIO-NFR-007) is a later step
-// (embedded font + shaping); this renderer is swapped then.
+// punctuation is folded to ASCII first. RIO-NFR-007 (Arabic RTL): any string
+// containing Arabic script is detected in text()/textWidth() below and routed
+// through arabic-text.ts instead — real contextual shaping and correct
+// right-to-left run order via an embedded font (Amiri, SIL OFL), rather than
+// esc()'s "?" fallback. Everything else in this file (wrap/truncate/table
+// layout/right-align) is unaffected because it all goes through text()/
+// textWidth(), which is the single chokepoint this fix hooks into.
 
 export const PAGE_W = 612;
 export const PAGE_H = 792;
@@ -93,7 +99,7 @@ const HELV_BOLD_W: readonly number[] = [
   611, 611, 389, 556, 333, 611, 556, 778, 556, 556, 500, 389, 280, 389, 584,
 ];
 
-export function textWidth(str: string, size: number, bold = false): number {
+function asciiTextWidth(str: string, size: number, bold = false): number {
   const table = bold ? HELV_BOLD_W : HELV_W;
   let units = 0;
   for (let i = 0; i < str.length; i++) {
@@ -102,6 +108,13 @@ export function textWidth(str: string, size: number, bold = false): number {
     units += (code >= 32 && code <= 126 ? table[code - 32] : table[31]) ?? 556;
   }
   return (units * size) / 1000;
+}
+export function textWidth(str: string, size: number, bold = false): number {
+  if (hasArabic(str)) {
+    const chunks = shapeArabicAware(str, bold ? "bold" : "regular");
+    return shapedWidth(chunks, size, (s, sz) => asciiTextWidth(s, sz, bold));
+  }
+  return asciiTextWidth(str, size, bold);
 }
 function fits(str: string, size: number, width: number, bold = false): boolean {
   return textWidth(str, size, bold) <= width;
@@ -159,6 +172,15 @@ export class Pdf {
    *  declares only the layers that page actually uses. */
   private layerPages = new Map<string, Set<number>>();
   private openLayer: string | null = null;
+
+  // RIO-NFR-007 — glyph id -> its width (1000-unit em, matching the /W array
+  // convention every other font in this file already uses), for every glyph
+  // this document actually draws from the embedded Arabic font. assemble()
+  // only embeds the Arabic font objects at all when one of these is non-empty,
+  // so a report with no Arabic content stays byte-for-byte the size it always
+  // was — no embedded-font cost paid unless the document actually needs it.
+  arabicGlyphWidthsRegular = new Map<number, number>();
+  arabicGlyphWidthsBold = new Map<number, number>();
 
   constructor(private readonly knownAnchorIds?: ReadonlySet<string>) {
     this.pages.push(this.ops);
@@ -269,8 +291,43 @@ export class Pdf {
     // text and rects/rules share one top-down origin (otherwise divider rules
     // strike through the following row's glyphs).
     const baseline = this.y + size * 0.76;
+    if (hasArabic(str)) {
+      this.textArabicAware(x, baseline, size, bold, str, color);
+      return;
+    }
     const font = family === "serif" ? (bold ? "F3" : "F4") : bold ? "F1" : "F2";
     this.ops.push(`${color} rg BT /${font} ${size} Tf 1 0 0 1 ${x} ${this.py(baseline)} Tm (${esc(str)}) Tj ET`);
+  }
+
+  // RIO-NFR-007 — draws a string containing Arabic script, chunk by chunk in
+  // final visual (left-to-right paint) order: a Latin/number chunk uses the
+  // existing Helvetica path unchanged, an Arabic chunk uses the embedded
+  // Arabic font's already-shaped glyph ids via Identity-H hex Tj. Each chunk
+  // advances `x` by its own real shaped width so mixed Arabic/Latin content
+  // (e.g. an Arabic sentence containing an English question ID) lines up
+  // exactly the way textWidth() measured it for wrapping/right-align.
+  private textArabicAware(x: number, baseline: number, size: number, bold: boolean, str: string, color: string): void {
+    const chunks: ShapedChunk[] = shapeArabicAware(str, bold ? "bold" : "regular");
+    const arabicFont = bold ? "F6" : "F5";
+    const latinFont = bold ? "F1" : "F2";
+    const widthMap = bold ? this.arabicGlyphWidthsBold : this.arabicGlyphWidthsRegular;
+    let cursor = x;
+    const y = this.py(baseline);
+    for (const chunk of chunks) {
+      if (chunk.kind === "latin") {
+        if (chunk.text.length > 0) {
+          this.ops.push(`${color} rg BT /${latinFont} ${size} Tf 1 0 0 1 ${cursor} ${y} Tm (${esc(chunk.text)}) Tj ET`);
+        }
+        cursor += asciiTextWidth(chunk.text, size, bold);
+      } else {
+        chunk.glyphIds.forEach((id, i) => widthMap.set(id, chunk.advances1000[i]!));
+        const hex = chunk.glyphIds.map((id) => id.toString(16).padStart(4, "0")).join("");
+        if (hex.length > 0) {
+          this.ops.push(`${color} rg BT /${arabicFont} ${size} Tf 1 0 0 1 ${cursor} ${y} Tm <${hex}> Tj ET`);
+        }
+        cursor += (chunk.advances1000.reduce((a, b) => a + b, 0) * size) / 1000;
+      }
+    }
   }
   // An unfilled rectangle border — used for card-style framing (e.g. KPI
   // stat tiles, a bordered page-content frame) where rect()'s solid fill
@@ -482,6 +539,7 @@ export class Pdf {
       this.anchors,
       this.links,
       { order: this.layerOrder, pages: this.layerPages },
+      { regular: this.arabicGlyphWidthsRegular, bold: this.arabicGlyphWidthsBold },
     );
   }
 }
@@ -1321,6 +1379,37 @@ export interface LayerInfo {
   pages: Map<string, Set<number>>;
 }
 
+// RIO-NFR-007 — the four PDF objects that embed one weight of the Arabic
+// font as a proper composite (Type0/CIDFontType2/Identity-H) font: the raw
+// TTF bytes (FontFile2), its FontDescriptor (metrics fontkit already parsed
+// out of the font, so nothing here is guessed), the CIDFontType2 descendant
+// naming that descriptor with an explicit /W array for every glyph this
+// document actually draws (so the viewer's own advance calculation matches
+// the widths textWidth() used for wrapping/right-align), and the Type0
+// wrapper that page Resources reference by name. CIDToGIDMap /Identity is
+// correct because the font is embedded whole (unsubsetted) — CID N is
+// literally glyph N in the file, no remapping table needed.
+function buildArabicFontObjects(weight: "regular" | "bold", used: Map<number, number>, firstObjNum: number): string[] {
+  const { font, ttfLatin1, ttfByteLength } = getArabicFont(weight);
+  const bbox = font.bbox;
+  const baseFontName = weight === "bold" ? "Amiri-Bold" : "Amiri-Regular";
+  const fontFileNum = firstObjNum;
+  const descNum = firstObjNum + 1;
+  const cidNum = firstObjNum + 2;
+  // Sorted so the /W array reads as ascending CID ranges — not required by
+  // the spec, just easier to eyeball while debugging a generated PDF.
+  const wEntries = [...used.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([cid, w]) => `${cid}[${w}]`)
+    .join(" ");
+  return [
+    `<< /Length ${Buffer.byteLength(ttfLatin1, "latin1")} /Length1 ${ttfByteLength} >>\nstream\n${ttfLatin1}\nendstream`,
+    `<< /Type /FontDescriptor /FontName /${baseFontName} /Flags 4 /FontBBox [${bbox.minX} ${bbox.minY} ${bbox.maxX} ${bbox.maxY}] /ItalicAngle 0 /Ascent ${Math.round(font.ascent)} /Descent ${Math.round(font.descent)} /CapHeight ${Math.round(font.capHeight || font.ascent)} /StemV 80 /FontFile2 ${fontFileNum} 0 R >>`,
+    `<< /Type /Font /Subtype /CIDFontType2 /BaseFont /${baseFontName} /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor ${descNum} 0 R /CIDToGIDMap /Identity /DW 500${wEntries ? ` /W [${wEntries}]` : ""} >>`,
+    `<< /Type /Font /Subtype /Type0 /BaseFont /${baseFontName} /Encoding /Identity-H /DescendantFonts [${cidNum} 0 R] >>`,
+  ];
+}
+
 function assemble(
   pageStreams: string[],
   anchors: Map<string, { pageIndex: number; yFromTop: number }> = new Map(),
@@ -1332,6 +1421,7 @@ function assemble(
     hideAll?: boolean;
   }> = [],
   layers: LayerInfo = { order: [], pages: new Map() },
+  arabicGlyphs: { regular: Map<number, number>; bold: Map<number, number> } = { regular: new Map(), bold: new Map() },
 ): Buffer {
   const pageCount = pageStreams.length || 1;
   if (pageStreams.length === 0) pageStreams.push("");
@@ -1344,7 +1434,20 @@ function assemble(
   // resource entries otherwise cost nothing.
   const fontSerifBold = fontReg + 1;
   const fontSerifReg = fontSerifBold + 1;
-  const firstContent = fontSerifReg + 1;
+
+  // RIO-NFR-007 — the embedded Arabic font (Amiri) is only worth its ~400KB
+  // per weight if this specific document actually drew Arabic text; an
+  // all-English report stays exactly the object count/size it always was.
+  // Each weight needs 4 objects: the raw TTF (FontFile2), its FontDescriptor,
+  // the CIDFontType2 descendant naming that descriptor, and the Type0
+  // wrapper actually referenced from page Resources as /F5 (regular) / /F6
+  // (bold) — see buildArabicFontObjects below.
+  const needsArabic = arabicGlyphs.regular.size > 0 || arabicGlyphs.bold.size > 0;
+  const arabicRegularFirst = fontSerifReg + 1;
+  const arabicBoldFirst = arabicRegularFirst + (needsArabic ? 4 : 0);
+  const fontArabicRegularType0 = arabicRegularFirst + 3;
+  const fontArabicBoldType0 = arabicBoldFirst + 3;
+  const firstContent = arabicBoldFirst + (needsArabic ? 4 : 0);
 
   // Annotation objects come after the content streams. Their count is known up
   // front, so the numbering stays a simple offset rather than needing a
@@ -1392,14 +1495,19 @@ function assemble(
     const propsEntry = onThisPage.length
       ? ` /Properties << ${onThisPage.map((id) => `/${id} ${ocgNum.get(id)} 0 R`).join(" ")} >>`
       : "";
+    const arabicFontEntry = needsArabic ? ` /F5 ${fontArabicRegularType0} 0 R /F6 ${fontArabicBoldType0} 0 R` : "";
     objects.push(
-      `<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 ${fontBold} 0 R /F2 ${fontReg} 0 R /F3 ${fontSerifBold} 0 R /F4 ${fontSerifReg} 0 R >>${propsEntry} >> /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] /Contents ${firstContent + i} 0 R${annotsEntry} >>`,
+      `<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 ${fontBold} 0 R /F2 ${fontReg} 0 R /F3 ${fontSerifBold} 0 R /F4 ${fontSerifReg} 0 R${arabicFontEntry} >>${propsEntry} >> /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] /Contents ${firstContent + i} 0 R${annotsEntry} >>`,
     );
   });
   objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
   objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
   objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Times-Bold >>");
   objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman >>");
+  if (needsArabic) {
+    objects.push(...buildArabicFontObjects("regular", arabicGlyphs.regular, arabicRegularFirst));
+    objects.push(...buildArabicFontObjects("bold", arabicGlyphs.bold, arabicBoldFirst));
+  }
   for (const stream of pageStreams) {
     objects.push(`<< /Length ${Buffer.byteLength(stream, "latin1")} >>\nstream\n${stream}\nendstream`);
   }

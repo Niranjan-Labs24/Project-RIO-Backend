@@ -1,6 +1,19 @@
 import { createHash } from "node:crypto";
 import ExcelJS from "exceljs";
 import type { DocSection, ReportDoc } from "./report-doc";
+import { hasArabic } from "./arabic-text";
+
+// RIO-NFR-007 / RIO-NFR-008 — Excel (unlike the PDF path) needs no font
+// embedding: exceljs writes plain Unicode strings into the workbook's XML,
+// and Excel itself renders and shapes Arabic script natively. The actual gap
+// was alignment/reading order: a cell holding Arabic text with no explicit
+// alignment falls back to whatever the opening application defaults to,
+// which is not reliably right-aligned/RTL-ordered across every Excel/Sheets
+// version. `arabicAlignment` makes it explicit wherever a cell's own value
+// contains Arabic, alongside the existing wrapText/vertical-top styling.
+function arabicAlignment(value: string): Partial<ExcelJS.Alignment> {
+  return hasArabic(value) ? { horizontal: "right", readingOrder: "rtl" } : {};
+}
 
 const ACCENT = "FF1F5A99";
 const LIGHT = "FFE6EEF7";
@@ -70,7 +83,9 @@ function addTableSheet(
     // render past its own column into whatever's next, rather than
     // wrapping inside the cell it actually belongs to.
     const row = sheet.addRow(r);
-    row.eachCell((cell) => (cell.alignment = { wrapText: true, vertical: "top" }));
+    row.eachCell((cell) => {
+      cell.alignment = { wrapText: true, vertical: "top", ...arabicAlignment(String(cell.value ?? "")) };
+    });
     const target = rowLinkSheets?.[i] ?? null;
     if (hasLinks && target) {
       const cell = row.getCell(columns.length + 1);
@@ -87,7 +102,11 @@ function addBarsSheet(wb: ExcelJS.Workbook, s: Extract<DocSection, { kind: "bars
     { header: "Value", key: "value", width: 16 },
   ];
   styleHeaderRow(sheet.getRow(1));
-  for (const b of s.bars) sheet.addRow({ label: b.label, value: b.value });
+  for (const b of s.bars) {
+    const row = sheet.addRow({ label: b.label, value: b.value });
+    const align = arabicAlignment(b.label);
+    if (align.horizontal) row.getCell(1).alignment = align;
+  }
   // Data-bar conditional formatting = an in-cell bar chart over the Value col.
   if (s.bars.length) {
     const options = {
@@ -131,7 +150,7 @@ export async function renderReportExcel(doc: ReportDoc): Promise<Buffer> {
     // wrapping inside the cell, looking like the text "overlaps" other
     // cells (it's the same underlying issue addTableSheet fixes for table
     // sheets).
-    row.getCell(2).alignment = { wrapText: true, vertical: "top" };
+    row.getCell(2).alignment = { wrapText: true, vertical: "top", ...arabicAlignment(value) };
     if (shaded) row.eachCell((c) => (c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: LIGHT } }));
   };
 
@@ -172,7 +191,7 @@ export async function renderReportExcel(doc: ReportDoc): Promise<Buffer> {
   const addText = (label: string, value: string, shaded = false) => {
     if (!detail) return kv(label, value, shaded);
     const row = detail.addRow([label, value]);
-    row.getCell(2).alignment = { wrapText: true, vertical: "top" };
+    row.getCell(2).alignment = { wrapText: true, vertical: "top", ...arabicAlignment(value) };
     return undefined;
   };
 
@@ -225,6 +244,10 @@ export async function renderReportExcel(doc: ReportDoc): Promise<Buffer> {
         styleHeaderRow(sheet.getRow(1));
         for (const tile of s.tiles) {
           const row = sheet.addRow([tile.label, tile.sub, ""]);
+          const labelAlign = arabicAlignment(tile.label);
+          if (labelAlign.horizontal) row.getCell(1).alignment = labelAlign;
+          const subAlign = arabicAlignment(tile.sub);
+          if (subAlign.horizontal) row.getCell(2).alignment = subAlign;
           const target = sheetFor(tile.to);
           if (target) {
             const cell = row.getCell(3);
@@ -270,7 +293,9 @@ export async function renderReportExcel(doc: ReportDoc): Promise<Buffer> {
         s.axes.forEach((ax, ai) => {
           const row: Record<string, string | number> = { axis: ax };
           s.series.forEach((se, si) => (row[`s${si}`] = se.values[ai] ?? 0));
-          sheet.addRow(row);
+          const addedRow = sheet.addRow(row);
+          const align = arabicAlignment(ax);
+          if (align.horizontal) addedRow.getCell(1).alignment = align;
         });
         break;
       }
@@ -310,7 +335,9 @@ export async function renderReportExcel(doc: ReportDoc): Promise<Buffer> {
           if (s.series.length === 2) {
             row.delta = (s.series[0]!.values[gi] ?? 0) - (s.series[1]!.values[gi] ?? 0);
           }
-          sheet.addRow(row);
+          const addedRow = sheet.addRow(row);
+          const align = arabicAlignment(g);
+          if (align.horizontal) addedRow.getCell(1).alignment = align;
         });
         break;
       }
