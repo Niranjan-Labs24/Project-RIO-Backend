@@ -13,6 +13,7 @@
     "dev": "nest start --watch",
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"{src,test}/**/*.ts\"",
+    "openapi:export": "tsx scripts/export-openapi.ts",
     "format": "prettier --write \"{src,test}/**/*.ts\"",
     "test": "vitest run",
     "test:watch": "vitest",
