@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException, Injectable } from '@nestjs/common';
+import { ConflictException, NotFoundException, Injectable, Logger } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { requireActor, requireOrgId } from '../../tenancy/org-context';
 import { AuditService } from '../audit/audit.service';
@@ -8,6 +8,8 @@ import type { Evidence, EvidenceRow, UploadedFilePayload } from './evidence.type
 
 @Injectable()
 export class EvidenceService {
+  private readonly logger = new Logger(EvidenceService.name);
+
   constructor(
     private readonly tenant: TenantPrismaService,
     private readonly audit: AuditService,
@@ -44,16 +46,6 @@ export class EvidenceService {
     }
     const studyId = need.studyId;
 
-    const existingCount = await this.tenant.runInOrgContext((tx) => tx.evidence.count({ where: { needId } }));
-    if (existingCount + files.length > MAX_EVIDENCE_FILES_PER_STUDY) {
-      throw new ConflictException({
-        error: {
-          code: 'EVIDENCE_LIMIT_REACHED',
-          message: `A need can have at most ${MAX_EVIDENCE_FILES_PER_STUDY} evidence files (${existingCount} already uploaded).`,
-        },
-      });
-    }
-
     // Duplicate detection is scoped to needId — each Need runs its own
     // independent evidence set, so the same file can validly reappear under
     // a sibling Need without being flagged. Seeded from what's already
@@ -84,6 +76,21 @@ export class EvidenceService {
         prepared.push({ ...file, fileHash, storageKey, isDuplicate });
       }
       const created = await this.tenant.runInOrgContext(async (tx) => {
+        // GAP-12: serialize concurrent uploads for THIS need so the capacity
+        // check and the inserts are atomic (Read Committed alone can't
+        // prevent two concurrent uploads from both reading count < cap
+        // before either commits). Held for the rest of this transaction,
+        // released automatically at commit/rollback.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'evidence:' + needId}))`;
+        const existingCount = await tx.evidence.count({ where: { needId } });
+        if (existingCount + files.length > MAX_EVIDENCE_FILES_PER_STUDY) {
+          throw new ConflictException({
+            error: {
+              code: 'EVIDENCE_LIMIT_REACHED',
+              message: `A need can have at most ${MAX_EVIDENCE_FILES_PER_STUDY} evidence files (${existingCount} already uploaded).`,
+            },
+          });
+        }
         const rows: EvidenceRow[] = [];
         for (const file of prepared) {
           const row = await tx.evidence.create({
@@ -194,7 +201,31 @@ export class EvidenceService {
       // rather than repeating its UUID.
       return { ...existing, needTitle: need?.title ?? null };
     });
-    await this.storage.remove(row.storageKey);
+    // GAP-13: the DB row is already gone at this point — a failed physical
+    // delete here used to be silently swallowed inside
+    // EvidenceStorageService.remove, orphaning the file with nothing to
+    // signal it. storage.remove() now reports success/failure; on failure,
+    // record a durable, retryable PendingFileDeletion row (a global table,
+    // written via runAsSupervisorWrite — see tenant-prisma.service.ts) and
+    // log at error level instead of dropping the failure on the floor.
+    // EvidenceFileCleanupService's cron sweep retries these.
+    //
+    // GAP-13 review follow-up: storage.remove() now resolves the real
+    // caught error (message + OS error code) rather than a bare boolean —
+    // that real error is what gets persisted as lastError, not a generic
+    // "Retry failed at <timestamp>" placeholder.
+    const removeError = await this.storage.remove(row.storageKey);
+    if (removeError) {
+      this.logger.error(
+        `Failed to delete evidence file from storage (storageKey=${row.storageKey}, evidenceId=${row.id}); ` +
+        'queued for retry via PendingFileDeletion',
+      );
+      await this.tenant.runAsSupervisorWrite((tx) =>
+        tx.pendingFileDeletion.create({
+          data: { storageKey: row.storageKey, lastError: `${removeError.code ?? 'ERR'}: ${removeError.message}` },
+        }),
+      );
+    }
     await this.audit.record({
       action: 'delete', entityType: 'evidence', entityId: row.id, entityLabel: row.fileName,
       // after: null — the file is removed from storage as well as the row, so

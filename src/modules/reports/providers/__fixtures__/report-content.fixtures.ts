@@ -418,7 +418,7 @@ export class StubReportDataProvider extends ReportDataProvider {
         keyFindings:
           "Water accessibility is the most frequently reported need; three governorates report recurring infrastructure concerns.",
         dataQualityNote:
-          "SLA compliance is not yet available — the reviewer-SLA source is pending integration.",
+          "Open-queue health is not yet available — the reviewer-SLA source is pending integration.",
         trendNote: "First collective cycle: trend baseline established.",
         recommendations: [
           "Prioritise water-accessibility interventions across the highest-severity governorates.",

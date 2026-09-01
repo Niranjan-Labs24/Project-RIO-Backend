@@ -235,7 +235,7 @@ describe("ReportSummaryDataProvider.getCollectiveReport (RPT02)", () => {
     expect(c.aiSummary.executiveSummary).toContain("3 need(s) recorded");
     expect(c.aiSummary.executiveSummary).toContain("1 are High priority");
     expect(c.aiSummary.keyFindings).toContain("Clean water access");
-    expect(c.aiSummary.recommendations).toContain("Clear the overdue reviewer queue — SLA compliance is 75%.");
+    expect(c.aiSummary.recommendations).toContain("Clear the overdue reviewer queue — open-queue health is 75%.");
   });
 
   it("says so plainly when the org has no needs", async () => {

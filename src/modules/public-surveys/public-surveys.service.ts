@@ -194,7 +194,7 @@ export class PublicSurveysService {
     };
     const [rows, total] = await this.tenant.runInOrgContext((tx) =>
       Promise.all([
-        tx.surveyResponse.findMany({ where, orderBy: { submittedAt: 'desc' }, take, skip }),
+        tx.surveyResponse.findMany({ where, orderBy: [{ submittedAt: 'desc' }, { id: 'desc' }], take, skip }),
         tx.surveyResponse.count({ where }),
       ]),
     );
@@ -213,9 +213,15 @@ export class PublicSurveysService {
   async listResponsesWithAnswers(needId: string, surveyLinkId?: string): Promise<SurveyResponseDetail[]> {
     await this.findNeedOrThrow(needId);
     const { rows, questionMap } = await this.tenant.runInOrgContext(async (tx) => {
+      const where = { needId, ...(surveyLinkId ? { surveyLinkId } : {}) };
+      // GAP-18: reject rather than silently truncate — a screen or export
+      // that quietly stops at MAX_EXPORTABLE_RESPONSES rows looks complete
+      // but isn't. Count first, inside the same tx as the read below, so
+      // the decision is made against the same `where` the read then uses.
+      await this.assertExportableCount(tx, where);
       const rows = await tx.surveyResponse.findMany({
-        where: { needId, ...(surveyLinkId ? { surveyLinkId } : {}) },
-        orderBy: { submittedAt: 'desc' },
+        where,
+        orderBy: [{ submittedAt: 'desc' }, { id: 'desc' }],
         take: MAX_EXPORTABLE_RESPONSES,
       });
       const questionMap = await this.buildQuestionMap(tx, needId);
@@ -250,7 +256,7 @@ export class PublicSurveysService {
     };
     const { rows, total, questionMap } = await this.tenant.runInOrgContext(async (tx) => {
       const [rows, total, questionMap] = await Promise.all([
-        tx.surveyResponse.findMany({ where, orderBy: { submittedAt: 'desc' }, take, skip }),
+        tx.surveyResponse.findMany({ where, orderBy: [{ submittedAt: 'desc' }, { id: 'desc' }], take, skip }),
         tx.surveyResponse.count({ where }),
         this.buildQuestionMap(tx, needId),
       ]);
@@ -300,6 +306,9 @@ export class PublicSurveysService {
     await this.findNeedOrThrow(needId);
     const escape = (value: string): string => `"${value.replace(/"/g, '""')}"`;
     return this.tenant.runInOrgContext(async (tx) => {
+      // GAP-18: reject rather than silently truncate at MAX_EXPORTABLE_RESPONSES
+      // rows — an export that quietly stops partway looks complete but isn't.
+      await this.assertExportableCount(tx, { needId, ...(surveyLinkId ? { surveyLinkId } : {}) });
       const [questionMap, versionMap] = await Promise.all([
         this.buildQuestionMap(tx, needId),
         this.buildVersionMap(tx, needId),
@@ -340,6 +349,8 @@ export class PublicSurveysService {
   async exportResponsesExcel(needId: string, surveyLinkId?: string): Promise<Buffer> {
     await this.findNeedOrThrow(needId);
     return this.tenant.runInOrgContext(async (tx) => {
+      // GAP-18: reject rather than silently truncate — see exportResponsesCsv.
+      await this.assertExportableCount(tx, { needId, ...(surveyLinkId ? { surveyLinkId } : {}) });
       const [questionMap, versionMap] = await Promise.all([
         this.buildQuestionMap(tx, needId),
         this.buildVersionMap(tx, needId),
@@ -400,6 +411,28 @@ export class PublicSurveysService {
       await workbook.commit();
       return Buffer.concat(chunks);
     });
+  }
+
+  // GAP-18: shared guard for the export/bulk-read paths below. Counts
+  // against the exact same `where` the caller then reads with, inside the
+  // same org tx, so the reject decision and the subsequent read can never
+  // disagree. Rejecting (rather than silently capping at
+  // MAX_EXPORTABLE_RESPONSES) is the safe default — a user should never
+  // receive a silently-incomplete export with no indication rows are
+  // missing.
+  private async assertExportableCount(
+    tx: Prisma.TransactionClient,
+    where: Prisma.SurveyResponseWhereInput,
+  ): Promise<void> {
+    const total = await tx.surveyResponse.count({ where });
+    if (total > MAX_EXPORTABLE_RESPONSES) {
+      throw new ConflictException({
+        error: {
+          code: 'EXPORT_TOO_LARGE',
+          message: `This export has ${total} responses, above the ${MAX_EXPORTABLE_RESPONSES} limit. Narrow the filter or contact an administrator to split the export.`,
+        },
+      });
+    }
   }
 
   // Cursor-paginated in batches of EXPORT_BATCH_SIZE, capped in total at

@@ -5,6 +5,7 @@ import { EvidenceStorageService } from "./evidence.storage.service";
 import { EvidenceDocumentsService } from "./evidence-documents.service";
 import { DocumentSummaryService } from "./document-summary.service";
 import { EvidenceDocumentsController } from "./evidence-documents.controller";
+import { EvidenceFileCleanupService } from "./evidence-file-cleanup.service";
 
 @Module({
   controllers: [
@@ -17,6 +18,10 @@ import { EvidenceDocumentsController } from "./evidence-documents.controller";
     EvidenceStorageService,
     EvidenceDocumentsService,
     DocumentSummaryService,
+    // GAP-13 — relies on ScheduleModule.forRoot() being imported once,
+    // globally, in AppModule (see app.module.ts), same as
+    // CitizenPiiRetentionService/SystemLogsRetentionService/BackupService.
+    EvidenceFileCleanupService,
   ],
   exports: [EvidenceDocumentsService, DocumentSummaryService],
 })

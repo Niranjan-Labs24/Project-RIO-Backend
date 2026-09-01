@@ -1,10 +1,20 @@
 import { createHash } from 'node:crypto';
+import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { EvidenceStorageService } from './evidence.storage.service';
 
 function makeService() {
   // hashBuffer does no I/O and config isn't touched by it, so a real
   // ConfigService isn't needed for these tests.
   return new EvidenceStorageService(undefined as never);
+}
+
+// remove() does real fs I/O (unlink), so these tests need a real directory
+// and a fake ConfigService pointing evidenceStoragePath at it — mirrors the
+// mkdtempSync pattern in src/config/https-options.spec.ts.
+function makeServiceWithStorageDir(dir: string) {
+  return new EvidenceStorageService({ evidenceStoragePath: dir } as never);
 }
 
 describe('EvidenceStorageService', () => {
@@ -29,6 +39,62 @@ describe('EvidenceStorageService', () => {
       const a = svc.hashBuffer(Buffer.from('content A'));
       const b = svc.hashBuffer(Buffer.from('content B'));
       expect(a).not.toBe(b);
+    });
+  });
+
+  // GAP-13: remove() used to swallow unlink failures with
+  // `.catch(() => undefined)`, always resolving as if the delete succeeded
+  // even when the file was left on disk. It must now surface failure to the
+  // caller instead of silently pretending success.
+  //
+  // GAP-13 review follow-up: remove() must still never throw (the
+  // upload-rollback Promise.all(prepared.map(remove)) path must never
+  // reject), but on failure it must return the real OS error — including
+  // its `code` (e.g. ENOENT) — instead of a bare boolean, so callers can
+  // record the genuine error in PendingFileDeletion.lastError rather than a
+  // generic placeholder string.
+  describe('remove', () => {
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'evidence-storage-'));
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('deletes an existing file and resolves null (no error)', async () => {
+      const key = 'a1111111-1111-1111-1111-111111111111.pdf';
+      writeFileSync(join(dir, key), 'content');
+      const svc = makeServiceWithStorageDir(dir);
+
+      const result = await svc.remove(key);
+
+      expect(result).toBeNull();
+      expect(existsSync(join(dir, key))).toBe(false);
+    });
+
+    it('surfaces the real OS error instead of silently swallowing it when the file does not exist', async () => {
+      const key = 'a2222222-2222-2222-2222-222222222222.pdf';
+      const svc = makeServiceWithStorageDir(dir);
+
+      const result = await svc.remove(key);
+
+      // Previously this resolved undefined (swallowed) no matter what
+      // happened on disk, and later a bare `false`. It must now report the
+      // genuine error — including the OS error code — rather than a
+      // placeholder.
+      expect(result).not.toBeNull();
+      expect(result?.code).toBe('ENOENT');
+      expect(result?.message).toBeTruthy();
+    });
+
+    it('never rejects even when the underlying unlink fails', async () => {
+      const key = 'a3333333-3333-3333-3333-333333333333.pdf';
+      const svc = makeServiceWithStorageDir(dir);
+
+      await expect(svc.remove(key)).resolves.not.toThrow();
     });
   });
 });

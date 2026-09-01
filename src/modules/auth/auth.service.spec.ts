@@ -545,3 +545,95 @@ describe('resetPassword atomic claim (GAP-06)', () => {
     expect(tx.user.update).not.toHaveBeenCalled();
   });
 });
+
+describe('AuthService.forgotPassword', () => {
+  // Local stubs mirroring the changePassword block above: forgotPassword
+  // needs fine-grained control over runAsSupervisor/runAsOrg and over the
+  // mailer's resolve timing, so the file-level fakeTenant()/mailerStub
+  // (which only stub sendTemporaryPassword) aren't enough here.
+  const audit = { record: vi.fn() };
+  const repo = { findByRegistrationNumber: vi.fn(), findUserByEmail: vi.fn(), createOrganisationAndAdmin: vi.fn() };
+  const config = { nodeEnv: 'development', corsOrigin: 'https://app.example.test' } as unknown as ConfigService;
+
+  const knownUser = {
+    id: 'u1', email: 'admin@demo-ngo.org', passwordHash: 'h', org: { ...orgFixture, isActive: true },
+  };
+
+  function forgotPasswordTenant(user: unknown) {
+    const updateManyCalls: Record<string, unknown>[] = [];
+    const createCalls: Record<string, unknown>[] = [];
+    const tenant = {
+      runAsSupervisor: async (fn: (tx: unknown) => unknown) => fn({ user: { findUnique: async () => user } }),
+      runAsOrg: async (_orgId: string, fn: (tx: unknown) => unknown) =>
+        fn({
+          passwordResetToken: {
+            updateMany: async (args: Record<string, unknown>) => { updateManyCalls.push(args); return { count: 0 }; },
+            create: async (args: Record<string, unknown>) => { createCalls.push(args); return {}; },
+          },
+        }),
+    };
+    return { tenant, updateManyCalls, createCalls };
+  }
+
+  // A promise that never resolves within the test's lifetime — used to prove
+  // forgotPassword() does not `await` the mailer call on its critical path.
+  function neverResolvingMailer() {
+    return { sendPasswordResetEmail: vi.fn(() => new Promise<boolean>(() => {})) };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('resolves for a known user even though the mailer send never resolves (email is not awaited)', async () => {
+    const { tenant } = forgotPasswordTenant(knownUser);
+    const mailer = neverResolvingMailer();
+    const service = new AuthService(tenant as never, passwords, tokens, audit as never, repo as never, mailer as never, config, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never);
+
+    // If the mailer call were awaited, this would hang until the test's
+    // timeout and fail; racing against a short timer proves forgotPassword
+    // itself resolves well before the mailer promise ever could.
+    const result = await Promise.race([
+      service.forgotPassword({ email: 'admin@demo-ngo.org' }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('forgotPassword did not resolve in time — mailer send is being awaited')), 500)),
+    ]);
+
+    expect(result).toEqual({ message: 'If that email exists, a reset link has been sent.' });
+    expect(mailer.sendPasswordResetEmail).toHaveBeenCalledWith('admin@demo-ngo.org', expect.stringContaining('/reset-password?token='));
+  });
+
+  it('performs comparable throwaway work for an unknown user before returning the generic result', async () => {
+    const { tenant } = forgotPasswordTenant(null);
+    const mailer = { sendPasswordResetEmail: vi.fn().mockResolvedValue(true) };
+    const hashSpy = vi.spyOn(passwords, 'hash');
+    const service = new AuthService(tenant as never, passwords, tokens, audit as never, repo as never, mailer as never, config, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never);
+
+    const result = await service.forgotPassword({ email: 'nobody@example.test' });
+
+    expect(result).toEqual({ message: 'If that email exists, a reset link has been sent.' });
+    // Equalizing work: the unknown-user branch must still pay for a
+    // comparable hash before short-circuiting, so response latency doesn't
+    // reveal that the email lookup missed.
+    expect(hashSpy).toHaveBeenCalled();
+    // And it must never reach the "known user" side effects.
+    expect(mailer.sendPasswordResetEmail).not.toHaveBeenCalled();
+    hashSpy.mockRestore();
+  });
+
+  it('returns the identical generic message for both known and unknown users', async () => {
+    const known = forgotPasswordTenant(knownUser);
+    const unknown = forgotPasswordTenant(null);
+    const mailer = { sendPasswordResetEmail: vi.fn().mockResolvedValue(true) };
+
+    const knownSvc = new AuthService(known.tenant as never, passwords, tokens, audit as never, repo as never, mailer as never, config, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never);
+    const unknownSvc = new AuthService(unknown.tenant as never, passwords, tokens, audit as never, repo as never, mailer as never, config, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never);
+
+    const [knownResult, unknownResult] = await Promise.all([
+      knownSvc.forgotPassword({ email: 'admin@demo-ngo.org' }),
+      unknownSvc.forgotPassword({ email: 'nobody@example.test' }),
+    ]);
+
+    expect(knownResult).toEqual(unknownResult);
+    expect(knownResult).toEqual({ message: 'If that email exists, a reset link has been sent.' });
+  });
+});
