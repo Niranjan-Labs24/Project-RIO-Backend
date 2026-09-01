@@ -106,9 +106,14 @@ services:
     # Migrations are NOT run automatically here: `prisma` (the CLI) and
     # prisma.config.ts are dev-only tooling and this runtime image is built
     # with `pnpm install --prod`, so the CLI isn't present. Apply schema
-    # changes from the host (or a one-off `build` target container) with
-    # `pnpm prisma migrate deploy` before/while this service starts — see
-    # README.md "Quick start" and "Migrations in Docker".
+    # changes from the host (or a one-off `build` target container) before/
+    # while this service starts, IN THIS ORDER:
+    #     pnpm gw:bootstrap && pnpm prisma migrate deploy
+    # gw:bootstrap must run first on a fresh database — migration
+    # 20260824160000_graphile_worker_grants GRANTs on graphile_worker
+    # objects that only exist once gw:bootstrap installs that schema. See
+    # README.md "Quick start", "Database setup / deploy ordering", and
+    # "Migrations in Docker".
     ports:
       # Host port defaults to 4000 (the FE default NEXT_PUBLIC_API_BASE_URL is
       # http://localhost:4000/api). Override with API_HOST_PORT in your local

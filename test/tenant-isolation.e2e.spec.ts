@@ -1,11 +1,15 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import { v7 as uuidv7 } from 'uuid';
+import type { SchedulerRegistry } from '@nestjs/schedule';
 import type { PrismaClient } from '../src/generated/prisma';
 import { PrismaClient as PrismaClientCtor } from '../src/generated/prisma';
 import { orgContext } from '../src/tenancy/org-context';
 import { TenantPrismaService } from '../src/tenancy/tenant-prisma.service';
 import { pgSslFromEnv } from '../src/prisma/pg-ssl';
 import { appClient, ownerClient } from './db.helper';
+import { AuditCheckpointService } from '../src/modules/audit/audit-checkpoint.service';
+import type { ConfigService } from '../src/config/config.service';
+import type { SystemLogsService } from '../src/modules/system-logs/system-logs.service';
 
 // Security CI gate for FR-010 (fail-closed, org-scoped RLS) on the DOMAIN
 // tenant tables — replaces the notes-based gate the domain migration removed.
@@ -98,5 +102,126 @@ describe('Cross-tenant isolation (RLS) — users', () => {
     } finally {
       await singleConn.$disconnect();
     }
+  });
+});
+
+// GAP-02 — tamper-evident audit via signed checkpoints, against the real
+// Docker DB (no mocks): seed audit_logs rows, run the checkpoint job,
+// verify it reports ok, then tamper a covered row directly (as owner —
+// the same privileged-actor threat model the checkpoint chain exists to
+// detect) and confirm verify() now reports a mismatch.
+describe('Audit checkpoint integrity (GAP-02)', () => {
+  let owner: PrismaClient;
+  let app: PrismaClient;
+  let tenant: TenantPrismaService;
+  let service: AuditCheckpointService;
+  const orgC = uuidv7();
+  const KEY = Buffer.alloc(32, 5).toString('base64');
+  // Every audit_logs id this suite seeds — tracked so afterAll can safely
+  // unwind exactly the checkpoints this run appended (see afterAll).
+  const seededIds: string[] = [];
+
+  function fakeConfig(): ConfigService {
+    return { auditCheckpointCron: '0 * * * *', auditSigningKey: KEY } as unknown as ConfigService;
+  }
+  function fakeSchedulerRegistry(): SchedulerRegistry {
+    return { addCronJob: () => undefined } as unknown as SchedulerRegistry;
+  }
+  // The off-box mirror (GAP-02 Task 5) isn't what this suite exercises —
+  // it's covered by audit-checkpoint.service.spec.ts's own unit tests —
+  // so a no-op fake keeps this integration test focused on checkpoint/
+  // verify against the real DB without also writing to system_logs.
+  function fakeSystemLogs(): SystemLogsService {
+    return { record: () => undefined } as unknown as SystemLogsService;
+  }
+
+  async function seedAuditRow(action: string, label: string): Promise<string> {
+    const id = uuidv7();
+    await owner.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.current_org_id', ${orgC}, true)`;
+      await tx.$executeRaw`
+        INSERT INTO audit_logs (id, organisation_id, action, entity_type, entity_label, created_at)
+        VALUES (${id}::uuid, ${orgC}::uuid, ${action}, 'test_entity', ${label}, now())
+      `;
+    });
+    seededIds.push(id);
+    return id;
+  }
+
+  beforeAll(async () => {
+    owner = ownerClient();
+    app = appClient();
+    // Checkpoint reads are genuinely cross-org (runAsSupervisor) — this
+    // needs the real cnap_supervisor-role connection, not the app client
+    // reused in its place (that role has no org GUC set, and audit_logs'
+    // RLS policy then matches organisation_id = NULL, i.e. zero rows: every
+    // checkpoint read would silently see nothing).
+    const supervisor = new PrismaClientCtor({
+      adapter: new PrismaPg({ connectionString: process.env.SUPERVISOR_DATABASE_URL, ssl: pgSslFromEnv() }),
+    });
+    tenant = new TenantPrismaService(app as never, supervisor as never);
+    service = new AuditCheckpointService(fakeConfig(), tenant, fakeSchedulerRegistry(), fakeSystemLogs());
+    await owner.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.current_org_id', ${orgC}, true)`;
+      await tx.$executeRaw`INSERT INTO organisations (id, name, updated_at) VALUES (${orgC}::uuid, 'ISO Org C (checkpoint)', now())`;
+    });
+  });
+
+  afterAll(async () => {
+    // audit_checkpoints is a single global, shared, append-only chain (no
+    // org scoping — see the migration's no-RLS comment): deleting a
+    // checkpoint from the *middle* of the chain (e.g. one covering other
+    // suites' pre-existing rows) would corrupt it for everyone. But leaving
+    // OUR OWN trailing checkpoints in place while deleting the audit_logs
+    // rows they cover is worse — a checkpoint whose covered row no longer
+    // exists is indistinguishable from tampering, and would permanently
+    // fail verify() for every later run against this shared dev DB. Since
+    // this test always runs its checkpoint() calls last, its checkpoints
+    // are the chain's current tail — safe to unwind, newest-first, for
+    // exactly as long as each one's covered_to_id is one of ours.
+    const seeded = new Set(seededIds);
+    const chain = await owner.auditCheckpoint.findMany({ orderBy: { createdAt: 'desc' } });
+    for (const cp of chain) {
+      if (!seeded.has(cp.coveredToId)) break;
+      await owner.auditCheckpoint.delete({ where: { id: cp.id } });
+    }
+
+    await owner.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.current_org_id', ${orgC}, true)`;
+      await tx.$executeRaw`DELETE FROM audit_logs WHERE organisation_id = ${orgC}::uuid`;
+    });
+    await owner.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.current_org_id', ${orgC}, true)`;
+      await tx.$executeRaw`DELETE FROM organisations WHERE id = ${orgC}::uuid`;
+    });
+    await owner.$disconnect();
+    await app.$disconnect();
+  });
+
+  it('checkpoints seeded rows and verify() reports ok', async () => {
+    await seedAuditRow('create', 'Row One');
+    await seedAuditRow('edit', 'Row Two');
+
+    await service.checkpoint();
+    const result = await service.verify();
+
+    expect(result.ok).toBe(true);
+  });
+
+  it('detects tampering: an owner-edited covered row makes verify() fail', async () => {
+    const tamperedId = await seedAuditRow('create', 'Original Label');
+    await service.checkpoint();
+    expect((await service.verify()).ok).toBe(true);
+
+    // Privileged-actor tamper: bypass the app entirely (cnap_app has no
+    // UPDATE grant on audit_logs) via the owner connection.
+    await owner.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.current_org_id', ${orgC}, true)`;
+      await tx.$executeRaw`UPDATE audit_logs SET entity_label = 'HACKED' WHERE id = ${tamperedId}::uuid`;
+    });
+
+    const result = await service.verify();
+    expect(result.ok).toBe(false);
+    expect(result.brokenCheckpointId).toBeDefined();
   });
 });

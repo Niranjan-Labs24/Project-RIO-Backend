@@ -1,4 +1,4 @@
-import { BadRequestException, GoneException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, GoneException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomInt } from 'node:crypto';
 import { Prisma } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
@@ -7,9 +7,7 @@ import { PasswordService } from '../../auth/password.service';
 import { SmsService } from '../../sms/sms.service';
 import { AuditService } from '../audit/audit.service';
 import { SurveysService } from '../surveys/surveys.service';
-import { DeterministicScoringService } from '../priority/scoring.service';
-import { ScoreRollupService } from '../priority/rollup.service';
-import { encryptPii } from './citizen-pii.crypto';
+import { computeBlindIndex, encryptPii } from './citizen-pii.crypto';
 import type {
   CheckDuplicatePayload, CheckDuplicateResult, CitizenOtpChallengeRow, PublicSurveyLinkRow, RequestOtpPayload,
   RequestOtpResult, ResolvedSurvey, SubmitResponsePayload, SubmitResponseResult, VerifyOtpPayload, VerifyOtpResult,
@@ -21,8 +19,6 @@ const SECONDS_PER_QUESTION = 20;
 
 @Injectable()
 export class CitizenService {
-  private readonly logger = new Logger(CitizenService.name);
-
   constructor(
     private readonly tenant: TenantPrismaService,
     private readonly config: ConfigService,
@@ -30,8 +26,6 @@ export class CitizenService {
     private readonly sms: SmsService,
     private readonly surveys: SurveysService,
     private readonly audit: AuditService,
-    private readonly scoringEngine: DeterministicScoringService,
-    private readonly rollupService: ScoreRollupService,
   ) {}
 
   // The published Survey Builder survey is the only source of questions for
@@ -120,17 +114,19 @@ export class CitizenService {
     // normalizeContact/normalizeMobile) so a trivial casing/whitespace
     // difference can't bypass this check. A match on EITHER channel counts
     // as a duplicate — see SurveyResponse.mobile's comment.
-    const encKey = this.config.encryptionKey;
-    // Deterministic encryption: same plaintext + key → same ciphertext,
-    // so equality queries against encrypted stored values work correctly.
-    const contact = encryptPii(this.normalizeContact(payload.contact), encKey);
+    // GAP-03/AD-17: equality is via the keyed blind index, not the GCM
+    // ciphertext columns — GCM's random IV means the same plaintext never
+    // produces the same ciphertext twice, so a ciphertext-equality query
+    // would never match even for a genuine duplicate.
+    const idxKey = this.config.blindIndexKey;
+    const contactBlindIndex = computeBlindIndex(this.normalizeContact(payload.contact), idxKey);
     const normalizedMobile = this.normalizeMobile(payload.mobile);
-    const mobile = normalizedMobile ? encryptPii(normalizedMobile, encKey) : null;
+    const mobileBlindIndex = normalizedMobile ? computeBlindIndex(normalizedMobile, idxKey) : null;
     const existing = await this.tenant.runAsSupervisor((tx) =>
       tx.surveyResponse.findFirst({
         where: {
           needId: link.needId,
-          OR: [{ contact }, ...(mobile ? [{ mobile }] : [])],
+          OR: [{ contactBlindIndex }, ...(mobileBlindIndex ? [{ mobileBlindIndex }] : [])],
         },
       }),
     );
@@ -251,10 +247,18 @@ export class CitizenService {
       // verification, not just a reused challenge. Scoped to the Need, not
       // the Study — see checkDuplicate's comment. `mobile` is only in the
       // OR when the challenge actually has one (see its nullable comment).
+      // GAP-03 fix: this previously compared challenge.contact (PLAINTEXT)
+      // against the stored `contact` column (CIPHERTEXT) — an always-false
+      // comparison that silently never caught a duplicate. Query by the
+      // keyed blind index instead, same as checkDuplicate.
+      const idxKey = this.config.blindIndexKey;
+      const contactBlindIndex = computeBlindIndex(this.normalizeContact(challenge.contact), idxKey);
+      const normalizedChallengeMobile = challenge.mobile ? this.normalizeMobile(challenge.mobile) : null;
+      const mobileBlindIndex = normalizedChallengeMobile ? computeBlindIndex(normalizedChallengeMobile, idxKey) : null;
       const existing = await tx.surveyResponse.findFirst({
         where: {
           needId: link.needId,
-          OR: [{ contact: challenge.contact }, ...(challenge.mobile ? [{ mobile: challenge.mobile }] : [])],
+          OR: [{ contactBlindIndex }, ...(mobileBlindIndex ? [{ mobileBlindIndex }] : [])],
         },
       });
       if (existing) {
@@ -314,9 +318,16 @@ export class CitizenService {
           needId: link.needId,
           studyId: link.studyId,
           surveyLinkId: link.id,
-          // RIO-NFR-002: encrypt citizen PII at rest (AES-256-CBC, deterministic IV).
+          // RIO-NFR-002 / AD-17: encrypt citizen PII at rest (AES-256-GCM,
+          // random IV — authenticated, non-deterministic).
           contact: encryptPii(challenge.contact, encKey),
           mobile: challenge.mobile ? encryptPii(challenge.mobile, encKey) : null,
+          // GAP-03/AD-17: keyed blind index, computed above from the same
+          // normalized challenge contact/mobile the dedup check just used —
+          // this is what dedup/uniqueness now runs against, since the GCM
+          // ciphertext above is no longer deterministic.
+          contactBlindIndex,
+          mobileBlindIndex,
           contactName: payload.contactName ?? null,
           gender: payload.gender ?? null,
           ageBracket: payload.ageBracket,
@@ -362,32 +373,33 @@ export class CitizenService {
           { field: 'Need', before: null, after: need?.title ?? link.needId },
         ],
       });
+      // GAP-04: enqueue scoring durably, on the SAME transaction as the
+      // response — via graphile-worker's add_job on the app role (cnap_app;
+      // granted the minimal enqueue privileges in
+      // 20260824160000_graphile_worker_grants). This replaces the old
+      // unawaited floating promise, which ran detached from the request and
+      // was lost outright on any crash/restart between commit and completion.
+      // Because the job row commits (or rolls back) atomically with the
+      // SurveyResponse, it is never lost and never runs for a response that
+      // didn't commit. The runner (JobsWorkerService) then executes the
+      // score_response task (scoring + roll-up, the logic moved out of the
+      // floating promise) with retries per max_attempts.
+      //
+      //  • job_key `score:<id>` dedups a re-submit / retry of the same
+      //    response into one job (job_key_mode defaults to 'replace').
+      //  • queue_name `study:<studyId>` serializes per-study roll-ups —
+      //    graphile-worker runs one job per named queue at a time, so two
+      //    responses under the same study never race on the roll-up upsert.
+      // Named args make this independent of add_job's positional signature.
+      await tx.$executeRawUnsafe(
+        `SELECT graphile_worker.add_job('score_response', payload := $1::json, max_attempts := 5, job_key := $2, queue_name := $3)`,
+        JSON.stringify({ responseId: created.id, orgId: link.orgId }),
+        `score:${created.id}`,
+        `study:${link.studyId}`,
+      );
       // Challenge was already atomically claimed (consumedAt set) above —
       // no second write needed here.
       return created;
-    });
-
-    // Score and rollup asynchronously. Both calls take `orgId` explicitly —
-    // this continuation runs detached from the citizen's (unauthenticated)
-    // request, so there's no ambient org context for them to fall back to.
-    const { studyId, orgId } = row;
-    this.scoringEngine.scoreResponse(row.id, orgId).then(async () => {
-      const resp = await this.tenant.runAsSupervisor(async (tx) => tx.surveyResponse.findUnique({
-        where: { id: row.id },
-        include: { need: true }
-      }));
-      if (resp) {
-        const survey = await this.tenant.runAsSupervisor(async (tx) => tx.survey.findFirst({
-          where: { needId: resp.needId, status: 'PUBLISHED' }
-        }));
-        if (survey) {
-          const villageId = resp.need.village?.[0] || null;
-          await this.rollupService.calculateRollups(studyId, survey.id, villageId, { orgId });
-          await this.rollupService.calculateRollups(studyId, survey.id, null, { orgId });
-        }
-      }
-    }).catch((err: Error) => {
-      this.logger.error(`Failed to calculate scores for response ${row.id}`, err.stack);
     });
 
     return { id: row.id, submittedAt: row.submittedAt.toISOString() };

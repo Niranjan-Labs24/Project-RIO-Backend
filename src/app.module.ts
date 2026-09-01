@@ -49,6 +49,7 @@ import { AiModule } from './modules/ai/ai.module';
 import { QuestionsModule } from './modules/questions/questions.module';
 import { SurveysModule } from './modules/surveys/surveys.module';
 import { BackupModule } from './modules/backup/backup.module';
+import { JobsModule } from './modules/jobs/jobs.module';
 import { OperationalLogInterceptor } from './common/interceptors/operational-log.interceptor';
 import { AppController } from './app.controller';
 
@@ -113,6 +114,9 @@ import { AppController } from './app.controller';
     QuestionsModule,
     SurveysModule,
     BackupModule,
+    // GAP-04 — in-process durable job runner (graphile-worker). After
+    // BackupModule, same "background provider, no controller" shape.
+    JobsModule,
   ],
   controllers: [AppController],
   providers: [

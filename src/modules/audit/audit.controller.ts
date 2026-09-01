@@ -3,11 +3,15 @@ import type { Response } from 'express';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { parseIntParam } from '../../common/http/query.util';
 import { AuditService } from './audit.service';
+import { AuditCheckpointService, type VerifyResult } from './audit-checkpoint.service';
 import type { AuditListResult } from './audit.types';
 
 @Controller('audit')
 export class AuditController {
-  constructor(private readonly audit: AuditService) {}
+  constructor(
+    private readonly audit: AuditService,
+    private readonly checkpoints: AuditCheckpointService,
+  ) {}
 
   @Get()
   @RequirePermission('auditLog', 'read')
@@ -78,6 +82,19 @@ export class AuditController {
   @RequirePermission('auditLog', 'read')
   getSummary() {
     return this.audit.getSummary();
+  }
+
+  // GAP-02 — checkpoint-chain integrity check. Gated on systemLogs (held by
+  // system_admin alone — see role-matrix.ts), deliberately NOT auditLog:
+  // auditLog is also granted to center_supervisor, but whether the
+  // tamper-evidence chain itself is intact is platform-operations
+  // territory, same posture as system_logs. Declared before the ':id' route
+  // below so the literal "integrity" segment is never swallowed as an id
+  // (same ordering note as system-logs.controller.ts's request/:requestId).
+  @Get('integrity')
+  @RequirePermission('systemLogs', 'read')
+  getIntegrity(): Promise<VerifyResult> {
+    return this.checkpoints.verify();
   }
 
   @Get(':id')

@@ -340,6 +340,36 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+// GAP-02 — tamper-evident audit via periodic signed checkpoints. Append-only
+// is already enforced for the app on audit_logs (cnap_app has SELECT,
+// INSERT only — no UPDATE/DELETE); the residual threat this table addresses
+// is a privileged actor (DB owner/superuser) editing audit_logs history
+// directly. A checkpoint job periodically reads all audit rows since the
+// last checkpoint (ordered by (createdAt, id) — createdAt is not unique, so
+// id, a uuidv7, is the mandatory tie-breaker for deterministic coverage
+// boundaries), computes a digest, chains it to the previous checkpoint's
+// signature, and signs it. A verifier recomputes from source rows and
+// compares. Single global chain — spans every org, so this table carries no
+// org ownership and no RLS policy (same "global table, no RLS" pattern as
+// SystemLog/NcnpReportReview); grants alone confine it (see the migration).
+model AuditCheckpoint {
+  id                 String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  // HMAC-SHA256 signature of the previous checkpoint in the chain; null for
+  // the genesis checkpoint.
+  prevChainHash      String?  @map("prev_chain_hash") @db.Char(64)
+  // Null on the genesis checkpoint (coverage starts "from the beginning").
+  coveredFromId      String?  @map("covered_from_id") @db.Uuid
+  coveredToId        String   @map("covered_to_id") @db.Uuid
+  coveredToCreatedAt DateTime @map("covered_to_created_at") @db.Timestamptz(6)
+  rowCount           Int      @map("row_count")
+  digest             String   @db.Char(64)
+  signature          String   @db.Char(64)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([createdAt])
+  @@map("audit_checkpoints")
+}
+
 // ──────── RIO-NFR-016: Operational logging ────────
 
 enum SystemLogLevel {
@@ -1148,38 +1178,45 @@ enum AgeBracket {
 // Generic response row — Response Quality, AI Summary, and Priority
 // Dashboard all read from this same table, seeded or real alike.
 model SurveyResponse {
-  id             String          @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  orgId          String          @map("org_id") @db.Uuid
-  needId         String          @map("need_id") @db.Uuid
+  id                String          @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId             String          @map("org_id") @db.Uuid
+  needId            String          @map("need_id") @db.Uuid
   // Denormalized from Need.studyId — see Evidence.studyId's comment.
-  studyId        String          @map("study_id") @db.Uuid
-  surveyLinkId   String          @map("survey_link_id") @db.Uuid
-  contactName    String?         @map("contact_name") @db.VarChar(200)
+  studyId           String          @map("study_id") @db.Uuid
+  surveyLinkId      String          @map("survey_link_id") @db.Uuid
+  contactName       String?         @map("contact_name") @db.VarChar(200)
   // Email — see CitizenOtpChallenge.contact's comment; every downstream
   // reader (reports, scoring, respondent dedup) already treats this as the
   // respondent's email identity, so it keeps its existing name.
   // Text, not VarChar: this column stores CIPHERTEXT, not the raw email.
-  // encryptPii emits "<iv-hex>:<ciphertext-hex>" — 32 hex IV chars + a colon
-  // + the AES-CBC block-padded body — so a 30-char email lands at 97 chars
-  // and the width has to track the ciphertext, never the plaintext. Sized
-  // by the value it holds instead of a guessed ceiling.
-  contact        String          @db.Text
+  // GAP-03/AD-17: encryptPii now emits AES-256-GCM ciphertext with a random
+  // IV ("gcm.v1:<iv-hex>:<tag-hex>:<ct-hex>"), so the SAME plaintext no
+  // longer produces the SAME ciphertext — equality/dedup can't be done
+  // against this column any more (see contactBlindIndex below). Sized by
+  // the value it holds instead of a guessed ceiling.
+  contact           String          @db.Text
   // Mobile number — new, alongside `contact`. Both are copied from the
   // CitizenOtpChallenge that verified this submission (see
   // CitizenService.submitResponse); either one matching a prior response
-  // for this Need counts as a duplicate (see the two unique constraints
-  // below), since either channel uniquely identifies a person. Nullable
-  // only so pre-this-feature rows don't need a backfill — Postgres treats
-  // multiple NULLs as distinct under a unique index, so this doesn't weaken
-  // the dedup guarantee for any row that does have one.
-  // Text for the same reason as `contact` above. VarChar(32) here was
-  // unsatisfiable: the shortest possible ciphertext is 65 chars (32 IV + 1
-  // + one 32-char AES block), so every mobile-bearing submission failed on
-  // P2000 before this.
-  mobile         String?         @db.Text
-  gender         Gender?
-  settlementType SettlementType? @map("settlement_type")
-  ageBracket     AgeBracket?     @map("age_bracket")
+  // for this Need counts as a duplicate (see the two unique constraints on
+  // the blind-index columns below), since either channel uniquely
+  // identifies a person. Nullable only so pre-this-feature rows don't need
+  // a backfill — Postgres treats multiple NULLs as distinct under a unique
+  // index, so this doesn't weaken the dedup guarantee for any row that does
+  // have one.
+  // Text for the same reason as `contact` above.
+  mobile            String?         @db.Text
+  // GAP-03/AD-17 — keyed blind index (HMAC-SHA256 of the normalized value,
+  // computeBlindIndex) for equality lookups/uniqueness on `contact` now that
+  // its GCM ciphertext is non-deterministic. Fixed-width hex digest, so
+  // Char(64) rather than Text/VarChar.
+  contactBlindIndex String          @map("contact_blind_index") @db.Char(64)
+  // Same as contactBlindIndex, for `mobile` — nullable to match `mobile`'s
+  // own nullability (no mobile submitted ⇒ no index to compute).
+  mobileBlindIndex  String?         @map("mobile_blind_index") @db.Char(64)
+  gender            Gender?
+  settlementType    SettlementType? @map("settlement_type")
+  ageBracket        AgeBracket?     @map("age_bracket")
   // Geography snapshot — copied from the Need (its own multi-select
   // Governorates/Centers, village) and the Organization (regionId) at
   // submission time, not asked of the citizen directly. A pure denormalized
@@ -1187,14 +1224,14 @@ model SurveyResponse {
   // Need.needGovernorates/NeedCenter/Need.village and
   // Organisation.regionId) — never independently edited, so plain array
   // columns rather than a join table are enough here.
-  regionId       String?         @map("region_id") @db.Uuid
-  governorateIds String[]        @default([]) @map("governorate_ids") @db.Uuid
-  centerIds      String[]        @default([]) @map("center_ids") @db.Uuid
-  village        String[]        @default([])
-  answers        Json
+  regionId          String?         @map("region_id") @db.Uuid
+  governorateIds    String[]        @default([]) @map("governorate_ids") @db.Uuid
+  centerIds         String[]        @default([]) @map("center_ids") @db.Uuid
+  village           String[]        @default([])
+  answers           Json
   // RIO-NFR-002: consent copy version the citizen accepted before submitting.
-  consentVersion String?         @map("consent_version") @db.VarChar(32)
-  submittedAt    DateTime        @default(now()) @map("submitted_at") @db.Timestamptz(6)
+  consentVersion    String?         @map("consent_version") @db.VarChar(32)
+  submittedAt       DateTime        @default(now()) @map("submitted_at") @db.Timestamptz(6)
 
   org                    Organisation            @relation(fields: [orgId], references: [id], onDelete: Cascade)
   study                  Study                   @relation(fields: [studyId], references: [id], onDelete: Cascade)
@@ -1209,8 +1246,14 @@ model SurveyResponse {
   // under the same Study (see CitizenService.checkDuplicate/submitResponse).
   // Two separate constraints (not one composite) so a match on EITHER
   // channel alone is enough to block a second submission.
-  @@unique([needId, contact])
-  @@unique([needId, mobile])
+  // GAP-03/AD-17: uniqueness moved OFF the ciphertext columns (contact/
+  // mobile) onto the blind-index columns — GCM's random IV makes the same
+  // plaintext produce different ciphertext on every encryption, so a unique
+  // constraint on the ciphertext itself would be meaningless (never collide,
+  // even for the same person) and previously only worked by accident of the
+  // old deterministic-CBC scheme.
+  @@unique([needId, contactBlindIndex])
+  @@unique([needId, mobileBlindIndex])
   @@index([orgId])
   @@index([needId])
   @@index([studyId])

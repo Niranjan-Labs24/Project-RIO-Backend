@@ -48,6 +48,13 @@ jobs:
       - name: Provision roles and database
         run: |
           PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -f db/init/00-init.sql
+      # Must run before `migrate deploy`: migration 20260824160000_graphile_worker_grants
+      # GRANTs on graphile_worker._private_* objects, which only exist once this
+      # installs the graphile-worker schema. On a fresh DB (like this CI job's),
+      # skipping this step aborts migrate deploy. Idempotent — see
+      # prisma/graphile-worker-bootstrap.ts. Uses DATABASE_URL (owner), already
+      # set at the job env: level above.
+      - run: pnpm gw:bootstrap
       - run: pnpm prisma migrate deploy
       - run: pnpm prisma generate
       # Seed roles + demo org/admins so the login-based e2e specs (auth, users,
