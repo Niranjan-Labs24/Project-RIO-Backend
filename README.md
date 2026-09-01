@@ -190,6 +190,12 @@ enriched with the request's correlation id and, once tenant context is establish
 bodies or the `authorization`/`cookie`/`x-org-id` headers, which are redacted.
 
 ## Operational runbook
+
+> Availability targets, the planned maintenance window and the incident/downtime
+> log live in [`docs/availability.md`](docs/availability.md) (RIO-NFR-011). This
+> section covers what to do when a specific thing breaks; that file covers what
+> we promise and what we record.
+
 - **Database unavailable**: `/api/health/db` returns 503 without leaking the driver error/hostname
   to the client (logged server-side only, Task 6 of the backend remediation pass). Recovery: check
   `docker compose ps db` / the managed Postgres instance's own health; the app retries per-request,
@@ -200,11 +206,13 @@ bodies or the `authorization`/`cookie`/`x-org-id` headers, which are redacted.
 - **SMS/Gemini provider timeout**: bounded by `SMS_TIMEOUT_MS`/`GEMINI_TIMEOUT_MS` (Task 7) — a
   timeout surfaces as a normal error response to the caller, logged server-side with the phone
   number/prompt redacted, never blocking the event loop indefinitely.
-- **Connection-pool exhaustion**: see `load-test/README.md`'s 2026-07-27 result — a real,
-  reproduced failure mode under concurrent load in this environment
+- **Connection-pool exhaustion**: was a reproduced failure mode under concurrent load
   (`PrismaClientKnownRequestError: Transaction API error: Unable to start a transaction in the
-  given time.`), not yet fixed (tracked there as a follow-up, consistent with the pre-existing
-  "connection-pool sizing" note in that file).
+  given time.`). **Fixed** — the pool is now sized explicitly via `DB_POOL_MAX_APP` (default 60)
+  and `DB_POOL_MAX_SUPERVISOR` (default 15), and the 500-concurrent-session case is covered by
+  the automated regression specs `test/dashboard-perf-regression.e2e.spec.ts` and
+  `test/report-perf-regression.e2e.spec.ts`. Recovery if it recurs: raise `DB_POOL_MAX_APP`
+  toward the database's own `max_connections`, and check for a query holding a transaction open.
 - **Load-test acceptance thresholds and alert-worthy events**: documented in
   `load-test/README.md` (p95/p99, error rate, heap, DB/Redis connection budgets). No metrics/
   tracing platform is wired into this codebase yet — that file's Notes section is the honest status
