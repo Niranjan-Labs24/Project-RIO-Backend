@@ -296,6 +296,11 @@ export class PriorityV2Service {
       studyId: string;
       studyTitle: string;
       needId: string;
+      /** The Need's own title. Every Need under one Study shares that Study's
+       *  name, so a list keyed only on studyTitle repeats the same string on
+       *  every row and tells the reviewer nothing about which need they are
+       *  looking at. */
+      needTitle: string;
       // RIO-FR-005 (Q12) — the Need's own analyst-entered Gap Type
       // classification (acute/chronic/structural/seasonal/equity), not to
       // be confused with `score.overrideReason` below — a previous version
@@ -335,63 +340,57 @@ export class PriorityV2Service {
       : this.tenant.runInOrgContext.bind(this.tenant);
 
     return runner(async (tx) => {
-      const [studies, needs, surveys, assessments] = await Promise.all([
+      const [studies, needs, assessments] = await Promise.all([
         tx.study.findMany(),
         tx.need.findMany({ orderBy: { updatedAt: 'desc' } }),
-        tx.survey.findMany({ orderBy: { createdAt: 'desc' } }),
-        tx.villagePriorityAssessment.findMany({
-          where: { villageId: '' },
-          orderBy: { calculatedAt: 'desc' },
+        // RIO-FR-003 — the org-wide list reads PriorityScore, the per-need
+        // explainable score the reviewer signs off, NOT
+        // VillagePriorityAssessment.
+        //
+        // Those are different things and had opposite polarity: the
+        // assessment is a per-VILLAGE performance score where low means
+        // urgent, while this list is per NEED and follows the methodology's
+        // severity convention where high means urgent. Reading the assessment
+        // here meant every need showed "Not scored yet" whenever the village
+        // pipeline had not been run, even with a fully scored need sitting in
+        // priority_scores — which is exactly what was on screen.
+        tx.priorityScore.findMany({
+          where: { surveyLinkId: null },
+          orderBy: { scoredAt: 'desc' },
         }),
       ]);
 
       const studyTitleById = new Map(studies.map((s) => [s.id, s.title]));
-      const surveyByNeedId = new Map<string, (typeof surveys)[number]>();
-      // RIO-FR-011: a Need can now have more than one Survey row
-      // (versioning) — VillagePriorityAssessment rows key off the
-      // PUBLISHED survey's id (that's the one whose responses were
-      // scored), so picking a newer DRAFT here would silently show "no
-      // score yet" for a need that's actually fully scored. PUBLISHED
-      // first, newest-created as the tiebreak/fallback.
-      const orderedSurveys = [...surveys].sort((a, b) => {
-        if (a.status === 'PUBLISHED' && b.status !== 'PUBLISHED') return -1;
-        if (b.status === 'PUBLISHED' && a.status !== 'PUBLISHED') return 1;
-        return b.createdAt.getTime() - a.createdAt.getTime();
-      });
-      for (const survey of orderedSurveys) {
-        if (!surveyByNeedId.has(survey.needId)) surveyByNeedId.set(survey.needId, survey);
-      }
-      const latestAssessmentBySurveyId = new Map<string, (typeof assessments)[number]>();
-      for (const assessment of assessments) {
-        if (!latestAssessmentBySurveyId.has(assessment.surveyId)) {
-          latestAssessmentBySurveyId.set(assessment.surveyId, assessment);
+      // PriorityScore is keyed on needId, so no survey indirection is needed —
+      // `scoredAt: desc` above means the first row seen per need is its latest.
+      const latestScoreByNeedId = new Map<string, (typeof assessments)[number]>();
+      for (const score of assessments) {
+        if (!latestScoreByNeedId.has(score.needId)) {
+          latestScoreByNeedId.set(score.needId, score);
         }
       }
 
       return needs
         .filter((need) => !gapType || need.gapType === gapType)
         .map((need) => {
-          const survey = surveyByNeedId.get(need.id);
-          const assessment = survey ? latestAssessmentBySurveyId.get(survey.id) : undefined;
+          const score = latestScoreByNeedId.get(need.id);
           return {
             studyId: need.studyId,
             studyTitle: studyTitleById.get(need.studyId) ?? need.studyId,
             needId: need.id,
+            needTitle: need.title,
             gapType: need.gapType,
             themes: need.themes ?? [],
             urgency: need.urgency ?? null,
-            score: assessment
+            score: score
               ? {
-                  overallScore: Math.round(Number(assessment.priorityScore) * 10) / 10,
-                  level: (assessment.overrideApplied
-                    ? 'critical'
-                    : assessment.priorityStatus.toLowerCase()) as
-                    | 'critical'
-                    | 'high'
-                    | 'medium'
-                    | 'low',
-                  overrideReason: assessment.overrideReason,
-                  scoredAt: assessment.calculatedAt.toISOString(),
+                  // The reviewer's override wins where there is one — that is
+                  // the number the need is ranked on, and the computed value
+                  // stays available on the need's own breakdown panel.
+                  overallScore: score.overrideScore ?? score.overallScore,
+                  level: score.level,
+                  overrideReason: score.overrideReason,
+                  scoredAt: score.scoredAt.toISOString(),
                 }
               : null,
           };
