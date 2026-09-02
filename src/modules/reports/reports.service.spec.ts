@@ -51,6 +51,9 @@ function makeHarness() {
     audit as never,
     {} as never,
     {} as never,
+    // Translation is a no-op here: these tests cover export authorisation and
+    // the audit trail, not wording, and a stub keeps them free of the model.
+    { translateDoc: async (doc: unknown) => doc } as never,
   );
   return { service, store, auditCalls, userFindManyCalls };
 }

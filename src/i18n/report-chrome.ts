@@ -73,6 +73,12 @@ const ar: Record<string, string> = {
   'Governorate-wise Needs Report': 'تقرير الاحتياجات حسب المحافظة',
   'Gender-wise Needs Report': 'تقرير الاحتياجات حسب الجنس',
   'Region Report': 'تقرير المنطقة',
+  // region.generator.ts composes the title as "Regional Needs Report — …",
+  // which is NOT the catalogue name above. The mismatch left the most
+  // prominent line of every Arabic RPT06 — its cover title, repeated in the
+  // footer — in English. Both spellings are kept: the generator's wording is
+  // what stored reports carry, and changing it would strand them.
+  'Regional Needs Report': 'تقرير الاحتياجات الإقليمية',
   'Data-Quality Report': 'تقرير جودة البيانات',
   'Executive Summary Report': 'تقرير الملخص التنفيذي',
   'Village Report': 'تقرير القرية',
@@ -432,6 +438,28 @@ const arValues: Record<string, string> = {
   MEDIUM: 'متوسط',
   LOW: 'منخفض',
   STANDARD: 'قياسي',
+
+  // ── Level badges, rendered in capitals as a table's "type" column ──
+  //
+  // These are the platform's own rendering of an enum, which is exactly what
+  // this closed vocabulary is for — and they are worth having here rather than
+  // leaving to the AI pass because they repeat in every row of every hierarchy
+  // table in the catalogue. Their capitalisation is typography, not a signal
+  // that they are machine vocabulary: each one is an English word a reader
+  // reads (RIO-I18N-007).
+  DOMAIN: 'مجال',
+  'SUB-DOMAIN': 'مجال فرعي',
+  INDICATOR: 'مؤشر',
+  KPI: 'مؤشر أداء',
+  SURVEY: 'استبيان',
+  SCORED: 'مُقيَّم',
+  ASSESSED: 'مُقيَّم',
+  'NOT ASSESSED': 'غير مُقيَّم',
+  PUBLISHED: 'منشور',
+  ABANDONED: 'متروك',
+  SESSION: 'جلسة',
+  QUANTITATIVE: 'كمي',
+  QUALITATIVE: 'نوعي',
   Critical: 'حرج',
   High: 'مرتفع',
   Medium: 'متوسط',

@@ -5,6 +5,7 @@ import { ReportSummaryDataProvider } from "./providers/report-summary-data.provi
 import { ReportDataProvider } from "./providers/report-data.provider";
 import { PrioritySummaryController } from "./priority-summary.controller";
 import { ReportSummaryService } from "./report-summary.service";
+import { ReportTranslationService } from "./report-translation.service";
 import { CombinedReportSummaryService } from "./combined-report-summary.service";
 import { CombinedReportSummaryController } from "./combined-report-summary.controller";
 import { AiModule } from "../ai/ai.module";
@@ -30,9 +31,13 @@ import { NeedsModule } from '../needs/needs.module';
   providers: [
     ReportsService,
     ReportSummaryService,
+    // The export-time AI translation pass (RIO-I18N-007). Provided here rather
+    // than in AiModule because it is report-shaped — it walks a ReportDoc — and
+    // AiModule owns the transport, not the use cases.
+    ReportTranslationService,
     CombinedReportSummaryService,
     { provide: ReportDataProvider, useClass: ReportSummaryDataProvider },
   ],
-  exports: [ReportsService, ReportSummaryService, CombinedReportSummaryService, ReportDataProvider],
+  exports: [ReportsService, ReportSummaryService, ReportTranslationService, CombinedReportSummaryService, ReportDataProvider],
 })
 export class ReportsModule {}

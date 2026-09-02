@@ -8,6 +8,7 @@ import { AuditService } from "../audit/audit.service";
 import { requireNonBlank } from "../../common/validation/require-non-blank";
 import { DEFAULT_APP_LOCALE, type AppLocale } from "../../i18n/locale";
 import { loadReferenceNames } from "./reference-names";
+import { ReportTranslationService } from "./report-translation.service";
 import {
   buildPlaceholderReport,
   buildExportStub,
@@ -51,6 +52,24 @@ function formatAssessmentPeriod(min: Date | null, max: Date | null): string | un
   const from = fmt(min);
   const to = fmt(max);
   return from === to ? from : `${from} - ${to}`;
+}
+
+/**
+ * The names in this export that the AI translation pass must never touch.
+ *
+ * A person's name and a study's authors are identity, not vocabulary. The
+ * translation prompt says so too, but a prompt is a request and this is a
+ * guarantee: an audit trail that renders "Approved by" with an Arabicised
+ * spelling of the approver's name no longer names a real person, and the audit
+ * trail is the part of a government report that has to be literally true.
+ *
+ * The organisation's own name is not listed because the export does not resolve
+ * it — that one is left to the prompt's proper-noun rule.
+ */
+function protectedNamesOf(meta: ExportAuditMeta): string[] {
+  return [meta.generatedByName, meta.officerConfirmedByName, meta.reviewedByName].filter(
+    (n): n is string => typeof n === "string" && n.length > 0,
+  );
 }
 
 /**
@@ -107,6 +126,7 @@ export class ReportsService {
     private readonly audit: AuditService,
     private readonly reportData: ReportDataProvider,
     private readonly reportSummary: ReportSummaryService,
+    private readonly reportTranslation: ReportTranslationService,
   ) {}
 
   /**
@@ -501,6 +521,7 @@ export class ReportsService {
         auditMeta,
         locale,
         await loadReferenceNames(this.tenant, locale),
+        (doc) => this.reportTranslation.translateDoc(doc, locale, protectedNamesOf(auditMeta)),
       );
     }
 
@@ -531,6 +552,7 @@ export class ReportsService {
       auditMeta,
       locale,
       await loadReferenceNames(this.tenant, locale),
+      (doc) => this.reportTranslation.translateDoc(doc, locale, protectedNamesOf(auditMeta)),
     );
   }
 

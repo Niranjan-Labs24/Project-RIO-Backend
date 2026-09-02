@@ -1,5 +1,6 @@
 import type { AppLocale } from "../../i18n/locale";
 import { chromeKey, reportChrome, reportValueVocabulary } from "../../i18n/report-chrome";
+import { localiseDateText } from "../../i18n/date-values";
 import type { DocSection, ReportDoc } from "./report-doc";
 
 /**
@@ -110,14 +111,20 @@ export function localiseReportDoc(
   // words, theirs is the meaning that belongs in their report.
   const val = (s: string): string => {
     const key = s.trim();
-    return referenceNames[key] ?? vocab[key] ?? s;
+    // Dates are LAST, and only reached when nothing else claimed the string.
+    // A value that is a known reference name or a band word is never a date, so
+    // the ordering costs nothing; and `localiseDateText` returns any
+    // non-date by identity, so a village name falls through it untouched.
+    // This is what catches both the compact stamps `scalar()` renders and the
+    // assessment-period strings baked into stored content — see date-values.ts.
+    return referenceNames[key] ?? vocab[key] ?? localiseDateText(s, locale);
   };
 
   return {
     ...doc,
     title: trComposed(doc.title),
     headerBand: doc.headerBand.map((r) => ({ ...r, label: tr(r.label), value: val(r.value) })),
-    sections: doc.sections.map((s) => localiseSection(s, tr, val, trComposed, chartLabel)),
+    sections: doc.sections.map((s) => localiseSection(s, tr, val, trComposed, chartLabel, locale)),
     audit: doc.audit.map((r) => ({ ...r, label: tr(r.label), value: val(r.value) })),
     chapters: doc.chapters?.map((c) => ({
       ...c,
@@ -126,7 +133,7 @@ export function localiseReportDoc(
       // generated prose, so it is safe to look up — and it falls through
       // unchanged when it is not in the dictionary.
       summary: tr(c.summary),
-      sections: c.sections.map((s) => localiseSection(s, tr, val, trComposed, chartLabel)),
+      sections: c.sections.map((s) => localiseSection(s, tr, val, trComposed, chartLabel, locale)),
     })),
   };
 }
@@ -137,6 +144,9 @@ function localiseSection(
   val: (s: string) => string,
   trComposed: (s: string) => string,
   chartLabel: (s: string) => string,
+  /** Needed only by the `stats` branch, whose `sub` carries a date but must
+   *  not reach either dictionary. */
+  locale: AppLocale,
 ): DocSection {
   switch (section.kind) {
     // Carries no user-visible text at all.
@@ -180,7 +190,17 @@ function localiseSection(
       return {
         ...section,
         heading: trComposed(section.heading),
-        tiles: section.tiles.map((t) => ({ ...t, label: tr(t.label), value: val(t.value) })),
+        tiles: section.tiles.map((t) => ({
+          ...t,
+          label: tr(t.label),
+          value: val(t.value),
+          // `sub` stays out of both dictionaries — it is a generated one-line
+          // descriptor, not a label — but the coverage band renders the
+          // assessment period here ("01 July 2026 - 15 July 2026"), so the
+          // date-only rewrite applies. Anything that is not a date is returned
+          // unchanged.
+          sub: t.sub === undefined ? t.sub : localiseDateText(t.sub, locale),
+        })),
       };
 
     // Chart point labels are DATA — usually a domain, village or KPI name, which
@@ -235,7 +255,7 @@ function localiseSection(
       return { ...section, heading: trComposed(section.heading) };
 
     case "columns":
-      return { ...section, children: section.children.map((c) => localiseSection(c, tr, val, trComposed, chartLabel)) };
+      return { ...section, children: section.children.map((c) => localiseSection(c, tr, val, trComposed, chartLabel, locale)) };
 
     default: {
       // Exhaustiveness guard: a new DocSection kind must be considered here

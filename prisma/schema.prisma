@@ -3066,3 +3066,69 @@ model SurveySessionEvent {
   @@index([sessionId])
   @@map("survey_session_events")
 }
+
+/// One English report string and its Arabic rendering, cached.
+///
+/// WHY A CACHE IS PART OF THE DESIGN, NOT AN OPTIMISATION
+///
+/// The AI translation pass (RIO-I18N-007) runs at EXPORT time, on the finished
+/// document, so it inherits the property that makes export-time localisation
+/// worth having: every report already in the database renders in Arabic with
+/// nothing to regenerate. What it does not inherit for free is determinism —
+/// and an official report that words a finding differently on Tuesday than it
+/// did on Monday is not a report anyone can cite.
+///
+/// So the model is asked about a given source string exactly ONCE, ever, across
+/// every report and every re-download; after that this table answers. That buys
+/// three things at once:
+///
+///  - Two downloads of one approved report are byte-identical in wording, and
+///    the English and Arabic editions stay reconcilable.
+///  - A second export costs no tokens and no latency. Reports repeat their
+///    vocabulary heavily — one string covers forty cells.
+///  - The client can CORRECT a translation. A row edited by hand and marked
+///    `source = 'human'` is never overwritten by the model, which is what makes
+///    this table the migration path for terminology NCNP has not yet approved
+///    (RIO-I18N-004 §10 q.1) rather than a permanent machine artefact.
+///
+/// GLOBAL, not org-scoped: "Severity" translates the same for every tenant, and
+/// a per-org copy would multiply the review burden by the tenant count while
+/// letting two organisations' reports disagree on the methodology's own words.
+model ReportTranslation {
+  id String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+
+  /// SHA-256 of `sourceText`, and the real lookup key.
+  ///
+  /// Indexing the text itself would mean an index over multi-sentence
+  /// methodology notes — past btree's row limit for the longest of them, so the
+  /// insert, not the query, is what would fail. A fixed-width digest has no
+  /// such ceiling and makes the unique constraint exact rather than
+  /// prefix-truncated.
+  sourceHash String @map("source_hash") @db.Char(64)
+  /// Kept in full so the table is reviewable by a human who does not have the
+  /// report in front of them. A cache nobody can audit is not usable as the
+  /// correction surface described above.
+  sourceText String @map("source_text") @db.Text
+  locale     String @db.VarChar(8)
+
+  translatedText String @map("translated_text") @db.Text
+
+  /// 'ai' or 'human'. A human row is authoritative and the writer skips it —
+  /// see the correction path above. Deliberately a string rather than an enum:
+  /// a third provenance ('client-glossary') is likely and should not need a
+  /// migration to a type that other tables would then also see.
+  source String @default("ai") @db.VarChar(16)
+
+  /// Which prompt produced an `ai` row, so a prompt change is traceable to the
+  /// wording it produced. Null for a human row, which had no prompt.
+  promptVersion String? @map("prompt_version") @db.VarChar(64)
+  model         String? @db.VarChar(64)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  /// The lookup, and the guarantee that one source string has one rendering per
+  /// language.
+  @@unique([sourceHash, locale])
+  @@map("report_translations")
+}

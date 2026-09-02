@@ -1,6 +1,6 @@
 import { renderReportExcel } from "./excel-builder";
 import { renderReportPdf } from "./pdf-builder";
-import { buildReportDoc } from "./report-doc";
+import { buildReportDoc, type ReportDoc } from "./report-doc";
 import type { ReportTypeCode } from "./reports.types";
 import { DEFAULT_APP_LOCALE, isRtl, type AppLocale } from "../../i18n/locale";
 import { translator } from "../../i18n/translate";
@@ -123,16 +123,31 @@ export async function buildExportStub(
    *  reference-names.ts. Empty for English exports and for a catalogue whose
    *  Arabic vocabulary has not been supplied yet. */
   referenceNames: Record<string, string> = {},
+  /**
+   * The AI translation pass, applied to the localised document (RIO-I18N-007).
+   *
+   * Injected as a function rather than called directly so this module stays
+   * pure and synchronously testable: every export test builds a real document
+   * without a database, an API key or a network call, and passing nothing here
+   * is exactly today's behaviour. `ReportsService` supplies the real
+   * implementation (`ReportTranslationService.translateDoc`).
+   */
+  translateDoc?: (doc: ReportDoc) => Promise<ReportDoc>,
 ): Promise<{ filename: string; contentType: string; body: Buffer }> {
   const auditRows = auditMetaLines(meta, locale).map((r) => ({ label: r.field, value: r.value }));
   // Chrome is translated on the BUILT document rather than at each of
   // buildReportDoc's ~200 literal sites — see localise-doc.ts. That is also
   // what makes already-stored reports render in Arabic without regeneration.
-  const doc = localiseReportDoc(
+  const localised = localiseReportDoc(
     { ...buildReportDoc(report.title, report.content, auditRows, locale), locale, rtl: isRtl(locale) },
     locale,
     referenceNames,
   );
+  // Dictionaries first, model second — see report-translation.service.ts. The
+  // model is asked only about what the exact, free lookups could not answer,
+  // which is both the cheapest and the smallest surface to hand a
+  // non-deterministic component.
+  const doc = translateDoc ? await translateDoc(localised) : localised;
   const ext = format === "pdf" ? "pdf" : "xlsx";
   // The locale is in the filename so two editions of one report do not collide
   // in a downloads folder — the previous name was identical for both, and the
