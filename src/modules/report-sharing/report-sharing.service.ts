@@ -127,11 +127,68 @@ export class ReportSharingService {
   }
 
   async approve(id: string, payload: DecideReportSharingRequestPayload = {}): Promise<ReportSharingRequest> {
-    return this.decide(id, "approved", payload.note);
+    return this.decide(id, "approved", payload.note, payload.expiresAt);
   }
 
   async reject(id: string, payload: DecideReportSharingRequestPayload = {}): Promise<ReportSharingRequest> {
     return this.decide(id, "rejected", payload.note);
+  }
+
+  // RIO-FR-014 (client Q30) — the owner can withdraw already-approved access
+  // at any time; only the owner, and only from `approved` (an already
+  // rejected/expired/withdrawn request has nothing left to withdraw).
+  async withdraw(id: string): Promise<ReportSharingRequest> {
+    const orgId = requireOrgId();
+    const withdrawnBy = requireActor();
+    const existing = await this.prisma.reportSharingRequest.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException({ error: { code: "REPORT_SHARING_REQUEST_NOT_FOUND", message: "Report sharing request not found" } });
+    }
+    if (existing.ownerOrgId !== orgId) {
+      throw new ForbiddenException({
+        error: { code: "FORBIDDEN", message: "Only the owning organisation can withdraw access." },
+      });
+    }
+    if (existing.status !== "approved") {
+      throw new BadRequestException({
+        error: { code: "REPORT_SHARING_NOT_APPROVED", message: "Only approved access can be withdrawn." },
+      });
+    }
+
+    const row = await this.prisma.reportSharingRequest.update({
+      where: { id },
+      data: { status: "withdrawn", withdrawnBy, withdrawnAt: new Date() },
+    });
+    const report = await this.tenant.runAsSupervisor((tx) => tx.report.findUnique({ where: { id: row.reportId } }));
+    const [ownerOrg, requestingOrg] = await Promise.all([
+      this.tenant.runAsSupervisor((tx) => tx.organisation.findUnique({ where: { id: row.ownerOrgId } })),
+      this.tenant.runAsSupervisor((tx) => tx.organisation.findUnique({ where: { id: row.requestingOrgId } })),
+    ]);
+    const ownerOrgName = ownerOrg?.name ?? row.ownerOrgId;
+    const requestingOrgName = requestingOrg?.name ?? row.requestingOrgId;
+    const reportTitle = report?.title ?? row.reportId;
+    const auditChanges = [
+      { field: "Requesting Organization", before: null, after: requestingOrgName },
+      { field: "Owning Organization", before: null, after: ownerOrgName },
+      { field: "Report", before: null, after: reportTitle },
+    ];
+    await this.audit.record({
+      action: "edit",
+      entityType: "report_sharing_request",
+      entityId: row.id,
+      entityLabel: `Report sharing access for "${reportTitle}" withdrawn (owned by ${ownerOrgName})`,
+      organizationId: row.ownerOrgId,
+      changes: auditChanges,
+    });
+    await this.audit.record({
+      action: "edit",
+      entityType: "report_sharing_request",
+      entityId: row.id,
+      entityLabel: `Report sharing access for "${reportTitle}" withdrawn (requested by ${requestingOrgName})`,
+      organizationId: row.requestingOrgId,
+      changes: auditChanges,
+    });
+    return this.enrichOne(row as unknown as ReportSharingRequestRow);
   }
 
   async getSharedSnapshot(id: string): Promise<SharedReportSnapshot> {
@@ -140,6 +197,11 @@ export class ReportSharingService {
     if (row.status !== "approved") {
       throw new ForbiddenException({
         error: { code: "SHARING_NOT_APPROVED", message: "This sharing request has not been approved." },
+      });
+    }
+    if (row.expiresAt && row.expiresAt.getTime() <= Date.now()) {
+      throw new ForbiddenException({
+        error: { code: "SHARING_EXPIRED", message: "This sharing access has expired." },
       });
     }
     if (!this.isCrossEntity() && row.requestingOrgId !== orgId) {
@@ -215,6 +277,7 @@ export class ReportSharingService {
     id: string,
     status: "approved" | "rejected",
     decisionNote: string | undefined,
+    expiresAt?: string,
   ): Promise<ReportSharingRequest> {
     const orgId = requireOrgId();
     const decidedBy = requireActor();
@@ -240,10 +303,19 @@ export class ReportSharingService {
         error: { code: "REJECT_REASON_REQUIRED", message: "A reason is required when rejecting a request." },
       });
     }
+    if (expiresAt && Number.isNaN(Date.parse(expiresAt))) {
+      throw new BadRequestException({ error: { code: "INVALID_EXPIRY_DATE", message: "Invalid expiry date." } });
+    }
 
     const row = await this.prisma.reportSharingRequest.update({
       where: { id },
-      data: { status, decidedBy, decidedAt: new Date(), decisionNote: decisionNote ?? null },
+      data: {
+        status,
+        decidedBy,
+        decidedAt: new Date(),
+        decisionNote: decisionNote ?? null,
+        ...(status === "approved" ? { expiresAt: expiresAt ? new Date(expiresAt) : null } : {}),
+      },
     });
     const report = await this.tenant.runAsSupervisor((tx) =>
       tx.report.findUnique({ where: { id: row.reportId } }),
@@ -334,6 +406,9 @@ export class ReportSharingService {
       decidedAt: row.decidedAt ? row.decidedAt.toISOString() : null,
       note: row.note,
       decisionNote: row.decisionNote,
+      expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
+      withdrawnBy: row.withdrawnBy,
+      withdrawnAt: row.withdrawnAt ? row.withdrawnAt.toISOString() : null,
     }));
   }
 }

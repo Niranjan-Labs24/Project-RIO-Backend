@@ -50,6 +50,7 @@ export class ArchiveService {
     const scopedOrgId = isCrossEntity ? null : requireOrgId();
 
     const orgById = new Map(organisations.map((org) => [org.id, org]));
+    const studyById = new Map(studies.map((study) => [study.id, study]));
     const needsByStudyId = new Map<string, typeof needs>();
     for (const need of needs) {
       const list = needsByStudyId.get(need.studyId) ?? [];
@@ -81,7 +82,11 @@ export class ArchiveService {
           organizationId: study.orgId,
           organizationName: org?.name ?? "",
           region: org?.region ?? [],
-          sector: org?.sector ?? null,
+          // RIO-FR-013 (client Q26): "sector" here means the study's own
+          // subject/domain, not the owning entity's sector — someone
+          // filtering for "Health" wants health studies, not studies from
+          // health-sector organisations.
+          sector: study.targetSector ?? null,
           villages: villagesByStudyId.get(study.id) ?? [],
         });
       }
@@ -89,6 +94,7 @@ export class ArchiveService {
     if (!params.kind || params.kind === "report") {
       for (const report of reports) {
         const org = orgById.get(report.orgId);
+        const reportStudy = report.studyId ? studyById.get(report.studyId) : undefined;
         results.push({
           id: report.id,
           kind: "report",
@@ -99,7 +105,8 @@ export class ArchiveService {
           organizationId: report.orgId,
           organizationName: org?.name ?? "",
           region: org?.region ?? [],
-          sector: org?.sector ?? null,
+          // Same subject-based sector as the study branch above (RIO-FR-013, Q26).
+          sector: reportStudy?.targetSector ?? null,
           villages: report.studyId ? (villagesByStudyId.get(report.studyId) ?? []) : [],
         });
       }
@@ -174,7 +181,8 @@ export class ArchiveService {
       organizationId: study.orgId,
       organizationName: study.org?.name ?? '',
       region: study.org?.region ?? [],
-      sector: study.org?.sector ?? null,
+      // RIO-FR-013 (client Q26): study's own subject, not the owning entity's sector.
+      sector: study.targetSector ?? null,
       villages: study.villages,
       createdAt: study.createdAt.toISOString(),
       updatedAt: study.updatedAt.toISOString(),

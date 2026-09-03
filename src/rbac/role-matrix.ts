@@ -22,6 +22,13 @@ export const PERMISSION_MODULES = [
   // belong to platform operations rather than tenant governance. Granted to
   // system_admin alone.
   'systemLogs',
+  // RIO-FR-009 — Initiative records and their linkage to Needs. Client Q41's
+  // literal answer named System Admin only (by analogy to Methodology
+  // Configuration); granted here to NGO Admin/Data Analyst as well so an
+  // NGO can actually record its own initiatives, per the schema comment on
+  // the Initiative model — flagged for client confirmation, not treated as
+  // a closed decision.
+  'initiatives',
 ] as const;
 export type PermissionModule = (typeof PERMISSION_MODULES)[number];
 export type PermissionAction = 'read' | 'write' | 'create' | 'approve' | 'export' | 'share';
@@ -86,6 +93,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('surveyBuilder', { read: true, write: true, create: true, export: true }),
     perm('ncnpReport'),
     perm('systemLogs'),
+    perm('initiatives', { read: true, write: true, create: true }),
   ] },
   { id: 'role_ngo_research_officer', key: 'ngo_research_officer', name: 'NGO Research Officer', description: 'Creates studies and surveys from the question bank and enters data.', crossEntity: false, permissions: [
     // RIO-RBAC-001 matrix (Aug 11): view-only on Organization/Users now
@@ -129,6 +137,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     // `create` added per the confirmed matrix (Researcher/Surveys: V/C/E).
     perm('surveyBuilder', { read: true, write: true, create: true }),
     perm('ncnpReport'),
+    perm('initiatives', RO),
   ] },
   { id: 'role_field_researcher', key: 'field_researcher', name: 'Field Researcher', description: 'Enters needs and documents the source and field notes.', crossEntity: false, permissions: [
     // Confirmed matrix (Jagannathan, Aug 12): Organization/Users = View.
@@ -205,6 +214,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     // final.
     perm('surveyBuilder', { read: true, write: true, approve: true }),
     perm('ncnpReport'),
+    perm('initiatives', RO),
   ] },
   { id: 'role_data_analyst', key: 'data_analyst', name: 'Data Analyst', description: 'Processes data, reviews quality, and prepares reports and dashboards.', crossEntity: false, permissions: [
     // Confirmed matrix (Jagannathan, Aug 12): Organization/Users = View.
@@ -251,6 +261,11 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('archiveSharingAudit'),
     // Confirmed matrix: Surveys/Survey Builder = View.
     perm('surveyBuilder', RO), perm('ncnpReport'),
+    // RIO-FR-009 — Data Analyst can record/edit its own org's Initiatives
+    // (decision-logging/FR-005 is already this role's territory) — see the
+    // schema comment on the Initiative model for the Q41 ambiguity this
+    // resolves pragmatically.
+    perm('initiatives', { read: true, write: true, create: true }),
   ] },
   { id: 'role_system_admin', key: 'system_admin', name: 'System Admin', description: 'Platform-wide operational authority: manages accounts, roles, permissions, audit log, and Edit rights over all configured/reference data (Methodology/Question Bank, Onboarding Consent & Data Sharing Policy content, and other configured databases) — System Reviewer holds the governance approval gate over the sensitive subset of that same data.', crossEntity: true, permissions: [
     perm('entityTeam', { read: true, write: true, create: true, export: true }),
@@ -295,6 +310,9 @@ export const ROLE_MATRIX: RoleDef[] = [
     // (GET /system-logs/export); there is no write action to grant, since
     // the table has no HTTP write path by design.
     perm('systemLogs', { read: true, export: true }),
+    // RIO-FR-009 — full authority, cross-entity (create/edit for any org),
+    // matching System Admin's cross-org Study-creation pattern elsewhere.
+    perm('initiatives', { read: true, write: true, create: true, approve: true }),
   ] },
   { id: 'role_read_only_viewer', key: 'read_only_viewer', name: 'Read-only Viewer', description: 'Views authorized outputs without editing.', crossEntity: false, permissions: [
     // Confirmed matrix (Jagannathan, Aug 12): Organization/Users = View.
@@ -309,6 +327,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('archiveSharingAudit'),
     // Confirmed matrix: Surveys/Survey Builder = View — was no access.
     perm('surveyBuilder', RO), perm('ncnpReport'),
+    perm('initiatives', RO),
   ] },
   // RIO-RBAC-001 (client-confirmed): "Center supervisor / NCNP supervisor"
   // is one combined role in the client's own Roles & Permissions sheet, not
@@ -335,6 +354,10 @@ export const ROLE_MATRIX: RoleDef[] = [
     // `read` added per the confirmed matrix (Center Supervisor/Surveys: V) —
     // this role previously had zero access to Survey Builder, not even view.
     perm('surveyBuilder', RO), perm('ncnpReport'),
+    // RIO-FR-009 (client Q15) — NCNP/Center sees every Initiative by
+    // default, read-only, same cross-entity oversight pattern as everything
+    // else this role holds.
+    perm('initiatives', RO),
   ] },
   { id: 'role_citizen_guest', key: 'citizen_guest', name: 'Citizen / Beneficiary Guest', description: 'Responds to surveys through OTP verification; no internal application access.', crossEntity: false,
     permissions: PERMISSION_MODULES.map((m) => (m === 'citizenChannel' ? perm(m, { create: true }) : perm(m))) },

@@ -1,4 +1,4 @@
-export type SharingStatus = "pending" | "approved" | "rejected" | "expired";
+export type SharingStatus = "pending" | "approved" | "rejected" | "expired" | "withdrawn";
 
 export interface SharingRequestRow {
   id: string;
@@ -15,6 +15,9 @@ export interface SharingRequestRow {
   // previously missing entirely on this module (reject was a single click,
   // no explanation). Same field shape as ReportSharingRequest.
   decisionNote: string | null;
+  expiresAt: Date | null;
+  withdrawnBy: string | null;
+  withdrawnAt: Date | null;
 }
 
 export interface SharingRequest {
@@ -32,10 +35,16 @@ export interface SharingRequest {
   decidedAt: string | null;
   note: string | null;
   decisionNote: string | null;
+  /** RIO-FR-014 (client Q30) — null means access never expires on its own. */
+  expiresAt: string | null;
+  withdrawnBy: string | null;
+  withdrawnAt: string | null;
 }
 
 export interface DecideSharingRequestPayload {
   note?: string;
+  /** Only meaningful on approve — an optional expiry the owner sets at approval time (RIO-FR-014, Q30). */
+  expiresAt?: string;
 }
 
 export interface CreateSharingRequestPayload {

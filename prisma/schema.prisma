@@ -53,6 +53,8 @@ enum PermissionModule {
   // belong to platform operations, not to tenant governance. Granted to
   // system_admin alone.
   systemLogs
+  // RIO-FR-009 — Initiative records and their linkage to Needs.
+  initiatives
 }
 
 // ──────── Reference (global, seeded, read-only to cnap_app) ────────
@@ -262,6 +264,7 @@ model Organisation {
   aiPrioritySummaries        AiPrioritySummary[]
   evidenceDocuments          EvidenceDocument[]
   combinedReportSummaries    CombinedReportSummary[]
+  initiatives                Initiative[]
 
   @@index([regionId])
   @@map("organisations")
@@ -784,6 +787,13 @@ model Need {
   createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
 
+  // RIO-FR-009 (client Q17) — a second, separate status alongside `status`
+  // above, not a replacement for it. `open_gap` and `documented_in_study`
+  // are set automatically by NeedsService (see the analytical-status
+  // recompute helper); the rest are set manually, restricted to
+  // System Admin/Data Analyst with Human Reviewer sign-off.
+  analyticalStatus AnalyticalStatus @default(observed) @map("analytical_status")
+
   study Study        @relation(fields: [studyId], references: [id], onDelete: Cascade)
   org   Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
   needGovernorates NeedGovernorate[]
@@ -802,10 +812,117 @@ model Need {
   decisions NeedDecision[]
   aiSuggestions AiSuggestion[]
   evidenceDocuments EvidenceDocument[]
+  initiativeLinks NeedInitiative[]
+  analyticalStatusEvents NeedAnalyticalStatusEvent[]
 
   @@index([orgId])
   @@index([studyId])
   @@map("needs")
+}
+
+// RIO-FR-009 (client Q17) — the five analytical statuses fixed by the
+// approved SOW register. Distinct vocabulary from NeedStatus (the
+// intake/classification workflow) on purpose — see the field comment on
+// Need.analyticalStatus.
+enum AnalyticalStatus {
+  observed
+  under_analysis
+  documented_in_study
+  linked_to_initiative
+  open_gap
+}
+
+// One row per analytical-status transition (client Q19: full history, same
+// reasoning as NeedDecisionStatusEvent above — audit-defensibility).
+model NeedAnalyticalStatusEvent {
+  id         String           @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  needId     String           @map("need_id") @db.Uuid
+  orgId      String           @map("org_id") @db.Uuid
+  fromStatus AnalyticalStatus? @map("from_status")
+  toStatus   AnalyticalStatus @map("to_status")
+  changedBy  String?          @map("changed_by") @db.Uuid
+  // Null when the transition was automatic (open_gap / documented_in_study —
+  // client Q17 a/b), so the history can tell a system-driven change apart
+  // from a human one without a separate boolean column.
+  changedAt  DateTime         @default(now()) @map("changed_at") @db.Timestamptz(6)
+  note       String?
+
+  need Need @relation(fields: [needId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([needId])
+  @@map("need_analytical_status_events")
+}
+
+// ──────── Initiatives (RIO-FR-009) ────────
+// Client-confirmed field list (Q16) + visibility model (Q15): NCNP/Center
+// sees every initiative by default (cross-entity oversight, same pattern as
+// Center/NCNP Supervisor elsewhere); other NGOs only see one that its owning
+// NGO has explicitly marked open via `openToOtherEntities` (owner-controlled,
+// off by default) — a toggle, not FR-014's request/approve workflow.
+//
+// Create/edit access (Q41): client's literal answer said "System Admin"
+// (by analogy to Methodology Configuration). Implemented here as NGO Admin
+// (full-access within their own org, same as Study/Need authorship
+// elsewhere) plus System Admin (cross-org, same as System Admin's own
+// Study-creation-for-any-org pattern) — flagged for client confirmation
+// before this is treated as final, since a literal System-Admin-only
+// reading would mean no NGO could record its own initiatives.
+model Initiative {
+  id                  String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  // The implementing entity — picked from the entities register, not typed
+  // freely (client Q16).
+  orgId               String    @map("org_id") @db.Uuid
+  name                String    @db.VarChar(300)
+  domain              String?   @db.VarChar(120)
+  // Free-text geographic description for Sprint 3 (e.g. "Ad-Dawadmi
+  // governorate, 6 villages") — not yet linked to the structured
+  // Governorate/Center reference the way Study/Need are. Revisit if the
+  // client wants map-level initiative plotting (client Q39 explicitly
+  // deferred this out of the FR-008 map for Sprint 3).
+  geography           String?
+  startDate           DateTime? @map("start_date") @db.Date
+  expectedEndDate     DateTime? @map("expected_end_date") @db.Date
+  status              String    @default("active") @db.VarChar(30)
+  fundingSource       String?   @map("funding_source") @db.VarChar(200)
+  description         String?
+  // Optional per client Q16 ("recommend optional, not required, at least
+  // for Sprint 3").
+  budget              Decimal?  @db.Decimal(14, 2)
+  // Client Q15 — owner-controlled, off by default.
+  openToOtherEntities Boolean   @default(false) @map("open_to_other_entities")
+  createdBy           String    @map("created_by") @db.Uuid
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  org   Organisation     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  needs NeedInitiative[]
+
+  @@index([orgId])
+  @@map("initiatives")
+}
+
+// Many-to-many (client Q18: "yes, both ways") — a Need can link to several
+// Initiatives and an Initiative can cover several Needs.
+model NeedInitiative {
+  id           String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  needId       String   @map("need_id") @db.Uuid
+  initiativeId String   @map("initiative_id") @db.Uuid
+  // Denormalized from Need.orgId — a link is always created by the Need's
+  // own org (linking to an Initiative visible to them, per Initiative's own
+  // RLS), so RLS on this join table matches the Need side, same reasoning
+  // as Evidence.studyId's own denormalization comment elsewhere.
+  orgId        String   @map("org_id") @db.Uuid
+  linkedBy     String   @map("linked_by") @db.Uuid
+  linkedAt     DateTime @default(now()) @map("linked_at") @db.Timestamptz(6)
+
+  need       Need       @relation(fields: [needId], references: [id], onDelete: Cascade)
+  initiative Initiative @relation(fields: [initiativeId], references: [id], onDelete: Cascade)
+
+  @@unique([needId, initiativeId])
+  @@index([needId])
+  @@index([initiativeId])
+  @@map("need_initiatives")
 }
 
 // Multi-select Domain/Sub-domain pairs for a Need — a Need can be manually
@@ -1747,6 +1864,11 @@ enum SharingStatus {
   approved
   rejected
   expired
+  // RIO-FR-014 (client Q30) — the owner revoked already-approved access.
+  // Distinct from `rejected` (never approved in the first place): a
+  // withdrawal can only happen from `approved`, and is always the owner's
+  // own action, never automatic.
+  withdrawn
 }
 
 model SharingRequest {
@@ -1763,6 +1885,14 @@ model SharingRequest {
   // Optional reason the owner org gives when rejecting (or, less commonly,
   // approving with a caveat) — same field shape as ReportSharingRequest.
   decisionNote     String?       @map("decision_note") @db.VarChar(1000)
+  // RIO-FR-014 (client Q30) — optional expiry set by the owner at approval
+  // time; null means access never expires on its own. Checked alongside
+  // `status = approved` wherever read access is granted.
+  expiresAt        DateTime?     @map("expires_at") @db.Timestamptz(6)
+  // RIO-FR-014 (client Q30) — owner can withdraw approved access at any
+  // time; who and when, for the audit trail.
+  withdrawnBy      String?       @map("withdrawn_by") @db.Uuid
+  withdrawnAt      DateTime?     @map("withdrawn_at") @db.Timestamptz(6)
 
   ownerOrg      Organisation @relation("SharingRequestsOwned", fields: [ownerOrgId], references: [id], onDelete: Cascade)
   requestingOrg Organisation @relation("SharingRequestsMade", fields: [requestingOrgId], references: [id], onDelete: Cascade)
@@ -1799,6 +1929,11 @@ model ReportSharingRequest {
   decidedAt        DateTime?     @map("decided_at") @db.Timestamptz(6)
   note             String?       @db.VarChar(1000)
   decisionNote     String?       @map("decision_note") @db.VarChar(1000)
+  // RIO-FR-014 (client Q30) — same optional-expiry / owner-withdrawal pair
+  // as SharingRequest above.
+  expiresAt        DateTime?     @map("expires_at") @db.Timestamptz(6)
+  withdrawnBy      String?       @map("withdrawn_by") @db.Uuid
+  withdrawnAt      DateTime?     @map("withdrawn_at") @db.Timestamptz(6)
 
   ownerOrg      Organisation @relation("ReportSharingRequestsOwned", fields: [ownerOrgId], references: [id], onDelete: Cascade)
   requestingOrg Organisation @relation("ReportSharingRequestsMade", fields: [requestingOrgId], references: [id], onDelete: Cascade)

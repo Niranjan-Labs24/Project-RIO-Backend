@@ -25,6 +25,7 @@ export const DecideReportSharingRequestBody = registerSchema(
   T.Object(
     {
       note: T.Optional(T.String({ maxLength: 1000 })),
+      expiresAt: T.Optional(T.String({ format: "date-time" })),
     },
     { additionalProperties: false },
   ),
