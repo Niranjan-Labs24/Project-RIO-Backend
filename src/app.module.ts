@@ -25,6 +25,7 @@ import { OrganizationsModule } from './modules/organizations/organizations.modul
 import { UsersModule } from './modules/users/users.module';
 import { ConsentModule } from './modules/consent/consent.module';
 import { StudiesModule } from './modules/studies/studies.module';
+import { DataCleaningModule } from './modules/data-cleaning/data-cleaning.module';
 import { NeedsModule } from './modules/needs/needs.module';
 import { EvidenceModule } from './modules/evidence/evidence.module';
 import { AiDecisionsModule } from './modules/ai-decisions/ai-decisions.module';
@@ -95,6 +96,7 @@ import { AppController } from './app.controller';
     ConsentModule,
     StudiesModule,
     NeedsModule,
+    DataCleaningModule,
     EvidenceModule,
     AiDecisionsModule,
     DomainsModule,

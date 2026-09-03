@@ -22,6 +22,12 @@ export const PERMISSION_MODULES = [
   // belong to platform operations rather than tenant governance. Granted to
   // system_admin alone.
   'systemLogs',
+  // RIO-FR-002 — the Data Quality reviewer queue. `approve` decides a flag
+  // (which writes the standardization onto the record), `write` tunes the
+  // rule set's thresholds, `read` sees the queue and the per-source report.
+  // Q23 puts both decision and tuning ownership with System Admin / Data
+  // Analyst; everyone else with a legitimate interest is read-only.
+  'dataQuality',
 ] as const;
 export type PermissionModule = (typeof PERMISSION_MODULES)[number];
 export type PermissionAction = 'read' | 'write' | 'create' | 'approve' | 'export' | 'share';
@@ -61,6 +67,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('studySurvey', { read: true, write: true, create: true, export: true, share: true }),
     perm('dataCollection', { read: true, write: true, create: true, export: true }),
     perm('dataImport', { read: true, write: true, create: true, approve: true, export: true, share: true }),
+    perm('dataQuality', { read: true, export: true }),
     perm('citizenChannel', { read: true, write: true, create: true, approve: true, export: true, share: true }),
     perm('aiReview', { read: true, write: true, create: true, approve: true, export: true, share: true }),
     perm('priorityScoring', { read: true, export: true }),
@@ -97,6 +104,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('studySurvey', { read: true, write: true, create: true }),
     perm('dataCollection', { read: true, write: true, create: true }),
     perm('dataImport', { read: true, write: true, create: true }),
+    perm('dataQuality', RO),
     perm('citizenChannel'),
     // Researcher can trigger/retry classification (`write`) but does not
     // Approve/Override/Reject it — that stays exclusively role_human_reviewer's
@@ -141,6 +149,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     // this role, so no shared-module conflict here).
     perm('dataCollection', { read: true, write: true, create: true }),
     perm('dataImport'), perm('citizenChannel'), perm('aiReview'), perm('priorityScoring'),
+    perm('dataQuality', RO),
     // Reports = View — was no access.
     perm('reportsDashboards', RO), perm('archiveSharingAudit'),
     // Surveys/Survey Builder = View/Create/Edit — was no access.
@@ -219,6 +228,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     // create Needs directly) per this confirmation.
     perm('dataCollection', RO),
     perm('dataImport', { read: true, write: true, create: true }), perm('citizenChannel'),
+    perm('dataQuality', { read: true, write: true, approve: true, export: true }),
     // Confirmed (Jagannathan, Aug 12): Data Analyst owns "Generating the AI
     // Evidence Summary" and "Generating the Combined Summary Report" — both
     // gated on aiReview:write in this codebase (see
@@ -271,6 +281,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('studySurvey', { read: true, write: true, create: true, approve: true, export: true, share: true }),
     perm('dataCollection', { read: true, write: true, create: true, approve: true, export: true, share: true }),
     perm('dataImport', RO), perm('citizenChannel', RO),
+    perm('dataQuality', { read: true, write: true, approve: true, export: true }),
     perm('aiReview', RO),
     // `export` added per the confirmed matrix (System Admin/Dashboard: V/Ex).
     perm('priorityScoring', { read: true, export: true }),
@@ -301,6 +312,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('entityTeam', RO), perm('rolesPermissions'), perm('onboardingConsent'),
     perm('methodologyQuestionBank', RO), perm('studySurvey', RO), perm('dataCollection', RO),
     perm('dataImport', RO), perm('citizenChannel'), perm('aiReview', RO), perm('priorityScoring', RO),
+    perm('dataQuality', RO),
     // Confirmed (Jagannathan, Aug 12): Reports = View only for this role —
     // no Export. Export was in an earlier build; removed per this
     // confirmation.
@@ -327,6 +339,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('entityTeam', RO), perm('rolesPermissions'), perm('onboardingConsent'),
     perm('methodologyQuestionBank', RO), perm('studySurvey', RO), perm('dataCollection', RO),
     perm('dataImport', RO), perm('citizenChannel'), perm('aiReview', RO),
+    perm('dataQuality', RO),
     // `export` added per the confirmed matrix (Center Supervisor/Dashboard: V/Ex).
     perm('priorityScoring', { read: true, export: true }),
     perm('reportsDashboards', { read: true, export: true }),
@@ -378,6 +391,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     // goes live. Was view-only.
     perm('methodologyQuestionBank', { read: true, approve: true }),
     perm('studySurvey', RO), perm('dataCollection', RO), perm('dataImport', RO),
+    perm('dataQuality', RO),
     // Client-confirmed: View + Approve — governance sign-off on the citizen
     // consent form specifically, not day-to-day channel operation.
     // Previously no access at all.

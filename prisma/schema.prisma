@@ -53,6 +53,15 @@ enum PermissionModule {
   // belong to platform operations, not to tenant governance. Granted to
   // system_admin alone.
   systemLogs
+  // RIO-FR-002 — the Data Quality reviewer queue (cleaning_flags, and from
+  // RIO-AI-004 the shared duplicate queue). Deliberately NOT a reuse of
+  // dataImport: that module is about getting rows IN, and its grants run the
+  // opposite way to Q23's ruling — system_admin holds dataImport read-only
+  // while ngo_admin and ngo_research_officer hold write, where Q23 puts
+  // cleaning decisions with System Admin and Data Analyst. `approve` is the
+  // right to decide a flag (which WRITES the standardization onto the
+  // record); `write` is the right to tune the rule set's thresholds.
+  dataQuality
 }
 
 // ──────── Reference (global, seeded, read-only to cnap_app) ────────
@@ -597,6 +606,7 @@ model Study {
   evidenceDocuments          EvidenceDocument[]
   evidenceDocumentSummaries  EvidenceDocumentSummary[]
   combinedReportSummaries    CombinedReportSummary[]
+  cleaningRuns               CleaningRun[]
 
   @@unique([orgId, cycleNumber])
   @@index([orgId])
@@ -802,6 +812,29 @@ model Need {
   decisions NeedDecision[]
   aiSuggestions AiSuggestion[]
   evidenceDocuments EvidenceDocument[]
+  // RIO-FR-002 / RIO-AI-004 — the shared duplicate queue (Q40). Two arrays
+  // because a candidate stores an ORDERED pair (need_a_id < need_b_id, so a
+  // pair can never sit in the queue twice); a Need appears on whichever side
+  // its uuid sorts to, and readers must look at both.
+  duplicateCandidatesAsA DuplicateCandidate[] @relation("DuplicateCandidateNeedA")
+  duplicateCandidatesAsB DuplicateCandidate[] @relation("DuplicateCandidateNeedB")
+  // RIO-AI-004 — merge. `mergedIntoNeedId` being set IS the merged state:
+  // deliberately not a new NeedStatus value, so a retired need keeps the
+  // workflow status it actually had ("a reviewer_approved need that turned out
+  // to duplicate another" is truer than overwriting it with "merged"). EVERY
+  // list, count and score must exclude `mergedIntoNeedId: { not: null }`.
+  mergedIntoNeedId String? @map("merged_into_need_id") @db.Uuid
+  mergedInto       Need?   @relation("NeedMergedInto", fields: [mergedIntoNeedId], references: [id], onDelete: Restrict)
+  mergedFrom       Need[]  @relation("NeedMergedInto")
+  // Q51 — "both external references are retained on the survivor". The
+  // retired need's submitter reference lands here rather than overwriting
+  // `referenceId`, which is what the submitter's own records say and which
+  // other systems match on.
+  absorbedReferenceIds String[] @default([]) @map("absorbed_reference_ids")
+  mergesAsSurvivor NeedMerge[]          @relation("NeedMergeSurvivor")
+  mergesAsRetired  NeedMerge[]          @relation("NeedMergeRetired")
+  referenceAliases NeedReferenceAlias[]
+  embeddings       NeedEmbedding[]
 
   @@index([orgId])
   @@index([studyId])
@@ -2012,6 +2045,24 @@ model MethodologyConfig {
   // Deliberately mirrors ScoringLookup's numericFloor/numericCeiling pattern,
   // which already does exactly this job for numeric survey questions.
   priorityFactorScales   Json              @map("priority_factor_scales")
+  // RIO-FR-002 — the cleaning rule set: what counts as missing, how "Don't
+  // know" is treated (Q13), the village-match and literal-duplicate
+  // thresholds (Q23), and the target formats of Q12. Shape:
+  // { ruleSetVersion, dontKnowTreatment, requiredNeedFields[],
+  //   softNeedFields[], requiredSurveyResponseFields[], dateOutputFormat,
+  //   phoneDefaultRegion, phoneOutputFormat, villageMatchAcceptThreshold,
+  //   villageMatchProposeThreshold, villageMatchMaxCandidates,
+  //   literalDuplicateThreshold, duplicateScopes{...} }.
+  //
+  // Deliberately SEPARATE from confidenceFlagSettings above, which is the
+  // <10 respondents / >20% "Don't know" statistical confidence flag. Q13 was
+  // explicit that these are two rules, not one: that one tags a result as
+  // low-confidence, this one defines what "missing" means for cleaning.
+  // Collapsing them would make a low-confidence result look like dirty data.
+  //
+  // Defaulted so an existing config row (and the seed) keeps working — the
+  // migration seeds the real starting values.
+  dataCleaningSettings   Json              @default("{}") @map("data_cleaning_settings")
   updatedAt              DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
   updatedBy              String?           @map("updated_by") @db.Uuid
 
@@ -2051,6 +2102,10 @@ model MethodologyConfigHistory {
   // Snapshotted for the same reason as aiClassificationSettings above.
   aiSummarySettings      Json     @map("ai_summary_settings")
   priorityFactorScales   Json     @map("priority_factor_scales")
+  // Snapshotted for the same reason as aiClassificationSettings above: a
+  // history row that silently omits the only thing that changed is worse
+  // than no history row. RIO-NFR-017 asks for EVERY configuration change.
+  dataCleaningSettings   Json     @default("{}") @map("data_cleaning_settings")
   changedBy              String?  @map("changed_by") @db.Uuid
   changedAt              DateTime @default(now()) @map("changed_at") @db.Timestamptz(6)
 
@@ -2230,6 +2285,7 @@ model AiSuggestion {
   need          Need            @relation(fields: [needId], references: [id], onDelete: Cascade)
   study         Study           @relation(fields: [studyId], references: [id], onDelete: Cascade)
   humanDecisions HumanDecision[]
+  duplicateCandidates DuplicateCandidate[]
 
   @@index([orgId])
   @@index([needId])
@@ -2972,4 +3028,322 @@ model SurveySessionEvent {
   @@index([orgId])
   @@index([sessionId])
   @@map("survey_session_events")
+}
+
+// ──────── RIO-FR-002: Data Cleaning, Standardization & Duplicate Detection ────────
+// Client-confirmed (Sprint 3 answers, 30 Aug 2026): duplicates are PROPOSED,
+// never merged automatically (Q11); one shared reviewer queue for FR-002's
+// literal candidates and RIO-AI-004's semantic ones (Q40); cleaning covers
+// all three sources under one rule set with a report per source (Q14).
+//
+// The rule set itself is NOT modelled here — it lives in
+// MethodologyConfig.dataCleaningSettings, on the same screen and under the
+// same System Reviewer sign-off as every other methodology threshold.
+
+// One cleaning pass over one source. This IS the per-source report Q14 asked
+// for: what was scanned, under which rule-set version, and what came out.
+// Inline cleaning (a single Need saved on the need-entry form) writes a run
+// with scopeType = "record" rather than being exempted — a source that is
+// only ever cleaned in bulk would read as clean when it is merely unmeasured.
+model CleaningRun {
+  id      String  @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId   String  @map("org_id") @db.Uuid
+  // "manual_entry" | "survey_response" | "file_upload" — deliberately the
+  // same vocabulary as NeedSource, so a per-source report reads against need
+  // counts without a translation table. VARCHAR rather than an enum, matching
+  // Need.urgency/Need.gapType: the allowed set is validated in the contract
+  // layer, so adding the citizen channel later is a contract change.
+  source  String  @db.VarChar(30)
+  // "org" | "study" | "import_batch" | "record"
+  scopeType String @map("scope_type") @db.VarChar(20)
+  studyId String? @map("study_id") @db.Uuid
+  // Which version of the rule set produced these flags. A flag raised under
+  // an older rule set stays readable as what it was — retuning a threshold
+  // never rewrites history, the same principle the client set for duplicate
+  // thresholds in Q23.
+  ruleSetVersion String @map("rule_set_version") @db.VarChar(50)
+  recordsScanned Int    @default(0) @map("records_scanned")
+  recordsFlagged Int    @default(0) @map("records_flagged")
+  flagsRaised    Int    @default(0) @map("flags_raised")
+  // "running" | "completed" | "failed"
+  status  String  @default("running") @db.VarChar(20)
+  error   String?
+  // Null when the system triggered the run on save/import rather than a
+  // person clicking "run cleaning".
+  triggeredBy String?   @map("triggered_by") @db.Uuid
+  startedAt   DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  finishedAt  DateTime? @map("finished_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  study Study?         @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  flags CleaningFlag[]
+
+  @@index([orgId])
+  @@index([studyId])
+  @@index([orgId, source, startedAt(sort: Desc)])
+  @@map("cleaning_runs")
+}
+
+// One issue found on one field of one record — AC 1 (missing detected and
+// flagged), AC 2 (formats standardized) and AC 4 (reviewer decision logged)
+// all resolve to rows here.
+//
+// A flag is a PROPOSAL: originalValue is what is stored today, proposedValue
+// is what the normalizer would write instead, and nothing changes until a
+// reviewer accepts it. That is Q11's propose-only discipline applied to
+// standardization as well as to duplicates.
+//
+// entityType/entityId is deliberately polymorphic with no foreign key: a flag
+// can point at a Need, a SurveyResponse, one ResponseAnswer, or at an import
+// row that was never persisted at all (entityId null, rowNumber set). It is
+// also a decision log — a flag whose Need was later deleted is still a true
+// record that someone reviewed something.
+model CleaningFlag {
+  id     String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId  String @map("org_id") @db.Uuid
+  runId  String @map("run_id") @db.Uuid
+  // Denormalized from the run so the per-source report never joins and a flag
+  // stays self-describing — same self-contained pattern as NeedDomain.orgId.
+  source String @db.VarChar(30)
+  studyId String? @map("study_id") @db.Uuid
+  // "need" | "survey_response" | "response_answer" | "import_row"
+  entityType String  @map("entity_type") @db.VarChar(40)
+  entityId   String? @map("entity_id") @db.Uuid
+  // 1-based row number within the uploaded file. Set only for
+  // entityType = "import_row", where there is no persisted record to point at
+  // yet and the uploader needs to be told WHICH row.
+  rowNumber  Int?    @map("row_number")
+  // The field the rule fired on, in the Prisma field name the API uses
+  // ("village", "mobile", "domain", ...), or the question code for an answer.
+  field      String  @db.VarChar(120)
+  // Stable machine code — "MISSING_REQUIRED", "VILLAGE_UNMATCHED",
+  // "VILLAGE_NEAR_MATCH", "DATE_FORMAT", "PHONE_FORMAT", "UNIT_MISMATCH",
+  // "DOMAIN_NOT_IN_METHODOLOGY". Codes are the API contract; the
+  // human-readable label is looked up per locale on the frontend and never
+  // stored here, so fixing Arabic copy is not a migration.
+  ruleCode   String  @map("rule_code") @db.VarChar(60)
+  // "missing" | "non_standard" | "out_of_vocabulary"
+  severity   String  @db.VarChar(30)
+  originalValue String? @map("original_value")
+  // Always null when severity is "missing" — a rule that both reports a field
+  // as absent and supplies a value for it is inventing data, which is the one
+  // thing cleaning must never do. Enforced by a CHECK constraint, not just
+  // here.
+  proposedValue String? @map("proposed_value")
+  // 0..1 for a fuzzy proposal (a near-matched village name); null when the
+  // proposal is deterministic — a date reformat is not a guess.
+  confidence Decimal? @db.Decimal(5, 4)
+  // Rule-specific context the reviewer needs and the code should not have to
+  // recompute — e.g. the top candidate Centers with their scores and codes
+  // behind a VILLAGE_NEAR_MATCH.
+  detail     Json?
+  // "pending" | "accepted" | "rejected" | "superseded". "superseded" is set
+  // by a later run when the underlying value changed before anyone reviewed
+  // the flag — never deleted, so the queue shrinks without the record of what
+  // was once wrong disappearing.
+  status     String    @default("pending") @db.VarChar(20)
+  reviewedBy String?   @map("reviewed_by") @db.Uuid
+  reviewedAt DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  note       String?
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  run CleaningRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([runId])
+  @@index([entityType, entityId])
+  @@map("cleaning_flags")
+}
+
+// The shared duplicate queue of Q40. FR-002 fills it with method = "literal"
+// rows; RIO-AI-004 adds method = "semantic" rows and the merge action. The
+// reviewer sees one queue either way.
+//
+// Nothing here mutates a Need. Confirming a duplicate sets `status` and (in
+// AI-004) writes a separate merge record — Q11's "propose-only, never
+// automatic" is a property of the schema, not a convention in a service.
+model DuplicateCandidate {
+  id    String  @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  // Null for scope = "cross_org". This is what keeps one entity's need text
+  // away from another entity's reviewers (Q9 / NFR-003): the RLS policy
+  // matches orgId with IS NOT DISTINCT FROM against the connection's org GUC,
+  // so an org-scoped connection sees only its own candidates and the no-GUC
+  // supervisor-write path sees only the cross-org ones.
+  orgId String? @map("org_id") @db.Uuid
+  // An ORDERED pair — needAId < needBId is enforced by a CHECK constraint, so
+  // (A,B) and (B,A) cannot both sit in the queue and the unique index below
+  // is sufficient on its own.
+  needAId String @map("need_a_id") @db.Uuid
+  needBId String @map("need_b_id") @db.Uuid
+  // Kept alongside the pair so the Center/NCNP queue can label which entity
+  // each side belongs to without joining across an RLS boundary it cannot
+  // read from.
+  needAOrgId String @map("need_a_org_id") @db.Uuid
+  needBOrgId String @map("need_b_org_id") @db.Uuid
+  // "within_study" | "within_org" | "cross_org" (Q9)
+  scope  String @db.VarChar(20)
+  // "literal" (FR-002) | "semantic" (AI-004, Q48). The reviewer is shown
+  // which pass proposed the pair, because the two warrant different scrutiny.
+  method String @db.VarChar(20)
+  // Similarity 0..1.
+  score  Decimal @db.Decimal(5, 4)
+  // The threshold in force WHEN THIS ROW WAS RAISED. Q23 has the threshold
+  // starting conservative and being tuned once real field data exists;
+  // storing it per row means retuning changes what is proposed next, never
+  // what was already proposed and decided.
+  threshold Decimal @db.Decimal(5, 4)
+  detectorVersion String @map("detector_version") @db.VarChar(50)
+  // AI-004 only: the stored AiSuggestion behind a semantic proposal, so
+  // "AI suggestion and human decision stored" resolves to real rows. SetNull,
+  // not Cascade — losing the suggestion must not take the reviewer's decision
+  // down with it, same reasoning as HumanDecision.aiSuggestionId.
+  aiSuggestionId String? @map("ai_suggestion_id") @db.Uuid
+  // "pending" | "confirmed_duplicate" | "not_duplicate" | "merged" | "dismissed"
+  status     String    @default("pending") @db.VarChar(30)
+  reviewedBy String?   @map("reviewed_by") @db.Uuid
+  reviewedAt DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  note       String?
+  detectedAt DateTime  @default(now()) @map("detected_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  merges       NeedMerge[]
+  needA        Need          @relation("DuplicateCandidateNeedA", fields: [needAId], references: [id], onDelete: Cascade)
+  needB        Need          @relation("DuplicateCandidateNeedB", fields: [needBId], references: [id], onDelete: Cascade)
+  aiSuggestion AiSuggestion? @relation(fields: [aiSuggestionId], references: [id], onDelete: SetNull)
+
+  @@unique([needAId, needBId, method])
+  @@index([orgId])
+  @@index([needAId])
+  @@index([needBId])
+  @@map("duplicate_candidates")
+}
+
+// ──────── RIO-AI-004: merge engine ────────
+// FR-002 proposes duplicate pairs and records the reviewer's decision. These
+// models turn a confirmed pair into one need without losing anything attached
+// to either — Q50 (everything transfers, with its source recorded), Q51 (the
+// survivor keeps its own reference, the retired one keeps resolving) and Q24
+// (published reports frozen, scores recalculated, undo with a mandatory note).
+
+// One merge decision, and everything undo needs to reverse it.
+model NeedMerge {
+  id             String  @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId          String  @map("org_id") @db.Uuid
+  survivorNeedId String  @map("survivor_need_id") @db.Uuid
+  retiredNeedId  String  @map("retired_need_id") @db.Uuid
+  // The queue candidate this acted on, when it came from there. SetNull, not
+  // Cascade: losing the proposal must never take the record of the merge with
+  // it — same reasoning as HumanDecision.aiSuggestionId.
+  candidateId    String? @map("candidate_id") @db.Uuid
+  // Optional on merge, MANDATORY on undo (enforced by a CHECK). Confirming a
+  // merge is explained by the pair itself; reversing one is the act a later
+  // reader needs a reason for.
+  note           String?
+  // How many items this merge moved. Stored rather than counted from
+  // needMergeTransfers because undo DELETES those rows — without this, an
+  // undone merge reports "0 items moved" in the history, which is not what
+  // happened. Found by calling the history endpoint against real data.
+  transferredCount Int     @default(0) @map("transferred_count")
+  decidedBy      String    @map("decided_by") @db.Uuid
+  decidedAt      DateTime  @default(now()) @map("decided_at") @db.Timestamptz(6)
+  undoneBy       String?   @map("undone_by") @db.Uuid
+  undoneAt       DateTime? @map("undone_at") @db.Timestamptz(6)
+  undoNote       String?   @map("undo_note")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  survivor  Need                @relation("NeedMergeSurvivor", fields: [survivorNeedId], references: [id], onDelete: Cascade)
+  retired   Need                @relation("NeedMergeRetired", fields: [retiredNeedId], references: [id], onDelete: Cascade)
+  candidate DuplicateCandidate? @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+  transfers NeedMergeTransfer[]
+  aliases   NeedReferenceAlias[]
+
+  @@index([orgId])
+  @@index([survivorNeedId])
+  @@map("need_merges")
+}
+
+// Q50's "each item keeping its original source recorded". A ledger rather than
+// a mergedFromNeedId column on each of the twelve tables a merge touches: one
+// table instead of twelve column additions, undo reads it directly instead of
+// running twelve reverse queries, and "what moved in this merge" is one
+// indexed lookup rather than a union.
+model NeedMergeTransfer {
+  id         String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  mergeId    String   @map("merge_id") @db.Uuid
+  orgId      String   @map("org_id") @db.Uuid
+  // The Prisma model name of the row that moved ("SurveyResponse",
+  // "Evidence", ...). Not an enum: the transfer set grows when FR-021's
+  // initiative links land, and that should be a code change.
+  entityType String   @map("entity_type") @db.VarChar(60)
+  entityId   String   @map("entity_id") @db.Uuid
+  fromNeedId String   @map("from_need_id") @db.Uuid
+  toNeedId   String   @map("to_need_id") @db.Uuid
+  transferredAt DateTime @default(now()) @map("transferred_at") @db.Timestamptz(6)
+
+  merge NeedMerge @relation(fields: [mergeId], references: [id], onDelete: Cascade)
+
+  @@unique([mergeId, entityType, entityId])
+  @@index([orgId])
+  @@index([mergeId])
+  @@map("need_merge_transfers")
+}
+
+// Q51 — "the retired number is kept permanently as an alias so old
+// links/reports still resolve". Permanently is the operative word: this row
+// SURVIVES an undo, so a reference printed in a report during the merged
+// period never stops resolving.
+model NeedReferenceAlias {
+  id                    String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId                 String   @map("org_id") @db.Uuid
+  // The retired need's internalRefSeq — the number that used to identify a
+  // need of its own. Globally unique because internalRefSeq is a global
+  // autoincrement, not per-org.
+  retiredInternalRefSeq Int      @map("retired_internal_ref_seq")
+  retiredNeedId         String   @map("retired_need_id") @db.Uuid
+  needId                String   @map("need_id") @db.Uuid
+  mergeId               String?  @map("merge_id") @db.Uuid
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  need  Need       @relation(fields: [needId], references: [id], onDelete: Cascade)
+  merge NeedMerge? @relation(fields: [mergeId], references: [id], onDelete: SetNull)
+
+  @@unique([retiredInternalRefSeq])
+  @@index([needId])
+  @@index([orgId])
+  @@map("need_reference_aliases")
+}
+
+// RIO-AI-004 / Q48 — meaning-based matching. The client accepted the design
+// "in principle" and blocked the BUILD pending the AI-provider and residency
+// ruling in Q10, so the table exists and nothing writes to it until the
+// provider flag is on.
+//
+// `vector` is JSONB rather than a pgvector column: enabling an extension on
+// the client's instance is their decision, not one to make inside a migration,
+// and at pilot scale in-process cosine over a few thousand rows is not the
+// bottleneck. This column type is the one thing that changes if pgvector is
+// approved.
+model NeedEmbedding {
+  id               String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId            String   @map("org_id") @db.Uuid
+  needId           String   @map("need_id") @db.Uuid
+  // SHA-256 of the folded title+statement the vector came from. Regeneration
+  // is driven by this changing — the per-edit cost flagged in Q48.
+  textHash         String   @map("text_hash") @db.VarChar(64)
+  modelName        String   @map("model_name") @db.VarChar(150)
+  embeddingVersion String   @map("embedding_version") @db.VarChar(64)
+  dimensions       Int
+  vector           Json
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  need Need @relation(fields: [needId], references: [id], onDelete: Cascade)
+
+  // One vector per need per embedding version: a model change produces a new
+  // row rather than silently replacing vectors built by a different model.
+  @@unique([needId, embeddingVersion])
+  @@index([orgId])
+  @@map("need_embeddings")
 }

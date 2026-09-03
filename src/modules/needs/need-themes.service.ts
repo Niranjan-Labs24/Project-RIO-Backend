@@ -1,3 +1,4 @@
+import { EXCLUDE_MERGED } from './need-visibility';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { requireOrgId } from '../../tenancy/org-context';
@@ -124,7 +125,7 @@ ${redactPii(statement)}`;
   async listThemeCounts(): Promise<Array<{ theme: string; needCount: number }>> {
     const orgId = requireOrgId();
     const rows = await this.tenant.runInOrgContext((tx) =>
-      tx.need.findMany({ where: { orgId }, select: { themes: true } }),
+      tx.need.findMany({ where: { orgId, ...EXCLUDE_MERGED }, select: { themes: true } }),
     );
     const counts = new Map<string, number>();
     for (const row of rows) {

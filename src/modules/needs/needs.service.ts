@@ -1,3 +1,4 @@
+import { EXCLUDE_MERGED } from './need-visibility';
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
@@ -9,6 +10,7 @@ import { AiDecisionsService } from '../ai-decisions/ai-decisions.service';
 import { StudyConfigService } from '../study-config/study-config.service';
 import { resolveConfidenceBand, type ConfidenceBand } from '../ai-decisions/confidence-band';
 import { MethodologyConfigService } from '../methodology-config/methodology-config.service';
+import { DataCleaningService } from '../data-cleaning/data-cleaning.service';
 import { NeedThemesService } from './need-themes.service';
 import { NeedSummaryService } from './need-summary.service';
 import { NEED_EDITABLE_STATUSES, type CreateNeedPayload, type Need, type NeedRow, type UpdateNeedPayload } from './needs.types';
@@ -67,6 +69,7 @@ export class NeedsService {
     private readonly methodologyConfig: MethodologyConfigService,
     private readonly needThemes: NeedThemesService,
     private readonly needSummaries: NeedSummaryService,
+    private readonly dataCleaning: DataCleaningService,
   ) {}
 
   // A Study can hold many Needs — each one runs its own independent
@@ -170,6 +173,20 @@ export class NeedsService {
       this.logger.warn(`Theme extraction failed for need ${created.id}: ${err.message}`);
     });
 
+    // RIO-FR-002. Fire-and-forget for the same reasons as the three above, and
+    // one more that is specific to cleaning: it must never be able to fail a
+    // save. The Need is persisted and audited by this point, and a missing
+    // flag is a far smaller harm than losing a researcher's entry because the
+    // geographic reference was briefly unreachable. DataCleaningService
+    // resolves rather than throwing, so this catch only covers the promise.
+    //
+    // orgId is passed explicitly rather than read from ambient context: this
+    // runs after the HTTP response, and an explicit org is what makes that
+    // safe to reason about.
+    this.dataCleaning.cleanNeed(created.id, orgId, 'manual_entry').catch((err: Error) => {
+      this.logger.warn(`Data cleaning failed for need ${created.id}: ${err.message}`);
+    });
+
     return this.toNeed(this.toNeedRow(created), await this.resolveUserName(created.createdBy));
   }
 
@@ -239,10 +256,10 @@ export class NeedsService {
       store?.role === 'center_supervisor';
     const rows = (isCrossOrgReader
       ? await this.tenant.runAsSupervisor((tx) =>
-          tx.need.findMany({ where: { studyId }, orderBy: { createdAt: 'asc' }, include: GEO_INCLUDE }),
+          tx.need.findMany({ where: { studyId, ...EXCLUDE_MERGED }, orderBy: { createdAt: 'asc' }, include: GEO_INCLUDE }),
         )
       : await this.tenant.runInOrgContext((tx) =>
-          tx.need.findMany({ where: { studyId }, orderBy: { createdAt: 'asc' }, include: GEO_INCLUDE }),
+          tx.need.findMany({ where: { studyId, ...EXCLUDE_MERGED }, orderBy: { createdAt: 'asc' }, include: GEO_INCLUDE }),
         )) as RawNeedWithGeo[];
     const [names, confidences] = await Promise.all([
       this.resolveUserNames(rows.map((r) => r.createdBy)),
@@ -364,6 +381,18 @@ export class NeedsService {
       });
       this.needSummaries.maybeGenerateForNeed(updated.id, 'manual_entry').catch((err: Error) => {
         this.logger.warn(`Need summary regeneration failed for need ${updated.id}: ${err.message}`);
+      });
+    }
+
+    // RIO-FR-002. Re-run on ANY change, not only a statement rewrite: the
+    // fields cleaning cares about are village, domain and geography, and an
+    // edit that fixes a village name has to clear the flag that reported it.
+    // DataCleaningService supersedes flags that no longer apply, so this is
+    // also how the queue shrinks when someone corrects a record directly
+    // instead of accepting the proposal.
+    if (changes.length > 0) {
+      this.dataCleaning.cleanNeed(updated.id, orgId, 'manual_entry').catch((err: Error) => {
+        this.logger.warn(`Data cleaning failed for need ${updated.id}: ${err.message}`);
       });
     }
 

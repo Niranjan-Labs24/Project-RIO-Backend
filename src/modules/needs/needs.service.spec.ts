@@ -145,6 +145,10 @@ function makeService(
   // RIO-FR-003's theme extraction is fire-and-forget on the same paths, and
   // has its own spec — the stub only has to resolve.
   const needThemes = { maybeExtractForNeed: async () => null };
+  // RIO-FR-002's cleaning is fire-and-forget on create/update and has its own
+  // spec. The stub only has to resolve — these tests assert on the Need write,
+  // and cleaning must never be able to change it.
+  const dataCleaning = { cleanNeed: async () => undefined };
   return new NeedsService(
     tenant as never,
     audit as never,
@@ -154,6 +158,7 @@ function makeService(
     methodologyConfig as never,
     needThemes as never,
     needSummaries as never,
+    dataCleaning as never,
   );
 }
 

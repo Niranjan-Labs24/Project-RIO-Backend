@@ -1,3 +1,4 @@
+import { EXCLUDE_MERGED } from '../needs/need-visibility';
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "../../generated/prisma";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
@@ -311,7 +312,7 @@ export class PriorityService {
     // score, rather than either vanishing or leaking an unapproved number.
     const { studies, needs, scores } = await this.tenant.runInOrgContext(async (tx) => ({
       studies: await tx.study.findMany(),
-      needs: await tx.need.findMany({ orderBy: { updatedAt: "desc" } }),
+      needs: await tx.need.findMany({ where: EXCLUDE_MERGED, orderBy: { updatedAt: "desc" } }),
       // Consolidated only — a dashboard row must reflect all of the Need's
       // responses, not whichever single Survey Link happened to be scored
       // most recently. Approved only — see the method comment above.

@@ -1,3 +1,4 @@
+import { EXCLUDE_MERGED } from '../needs/need-visibility';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore } from '../../tenancy/org-context';
@@ -54,7 +55,7 @@ export class VillageAggregationService {
           error: { code: 'STUDY_NOT_FOUND', message: `Study not found or not accessible: ${missing.join(', ')}` },
         });
       }
-      const needs = await tx.need.findMany({ where: { studyId: { in: studyIds } } });
+      const needs = await tx.need.findMany({ where: { studyId: { in: studyIds }, ...EXCLUDE_MERGED } });
       const scores = await tx.priorityScore.findMany({
         where: { studyId: { in: studyIds }, surveyLinkId: null, approvedAt: { not: null } },
         orderBy: { scoredAt: 'desc' },
