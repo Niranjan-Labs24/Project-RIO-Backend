@@ -265,6 +265,7 @@ model Organisation {
   evidenceDocuments          EvidenceDocument[]
   combinedReportSummaries    CombinedReportSummary[]
   initiatives                Initiative[]
+  historicalStudies          HistoricalStudy[]
 
   @@index([regionId])
   @@map("organisations")
@@ -923,6 +924,60 @@ model NeedInitiative {
   @@index([needId])
   @@index([initiativeId])
   @@map("need_initiatives")
+}
+
+// RIO-FR-013 (client Q25, confirmed by Ganesh 2026-09-04 — build now rather
+// than defer to test phase) — a study conducted before the platform
+// existed, uploaded as a reference document (PDF/Word) into the Archive
+// rather than built up through Study/Need/Survey the way every other
+// archive entry is. No lifecycle of its own: it's metadata plus one file,
+// permanent once uploaded (Q27: archive entries are never deleted).
+model HistoricalStudy {
+  id     String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId  String @map("org_id") @db.Uuid
+  title  String @db.VarChar(300)
+  // The selected Region's own name (client asked for a proper Region ->
+  // Governorate -> Center picker, not free text) — kept as a plain string
+  // rather than a regionId FK, same "derived label, not a hard link"
+  // reasoning Study uses for its own region (never stored, always
+  // recomputed) — a pre-platform document's geography doesn't need to
+  // track a live FK the way a Study's own hierarchy does. Single-element
+  // array only to keep the Archive's existing `region: string[]` filter
+  // working unchanged for every entry kind.
+  region String[] @default([])
+  // Full KSA Geographic Reference picker (client request, 2026-09-04) —
+  // plain UUID arrays rather than a join table, same "additive, not
+  // promoted to strict master data" precedent as Study.villages.
+  governorateIds String[] @default([]) @map("governorate_ids") @db.Uuid
+  centerIds      String[] @default([]) @map("center_ids") @db.Uuid
+  // Validated against TargetSectorOption.name at the API layer, same
+  // convention as Study.targetSector — "sector" here means the study's own
+  // subject (client Q26), consistent with how the rest of the Archive works.
+  targetSector String? @map("target_sector") @db.VarChar(100)
+  // When the historical study was actually conducted — distinct from
+  // uploadedAt below (when it was added to RIO).
+  studyDate DateTime @map("study_date") @db.Date
+  author    String   @db.VarChar(300)
+  // Free text, not a link to MethodologyVersion — a genuinely external,
+  // pre-platform study's methodology is its own, not necessarily one of
+  // RIO's own tracked versions.
+  methodologyVersionLabel String @map("methodology_version_label") @db.VarChar(300)
+
+  // Same file-storage shape as Evidence — reuses EvidenceStorageService
+  // rather than a second storage implementation.
+  fileName   String  @map("file_name") @db.VarChar(255)
+  fileType   String  @map("file_type") @db.VarChar(100)
+  fileSize   Int     @default(0) @map("file_size")
+  storageKey String  @map("storage_key") @db.VarChar(500)
+  fileHash   String? @map("file_hash") @db.VarChar(64)
+
+  uploadedBy String   @map("uploaded_by") @db.Uuid
+  uploadedAt DateTime @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+
+  org Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@map("historical_studies")
 }
 
 // Multi-select Domain/Sub-domain pairs for a Need — a Need can be manually

@@ -30,18 +30,20 @@ export class ArchiveService {
   async list(params: ListArchiveParams): Promise<ArchiveEntry[]> {
     const isCrossEntity = this.isCrossEntity();
 
-    const { organisations, studies, reports, needs } = await (isCrossEntity
+    const { organisations, studies, reports, needs, historicalStudies } = await (isCrossEntity
       ? this.tenant.runAsSupervisor(async (tx) => ({
           organisations: await tx.organisation.findMany(),
           studies: await tx.study.findMany(),
           reports: await tx.report.findMany({ where: { status: { in: EXPORTABLE_STATUSES } } }),
           needs: await tx.need.findMany(),
+          historicalStudies: await tx.historicalStudy.findMany(),
         }))
       : this.tenant.runInOrgContext(async (tx) => ({
           organisations: await tx.organisation.findMany(),
           studies: await tx.study.findMany(),
           reports: await tx.report.findMany({ where: { status: { in: EXPORTABLE_STATUSES } } }),
           needs: await tx.need.findMany(),
+          historicalStudies: await tx.historicalStudy.findMany(),
         })));
 
     // Non-crossEntity callers only ever see their own org's rows anyway
@@ -108,6 +110,26 @@ export class ArchiveService {
           // Same subject-based sector as the study branch above (RIO-FR-013, Q26).
           sector: reportStudy?.targetSector ?? null,
           villages: report.studyId ? (villagesByStudyId.get(report.studyId) ?? []) : [],
+        });
+      }
+    }
+    if (!params.kind || params.kind === "historical") {
+      for (const hist of historicalStudies) {
+        const org = orgById.get(hist.orgId);
+        results.push({
+          id: hist.id,
+          kind: "historical",
+          title: hist.title,
+          status: "completed",
+          date: hist.studyDate.toISOString(),
+          studyId: null,
+          organizationId: hist.orgId,
+          organizationName: org?.name ?? "",
+          // A historical entry's own recorded region, not the org's — it
+          // may cover a different area than the uploading org's home region.
+          region: hist.region,
+          sector: hist.targetSector,
+          villages: [],
         });
       }
     }

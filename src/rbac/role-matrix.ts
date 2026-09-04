@@ -89,7 +89,12 @@ export const ROLE_MATRIX: RoleDef[] = [
     // the matrix asked for — flagging this as needing either a real
     // read-vs-read module split in a follow-up, or explicit client
     // confirmation that Sharing capability wins over strict Audit lockout.
-    perm('archiveSharingAudit', { read: true, create: true, approve: true }),
+    // `write` (RIO-FR-013, client Q25) — uploading a historical/pre-platform
+    // study into the Archive. Deliberately NOT `create`/`approve` (those
+    // stay Sharing-only, per the owner-approval boundary FR-014 depends
+    // on) — `write` was unused on this module until now, so this doesn't
+    // touch Sharing's own grants at all.
+    perm('archiveSharingAudit', { read: true, write: true, create: true, approve: true }),
     perm('surveyBuilder', { read: true, write: true, create: true, export: true }),
     perm('ncnpReport'),
     perm('systemLogs'),
@@ -295,9 +300,14 @@ export const ROLE_MATRIX: RoleDef[] = [
     // so the one role responsible for the audit log couldn't download it. The
     // audit CSV export (AuditController's GET /audit/export) is gated on
     // exactly `archiveSharingAudit:export`, and that action gates nothing else
-    // in this module — Archive is read-only and Sharing uses create/approve —
-    // so this widens audit export only, not Archive or Sharing.
-    perm('archiveSharingAudit', { read: true, export: true }),
+    // in this module — Sharing uses create/approve, which System Admin
+    // deliberately still lacks (owner-only approval, FR-014) — so this
+    // widens audit export only, not Sharing.
+    // `write` (RIO-FR-013, client Q25) — uploading a historical study on an
+    // entity's behalf, the same "System Admin acts for any org" pattern
+    // already used for Study creation (requireOrgId() resolves via
+    // X-Act-As-Org for a crossEntity caller — no extra logic needed here).
+    perm('archiveSharingAudit', { read: true, write: true, export: true }),
     perm('surveyBuilder', { read: true, write: true, create: true, approve: true, export: true, share: true }),
     // Generate a new NCNP Compiled Report snapshot for review, and publish
     // one a System Reviewer has already approved — `write` covers both
