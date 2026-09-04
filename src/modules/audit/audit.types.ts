@@ -83,7 +83,9 @@ export type AuditEntityType =
   // too": every draft/edit/approve/reject/publish of a Terms of Use or Data
   // Sharing Policy version is an auditable governance event in its own right,
   // distinct from `user`-scoped consent acceptance (action: 'consent').
-  | 'consent_policy';
+  | 'consent_policy'
+  // RIO-FR-009 — Initiative create/edit events.
+  | 'initiative';
 
   
   // RIO-AI-003 — one row per suggested summary of a Need's description.

@@ -69,6 +69,12 @@ export class SharingController {
     return this.sharing.reject(id, body ?? {});
   }
 
+  @Patch(":id/withdraw")
+  @RequirePermission("archiveSharingAudit", "approve")
+  withdraw(@Param("id", new UuidParamPipe()) id: string): Promise<SharingRequest> {
+    return this.sharing.withdraw(id);
+  }
+
   @Get(":id/shared-study")
   @RequirePermission("archiveSharingAudit", "read")
   getSharedSnapshot(@Param("id", new UuidParamPipe()) id: string): Promise<SharedStudySnapshot> {

@@ -18,6 +18,7 @@ function makeRow(overrides: Partial<NeedRow> = {}): NeedRow {
     internalRefSeq: 1,
     affectedPopulation: null,
     status: 'draft',
+    analyticalStatus: 'observed',
     domain: 'Water',
     subDomain: 'Access',
     allDomainsSelected: false,

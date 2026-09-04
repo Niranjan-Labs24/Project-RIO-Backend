@@ -15,13 +15,16 @@ interface FakeRow {
   ownerOrgId: string;
   requestingOrgId: string;
   studyId: string;
-  status: "pending" | "approved" | "rejected" | "expired";
+  status: "pending" | "approved" | "rejected" | "expired" | "withdrawn";
   requestedBy: string;
   requestedAt: Date;
   decidedBy: string | null;
   decidedAt: Date | null;
   note: string | null;
   decisionNote: string | null;
+  expiresAt?: Date | null;
+  withdrawnBy?: string | null;
+  withdrawnAt?: Date | null;
 }
 
 // A single fake tenant now backs every call the service makes — create(),
@@ -212,6 +215,83 @@ describe("SharingService.decide (approve/reject)", () => {
   });
 });
 
+describe("SharingService.approve — optional expiry (RIO-FR-014, Q30)", () => {
+  function seedPending(): FakeRow {
+    return {
+      id: "sr-1", ownerOrgId: "org-owner", requestingOrgId: "org-requester", studyId: STUDY.id,
+      status: "pending", requestedBy: "user-1", requestedAt: new Date(),
+      decidedBy: null, decidedAt: null, note: "why", decisionNote: null,
+    };
+  }
+
+  it("approving with no expiresAt leaves access open-ended", async () => {
+    const svc = new SharingService(fakeTenant([STUDY], ORGS, [seedPending()]) as never, fakeAudit() as never);
+    const result = await runAsOrg("org-owner", "user-2", () => svc.approve("sr-1"));
+    expect(result.status).toBe("approved");
+    expect(result.expiresAt).toBeNull();
+  });
+
+  it("approving with an expiresAt stores it", async () => {
+    const svc = new SharingService(fakeTenant([STUDY], ORGS, [seedPending()]) as never, fakeAudit() as never);
+    const result = await runAsOrg("org-owner", "user-2", () =>
+      svc.approve("sr-1", { expiresAt: "2027-01-01T00:00:00.000Z" }),
+    );
+    expect(result.expiresAt).toBe("2027-01-01T00:00:00.000Z");
+  });
+
+  it("rejects an unparsable expiry date", async () => {
+    const svc = new SharingService(fakeTenant([STUDY], ORGS, [seedPending()]) as never, fakeAudit() as never);
+    await expect(
+      runAsOrg("org-owner", "user-2", () => svc.approve("sr-1", { expiresAt: "not-a-date" })),
+    ).rejects.toMatchObject({ response: { error: { code: "INVALID_EXPIRY_DATE" } } });
+  });
+});
+
+describe("SharingService.withdraw (RIO-FR-014, Q30)", () => {
+  function seedApproved(): FakeRow {
+    return {
+      id: "sr-1", ownerOrgId: "org-owner", requestingOrgId: "org-requester", studyId: STUDY.id,
+      status: "approved", requestedBy: "user-1", requestedAt: new Date(),
+      decidedBy: "user-2", decidedAt: new Date(), note: "why", decisionNote: null,
+    };
+  }
+
+  it("only the owning org can withdraw", async () => {
+    const svc = new SharingService(fakeTenant([STUDY], ORGS, [seedApproved()]) as never, fakeAudit() as never);
+    await expect(
+      runAsOrg("org-requester", "user-1", () => svc.withdraw("sr-1")),
+    ).rejects.toMatchObject({ response: { error: { code: "FORBIDDEN" } } });
+  });
+
+  it("cannot withdraw a request that was never approved", async () => {
+    const row = { ...seedApproved(), status: "pending" as const, decidedBy: null, decidedAt: null };
+    const svc = new SharingService(fakeTenant([STUDY], ORGS, [row]) as never, fakeAudit() as never);
+    await expect(
+      runAsOrg("org-owner", "user-2", () => svc.withdraw("sr-1")),
+    ).rejects.toMatchObject({ response: { error: { code: "SHARING_NOT_APPROVED" } } });
+  });
+
+  it("withdraws approved access, stamps who/when, and audits both orgs", async () => {
+    const audit = fakeAudit();
+    const svc = new SharingService(fakeTenant([STUDY], ORGS, [seedApproved()]) as never, audit as never);
+    const result = await runAsOrg("org-owner", "user-3", () => svc.withdraw("sr-1"));
+
+    expect(result.status).toBe("withdrawn");
+    expect(result.withdrawnBy).toBe("user-3");
+    expect(result.withdrawnAt).not.toBeNull();
+    expect(audit.calls).toHaveLength(2);
+    expect(audit.calls.map((c) => c.organizationId).sort()).toEqual(["org-owner", "org-requester"].sort());
+  });
+
+  it("a withdrawn request can no longer be viewed via getSharedSnapshot", async () => {
+    const row = { ...seedApproved(), status: "withdrawn" as const, withdrawnBy: "user-3", withdrawnAt: new Date() };
+    const svc = new SharingService(fakeTenant([STUDY], ORGS, [row]) as never, fakeAudit() as never);
+    await expect(
+      runAsOrg("org-requester", "user-1", () => svc.getSharedSnapshot("sr-1")),
+    ).rejects.toMatchObject({ response: { error: { code: "SHARING_NOT_APPROVED" } } });
+  });
+});
+
 describe("SharingService.getSharedSnapshot", () => {
   function fakeTenantWithNeeds(initialRows: FakeRow[] = []) {
     const base = fakeTenant([STUDY], ORGS, initialRows);
@@ -248,6 +328,19 @@ describe("SharingService.getSharedSnapshot", () => {
     await expect(
       runAsOrg("org-owner", "user-2", () => svc.getSharedSnapshot("sr-1")),
     ).rejects.toMatchObject({ response: { error: { code: "FORBIDDEN" } } });
+  });
+
+  it("refuses to reveal a snapshot once the approval has expired (RIO-FR-014, Q30)", async () => {
+    const row: FakeRow = {
+      id: "sr-1", ownerOrgId: "org-owner", requestingOrgId: "org-requester", studyId: STUDY.id,
+      status: "approved", requestedBy: "user-1", requestedAt: new Date(),
+      decidedBy: "user-2", decidedAt: new Date(), note: null, decisionNote: null,
+      expiresAt: new Date("2020-01-01T00:00:00.000Z"),
+    };
+    const svc = new SharingService(fakeTenantWithNeeds([row]) as never, fakeAudit() as never);
+    await expect(
+      runAsOrg("org-requester", "user-1", () => svc.getSharedSnapshot("sr-1")),
+    ).rejects.toMatchObject({ response: { error: { code: "SHARING_EXPIRED" } } });
   });
 
   it("returns the study's needs and evidence count once approved, for the requesting org", async () => {
