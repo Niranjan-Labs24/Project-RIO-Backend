@@ -1,8 +1,10 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import type { Prisma } from "../../generated/prisma";
-import { requireActor, requireOrgId } from "../../tenancy/org-context";
+import { getOrgStore, orgContext, requireActor, requireOrgId } from "../../tenancy/org-context";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { AuditService } from "../audit/audit.service";
+import { PriorityService } from "../priority/priority.service";
+import { isCrossOrgReader } from "./cross-org-reader";
 
 /**
  * RIO-AI-004 — turning a confirmed duplicate pair into one need.
@@ -87,7 +89,12 @@ export interface MergePreview {
   frozenReportCount: number;
   /** Scores that will be recalculated for the survivor (Q24). */
   scoresToRecalculate: number;
-  warnings: string[];
+  /**
+   * Warnings as CODES, not prose. This platform is Arabic-first and the merge
+   * dialog is translated — an English sentence built on the server would be
+   * the one untranslated string on the screen. The client renders these.
+   */
+  warnings: { code: string; count?: number }[];
 }
 
 function formatReference(seq: number): string {
@@ -101,6 +108,7 @@ export class NeedMergeService {
   constructor(
     private readonly tenant: TenantPrismaService,
     private readonly audit: AuditService,
+    private readonly priority: PriorityService,
   ) {}
 
   /**
@@ -111,7 +119,10 @@ export class NeedMergeService {
    * same description can be shown to the client as a worked example.
    */
   async preview(survivorNeedId: string, retiredNeedId: string): Promise<MergePreview> {
-    return this.tenant.runInOrgContext(async (tx) => {
+    const run = isCrossOrgReader()
+      ? this.tenant.runAsSupervisor.bind(this.tenant)
+      : this.tenant.runInOrgContext.bind(this.tenant);
+    return run(async (tx) => {
       const { survivor, retired } = await this.loadPair(tx, survivorNeedId, retiredNeedId);
 
       const transfers: { entityType: string; count: number }[] = [];
@@ -134,18 +145,16 @@ export class NeedMergeService {
         tx.priorityScore.count({ where: { needId: survivorNeedId } }),
       ]);
 
-      const warnings: string[] = [];
+      const warnings: { code: string; count?: number }[] = [];
       if (survivor.studyId !== retired.studyId) {
         // Not refused — a duplicate genuinely can be entered under two studies
         // — but it moves responses across a study boundary, which changes what
         // each study's own totals contain. The reviewer should know.
-        warnings.push("These needs belong to different studies; everything attached moves into the survivor's study.");
+        warnings.push({ code: "DIFFERENT_STUDIES" });
       }
       const retiredScores = await tx.priorityScore.count({ where: { needId: retiredNeedId } });
       if (retiredScores > 0) {
-        warnings.push(
-          `The retired need has ${retiredScores} computed score(s). Per the methodology these are not transferred — the survivor's scores are recalculated instead.`,
-        );
+        warnings.push({ code: "RETIRED_HAS_SCORES", count: retiredScores });
       }
 
       return {
@@ -191,7 +200,11 @@ export class NeedMergeService {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 25;
 
-    return this.tenant.runInOrgContext(async (tx) => {
+    const run = isCrossOrgReader()
+      ? this.tenant.runAsSupervisor.bind(this.tenant)
+      : this.tenant.runInOrgContext.bind(this.tenant);
+
+    return run(async (tx) => {
       const [rows, total] = await Promise.all([
         tx.needMerge.findMany({
           orderBy: { decidedAt: "desc" },
@@ -261,7 +274,11 @@ export class NeedMergeService {
     const orgId = requireOrgId();
     const actor = requireActor();
 
-    const result = await this.tenant.runInOrgContext(async (tx) => {
+    // Q23 names System Admin as a decision owner, and a crossEntity role can
+    // see these pairs — so it can merge them, in the OWNING entity's context.
+    const targetOrgId = await this.resolveNeedOrg(input.survivorNeedId, orgId);
+
+    const result = await this.tenant.runAsOrg(targetOrgId, async (tx) => {
       const { survivor, retired } = await this.loadPair(
         tx,
         input.survivorNeedId,
@@ -347,12 +364,40 @@ export class NeedMergeService {
       return { mergeId: merge.id, transferred, survivor, retired };
     });
 
+    // Q24 — "current scores are recalculated". The survivor now carries the
+    // retired need's responses and evidence, so its score is out of date the
+    // moment the merge commits.
+    //
+    // score() APPENDS a new PriorityScore rather than replacing the old one,
+    // and that is deliberate here: every reader takes the latest row
+    // (`take: 1, orderBy: scoredAt desc`), so this is a score history, not the
+    // duplication problem scoreResponse had. The new row is unapproved, which
+    // is correct — a changed number goes through the same sign-off gate as any
+    // other (RIO-FR-003).
+    //
+    // Best-effort and run in the OWNING entity's context: the merge is already
+    // committed, and a scoring failure must not undo it. Published reports are
+    // untouched either way — Q24 freezes those.
+    const store = getOrgStore();
+    let rescored = false;
+    try {
+      await orgContext.run(
+        { ...(store ?? { requestId: "merge" }), orgId: targetOrgId },
+        () => this.priority.score(result.survivor.id),
+      );
+      rescored = true;
+    } catch (err) {
+      this.logger.warn(
+        `Re-scoring the surviving need failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
     await this.audit.record({
       action: "merge_needs",
       entityType: "need",
       entityId: result.survivor.id,
       entityLabel: `${formatReference(result.retired.internalRefSeq)} merged into ${formatReference(result.survivor.internalRefSeq)}`,
-      organizationId: orgId,
+      organizationId: targetOrgId,
       changes: [
         { field: "Survivor", before: null, after: formatReference(result.survivor.internalRefSeq) },
         { field: "Retired", before: null, after: formatReference(result.retired.internalRefSeq) },
@@ -364,7 +409,13 @@ export class NeedMergeService {
         },
         // Q24, said out loud rather than left for a reader to work out.
         { field: "Published reports", before: null, after: "unchanged — frozen as historical record" },
-        { field: "Priority scores", before: null, after: "stale — the survivor needs re-scoring" },
+        {
+          field: "Priority scores",
+          before: null,
+          after: rescored
+            ? "recalculated for the surviving need, awaiting approval"
+            : "stale — re-scoring failed, the surviving need needs re-scoring",
+        },
         { field: "Note", before: null, after: result.retired ? (input.note?.trim() ?? null) : null },
       ],
     });
@@ -394,7 +445,9 @@ export class NeedMergeService {
       });
     }
 
-    const result = await this.tenant.runInOrgContext(async (tx) => {
+    const targetOrgId = await this.resolveMergeOrg(mergeId, orgId);
+
+    const result = await this.tenant.runAsOrg(targetOrgId, async (tx) => {
       const merge = await tx.needMerge.findUnique({
         where: { id: mergeId },
         include: { transfers: true },
@@ -472,7 +525,7 @@ export class NeedMergeService {
       entityType: "need",
       entityId: result.merge.survivorNeedId,
       entityLabel: "Merge undone",
-      organizationId: orgId,
+      organizationId: targetOrgId,
       changes: [
         { field: "Items restored", before: null, after: result.restored },
         {
@@ -489,6 +542,23 @@ export class NeedMergeService {
   }
 
   // ── internals ────────────────────────────────────────────────────────────
+
+  /** Which entity owns this need — see FlagReviewService.resolveFlagOrg. */
+  private async resolveNeedOrg(needId: string, actorOrgId: string): Promise<string> {
+    if (!isCrossOrgReader()) return actorOrgId;
+    const row = await this.tenant.runAsSupervisor((tx) =>
+      tx.need.findUnique({ where: { id: needId }, select: { orgId: true } }),
+    );
+    return row?.orgId ?? actorOrgId;
+  }
+
+  private async resolveMergeOrg(mergeId: string, actorOrgId: string): Promise<string> {
+    if (!isCrossOrgReader()) return actorOrgId;
+    const row = await this.tenant.runAsSupervisor((tx) =>
+      tx.needMerge.findUnique({ where: { id: mergeId }, select: { orgId: true } }),
+    );
+    return row?.orgId ?? actorOrgId;
+  }
 
   private async loadPair(
     tx: Prisma.TransactionClient,

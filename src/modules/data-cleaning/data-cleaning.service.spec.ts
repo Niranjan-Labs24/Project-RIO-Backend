@@ -23,6 +23,7 @@ const CONTEXT: CleaningContext = {
     villageMatchProposeThreshold: 0.75,
     villageMatchMaxCandidates: 5,
     classificationNearMatchThreshold: 0.5,
+  semanticDuplicateThreshold: 0.9,
     literalDuplicateThreshold: 0.85,
     duplicateScopes: { withinStudy: true, withinOrg: true, crossOrg: false },
   },

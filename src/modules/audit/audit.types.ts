@@ -147,7 +147,12 @@ export interface RecordAuditInput {
   // (e.g. system_admin creating an org/user) so the event is traceable under
   // the AFFECTED org rather than the acting admin's own org. When omitted the
   // event is filed under the caller's ambient org context.
-  organizationId?: string;
+  //
+  // Explicit null means the event belongs to NO single entity and is filed at
+  // platform level. That is different from omitting the field: omitting falls
+  // back to the caller's org, which for an oversight action about two OTHER
+  // entities files it under an organisation that had no part in it.
+  organizationId?: string | null;
   // The submitter's own external tracking id for the entity this event is
   // about (e.g. Need.referenceId) — a first-class, indexed column, not
   // another metadata key. Omit (or null) when the entity has no such

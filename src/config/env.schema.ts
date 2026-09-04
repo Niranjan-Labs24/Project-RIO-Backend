@@ -101,6 +101,13 @@ export const EnvSchema = Type.Object({
   REVIEWER_SLA_HOURS: Type.Number({ default: 48 }),
   REVIEWER_SLA_POLL_INTERVAL_MS: Type.Number({ default: 60_000 }),
   GEMINI_API_KEY: Type.Optional(Type.String()),
+  // RIO-AI-004 / Q10 — the switch that lets need text leave the platform.
+  //
+  // Semantic duplicate detection embeds need titles and statements with an
+  // external model. Until the client rules on in-Kingdom residency that is a
+  // deployment decision, not a screen toggle, so it lives here and defaults
+  // OFF: the code ships complete and inert until someone sets this.
+  SEMANTIC_DUPLICATES_ENABLED: Type.Boolean({ default: false }),
   // Periodic pg_dump backup (BackupService). BACKUP_DIR is where dump files
   // are written (created if missing, relative paths resolved from the
   // process cwd). BACKUP_CRON_SCHEDULE is a standard 5-field cron

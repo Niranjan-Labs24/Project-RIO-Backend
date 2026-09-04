@@ -62,6 +62,28 @@ export interface DataCleaningSettings {
   villageMatchMaxCandidates?: number;
   literalDuplicateThreshold?: number;
   classificationNearMatchThreshold?: number;
+  /**
+   * RIO-AI-004 — cosine similarity a semantic pair must reach to be proposed.
+   *
+   * Higher than the literal threshold on purpose, and the number is measured
+   * rather than picked. Calibrated against gemini-embedding-001 at 768
+   * dimensions on 17 synthetic pairs shaped like real needs:
+   *
+   *   true duplicates     0.923 .. 0.985   (including Arabic/English pairs)
+   *   unrelated needs     0.678 .. 0.886
+   *
+   * A clean gap sits between 0.886 and 0.923, and 0.90 falls inside it: on that
+   * sample it caught 8 of 8 duplicates with one false alarm. Embeddings do not
+   * spread out the way trigrams do — unrelated Saudi community needs still
+   * score ~0.77 because they are all community needs — so a threshold that
+   * looks lenient by trigram standards is strict here.
+   *
+   * The one false alarm no threshold can remove: the SAME need stated for two
+   * different years scores 0.983, above most genuine duplicates. Meaning-based
+   * matching cannot tell 2026 from 2025. That is the standing argument for
+   * Q11 propose-only, not a tuning problem.
+   */
+  semanticDuplicateThreshold?: number;
   duplicateScopes?: {
     withinStudy?: boolean;
     withinOrg?: boolean;
@@ -83,6 +105,7 @@ export const DEFAULT_SETTINGS: Required<
     | "villageMatchProposeThreshold"
     | "villageMatchMaxCandidates"
     | "classificationNearMatchThreshold"
+    | "semanticDuplicateThreshold"
     | "literalDuplicateThreshold"
     | "duplicateScopes"
   >
@@ -98,6 +121,7 @@ export const DEFAULT_SETTINGS: Required<
   villageMatchProposeThreshold: 0.75,
   villageMatchMaxCandidates: 5,
   classificationNearMatchThreshold: 0.5,
+  semanticDuplicateThreshold: 0.9,
   // Q23 — start conservative so reviewers see few false alarms, tune once
   // real field data exists.
   literalDuplicateThreshold: 0.85,

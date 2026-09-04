@@ -114,6 +114,10 @@ export class ConfigService {
   get geminiApiKey(): string | undefined {
     return this.config.GEMINI_API_KEY;
   }
+  /** See SEMANTIC_DUPLICATES_ENABLED in env.schema.ts — Q10 sits behind this. */
+  get semanticDuplicatesEnabled(): boolean {
+    return this.config.SEMANTIC_DUPLICATES_ENABLED;
+  }
   get twilioAccountSid(): string | undefined {
     return this.config.TWILIO_ACCOUNT_SID;
   }

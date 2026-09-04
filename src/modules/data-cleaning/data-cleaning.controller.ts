@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
@@ -9,6 +9,7 @@ import {
   ListMergesQuery,
   MergeNeedsBody,
   UndoMergeBody,
+  UpdateCleaningSettingsBody,
   ListFlagsQuery,
   ReviewFlagBody,
   type BulkAcceptDto,
@@ -17,14 +18,22 @@ import {
   type ListMergesQueryDto,
   type MergeNeedsDto,
   type UndoMergeDto,
+  type UpdateCleaningSettingsDto,
   type ListFlagsQueryDto,
   type ReviewFlagDto,
 } from './data-cleaning.contract';
+import { DuplicateDetectionService } from './duplicate-detection.service';
 import {
   DuplicateReviewService,
   type DuplicateCandidateItem,
 } from './duplicate-review.service';
+import {
+  CleaningSettingsService,
+  type CleaningSettingsView,
+} from './cleaning-settings.service';
+import { isCrossOrgReader } from './cross-org-reader';
 import { FlagReviewService, type FlagListItem } from './flag-review.service';
+import { SemanticDuplicateService } from './semantic-duplicate.service';
 import {
   NeedMergeService,
   type MergeHistoryItem,
@@ -59,6 +68,9 @@ export class DataCleaningController {
     private readonly review: FlagReviewService,
     private readonly duplicates: DuplicateReviewService,
     private readonly merges: NeedMergeService,
+    private readonly settings: CleaningSettingsService,
+    private readonly detection: DuplicateDetectionService,
+    private readonly semantic: SemanticDuplicateService,
   ) {}
 
   @Get('flags')
@@ -113,6 +125,26 @@ export class DataCleaningController {
     return this.review.bulkAccept(body.ruleCode, body.source, body.note);
   }
 
+  // ── Q23: the rule set's own thresholds ────────────────────────────────
+  //
+  // Read on `read` so anyone who can see the queue can see the thresholds it
+  // was produced under; write on `write`, which Q23 gives to System Admin and
+  // Data Analyst alone.
+
+  @Get('settings')
+  @RequirePermission('dataQuality', 'read')
+  getSettings(): Promise<CleaningSettingsView> {
+    return this.settings.get();
+  }
+
+  @Patch('settings')
+  @RequirePermission('dataQuality', 'write')
+  updateSettings(
+    @Body(new TypeBoxValidationPipe(UpdateCleaningSettingsBody)) body: UpdateCleaningSettingsDto,
+  ): Promise<CleaningSettingsView> {
+    return this.settings.update(body);
+  }
+
   // ── Q40's shared duplicate queue ────────────────────────────────────────
   //
   // Same permission as the findings queue, and deliberately the same
@@ -130,6 +162,67 @@ export class DataCleaningController {
       page: page ? Number(page) : undefined,
       pageSize: pageSize ? Number(pageSize) : undefined,
     });
+  }
+
+  /**
+   * RIO-AI-004 / Q9 — cross-entity candidates, for the Center / NCNP
+   * Supervisor only.
+   *
+   * Gated on `crossEntity` in addition to the module permission. The RLS
+   * policy already makes these rows unreachable from an entity-scoped
+   * connection, so this is the second of two independent gates: the database
+   * and the role both have to fail before one entity's need text could reach
+   * another entity's reviewer.
+   */
+  @Get('duplicates/cross-entity')
+  @RequirePermission('dataQuality', 'read')
+  listCrossEntityDuplicates(
+    @Query(new TypeBoxValidationPipe(ListDuplicatesQuery)) query: ListDuplicatesQueryDto,
+  ): Promise<{ items: DuplicateCandidateItem[]; total: number }> {
+    if (!isCrossOrgReader()) {
+      // Not a 403 with detail: an entity reviewer should not learn that a
+      // cross-entity queue exists, let alone how many pairs are in it.
+      return Promise.resolve({ items: [], total: 0 });
+    }
+    return this.duplicates.listCrossEntity({
+      page: query.page ? Number(query.page) : undefined,
+      pageSize: query.pageSize ? Number(query.pageSize) : undefined,
+    });
+  }
+
+  /**
+   * Run the cross-entity pass. An explicit act, not a side effect of saving a
+   * need — see DuplicateDetectionService.runCrossOrgPass for why.
+   */
+  @Post('duplicates/cross-entity/scan')
+  @RequirePermission('dataQuality', 'write')
+  scanCrossEntity(): Promise<{ scanned: number; proposed: number }> {
+    if (!isCrossOrgReader()) {
+      return Promise.resolve({ scanned: 0, proposed: 0 });
+    }
+    return this.detection.runCrossOrgPass();
+  }
+
+  /**
+   * RIO-AI-004 — run the semantic pass over this entity's needs.
+   *
+   * Explicit, like the cross-entity scan, and for a stronger reason: it sends
+   * need text to an external model. That is not something a background job
+   * should start doing on its own before the client has ruled on residency
+   * (Q10), so it stays an act a named person performs.
+   *
+   * Gated on `write` rather than `read` for the same reason — running it costs
+   * money and moves data, which is not a read.
+   */
+  @Post('duplicates/semantic/scan')
+  @RequirePermission('dataQuality', 'write')
+  scanSemantic(): Promise<{
+    embedded: number;
+    compared: number;
+    proposed: number;
+    skippedReason: string | null;
+  }> {
+    return this.semantic.runSemanticPass();
   }
 
   @Post('duplicates/:candidateId/decide')

@@ -3,6 +3,7 @@ import type { Prisma } from "../../generated/prisma";
 import { requireActor, requireOrgId } from "../../tenancy/org-context";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { AuditService } from "../audit/audit.service";
+import { isCrossOrgReader } from "./cross-org-reader";
 
 /**
  * RIO-FR-002 — the shared duplicate queue of Q40, reader and decision side.
@@ -78,7 +79,17 @@ export class DuplicateReviewService {
       ...(query.method ? { method: query.method } : {}),
     };
 
-    return this.tenant.runInOrgContext(async (tx) => {
+    // Same oversight read as the findings queue. Note this does NOT widen Q9:
+    // cross-ENTITY candidates carry org_id NULL and are already reachable only
+    // through this supervisor path, never through an org-scoped one. What
+    // changes here is that a platform-wide role can see each entity's OWN
+    // pairs, which is the same data it can already read on that entity's
+    // studies.
+    const run = isCrossOrgReader()
+      ? this.tenant.runAsSupervisor.bind(this.tenant)
+      : this.tenant.runInOrgContext.bind(this.tenant);
+
+    return run(async (tx) => {
       const [rows, total] = await Promise.all([
         tx.duplicateCandidate.findMany({
           where,
@@ -149,6 +160,99 @@ export class DuplicateReviewService {
   }
 
   /**
+   * RIO-AI-004 / Q9 — the cross-entity queue.
+   *
+   * Deliberately a SEPARATE method and a separate endpoint rather than a
+   * filter on `list` above. Cross-entity rows carry org_id NULL and are only
+   * reachable through the no-GUC supervisor path, so an entity-scoped caller
+   * could not see them however it filtered — but relying on that alone would
+   * mean the restriction lived in a WHERE clause an future edit could widen.
+   * A distinct route lets the controller gate it on the role explicitly, so
+   * both the policy and the permission have to fail before anything leaks.
+   */
+  async listCrossEntity(query: { page?: number; pageSize?: number }): Promise<{
+    items: DuplicateCandidateItem[];
+    total: number;
+  }> {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? DEFAULT_PAGE_SIZE;
+    const where: Prisma.DuplicateCandidateWhereInput = {
+      scope: "cross_org",
+      status: "pending",
+    };
+
+    return this.tenant.runAsSupervisor(async (tx) => {
+      const [rows, total] = await Promise.all([
+        tx.duplicateCandidate.findMany({
+          where,
+          orderBy: [{ score: "desc" }, { detectedAt: "asc" }],
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+          include: { aiSuggestion: { select: { reason: true } } },
+        }),
+        tx.duplicateCandidate.count({ where }),
+      ]);
+
+      const needIds = [...new Set(rows.flatMap((r) => [r.needAId, r.needBId]))];
+      const orgIds = [...new Set(rows.flatMap((r) => [r.needAOrgId, r.needBOrgId]))];
+      const [needs, orgs] = await Promise.all([
+        needIds.length
+          ? tx.need.findMany({
+              where: { id: { in: needIds } },
+              select: {
+                id: true, internalRefSeq: true, title: true, statement: true,
+                village: true, domain: true, subDomain: true, referenceId: true,
+                orgId: true, createdAt: true,
+              },
+            })
+          : [],
+        orgIds.length
+          ? tx.organisation.findMany({ where: { id: { in: orgIds } }, select: { id: true, name: true } })
+          : [],
+      ]);
+      const orgName = new Map(orgs.map((o) => [o.id, o.name]));
+      const byId = new Map(
+        needs.map((n) => [
+          n.id,
+          {
+            id: n.id,
+            reference: `NEED-${String(n.internalRefSeq).padStart(6, "0")}`,
+            title: n.title,
+            statement: n.statement,
+            village: n.village,
+            domain: n.domain,
+            subDomain: n.subDomain,
+            referenceId: n.referenceId,
+            // The owning ENTITY, not the study: on this queue the question a
+            // reviewer is answering is "are these two entities recording the
+            // same need?", so whose need it is has to be on screen.
+            studyTitle: orgName.get(n.orgId) ?? null,
+            createdAt: n.createdAt,
+          } satisfies DuplicateNeedSummary,
+        ]),
+      );
+
+      return {
+        total,
+        items: rows.map((row) => ({
+          id: row.id,
+          scope: row.scope,
+          method: row.method,
+          score: Number(row.score),
+          threshold: Number(row.threshold),
+          status: row.status,
+          note: row.note,
+          reviewedAt: row.reviewedAt,
+          detectedAt: row.detectedAt,
+          aiReason: row.aiSuggestion?.reason ?? null,
+          needA: byId.get(row.needAId) ?? null,
+          needB: byId.get(row.needBId) ?? null,
+        })),
+      };
+    });
+  }
+
+  /**
    * Record a reviewer's decision on a proposed pair (AC 3 and AC 4).
    *
    * A note is required for "not a duplicate": that decision permanently
@@ -174,7 +278,22 @@ export class DuplicateReviewService {
       });
     }
 
-    const updated = await this.tenant.runInOrgContext(async (tx) => {
+    // Same reasoning as FlagReviewService.review: a crossEntity role that can
+    // see the pair must be able to decide it, and the write runs in the
+    // owning entity's context so RLS and the audit trail both stay honest.
+    const targetOrgId = await this.resolveCandidateOrg(candidateId, orgId);
+
+    // A cross-entity pair carries org_id NULL, so no org-scoped connection can
+    // reach it. The supervisor write path leaves the org GUC unset, and the
+    // policy then reads as `org_id IS NOT DISTINCT FROM NULL` — which matches
+    // the cross-entity rows and ONLY those. Every org-owned candidate stays
+    // invisible on this path, so it confines the write rather than escaping it.
+    const run = <T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> =>
+      targetOrgId === null
+        ? this.tenant.runAsSupervisorWrite(fn)
+        : this.tenant.runAsOrg(targetOrgId, fn);
+
+    const updated = await run(async (tx) => {
       const existing = await tx.duplicateCandidate.findUnique({ where: { id: candidateId } });
       if (!existing) {
         throw new NotFoundException({
@@ -205,16 +324,30 @@ export class DuplicateReviewService {
       entityType: "duplicate_candidate",
       entityId: updated.id,
       entityLabel: `${decision === "confirmed_duplicate" ? "Confirmed" : "Dismissed"} duplicate pair`,
-      organizationId: orgId,
+      // Null for a cross-entity pair: the decision is oversight acting above
+      // both entities, and the reviewer's own entity is typically neither of
+      // them. Passing null files it at platform level; passing undefined would
+      // fall back to the reviewer's org, which is how the first version of
+      // this got it wrong.
+      organizationId: targetOrgId,
       changes: [
         { field: "Decision", before: "pending", after: decision },
+        ...(targetOrgId === null
+          ? [{ field: "Scope", before: null, after: "cross_entity" }]
+          : []),
         { field: "Detected by", before: null, after: updated.method },
         { field: "Similarity", before: null, after: Number(updated.score) },
         { field: "Note", before: null, after: note?.trim() ?? null },
       ],
     });
 
-    const refreshed = await this.list({ status: updated.status, pageSize: 1 });
+    // A decided cross-entity pair is no longer in listCrossEntity (which shows
+    // pending only), and the org-scoped list cannot see it at all, so there is
+    // nothing to re-read — the row we just wrote is the answer.
+    const refreshed =
+      targetOrgId === null
+        ? { items: [] as DuplicateCandidateItem[] }
+        : await this.list({ status: updated.status, pageSize: 1 });
     return (
       refreshed.items.find((item) => item.id === updated.id) ?? {
         id: updated.id,
@@ -231,5 +364,25 @@ export class DuplicateReviewService {
         needB: null,
       }
     );
+  }
+
+  /**
+   * Which entity owns this pair — see FlagReviewService.resolveFlagOrg.
+   *
+   * Returns null for a cross-ENTITY pair, which has no owning org by design
+   * (Q9). That is a real answer, not a miss: the caller has to pick a
+   * different write path for it. An earlier version fell back to the actor own
+   * org here, which put the update behind an RLS policy the row could never
+   * satisfy and surfaced as a 404 on a pair the reviewer was looking at.
+   */
+  private async resolveCandidateOrg(
+    candidateId: string,
+    actorOrgId: string,
+  ): Promise<string | null> {
+    if (!isCrossOrgReader()) return actorOrgId;
+    const row = await this.tenant.runAsSupervisor((tx) =>
+      tx.duplicateCandidate.findUnique({ where: { id: candidateId }, select: { orgId: true } }),
+    );
+    return row?.orgId ?? null;
   }
 }

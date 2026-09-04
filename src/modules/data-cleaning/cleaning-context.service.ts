@@ -44,6 +44,7 @@ export interface CleaningContext {
       | "villageMatchProposeThreshold"
       | "villageMatchMaxCandidates"
       | "classificationNearMatchThreshold"
+      | "semanticDuplicateThreshold"
       | "literalDuplicateThreshold"
       | "duplicateScopes"
     >
@@ -127,6 +128,8 @@ export class CleaningContextService {
       classificationNearMatchThreshold:
         stored.classificationNearMatchThreshold ??
         DEFAULT_SETTINGS.classificationNearMatchThreshold,
+      semanticDuplicateThreshold:
+        stored.semanticDuplicateThreshold ?? DEFAULT_SETTINGS.semanticDuplicateThreshold,
       literalDuplicateThreshold:
         stored.literalDuplicateThreshold ?? DEFAULT_SETTINGS.literalDuplicateThreshold,
       duplicateScopes: stored.duplicateScopes ?? DEFAULT_SETTINGS.duplicateScopes,

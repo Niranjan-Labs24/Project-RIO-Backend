@@ -23,6 +23,8 @@
     "fr002:verify-duplicates": "tsx scripts/fr002-verify-duplicates.ts",
     "fr002:verify-numeric": "tsx scripts/fr002-verify-numeric.ts",
     "ai004:verify-merge": "tsx scripts/ai004-verify-merge.ts",
+    "ai004:verify-tenancy": "tsx scripts/ai004-verify-tenancy.ts",
+    "verify:scoring-idempotent": "tsx scripts/verify-scoring-idempotent.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",

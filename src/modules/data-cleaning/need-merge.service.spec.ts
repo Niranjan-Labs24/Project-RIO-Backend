@@ -39,7 +39,11 @@ function serviceWith(rows: Record<string, ReturnType<typeof needRow> | null>) {
     runInOrgContext: <T>(fn: (t: unknown) => Promise<T>) => fn(tx),
   };
   const audit = { record: vi.fn(async () => undefined) };
-  return new NeedMergeService(tenant as never, audit as never);
+  // Q24's re-score of the surviving need. Best-effort in the service and
+  // covered end-to-end by ai004:verify-merge — the stub only has to resolve,
+  // since these tests are about the refusals.
+  const priority = { score: vi.fn(async () => undefined) };
+  return new NeedMergeService(tenant as never, audit as never, priority as never);
 }
 
 async function expectRefusal(promise: Promise<unknown>, code: string) {

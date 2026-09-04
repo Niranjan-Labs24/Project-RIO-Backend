@@ -176,3 +176,43 @@ export const ListMergesQuery = registerSchema(
   ),
 );
 export type ListMergesQueryDto = Static<typeof ListMergesQuery>;
+
+// ─── RIO-FR-002 / Q23: tuning the rule set ─────────────────────────────────
+
+const Threshold = T.Number({ minimum: 0, maximum: 1 });
+
+export const UpdateCleaningSettingsBody = registerSchema(
+  'UpdateCleaningSettingsBody',
+  T.Object(
+    {
+      // Every field optional: the screen patches what changed, and sending a
+      // partial must never reset the thresholds it did not touch.
+      dontKnowTreatment: T.Optional(
+        T.Union([T.Literal('excluded_answer'), T.Literal('missing_value')]),
+      ),
+      villageMatchAcceptThreshold: T.Optional(Threshold),
+      villageMatchProposeThreshold: T.Optional(Threshold),
+      villageMatchMaxCandidates: T.Optional(T.Integer({ minimum: 1, maximum: 20 })),
+      literalDuplicateThreshold: T.Optional(Threshold),
+      classificationNearMatchThreshold: T.Optional(Threshold),
+      semanticDuplicateThreshold: T.Optional(Threshold),
+      requiredNeedFields: T.Optional(T.Array(T.String({ maxLength: 60 }), { maxItems: 20 })),
+      softNeedFields: T.Optional(T.Array(T.String({ maxLength: 60 }), { maxItems: 20 })),
+      duplicateScopes: T.Optional(
+        T.Object(
+          {
+            withinStudy: T.Optional(T.Boolean()),
+            withinOrg: T.Optional(T.Boolean()),
+            // crossOrg stays here for completeness; RIO-AI-004 is what
+            // actually generates cross-entity candidates, and Q9 confines
+            // seeing them to the Center/NCNP role.
+            crossOrg: T.Optional(T.Boolean()),
+          },
+          { additionalProperties: false },
+        ),
+      ),
+    },
+    { additionalProperties: false },
+  ),
+);
+export type UpdateCleaningSettingsDto = Static<typeof UpdateCleaningSettingsBody>;

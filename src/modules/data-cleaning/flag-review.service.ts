@@ -1,9 +1,11 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import type { Prisma } from "../../generated/prisma";
 import { requireActor, requireOrgId } from "../../tenancy/org-context";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { AuditService } from "../audit/audit.service";
+import { DeterministicScoringService } from "../priority/scoring.service";
 import { CleaningContextService } from "./cleaning-context.service";
+import { isCrossOrgReader } from "./cross-org-reader";
 import type { ListFlagsQueryDto } from "./data-cleaning.contract";
 import { normalizePhone } from "./normalizers";
 
@@ -53,10 +55,13 @@ export interface FlagListItem {
 
 @Injectable()
 export class FlagReviewService {
+  private readonly logger = new Logger(FlagReviewService.name);
+
   constructor(
     private readonly tenant: TenantPrismaService,
     private readonly audit: AuditService,
     private readonly context: CleaningContextService,
+    private readonly scoring: DeterministicScoringService,
   ) {}
 
   async list(
@@ -74,7 +79,13 @@ export class FlagReviewService {
       ...(query.studyId ? { studyId: query.studyId } : {}),
     };
 
-    return this.tenant.runInOrgContext(async (tx) => {
+    // A crossEntity role sees every entity's findings; everyone else sees
+    // their own org's, enforced by RLS either way.
+    const run = isCrossOrgReader()
+      ? this.tenant.runAsSupervisor.bind(this.tenant)
+      : this.tenant.runInOrgContext.bind(this.tenant);
+
+    return run(async (tx) => {
       const [rows, total] = await Promise.all([
         tx.cleaningFlag.findMany({
           where,
@@ -135,7 +146,11 @@ export class FlagReviewService {
     byRule: { ruleCode: string; severity: string; source: string; count: number }[];
     lastRunAt: Date | null;
   }> {
-    return this.tenant.runInOrgContext(async (tx) => {
+    const run = isCrossOrgReader()
+      ? this.tenant.runAsSupervisor.bind(this.tenant)
+      : this.tenant.runInOrgContext.bind(this.tenant);
+
+    return run(async (tx) => {
       const [bySource, byRule, lastRun] = await Promise.all([
         tx.cleaningFlag.groupBy({ by: ["source", "status"], _count: { _all: true } }),
         tx.cleaningFlag.groupBy({
@@ -195,7 +210,15 @@ export class FlagReviewService {
 
     const context = await this.context.load();
 
-    const { flag, applied } = await this.tenant.runInOrgContext(async (tx) => {
+    // A crossEntity reviewer can SEE another entity's findings (see list
+    // above), so it must also be able to decide on them — Q23 names System
+    // Admin as an owner of these decisions. The write runs in the TARGET
+    // entity's org context rather than the actor's: RLS still applies row by
+    // row, and the audit entry is filed against the entity whose data changed,
+    // not the platform org the actor happens to sit in.
+    const targetOrgId = await this.resolveFlagOrg(flagId, orgId);
+
+    const { flag, applied } = await this.tenant.runAsOrg(targetOrgId, async (tx) => {
       const existing = await tx.cleaningFlag.findUnique({ where: { id: flagId } });
       if (!existing) {
         throw new NotFoundException({
@@ -229,6 +252,24 @@ export class FlagReviewService {
       return { flag: updated, applied };
     });
 
+    // A corrected numeric answer changes what the response scores. Now that
+    // scoreResponse clears before it writes, re-running it REPLACES the
+    // response's answers and severity rows rather than doubling them, so the
+    // correction can actually reach the score instead of being audited as
+    // stale. Best-effort: the correction itself is already committed, and a
+    // scoring failure must not undo a reviewer's decision.
+    let rescored = false;
+    if (applied && ANSWER_FIELD.test(applied.field) && flag.entityId) {
+      try {
+        await this.scoring.scoreResponse(flag.entityId, targetOrgId);
+        rescored = true;
+      } catch (err) {
+        this.logger.warn(
+          `Re-scoring failed for response ${flag.entityId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
     // AC 4. Recorded against the FLAG, so an auditor can see every decision
     // made on the queue in one filter.
     await this.audit.record({
@@ -236,7 +277,7 @@ export class FlagReviewService {
       entityType: "cleaning_flag",
       entityId: flag.id,
       entityLabel: `${flag.ruleCode} on ${flag.field}`,
-      organizationId: orgId,
+      organizationId: targetOrgId,
       changes: [
         { field: "Decision", before: "pending", after: decision === "accept" ? "accepted" : "rejected" },
         { field: "Rule", before: null, after: flag.ruleCode },
@@ -258,7 +299,7 @@ export class FlagReviewService {
         entityType: flag.entityType === "need" ? "need" : "survey_response",
         entityId: flag.entityId ?? flag.id,
         entityLabel: `${flag.ruleCode} applied to ${applied.field}`,
-        organizationId: orgId,
+        organizationId: targetOrgId,
         changes: [
           { field: applied.field, before: applied.before, after: applied.after },
           ...(answerCorrected
@@ -266,7 +307,9 @@ export class FlagReviewService {
                 {
                   field: "Severity score",
                   before: null,
-                  after: "stale — this response needs re-scoring",
+                  after: rescored
+                    ? "recalculated from the corrected answer"
+                    : "stale — re-scoring failed, this response needs rescoring",
                 },
               ]
             : []),
@@ -371,6 +414,20 @@ export class FlagReviewService {
     }
 
     return { accepted, skipped };
+  }
+
+  /**
+   * Which entity owns this finding. For an ordinary reviewer it is always
+   * their own org and no lookup happens. For a crossEntity role the row may
+   * belong to any entity, so it is read through the SELECT-only supervisor
+   * client first — the one path allowed to see across the boundary.
+   */
+  private async resolveFlagOrg(flagId: string, actorOrgId: string): Promise<string> {
+    if (!isCrossOrgReader()) return actorOrgId;
+    const row = await this.tenant.runAsSupervisor((tx) =>
+      tx.cleaningFlag.findUnique({ where: { id: flagId }, select: { orgId: true } }),
+    );
+    return row?.orgId ?? actorOrgId;
   }
 
   // ── applying a proposal ──────────────────────────────────────────────────

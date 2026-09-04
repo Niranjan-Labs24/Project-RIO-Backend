@@ -67,7 +67,11 @@ export class AuditService {
       if (input.entityId !== null && input.entityId !== undefined && entityId === null) {
         metadata.invalidEntityId = input.entityId;
       }
-      const rawOrgId = input.organizationId ?? store?.orgId ?? null;
+      // `undefined` means "not stated, use the ambient org"; an explicit null
+      // means "platform level, deliberately no org" — so they cannot collapse
+      // into one ?? chain.
+      const rawOrgId =
+        input.organizationId !== undefined ? input.organizationId : (store?.orgId ?? null);
       const isVirtualOrg = !rawOrgId || rawOrgId === '00000000-0000-0000-0000-000000000001';
       const targetOrgId = isVirtualOrg ? null : rawOrgId;
 

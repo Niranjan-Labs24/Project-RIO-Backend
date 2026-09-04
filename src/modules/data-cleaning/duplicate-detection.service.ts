@@ -2,6 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { Prisma } from "../../generated/prisma";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { CleaningContextService } from "./cleaning-context.service";
+import { foldText, trigramSimilarity } from "./normalizers";
 
 /**
  * RIO-FR-002 — the LITERAL duplicate pass.
@@ -182,5 +183,125 @@ export class DuplicateDetectionService {
       ORDER BY score DESC
       LIMIT 20
     `;
+  }
+
+  /**
+   * RIO-AI-004 / Q9 — the CROSS-ENTITY pass.
+   *
+   * The client ruled that cross-entity duplicate candidates may surface only
+   * to the Center / NCNP Supervisor, because comparing across entities means
+   * one entity's reviewer could otherwise see another's need text, which
+   * NFR-003 forbids. That restriction is enforced in the RLS policy on
+   * duplicate_candidates (cross-org rows carry org_id NULL and are reachable
+   * only through the no-GUC path), and `pnpm ai004:verify-tenancy` proves it.
+   *
+   * ─── Why this is a deliberate batch, not part of the save path ───────────
+   * The within-org passes run when a need is saved, which is cheap: the query
+   * is scoped to one org. Comparing ACROSS entities means every save in any
+   * entity would read every other entity's needs — expensive, and it would
+   * quietly make one entity's write depend on another's data volume. It is
+   * also a privacy-sensitive operation that should happen because someone
+   * decided it should, not as a side effect of a researcher pressing save.
+   *
+   * So it is an explicit pass, off by default
+   * (`duplicateScopes.crossOrg = false`), reading through the SELECT-only
+   * supervisor client and writing through the no-GUC path — the two halves of
+   * the boundary the policy already draws.
+   */
+  async runCrossOrgPass(limit = 200): Promise<{ scanned: number; proposed: number }> {
+    const { settings } = await this.context.load();
+    if (settings.duplicateScopes.crossOrg !== true) {
+      this.logger.log(
+        "Cross-entity duplicate detection is off (duplicateScopes.crossOrg). Nothing scanned.",
+      );
+      return { scanned: 0, proposed: 0 };
+    }
+    const threshold = settings.literalDuplicateThreshold;
+
+    // Read across entities with the SELECT-only client — the one path allowed
+    // to see past the boundary.
+    const needs = await this.tenant.runAsSupervisor((tx) =>
+      tx.need.findMany({
+        where: { mergedIntoNeedId: null },
+        select: { id: true, orgId: true, title: true, statement: true, referenceId: true },
+        orderBy: { internalRefSeq: "asc" },
+        take: limit,
+      }),
+    );
+
+    let proposed = 0;
+    for (let i = 0; i < needs.length; i++) {
+      const a = needs[i]!;
+      for (let j = i + 1; j < needs.length; j++) {
+        const b = needs[j]!;
+        // Same-entity pairs are the within-org pass's job, not this one.
+        if (a.orgId === b.orgId) continue;
+
+        const sameReference =
+          !!a.referenceId?.trim() && a.referenceId.trim() === b.referenceId?.trim();
+        const score = sameReference
+          ? 1
+          : Math.max(
+              trigramSimilarity(foldText(a.title), foldText(b.title)),
+              trigramSimilarity(foldText(a.statement), foldText(b.statement)),
+            );
+        if (score < threshold) continue;
+
+        const [lo, hi] = a.id < b.id ? [a, b] : [b, a];
+        const written = await this.writeCrossOrgCandidate(lo, hi, score, threshold);
+        if (written) proposed++;
+      }
+    }
+
+    this.logger.log(
+      `Cross-entity duplicate pass: ${needs.length} needs scanned, ${proposed} candidate(s) proposed.`,
+    );
+    return { scanned: needs.length, proposed };
+  }
+
+  /**
+   * Write one cross-entity candidate.
+   *
+   * org_id is NULL — that is what makes the row invisible to every
+   * entity-scoped connection and visible only through the oversight path. The
+   * CHECK constraint `duplicate_candidates_cross_org_has_no_owner` enforces
+   * the pairing of scope and owner, so this cannot drift.
+   */
+  private async writeCrossOrgCandidate(
+    lo: { id: string; orgId: string },
+    hi: { id: string; orgId: string },
+    score: number,
+    threshold: number,
+  ): Promise<boolean> {
+    return this.tenant.runAsSupervisorWrite(async (tx) => {
+      const existing = await tx.duplicateCandidate.findUnique({
+        where: { needAId_needBId_method: { needAId: lo.id, needBId: hi.id, method: "literal" } },
+        select: { id: true, status: true },
+      });
+      if (existing) {
+        // A reviewer's decision is never revisited by a later scan.
+        if (existing.status !== "pending") return false;
+        await tx.duplicateCandidate.update({
+          where: { id: existing.id },
+          data: { score, threshold, detectorVersion: this.detectorVersion },
+        });
+        return false;
+      }
+      await tx.duplicateCandidate.create({
+        data: {
+          orgId: null,
+          needAId: lo.id,
+          needBId: hi.id,
+          needAOrgId: lo.orgId,
+          needBOrgId: hi.orgId,
+          scope: "cross_org",
+          method: "literal",
+          score,
+          threshold,
+          detectorVersion: this.detectorVersion,
+        },
+      });
+      return true;
+    });
   }
 }
