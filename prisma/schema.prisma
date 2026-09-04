@@ -62,6 +62,9 @@ enum PermissionModule {
   // right to decide a flag (which WRITES the standardization onto the
   // record); `write` is the right to tune the rule set's thresholds.
   dataQuality
+  // RIO-NFR-010 — backup administration. Its own module rather than a
+  // systemLogs grant: see 20260904010000 for why.
+  backups
 }
 
 // ──────── Reference (global, seeded, read-only to cnap_app) ────────
@@ -3346,4 +3349,35 @@ model NeedEmbedding {
   @@unique([needId, embeddingVersion])
   @@index([orgId])
   @@map("need_embeddings")
+}
+
+// RIO-NFR-010 — one row per backup attempt, written when the run STARTS.
+//
+// AC 2 ("backup logs auditable") is this table. See the migration comment for
+// why it is not AuditLog: the human ACTS are audited there, the machine record
+// lives here with a retention window, mirroring SystemLog under NFR-016.
+model BackupRun {
+  id          String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  kind        String    @db.VarChar(20)
+  status      String    @db.VarChar(20)
+  trigger     String    @db.VarChar(20)
+  triggeredBy String?   @map("triggered_by") @db.Uuid
+  startedAt   DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  finishedAt  DateTime? @map("finished_at") @db.Timestamptz(6)
+  durationMs  Int?      @map("duration_ms")
+  fileName    String?   @map("file_name") @db.VarChar(255)
+  filePath    String?   @map("file_path") @db.VarChar(1000)
+  sizeBytes   BigInt?   @map("size_bytes")
+  // SHA-256 of the artefact — what makes "recoverable" checkable without
+  // performing a restore.
+  sha256      String?   @db.VarChar(64)
+  fileCount   Int?      @map("file_count")
+  retainUntil DateTime? @map("retain_until") @db.Timestamptz(6)
+  prunedAt    DateTime? @map("pruned_at") @db.Timestamptz(6)
+  error       String?   @db.VarChar(2000)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([startedAt(sort: Desc)])
+  @@index([kind, status, startedAt(sort: Desc)])
+  @@map("backup_runs")
 }

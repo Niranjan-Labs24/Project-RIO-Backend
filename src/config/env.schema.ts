@@ -140,6 +140,35 @@ export const EnvSchema = Type.Object({
   SURVEY_SESSION_SWEEP_CRON: Type.String({ default: '*/15 * * * *' }),
   BACKUP_DIR: Type.String({ default: './storage/backups' }),
   BACKUP_CRON_SCHEDULE: Type.String({ default: '0 3 * * 0' }),
+  // RIO-NFR-010 retention. How long a backup file is kept, and when the sweep
+  // that deletes expired ones runs. The sweep has its own schedule rather than
+  // riding the backup tick: a period with no backups is exactly when disk
+  // pressure builds, so that is the worst time for pruning to also stop.
+  //
+  // 30 days is a starting value, not a client ruling. Q34 covers destination,
+  // encryption and key custody; retention belongs with the same answer.
+  BACKUP_RETENTION_DAYS: Type.Number({ default: 30 }),
+  BACKUP_RETENTION_CRON: Type.String({ default: '30 4 * * *' }),
+  // RIO-NFR-010 — the connection pg_dump uses.
+  //
+  // Separate from DATABASE_URL because a dump needs BYPASSRLS and the
+  // application roles deliberately do not have it: 43 tables FORCE row-level
+  // security, so pg_dump as cnap_owner fails outright ("query would be
+  // affected by row-level security policy"). See
+  // scripts/sql/nfr010-backup-role.sql, which provisions cnap_backup — SELECT
+  // only, BYPASSRLS, nothing else.
+  //
+  // Optional so the app still boots without it; BackupService reports the
+  // missing role in the failure it records rather than dumping the wrong
+  // thing quietly.
+  BACKUP_DATABASE_URL: Type.Optional(Type.String()),
+  // RIO-NFR-010 / Q34 — encryption at rest for backup artefacts.
+  //
+  // Off unless set, deliberately. A backup encrypted with a key nobody has
+  // escrowed is not a backup, it is a tidy way to lose data — so turning this
+  // on is a decision taken together with deciding who holds the key, which is
+  // exactly what Q34 asks. AES-256-GCM, key derived per file with scrypt.
+  BACKUP_ENCRYPTION_KEY: Type.Optional(Type.String()),
   // Optional override for the pg_dump binary — the bare command name is
   // resolved via PATH by default, which is correct in Docker (see
   // Dockerfile) but can silently pick the wrong installed major version on

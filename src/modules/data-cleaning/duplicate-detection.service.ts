@@ -2,7 +2,6 @@ import { Injectable, Logger } from "@nestjs/common";
 import { Prisma } from "../../generated/prisma";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { CleaningContextService } from "./cleaning-context.service";
-import { foldText, trigramSimilarity } from "./normalizers";
 
 /**
  * RIO-FR-002 — the LITERAL duplicate pass.
@@ -36,6 +35,25 @@ import { foldText, trigramSimilarity } from "./normalizers";
  * prefilter. The real decision is the configured threshold applied below,
  * which starts conservative per Q23.
  */
+
+// How many needs are pulled from the database at a time. The pass itself has
+// no ceiling — this only bounds memory, not coverage.
+const CROSS_ORG_BATCH = 500;
+
+// Partners considered per need. The query returns them best-first, so a need
+// with more near-matches than this keeps the strongest — and at this width a
+// genuine duplicate being pushed out would mean 50 better matches exist, which
+// is a data problem, not a detection one.
+const CROSS_ORG_PARTNERS_PER_NEED = 50;
+
+interface CrossOrgSeed {
+  id: string;
+  orgId: string;
+  title: string;
+  statement: string;
+  referenceId: string | null;
+  internalRefSeq: number;
+}
 
 interface CandidateRow {
   id: string;
@@ -208,65 +226,150 @@ export class DuplicateDetectionService {
    * supervisor client and writing through the no-GUC path — the two halves of
    * the boundary the policy already draws.
    */
-  async runCrossOrgPass(limit = 200): Promise<{ scanned: number; proposed: number }> {
+  /**
+   * RIO-AI-004 / Q9 — the cross-entity pass.
+   *
+   * ─── What this used to do, and why it was wrong ───────────────────────────
+   * It took `limit = 200`, the controller called it with no argument, and the
+   * query was `orderBy internalRefSeq asc, take: 200`. Past 200 needs it
+   * compared the OLDEST 200 only and reported success. Nothing anywhere said
+   * the scan had been partial — the reviewer saw "0 proposed" and reasonably
+   * concluded there were no cross-entity duplicates.
+   *
+   * It also folded the same text inside a doubly-nested loop: 1,000 needs meant
+   * 499,500 comparisons and 999,000 redundant folds, measured at 14.4s.
+   *
+   * ─── What it does now ─────────────────────────────────────────────────────
+   * Pages through EVERY unmerged need and asks Postgres for each one's
+   * cross-entity partners, using the same `%` operator and functional trigram
+   * indexes the within-entity pass uses. That turns an O(n²) Node loop into n
+   * index-assisted queries, and the folding happens once per row inside the
+   * database rather than n times in JavaScript.
+   *
+   * `n.id > $id` gives each pair exactly once, which lines up with the
+   * ordered-pair CHECK (need_a_id < need_b_id) rather than fighting it.
+   *
+   * A caller may still pass `maxNeeds` to bound a run — but the result now
+   * carries `truncated`, so a partial scan can never again look like a complete
+   * one that found nothing.
+   */
+  async runCrossOrgPass(
+    options: { maxNeeds?: number } = {},
+  ): Promise<{ scanned: number; proposed: number; truncated: boolean }> {
     const { settings } = await this.context.load();
     if (settings.duplicateScopes.crossOrg !== true) {
       this.logger.log(
         "Cross-entity duplicate detection is off (duplicateScopes.crossOrg). Nothing scanned.",
       );
-      return { scanned: 0, proposed: 0 };
+      return { scanned: 0, proposed: 0, truncated: false };
     }
     const threshold = settings.literalDuplicateThreshold;
 
-    // Read across entities with the SELECT-only client — the one path allowed
-    // to see past the boundary.
-    const needs = await this.tenant.runAsSupervisor((tx) =>
-      tx.need.findMany({
-        where: { mergedIntoNeedId: null },
-        select: { id: true, orgId: true, title: true, statement: true, referenceId: true },
-        orderBy: { internalRefSeq: "asc" },
-        take: limit,
-      }),
-    );
-
+    let scanned = 0;
     let proposed = 0;
-    for (let i = 0; i < needs.length; i++) {
-      const a = needs[i]!;
-      for (let j = i + 1; j < needs.length; j++) {
-        const b = needs[j]!;
-        // Same-entity pairs are the within-org pass's job, not this one.
-        if (a.orgId === b.orgId) continue;
+    let truncated = false;
+    let cursor: number | null = null;
 
-        const sameReference =
-          !!a.referenceId?.trim() && a.referenceId.trim() === b.referenceId?.trim();
-        const score = sameReference
-          ? 1
-          : Math.max(
-              trigramSimilarity(foldText(a.title), foldText(b.title)),
-              trigramSimilarity(foldText(a.statement), foldText(b.statement)),
-            );
-        if (score < threshold) continue;
+    for (;;) {
+      // Read across entities with the SELECT-only client — the one path
+      // allowed to see past the boundary.
+      const batch: CrossOrgSeed[] = await this.tenant.runAsSupervisor((tx) =>
+        tx.need.findMany({
+          where: {
+            mergedIntoNeedId: null,
+            ...(cursor === null ? {} : { internalRefSeq: { gt: cursor } }),
+          },
+          select: {
+            id: true,
+            orgId: true,
+            title: true,
+            statement: true,
+            referenceId: true,
+            internalRefSeq: true,
+          },
+          orderBy: { internalRefSeq: "asc" },
+          take: CROSS_ORG_BATCH,
+        }),
+      );
+      if (batch.length === 0) break;
 
-        const [lo, hi] = a.id < b.id ? [a, b] : [b, a];
-        const written = await this.writeCrossOrgCandidate(lo, hi, score, threshold);
-        if (written) proposed++;
+      for (const need of batch) {
+        if (options.maxNeeds !== undefined && scanned >= options.maxNeeds) {
+          truncated = true;
+          break;
+        }
+        scanned++;
+        proposed += await this.proposeCrossOrgPartners(need, threshold);
       }
+
+      cursor = batch[batch.length - 1]!.internalRefSeq;
+      if (truncated || batch.length < CROSS_ORG_BATCH) break;
     }
 
     this.logger.log(
-      `Cross-entity duplicate pass: ${needs.length} needs scanned, ${proposed} candidate(s) proposed.`,
+      `Cross-entity duplicate pass: ${scanned} needs scanned, ${proposed} candidate(s) proposed` +
+        `${truncated ? " (TRUNCATED — maxNeeds reached, the scan is incomplete)" : ""}.`,
     );
-    return { scanned: needs.length, proposed };
+    return { scanned, proposed, truncated };
   }
 
   /**
-   * Write one cross-entity candidate.
+   * The partners of one need in OTHER entities, shortlisted by Postgres.
    *
-   * org_id is NULL — that is what makes the row invisible to every
-   * entity-scoped connection and visible only through the oversight path. The
-   * CHECK constraint `duplicate_candidates_cross_org_has_no_owner` enforces
-   * the pairing of scope and owner, so this cannot drift.
+   * Mirrors findCandidates deliberately, including the `%` prefilter: the real
+   * decision is the configured threshold applied here, and pg_trgm's own floor
+   * (0.3) only narrows what the index returns. Lowering the configured
+   * threshold below 0.3 therefore has no effect, which is the same caveat the
+   * within-entity pass carries.
    */
+  private async proposeCrossOrgPartners(
+    need: CrossOrgSeed,
+    threshold: number,
+  ): Promise<number> {
+    const reference = need.referenceId?.trim() || null;
+
+    const rows = await this.tenant.runAsSupervisor((tx) =>
+      tx.$queryRaw<CandidateRow[]>`
+        SELECT
+          n.id,
+          n.org_id,
+          n.study_id,
+          GREATEST(
+            similarity(rio_fold_text(n.title), rio_fold_text(${need.title})),
+            similarity(rio_fold_text(n.statement), rio_fold_text(${need.statement}))
+          ) AS score,
+          (${reference}::text IS NOT NULL AND n.reference_id = ${reference}::text) AS same_reference
+        FROM needs n
+        WHERE n.id > ${need.id}::uuid
+          AND n.org_id <> ${need.orgId}::uuid
+          AND n.merged_into_need_id IS NULL
+          AND (
+            rio_fold_text(n.title) % rio_fold_text(${need.title})
+            OR rio_fold_text(n.statement) % rio_fold_text(${need.statement})
+            OR (${reference}::text IS NOT NULL AND n.reference_id = ${reference}::text)
+          )
+        ORDER BY score DESC
+        LIMIT ${CROSS_ORG_PARTNERS_PER_NEED}
+      `,
+    );
+
+    let written = 0;
+    for (const row of rows) {
+      const score = row.same_reference ? 1 : Number(row.score);
+      if (score < threshold) continue;
+      // `n.id > need.id` in the query already guarantees the order the
+      // duplicate_candidates_ordered_pair CHECK requires.
+      const ok = await this.writeCrossOrgCandidate(
+        { id: need.id, orgId: need.orgId },
+        { id: row.id, orgId: row.org_id },
+        score,
+        threshold,
+      );
+      if (ok) written++;
+    }
+    return written;
+  }
+
   private async writeCrossOrgCandidate(
     lo: { id: string; orgId: string },
     hi: { id: string; orgId: string },

@@ -22,6 +22,13 @@ export const PERMISSION_MODULES = [
   // belong to platform operations rather than tenant governance. Granted to
   // system_admin alone.
   'systemLogs',
+  // RIO-NFR-010 — backup administration. Its OWN module rather than a
+  // systemLogs grant: systemLogs is read-and-export by design and carries no
+  // write action for anyone, because nothing writes an operational log through
+  // the API. Triggering a backup and running the retention sweep both need
+  // one. `read` sees the run history and can re-verify a stored artefact
+  // (which changes nothing); `write` starts a run or prunes expired files.
+  'backups',
   // RIO-FR-002 — the Data Quality reviewer queue. `approve` decides a flag
   // (which writes the standardization onto the record), `write` tunes the
   // rule set's thresholds, `read` sees the queue and the per-source report.
@@ -93,6 +100,10 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('surveyBuilder', { read: true, write: true, create: true, export: true }),
     perm('ncnpReport'),
     perm('systemLogs'),
+    // RIO-NFR-010 — read only. The platform-wide oversight role should be able
+    // to answer "is this platform being backed up" without being able to start
+    // a run or delete a file.
+    perm('backups', { read: true }),
   ] },
   { id: 'role_ngo_research_officer', key: 'ngo_research_officer', name: 'NGO Research Officer', description: 'Creates studies and surveys from the question bank and enters data.', crossEntity: false, permissions: [
     // RIO-RBAC-001 matrix (Aug 11): view-only on Organization/Users now
@@ -306,6 +317,10 @@ export const ROLE_MATRIX: RoleDef[] = [
     // (GET /system-logs/export); there is no write action to grant, since
     // the table has no HTTP write path by design.
     perm('systemLogs', { read: true, export: true }),
+    // RIO-NFR-010. `write` covers both acts that consume resources on a live
+    // system: triggering a backup, and the retention sweep, which deletes
+    // files.
+    perm('backups', { read: true, write: true, export: true }),
   ] },
   { id: 'role_read_only_viewer', key: 'read_only_viewer', name: 'Read-only Viewer', description: 'Views authorized outputs without editing.', crossEntity: false, permissions: [
     // Confirmed matrix (Jagannathan, Aug 12): Organization/Users = View.

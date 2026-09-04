@@ -354,6 +354,26 @@ export class NeedMergeService {
         });
       }
 
+      // 5b. Every OTHER open pair that references the need we just retired.
+      //
+      // Closing only the candidate we merged from left the rest of the queue
+      // holding proposals about a need that no longer exists as a live record.
+      // A reviewer opening one of those sees a pair where one side has been
+      // absorbed into another need, with no way to act on it sensibly — and it
+      // is not a duplicate decision they can make, because the question has
+      // already been answered by the merge.
+      //
+      // `superseded` rather than `merged`: these pairs were not merged, they
+      // stopped being decidable. The distinction matters when someone later
+      // asks what this queue actually did.
+      await tx.duplicateCandidate.updateMany({
+        where: {
+          status: { in: ["pending", "confirmed_duplicate"] },
+          OR: [{ needAId: retired.id }, { needBId: retired.id }],
+        },
+        data: { status: "superseded", reviewedBy: actor, reviewedAt: new Date() },
+      });
+
       // Recorded on the merge itself so the history keeps it after an undo
       // clears the ledger.
       await tx.needMerge.update({
@@ -363,6 +383,30 @@ export class NeedMergeService {
 
       return { mergeId: merge.id, transferred, survivor, retired };
     });
+
+    // Cross-entity pairs mentioning the retired need, which the transaction
+    // above could not reach.
+    //
+    // Step 5b runs org-scoped, and a cross-entity candidate carries org_id NULL
+    // — unreachable from any org-scoped connection by RLS design (Q9). So it
+    // survived the merge and kept sitting in the Center/NCNP queue pointing at
+    // a need that no longer exists. Exactly the blind spot that made
+    // cross-entity pairs undecidable before, in a different place.
+    //
+    // Best-effort and after the commit: the merge is done, and failing to tidy
+    // a queue must not undo it.
+    await this.tenant
+      .runAsSupervisorWrite((tx) =>
+        tx.duplicateCandidate.updateMany({
+          where: {
+            scope: "cross_org",
+            status: { in: ["pending", "confirmed_duplicate"] },
+            OR: [{ needAId: result.retired.id }, { needBId: result.retired.id }],
+          },
+          data: { status: "superseded", reviewedBy: actor, reviewedAt: new Date() },
+        }),
+      )
+      .catch(() => undefined);
 
     // Q24 — "current scores are recalculated". The survivor now carries the
     // retired need's responses and evidence, so its score is out of date the
@@ -512,6 +556,24 @@ export class NeedMergeService {
         });
       }
 
+      // And the pairs that were superseded when this need was retired. The
+      // need is live again, so the questions they posed are open again — an
+      // undo that restored the need but left its proposals closed would hide
+      // duplicates that were never decided by a person.
+      //
+      // reviewedBy/At are cleared: a pending row must have neither, which the
+      // duplicate_candidates_decision_needs_reviewer CHECK enforces.
+      await tx.duplicateCandidate.updateMany({
+        where: {
+          status: "superseded",
+          OR: [{ needAId: merge.retiredNeedId }, { needBId: merge.retiredNeedId }],
+        },
+        data: { status: "pending", reviewedBy: null, reviewedAt: null },
+      });
+
+      // The cross-entity ones live outside this org-scoped transaction and are
+      // reopened after it commits — see below.
+
       await tx.needMerge.update({
         where: { id: mergeId },
         data: { undoneBy: actor, undoneAt: new Date(), undoNote: note.trim() },
@@ -519,6 +581,27 @@ export class NeedMergeService {
 
       return { restored, merge };
     });
+
+    // The cross-entity pairs this merge superseded. Same reasoning as the
+    // merge side: org_id NULL puts them beyond any org-scoped transaction, so
+    // they are reopened here, after the commit, on the supervisor write path.
+    await this.tenant
+      .runAsSupervisorWrite((tx) =>
+        tx.duplicateCandidate.updateMany({
+          where: {
+            scope: "cross_org",
+            status: "superseded",
+            OR: [
+              { needAId: result.merge.retiredNeedId },
+              { needBId: result.merge.retiredNeedId },
+            ],
+          },
+          // A pending row must carry no reviewer, which the
+          // duplicate_candidates_decision_needs_reviewer CHECK enforces.
+          data: { status: "pending", reviewedBy: null, reviewedAt: null },
+        }),
+      )
+      .catch(() => undefined);
 
     await this.audit.record({
       action: "undo_need_merge",

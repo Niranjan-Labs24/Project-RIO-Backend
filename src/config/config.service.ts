@@ -154,6 +154,20 @@ export class ConfigService {
   get backupCronSchedule(): string {
     return this.config.BACKUP_CRON_SCHEDULE;
   }
+  get backupRetentionDays(): number {
+    return this.config.BACKUP_RETENTION_DAYS;
+  }
+  get backupRetentionCron(): string {
+    return this.config.BACKUP_RETENTION_CRON;
+  }
+  /** See BACKUP_DATABASE_URL — pg_dump needs a BYPASSRLS role. */
+  get backupDatabaseUrl(): string | undefined {
+    return this.config.BACKUP_DATABASE_URL;
+  }
+  /** See BACKUP_ENCRYPTION_KEY — unset means artefacts are stored in clear. */
+  get backupEncryptionKey(): string | undefined {
+    return this.config.BACKUP_ENCRYPTION_KEY;
+  }
   get pgDumpPath(): string | undefined {
     return this.config.PG_DUMP_PATH;
   }

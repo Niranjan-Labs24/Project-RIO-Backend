@@ -77,6 +77,13 @@ export class DuplicateReviewService {
     const where: Prisma.DuplicateCandidateWhereInput = {
       status: query.status ?? "pending",
       ...(query.method ? { method: query.method } : {}),
+      // Never offer a pair whose need has been retired by a merge. The merge
+      // now closes these at source, so this should match nothing — it is the
+      // second of two gates, the same reasoning applied to cross-entity reads.
+      // Without it a single missed close path puts an undecidable pair in front
+      // of a reviewer, who gets ALREADY_MERGED and no way forward.
+      needA: { mergedIntoNeedId: null },
+      needB: { mergedIntoNeedId: null },
     };
 
     // Same oversight read as the findings queue. Note this does NOT widen Q9:
@@ -179,6 +186,9 @@ export class DuplicateReviewService {
     const where: Prisma.DuplicateCandidateWhereInput = {
       scope: "cross_org",
       status: "pending",
+      // As above: a retired need has no decision left to make.
+      needA: { mergedIntoNeedId: null },
+      needB: { mergedIntoNeedId: null },
     };
 
     return this.tenant.runAsSupervisor(async (tx) => {

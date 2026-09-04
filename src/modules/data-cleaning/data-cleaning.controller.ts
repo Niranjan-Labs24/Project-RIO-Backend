@@ -196,10 +196,13 @@ export class DataCleaningController {
    */
   @Post('duplicates/cross-entity/scan')
   @RequirePermission('dataQuality', 'write')
-  scanCrossEntity(): Promise<{ scanned: number; proposed: number }> {
+  scanCrossEntity(): Promise<{ scanned: number; proposed: number; truncated: boolean }> {
     if (!isCrossOrgReader()) {
-      return Promise.resolve({ scanned: 0, proposed: 0 });
+      return Promise.resolve({ scanned: 0, proposed: 0, truncated: false });
     }
+    // No cap: the pass covers every unmerged need. `truncated` is returned so
+    // that if a caller ever does bound a run, a partial scan cannot be mistaken
+    // for a complete one that found nothing.
     return this.detection.runCrossOrgPass();
   }
 

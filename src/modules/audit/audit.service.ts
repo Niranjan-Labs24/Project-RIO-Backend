@@ -97,7 +97,12 @@ export class AuditService {
       if (targetOrgId) {
         await this.tenant.runAsOrg(targetOrgId, write);
       } else {
-        await this.tenant.runAsSupervisor(write);
+        // A platform-level event belongs to no entity. It must be written on
+        // the read-WRITE client with no org GUC: runAsSupervisor uses
+        // cnap_supervisor, which holds SELECT and nothing else, so this path
+        // failed with "permission denied for table audit_logs" and the catch
+        // below turned every such event into a warning and no row.
+        await this.tenant.runAsSupervisorWrite(write);
       }
     } catch (err) {
       // Audit recording should log a warning but never crash the primary read/write request

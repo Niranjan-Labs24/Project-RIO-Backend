@@ -135,6 +135,24 @@ async function main(): Promise<void> {
       (await supervisor.evidence.count({ where: { needId: retired.id } })) === 0,
   );
 
+  // Retiring a need must close EVERY open pair that mentions it, not just the
+  // one the merge came from. Leaving the rest pending put proposals in the
+  // reviewer queue about a need that no longer exists as a live record.
+  const strandedAfterMerge = await supervisor.duplicateCandidate.findMany({
+    where: {
+      status: { in: ["pending", "confirmed_duplicate"] },
+      OR: [{ needAId: retired.id }, { needBId: retired.id }],
+    },
+    select: { id: true, scope: true, method: true, status: true, orgId: true },
+  });
+  check(
+    "no open duplicate pair still references the retired need",
+    strandedAfterMerge.length === 0,
+    strandedAfterMerge
+      .map((c) => `${c.method}/${c.scope}/${c.status}/org=${c.orgId ?? "null"}`)
+      .join(", "),
+  );
+
   const ledger = await supervisor.needMergeTransfer.count({ where: { mergeId: result.mergeId } });
   check("every moved item recorded with its origin (Q50)", ledger === result.transferred, `${ledger} ledger rows`);
 
@@ -190,6 +208,21 @@ async function main(): Promise<void> {
 
   const reopened = await supervisor.duplicateCandidate.findUnique({ where: { id: candidate.id } });
   check("candidate returned to the queue", reopened?.status === "confirmed_duplicate");
+
+  // The need is live again, so the pairs superseded when it was retired have
+  // to be answerable again. An undo that restored the need but left its
+  // proposals closed would hide duplicates no person ever decided.
+  const stillSuperseded = await supervisor.duplicateCandidate.count({
+    where: {
+      status: "superseded",
+      OR: [{ needAId: retired.id }, { needBId: retired.id }],
+    },
+  });
+  check(
+    "pairs superseded by the merge are open again after undo",
+    stillSuperseded === 0,
+    `${stillSuperseded} still superseded`,
+  );
 
   heading("6. Audit trail");
   const entries = await supervisor.auditLog.findMany({

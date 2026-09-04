@@ -193,6 +193,65 @@ export class MailerService {
   }
 
   /**
+   * RIO-NFR-010 — a backup failed.
+   *
+   * The whole point of this ticket is that a backup which fails quietly is
+   * indistinguishable from one that never ran. `backup_runs` records it and
+   * SystemLog records it, but both are pull: somebody has to go and look. This
+   * is the push, and it is the difference between finding out on Tuesday and
+   * finding out during a restore.
+   *
+   * Same soft-fail contract as every other send here. A mail failure must never
+   * turn a recorded backup failure into an unhandled exception on top of it.
+   */
+  async sendBackupFailureAlert(
+    recipients: string[],
+    input: { kind: string; error: string; runId: string; startedAt: Date },
+  ): Promise<boolean> {
+    if (!this.client) return false;
+    if (recipients.length === 0) return false;
+
+    const when = input.startedAt.toISOString();
+    const subject = `RIO backup FAILED — ${input.kind}`;
+    // The error text is included in full. It is written by pg_dump or by this
+    // module, carries no tenant data, and the first question an administrator
+    // asks is "why" — sending them to a screen to find out wastes the alert.
+    const text =
+      `A ${input.kind} backup failed.\n\n` +
+      `Started : ${when}\n` +
+      `Run     : ${input.runId}\n\n` +
+      `Error:\n${input.error}\n\n` +
+      `Until this is resolved the platform has no current ${input.kind} backup.\n` +
+      `See System Administration -> Backups.`;
+
+    try {
+      const { error } = await this.client.emails.send({
+        from: this.config.mailFrom,
+        to: this.config.mailFrom,
+        // BCC so one administrator cannot see the others addresses.
+        bcc: recipients,
+        subject,
+        text,
+        html: backupFailureHtml({ ...input, when }),
+      });
+      if (error) {
+        this.logger.error(
+          `Failed to email backup failure alert: ${error.name} ${error.message}`,
+        );
+        this.recordSendFailure('backup_failure_alert', 'system admins', {
+          providerError: `${error.name}: ${error.message}`,
+        });
+        return false;
+      }
+      return true;
+    } catch (err) {
+      this.logger.error('Failed to email backup failure alert', err as Error);
+      this.recordSendFailure('backup_failure_alert', 'system admins', {}, err);
+      return false;
+    }
+  }
+
+  /**
    * RIO-NFR-016 — one persisted row per *give-up*, not per attempt: the
    * retry inside sendTemporaryPassword is normal transient behaviour, and
    * logging both tries would double every failure on the System Logs
@@ -593,6 +652,47 @@ function surveyReminderHtml({ needTitle, publicUrl }: SurveyReminderEmailInput):
               </td>
             </tr>
           </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+}
+
+/** RIO-NFR-010 — the failure alert body. Plain and unmissable, not branded. */
+function backupFailureHtml(input: {
+  kind: string;
+  error: string;
+  runId: string;
+  when: string;
+}): string {
+  // Local, as in every other builder in this file. The error text comes from
+  // pg_dump and is interpolated into HTML, so escaping is not optional.
+  const esc = (value: string): string =>
+    value
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+  return `<!doctype html>
+<html>
+  <body style="margin:0;padding:24px;background-color:#f9fafb;font-family:-apple-system,Segoe UI,Roboto,sans-serif;">
+    <table role="presentation" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:12px;border:1px solid #fecaca;">
+      <tr>
+        <td style="padding:24px;">
+          <p style="margin:0 0 8px;font-size:18px;font-weight:700;color:#b91c1c;">
+            Backup failed &mdash; ${esc(input.kind)}
+          </p>
+          <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#374151;">
+            Until this is resolved the platform has no current ${esc(input.kind)} backup.
+          </p>
+          <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin-bottom:16px;font-size:13px;color:#374151;">
+            <tr><td style="padding:4px 0;color:#6b7280;">Started</td><td style="padding:4px 0;">${esc(input.when)}</td></tr>
+            <tr><td style="padding:4px 0;color:#6b7280;">Run</td><td style="padding:4px 0;font-family:monospace;">${esc(input.runId)}</td></tr>
+          </table>
+          <pre style="margin:0 0 16px;padding:12px;background:#f3f4f6;border-radius:8px;font-size:12px;line-height:1.5;color:#111827;white-space:pre-wrap;word-break:break-word;">${esc(input.error)}</pre>
+          <p style="margin:0;font-size:12px;color:#6b7280;">
+            System Administration &rarr; Backups
+          </p>
         </td>
       </tr>
     </table>

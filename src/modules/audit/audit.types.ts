@@ -1,4 +1,15 @@
 export type AuditAction =
+  // RIO-NFR-010 — the human acts around backups. The machine record of each
+  // run lives in backup_runs, which carries a retention window. These rows do
+  // not expire, because who asked for a backup and who pruned one are business
+  // events rather than telemetry.
+  //
+  // NOTE: no semicolons and no apostrophes anywhere in the comments inside
+  // this union. The frontend contract test extracts it with a regex that stops
+  // at the first semicolon, and a stray one silently yields ZERO actions —
+  // which is how this exact mistake has now been made three times.
+  | 'run_backup'
+  | 'prune_backups'
   | 'create'
   | 'edit'
   | 'approve'
@@ -88,6 +99,8 @@ export type AuditAction =
   | 'undo_need_merge'
   | 'export';
 export type AuditEntityType =
+  // RIO-NFR-010
+  | 'backup_run'
   | 'organization'
   | 'user'
   | 'study'

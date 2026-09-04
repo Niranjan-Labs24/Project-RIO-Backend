@@ -107,3 +107,23 @@ describe("NeedMergeService guards", () => {
     await orgContext.run(CTX, () => expectRefusal(service.undo("merge-1", "   "), "NOTE_REQUIRED"));
   });
 });
+
+/**
+ * RIO-AI-004 — closing pairs stranded by a merge is NOT unit-tested here, and
+ * that is deliberate.
+ *
+ * The behaviour is: retiring a need closes every other open pair that mentions
+ * it, and undo reopens them. Exercising that needs the real merge transaction,
+ * which spans eleven models — stubbing all of them produces a test that asserts
+ * the shape of its own mock rather than what the service does. A first attempt
+ * at exactly that was written and deleted: every assertion passed against
+ * hand-built literals and would have passed with the service removed.
+ *
+ * It IS verified, against a real database, by `pnpm ai004:verify-merge`:
+ *
+ *   "no open duplicate pair still references the retired need"
+ *   "pairs superseded by the merge are open again after undo"
+ *
+ * plus the cross-entity half, which an org-scoped stub could not reach at all
+ * because those rows carry org_id NULL and live behind row-level security.
+ */
