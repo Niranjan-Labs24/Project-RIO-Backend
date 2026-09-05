@@ -69,13 +69,16 @@ describe('ROLE_MATRIX', () => {
   // RIO-FR-007 — the BRD names System Admin as the role that "manages ... the
   // audit log", so read-alone was a gap: it could open the log but never
   // download it. `export` is the exact action GET /audit/export is gated on.
-  it('system_admin can read AND export the audit log, without gaining Archive/Sharing writes', () => {
+  it('system_admin can read AND export the audit log, without gaining Sharing writes', () => {
     expect(can('system_admin', 'archiveSharingAudit', 'read')).toBe(true);
     expect(can('system_admin', 'archiveSharingAudit', 'export')).toBe(true);
-    // Same module, but export must not have widened anything else: Sharing's
-    // request/decide actions and Archive writes stay out of reach.
+    // RIO-FR-013 (client Q25) — System Admin can upload a historical study
+    // on an entity's behalf, same as it can already create a Study for any
+    // org. `write` is dedicated to that action and gates nothing else.
+    expect(can('system_admin', 'archiveSharingAudit', 'write')).toBe(true);
+    // Same module, but none of the above widened Sharing's own actions:
+    // request/decide stay owner-only (FR-014).
     expect(can('system_admin', 'archiveSharingAudit', 'create')).toBe(false);
-    expect(can('system_admin', 'archiveSharingAudit', 'write')).toBe(false);
     expect(can('system_admin', 'archiveSharingAudit', 'approve')).toBe(false);
     expect(can('system_admin', 'archiveSharingAudit', 'share')).toBe(false);
   });

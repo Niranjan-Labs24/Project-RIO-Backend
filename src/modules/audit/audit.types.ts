@@ -129,6 +129,8 @@ export type AuditEntityType =
   // Sharing Policy version is an auditable governance event in its own right,
   // distinct from `user`-scoped consent acceptance (action: 'consent').
   | 'consent_policy'
+  // RIO-FR-009 — Initiative create/edit events.
+  | 'initiative'
   // RIO-FR-002 — one row per data-quality finding a reviewer decided on. Its
   // own entity type rather than folded into 'need': the decision is about the
   // finding, and the write it may cause is audited separately against the

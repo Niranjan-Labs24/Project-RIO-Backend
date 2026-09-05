@@ -1,4 +1,5 @@
 import type { ConfidenceBand } from '../ai-decisions/confidence-band';
+import type { AnalyticalStatus } from '../initiatives/initiatives.types';
 
 export type NeedStatus =
   | 'draft'
@@ -32,6 +33,11 @@ export interface NeedRow {
   internalRefSeq: number;
   affectedPopulation: number | null;
   status: NeedStatus;
+  // RIO-FR-009 (client Q17) — a second, independent status tracking the
+  // Need's analytical/actionability lifecycle, alongside `status` above
+  // (the data-collection workflow status). See InitiativesService for the
+  // transition logic.
+  analyticalStatus: AnalyticalStatus;
   domain: string | null;
   subDomain: string | null;
   // True when AI couldn't confidently classify this Need at all — every
@@ -96,6 +102,9 @@ export interface Need {
   // substituting the study-area population. See schema.prisma's comment.
   affectedPopulation: number | null;
   status: NeedStatus;
+  // RIO-FR-009 (client Q17) — second, independent status alongside `status`
+  // above; see InitiativesService for the transition logic that maintains it.
+  analyticalStatus: AnalyticalStatus;
   // No longer set at creation — AI Classification runs automatically right
   // after a Need is saved (see NeedsService.create /
   // AiDecisionsService.classifyAutomatically). domain/subDomain are the

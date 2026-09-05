@@ -107,11 +107,66 @@ export class SharingService {
   }
 
   async approve(id: string, payload: DecideSharingRequestPayload = {}): Promise<SharingRequest> {
-    return this.decide(id, "approved", payload.note);
+    return this.decide(id, "approved", payload.note, payload.expiresAt);
   }
 
   async reject(id: string, payload: DecideSharingRequestPayload = {}): Promise<SharingRequest> {
     return this.decide(id, "rejected", payload.note);
+  }
+
+  // RIO-FR-014 (client Q30) — mirrors ReportSharingService.withdraw exactly.
+  async withdraw(id: string): Promise<SharingRequest> {
+    const orgId = requireOrgId();
+    const withdrawnBy = requireActor();
+    const existing = await this.tenant.runInOrgContext((tx) => tx.sharingRequest.findUnique({ where: { id } }));
+    if (!existing) {
+      throw new NotFoundException({ error: { code: "SHARING_REQUEST_NOT_FOUND", message: "Sharing request not found" } });
+    }
+    if (existing.ownerOrgId !== orgId) {
+      throw new ForbiddenException({
+        error: { code: "FORBIDDEN", message: "Only the owning organisation can withdraw access." },
+      });
+    }
+    if (existing.status !== "approved") {
+      throw new BadRequestException({
+        error: { code: "SHARING_NOT_APPROVED", message: "Only approved access can be withdrawn." },
+      });
+    }
+
+    const row = await this.tenant.runInOrgContext((tx) => tx.sharingRequest.update({
+      where: { id },
+      data: { status: "withdrawn", withdrawnBy, withdrawnAt: new Date() },
+    }));
+    const study = await this.tenant.runAsSupervisor((tx) => tx.study.findUnique({ where: { id: row.studyId } }));
+    const [ownerOrg, requestingOrg] = await Promise.all([
+      this.tenant.runAsSupervisor((tx) => tx.organisation.findUnique({ where: { id: row.ownerOrgId } })),
+      this.tenant.runAsSupervisor((tx) => tx.organisation.findUnique({ where: { id: row.requestingOrgId } })),
+    ]);
+    const ownerOrgName = ownerOrg?.name ?? row.ownerOrgId;
+    const requestingOrgName = requestingOrg?.name ?? row.requestingOrgId;
+    const studyTitle = study?.title ?? row.studyId;
+    const auditChanges = [
+      { field: "Requesting Organization", before: null, after: requestingOrgName },
+      { field: "Owning Organization", before: null, after: ownerOrgName },
+      { field: "Study", before: null, after: studyTitle },
+    ];
+    await this.audit.record({
+      action: "edit",
+      entityType: "sharing_request",
+      entityId: row.id,
+      entityLabel: `Sharing access for study "${studyTitle}" withdrawn (owned by ${ownerOrgName})`,
+      organizationId: row.ownerOrgId,
+      changes: auditChanges,
+    });
+    await this.audit.record({
+      action: "edit",
+      entityType: "sharing_request",
+      entityId: row.id,
+      entityLabel: `Sharing access for study "${studyTitle}" withdrawn (requested by ${requestingOrgName})`,
+      organizationId: row.requestingOrgId,
+      changes: auditChanges,
+    });
+    return this.enrichOne(row as unknown as SharingRequestRow);
   }
 
   async getSharedSnapshot(id: string): Promise<SharedStudySnapshot> {
@@ -120,6 +175,11 @@ export class SharingService {
     if (row.status !== "approved") {
       throw new ForbiddenException({
         error: { code: "SHARING_NOT_APPROVED", message: "This sharing request has not been approved." },
+      });
+    }
+    if (row.expiresAt && row.expiresAt.getTime() <= Date.now()) {
+      throw new ForbiddenException({
+        error: { code: "SHARING_EXPIRED", message: "This sharing access has expired." },
       });
     }
     if (!this.isCrossEntity() && row.requestingOrgId !== orgId) {
@@ -187,6 +247,7 @@ export class SharingService {
     id: string,
     status: "approved" | "rejected",
     decisionNote: string | undefined,
+    expiresAt?: string,
   ): Promise<SharingRequest> {
     const orgId = requireOrgId();
     const decidedBy = requireActor();
@@ -212,10 +273,19 @@ export class SharingService {
         error: { code: "REJECT_REASON_REQUIRED", message: "A reason is required when rejecting a request." },
       });
     }
+    if (expiresAt && Number.isNaN(Date.parse(expiresAt))) {
+      throw new BadRequestException({ error: { code: "INVALID_EXPIRY_DATE", message: "Invalid expiry date." } });
+    }
 
     const row = await this.tenant.runInOrgContext((tx) => tx.sharingRequest.update({
       where: { id },
-      data: { status, decidedBy, decidedAt: new Date(), decisionNote: decisionNote ?? null },
+      data: {
+        status,
+        decidedBy,
+        decidedAt: new Date(),
+        decisionNote: decisionNote ?? null,
+        ...(status === "approved" ? { expiresAt: expiresAt ? new Date(expiresAt) : null } : {}),
+      },
     }));
     const study = await this.tenant.runAsSupervisor((tx) =>
       tx.study.findUnique({ where: { id: row.studyId } }),
@@ -308,6 +378,9 @@ export class SharingService {
       decidedAt: row.decidedAt ? row.decidedAt.toISOString() : null,
       note: row.note,
       decisionNote: row.decisionNote,
+      expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
+      withdrawnBy: row.withdrawnBy,
+      withdrawnAt: row.withdrawnAt ? row.withdrawnAt.toISOString() : null,
     }));
   }
 }

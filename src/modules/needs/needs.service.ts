@@ -654,6 +654,7 @@ export class NeedsService {
       internalReferenceId: formatInternalReferenceId(row.internalRefSeq),
       affectedPopulation: row.affectedPopulation,
       status: row.status,
+      analyticalStatus: row.analyticalStatus,
       domain: row.domain,
       subDomain: row.subDomain,
       allDomainsSelected: row.allDomainsSelected,

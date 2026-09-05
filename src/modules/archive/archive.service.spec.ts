@@ -26,15 +26,17 @@ interface FakeReport { id: string; title: string; status: string; reportType: st
 interface FakeNeed { id: string; studyId: string; status: string; village: string[] }
 interface FakeOrg { id: string; name: string; region: string[]; sector: string }
 interface FakeAuditLog { id: string; action: string; actorUserId: string; createdAt: Date; metadata: unknown }
+interface FakeHistoricalStudy { id: string; orgId: string; title: string; region: string[]; targetSector: string | null; studyDate: Date }
 interface FakeTx {
   organisation: { findMany: () => Promise<FakeOrg[]> };
   study: { findMany: () => Promise<FakeStudy[]>; findUnique: (args: { where: { id: string } }) => Promise<FakeStudy | null> };
   report: { findMany: () => Promise<FakeReport[]> };
   need: { findMany: () => Promise<FakeNeed[]> };
   auditLog: { findMany: () => Promise<FakeAuditLog[]> };
+  historicalStudy: { findMany: () => Promise<FakeHistoricalStudy[]> };
 }
 
-function fakeTenant(opts: { studies?: FakeStudy[]; reports?: FakeReport[]; needs?: FakeNeed[]; orgs?: FakeOrg[]; auditLogs?: FakeAuditLog[] }) {
+function fakeTenant(opts: { studies?: FakeStudy[]; reports?: FakeReport[]; needs?: FakeNeed[]; orgs?: FakeOrg[]; auditLogs?: FakeAuditLog[]; historicalStudies?: FakeHistoricalStudy[] }) {
   const tx: FakeTx = {
     organisation: {
       findMany: async () => opts.orgs ?? [{ id: 'o1', name: 'Org 1', region: ['Region A'], sector: 'Health' }],
@@ -51,6 +53,9 @@ function fakeTenant(opts: { studies?: FakeStudy[]; reports?: FakeReport[]; needs
     },
     auditLog: {
       findMany: async () => opts.auditLogs ?? [],
+    },
+    historicalStudy: {
+      findMany: async () => opts.historicalStudies ?? [],
     },
   };
   return {
@@ -118,5 +123,53 @@ describe('ArchiveService', () => {
     expect(detail.needsCount).toBe(1);
     expect(detail.reports).toHaveLength(1);
     expect(detail.auditHistory).toHaveLength(1);
+  });
+
+  // RIO-FR-013 (client Q25) — historical/pre-platform study uploads surface
+  // in the same Archive listing as real studies and reports.
+  it('includes historical study uploads in the archive listing, with their own recorded region and sector', async () => {
+    const historicalStudies = [
+      {
+        id: 'h1',
+        orgId: 'o1',
+        title: 'Pre-2024 Water Access Survey',
+        region: ['Ad-Dawadmi'],
+        targetSector: 'Water & Sanitation',
+        studyDate: new Date('2022-06-01'),
+      },
+    ];
+    const tenant = fakeTenant({ historicalStudies });
+    const svc = new ArchiveService(tenant as never, auditStub as never);
+
+    const entries = await orgContext.run(
+      { requestId: 'r1', actorId: 'u1', orgId: 'o1', role: 'ngo_admin' },
+      () => svc.list({}),
+    );
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      kind: 'historical',
+      title: 'Pre-2024 Water Access Survey',
+      region: ['Ad-Dawadmi'],
+      sector: 'Water & Sanitation',
+      studyId: null,
+    });
+  });
+
+  it('filters to only historical entries when kind=historical is requested', async () => {
+    const study = { id: 's1', orgId: 'o1', title: 'Real Study', status: 'archived', updatedAt: new Date('2026-01-01') };
+    const historicalStudies = [
+      { id: 'h1', orgId: 'o1', title: 'Old Study', region: [], targetSector: null, studyDate: new Date('2020-01-01') },
+    ];
+    const tenant = fakeTenant({ studies: [study], historicalStudies });
+    const svc = new ArchiveService(tenant as never, auditStub as never);
+
+    const entries = await orgContext.run(
+      { requestId: 'r1', actorId: 'u1', orgId: 'o1', role: 'ngo_admin' },
+      () => svc.list({ kind: 'historical' }),
+    );
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.kind).toBe('historical');
   });
 });

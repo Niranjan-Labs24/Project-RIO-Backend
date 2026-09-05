@@ -44,6 +44,8 @@ import { ResponseQualityModule } from './modules/response-quality/response-quali
 import { PriorityModule } from './modules/priority/priority.module';
 import { SharingModule } from './modules/sharing/sharing.module';
 import { ReportSharingModule } from './modules/report-sharing/report-sharing.module';
+import { InitiativesModule } from './modules/initiatives/initiatives.module';
+import { HistoricalStudiesModule } from './modules/historical-studies/historical-studies.module';
 import { SharingAlertsModule } from './modules/sharing-alerts/sharing-alerts.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { ArchiveModule } from './modules/archive/archive.module';
@@ -114,6 +116,8 @@ import { AppController } from './app.controller';
     PriorityModule,
     SharingModule,
     ReportSharingModule,
+    InitiativesModule,
+    HistoricalStudiesModule,
     SharingAlertsModule,
     ReportsModule,
     ArchiveModule,

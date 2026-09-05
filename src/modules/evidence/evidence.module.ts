@@ -18,6 +18,6 @@ import { EvidenceDocumentsController } from "./evidence-documents.controller";
     EvidenceDocumentsService,
     DocumentSummaryService,
   ],
-  exports: [EvidenceDocumentsService, DocumentSummaryService],
+  exports: [EvidenceDocumentsService, DocumentSummaryService, EvidenceStorageService],
 })
 export class EvidenceModule {}
