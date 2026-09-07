@@ -27,7 +27,8 @@ FROM node:24-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83
 WORKDIR /app
 RUN corepack enable
 ENV NODE_ENV=production
-# BackupService shells out to `pg_dump` (see src/modules/backup) — not
+# BackupService shells out to `pg_dump`, and the recoverability check to
+# `pg_restore --list` (see src/modules/backup) — neither is
 # available on node:24-slim by default. The db service runs postgres:18
 # (see db/Dockerfile), and pg_dump generally needs to be >= the server's
 # major version, which the base image's own Debian repos aren't guaranteed

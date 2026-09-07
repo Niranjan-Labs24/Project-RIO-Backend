@@ -41,3 +41,29 @@ export interface BackupSummary {
   failuresLast7Days: number;
   totalSizeBytes: number;
 }
+
+/**
+ * RIO-NFR-010 AC 1 — the answer to "can this backup actually be restored",
+ * which is a different and harder question than "is the file intact".
+ */
+export interface RecoverabilityCheck {
+  /** True only when the artefact both matches its checksum AND parses. */
+  ok: boolean;
+  /** Whether the cheap half passed — separated so a caller can say which failed. */
+  checksumOk: boolean;
+  /** Why not: CHECKSUM_MISMATCH, NO_TABLE_DATA, MANIFEST_MISMATCH, ... */
+  reason: string | null;
+  checkedAt: Date;
+  durationMs: number;
+  /**
+   * What the structural check saw — table-data entries for a dump, files
+   * verified against the manifest for an attachment archive. Shown on screen
+   * because "recoverable" with no number behind it is a claim, not evidence.
+   */
+  detail: {
+    tocEntries?: number;
+    tableDataEntries?: number;
+    filesVerified?: number;
+    filesExpected?: number;
+  };
+}

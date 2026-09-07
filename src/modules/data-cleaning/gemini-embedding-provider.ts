@@ -59,7 +59,12 @@ const DIMENSIONS = 768;
 // Bumped whenever the model, the dimensions or the text we feed it changes.
 // NeedEmbedding is unique on (needId, embeddingVersion), so a bump regenerates
 // rather than silently comparing vectors from two different models.
-const EMBEDDING_VERSION = "gemini-embedding-001-768-v1";
+// v2: the text sent to the model changed from the folded comparison key to the
+// raw title and statement (see SemanticDuplicateService.embeddingText). Vectors
+// built from different input are not comparable, so the version bump is not
+// cosmetic — NeedEmbedding is unique on (needId, embeddingVersion), so v1 rows
+// stay untouched and every need is re-embedded once on the next scan.
+const EMBEDDING_VERSION = "gemini-embedding-001-768-v2";
 
 // How many requests are in flight at once. The API is per-request here, and an
 // unbounded Promise.all over 200 needs is a self-inflicted rate limit.

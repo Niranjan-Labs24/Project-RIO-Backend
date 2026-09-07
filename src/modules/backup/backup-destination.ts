@@ -111,6 +111,62 @@ export class LocalFilesystemDestination implements BackupDestination {
   }
 }
 
+/**
+ * The inverse of `LocalFilesystemDestination.store`'s encryption, for anything
+ * that has to READ an artefact back — today the recoverability check, tomorrow
+ * whatever tool performs the restore.
+ *
+ * Deliberately a free function rather than a method on the destination: it
+ * needs the key and nothing else, and a restore may well be run by a script
+ * with no Nest container around it. It throws on a bad key, a truncated file or
+ * a tampered one — GCM's auth tag fails loudly rather than yielding plausible
+ * garbage, which is the reason it was chosen over CBC.
+ */
+export async function decryptArtefact(
+  sourcePath: string,
+  destPath: string,
+  passphrase: string,
+): Promise<void> {
+  const { createDecipheriv } = await import('node:crypto');
+  const { open } = await import('node:fs/promises');
+
+  const handle = await open(sourcePath, 'r');
+  try {
+    const { size } = await handle.stat();
+    if (size < ENCRYPTED_HEADER_BYTES + TAG_BYTES) {
+      throw new Error('Artefact is too short to be an encrypted backup');
+    }
+
+    const header = Buffer.alloc(ENCRYPTED_HEADER_BYTES);
+    await handle.read(header, 0, header.length, 0);
+    if (!header.subarray(0, MAGIC.length).equals(MAGIC)) {
+      throw new Error('Artefact is not in RIOBK1 format');
+    }
+    const salt = header.subarray(MAGIC.length, MAGIC.length + SALT_BYTES);
+    const iv = header.subarray(MAGIC.length + SALT_BYTES);
+
+    // The tag lives at the end of the file, and Node needs it set before the
+    // stream finishes — so it is read up front rather than discovered on the
+    // way past.
+    const tag = Buffer.alloc(TAG_BYTES);
+    await handle.read(tag, 0, TAG_BYTES, size - TAG_BYTES);
+
+    const decipher = createDecipheriv('aes-256-gcm', scryptSync(passphrase, salt, 32), iv);
+    decipher.setAuthTag(tag);
+
+    await pipeline(
+      createReadStream(sourcePath, {
+        start: ENCRYPTED_HEADER_BYTES,
+        end: size - TAG_BYTES - 1,
+      }),
+      decipher,
+      createWriteStream(destPath),
+    );
+  } finally {
+    await handle.close();
+  }
+}
+
 /** Header length, exported so a restore tool can seek past it. */
 export const ENCRYPTED_HEADER_BYTES = MAGIC.length + SALT_BYTES + IV_BYTES;
 export const ENCRYPTED_TAG_BYTES = TAG_BYTES;

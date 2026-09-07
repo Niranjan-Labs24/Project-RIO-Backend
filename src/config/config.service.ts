@@ -171,4 +171,8 @@ export class ConfigService {
   get pgDumpPath(): string | undefined {
     return this.config.PG_DUMP_PATH;
   }
+  /** See PG_RESTORE_PATH — used by the recoverability check, not by backups. */
+  get pgRestorePath(): string | undefined {
+    return this.config.PG_RESTORE_PATH;
+  }
 }

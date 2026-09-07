@@ -830,6 +830,32 @@ model Need {
   @@index([orgId])
   @@index([studyId])
   @@map("needs")
+  // RIO-AI-004 — merge. `mergedIntoNeedId` being set IS the merged state:
+  // deliberately not a new NeedStatus value, so a retired need keeps the
+  // workflow status it actually had ("a reviewer_approved need that turned out
+  // to duplicate another" is truer than overwriting it with "merged"). EVERY
+  // list, count and score must exclude `mergedIntoNeedId: { not: null }`.
+  mergedIntoNeedId String? @map("merged_into_need_id") @db.Uuid
+  mergedInto       Need?   @relation("NeedMergedInto", fields: [mergedIntoNeedId], references: [id], onDelete: Restrict)
+  mergedFrom       Need[]  @relation("NeedMergedInto")
+  // Q51 — "both external references are retained on the survivor". The
+  // retired need's submitter reference lands here rather than overwriting
+  // `referenceId`, which is what the submitter's own records say and which
+  // other systems match on.
+  absorbedReferenceIds String[] @default([]) @map("absorbed_reference_ids")
+  mergesAsSurvivor NeedMerge[]          @relation("NeedMergeSurvivor")
+  mergesAsRetired  NeedMerge[]          @relation("NeedMergeRetired")
+  referenceAliases NeedReferenceAlias[]
+  embeddings       NeedEmbedding[]
+  // RIO-FR-002 / RIO-AI-004 — the shared duplicate queue (Q40). Two arrays
+  // because a candidate stores an ORDERED pair (need_a_id < need_b_id, so a
+  // pair can never sit in the queue twice); a Need appears on whichever side
+  // its uuid sorts to, and readers must look at both.
+  duplicateCandidatesAsA DuplicateCandidate[] @relation("DuplicateCandidateNeedA")
+  duplicateCandidatesAsB DuplicateCandidate[] @relation("DuplicateCandidateNeedB")
+  // RIO-FR-009 (from feat/sprint-3) — dropped by the same merge conflict.
+  initiativeLinks NeedInitiative[]
+  analyticalStatusEvents NeedAnalyticalStatusEvent[]
 }
 
 // RIO-FR-009 (client Q17) — the five analytical statuses fixed by the

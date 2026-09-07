@@ -1,19 +1,34 @@
 import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
+import { randomUUID } from 'node:crypto';
 import { stat, unlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { ConfigService } from '../../config/config.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MailerService } from '../../mailer/mailer.service';
 import { SystemLogsService } from '../system-logs/system-logs.service';
 import { archiveAttachments, hashFile } from './attachment-archive.util';
-import type { BackupDestination } from './backup-destination';
+import { decryptArtefact, type BackupDestination } from './backup-destination';
 import { BACKUP_DESTINATION } from './backup-destination.token';
 import { runPgDump } from './pg-dump.util';
-import type { BackupKind, BackupResult, BackupTrigger } from './backup.types';
+import { inspectAttachmentArchive, inspectDatabaseDump } from './recoverability.util';
+import type {
+  BackupKind,
+  BackupResult,
+  BackupTrigger,
+  RecoverabilityCheck,
+} from './backup.types';
 
 const CRON_JOB_NAME = 'database-backup';
 const RETENTION_JOB_NAME = 'backup-retention';
+/**
+ * The value migration 20260904040000 and scripts/sql/nfr010-backup-role.sql
+ * create the role with. Hardcoded here on purpose: this is a check for a known
+ * published credential, not a password policy.
+ */
+const DEFAULT_BACKUP_PASSWORD = 'cnap_backup_dev_pw';
 
 /**
  * RIO-NFR-010 — periodic, recoverable backup of data and attachments.
@@ -80,6 +95,26 @@ export class BackupService implements OnModuleInit {
     });
     this.schedulerRegistry.addCronJob(RETENTION_JOB_NAME, sweep);
     sweep.start();
+
+    // The backup role reads every tenant's row in the database — that is what
+    // a dump is — and both the migration and the setup script create it with a
+    // published development password. "Rotate it" written in a comment is a
+    // note nobody reads twice; said at every boot, and in the operational log
+    // an administrator already watches, it is a finding with a date on it.
+    if (this.config.backupDatabaseUrl?.includes(DEFAULT_BACKUP_PASSWORD)) {
+      const message =
+        'BACKUP_DATABASE_URL still uses the default development password for cnap_backup. ' +
+        'That credential grants read of every tenant\'s data. Rotate it: ' +
+        "ALTER ROLE cnap_backup WITH PASSWORD '<new>'; then update BACKUP_DATABASE_URL.";
+      this.logger.warn(message);
+      this.systemLog.record({
+        level: 'warn',
+        category: 'security',
+        source: 'BackupService',
+        eventCode: 'BACKUP_ROLE_DEFAULT_PASSWORD',
+        message,
+      });
+    }
 
     this.logger.log(
       `Backups scheduled (cron: "${schedule}", retention: "${this.config.backupRetentionCron}", ` +
@@ -158,6 +193,31 @@ export class BackupService implements OnModuleInit {
       this.logger.log(
         `${kind} backup succeeded: ${outcome.fileName} (${outcome.sizeBytes} bytes, ${durationMs}ms)`,
       );
+      // NFR-016's persisted record of the SUCCESS, not only of the failure.
+      // A failure-only log answers "did anything break"; it cannot answer "is
+      // this platform being backed up", which is the question AC 2 is about
+      // and the one someone reading the System Logs screen is actually asking.
+      // Same eventCode for scheduled and manual runs, with the trigger in the
+      // context — grouping by outcome is what makes the code useful, and
+      // `trigger` is there for anyone who needs to separate them.
+      this.systemLog.record({
+        level: 'info',
+        category: 'job',
+        source: 'BackupService',
+        eventCode: 'BACKUP_SUCCEEDED',
+        message: `${kind} backup succeeded: ${outcome.fileName} (${outcome.sizeBytes} bytes)`,
+        context: {
+          kind,
+          trigger,
+          runId: run.id,
+          durationMs,
+          sizeBytes: outcome.sizeBytes,
+          sha256: outcome.sha256,
+          fileCount: outcome.fileCount ?? null,
+          destination: this.destination.name,
+          encrypted: this.destination.encrypts,
+        },
+      });
       return {
         success: true,
         runId: run.id,
@@ -316,7 +376,11 @@ export class BackupService implements OnModuleInit {
       throw new Error(
         `${uncovered.length} table(s) enforce row-level security with no cnap_backup read ` +
           `policy, so a dump would silently omit their rows: ${names}. ` +
-          `Add a policy for each (see migration 20260904040000) before backing up.`,
+          // The fix is a re-run of the generator, not a hand-written policy per
+          // table: it is idempotent and converges on whatever the schema now
+          // holds, which is the only version of this that stays correct.
+          `Re-run the DO block in migration 20260907000000_nfr010_backup_role_coverage ` +
+          `as cnap_owner to generate the missing policies, then back up again.`,
       );
     }
   }
@@ -365,6 +429,126 @@ export class BackupService implements OnModuleInit {
     } catch {
       return { ok: false, reason: 'FILE_MISSING' };
     }
+  }
+
+  /**
+   * RIO-NFR-010 AC 1 — is this backup RECOVERABLE, not just present.
+   *
+   * `verify()` re-checksums: it proves the bytes on disk are the bytes we
+   * wrote, and nothing more. That leaves the worse failure uncaught — an
+   * artefact that was never restorable to begin with checksums perfectly. A
+   * dump whose TOC carries no table data, an archive missing half the evidence
+   * it claims: both pass verification and both fail a restore.
+   *
+   * So this runs verification FIRST (a corrupt file is not worth opening), then
+   * opens the artefact:
+   *   - database → `pg_restore --list`, which parses the archive and counts the
+   *     tables that actually carry data,
+   *   - attachments → every file re-hashed against the manifest inside the
+   *     archive.
+   *
+   * What it deliberately does NOT do is restore. That needs a scratch database
+   * and belongs in `pnpm nfr010:restore-check`, not in an HTTP request against
+   * a live system. This is the deepest check that is safe on demand, and the
+   * result says which one was performed so nobody mistakes it for a rehearsal.
+   *
+   * The outcome is written to the system log either way: a recoverability check
+   * that fails is an operational event of the first order, and one that passes
+   * is the evidence that the check was performed at all.
+   */
+  async checkRecoverability(runId: string): Promise<RecoverabilityCheck> {
+    const started = Date.now();
+    const integrity = await this.verify(runId);
+    if (!integrity.ok) {
+      // Checksum failed: report that, and do not pretend a deeper check ran.
+      return this.recordRecoverability(runId, {
+        ok: false,
+        checksumOk: false,
+        reason: integrity.reason,
+        checkedAt: new Date(),
+        durationMs: Date.now() - started,
+        detail: {},
+      });
+    }
+
+    const run = await this.prisma.backupRun.findUnique({
+      where: { id: runId },
+      select: { kind: true, filePath: true },
+    });
+    // verify() already established both of these; narrowing for the compiler.
+    if (!run?.filePath) {
+      return this.recordRecoverability(runId, {
+        ok: false,
+        checksumOk: true,
+        reason: 'NO_ARTEFACT_RECORDED',
+        checkedAt: new Date(),
+        durationMs: Date.now() - started,
+        detail: {},
+      });
+    }
+
+    // An encrypted artefact has to be decrypted before anything can read its
+    // structure. Into a temporary file that is always removed: a plaintext copy
+    // of the whole database is not something to leave lying beside the
+    // encrypted one because a check threw.
+    let readablePath = run.filePath;
+    let temporary: string | undefined;
+    try {
+      if (this.destination.encrypts && this.config.backupEncryptionKey) {
+        temporary = join(tmpdir(), `rio-recoverability-${randomUUID()}`);
+        await decryptArtefact(run.filePath, temporary, this.config.backupEncryptionKey);
+        readablePath = temporary;
+      }
+
+      const outcome =
+        run.kind === 'database'
+          ? await inspectDatabaseDump({
+              filePath: readablePath,
+              pgRestorePath: this.config.pgRestorePath,
+            })
+          : await inspectAttachmentArchive(readablePath);
+
+      return this.recordRecoverability(runId, {
+        ok: outcome.ok,
+        checksumOk: true,
+        reason: outcome.reason,
+        checkedAt: new Date(),
+        durationMs: Date.now() - started,
+        detail: outcome.detail,
+      });
+    } catch (error) {
+      // Includes a failed decryption, which is itself a recoverability answer:
+      // an artefact that will not decrypt cannot be restored.
+      const message = error instanceof Error ? error.message : String(error);
+      return this.recordRecoverability(runId, {
+        ok: false,
+        checksumOk: true,
+        reason: `CHECK_FAILED: ${message.slice(0, 300)}`,
+        checkedAt: new Date(),
+        durationMs: Date.now() - started,
+        detail: {},
+      });
+    } finally {
+      if (temporary) await unlink(temporary).catch(() => undefined);
+    }
+  }
+
+  /** One place to log a recoverability outcome, so no path can skip it. */
+  private recordRecoverability(runId: string, result: RecoverabilityCheck): RecoverabilityCheck {
+    this.systemLog.record({
+      level: result.ok ? 'info' : 'error',
+      category: 'job',
+      source: 'BackupService',
+      eventCode: result.ok ? 'BACKUP_RECOVERABLE' : 'BACKUP_NOT_RECOVERABLE',
+      message: result.ok
+        ? `Backup ${runId} verified recoverable`
+        : `Backup ${runId} is NOT recoverable: ${result.reason ?? 'unknown'}`,
+      context: { runId, ...result, checkedAt: result.checkedAt.toISOString() },
+    });
+    if (!result.ok) {
+      this.logger.error(`Recoverability check failed for ${runId}: ${result.reason}`);
+    }
+    return result;
   }
 
   /**

@@ -1,8 +1,12 @@
+import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SchedulerRegistry } from '@nestjs/schedule';
 import { BackupService } from './backup.service';
 import * as archiveUtil from './attachment-archive.util';
 import * as pgDumpUtil from './pg-dump.util';
+import * as recoverability from './recoverability.util';
 import type { ConfigService } from '../../config/config.service';
 import type { PrismaService } from '../../prisma/prisma.service';
 import type { SystemLogsService } from '../system-logs/system-logs.service';
@@ -14,6 +18,13 @@ vi.mock('./pg-dump.util', () => ({
 vi.mock('./attachment-archive.util', () => ({
   archiveAttachments: vi.fn(),
   hashFile: vi.fn(async () => 'a'.repeat(64)),
+}));
+// The structural checks have their own suite against real archives
+// (recoverability.util.spec.ts). What matters here is which one the service
+// reaches for, and whether it reaches for one at all.
+vi.mock('./recoverability.util', () => ({
+  inspectDatabaseDump: vi.fn(),
+  inspectAttachmentArchive: vi.fn(),
 }));
 
 function fakeConfig(
@@ -128,6 +139,53 @@ describe('BackupService', () => {
     expect(scheduler.addCronJob).toHaveBeenCalledTimes(2);
     expect(scheduler.addCronJob).toHaveBeenCalledWith('database-backup', expect.anything());
     expect(scheduler.addCronJob).toHaveBeenCalledWith('backup-retention', expect.anything());
+  });
+
+  it('warns at boot when the backup role still has its published dev password', () => {
+    // The credential grants read of every tenant's data. A comment saying
+    // "rotate it" is read once; this is said at every boot and lands in the
+    // operational log an administrator already watches.
+    const { prisma } = fakePrisma();
+    const systemLog = fakeSystemLog();
+    const service = new BackupService(
+      fakeConfig({
+        backupDatabaseUrl: 'postgresql://cnap_backup:cnap_backup_dev_pw@localhost:5432/cnap',
+      }),
+      fakeSchedulerRegistry(),
+      prisma,
+      systemLog,
+      fakeMailer(),
+      fakeDestination(),
+    );
+
+    service.onModuleInit();
+
+    expect(systemLog.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: 'warn',
+        category: 'security',
+        eventCode: 'BACKUP_ROLE_DEFAULT_PASSWORD',
+      }),
+    );
+  });
+
+  it('says nothing about the password once it has been rotated', () => {
+    const { prisma } = fakePrisma();
+    const systemLog = fakeSystemLog();
+    const service = new BackupService(
+      fakeConfig({
+        backupDatabaseUrl: 'postgresql://cnap_backup:6f2a9c4e1b@localhost:5432/cnap',
+      }),
+      fakeSchedulerRegistry(),
+      prisma,
+      systemLog,
+      fakeMailer(),
+      fakeDestination(),
+    );
+
+    service.onModuleInit();
+
+    expect(systemLog.record).not.toHaveBeenCalled();
   });
 
   it('records a run row BEFORE doing any work, so a killed process leaves evidence', async () => {
@@ -366,6 +424,146 @@ describe('BackupService', () => {
       ['admin@platform.local'],
       expect.objectContaining({ kind: 'database' }),
     );
+  });
+
+  it('logs a SUCCESSFUL backup, not only a failed one', async () => {
+    // A failure-only log answers "did anything break". It cannot answer "is
+    // this platform being backed up", which is the question AC 2 is about and
+    // the one somebody reading the System Logs screen is actually asking.
+    vi.mocked(pgDumpUtil.runPgDump).mockResolvedValue({
+      filePath: '/app/storage/backups/x.dump',
+      fileName: 'x.dump',
+      sizeBytes: 4096,
+    });
+    const { prisma } = fakePrisma();
+    const systemLog = fakeSystemLog();
+    const service = new BackupService(
+      fakeConfig(), fakeSchedulerRegistry(), prisma, systemLog,
+      fakeMailer(),
+      fakeDestination(),
+    );
+
+    await service.run('database', 'manual', 'user-1');
+
+    expect(systemLog.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: 'info',
+        eventCode: 'BACKUP_SUCCEEDED',
+        context: expect.objectContaining({ kind: 'database', trigger: 'manual' }),
+      }),
+    );
+  });
+
+  describe('checkRecoverability', () => {
+    /** A real file on disk, because verify() stats and re-hashes the artefact. */
+    async function artefact(contents: string) {
+      const dir = await mkdtemp(join(tmpdir(), 'rio-recoverability-'));
+      const filePath = join(dir, 'artefact.dump');
+      await writeFile(filePath, contents);
+      const { size } = await stat(filePath);
+      return { dir, filePath, sizeBytes: BigInt(size) };
+    }
+
+    it('does not open an artefact that failed its checksum', async () => {
+      // Nothing is learned by parsing bytes already known to be wrong, and
+      // reporting a structural reason would hide the real one.
+      const { prisma } = fakePrisma({
+        rows: [{ id: 'r1', kind: 'database', status: 'failed', prunedAt: null }],
+      });
+      const systemLog = fakeSystemLog();
+      const service = new BackupService(
+        fakeConfig(), fakeSchedulerRegistry(), prisma, systemLog,
+        fakeMailer(),
+        fakeDestination(),
+      );
+
+      const result = await service.checkRecoverability('r1');
+
+      expect(result.ok).toBe(false);
+      expect(result.checksumOk).toBe(false);
+      expect(result.reason).toBe('RUN_DID_NOT_SUCCEED');
+      expect(recoverability.inspectDatabaseDump).not.toHaveBeenCalled();
+      expect(systemLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({ level: 'error', eventCode: 'BACKUP_NOT_RECOVERABLE' }),
+      );
+    });
+
+    it('fails a dump that parses but carries no table data', async () => {
+      // The failure a checksum can never catch: a structurally valid archive
+      // holding schema and nothing else. It restores cleanly, into an empty
+      // database.
+      const file = await artefact('pretend dump');
+      const { prisma } = fakePrisma({
+        rows: [
+          {
+            id: 'r1',
+            kind: 'database',
+            status: 'succeeded',
+            prunedAt: null,
+            filePath: file.filePath,
+            sizeBytes: file.sizeBytes,
+            sha256: 'a'.repeat(64),
+          },
+        ],
+      });
+      vi.mocked(recoverability.inspectDatabaseDump).mockResolvedValue({
+        ok: false,
+        reason: 'NO_TABLE_DATA',
+        detail: { tocEntries: 120, tableDataEntries: 0 },
+      });
+      const service = new BackupService(
+        fakeConfig(), fakeSchedulerRegistry(), prisma, fakeSystemLog(),
+        fakeMailer(),
+        fakeDestination(),
+      );
+
+      const result = await service.checkRecoverability('r1');
+
+      expect(result.checksumOk).toBe(true);
+      expect(result.ok).toBe(false);
+      expect(result.reason).toBe('NO_TABLE_DATA');
+      await rm(file.dir, { recursive: true, force: true });
+    });
+
+    it('checks an attachment archive against its manifest, and logs the pass', async () => {
+      const file = await artefact('pretend archive');
+      const { prisma } = fakePrisma({
+        rows: [
+          {
+            id: 'r2',
+            kind: 'attachments',
+            status: 'succeeded',
+            prunedAt: null,
+            filePath: file.filePath,
+            sizeBytes: file.sizeBytes,
+            sha256: 'a'.repeat(64),
+          },
+        ],
+      });
+      vi.mocked(recoverability.inspectAttachmentArchive).mockResolvedValue({
+        ok: true,
+        reason: null,
+        detail: { filesVerified: 52, filesExpected: 52 },
+      });
+      const systemLog = fakeSystemLog();
+      const service = new BackupService(
+        fakeConfig(), fakeSchedulerRegistry(), prisma, systemLog,
+        fakeMailer(),
+        fakeDestination(),
+      );
+
+      const result = await service.checkRecoverability('r2');
+
+      expect(result.ok).toBe(true);
+      expect(result.detail.filesVerified).toBe(52);
+      // The passing check is logged too: evidence that it was performed is
+      // the point of running it on a schedule nobody watches.
+      expect(systemLog.record).toHaveBeenCalledWith(
+        expect.objectContaining({ level: 'info', eventCode: 'BACKUP_RECOVERABLE' }),
+      );
+      expect(recoverability.inspectDatabaseDump).not.toHaveBeenCalled();
+      await rm(file.dir, { recursive: true, force: true });
+    });
   });
 
   it('never prunes the newest successful run of a kind, whatever retention says', async () => {

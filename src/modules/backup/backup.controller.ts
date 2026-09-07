@@ -4,6 +4,7 @@ import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import { requireActor } from '../../tenancy/org-context';
 import { AuditService } from '../audit/audit.service';
+import { SystemLogsService } from '../system-logs/system-logs.service';
 import { BackupService } from './backup.service';
 import {
   ListBackupRunsQuery,
@@ -12,7 +13,7 @@ import {
   type TriggerBackupDto,
 } from './backup.contract';
 import { PrismaService } from '../../prisma/prisma.service';
-import type { BackupRunView, BackupSummary } from './backup.types';
+import type { BackupRunView, BackupSummary, RecoverabilityCheck } from './backup.types';
 
 /**
  * RIO-NFR-010 — the administrator's view of backups.
@@ -31,6 +32,11 @@ export class BackupController {
     private readonly backups: BackupService,
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    /**
+     * Not for recording — BackupService already does that. This is here to
+     * FLUSH: see the note on each endpoint below.
+     */
+    private readonly systemLog: SystemLogsService,
   ) {}
 
   /** AC 2 — the auditable log, as a queryable list rather than a text file. */
@@ -129,6 +135,18 @@ export class BackupController {
       ],
     });
 
+    // SystemLogsService buffers and flushes on a 2s timer, which is right for
+    // the thousands of events a request pipeline produces and wrong for this
+    // one: the caller is a screen that reloads the log table the moment this
+    // response lands, and a BACKUP_SUCCEEDED row still sitting in a buffer
+    // reads to the operator as a backup that was never logged. Forcing the
+    // flush makes the response mean "the record exists", which is what the
+    // person who clicked the button is actually waiting to be told.
+    //
+    // Cheap, and only on this path: one batched insert of a couple of rows,
+    // on an action a human takes by hand.
+    await this.systemLog.flush();
+
     return { runId: result.runId, success: result.success, error: result.error };
   }
 
@@ -145,6 +163,32 @@ export class BackupController {
     @Param('runId', new UuidParamPipe()) runId: string,
   ): Promise<{ ok: boolean; reason: string | null }> {
     return this.backups.verify(runId);
+  }
+
+  /**
+   * The deeper question: is this backup RECOVERABLE.
+   *
+   * `verify` re-checksums; this opens the artefact and checks it parses as
+   * something a restore could consume — `pg_restore --list` for a dump, the
+   * embedded manifest for an attachment archive. Still a read: it writes
+   * nothing, restores nothing and never touches the live database, so it is
+   * gated on `read` like verify rather than `write`.
+   *
+   * It is NOT a restore rehearsal. That needs a scratch database and lives in
+   * `pnpm nfr010:restore-check`; the response says which check ran so the two
+   * are never confused.
+   */
+  @Post(':runId/recoverability')
+  @RequirePermission('backups', 'read')
+  async checkRecoverability(
+    @Param('runId', new UuidParamPipe()) runId: string,
+  ): Promise<RecoverabilityCheck> {
+    const result = await this.backups.checkRecoverability(runId);
+    // Same reason as the run endpoint: BACKUP_RECOVERABLE / _NOT_RECOVERABLE
+    // is the evidence the check happened, and it is worth nothing to an
+    // operator who reloads the page before it is written.
+    await this.systemLog.flush();
+    return result;
   }
 
   /** Run the retention sweep now. Audited: it deletes files. */
