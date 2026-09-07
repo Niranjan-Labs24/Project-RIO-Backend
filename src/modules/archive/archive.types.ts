@@ -15,6 +15,16 @@ export interface ArchiveEntry {
   region: string[];
   sector: string | null;
   villages: string[];
+  // Historical-only detail — undefined for kind "study"/"report". Backs the
+  // Archive row-detail popup (client feedback 2026-09-04: clicking a
+  // historical row should show its full metadata, not just what fits in
+  // the table's columns).
+  governorateNames?: string[];
+  centerNames?: string[];
+  author?: string;
+  methodologyVersionLabel?: string;
+  uploadedByName?: string | null;
+  uploadedAt?: string;
 }
 
 export interface ListArchiveParams {

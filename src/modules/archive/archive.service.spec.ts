@@ -26,17 +26,33 @@ interface FakeReport { id: string; title: string; status: string; reportType: st
 interface FakeNeed { id: string; studyId: string; status: string; village: string[] }
 interface FakeOrg { id: string; name: string; region: string[]; sector: string }
 interface FakeAuditLog { id: string; action: string; actorUserId: string; createdAt: Date; metadata: unknown }
-interface FakeHistoricalStudy { id: string; orgId: string; title: string; region: string[]; targetSector: string | null; studyDate: Date }
+// Shape ArchiveService actually consumes now — HistoricalStudiesService's
+// own already-enriched HistoricalStudy (see archive.service.ts), not the
+// raw Prisma row. Only the fields these tests set/read.
+interface FakeHistoricalStudyEntry {
+  id: string;
+  orgId: string;
+  orgName: string;
+  title: string;
+  region: string[];
+  targetSector: string | null;
+  studyDate: string;
+  governorateNames: string[];
+  centerNames: string[];
+  author: string;
+  methodologyVersionLabel: string;
+  uploadedByName: string | null;
+  uploadedAt: string;
+}
 interface FakeTx {
   organisation: { findMany: () => Promise<FakeOrg[]> };
   study: { findMany: () => Promise<FakeStudy[]>; findUnique: (args: { where: { id: string } }) => Promise<FakeStudy | null> };
   report: { findMany: () => Promise<FakeReport[]> };
   need: { findMany: () => Promise<FakeNeed[]> };
   auditLog: { findMany: () => Promise<FakeAuditLog[]> };
-  historicalStudy: { findMany: () => Promise<FakeHistoricalStudy[]> };
 }
 
-function fakeTenant(opts: { studies?: FakeStudy[]; reports?: FakeReport[]; needs?: FakeNeed[]; orgs?: FakeOrg[]; auditLogs?: FakeAuditLog[]; historicalStudies?: FakeHistoricalStudy[] }) {
+function fakeTenant(opts: { studies?: FakeStudy[]; reports?: FakeReport[]; needs?: FakeNeed[]; orgs?: FakeOrg[]; auditLogs?: FakeAuditLog[] }) {
   const tx: FakeTx = {
     organisation: {
       findMany: async () => opts.orgs ?? [{ id: 'o1', name: 'Org 1', region: ['Region A'], sector: 'Health' }],
@@ -54,13 +70,31 @@ function fakeTenant(opts: { studies?: FakeStudy[]; reports?: FakeReport[]; needs
     auditLog: {
       findMany: async () => opts.auditLogs ?? [],
     },
-    historicalStudy: {
-      findMany: async () => opts.historicalStudies ?? [],
-    },
   };
   return {
     runInOrgContext: async (fn: (tx: FakeTx) => unknown) => fn(tx),
     runAsSupervisor: async (fn: (tx: FakeTx) => unknown) => fn(tx),
+  };
+}
+
+function fakeHistoricalStudiesService(rows: FakeHistoricalStudyEntry[] = []) {
+  return { list: async () => rows };
+}
+
+function historicalEntry(overrides: Partial<FakeHistoricalStudyEntry> & Pick<FakeHistoricalStudyEntry, 'id' | 'title'>): FakeHistoricalStudyEntry {
+  return {
+    orgId: 'o1',
+    orgName: 'Org 1',
+    region: [],
+    targetSector: null,
+    studyDate: '2020-01-01',
+    governorateNames: [],
+    centerNames: [],
+    author: 'Someone',
+    methodologyVersionLabel: 'v1',
+    uploadedByName: null,
+    uploadedAt: '2020-01-02T00:00:00.000Z',
+    ...overrides,
   };
 }
 
@@ -75,7 +109,7 @@ describe('ArchiveService', () => {
       { id: 'n1', studyId: 's1', status: 'survey_published', village: ['Village A'] },
     ];
     const tenant = fakeTenant({ studies, needs });
-    const svc = new ArchiveService(tenant as never, auditStub as never);
+    const svc = new ArchiveService(tenant as never, auditStub as never, fakeHistoricalStudiesService() as never);
 
     const result = await orgContext.run(
       { requestId: 'r1', actorId: 'sys1', role: 'system_admin' },
@@ -110,7 +144,7 @@ describe('ArchiveService', () => {
     ];
 
     const tenant = fakeTenant({ studies: [study], auditLogs });
-    const svc = new ArchiveService(tenant as never, auditStub as never);
+    const svc = new ArchiveService(tenant as never, auditStub as never, fakeHistoricalStudiesService() as never);
 
     const detail = await orgContext.run(
       { requestId: 'r1', actorId: 'sys1', role: 'system_admin' },
@@ -127,19 +161,27 @@ describe('ArchiveService', () => {
 
   // RIO-FR-013 (client Q25) — historical/pre-platform study uploads surface
   // in the same Archive listing as real studies and reports.
-  it('includes historical study uploads in the archive listing, with their own recorded region and sector', async () => {
+  it('includes historical study uploads in the archive listing, with their own recorded region, sector, and full detail fields', async () => {
     const historicalStudies = [
-      {
+      historicalEntry({
         id: 'h1',
-        orgId: 'o1',
         title: 'Pre-2024 Water Access Survey',
         region: ['Ad-Dawadmi'],
         targetSector: 'Water & Sanitation',
-        studyDate: new Date('2022-06-01'),
-      },
+        studyDate: '2022-06-01',
+        governorateNames: ['Ad-Dawadmi'],
+        centerNames: ['Ad-Dawadmi Center'],
+        author: 'Dr. Fatima Al-Zahrani',
+        methodologyVersionLabel: 'Internal manual scoring, v1',
+        uploadedByName: 'Aparna',
+      }),
     ];
-    const tenant = fakeTenant({ historicalStudies });
-    const svc = new ArchiveService(tenant as never, auditStub as never);
+    const tenant = fakeTenant({});
+    const svc = new ArchiveService(
+      tenant as never,
+      auditStub as never,
+      fakeHistoricalStudiesService(historicalStudies) as never,
+    );
 
     const entries = await orgContext.run(
       { requestId: 'r1', actorId: 'u1', orgId: 'o1', role: 'ngo_admin' },
@@ -153,16 +195,27 @@ describe('ArchiveService', () => {
       region: ['Ad-Dawadmi'],
       sector: 'Water & Sanitation',
       studyId: null,
+      // The "Governorates" column reuses `villages` across all kinds — a
+      // historical entry's own recorded governorates must surface there,
+      // not stay empty (client-reported bug 2026-09-04).
+      villages: ['Ad-Dawadmi'],
+      governorateNames: ['Ad-Dawadmi'],
+      centerNames: ['Ad-Dawadmi Center'],
+      author: 'Dr. Fatima Al-Zahrani',
+      methodologyVersionLabel: 'Internal manual scoring, v1',
+      uploadedByName: 'Aparna',
     });
   });
 
   it('filters to only historical entries when kind=historical is requested', async () => {
     const study = { id: 's1', orgId: 'o1', title: 'Real Study', status: 'archived', updatedAt: new Date('2026-01-01') };
-    const historicalStudies = [
-      { id: 'h1', orgId: 'o1', title: 'Old Study', region: [], targetSector: null, studyDate: new Date('2020-01-01') },
-    ];
-    const tenant = fakeTenant({ studies: [study], historicalStudies });
-    const svc = new ArchiveService(tenant as never, auditStub as never);
+    const historicalStudies = [historicalEntry({ id: 'h1', title: 'Old Study' })];
+    const tenant = fakeTenant({ studies: [study] });
+    const svc = new ArchiveService(
+      tenant as never,
+      auditStub as never,
+      fakeHistoricalStudiesService(historicalStudies) as never,
+    );
 
     const entries = await orgContext.run(
       { requestId: 'r1', actorId: 'u1', orgId: 'o1', role: 'ngo_admin' },

@@ -5,6 +5,9 @@ export const CreateStudyConfigOptionBody = registerSchema(
   T.Object(
     {
       name: T.String({ minLength: 1, maxLength: 100 }),
+      // RIO Arabic Localization (Approach 3, Hybrid) — optional so an admin
+      // can add the English value first and fill in Arabic afterward.
+      nameAr: T.Optional(T.String({ minLength: 1, maxLength: 100 })),
       displayOrder: T.Optional(T.Integer({ minimum: 0 })),
     },
     { additionalProperties: false },
@@ -17,6 +20,7 @@ export const UpdateStudyConfigOptionBody = registerSchema(
   T.Object(
     {
       name: T.Optional(T.String({ minLength: 1, maxLength: 100 })),
+      nameAr: T.Optional(T.String({ minLength: 1, maxLength: 100 })),
       displayOrder: T.Optional(T.Integer({ minimum: 0 })),
     },
     { additionalProperties: false },

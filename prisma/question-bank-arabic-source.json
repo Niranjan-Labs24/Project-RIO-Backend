@@ -1,0 +1,3480 @@
+{
+  "english": [
+    {
+      "qCode": "HLT-01",
+      "domain": "Health",
+      "subDomain": "Primary Healthcare Access",
+      "indicator": "Health facility availability",
+      "kpi": "HLT-01 — % of villages with a functioning primary health facility within 5 km",
+      "questionText": "To the best of your knowledge, is there a currently functioning health facility within about 5 km by road of this household?",
+      "responseOptions": "Yes / No / Don't know"
+    },
+    {
+      "qCode": "HLT-02",
+      "domain": "Health",
+      "subDomain": "Primary Healthcare Access",
+      "indicator": "Health facility availability",
+      "kpi": "HLT-02 — Travel time to the nearest functioning health facility",
+      "questionText": "Using your household's usual means of transport, how many minutes does a one-way trip from this household to the nearest functioning health facility normally take?",
+      "responseOptions": "Open numeric (minutes) / Don't know"
+    },
+    {
+      "qCode": "HLT-03",
+      "domain": "Health",
+      "subDomain": "Primary Healthcare Access",
+      "indicator": "Transport barrier",
+      "kpi": "HLT-03 — % of households reporting transport as a barrier to reaching care",
+      "questionText": "In the past 12 months, when a household member needed health care, did the lack of transport delay that care or prevent them from receiving it?",
+      "responseOptions": "Always / Often / Sometimes / Never / No health care was needed"
+    },
+    {
+      "qCode": "HLT-04",
+      "domain": "Health",
+      "subDomain": "Maternal & Child Health",
+      "indicator": "Antenatal care coverage",
+      "kpi": "HLT-04 — Number of antenatal care visits (most recent pregnancy)",
+      "questionText": "For each woman who was pregnant in the past 24 months: during your most recent pregnancy, how many antenatal care visits did you receive from a qualified health provider?",
+      "responseOptions": "Open numeric (contacts) / Don't know / Prefer not to answer"
+    },
+    {
+      "qCode": "HLT-05",
+      "domain": "Health",
+      "subDomain": "Maternal & Child Health",
+      "indicator": "Skilled birth attendance",
+      "kpi": "HLT-05 — % of births attended by a skilled health professional",
+      "questionText": "Who attended the most recent birth in this household?",
+      "responseOptions": "Doctor / Nurse / Qualified midwife / Traditional birth attendant / Relative or friend / No one / Other — specify / Don't know / Prefer not to answer"
+    },
+    {
+      "qCode": "HLT-06",
+      "domain": "Health",
+      "subDomain": "Maternal & Child Health",
+      "indicator": "Child immunization",
+      "kpi": "HLT-06 — % of children under five who are fully immunized",
+      "questionText": "For each child aged 0–59 months: according to the vaccination card or the caregiver's report, has the child received all vaccinations recommended for their age?",
+      "responseOptions": "Yes — documented on the card / Yes — by caregiver report / No / Don't know"
+    },
+    {
+      "qCode": "HLT-07",
+      "domain": "Health",
+      "subDomain": "Maternal & Child Health",
+      "indicator": "Child growth monitoring",
+      "kpi": "HLT-07 — Number of growth-monitoring visits (children under five)",
+      "questionText": "For each child aged 0–59 months: in the past six months, how many times was the child weighed or measured for growth monitoring at a health facility or outreach service?",
+      "responseOptions": "Open numeric (visits) / None / Don't know"
+    },
+    {
+      "qCode": "HLT-08",
+      "domain": "Health",
+      "subDomain": "Disease Burden",
+      "indicator": "Chronic disease prevalence",
+      "kpi": "HLT-08 — % of households with a member who has a diagnosed chronic condition",
+      "questionText": "Does any member of this household have a diagnosed chronic condition (diabetes, hypertension, or similar)?",
+      "responseOptions": "Yes / No / Don't know"
+    },
+    {
+      "qCode": "HLT-09",
+      "domain": "Health",
+      "subDomain": "Disease Burden",
+      "indicator": "Continuity of chronic disease care",
+      "kpi": "HLT-09 — % of people with a chronic condition receiving regular follow-up",
+      "questionText": "Does the household member with a diagnosed chronic condition receive regular follow-up care (check-ups or medicine dispensing)?",
+      "responseOptions": "Yes, regularly / Irregularly or with difficulty / No / Don't know"
+    },
+    {
+      "qCode": "HLT-10",
+      "domain": "Health",
+      "subDomain": "Mental Health",
+      "indicator": "Service awareness",
+      "kpi": "HLT-10 — % of households aware of available mental health support channels",
+      "questionText": "Do you know where someone in this area can seek specialist help for psychological, emotional or mental health problems?",
+      "responseOptions": "Yes / No"
+    },
+    {
+      "qCode": "HLT-11",
+      "domain": "Health",
+      "subDomain": "Mental Health",
+      "indicator": "Perceived stigma",
+      "kpi": "HLT-11 — Community acceptability of seeking mental health support",
+      "questionText": "In your view, how acceptable is it in your community for someone to seek specialist help for psychological or emotional difficulties?",
+      "responseOptions": "Completely unacceptable / Unacceptable / Neutral / Acceptable / Very acceptable"
+    },
+    {
+      "qCode": "HLT-12",
+      "domain": "Health",
+      "subDomain": "Service Quality",
+      "indicator": "Perceived service quality",
+      "kpi": "HLT-12 — % of households rating health service quality as fair or better",
+      "questionText": "How do you rate the overall quality of the health services available to this village?",
+      "responseOptions": "Very poor / Poor / Fair / Good / Very good"
+    },
+    {
+      "qCode": "HLT-13",
+      "domain": "Health",
+      "subDomain": "Service Quality",
+      "indicator": "Medicine availability",
+      "kpi": "HLT-13 — Availability of prescribed medicines at the most recent visit",
+      "questionText": "At the most recent visit to a health facility in the past 12 months, were all the medicines prescribed to the patient available at the facility?",
+      "responseOptions": "Yes, all available / Some available / None available / No medicines were prescribed / No visit in the past 12 months"
+    },
+    {
+      "qCode": "HLT-14",
+      "domain": "Health",
+      "subDomain": "Service Quality",
+      "indicator": "Affordability",
+      "kpi": "HLT-14 — Forgoing or deferring care because of cost",
+      "questionText": "In the past 12 months, did any household member forgo or defer needed care because of cost (consultation, medicine or transport)?",
+      "responseOptions": "Never / Once or twice / Several times / Routinely"
+    },
+    {
+      "qCode": "HLT-15",
+      "domain": "Health",
+      "subDomain": "Emergency Preparedness",
+      "indicator": "Emergency response time",
+      "kpi": "HLT-15 — Perceived adequacy of emergency medical response time",
+      "questionText": "In a medical emergency, how long does help usually take to arrive (ambulance / transfer to a facility) or to be reached?",
+      "responseOptions": "Under 30 minutes / 30–60 minutes / 1–2 hours / More than 2 hours / No emergency service available"
+    },
+    {
+      "qCode": "HLT-16",
+      "domain": "Health",
+      "subDomain": "Primary Healthcare Access",
+      "indicator": "Health facility availability",
+      "kpi": "HLT-02 — Travel time to the nearest functioning health facility (enrichment dimension: access time, banded)",
+      "questionText": "How long does it take to reach the nearest functioning health facility using your household's usual means of transport?",
+      "responseOptions": "Under 30 minutes / 30–60 / 60–120 / >120 / Don't know"
+    },
+    {
+      "qCode": "HLT-17",
+      "domain": "Health",
+      "subDomain": "Primary Healthcare Access",
+      "indicator": "Health facility availability",
+      "kpi": "HLT-02 — Travel time to the nearest functioning health facility (enrichment dimension: affordability of access)",
+      "questionText": "Approximately how many Saudi riyals does an adult usually pay for a return trip from this household to the nearest health facility?",
+      "responseOptions": "Open numeric (SAR) / Don't know"
+    },
+    {
+      "qCode": "HLT-18",
+      "domain": "Health",
+      "subDomain": "Maternal & Child Health",
+      "indicator": "Skilled birth attendance",
+      "kpi": "HLT-05 — % of births attended by a skilled health professional (enrichment dimension: place of delivery)",
+      "questionText": "Where did the most recent live birth in this household in the past 24 months take place?",
+      "responseOptions": "Government hospital / Private hospital / Health centre or clinic / Another health facility / At home / In transit / Other — specify / Don't know / Prefer not to answer"
+    },
+    {
+      "qCode": "HLT-19",
+      "domain": "Health",
+      "subDomain": "Maternal & Child Health",
+      "indicator": "Diagnosis of barriers to facility delivery",
+      "kpi": "—",
+      "questionText": "If the birth did not take place in a health facility, what were the main reasons?",
+      "responseOptions": "Distance / Cost / No female staff available / Personal preference / Sudden onset of labour / Other — specify"
+    },
+    {
+      "qCode": "HLT-20",
+      "domain": "Health",
+      "subDomain": "Disease Burden",
+      "indicator": "Chronic disease prevalence",
+      "kpi": "HLT-08 — % of households with a member who has a diagnosed chronic condition (enrichment dimension: medicine supply channel)",
+      "questionText": "How does the household usually obtain the medicine required for that condition?",
+      "responseOptions": "Local pharmacy / Dispensed by the health facility / Travelling outside the area / Cannot be obtained regularly"
+    },
+    {
+      "qCode": "HLT-21",
+      "domain": "Health",
+      "subDomain": "Service Quality",
+      "indicator": "Affordability",
+      "kpi": "HLT-14 — Forgoing or deferring care because of cost (enrichment dimension: financial distress from health costs)",
+      "questionText": "In the past 12 months, did the household use any of the following to pay for health care costs?",
+      "responseOptions": "Borrowed money / Sold an asset / Used essential savings / Deferred rent, food, education or utility payments / None / Prefer not to answer"
+    },
+    {
+      "qCode": "HLT-22",
+      "domain": "Health",
+      "subDomain": "Primary Healthcare Access",
+      "indicator": "Health facility availability",
+      "kpi": "HLT-01 — % of villages with a functioning primary health facility within 5 km (enrichment dimension: recency-based verification)",
+      "questionText": "When did a household member last visit a health centre?",
+      "responseOptions": "Less than 3 months ago / 3–12 months ago / More than 12 months ago / Never"
+    },
+    {
+      "qCode": "HLT-23",
+      "domain": "Health",
+      "subDomain": "Primary Healthcare Access",
+      "indicator": "Access barrier diagnosis (low utilization)",
+      "kpi": "—",
+      "questionText": "What reasons prevented the person from obtaining care or delayed it?",
+      "responseOptions": "Cost / Distance / Facility closed / Service or staff unavailable / Medicine unavailable / Long waiting time / Concern about quality / Privacy or cultural consideration / Other — specify"
+    },
+    {
+      "qCode": "HLT-24",
+      "domain": "Health",
+      "subDomain": "Service Quality",
+      "indicator": "Formal health coverage",
+      "kpi": "HLT-24 — Health coverage",
+      "questionText": "Is every household member covered by health insurance or another formal arrangement that covers health care costs?",
+      "responseOptions": "Government coverage / Employer insurance / Private insurance / Other / No coverage / Don't know / Prefer not to answer"
+    },
+    {
+      "qCode": "HLT-25",
+      "domain": "Health",
+      "subDomain": "Service Quality",
+      "indicator": "Out-of-pocket health spending",
+      "kpi": "HLT-25 — Out-of-pocket spending",
+      "questionText": "For the household's most recent episode of health care, approximately how much was paid for consultation, tests, medicines, transport and accommodation?",
+      "responseOptions": "Open numeric SAR per component / 0 / Don't know / Prefer not to answer"
+    },
+    {
+      "qCode": "HLT-26",
+      "domain": "Health",
+      "subDomain": "Maternal & Child Health",
+      "indicator": "Growth and nutrition screening outcome",
+      "kpi": "HLT-26 — Child nutrition (growth screening outcome)",
+      "questionText": "For each child aged 0–59 months: was the child's height / weight measured by a health provider in the past six months, and was any nutrition problem identified?",
+      "responseOptions": "Measured — no problem found / Measured — a nutrition problem was found / Not measured / Don't know"
+    },
+    {
+      "qCode": "EDU-01",
+      "domain": "Education",
+      "subDomain": "Basic Education Access",
+      "indicator": "School enrolment",
+      "kpi": "EDU-01 — Enrolment status of children of compulsory school age (6–18)",
+      "questionText": "For each child of compulsory school age (6–18): is the child currently enrolled in a recognised school or education programme?",
+      "responseOptions": "Yes — attending / Yes — enrolled but temporarily not attending / No / Don't know"
+    },
+    {
+      "qCode": "EDU-02",
+      "domain": "Education",
+      "subDomain": "Basic Education Access",
+      "indicator": "School proximity",
+      "kpi": "EDU-02 — Average distance to the nearest primary school (km)",
+      "questionText": "What is the approximate distance from this household to the nearest primary school?",
+      "responseOptions": "Open numeric (km)"
+    },
+    {
+      "qCode": "EDU-03",
+      "domain": "Education",
+      "subDomain": "Basic Education Access",
+      "indicator": "School transport safety",
+      "kpi": "EDU-03 — % of households with safe and reliable school transport",
+      "questionText": "Do this household's children have safe and reliable transport to and from school?",
+      "responseOptions": "Yes / Partly / No / Not applicable"
+    },
+    {
+      "qCode": "EDU-04",
+      "domain": "Education",
+      "subDomain": "Basic Education Access",
+      "indicator": "Dropout risk",
+      "kpi": "EDU-04 — School interruption or dropout incidents (past two years)",
+      "questionText": "Has any school-age child stopped attending or dropped out for a full term or longer in the past two years?",
+      "responseOptions": "No / Yes, once / Yes, repeatedly"
+    },
+    {
+      "qCode": "EDU-05",
+      "domain": "Education",
+      "subDomain": "Basic Education Access",
+      "indicator": "Most frequently cited reason for dropping out",
+      "kpi": "—",
+      "questionText": "If yes, what was the main reason for leaving school?",
+      "responseOptions": "Financial / Distance / Safety / Early marriage / Work / Disability / Academic difficulty / Other"
+    },
+    {
+      "qCode": "EDU-06",
+      "domain": "Education",
+      "subDomain": "Gender Equity in Education",
+      "indicator": "Gender parity in enrolment",
+      "kpi": "EDU-06 — Ratio of girls to boys enrolled",
+      "questionText": "Are there school-age girls in this household who are not enrolled while boys of a similar age are?",
+      "responseOptions": "Yes / No / Not applicable"
+    },
+    {
+      "qCode": "EDU-07",
+      "domain": "Education",
+      "subDomain": "Gender Equity in Education",
+      "indicator": "Perceived barriers facing girls",
+      "kpi": "EDU-07 — % of households identifying barriers to girls' education",
+      "questionText": "What barriers, if any, do girls in this village face in continuing their education that boys do not?",
+      "responseOptions": "Distance / safety / Shortage of female teachers / Early marriage / Household burdens / Cultural norms / None"
+    },
+    {
+      "qCode": "EDU-08",
+      "domain": "Education",
+      "subDomain": "Education Quality",
+      "indicator": "Perceived teaching quality",
+      "kpi": "EDU-08 — % of parents satisfied with teaching quality",
+      "questionText": "How satisfied are you with the quality of teaching at the school your children attend?",
+      "responseOptions": "Very dissatisfied / Dissatisfied / Neutral / Satisfied / Very satisfied"
+    },
+    {
+      "qCode": "EDU-09",
+      "domain": "Education",
+      "subDomain": "Education Quality",
+      "indicator": "Teacher availability",
+      "kpi": "EDU-09 — % of schools with sufficient teaching staff",
+      "questionText": "Does the local school have enough teachers to cover all subjects / grades?",
+      "responseOptions": "Yes / Partly / No / Don't know"
+    },
+    {
+      "qCode": "EDU-10",
+      "domain": "Education",
+      "subDomain": "Education Quality",
+      "indicator": "Learning materials",
+      "kpi": "EDU-10 — % of households whose children have adequate books and learning materials",
+      "questionText": "Do your children receive the books and learning materials required for their grade level?",
+      "responseOptions": "Yes, fully / Partly / No"
+    },
+    {
+      "qCode": "EDU-11",
+      "domain": "Education",
+      "subDomain": "School Infrastructure",
+      "indicator": "Facility adequacy",
+      "kpi": "EDU-11 — % of schools with adequate classrooms, water and sanitation",
+      "questionText": "Does the school your children attend have adequate classrooms, clean water and working toilets?",
+      "responseOptions": "Yes, all adequate / Some inadequate / Most inadequate / Don't know"
+    },
+    {
+      "qCode": "EDU-12",
+      "domain": "Education",
+      "subDomain": "School Infrastructure",
+      "indicator": "Digital access",
+      "kpi": "EDU-12 — % of schools with computers / internet for students",
+      "questionText": "Does the school have working computers or internet available for students to use?",
+      "responseOptions": "Yes / No / Don't know"
+    },
+    {
+      "qCode": "EDU-13",
+      "domain": "Education",
+      "subDomain": "Vocational & Adult Education",
+      "indicator": "Awareness of vocational training",
+      "kpi": "EDU-13 — Awareness of accessible vocational training",
+      "questionText": "Do you know of any vocational or technical training programme you could reach within 60 minutes?",
+      "responseOptions": "Yes / No / Don't know"
+    },
+    {
+      "qCode": "EDU-14",
+      "domain": "Education",
+      "subDomain": "Vocational & Adult Education",
+      "indicator": "Participation in vocational training",
+      "kpi": "EDU-14 — Participation in vocational training (past 24 months)",
+      "questionText": "Have you taken part in such a programme in the past 24 months?",
+      "responseOptions": "Completed the programme / Currently enrolled / Started but did not complete / No / Not eligible"
+    },
+    {
+      "qCode": "EDU-15",
+      "domain": "Education",
+      "subDomain": "Vocational & Adult Education",
+      "indicator": "Adult literacy",
+      "kpi": "EDU-15 — % of adults who are not literate",
+      "questionText": "Are there adults in this household who cannot read or write?",
+      "responseOptions": "Yes / No"
+    },
+    {
+      "qCode": "EDU-16",
+      "domain": "Education",
+      "subDomain": "Basic Education Access",
+      "indicator": "Regularity of school attendance",
+      "kpi": "EDU-16 — Attendance regularity (last five school days)",
+      "questionText": "For each enrolled child: over the last five school days, on how many days did the child attend school?",
+      "responseOptions": "0–5 days / School closed / Child newly enrolled / Don't know"
+    },
+    {
+      "qCode": "EDU-17",
+      "domain": "Education",
+      "subDomain": "Basic Education Access",
+      "indicator": "Early childhood education",
+      "kpi": "EDU-17 — Early childhood education (ages 3–5)",
+      "questionText": "For each child aged 3–5 years: is the child currently attending a nursery, kindergarten or organised early learning programme?",
+      "responseOptions": "Yes / No / No programme available / Child not eligible / Don't know"
+    },
+    {
+      "qCode": "EDU-18",
+      "domain": "Education",
+      "subDomain": "Basic Education Access",
+      "indicator": "Burden of education costs",
+      "kpi": "EDU-18 — Burden of education costs",
+      "questionText": "During the current school year, have school costs caused any child to miss school, have their enrolment delayed, or go without supplies?",
+      "responseOptions": "No / Missed school / Delayed enrolment / Lacked supplies or uniform / Other — specify / Prefer not to answer"
+    },
+    {
+      "qCode": "EDU-19",
+      "domain": "Education",
+      "subDomain": "Education Quality",
+      "indicator": "Parental engagement",
+      "kpi": "EDU-19 — Parental engagement",
+      "questionText": "During the current term, has an adult in the household spoken to a teacher or attended a school meeting about the child's learning?",
+      "responseOptions": "Yes — once / Yes — more than once / No / The school did not offer the opportunity / Don't know"
+    },
+    {
+      "qCode": "WSH-01",
+      "domain": "Water & Sanitation",
+      "subDomain": "Drinking Water Access",
+      "indicator": "Access to a safe water source",
+      "kpi": "WSH-01 — % of households with an improved drinking water source",
+      "questionText": "What is this household's main source of drinking water?",
+      "responseOptions": "Piped into the dwelling / Public tap / Protected well / Unprotected well / Surface water (river / pond) / Tanker / vendor / Other"
+    },
+    {
+      "qCode": "WSH-02",
+      "domain": "Water & Sanitation",
+      "subDomain": "Drinking Water Access",
+      "indicator": "Water collection time",
+      "kpi": "WSH-02 — Water collection burden (JMP basic / limited)",
+      "questionText": "How many minutes does a single return trip to collect water from the main source take, if it is not on the premises?",
+      "responseOptions": "Water on the premises / 30 minutes or less / More than 30 minutes / Don't know"
+    },
+    {
+      "qCode": "WSH-03",
+      "domain": "Water & Sanitation",
+      "subDomain": "Drinking Water Access",
+      "indicator": "Water source continuity",
+      "kpi": "WSH-03 — Availability when needed (JMP continuity)",
+      "questionText": "In the past four weeks, on how many days was the household's main drinking water source unavailable when needed?",
+      "responseOptions": "Open numeric 0–28 days / Don't know"
+    },
+    {
+      "qCode": "WSH-04",
+      "domain": "Water & Sanitation",
+      "subDomain": "Drinking Water Access",
+      "indicator": "Seasonality of water shortage",
+      "kpi": "—",
+      "questionText": "In which months over the past 12 months did water shortages occur?",
+      "responseOptions": "January–December (select all that apply) / No seasonal shortage / Don't know"
+    },
+    {
+      "qCode": "WSH-05",
+      "domain": "Water & Sanitation",
+      "subDomain": "Water Quality",
+      "indicator": "Perceived water safety",
+      "kpi": "WSH-05 — % of households considering their water safe to drink",
+      "questionText": "In your view, is the water from the household's main drinking source safe to drink without further treatment?",
+      "responseOptions": "Yes / No, it needs treatment / Don't know"
+    },
+    {
+      "qCode": "WSH-06",
+      "domain": "Water & Sanitation",
+      "subDomain": "Water Quality",
+      "indicator": "Water treatment practice",
+      "kpi": "WSH-06 — % of households treating water before drinking",
+      "questionText": "Does this household treat its water (boiling, filtering, chlorination) before drinking it?",
+      "responseOptions": "Always / Sometimes / Never"
+    },
+    {
+      "qCode": "WSH-07",
+      "domain": "Water & Sanitation",
+      "subDomain": "Water Quality",
+      "indicator": "Incidence of water-borne illness",
+      "kpi": "WSH-07 — % of households reporting a water-related illness (past 6 months)",
+      "questionText": "Has any household member had an illness suspected to be linked to water quality in the past six months (such as diarrhoea)?",
+      "responseOptions": "Yes / No / Don't know"
+    },
+    {
+      "qCode": "WSH-08",
+      "domain": "Water & Sanitation",
+      "subDomain": "Sanitation Access",
+      "indicator": "Improved sanitation facility",
+      "kpi": "WSH-08 — % of households with an improved sanitation facility",
+      "questionText": "What type of toilet does this household mainly use?",
+      "responseOptions": "Flush toilet connected to a sewer or septic tank / Pit latrine with a slab / Pit latrine without a slab / Shared / public facility / Open defecation"
+    },
+    {
+      "qCode": "WSH-09",
+      "domain": "Water & Sanitation",
+      "subDomain": "Sanitation Access",
+      "indicator": "Safely managed sanitation chain",
+      "kpi": "WSH-09 — Final disposal of contents (JMP safely managed chain)",
+      "questionText": "Where are the contents ultimately discharged or emptied?",
+      "responseOptions": "Sewer network / Septic tank / Pit / Open drain or into the environment / Collected for treatment / Don't know"
+    },
+    {
+      "qCode": "WSH-10",
+      "domain": "Water & Sanitation",
+      "subDomain": "Sanitation Access",
+      "indicator": "Facility privacy and safety",
+      "kpi": "WSH-10 — % of households whose facility is private and safe at night",
+      "questionText": "Is your household's toilet private and safe to use, including at night?",
+      "responseOptions": "Yes / To some extent / No"
+    },
+    {
+      "qCode": "WSH-11",
+      "domain": "Water & Sanitation",
+      "subDomain": "Hygiene & Waste",
+      "indicator": "Handwashing facility",
+      "kpi": "WSH-11 — % of households with a handwashing place with water and soap",
+      "questionText": "Does this household have a handwashing place supplied with both water and soap?",
+      "responseOptions": "Yes / Water only, no soap / No facility"
+    },
+    {
+      "qCode": "WSH-12",
+      "domain": "Water & Sanitation",
+      "subDomain": "Hygiene & Waste",
+      "indicator": "Solid waste collection",
+      "kpi": "WSH-12 — % of villages with a regular waste collection service",
+      "questionText": "Is there a regular waste collection service operating in this village?",
+      "responseOptions": "Yes, weekly or more often / Yes, but irregular / No service"
+    },
+    {
+      "qCode": "WSH-13",
+      "domain": "Water & Sanitation",
+      "subDomain": "Hygiene & Waste",
+      "indicator": "Prevailing disposal method where no collection service exists",
+      "kpi": "—",
+      "questionText": "In the absence of formal collection, how does this household mainly dispose of its waste?",
+      "responseOptions": "Burning / Burying / Open dumping / Private collection / Other"
+    },
+    {
+      "qCode": "WSH-14",
+      "domain": "Water & Sanitation",
+      "subDomain": "Drinking Water Access",
+      "indicator": "Water sufficiency for household needs",
+      "kpi": "WSH-14 — Water sufficiency",
+      "questionText": "In the past four weeks, on how many days was the available water insufficient for the household's drinking, cooking, personal hygiene and cleaning?",
+      "responseOptions": "Open numeric 0–28 days / Don't know"
+    },
+    {
+      "qCode": "WSH-15",
+      "domain": "Water & Sanitation",
+      "subDomain": "Water Quality",
+      "indicator": "Laboratory verification of water quality",
+      "kpi": "—",
+      "questionText": "What was the result and date of the most recent microbiological and chemical test of the main drinking water source?",
+      "responseOptions": "Meets standard / Fails microbiological standard / Fails chemical standard / No recent test / Record unavailable"
+    },
+    {
+      "qCode": "WSH-16",
+      "domain": "Water & Sanitation",
+      "subDomain": "Hygiene & Waste",
+      "indicator": "Household wastewater management",
+      "kpi": "WSH-16 — Wastewater management",
+      "questionText": "Where is bathing, laundry and kitchen water usually discharged in this household?",
+      "responseOptions": "Sewer network / Septic tank or soakaway pit / Covered drain / Open drain / Open ground / Reused / Other — specify / Don't know"
+    },
+    {
+      "qCode": "WSH-17",
+      "domain": "Water & Sanitation",
+      "subDomain": "Hygiene & Waste",
+      "indicator": "Drainage and stagnant water",
+      "kpi": "WSH-17 — Drainage and stagnant water",
+      "questionText": "In the past 12 months, has wastewater, rainwater or stagnant water collected near this dwelling?",
+      "responseOptions": "Never / Once or twice / Several times / Frequently / Don't know"
+    },
+    {
+      "qCode": "WSH-18",
+      "domain": "Water & Sanitation",
+      "subDomain": "Drinking Water Access",
+      "indicator": "Water affordability",
+      "kpi": "WSH-18 — Water affordability",
+      "questionText": "Approximately how much did the household pay for drinking and household-use water in the past 30 days?",
+      "responseOptions": "Open numeric SAR / 0 / Don't know / Prefer not to answer"
+    },
+    {
+      "qCode": "ENV-01",
+      "domain": "Energy & Environment",
+      "subDomain": "Electricity Access",
+      "indicator": "Electricity grid connection",
+      "kpi": "ENV-01 — % of households with a working connection to the national grid",
+      "questionText": "Does this household currently have a working electricity connection to the national grid?",
+      "responseOptions": "Yes — connected and working / Connected but disconnected or not currently working / No — uses off-grid electricity / No electricity / Don't know"
+    },
+    {
+      "qCode": "ENV-02",
+      "domain": "Energy & Environment",
+      "subDomain": "Electricity Access",
+      "indicator": "Service reliability",
+      "kpi": "ENV-02 — Average hours of electricity outage per day",
+      "questionText": "On a typical day, for how many hours is the electricity supply cut off?",
+      "responseOptions": "No outages / Less than 2 hours / 2–6 hours / More than 6 hours / Not connected to the grid"
+    },
+    {
+      "qCode": "ENV-03",
+      "domain": "Energy & Environment",
+      "subDomain": "Electricity Access",
+      "indicator": "Share of households relying on alternative / off-grid sources",
+      "kpi": "—",
+      "questionText": "If the household is not connected to the grid, what is its main energy source?",
+      "responseOptions": "Solar power / Generator / Gas / Firewood / biomass / Other / Not applicable"
+    },
+    {
+      "qCode": "ENV-04",
+      "domain": "Energy & Environment",
+      "subDomain": "Clean Cooking",
+      "indicator": "Cooking fuel type",
+      "kpi": "ENV-04 — % of households using clean cooking fuel / technology",
+      "questionText": "What is the main fuel or technology this household uses for cooking?",
+      "responseOptions": "Electricity / LPG / natural gas / Improved stove / Firewood / charcoal / open fire / Other"
+    },
+    {
+      "qCode": "ENV-05",
+      "domain": "Energy & Environment",
+      "subDomain": "Clean Cooking",
+      "indicator": "Indoor air quality concerns",
+      "kpi": "ENV-05 — % of households reporting health problems from cooking smoke",
+      "questionText": "Do household members experience respiratory symptoms or eye irritation believed to be linked to cooking smoke?",
+      "responseOptions": "Yes, frequently / Sometimes / Never / Not applicable"
+    },
+    {
+      "qCode": "ENV-06",
+      "domain": "Energy & Environment",
+      "subDomain": "Environmental Quality",
+      "indicator": "Perceived water scarcity",
+      "kpi": "ENV-06 — % of households whose farming / livestock is affected by water scarcity",
+      "questionText": "Does this household experience water scarcity that affects its farming or livestock during part of the year?",
+      "responseOptions": "Yes, severe / Yes, moderate / No"
+    },
+    {
+      "qCode": "ENV-07",
+      "domain": "Energy & Environment",
+      "subDomain": "Environmental Quality",
+      "indicator": "Perceived land degradation",
+      "kpi": "ENV-07 — Perceived change in land / soil quality (past 5 years)",
+      "questionText": "Compared with five years ago, how would you describe the quality of farmland / soil in this area?",
+      "responseOptions": "Improved / Unchanged / Deteriorated / Don't know"
+    },
+    {
+      "qCode": "ENV-08",
+      "domain": "Energy & Environment",
+      "subDomain": "Environmental Quality",
+      "indicator": "Exposure to natural disasters",
+      "kpi": "ENV-08 — % of households affected by a natural disaster (past 3 years)",
+      "questionText": "Has this household been affected by a flood, drought or other natural disaster in the past three years?",
+      "responseOptions": "Yes / No"
+    },
+    {
+      "qCode": "ENV-09",
+      "domain": "Energy & Environment",
+      "subDomain": "Environmental Awareness",
+      "indicator": "Programme awareness",
+      "kpi": "ENV-09 — % of households aware of local environmental / clean energy programmes",
+      "questionText": "Do you know of any environmental conservation or clean energy programmes operating in or near this village?",
+      "responseOptions": "Yes / No"
+    },
+    {
+      "qCode": "ENV-10",
+      "domain": "Energy & Environment",
+      "subDomain": "Environmental Awareness",
+      "indicator": "Participation in environmental programmes",
+      "kpi": "ENV-10 — Participation in environmental / clean energy programmes",
+      "questionText": "Has any household member taken part in one of them in the past 12 months?",
+      "responseOptions": "Yes / No / Not aware"
+    },
+    {
+      "qCode": "ENV-11",
+      "domain": "Energy & Environment",
+      "subDomain": "Environmental Awareness",
+      "indicator": "Conservation practice",
+      "kpi": "ENV-11 — % of households practising water / resource conservation",
+      "questionText": "Does this household practise any form of water or resource conservation?",
+      "responseOptions": "Yes, regularly / Sometimes / No"
+    },
+    {
+      "qCode": "ENV-12",
+      "domain": "Energy & Environment",
+      "subDomain": "Environmental Awareness",
+      "indicator": "Conservation practice",
+      "kpi": "ENV-11 — % of households practising water / resource conservation (enrichment dimension: supply reliability, MTF tiers)",
+      "questionText": "Over the past 12 months, for how many hours a day was electricity typically available?",
+      "responseOptions": "24 hours / 20–23 / 12–19 / <12"
+    },
+    {
+      "qCode": "ENV-13",
+      "domain": "Energy & Environment",
+      "subDomain": "Environmental Awareness",
+      "indicator": "Conservation practice",
+      "kpi": "ENV-11 — % of households practising water / resource conservation (enrichment dimension: verifiable conservation practice)",
+      "questionText": "Does the household reuse greywater or harvest rainwater for any purpose?",
+      "responseOptions": "Yes, regularly / Sometimes / No"
+    },
+    {
+      "qCode": "ENV-14",
+      "domain": "Energy & Environment",
+      "subDomain": "Electricity Access",
+      "indicator": "Energy affordability",
+      "kpi": "ENV-14 — Energy affordability",
+      "questionText": "Approximately how much did the household spend on electricity, cooking fuel and generator or battery costs in the past 30 days?",
+      "responseOptions": "Open numeric SAR / 0 / Don't know / Prefer not to answer"
+    },
+    {
+      "qCode": "ENV-15",
+      "domain": "Energy & Environment",
+      "subDomain": "Environmental Quality",
+      "indicator": "Thermal comfort of the dwelling",
+      "kpi": "ENV-15 — Thermal comfort",
+      "questionText": "During the hottest months of the past year, how often was the dwelling too hot to sleep in or to carry out usual activities?",
+      "responseOptions": "Never / Rarely / Sometimes / Often / Every day or almost every day"
+    },
+    {
+      "qCode": "ENV-16",
+      "domain": "Energy & Environment",
+      "subDomain": "Emergency Preparedness",
+      "indicator": "Household disaster preparedness",
+      "kpi": "ENV-16 — Household disaster preparedness",
+      "questionText": "Does the household have a known evacuation route, an emergency contact, basic emergency supplies and a plan for its most vulnerable members?",
+      "responseOptions": "Yes / No / Do not know — recorded for each of the four items"
+    },
+    {
+      "qCode": "ENV-17",
+      "domain": "Energy & Environment",
+      "subDomain": "Environmental Quality",
+      "indicator": "Exposure to environmental hazards",
+      "kpi": "ENV-17 — Environmental exposure",
+      "questionText": "Is the dwelling located near any source of smoke, waste burning, industrial emissions, polluted water or other environmental hazard?",
+      "responseOptions": "Waste burning / Industrial source / Sewage or stagnant water / Dust or quarrying / Agricultural chemicals / None / Other — specify"
+    },
+    {
+      "qCode": "ENV-18",
+      "domain": "Energy & Environment",
+      "subDomain": "Environmental Quality",
+      "indicator": "Climate adaptation measures",
+      "kpi": "ENV-18 — Climate adaptation measures",
+      "questionText": "Over the past three years, what measures has the household taken to reduce the effects of heat, drought, flooding or other climate hazards?",
+      "responseOptions": "Modifying the dwelling / Water storage / Changing crops / Insurance or saving / Using early warning / Relocating / None / Other — specify"
+    },
+    {
+      "qCode": "ENV-19",
+      "domain": "Energy & Environment",
+      "subDomain": "Environmental Awareness",
+      "indicator": "Waste sorting and recycling",
+      "kpi": "ENV-19 — Waste sorting / recycling",
+      "questionText": "In the past seven days, did the household separate any recyclable, organic or hazardous waste from general waste?",
+      "responseOptions": "Recyclable materials / Organic waste / Batteries or hazardous waste / No sorting / No waste generated"
+    },
+    {
+      "qCode": "LIV-01",
+      "domain": "Livelihood",
+      "subDomain": "Employment & Income",
+      "indicator": "Employment status",
+      "kpi": "LIV-01 — % of working-age people (15-64) employed or self-employed",
+      "questionText": "What is the current employment status of the household's main working-age members?",
+      "responseOptions": "Employed full time / Employed part time / Self-employed / Looking for work / Not looking for work / Unable to work"
+    },
+    {
+      "qCode": "LIV-02",
+      "domain": "Livelihood",
+      "subDomain": "Employment & Income",
+      "indicator": "Income adequacy",
+      "kpi": "LIV-02 — % of households whose income covers basic needs",
+      "questionText": "Does this household's income cover its basic needs (food, housing, health, education)?",
+      "responseOptions": "Covers comfortably / Barely covers / Does not cover"
+    },
+    {
+      "qCode": "LIV-03",
+      "domain": "Livelihood",
+      "subDomain": "Employment & Income",
+      "indicator": "Income stability",
+      "kpi": "LIV-03 — Months of income from the main source (stability)",
+      "questionText": "In how many of the past 12 months did the household receive income from its main source?",
+      "responseOptions": "Open numeric 0–12 months"
+    },
+    {
+      "qCode": "LIV-04",
+      "domain": "Livelihood",
+      "subDomain": "Employment & Income",
+      "indicator": "Income diversification",
+      "kpi": "LIV-04 — Number of distinct household income sources",
+      "questionText": "How many different income sources does this household currently rely on?",
+      "responseOptions": "One / Two / Three or more / None"
+    },
+    {
+      "qCode": "LIV-05",
+      "domain": "Livelihood",
+      "subDomain": "Agriculture & Primary Production",
+      "indicator": "Share of households relying on farming / livestock as their main livelihood",
+      "kpi": "—",
+      "questionText": "Are farming, livestock or fishing this household's main source of livelihood?",
+      "responseOptions": "Yes, a main source / Yes, a secondary source / No"
+    },
+    {
+      "qCode": "LIV-06",
+      "domain": "Livelihood",
+      "subDomain": "Agriculture & Primary Production",
+      "indicator": "Access to inputs and markets",
+      "kpi": "LIV-06 — Access to inputs and output markets",
+      "questionText": "Does this household have adequate access to agricultural inputs and to a market for selling its produce / livestock?",
+      "responseOptions": "Yes, both / Inputs only / Market only / Neither / Not applicable"
+    },
+    {
+      "qCode": "LIV-07",
+      "domain": "Livelihood",
+      "subDomain": "Agriculture & Primary Production",
+      "indicator": "Most frequently cited constraint on agricultural productivity",
+      "kpi": "—",
+      "questionText": "What is the biggest constraint limiting this household's crop / livestock productivity?",
+      "responseOptions": "Water / irrigation / Land area / Cost of inputs / Market access / Climate / weather / Lack of equipment / Lack of skills / Other"
+    },
+    {
+      "qCode": "LIV-08",
+      "domain": "Livelihood",
+      "subDomain": "Entrepreneurship",
+      "indicator": "Share of households running a small or micro enterprise",
+      "kpi": "—",
+      "questionText": "Does this household currently own or run a small or micro enterprise?",
+      "responseOptions": "Yes / No"
+    },
+    {
+      "qCode": "LIV-09",
+      "domain": "Livelihood",
+      "subDomain": "Entrepreneurship",
+      "indicator": "Share of non-operating households wishing to start a venture",
+      "kpi": "—",
+      "questionText": "If it does not currently run a venture, would household members like to start one?",
+      "responseOptions": "Yes, with a clear idea / Yes, without a clear idea / No interest / Not applicable"
+    },
+    {
+      "qCode": "LIV-10",
+      "domain": "Livelihood",
+      "subDomain": "Entrepreneurship",
+      "indicator": "Entrepreneurship barriers",
+      "kpi": "LIV-10 — Most frequently cited barrier to starting or growing a venture",
+      "questionText": "What is the main barrier preventing this household from starting or growing a venture?",
+      "responseOptions": "Lack of capital / Lack of skills / training / No market / Regulatory / licensing problems / No mentoring / Other"
+    },
+    {
+      "qCode": "LIV-11",
+      "domain": "Livelihood",
+      "subDomain": "Entrepreneurship",
+      "indicator": "Access to finance",
+      "kpi": "LIV-11 — Access to formal financial institutions",
+      "questionText": "Does this household have a bank account or access to formal bank credit when needed?",
+      "responseOptions": "Yes, easily / Yes, with difficulty / No access / Don't know"
+    },
+    {
+      "qCode": "LIV-12",
+      "domain": "Livelihood",
+      "subDomain": "Entrepreneurship",
+      "indicator": "Microfinance and alternative channels",
+      "kpi": "LIV-12 — Access to microfinance or cooperatives (alternative channel)",
+      "questionText": "Does this household have access to microfinance institutions or cooperatives when needed?",
+      "responseOptions": "Yes, easily / Yes, with difficulty / No access / Don't know"
+    },
+    {
+      "qCode": "LIV-13",
+      "domain": "Livelihood",
+      "subDomain": "Skills & Employability",
+      "indicator": "Holding a vocational skill",
+      "kpi": "LIV-13 — % of working-age members with a marketable vocational skill",
+      "questionText": "Do working-age household members hold any vocational or technical skill (carpentry, tailoring, maintenance trades)?",
+      "responseOptions": "Yes / No / Don't know"
+    },
+    {
+      "qCode": "LIV-14",
+      "domain": "Livelihood",
+      "subDomain": "Skills & Employability",
+      "indicator": "Training participation",
+      "kpi": "LIV-14 — Participation in a training programme (past two years)",
+      "questionText": "Has any working-age household member taken part in a job or skills training programme in the past two years?",
+      "responseOptions": "Yes / No"
+    },
+    {
+      "qCode": "LIV-15",
+      "domain": "Livelihood",
+      "subDomain": "Women's Economic Empowerment",
+      "indicator": "Women's labour force participation",
+      "kpi": "LIV-15 — % of women employed or seeking work",
+      "questionText": "Are the women in this household employed, self-employed or actively looking for paid work?",
+      "responseOptions": "Yes / No, by their own choice / No, because of barriers / Not applicable"
+    },
+    {
+      "qCode": "LIV-16",
+      "domain": "Livelihood",
+      "subDomain": "Women's Economic Empowerment",
+      "indicator": "Barriers to women's employment",
+      "kpi": "LIV-16 — Main barrier to women's economic participation",
+      "questionText": "If the women in this household face barriers to working, what is the main barrier?",
+      "responseOptions": "Childcare / household burdens / Cultural / social norms / No nearby opportunities / Transport / Lack of skills / Not applicable"
+    },
+    {
+      "qCode": "LIV-17",
+      "domain": "Livelihood",
+      "subDomain": "Women's Economic Empowerment",
+      "indicator": "Control over income",
+      "kpi": "LIV-17 — Women's control over the income they earn",
+      "questionText": "If the women in this household earn an income, do they have authority over how it is spent or saved?",
+      "responseOptions": "Full control / Joint decision / Limited control / Not applicable"
+    },
+    {
+      "qCode": "LIV-18",
+      "domain": "Livelihood",
+      "subDomain": "Entrepreneurship",
+      "indicator": "Entrepreneurship barriers",
+      "kpi": "LIV-10 — Most frequently cited barrier to starting or growing a venture (enrichment dimension: the attempt and outcome behind the perceived barrier)",
+      "questionText": "Has any member of this household tried to start or expand an income-generating activity in the past three years?",
+      "responseOptions": "Yes, and it succeeded / Yes, but it failed / Considered it but did not try / No"
+    },
+    {
+      "qCode": "LIV-19",
+      "domain": "Livelihood",
+      "subDomain": "Livelihood",
+      "indicator": "Food security (FIES)",
+      "kpi": "LIV-19 — FIES worry item",
+      "questionText": "In the past 12 months, was there a time when you were worried you would not have enough food because of a lack of money or resources?",
+      "responseOptions": "Yes / No / Don't know / Prefer not to answer"
+    },
+    {
+      "qCode": "LIV-20",
+      "domain": "Livelihood",
+      "subDomain": "Livelihood",
+      "indicator": "Youth not in education, employment or training (NEET)",
+      "kpi": "LIV-20 — NEET indicator",
+      "questionText": "Are there young people (15–24) in this household who are not currently in education, employment or training?",
+      "responseOptions": "No / Yes, one / Yes, more than one"
+    },
+    {
+      "qCode": "LIV-21",
+      "domain": "Livelihood",
+      "subDomain": "Employment & Income",
+      "indicator": "Household income band",
+      "kpi": "LIV-21 — Household income band",
+      "questionText": "What was the household's approximate total income from all sources in a typical month over the past three months?",
+      "responseOptions": "Less than SAR 5,000 / More than SAR 5,000 / No income / Irregular — cannot be estimated / Prefer not to answer"
+    },
+    {
+      "qCode": "LIV-22",
+      "domain": "Livelihood",
+      "subDomain": "Employment & Income",
+      "indicator": "Essential expenditure band",
+      "kpi": "—",
+      "questionText": "Approximately how much did the household spend in the past 30 days on food, housing, utilities, transport, health and education?",
+      "responseOptions": "Open numeric or locally calibrated SAR bands by category / Prefer not to answer"
+    },
+    {
+      "qCode": "LIV-23",
+      "domain": "Livelihood",
+      "subDomain": "Employment & Income",
+      "indicator": "Debt and arrears",
+      "kpi": "LIV-23 — Debt and arrears",
+      "questionText": "In the past three months, was the household unable to pay any rent, loan, utility bill or other essential obligation on time?",
+      "responseOptions": "Rent / Loan / Electricity or water bill / School cost / Medical bill / None / Prefer not to answer"
+    },
+    {
+      "qCode": "LIV-24",
+      "domain": "Livelihood",
+      "subDomain": "Employment & Income",
+      "indicator": "Economic shocks and coping mechanisms",
+      "kpi": "LIV-24 — Economic shocks and coping mechanisms",
+      "questionText": "In the past 12 months, did the household experience a job loss, business loss, crop / livestock loss, serious illness or other income shock, and how did it cope?",
+      "responseOptions": "Shock types;coping: Savings / Borrowing / Selling assets / Cutting back on food or essentials / External support / No coping mechanism was needed / Other — specify"
+    },
+    {
+      "qCode": "LIV-25",
+      "domain": "Livelihood",
+      "subDomain": "Employment & Income",
+      "indicator": "Job quality (decent work)",
+      "kpi": "LIV-25 — Job quality",
+      "questionText": "For each working member: does their main job provide a written contract, regular pay, safe conditions and social insurance coverage?",
+      "responseOptions": "Yes / No / Don't know / Prefer not to answer — for each dimension"
+    },
+    {
+      "qCode": "LIV-26",
+      "domain": "Livelihood",
+      "subDomain": "Employment & Income",
+      "indicator": "Labour migration and remittances",
+      "kpi": "—",
+      "questionText": "In the past 12 months, did any household member migrate for work, or did the household receive or send remittances?",
+      "responseOptions": "Labour migration / Receiving remittances / Sending remittances / None / Prefer not to answer; frequency and approximate amount bands recorded"
+    },
+    {
+      "qCode": "LIV-27",
+      "domain": "Livelihood",
+      "subDomain": "Entrepreneurship",
+      "indicator": "Household enterprise performance",
+      "kpi": "LIV-27 — Enterprise performance",
+      "questionText": "For each active household enterprise: compared with 12 months ago, have sales, profits and the number of workers increased, stayed the same, or decreased?",
+      "responseOptions": "Increased / Unchanged / Decreased / The venture started less than 12 months ago / Don't know"
+    },
+    {
+      "qCode": "INF-01",
+      "domain": "Infrastructure",
+      "subDomain": "Roads & Transport",
+      "indicator": "Road connectivity quality",
+      "kpi": "INF-01 — % of villages connected by a paved or all-weather road",
+      "questionText": "Is this village connected to the main road network by a paved or all-weather road?",
+      "responseOptions": "Yes, paved / Yes, graded / unpaved but passable / No, often impassable"
+    },
+    {
+      "qCode": "INF-02",
+      "domain": "Infrastructure",
+      "subDomain": "Roads & Transport",
+      "indicator": "Public transport availability",
+      "kpi": "INF-02 — % of households with access to regular public / shared transport",
+      "questionText": "Is there regular public or shared transport linking this village to neighbouring cities / towns?",
+      "responseOptions": "Yes, daily / Yes, on a limited schedule / No regular service"
+    },
+    {
+      "qCode": "INF-03",
+      "domain": "Infrastructure",
+      "subDomain": "Roads & Transport",
+      "indicator": "Seasonal accessibility",
+      "kpi": "INF-03 — % of the year the village is fully accessible by road",
+      "questionText": "Are there times of year (such as the rainy season) when this village is difficult or impossible to reach by road?",
+      "responseOptions": "Access is always available / Sometimes difficult / Often impassable"
+    },
+    {
+      "qCode": "INF-04",
+      "domain": "Infrastructure",
+      "subDomain": "Roads & Transport",
+      "indicator": "Cause of seasonal inaccessibility",
+      "kpi": "—",
+      "questionText": "If yes, what is the main reason the road becomes difficult or impassable?",
+      "responseOptions": "Flooding / Storms / Road damage / Other — specify"
+    },
+    {
+      "qCode": "INF-05",
+      "domain": "Infrastructure",
+      "subDomain": "Digital Connectivity",
+      "indicator": "Mobile network coverage",
+      "kpi": "INF-05 — % of households with reliable mobile coverage",
+      "questionText": "Is mobile network coverage reliable at this household's location?",
+      "responseOptions": "Yes, strong signal / Weak / intermittent signal / No coverage"
+    },
+    {
+      "qCode": "INF-06",
+      "domain": "Infrastructure",
+      "subDomain": "Digital Connectivity",
+      "indicator": "Internet access",
+      "kpi": "INF-06 — Internet availability and reliability (consolidated item)",
+      "questionText": "Does this household have working internet (mobile data or a fixed connection), and how would you describe its quality when needed?",
+      "responseOptions": "Good and stable / Usable with interruptions / Very poor / No connection"
+    },
+    {
+      "qCode": "INF-07",
+      "domain": "Infrastructure",
+      "subDomain": "Digital Connectivity",
+      "indicator": "Digital literacy",
+      "kpi": "INF-07 — % of individuals able to perform basic digital tasks",
+      "questionText": "Can members of this household use a smartphone or the internet for basic tasks (messaging, browsing, banking)?",
+      "responseOptions": "Yes, most members / Some members / No members"
+    },
+    {
+      "qCode": "INF-08",
+      "domain": "Infrastructure",
+      "subDomain": "Housing & Built Environment",
+      "indicator": "Housing adequacy",
+      "kpi": "INF-08 — % of households in structurally sound dwellings",
+      "questionText": "Is the household's dwelling structurally sound (intact roof and walls, protection from the weather)?",
+      "responseOptions": "Yes, fully adequate / Partly adequate / Inadequate"
+    },
+    {
+      "qCode": "INF-09",
+      "domain": "Infrastructure",
+      "subDomain": "Housing & Built Environment",
+      "indicator": "Housing overcrowding",
+      "kpi": "INF-09 — Overcrowding (people per bedroom, calculated)",
+      "questionText": "How many separate bedrooms does the household use?",
+      "responseOptions": "Open numeric (rooms)"
+    },
+    {
+      "qCode": "INF-10",
+      "domain": "Infrastructure",
+      "subDomain": "Public & Community Facilities",
+      "indicator": "Market access",
+      "kpi": "INF-10 — % of households within a reasonable distance of a functioning market",
+      "questionText": "Is there a functioning market (for buying and selling) within a reasonable distance of this village?",
+      "responseOptions": "Yes, within the village / Yes, nearby (under 10 km) / No, far (over 10 km)"
+    },
+    {
+      "qCode": "INF-11",
+      "domain": "Infrastructure",
+      "subDomain": "Public & Community Facilities",
+      "indicator": "Community gathering place",
+      "kpi": "INF-11 — Availability of a functioning community centre or gathering place",
+      "questionText": "Does this village have a functioning community centre, public square or gathering place?",
+      "responseOptions": "Yes, well maintained / Yes, poorly maintained / No"
+    },
+    {
+      "qCode": "INF-12",
+      "domain": "Infrastructure",
+      "subDomain": "Digital Connectivity",
+      "indicator": "Internet access",
+      "kpi": "INF-06 — Internet availability and reliability (consolidated item) (enrichment dimension: internet / data spending — affordability, objective)",
+      "questionText": "Approximately how much did this household spend on internet or mobile data in the past 30 days?",
+      "responseOptions": "Open numeric (SAR) / Prefer not to answer"
+    },
+    {
+      "qCode": "INF-13",
+      "domain": "Infrastructure",
+      "subDomain": "Digital Connectivity",
+      "indicator": "Internet access",
+      "kpi": "INF-06 — Internet availability and reliability (consolidated item) (enrichment dimension: reduced usage or disconnection because of cost)",
+      "questionText": "In the past three months, did cost lead the household to reduce its internet use or disconnect it?",
+      "responseOptions": "No / Reduced usage / Temporary disconnection / No access because of cost / Prefer not to answer"
+    },
+    {
+      "qCode": "INF-14",
+      "domain": "Infrastructure",
+      "subDomain": "Housing & Built Environment",
+      "indicator": "Housing overcrowding",
+      "kpi": "INF-09 — Overcrowding (people per bedroom, calculated) (enrichment dimension: structural problems in the dwelling)",
+      "questionText": "Does the dwelling have structural problems (roof leaks, cracked walls, poor ventilation)?",
+      "responseOptions": "Roof / Walls / Ventilation / Damp / None"
+    },
+    {
+      "qCode": "INF-15",
+      "domain": "Infrastructure",
+      "subDomain": "Public & Community Facilities",
+      "indicator": "Market access",
+      "kpi": "INF-10 — % of households within a reasonable distance of a functioning market (enrichment dimension: market use versus availability)",
+      "questionText": "How often does this household actually shop at that market?",
+      "responseOptions": "Weekly or more often / Monthly / Rarely / Never"
+    },
+    {
+      "qCode": "INF-16",
+      "domain": "Infrastructure",
+      "subDomain": "Public & Community Facilities",
+      "indicator": "Market access",
+      "kpi": "INF-10 — % of households within a reasonable distance of a functioning market (enrichment dimension: market adequacy and prices)",
+      "questionText": "Does the market supply the household's basic needs at acceptable prices?",
+      "responseOptions": "Yes / Partly / No / Don't know"
+    },
+    {
+      "qCode": "INF-17",
+      "domain": "Infrastructure",
+      "subDomain": "Digital Connectivity",
+      "indicator": "Mobile network coverage",
+      "kpi": "INF-05 — % of households with reliable mobile coverage (enrichment dimension: network resilience in emergencies)",
+      "questionText": "During emergencies or storms, does the mobile network remain usable?",
+      "responseOptions": "Yes / Sometimes fails / Usually fails / Don't know"
+    },
+    {
+      "qCode": "INF-18",
+      "domain": "Infrastructure",
+      "subDomain": "Digital Connectivity",
+      "indicator": "Mobile network coverage",
+      "kpi": "INF-05 — % of households with reliable mobile coverage (enrichment dimension: spatial coverage gaps)",
+      "questionText": "Are there known no-coverage spots inside the village or on the road leading to it?",
+      "responseOptions": "None / Few / Many / Most of the area"
+    },
+    {
+      "qCode": "INF-19",
+      "domain": "Infrastructure",
+      "subDomain": "Infrastructure",
+      "indicator": "Security of housing tenure",
+      "kpi": "INF-19 — Housing and built environment (security of tenure)",
+      "questionText": "Does this household own its dwelling, rent it, or occupy it without a formal arrangement?",
+      "responseOptions": "Owned / Rented (formal) / Provided by relatives-employer / No formal arrangement"
+    },
+    {
+      "qCode": "INF-20",
+      "domain": "Infrastructure",
+      "subDomain": "Public & Community Facilities",
+      "indicator": "Street and pathway lighting",
+      "kpi": "INF-20 — Street lighting",
+      "questionText": "At night, is the usual route from this dwelling to the village centre or main road adequately lit?",
+      "responseOptions": "Fully lit / Partly lit / Unlit / No such route exists / Don't know"
+    },
+    {
+      "qCode": "INF-21",
+      "domain": "Infrastructure",
+      "subDomain": "Housing & Built Environment",
+      "indicator": "Stormwater drainage",
+      "kpi": "INF-21 — Stormwater drainage",
+      "questionText": "During the last heavy rain, did water enter the dwelling or block access to it because of inadequate drainage?",
+      "responseOptions": "No heavy rain occurred / No impact / The dwelling became unreachable / Water entered the dwelling / Both / Don't know"
+    },
+    {
+      "qCode": "INF-22",
+      "domain": "Infrastructure",
+      "subDomain": "Roads & Transport",
+      "indicator": "Service access-time matrix",
+      "kpi": "INF-22 — Access-time matrix for essential services",
+      "questionText": "Using the usual means of travel, how many minutes one way does it take to reach the nearest health facility, school, market, government service point and public transport stop?",
+      "responseOptions": "Open numeric minutes per service / Service not available / Don't know"
+    },
+    {
+      "qCode": "INF-23",
+      "domain": "Infrastructure",
+      "subDomain": "Roads & Transport",
+      "indicator": "Transport affordability",
+      "kpi": "INF-23 — Transport affordability",
+      "questionText": "In the past 30 days, did transport costs prevent any household member from reaching work, education, health care or a government service?",
+      "responseOptions": "Work / Education / Health care / Government service / Market / None / Prefer not to answer"
+    },
+    {
+      "qCode": "INF-24",
+      "domain": "Infrastructure",
+      "subDomain": "Digital Connectivity",
+      "indicator": "Access to digital devices",
+      "kpi": "INF-24 — Access to digital devices",
+      "questionText": "For each person aged 10 and over: does that person have regular access to a working smartphone, computer or tablet?",
+      "responseOptions": "Personal device / Shared household device / Borrowed device or public access / No regular access"
+    },
+    {
+      "qCode": "INF-25",
+      "domain": "Infrastructure",
+      "subDomain": "Housing & Built Environment",
+      "indicator": "Basic dwelling services",
+      "kpi": "INF-25 — Basic dwelling services checklist",
+      "questionText": "Does the dwelling have working electricity, safe water, sanitation, drainage and a secure door or lock?",
+      "responseOptions": "Functioning / Partly functioning / Not functioning / Not present — for each dimension"
+    },
+    {
+      "qCode": "SOC-01",
+      "domain": "Social Development",
+      "subDomain": "Safety & Social Security",
+      "indicator": "Perceived personal safety",
+      "kpi": "SOC-01 — % of households feeling safe by day and by night",
+      "questionText": "How safe do members of this household feel walking in this village by day and by night?",
+      "responseOptions": "Very unsafe / Unsafe / Neutral / Safe / Very safe"
+    },
+    {
+      "qCode": "SOC-02",
+      "domain": "Social Development",
+      "subDomain": "Safety & Social Security",
+      "indicator": "Access to social protection",
+      "kpi": "SOC-02 — Receipt of formal social protection (past 12 months)",
+      "questionText": "In the past 12 months, did any household member receive support from a government or formal social protection programme?",
+      "responseOptions": "Yes / No, despite being eligible / No, not eligible / Does not know about eligibility"
+    },
+    {
+      "qCode": "SOC-03",
+      "domain": "Social Development",
+      "subDomain": "Vulnerable Groups",
+      "indicator": "Older people's access to care",
+      "kpi": "SOC-03 — % of older people with access to adequate care",
+      "questionText": "Do the older people in this household have access to adequate care, support or social services?",
+      "responseOptions": "Yes / Partly / No / Not applicable"
+    },
+    {
+      "qCode": "SOC-04",
+      "domain": "Social Development",
+      "subDomain": "Vulnerable Groups",
+      "indicator": "Inclusion of people with disabilities",
+      "kpi": "SOC-04 — % of public facilities accessible to people with disabilities",
+      "questionText": "Are the public facilities in this village (schools, health centres, public buildings) accessible to people with disabilities?",
+      "responseOptions": "Yes, mostly / Partly / Not accessible / No people with disabilities in the household"
+    },
+    {
+      "qCode": "SOC-05",
+      "domain": "Social Development",
+      "subDomain": "Vulnerable Groups",
+      "indicator": "Disability prevalence (Washington Group functional domains)",
+      "kpi": "—",
+      "questionText": "Does any household member have difficulty seeing, hearing, walking or climbing steps, remembering or concentrating, with self-care, or with communicating?",
+      "responseOptions": "Yes / No"
+    },
+    {
+      "qCode": "SOC-06",
+      "domain": "Social Development",
+      "subDomain": "Child & Youth Protection",
+      "indicator": "Child protection awareness",
+      "kpi": "SOC-06 — Awareness of channels for reporting child abuse",
+      "questionText": "Do you know how or where to report a case of child abuse or neglect in this area?",
+      "responseOptions": "Yes / No / Not sure / Prefer not to answer"
+    },
+    {
+      "qCode": "SOC-07",
+      "domain": "Social Development",
+      "subDomain": "Child & Youth Protection",
+      "indicator": "Youth civic participation",
+      "kpi": "SOC-07 — Youth participation in civic / voluntary activities",
+      "questionText": "For each young person aged 15–24: in the past 12 months, did they take part in any voluntary, community or civic activity, or a youth group?",
+      "responseOptions": "Yes / No"
+    },
+    {
+      "qCode": "SOC-08",
+      "domain": "Social Development",
+      "subDomain": "Child & Youth Protection",
+      "indicator": "Prevalence of child marriage",
+      "kpi": "SOC-08 — % of households with a member who married before 18",
+      "questionText": "Did any member of this household marry before the age of eighteen?",
+      "responseOptions": "Yes / No / Prefer not to answer"
+    },
+    {
+      "qCode": "SOC-09",
+      "domain": "Social Development",
+      "subDomain": "Social Cohesion",
+      "indicator": "Sense of community belonging",
+      "kpi": "SOC-09 — % of households with a strong sense of belonging / trust",
+      "questionText": "How strong is your household's sense of belonging and trust within this village community?",
+      "responseOptions": "Very poor / Weak / Moderate / Strong / Very strong"
+    },
+    {
+      "qCode": "SOC-10",
+      "domain": "Social Development",
+      "subDomain": "Social Cohesion",
+      "indicator": "Incidence of disputes",
+      "kpi": "SOC-10 — % of households reporting an unresolved dispute (past year)",
+      "questionText": "Has this household been party to, or affected by, a community, land or resource dispute that remained unresolved over the past year?",
+      "responseOptions": "Yes / No"
+    },
+    {
+      "qCode": "SOC-11",
+      "domain": "Social Development",
+      "subDomain": "Social Cohesion",
+      "indicator": "Collective action capacity",
+      "kpi": "SOC-11 — % of villages with an active community group",
+      "questionText": "Is there an active community group or committee in this village that addresses local needs?",
+      "responseOptions": "Yes, active / Exists but is inactive / None"
+    },
+    {
+      "qCode": "SOC-12",
+      "domain": "Social Development",
+      "subDomain": "Vulnerable Groups",
+      "indicator": "Inclusion of people with disabilities",
+      "kpi": "SOC-04 — % of public facilities accessible to people with disabilities (enrichment dimension: lived experience of accessibility)",
+      "questionText": "Does any household member with a disability have difficulty using the village's public facilities?",
+      "responseOptions": "No difficulty / Some of them / Severe / Cannot be used at all"
+    },
+    {
+      "qCode": "SOC-13",
+      "domain": "Social Development",
+      "subDomain": "Vulnerable Groups",
+      "indicator": "Inclusion of people with disabilities",
+      "kpi": "SOC-04 — % of public facilities accessible to people with disabilities (enrichment dimension: verifiable accessibility features)",
+      "questionText": "Which accessibility features are present at the facilities you use? (ramps, accessible toilets, signage)",
+      "responseOptions": "Ramps / Accessible toilets / Signage / None"
+    },
+    {
+      "qCode": "SOC-14",
+      "domain": "Social Development",
+      "subDomain": "Social Cohesion",
+      "indicator": "Social isolation",
+      "kpi": "SOC-14 — Social isolation",
+      "questionText": "In the past four weeks, how often did you feel isolated or that there was no one to turn to for help?",
+      "responseOptions": "Never / Rarely / Sometimes / Often / Always / Prefer not to answer"
+    },
+    {
+      "qCode": "SOC-15",
+      "domain": "Social Development",
+      "subDomain": "Vulnerable Groups",
+      "indicator": "Caregiver burden",
+      "kpi": "SOC-15 — Caregiver burden",
+      "questionText": "For the primary unpaid caregiver: in the past four weeks, how often did caring responsibilities prevent you from working, studying, resting or seeking health care?",
+      "responseOptions": "Never / Rarely / Sometimes / Often / Always / Prefer not to answer"
+    },
+    {
+      "qCode": "SOC-16",
+      "domain": "Social Development",
+      "subDomain": "Vulnerable Groups",
+      "indicator": "Discrimination and exclusion",
+      "kpi": "SOC-16 — Discrimination and exclusion",
+      "questionText": "In the past 12 months, did you personally feel excluded or unfairly treated when trying to use a public service or take part in community life?",
+      "responseOptions": "No / Yes — once / Yes — more than once / Prefer not to answer"
+    },
+    {
+      "qCode": "SOC-17",
+      "domain": "Social Development",
+      "subDomain": "Safety & Social Security",
+      "indicator": "Awareness of domestic violence support channels",
+      "kpi": "SOC-17 — Awareness of support channels (domestic / gender-based violence)",
+      "questionText": "Do you know of a confidential service or hotline for someone experiencing domestic or gender-based violence?",
+      "responseOptions": "Yes / No / Not sure / Prefer not to answer"
+    },
+    {
+      "qCode": "SOC-18",
+      "domain": "Social Development",
+      "subDomain": "Vulnerable Groups",
+      "indicator": "Social participation of older people",
+      "kpi": "SOC-18 — Social participation of older people",
+      "questionText": "For each older person: in the past 30 days, did they take part in any family, community, religious or social activity beyond usual household tasks?",
+      "responseOptions": "Weekly or more often / 1–3 times / None / Unable for health or accessibility reasons / Prefer not to answer"
+    },
+    {
+      "qCode": "SOC-19",
+      "domain": "Social Development",
+      "subDomain": "Child & Youth Protection",
+      "indicator": "Youth aspirations and their barriers",
+      "kpi": "—",
+      "questionText": "For each young person aged 15–24: what is the main educational, employment or entrepreneurial goal you want to achieve in the next two years, and what is the main barrier?",
+      "responseOptions": "Goal: Education / A job / A business / Skills / Migration / Other; plus barrier list"
+    },
+    {
+      "qCode": "CUL-01",
+      "domain": "Culture",
+      "subDomain": "Cultural Heritage",
+      "indicator": "Presence of heritage assets",
+      "kpi": "CUL-01 — % of villages with identified tangible or intangible heritage assets",
+      "questionText": "Does this village have cultural heritage sites, crafts or traditions that are actively recognised or safeguarded?",
+      "responseOptions": "Yes, actively maintained / Exists but undocumented / at risk / Nothing identified"
+    },
+    {
+      "qCode": "CUL-02",
+      "domain": "Culture",
+      "subDomain": "Cultural Heritage",
+      "indicator": "Heritage risk status",
+      "kpi": "CUL-02 — Perceived risk of losing cultural practices or sites",
+      "questionText": "Do you feel that local traditions, crafts or heritage sites are at risk of being lost within the next generation?",
+      "responseOptions": "High risk / Medium risk / Low risk / Don't know"
+    },
+    {
+      "qCode": "CUL-03",
+      "domain": "Culture",
+      "subDomain": "Cultural Programmes & Participation",
+      "indicator": "Programme availability",
+      "kpi": "CUL-03 — Awareness of accessible cultural, arts or heritage programmes",
+      "questionText": "Do you know of any cultural, arts or heritage programme or event reachable from this household within about 60 minutes?",
+      "responseOptions": "Yes / No / Don't know"
+    },
+    {
+      "qCode": "CUL-04",
+      "domain": "Culture",
+      "subDomain": "Cultural Programmes & Participation",
+      "indicator": "Participation rate",
+      "kpi": "CUL-04 — Frequency of participation (past 12 months)",
+      "questionText": "Has any member of this household taken part in a local cultural, heritage or arts activity in the past 12 months?",
+      "responseOptions": "Yes, more than once / Yes, once / No"
+    },
+    {
+      "qCode": "CUL-05",
+      "domain": "Culture",
+      "subDomain": "Community Identity",
+      "indicator": "Cultural pride",
+      "kpi": "CUL-05 — Personal pride in local cultural identity / heritage",
+      "questionText": "How proud do you personally feel of the cultural identity and heritage associated with this village?",
+      "responseOptions": "Not proud at all / Slightly proud / Moderately proud / Proud / Very proud"
+    },
+    {
+      "qCode": "CUL-06",
+      "domain": "Culture",
+      "subDomain": "Community Identity",
+      "indicator": "Intergenerational transmission",
+      "kpi": "CUL-06 — Transmission of traditional skills / knowledge to younger generations",
+      "questionText": "Are traditional skills, crafts or knowledge actively being taught to younger generations in this household / community?",
+      "responseOptions": "Yes, actively / To some extent / Does not happen"
+    },
+    {
+      "qCode": "CUL-07",
+      "domain": "Culture",
+      "subDomain": "Cultural Programmes & Participation",
+      "indicator": "Programme availability",
+      "kpi": "CUL-03 — Awareness of accessible cultural, arts or heritage programmes (enrichment dimension: availability of premises — structural)",
+      "questionText": "Does the village have suitable premises for cultural / community activities?",
+      "responseOptions": "Yes, suitable / Yes, limited / No / Don't know"
+    },
+    {
+      "qCode": "CUL-08",
+      "domain": "Culture",
+      "subDomain": "Culture",
+      "indicator": "Documentation of intangible heritage",
+      "kpi": "CUL-08 — Documentation of intangible heritage",
+      "questionText": "Has any of this village's intangible cultural heritage been formally documented or archived (oral history, traditional practices, local dialect)?",
+      "responseOptions": "Yes, fully / Partly / No / Don't know"
+    },
+    {
+      "qCode": "CUL-09",
+      "domain": "Culture",
+      "subDomain": "Community Identity",
+      "indicator": "Transmission of language and oral history",
+      "kpi": "CUL-09 — Transmission of language and oral history",
+      "questionText": "How often do younger household members use the local dialect, stories or oral traditions with older generations?",
+      "responseOptions": "Daily / Weekly / Monthly / Rarely / Never / Not applicable"
+    },
+    {
+      "qCode": "CUL-10",
+      "domain": "Culture",
+      "subDomain": "Cultural Programmes & Participation",
+      "indicator": "Youth cultural interest",
+      "kpi": "CUL-10 — Youth cultural interest",
+      "questionText": "For young people aged 15–24: how interested are you in learning or practising a local craft, tradition, dialect or heritage activity?",
+      "responseOptions": "Not at all / Slightly / Moderately / Very / Extremely interested"
+    },
+    {
+      "qCode": "CUL-11",
+      "domain": "Culture",
+      "subDomain": "Cultural Heritage",
+      "indicator": "Support needs of heritage bearers",
+      "kpi": "—",
+      "questionText": "For identified cultural heritage bearers: what support is most needed to safeguard or transmit this cultural asset?",
+      "responseOptions": "Documentation / Training apprentices / Premises / hall / Funding / Raw materials / Legal recognition / Marketing / Digital archiving / Other — specify"
+    },
+    {
+      "qCode": "CUL-12",
+      "domain": "Culture",
+      "subDomain": "Cultural Programmes & Participation",
+      "indicator": "Barriers to cultural participation",
+      "kpi": "—",
+      "questionText": "For non-participants: what prevents you from taking part in cultural or heritage activities?",
+      "responseOptions": "No programme / Timing / Cost / Transport / Lack of information / Difficulty getting there / Not relevant or not interested / Family restrictions / Other — specify"
+    },
+    {
+      "qCode": "CUL-13",
+      "domain": "Culture",
+      "subDomain": "Cultural Heritage",
+      "indicator": "Heritage livelihood economy",
+      "kpi": "CUL-13 — Livelihood potential of heritage",
+      "questionText": "In the past 12 months, did any household member earn income from a local craft, heritage product, cultural event or heritage-related tourism?",
+      "responseOptions": "Yes — regularly / Yes — sometimes / No / Prefer not to answer; activity type recorded"
+    },
+    {
+      "qCode": "GOV-01",
+      "domain": "Governance & Services",
+      "subDomain": "Government Service Access",
+      "indicator": "Ease of reaching service centres",
+      "kpi": "GOV-01 — % of households reporting easy access to service centres",
+      "questionText": "How easily can this household reach government service centres (civil affairs, licensing and the like) when needed?",
+      "responseOptions": "Very difficult / Difficult / Moderate / Easy / Very easy"
+    },
+    {
+      "qCode": "GOV-02",
+      "domain": "Governance & Services",
+      "subDomain": "Government Service Access",
+      "indicator": "Completeness of civil documents",
+      "kpi": "GOV-02 — % of individuals with complete civil documents",
+      "questionText": "Do all members of this household hold complete civil documents (national ID, birth certificate and the like)?",
+      "responseOptions": "Yes, everyone / Some are missing / Don't know"
+    },
+    {
+      "qCode": "GOV-03",
+      "domain": "Governance & Services",
+      "subDomain": "Digital Government",
+      "indicator": "E-government usage",
+      "kpi": "GOV-03 — % of households that used an e-government service (past 6 months)",
+      "questionText": "Has this household used any digital government service (online applications, digital identity platforms) in the past six months?",
+      "responseOptions": "Yes / No, but is aware / No, unaware of the options"
+    },
+    {
+      "qCode": "GOV-04",
+      "domain": "Governance & Services",
+      "subDomain": "Digital Government",
+      "indicator": "Satisfaction with digital services",
+      "kpi": "GOV-04 — % of households satisfied with the e-services they used",
+      "questionText": "If used, how satisfied were you with the e-government service experience?",
+      "responseOptions": "Very dissatisfied / Dissatisfied / Neutral / Satisfied / Very satisfied / Not applicable"
+    },
+    {
+      "qCode": "GOV-05",
+      "domain": "Governance & Services",
+      "subDomain": "Community Participation",
+      "indicator": "Participation in local governance",
+      "kpi": "GOV-05 — % of adults participating in a local committee, council or association",
+      "questionText": "Do adults from this household take part in any local committee, council or community association?",
+      "responseOptions": "Yes, actively / Sometimes / No"
+    },
+    {
+      "qCode": "GOV-06",
+      "domain": "Governance & Services",
+      "subDomain": "Community Participation",
+      "indicator": "Voice in local decision-making",
+      "kpi": "GOV-06 — Perceived ability of residents to influence decisions",
+      "questionText": "Do the residents of this village feel they have a real opportunity to influence decisions that affect the village?",
+      "responseOptions": "No influence at all / Limited influence / Moderate influence / Strong influence / Very strong influence"
+    },
+    {
+      "qCode": "GOV-07",
+      "domain": "Governance & Services",
+      "subDomain": "Accountability & Trust",
+      "indicator": "Trust in local institutions",
+      "kpi": "GOV-07 — Level of trust in local governance / administrative bodies",
+      "questionText": "How much do you trust the local administrative or governance bodies serving this village?",
+      "responseOptions": "No trust / Low trust / Moderate trust / High trust / Very high trust"
+    },
+    {
+      "qCode": "GOV-08",
+      "domain": "Governance & Services",
+      "subDomain": "Accountability & Trust",
+      "indicator": "Awareness of grievance channels",
+      "kpi": "GOV-08 — Awareness of the complaints / grievance channel",
+      "questionText": "Do you know how and where to submit a service request, complaint or grievance about public services to the responsible local body?",
+      "responseOptions": "Yes / Approximately / No"
+    },
+    {
+      "qCode": "GOV-09",
+      "domain": "Governance & Services",
+      "subDomain": "Accountability & Trust",
+      "indicator": "Naming a complaint channel (verification)",
+      "kpi": "—",
+      "questionText": "If yes, which channel would you use?",
+      "responseOptions": "Municipality office / National reporting platform / app / Hotline / Local council / village mayor / Other — specify / Cannot name a channel"
+    },
+    {
+      "qCode": "GOV-10",
+      "domain": "Governance & Services",
+      "subDomain": "Accountability & Trust",
+      "indicator": "Trust in local institutions",
+      "kpi": "GOV-07 — Level of trust in local governance / administrative bodies (enrichment dimension: responsiveness as experienced)",
+      "questionText": "In the past 12 months, did the household submit any request or complaint to a local body, and what was the outcome?",
+      "responseOptions": "Resolved / In progress / Ignored / No request was submitted"
+    },
+    {
+      "qCode": "GOV-11",
+      "domain": "Governance & Services",
+      "subDomain": "Governance & Services",
+      "indicator": "Awareness of non-profit organisations",
+      "kpi": "GOV-11 — Awareness",
+      "questionText": "Do you know of non-profit organisations (charities, associations, cooperatives) providing services in or near this village?",
+      "responseOptions": "Yes, several organisations / Yes, one or two / None / Don't know"
+    },
+    {
+      "qCode": "GOV-12",
+      "domain": "Governance & Services",
+      "subDomain": "Governance & Services",
+      "indicator": "Access to non-profit sector services",
+      "kpi": "GOV-12 — Uptake",
+      "questionText": "Has this household received any service or support from a non-profit organisation in the past 12 months?",
+      "responseOptions": "Yes / No, but knows how to reach them / No, and does not know how to reach them / Don't know"
+    },
+    {
+      "qCode": "GOV-13",
+      "domain": "Governance & Services",
+      "subDomain": "Governance & Services",
+      "indicator": "Formal local representation",
+      "kpi": "GOV-13 — Local representation structure",
+      "questionText": "Does this village have a formally recognised representative body (village council, village mayor's office or similar) that raises community needs with governorate or regional authorities?",
+      "responseOptions": "Yes, active / Yes, but not effective / No / Don't know"
+    },
+    {
+      "qCode": "GOV-14",
+      "domain": "Governance & Services",
+      "subDomain": "Accountability & Trust",
+      "indicator": "Access to public information",
+      "kpi": "GOV-14 — Access to public information",
+      "questionText": "In the past 12 months, did you receive clear and timely information about any public service, eligibility requirement, project or local decision affecting your household?",
+      "responseOptions": "Always / Usually / Sometimes / Never / No relevant information was needed; information-source list recorded"
+    },
+    {
+      "qCode": "GOV-15",
+      "domain": "Governance & Services",
+      "subDomain": "Community Participation",
+      "indicator": "Consultation feedback loop",
+      "kpi": "GOV-15 — Consultation feedback loop",
+      "questionText": "For those who took part in a consultation: were you subsequently told how community input was taken into account, or what was decided?",
+      "responseOptions": "Yes, clearly / Partly / No / The decision has not yet been taken / Don't know"
+    },
+    {
+      "qCode": "GOV-16",
+      "domain": "Governance & Services",
+      "subDomain": "Government Service Access",
+      "indicator": "Transaction turnaround time",
+      "kpi": "GOV-16 — Service turnaround time",
+      "questionText": "For the most recent priority government transaction: how many calendar days elapsed from the first request to completion or the last response?",
+      "responseOptions": "Open numeric days / Still pending / No response / Don't know"
+    },
+    {
+      "qCode": "GOV-17",
+      "domain": "Governance & Services",
+      "subDomain": "Accountability & Trust",
+      "indicator": "Safety in submitting a complaint",
+      "kpi": "GOV-17 — Confidence in complaining safely",
+      "questionText": "How confident are you that you could complain about a public service without unfair negative consequences?",
+      "responseOptions": "Not confident at all / Slightly / Moderately / Very / Fully confident / Prefer not to answer"
+    },
+    {
+      "qCode": "GOV-18",
+      "domain": "Governance & Services",
+      "subDomain": "Governance & Services",
+      "indicator": "Unmet demand for the non-profit sector",
+      "kpi": "GOV-18 — Unmet demand for the non-profit sector",
+      "questionText": "In the past 12 months, did the household need any social, livelihood, health, education or other support that no government or non-profit body provided?",
+      "responseOptions": "Service domains (select all that apply) / No unmet need / Don't know / Prefer not to answer"
+    },
+    {
+      "qCode": "GOV-19",
+      "domain": "Governance & Services",
+      "subDomain": "Governance & Services",
+      "indicator": "Service duplication and coordination",
+      "kpi": "GOV-19 — Service duplication and coordination",
+      "questionText": "For households receiving support: in the past 12 months, did different organisations provide the same type of support while another important need went unmet?",
+      "responseOptions": "No duplication / Some duplication / Substantial duplication / Don't know / Prefer not to answer"
+    },
+    {
+      "qCode": "XDM-01",
+      "domain": "Cross-Domain (Facts Question Pattern)",
+      "subDomain": "Cross-Domain",
+      "indicator": "Recency verification pattern",
+      "kpi": "—",
+      "questionText": "When did a household member last use [the service]? (pattern applied to every fact-based indicator)",
+      "responseOptions": "Recency bands per service"
+    },
+    {
+      "qCode": "XDM-02",
+      "domain": "Cross-Domain (Facts Question Pattern)",
+      "subDomain": "Cross-Domain",
+      "indicator": "Barrier diagnosis pattern",
+      "kpi": "—",
+      "questionText": "What prevents you from using the service?",
+      "responseOptions": "Barrier categories per service"
+    },
+    {
+      "qCode": "XDM-03",
+      "domain": "Cross-Domain (Facts Question Pattern)",
+      "subDomain": "Cross-Domain",
+      "indicator": "Household member roster (module)",
+      "kpi": "—",
+      "questionText": "Please list all usual household members and record age, sex, relationship, education, employment status and functional difficulties.",
+      "responseOptions": "Standard coded roster fields"
+    },
+    {
+      "qCode": "XDM-04",
+      "domain": "Cross-Domain (Facts Question Pattern)",
+      "subDomain": "Cross-Domain",
+      "indicator": "Geographic data (module)",
+      "kpi": "—",
+      "questionText": "Record the administrative region, village, cluster, household coordinates, settlement type and distance to the village centre.",
+      "responseOptions": "Coded geography + coordinates + GPS accuracy"
+    },
+    {
+      "qCode": "XDM-05",
+      "domain": "Cross-Domain (Facts Question Pattern)",
+      "subDomain": "Cross-Domain",
+      "indicator": "Respondent selection and proxy (module)",
+      "kpi": "—",
+      "questionText": "Record the respondent's relationship to the household, which modules they can answer reliably, and whether any answers are given by proxy.",
+      "responseOptions": "Relationship;knowledgeable for module: Yes/No;proxy: Yes/No"
+    },
+    {
+      "qCode": "XDM-06",
+      "domain": "Cross-Domain (Facts Question Pattern)",
+      "subDomain": "Cross-Domain",
+      "indicator": "Need–use–barrier template",
+      "kpi": "—",
+      "questionText": "For each priority service: was the service needed during the recall period; was it used; when; was the need fully met; and what barriers affected use?",
+      "responseOptions": "Need / Use / Outcome / Barrier / Time / Cost fields tailored by service"
+    },
+    {
+      "qCode": "XDM-07",
+      "domain": "Cross-Domain (Facts Question Pattern)",
+      "subDomain": "Cross-Domain",
+      "indicator": "Evidence-source flag (module)",
+      "kpi": "—",
+      "questionText": "For each fact-based indicator, record whether the evidence comes from observation, an administrative record, GIS, a service-provider report, household experience or household perception.",
+      "responseOptions": "Source type + date + sample count + population coverage + confidence rating"
+    },
+    {
+      "qCode": "XDM-08",
+      "domain": "Cross-Domain (Facts Question Pattern)",
+      "subDomain": "Cross-Domain",
+      "indicator": "Major household shocks",
+      "kpi": "XDM-08 — Major household shocks",
+      "questionText": "In the past 12 months, what major events affected the household's income, health, housing, education or access to services?",
+      "responseOptions": "Job loss / Illness or death / Price shock / Natural disaster / Displacement / Conflict / Other — specify / None"
+    }
+  ],
+  "arabic": [
+    {
+      "qCode": "HLT-01",
+      "domain": "الصحة",
+      "subDomain": "الوصول إلى الرعاية الصحية الأولية",
+      "indicator": "توفر المرفق الصحي",
+      "kpi": "HLT-01 — نسبة القرى التي يتوفر فيها مرفق صحي أولي عامل ضمن 5 كم",
+      "questionText": "على حد علمك، هل يوجد مرفق صحي يعمل حاليًا ضمن نحو 5 كم برًّا من هذه الأسرة؟",
+      "responseOptions": "نعم / لا / لا أعلم"
+    },
+    {
+      "qCode": "HLT-02",
+      "domain": "الصحة",
+      "subDomain": "الوصول إلى الرعاية الصحية الأولية",
+      "indicator": "توفر المرفق الصحي",
+      "kpi": "HLT-02 — زمن الوصول إلى أقرب مرفق صحي عامل",
+      "questionText": "باستخدام وسيلة النقل المعتادة لأسرتك، كم دقيقة تستغرق الرحلة باتجاه واحد من هذه الأسرة إلى أقرب مرفق صحي عامل عادةً؟",
+      "responseOptions": "Open numeric (minutes) / لا أعلم"
+    },
+    {
+      "qCode": "HLT-03",
+      "domain": "الصحة",
+      "subDomain": "الوصول إلى الرعاية الصحية الأولية",
+      "indicator": "عائق المواصلات",
+      "kpi": "HLT-03 — نسبة الأسر التي تعتبر المواصلات عائقًا أمام الوصول للرعاية",
+      "questionText": "خلال الـ 12 شهرًا الماضية، عندما احتاج أحد أفراد الأسرة إلى رعاية صحية، هل تسبب غياب المواصلات في تأخير الرعاية أو عدم الحصول عليها؟",
+      "responseOptions": "دائمًا / غالبًا / أحيانًا / أبدًا / لم تلزم رعاية صحية"
+    },
+    {
+      "qCode": "HLT-04",
+      "domain": "الصحة",
+      "subDomain": "صحة الأم والطفل",
+      "indicator": "تغطية رعاية الحمل",
+      "kpi": "HLT-04 — عدد زيارات رعاية الحمل (آخر حمل)",
+      "questionText": "لكل امرأة مرّت بحمل خلال الـ 24 شهرًا الماضية: خلال حملك الأخير، كم عدد زيارات رعاية الحمل التي تلقيتها لدى مقدم رعاية صحية مؤهل؟",
+      "responseOptions": "Open numeric (contacts) / لا أعلم / أفضّل عدم الإجابة"
+    },
+    {
+      "qCode": "HLT-05",
+      "domain": "الصحة",
+      "subDomain": "صحة الأم والطفل",
+      "indicator": "الولادة بإشراف مؤهل",
+      "kpi": "HLT-05 — نسبة الولادات بإشراف كادر صحي مؤهل",
+      "questionText": "من الذي أشرف على آخر ولادة في هذه الأسرة؟",
+      "responseOptions": "طبيب / ممرض/ممرضة / قابلة مؤهلة / قابلة تقليدية / قريب أو صديق / لا أحد / أخرى — حدد / لا أعلم / أفضّل عدم الإجابة"
+    },
+    {
+      "qCode": "HLT-06",
+      "domain": "الصحة",
+      "subDomain": "صحة الأم والطفل",
+      "indicator": "تحصين الأطفال",
+      "kpi": "HLT-06 — نسبة الأطفال دون الخامسة المستكملين للتطعيمات",
+      "questionText": "لكل طفل بعمر 0–59 شهرًا: وفقًا لبطاقة التطعيم أو إفادة مقدم الرعاية، هل الطفل مستكمل لجميع التطعيمات الموصى بها لعمره؟",
+      "responseOptions": "نعم — موثق بالبطاقة / نعم — بإفادة مقدم الرعاية / لا / لا أعلم"
+    },
+    {
+      "qCode": "HLT-07",
+      "domain": "الصحة",
+      "subDomain": "صحة الأم والطفل",
+      "indicator": "متابعة نمو الطفل",
+      "kpi": "HLT-07 — عدد زيارات متابعة النمو (الأطفال دون الخامسة)",
+      "questionText": "لكل طفل بعمر 0–59 شهرًا: خلال الأشهر الستة الماضية، كم مرة تم وزن الطفل أو قياسه لمتابعة النمو في مرفق صحي أو خدمة ميدانية؟",
+      "responseOptions": "Open numeric (visits) / لا شيء / لا أعلم"
+    },
+    {
+      "qCode": "HLT-08",
+      "domain": "الصحة",
+      "subDomain": "عبء الأمراض",
+      "indicator": "انتشار الأمراض المزمنة",
+      "kpi": "HLT-08 — نسبة الأسر التي لديها فرد بحالة مزمنة مشخّصة",
+      "questionText": "هل يعاني أي فرد من أفراد هذه الأسرة من حالة مزمنة مشخّصة (سكري، ضغط، وغيرها)؟",
+      "responseOptions": "نعم / لا / لا أعلم"
+    },
+    {
+      "qCode": "HLT-09",
+      "domain": "الصحة",
+      "subDomain": "عبء الأمراض",
+      "indicator": "استمرارية رعاية الأمراض المزمنة",
+      "kpi": "HLT-09 — نسبة المصابين بأمراض مزمنة الحاصلين على متابعة منتظمة",
+      "questionText": "هل يتلقى فرد الأسرة المصاب بحالة مزمنة مشخّصة رعاية متابعة منتظمة (فحوصات أو صرف أدوية)؟",
+      "responseOptions": "نعم، بانتظام / بشكل غير منتظم أو بصعوبة / لا / لا أعلم"
+    },
+    {
+      "qCode": "HLT-10",
+      "domain": "الصحة",
+      "subDomain": "الصحة النفسية",
+      "indicator": "الوعي بالخدمة",
+      "kpi": "HLT-10 — نسبة الأسر المدركة لقنوات الدعم النفسي المتاحة",
+      "questionText": "هل تعرف أين يمكن لأي شخص في هذه المنطقة طلب مساعدة متخصصة للمشكلات النفسية أو العاطفية أو الصحة النفسية؟",
+      "responseOptions": "نعم / لا"
+    },
+    {
+      "qCode": "HLT-11",
+      "domain": "الصحة",
+      "subDomain": "الصحة النفسية",
+      "indicator": "الوصمة المتصورة",
+      "kpi": "HLT-11 — مدى تقبّل المجتمع لطلب الدعم النفسي",
+      "questionText": "برأيك، ما مدى تقبّل مجتمعك لطلب الشخص مساعدة متخصصة للصعوبات النفسية أو العاطفية؟",
+      "responseOptions": "غير مقبول إطلاقًا / غير مقبول / محايد / مقبول / مقبول جدًا"
+    },
+    {
+      "qCode": "HLT-12",
+      "domain": "الصحة",
+      "subDomain": "جودة الخدمات",
+      "indicator": "الجودة المتصورة للخدمة",
+      "kpi": "HLT-12 — نسبة الأسر التي تقيّم جودة الخدمات الصحية بملائمة فأعلى",
+      "questionText": "كيف تقيّم الجودة العامة للخدمات الصحية المتاحة لهذه القرية؟",
+      "responseOptions": "ضعيفة جدًا / ضعيفة / مقبولة / جيدة / جيدة جدًا"
+    },
+    {
+      "qCode": "HLT-13",
+      "domain": "الصحة",
+      "subDomain": "جودة الخدمات",
+      "indicator": "توفر الأدوية",
+      "kpi": "HLT-13 — توفر الأدوية الموصوفة في آخر زيارة",
+      "questionText": "في آخر زيارة لمرفق صحي خلال الـ 12 شهرًا الماضية، هل كانت جميع الأدوية الموصوفة للمريض متوفرة في المرفق؟",
+      "responseOptions": "نعم، جميعها متوفرة / بعضها متوفر / لا يتوفر شيء / لم توصف أدوية / لا زيارة خلال 12 شهرًا"
+    },
+    {
+      "qCode": "HLT-14",
+      "domain": "الصحة",
+      "subDomain": "جودة الخدمات",
+      "indicator": "القدرة على التحمل",
+      "kpi": "HLT-14 — الامتناع عن الرعاية أو تأجيلها بسبب التكلفة",
+      "questionText": "خلال الـ 12 شهرًا الماضية، هل امتنع أحد أفراد الأسرة عن رعاية لازمة أو أجّلها بسبب التكلفة (كشف أو دواء أو مواصلات)؟",
+      "responseOptions": "أبدًا / مرة أو مرتين / عدة مرات / بشكل روتيني"
+    },
+    {
+      "qCode": "HLT-15",
+      "domain": "الصحة",
+      "subDomain": "الجاهزية للطوارئ",
+      "indicator": "زمن الاستجابة للطوارئ",
+      "kpi": "HLT-15 — الكفاية المتصورة لزمن الاستجابة الطبية الطارئة",
+      "questionText": "في حال حدوث طارئ طبي، كم يستغرق عادةً وصول المساعدة (إسعاف/نقل إلى مرفق) أو الوصول إليها؟",
+      "responseOptions": "أقل من 30 دقيقة / 30–60 دقيقة / 1–2 ساعة / أكثر من ساعتين / لا تتوفر خدمة طوارئ"
+    },
+    {
+      "qCode": "HLT-16",
+      "domain": "الصحة",
+      "subDomain": "الوصول إلى الرعاية الصحية الأولية",
+      "indicator": "توفر المرفق الصحي",
+      "kpi": "HLT-02 — زمن الوصول إلى أقرب مرفق صحي عامل (بُعد إثراء: زمن الوصول (نطاقات))",
+      "questionText": "كم يستغرق الوصول إلى أقرب مرفق صحي عامل باستخدام وسيلة النقل المعتادة لأسرتك؟",
+      "responseOptions": "أقل من 30 دقيقة / 30–60 / 60–120 / >120 / لا أعلم"
+    },
+    {
+      "qCode": "HLT-17",
+      "domain": "الصحة",
+      "subDomain": "الوصول إلى الرعاية الصحية الأولية",
+      "indicator": "توفر المرفق الصحي",
+      "kpi": "HLT-02 — زمن الوصول إلى أقرب مرفق صحي عامل (بُعد إثراء: القدرة على تحمل تكلفة الوصول)",
+      "questionText": "كم ريالًا سعوديًا يدفع الشخص البالغ عادةً تقريبًا لرحلة ذهاب وعودة من هذه الأسرة إلى أقرب مرفق صحي؟",
+      "responseOptions": "Open numeric (SAR) / لا أعلم"
+    },
+    {
+      "qCode": "HLT-18",
+      "domain": "الصحة",
+      "subDomain": "صحة الأم والطفل",
+      "indicator": "الولادة بإشراف مؤهل",
+      "kpi": "HLT-05 — نسبة الولادات بإشراف كادر صحي مؤهل (بُعد إثراء: مكان الولادة)",
+      "questionText": "أين حدثت آخر ولادة حية في هذه الأسرة خلال الـ 24 شهرًا الماضية؟",
+      "responseOptions": "مستشفى حكومي / مستشفى خاص / مركز صحي أو عيادة / مرفق صحي آخر / المنزل / أثناء الانتقال / أخرى — حدد / لا أعلم / أفضّل عدم الإجابة"
+    },
+    {
+      "qCode": "HLT-19",
+      "domain": "الصحة",
+      "subDomain": "صحة الأم والطفل",
+      "indicator": "تشخيص عوائق الولادة خارج المرفق",
+      "kpi": "—",
+      "questionText": "إذا لم تكن الولادة في مرفق صحي، فما الأسباب الرئيسية؟",
+      "responseOptions": "المسافة / التكلفة / عدم وجود كادر نسائي / تفضيل شخصي / مخاض مفاجئ / أخرى — حدد"
+    },
+    {
+      "qCode": "HLT-20",
+      "domain": "الصحة",
+      "subDomain": "عبء الأمراض",
+      "indicator": "انتشار الأمراض المزمنة",
+      "kpi": "HLT-08 — نسبة الأسر التي لديها فرد بحالة مزمنة مشخّصة (بُعد إثراء: قناة الحصول على الدواء)",
+      "questionText": "كيف تحصل الأسرة عادةً على الدواء اللازم لتلك الحالة؟",
+      "responseOptions": "صيدلية محلية / صرف من المرفق الصحي / السفر خارج المنطقة / لا يمكن الحصول عليه بانتظام"
+    },
+    {
+      "qCode": "HLT-21",
+      "domain": "الصحة",
+      "subDomain": "جودة الخدمات",
+      "indicator": "القدرة على التحمل",
+      "kpi": "HLT-14 — الامتناع عن الرعاية أو تأجيلها بسبب التكلفة (بُعد إثراء: الضائقة المالية بسبب تكاليف الصحة)",
+      "questionText": "خلال الـ 12 شهرًا الماضية، هل استخدمت الأسرة أيًا مما يلي لدفع تكاليف الرعاية الصحية؟",
+      "responseOptions": "اقتراض مال / بيع أصل / استخدام مدخرات أساسية / تأجيل دفع الإيجار أو الغذاء أو التعليم أو الخدمات / لا شيء / أفضّل عدم الإجابة"
+    },
+    {
+      "qCode": "HLT-22",
+      "domain": "الصحة",
+      "subDomain": "الوصول إلى الرعاية الصحية الأولية",
+      "indicator": "توفر المرفق الصحي",
+      "kpi": "HLT-01 — نسبة القرى التي يتوفر فيها مرفق صحي أولي عامل ضمن 5 كم (بُعد إثراء: تحقق موجَّه بالحداثة)",
+      "questionText": "متى كانت آخر مرة زار فيها أي فرد من الأسرة مركزًا صحيًا؟",
+      "responseOptions": "أقل من 3 أشهر / 3–12 شهرًا / أكثر من 12 شهرًا / أبدًا"
+    },
+    {
+      "qCode": "HLT-23",
+      "domain": "الصحة",
+      "subDomain": "الوصول إلى الرعاية الصحية الأولية",
+      "indicator": "تشخيص عوائق الوصول (انخفاض الاستخدام)",
+      "kpi": "—",
+      "questionText": "ما الأسباب التي منعت الشخص من الحصول على الرعاية أو أخّرتها؟",
+      "responseOptions": "التكلفة / المسافة / المرفق مغلق / الخدمة أو الكادر غير متوفر / الدواء غير متوفر / طول الانتظار / قلق من الجودة / اعتبار خصوصية أو ثقافي / أخرى — حدد"
+    },
+    {
+      "qCode": "HLT-24",
+      "domain": "الصحة",
+      "subDomain": "جودة الخدمات",
+      "indicator": "التغطية الصحية النظامية",
+      "kpi": "HLT-24 — التغطية الصحية",
+      "questionText": "هل كل فرد من أفراد الأسرة مشمول بتأمين صحي أو أي ترتيب نظامي آخر يغطي تكاليف الرعاية الصحية؟",
+      "responseOptions": "تغطية حكومية / تأمين صاحب العمل / تأمين خاص / أخرى / لا توجد تغطية / لا أعلم / أفضّل عدم الإجابة"
+    },
+    {
+      "qCode": "HLT-25",
+      "domain": "الصحة",
+      "subDomain": "جودة الخدمات",
+      "indicator": "الإنفاق الصحي من الجيب",
+      "kpi": "HLT-25 — الإنفاق من الجيب",
+      "questionText": "في آخر حالة رعاية صحية للأسرة، كم دُفع تقريبًا مقابل الكشف والفحوصات والأدوية والمواصلات والإقامة؟",
+      "responseOptions": "Open numeric SAR per component / 0 / لا أعلم / أفضّل عدم الإجابة"
+    },
+    {
+      "qCode": "HLT-26",
+      "domain": "الصحة",
+      "subDomain": "صحة الأم والطفل",
+      "indicator": "نتيجة رصد النمو والتغذية",
+      "kpi": "HLT-26 — تغذية الطفل (نتيجة فحص النمو)",
+      "questionText": "لكل طفل بعمر 0–59 شهرًا: هل قيس طول/وزن الطفل لدى مقدم رعاية صحية خلال الأشهر الستة الماضية، وهل رُصدت أي مشكلة تغذوية؟",
+      "responseOptions": "تم القياس — لا مشكلة / تم القياس — رُصدت مشكلة تغذوية / لم يتم القياس / لا أعلم"
+    },
+    {
+      "qCode": "EDU-01",
+      "domain": "التعليم",
+      "subDomain": "الوصول إلى التعليم الأساسي",
+      "indicator": "القيد المدرسي",
+      "kpi": "EDU-01 — حالة قيد الأطفال في سن التعليم الإلزامي (6–18)",
+      "questionText": "لكل طفل في سن التعليم الإلزامي (6–18): هل الطفل مقيّد حاليًا في مدرسة أو برنامج تعليمي معترف به؟",
+      "responseOptions": "Yes — attending / Yes — enrolled but temporarily not attending / لا / لا أعلم"
+    },
+    {
+      "qCode": "EDU-02",
+      "domain": "التعليم",
+      "subDomain": "الوصول إلى التعليم الأساسي",
+      "indicator": "قرب المدرسة",
+      "kpi": "EDU-02 — متوسط المسافة إلى أقرب مدرسة ابتدائية (كم)",
+      "questionText": "ما المسافة التقريبية من هذه الأسرة إلى أقرب مدرسة ابتدائية؟",
+      "responseOptions": "Open numeric (km)"
+    },
+    {
+      "qCode": "EDU-03",
+      "domain": "التعليم",
+      "subDomain": "الوصول إلى التعليم الأساسي",
+      "indicator": "سلامة النقل المدرسي",
+      "kpi": "EDU-03 — نسبة الأسر التي لديها نقل مدرسي آمن وموثوق",
+      "questionText": "هل يتوفر لأطفال هذه الأسرة نقل آمن وموثوق من المدرسة وإليها؟",
+      "responseOptions": "نعم / جزئيًا / لا / لا ينطبق"
+    },
+    {
+      "qCode": "EDU-04",
+      "domain": "التعليم",
+      "subDomain": "الوصول إلى التعليم الأساسي",
+      "indicator": "مخاطر التسرب",
+      "kpi": "EDU-04 — حالات الانقطاع أو التسرب المدرسي (آخر عامين)",
+      "questionText": "هل توقف أي طفل في سن الدراسة عن الحضور أو انقطع عن الدراسة فصلًا كاملًا أو أكثر خلال العامين الماضيين؟",
+      "responseOptions": "لا / نعم، مرة واحدة / نعم، بشكل متكرر"
+    },
+    {
+      "qCode": "EDU-05",
+      "domain": "التعليم",
+      "subDomain": "الوصول إلى التعليم الأساسي",
+      "indicator": "أكثر أسباب التسرب المدرسي ذكرًا",
+      "kpi": "—",
+      "questionText": "إذا كانت الإجابة نعم، فما السبب الرئيسي لترك الدراسة؟",
+      "responseOptions": "مالي / المسافة / السلامة / زواج مبكر / العمل / إعاقة / صعوبة دراسية / أخرى"
+    },
+    {
+      "qCode": "EDU-06",
+      "domain": "التعليم",
+      "subDomain": "العدالة بين الجنسين في التعليم",
+      "indicator": "التكافؤ بين الجنسين في القيد",
+      "kpi": "EDU-06 — نسبة الفتيات إلى الأولاد المقيّدين",
+      "questionText": "هل توجد فتيات في سن الدراسة في هذه الأسرة غير مقيّدات بالمدرسة بينما الأولاد في سن مماثلة مقيّدون؟",
+      "responseOptions": "نعم / لا / لا ينطبق"
+    },
+    {
+      "qCode": "EDU-07",
+      "domain": "التعليم",
+      "subDomain": "العدالة بين الجنسين في التعليم",
+      "indicator": "العوائق المتصورة أمام الفتيات",
+      "kpi": "EDU-07 — نسبة الأسر التي ترصد عوائق أمام تعليم الفتيات",
+      "questionText": "ما العوائق، إن وُجدت، التي تواجه الفتيات في هذه القرية لمواصلة تعليمهن دون الأولاد؟",
+      "responseOptions": "المسافة/السلامة / نقص المعلمات / زواج مبكر / أعباء منزلية / أعراف ثقافية / لا شيء"
+    },
+    {
+      "qCode": "EDU-08",
+      "domain": "التعليم",
+      "subDomain": "جودة التعليم",
+      "indicator": "الجودة المتصورة للتدريس",
+      "kpi": "EDU-08 — نسبة أولياء الأمور الراضين عن جودة التدريس",
+      "questionText": "ما مدى رضاك عن جودة التدريس في المدرسة التي يرتادها أطفالك؟",
+      "responseOptions": "غير راضٍ إطلاقًا / غير راضٍ / محايد / راضٍ / راضٍ جدًا"
+    },
+    {
+      "qCode": "EDU-09",
+      "domain": "التعليم",
+      "subDomain": "جودة التعليم",
+      "indicator": "توفر المعلمين",
+      "kpi": "EDU-09 — نسبة المدارس ذات الكادر التعليمي الكافي",
+      "questionText": "هل يتوفر في المدرسة المحلية عدد كافٍ من المعلمين لتغطية جميع المواد/الصفوف؟",
+      "responseOptions": "نعم / جزئيًا / لا / لا أعلم"
+    },
+    {
+      "qCode": "EDU-10",
+      "domain": "التعليم",
+      "subDomain": "جودة التعليم",
+      "indicator": "المواد التعليمية",
+      "kpi": "EDU-10 — نسبة الأسر التي لدى أطفالها كتب ومواد تعليمية كافية",
+      "questionText": "هل يحصل أطفالك على الكتب والمواد التعليمية اللازمة لمستواهم الدراسي؟",
+      "responseOptions": "نعم، بالكامل / جزئيًا / لا"
+    },
+    {
+      "qCode": "EDU-11",
+      "domain": "التعليم",
+      "subDomain": "البنية المدرسية",
+      "indicator": "ملاءمة المرافق",
+      "kpi": "EDU-11 — نسبة المدارس ذات الفصول والمياه والصرف الملائم",
+      "questionText": "هل تتوفر في المدرسة التي يرتادها أطفالك فصول ملائمة ومياه نظيفة ودورات مياه عاملة؟",
+      "responseOptions": "نعم، جميعها ملائمة / بعضها غير ملائم / معظمها غير ملائم / لا أعلم"
+    },
+    {
+      "qCode": "EDU-12",
+      "domain": "التعليم",
+      "subDomain": "البنية المدرسية",
+      "indicator": "الوصول الرقمي",
+      "kpi": "EDU-12 — نسبة المدارس ذات حواسيب/إنترنت للطلاب",
+      "questionText": "هل تتوفر في المدرسة حواسيب عاملة أو إنترنت متاح لاستخدام الطلاب؟",
+      "responseOptions": "نعم / لا / لا أعلم"
+    },
+    {
+      "qCode": "EDU-13",
+      "domain": "التعليم",
+      "subDomain": "التعليم المهني وتعليم الكبار",
+      "indicator": "الوعي بالتدريب المهني",
+      "kpi": "EDU-13 — الوعي بتدريب مهني يمكن الوصول إليه",
+      "questionText": "هل تعلم بوجود أي برنامج تدريب مهني أو تقني يمكنك الوصول إليه خلال 60 دقيقة؟",
+      "responseOptions": "نعم / لا / لا أعلم"
+    },
+    {
+      "qCode": "EDU-14",
+      "domain": "التعليم",
+      "subDomain": "التعليم المهني وتعليم الكبار",
+      "indicator": "المشاركة في التدريب المهني",
+      "kpi": "EDU-14 — المشاركة في تدريب مهني (24 شهرًا)",
+      "questionText": "هل شاركت في برنامج من هذا النوع خلال الـ 24 شهرًا الماضية؟",
+      "responseOptions": "أكمل البرنامج / مقيّد حاليًا / بدأ ولم يكمل / لا / غير مؤهل"
+    },
+    {
+      "qCode": "EDU-15",
+      "domain": "التعليم",
+      "subDomain": "التعليم المهني وتعليم الكبار",
+      "indicator": "إلمام الكبار بالقراءة والكتابة",
+      "kpi": "EDU-15 — نسبة البالغين غير الملمّين بالقراءة والكتابة",
+      "questionText": "هل يوجد أفراد بالغون في هذه الأسرة لا يجيدون القراءة أو الكتابة؟",
+      "responseOptions": "نعم / لا"
+    },
+    {
+      "qCode": "EDU-16",
+      "domain": "التعليم",
+      "subDomain": "الوصول إلى التعليم الأساسي",
+      "indicator": "الانتظام في الحضور المدرسي",
+      "kpi": "EDU-16 — الانتظام في الحضور (آخر خمسة أيام دراسية)",
+      "questionText": "لكل طفل مقيّد: خلال آخر خمسة أيام دراسية، كم يومًا حضر الطفل إلى المدرسة؟",
+      "responseOptions": "0–5 days / School closed / Child newly enrolled / لا أعلم"
+    },
+    {
+      "qCode": "EDU-17",
+      "domain": "التعليم",
+      "subDomain": "الوصول إلى التعليم الأساسي",
+      "indicator": "التعليم في الطفولة المبكرة",
+      "kpi": "EDU-17 — التعليم في الطفولة المبكرة (3–5)",
+      "questionText": "لكل طفل بعمر 3–5 سنوات: هل يلتحق الطفل حاليًا بحضانة أو روضة أو برنامج تعليم مبكر منظم؟",
+      "responseOptions": "نعم / لا / لا يتوفر برنامج / الطفل غير مؤهل / لا أعلم"
+    },
+    {
+      "qCode": "EDU-18",
+      "domain": "التعليم",
+      "subDomain": "الوصول إلى التعليم الأساسي",
+      "indicator": "عبء التكاليف التعليمية",
+      "kpi": "EDU-18 — عبء التكاليف التعليمية",
+      "questionText": "خلال العام الدراسي الحالي، هل تسببت التكاليف المدرسية في تغيّب أي طفل أو تأخير قيده أو نقص مستلزماته؟",
+      "responseOptions": "لا / تغيّب عن المدرسة / تأخير القيد / نقص المستلزمات أو الزي / أخرى — حدد / أفضّل عدم الإجابة"
+    },
+    {
+      "qCode": "EDU-19",
+      "domain": "التعليم",
+      "subDomain": "جودة التعليم",
+      "indicator": "المشاركة الوالدية",
+      "kpi": "EDU-19 — المشاركة الوالدية",
+      "questionText": "خلال الفصل الدراسي الحالي، هل تحدث أحد البالغين في الأسرة مع معلم أو حضر اجتماعًا مدرسيًا حول تعلّم الطفل؟",
+      "responseOptions": "نعم — مرة واحدة / نعم — أكثر من مرة / لا / المدرسة لم تُتح ذلك / لا أعلم"
+    },
+    {
+      "qCode": "WSH-01",
+      "domain": "المياه والصرف الصحي",
+      "subDomain": "الوصول إلى مياه الشرب",
+      "indicator": "الوصول لمصدر مياه آمن",
+      "kpi": "WSH-01 — نسبة الأسر ذات مصدر مياه شرب محسّن",
+      "questionText": "ما المصدر الرئيسي لمياه الشرب لهذه الأسرة؟",
+      "responseOptions": "أنابيب داخل المسكن / صنبور عام / بئر محمية / بئر غير محمية / مياه سطحية (نهر/بركة) / صهريج/بائع / أخرى"
+    },
+    {
+      "qCode": "WSH-02",
+      "domain": "المياه والصرف الصحي",
+      "subDomain": "الوصول إلى مياه الشرب",
+      "indicator": "زمن جلب المياه",
+      "kpi": "WSH-02 — عبء جلب المياه (أساسي/محدود حسب JMP)",
+      "questionText": "كم دقيقة تستغرق رحلة ذهاب وعودة واحدة لجلب المياه من المصدر الرئيسي، إذا لم يكن داخل المسكن؟",
+      "responseOptions": "المياه داخل المسكن / 30 دقيقة أو أقل / أكثر من 30 دقيقة / لا أعلم"
+    },
+    {
+      "qCode": "WSH-03",
+      "domain": "المياه والصرف الصحي",
+      "subDomain": "الوصول إلى مياه الشرب",
+      "indicator": "استمرارية مصدر المياه",
+      "kpi": "WSH-03 — الإتاحة عند الحاجة (استمرارية JMP)",
+      "questionText": "خلال الأسابيع الأربعة الماضية، كم يومًا كان مصدر مياه الشرب الرئيسي للأسرة غير متاح عند الحاجة؟",
+      "responseOptions": "Open numeric 0–28 days / لا أعلم"
+    },
+    {
+      "qCode": "WSH-04",
+      "domain": "المياه والصرف الصحي",
+      "subDomain": "الوصول إلى مياه الشرب",
+      "indicator": "موسمية نقص المياه",
+      "kpi": "—",
+      "questionText": "في أي أشهر خلال الـ 12 شهرًا الماضية حدث نقص في المياه؟",
+      "responseOptions": "January–December (select all that apply) / لا يوجد نقص موسمي / لا أعلم"
+    },
+    {
+      "qCode": "WSH-05",
+      "domain": "المياه والصرف الصحي",
+      "subDomain": "جودة المياه",
+      "indicator": "الأمان المتصور للمياه",
+      "kpi": "WSH-05 — نسبة الأسر التي تعتبر مياهها آمنة للشرب",
+      "questionText": "برأيك، هل مياه المصدر الرئيسي لشرب الأسرة آمنة للشرب دون معالجة إضافية؟",
+      "responseOptions": "نعم / لا، تحتاج معالجة / لا أعلم"
+    },
+    {
+      "qCode": "WSH-06",
+      "domain": "المياه والصرف الصحي",
+      "subDomain": "جودة المياه",
+      "indicator": "ممارسة معالجة المياه",
+      "kpi": "WSH-06 — نسبة الأسر التي تعالج المياه قبل الشرب",
+      "questionText": "هل تعالج هذه الأسرة المياه (غلي، ترشيح، كلورة) قبل شربها؟",
+      "responseOptions": "دائمًا / أحيانًا / أبدًا"
+    },
+    {
+      "qCode": "WSH-07",
+      "domain": "المياه والصرف الصحي",
+      "subDomain": "جودة المياه",
+      "indicator": "وقوع الأمراض المنقولة بالمياه",
+      "kpi": "WSH-07 — نسبة الأسر المبلغة عن مرض مرتبط بالمياه (6 أشهر)",
+      "questionText": "هل أصيب أي فرد من الأسرة بمرض يُشتبه بارتباطه بجودة المياه خلال الأشهر الستة الماضية (كالإسهال)؟",
+      "responseOptions": "نعم / لا / لا أعلم"
+    },
+    {
+      "qCode": "WSH-08",
+      "domain": "المياه والصرف الصحي",
+      "subDomain": "الوصول إلى الصرف الصحي",
+      "indicator": "مرفق صرف صحي محسّن",
+      "kpi": "WSH-08 — نسبة الأسر ذات مرفق صرف محسّن",
+      "questionText": "ما نوع المرحاض الذي تستخدمه هذه الأسرة بشكل رئيسي؟",
+      "responseOptions": "مرحاض شطف موصول بشبكة صرف أو خزان تحليل / مرحاض حفرة ببلاطة / مرحاض حفرة بدون بلاطة / مرفق مشترك/عام / التغوط في العراء"
+    },
+    {
+      "qCode": "WSH-09",
+      "domain": "المياه والصرف الصحي",
+      "subDomain": "الوصول إلى الصرف الصحي",
+      "indicator": "سلسلة الإدارة الآمنة للصرف",
+      "kpi": "WSH-09 — التصريف النهائي للمحتويات (سلسلة الإدارة الآمنة JMP)",
+      "questionText": "إلى أين تُصرَّف المحتويات في النهاية أو أين تُفرَّغ؟",
+      "responseOptions": "شبكة صرف صحي / خزان تحليل / حفرة / مصرف مكشوف أو إلى البيئة / تُجمع للمعالجة / لا أعلم"
+    },
+    {
+      "qCode": "WSH-10",
+      "domain": "المياه والصرف الصحي",
+      "subDomain": "الوصول إلى الصرف الصحي",
+      "indicator": "خصوصية المرفق وأمانه",
+      "kpi": "WSH-10 — نسبة الأسر التي مرفقها خاص وآمن ليلًا",
+      "questionText": "هل مرحاض أسرتك خاص وآمن للاستخدام، بما في ذلك ليلًا؟",
+      "responseOptions": "نعم / إلى حد ما / لا"
+    },
+    {
+      "qCode": "WSH-11",
+      "domain": "المياه والصرف الصحي",
+      "subDomain": "النظافة والنفايات",
+      "indicator": "مرفق غسل اليدين",
+      "kpi": "WSH-11 — نسبة الأسر ذات مكان غسل يدين بمياه وصابون",
+      "questionText": "هل يتوفر لدى هذه الأسرة مكان لغسل اليدين مزوّد بالمياه والصابون معًا؟",
+      "responseOptions": "نعم / مياه فقط بدون صابون / لا يوجد مرفق"
+    },
+    {
+      "qCode": "WSH-12",
+      "domain": "المياه والصرف الصحي",
+      "subDomain": "النظافة والنفايات",
+      "indicator": "جمع النفايات الصلبة",
+      "kpi": "WSH-12 — نسبة القرى ذات خدمة جمع نفايات منتظمة",
+      "questionText": "هل توجد خدمة جمع نفايات منتظمة تعمل في هذه القرية؟",
+      "responseOptions": "نعم، أسبوعيًا أو أكثر / نعم، غير منتظمة / لا توجد خدمة"
+    },
+    {
+      "qCode": "WSH-13",
+      "domain": "المياه والصرف الصحي",
+      "subDomain": "النظافة والنفايات",
+      "indicator": "طريقة التخلص السائدة عند غياب خدمة الجمع",
+      "kpi": "—",
+      "questionText": "في غياب الجمع الرسمي، كيف تتخلص هذه الأسرة من النفايات بشكل رئيسي؟",
+      "responseOptions": "الحرق / الدفن / رمي مكشوف / جمع خاص / أخرى"
+    },
+    {
+      "qCode": "WSH-14",
+      "domain": "المياه والصرف الصحي",
+      "subDomain": "الوصول إلى مياه الشرب",
+      "indicator": "كفاية المياه للاحتياجات",
+      "kpi": "WSH-14 — كفاية المياه",
+      "questionText": "خلال الأسابيع الأربعة الماضية، كم يومًا لم تكفِ المياه المتوفرة للأسرة للشرب والطبخ والنظافة الشخصية والتنظيف؟",
+      "responseOptions": "Open numeric 0–28 days / لا أعلم"
+    },
+    {
+      "qCode": "WSH-15",
+      "domain": "المياه والصرف الصحي",
+      "subDomain": "جودة المياه",
+      "indicator": "التحقق المخبري من جودة المياه",
+      "kpi": "—",
+      "questionText": "ما نتيجة وتاريخ آخر فحص ميكروبيولوجي وكيميائي لمصدر مياه الشرب الرئيسي؟",
+      "responseOptions": "Meets standard / Fails microbiological standard / Fails chemical standard / No recent test / Record unavailable"
+    },
+    {
+      "qCode": "WSH-16",
+      "domain": "المياه والصرف الصحي",
+      "subDomain": "النظافة والنفايات",
+      "indicator": "إدارة المياه العادمة المنزلية",
+      "kpi": "WSH-16 — إدارة المياه العادمة",
+      "questionText": "إلى أين تُصرَّف عادةً مياه الاستحمام والغسيل والمطبخ في هذه الأسرة؟",
+      "responseOptions": "شبكة صرف صحي / خزان تحليل أو حفرة امتصاص / مصرف مغطى / مصرف مكشوف / أرض مكشوفة / يُعاد استخدامه / أخرى — حدد / لا أعلم"
+    },
+    {
+      "qCode": "WSH-17",
+      "domain": "المياه والصرف الصحي",
+      "subDomain": "النظافة والنفايات",
+      "indicator": "التصريف والمياه الراكدة",
+      "kpi": "WSH-17 — التصريف والمياه الراكدة",
+      "questionText": "خلال الـ 12 شهرًا الماضية، هل تجمّعت مياه صرف أو أمطار أو مياه راكدة قرب هذا المسكن؟",
+      "responseOptions": "أبدًا / مرة أو مرتين / عدة مرات / كثيرًا / لا أعلم"
+    },
+    {
+      "qCode": "WSH-18",
+      "domain": "المياه والصرف الصحي",
+      "subDomain": "الوصول إلى مياه الشرب",
+      "indicator": "القدرة على تحمل تكلفة المياه",
+      "kpi": "WSH-18 — القدرة على تحمل تكلفة المياه",
+      "questionText": "كم دفعت الأسرة تقريبًا مقابل مياه الشرب والاستخدام المنزلي خلال الـ 30 يومًا الماضية؟",
+      "responseOptions": "Open numeric SAR / 0 / لا أعلم / أفضّل عدم الإجابة"
+    },
+    {
+      "qCode": "ENV-01",
+      "domain": "الطاقة والبيئة",
+      "subDomain": "الوصول إلى الكهرباء",
+      "indicator": "الاتصال بالشبكة الكهربائية",
+      "kpi": "ENV-01 — نسبة الأسر ذات اتصال فعّال بالشبكة الوطنية",
+      "questionText": "هل لدى هذه الأسرة حاليًا اتصال كهربائي فعّال بالشبكة الوطنية؟",
+      "responseOptions": "نعم — فعّال ويعمل / موصول لكنه مفصول أو لا يعمل حاليًا / لا — يستخدم كهرباء خارج الشبكة / لا توجد كهرباء / لا أعلم"
+    },
+    {
+      "qCode": "ENV-02",
+      "domain": "الطاقة والبيئة",
+      "subDomain": "الوصول إلى الكهرباء",
+      "indicator": "موثوقية الخدمة",
+      "kpi": "ENV-02 — متوسط ساعات انقطاع الكهرباء يوميًا",
+      "questionText": "في اليوم العادي، كم ساعة ينقطع فيها التيار الكهربائي؟",
+      "responseOptions": "لا انقطاعات / أقل من ساعتين / 2–6 ساعات / أكثر من 6 ساعات / غير موصول بالشبكة"
+    },
+    {
+      "qCode": "ENV-03",
+      "domain": "الطاقة والبيئة",
+      "subDomain": "الوصول إلى الكهرباء",
+      "indicator": "نسبة الأسر المعتمدة على مصادر بديلة/خارج الشبكة",
+      "kpi": "—",
+      "questionText": "إذا لم تكن الأسرة موصولة بالشبكة، فما مصدر الطاقة الرئيسي لها؟",
+      "responseOptions": "طاقة شمسية / مولد كهربائي / غاز / حطب/كتلة حيوية / أخرى / لا ينطبق"
+    },
+    {
+      "qCode": "ENV-04",
+      "domain": "الطاقة والبيئة",
+      "subDomain": "الطبخ النظيف",
+      "indicator": "نوع وقود الطبخ",
+      "kpi": "ENV-04 — نسبة الأسر المستخدمة لوقود/تقنية طبخ نظيفة",
+      "questionText": "ما الوقود أو التقنية الرئيسية التي تستخدمها هذه الأسرة للطبخ؟",
+      "responseOptions": "كهرباء/غاز مسال/غاز طبيعي / موقد محسّن / حطب/فحم/نار مكشوفة / أخرى"
+    },
+    {
+      "qCode": "ENV-05",
+      "domain": "الطاقة والبيئة",
+      "subDomain": "الطبخ النظيف",
+      "indicator": "مخاوف جودة الهواء الداخلي",
+      "kpi": "ENV-05 — نسبة الأسر المبلغة عن مشكلات صحية من دخان الطبخ",
+      "questionText": "هل يعاني أفراد الأسرة من أعراض تنفسية أو تهيّج في العينين يُعتقد ارتباطها بدخان الطبخ؟",
+      "responseOptions": "نعم، كثيرًا / أحيانًا / أبدًا / لا ينطبق"
+    },
+    {
+      "qCode": "ENV-06",
+      "domain": "الطاقة والبيئة",
+      "subDomain": "الجودة البيئية",
+      "indicator": "شح المياه المتصور",
+      "kpi": "ENV-06 — نسبة الأسر التي يمس شح المياه زراعتها/ماشيتها",
+      "questionText": "هل تعاني هذه الأسرة من شح مياه يؤثر على الزراعة أو الماشية في جزء من السنة؟",
+      "responseOptions": "نعم، شديدة / نعم، متوسطة / لا"
+    },
+    {
+      "qCode": "ENV-07",
+      "domain": "الطاقة والبيئة",
+      "subDomain": "الجودة البيئية",
+      "indicator": "تدهور الأراضي المتصور",
+      "kpi": "ENV-07 — التغير المتصور في جودة الأرض/التربة (5 سنوات)",
+      "questionText": "مقارنة بخمس سنوات مضت، كيف تصف جودة الأراضي الزراعية/التربة في هذه المنطقة؟",
+      "responseOptions": "تحسنت / كما هو / تدهورت / لا أعلم"
+    },
+    {
+      "qCode": "ENV-08",
+      "domain": "الطاقة والبيئة",
+      "subDomain": "الجودة البيئية",
+      "indicator": "التعرض للكوارث الطبيعية",
+      "kpi": "ENV-08 — نسبة الأسر المتأثرة بكارثة طبيعية (3 سنوات)",
+      "questionText": "هل تأثرت هذه الأسرة بفيضان أو جفاف أو كارثة طبيعية أخرى خلال السنوات الثلاث الماضية؟",
+      "responseOptions": "نعم / لا"
+    },
+    {
+      "qCode": "ENV-09",
+      "domain": "الطاقة والبيئة",
+      "subDomain": "الوعي البيئي",
+      "indicator": "الوعي بالبرامج",
+      "kpi": "ENV-09 — نسبة الأسر المدركة لبرامج بيئية/طاقة نظيفة محلية",
+      "questionText": "هل تعلم بوجود برامج للحفاظ على البيئة أو الطاقة النظيفة تعمل في هذه القرية أو قربها؟",
+      "responseOptions": "نعم / لا"
+    },
+    {
+      "qCode": "ENV-10",
+      "domain": "الطاقة والبيئة",
+      "subDomain": "الوعي البيئي",
+      "indicator": "المشاركة في البرامج البيئية",
+      "kpi": "ENV-10 — المشاركة في البرامج البيئية/الطاقة النظيفة",
+      "questionText": "هل شارك أي فرد من الأسرة في أحدها خلال الـ 12 شهرًا الماضية؟",
+      "responseOptions": "نعم / لا / غير مدرك"
+    },
+    {
+      "qCode": "ENV-11",
+      "domain": "الطاقة والبيئة",
+      "subDomain": "الوعي البيئي",
+      "indicator": "ممارسة الترشيد",
+      "kpi": "ENV-11 — نسبة الأسر الممارسة لترشيد المياه/الموارد",
+      "questionText": "هل تمارس هذه الأسرة أي شكل من أشكال ترشيد المياه أو الموارد؟",
+      "responseOptions": "نعم، بانتظام / أحيانًا / لا"
+    },
+    {
+      "qCode": "ENV-12",
+      "domain": "الطاقة والبيئة",
+      "subDomain": "الوعي البيئي",
+      "indicator": "ممارسة الترشيد",
+      "kpi": "ENV-11 — نسبة الأسر الممارسة لترشيد المياه/الموارد (بُعد إثراء: موثوقية الإمداد (فئات MTF))",
+      "questionText": "خلال الـ 12 شهرًا الماضية، كم ساعة في اليوم كانت الكهرباء متاحة عادةً؟",
+      "responseOptions": "24 ساعة / 20–23 / 12–19 / <12"
+    },
+    {
+      "qCode": "ENV-13",
+      "domain": "الطاقة والبيئة",
+      "subDomain": "الوعي البيئي",
+      "indicator": "ممارسة الترشيد",
+      "kpi": "ENV-11 — نسبة الأسر الممارسة لترشيد المياه/الموارد (بُعد إثراء: ممارسة ترشيد قابلة للتحقق)",
+      "questionText": "هل تعيد الأسرة استخدام المياه الرمادية أو تحصد مياه الأمطار لأي غرض؟",
+      "responseOptions": "نعم بانتظام / أحيانًا / لا"
+    },
+    {
+      "qCode": "ENV-14",
+      "domain": "الطاقة والبيئة",
+      "subDomain": "الوصول إلى الكهرباء",
+      "indicator": "القدرة على تحمل تكلفة الطاقة",
+      "kpi": "ENV-14 — القدرة على تحمل تكلفة الطاقة",
+      "questionText": "كم أنفقت الأسرة تقريبًا على الكهرباء ووقود الطبخ وتكاليف المولد أو البطاريات خلال الـ 30 يومًا الماضية؟",
+      "responseOptions": "Open numeric SAR / 0 / لا أعلم / أفضّل عدم الإجابة"
+    },
+    {
+      "qCode": "ENV-15",
+      "domain": "الطاقة والبيئة",
+      "subDomain": "الجودة البيئية",
+      "indicator": "الراحة الحرارية للمسكن",
+      "kpi": "ENV-15 — الراحة الحرارية",
+      "questionText": "خلال أشد شهور السنة الماضية حرارة، كم مرة كان المسكن حارًا لدرجة تمنع النوم أو ممارسة الأنشطة المعتادة؟",
+      "responseOptions": "أبدًا / نادرًا / أحيانًا / غالبًا / كل يوم أو معظم الأيام تقريبًا"
+    },
+    {
+      "qCode": "ENV-16",
+      "domain": "الطاقة والبيئة",
+      "subDomain": "الجاهزية للطوارئ",
+      "indicator": "جاهزية الأسرة للكوارث",
+      "kpi": "ENV-16 — جاهزية الأسرة للكوارث",
+      "questionText": "هل لدى الأسرة مسار إخلاء معروف وجهة اتصال للطوارئ ومستلزمات طوارئ أساسية وخطة للأفراد الأكثر هشاشة؟",
+      "responseOptions": "نعم / لا / Do not know — recorded for each of the four items"
+    },
+    {
+      "qCode": "ENV-17",
+      "domain": "الطاقة والبيئة",
+      "subDomain": "الجودة البيئية",
+      "indicator": "التعرض للمخاطر البيئية",
+      "kpi": "ENV-17 — التعرض البيئي",
+      "questionText": "هل يقع المسكن قرب أي مصدر دخان أو حرق نفايات أو انبعاثات صناعية أو مياه ملوثة أو أي خطر بيئي آخر؟",
+      "responseOptions": "حرق نفايات / مصدر صناعي / صرف صحي أو مياه راكدة / غبار أو محجر / كيماويات زراعية / لا شيء / أخرى — حدد"
+    },
+    {
+      "qCode": "ENV-18",
+      "domain": "الطاقة والبيئة",
+      "subDomain": "الجودة البيئية",
+      "indicator": "إجراءات التكيف المناخي",
+      "kpi": "ENV-18 — إجراءات التكيف المناخي",
+      "questionText": "خلال السنوات الثلاث الماضية، ما الإجراءات التي اتخذتها الأسرة للحد من آثار الحرارة أو الجفاف أو الفيضانات أو المخاطر المناخية الأخرى؟",
+      "responseOptions": "تعديل المسكن / تخزين المياه / تغيير المحاصيل / تأمين أو ادخار / استخدام الإنذار المبكر / انتقال / لا شيء / أخرى — حدد"
+    },
+    {
+      "qCode": "ENV-19",
+      "domain": "الطاقة والبيئة",
+      "subDomain": "الوعي البيئي",
+      "indicator": "فرز النفايات وإعادة التدوير",
+      "kpi": "ENV-19 — فرز النفايات/إعادة التدوير",
+      "questionText": "خلال الأيام السبعة الماضية، هل فرزت الأسرة أي نفايات قابلة للتدوير أو عضوية أو خطرة عن النفايات العامة؟",
+      "responseOptions": "مواد قابلة للتدوير / نفايات عضوية / بطاريات أو نفايات خطرة / لا يوجد فرز / لا تتولد نفايات"
+    },
+    {
+      "qCode": "LIV-01",
+      "domain": "سبل العيش",
+      "subDomain": "العمل والدخل",
+      "indicator": "الحالة العمالية",
+      "kpi": "LIV-01 — نسبة الأفراد في سن العمل (15-64) العاملين أو أصحاب عمل حر",
+      "questionText": "ما وضع العمل الحالي لأفراد الأسرة الرئيسيين في سن العمل؟",
+      "responseOptions": "موظف بدوام كامل / موظف بدوام جزئي / عمل حر / يبحث عن عمل / لا يبحث عن عمل / غير قادر على العمل"
+    },
+    {
+      "qCode": "LIV-02",
+      "domain": "سبل العيش",
+      "subDomain": "العمل والدخل",
+      "indicator": "كفاية الدخل",
+      "kpi": "LIV-02 — نسبة الأسر التي يغطي دخلها الاحتياجات الأساسية",
+      "questionText": "هل يغطي دخل هذه الأسرة احتياجاتها الأساسية (غذاء، سكن، صحة، تعليم)؟",
+      "responseOptions": "يغطي بارتياح / يغطي بالكاد / لا يغطي"
+    },
+    {
+      "qCode": "LIV-03",
+      "domain": "سبل العيش",
+      "subDomain": "العمل والدخل",
+      "indicator": "استقرار الدخل",
+      "kpi": "LIV-03 — أشهر الدخل من المصدر الرئيسي (الاستقرار)",
+      "questionText": "خلال كم شهرًا من الـ 12 شهرًا الماضية تلقت الأسرة دخلًا من مصدرها الرئيسي؟",
+      "responseOptions": "Open numeric 0–12 months"
+    },
+    {
+      "qCode": "LIV-04",
+      "domain": "سبل العيش",
+      "subDomain": "العمل والدخل",
+      "indicator": "تنويع الدخل",
+      "kpi": "LIV-04 — عدد مصادر الدخل المتمايزة للأسرة",
+      "questionText": "كم عدد مصادر الدخل المختلفة التي تعتمد عليها هذه الأسرة حاليًا؟",
+      "responseOptions": "واحد / اثنان / ثلاثة أو أكثر / لا شيء"
+    },
+    {
+      "qCode": "LIV-05",
+      "domain": "سبل العيش",
+      "subDomain": "الزراعة والإنتاج الأولي",
+      "indicator": "نسبة الأسر المعتمدة على الزراعة/الماشية كمعيشة رئيسية",
+      "kpi": "—",
+      "questionText": "هل الزراعة أو الثروة الحيوانية أو الصيد هي مصدر المعيشة الرئيسي لهذه الأسرة؟",
+      "responseOptions": "نعم، مصدر رئيسي / نعم، مصدر ثانوي / لا"
+    },
+    {
+      "qCode": "LIV-06",
+      "domain": "سبل العيش",
+      "subDomain": "الزراعة والإنتاج الأولي",
+      "indicator": "الوصول للمدخلات والأسواق",
+      "kpi": "LIV-06 — الوصول إلى المدخلات وأسواق التصريف",
+      "questionText": "هل يتوفر لهذه الأسرة وصول كافٍ إلى المدخلات الزراعية وسوق لبيع منتجاتها/ماشيتها؟",
+      "responseOptions": "نعم، كلاهما / المدخلات فقط / السوق فقط / لا شيء منهما / لا ينطبق"
+    },
+    {
+      "qCode": "LIV-07",
+      "domain": "سبل العيش",
+      "subDomain": "الزراعة والإنتاج الأولي",
+      "indicator": "أكثر عائق يحدّ من الإنتاجية الزراعية ذكرًا",
+      "kpi": "—",
+      "questionText": "ما أكبر عائق يحدّ من الإنتاجية الزراعية/الحيوانية لهذه الأسرة؟",
+      "responseOptions": "المياه/الري / مساحة الأرض / تكلفة المدخلات / الوصول إلى السوق / المناخ/الطقس / نقص المعدات / نقص المهارات / أخرى"
+    },
+    {
+      "qCode": "LIV-08",
+      "domain": "سبل العيش",
+      "subDomain": "ريادة الأعمال",
+      "indicator": "نسبة الأسر المشغّلة لمشروع صغير أو متناهي الصغر",
+      "kpi": "—",
+      "questionText": "هل تمتلك هذه الأسرة أو تدير حاليًا مشروعًا صغيرًا أو متناهي الصغر؟",
+      "responseOptions": "نعم / لا"
+    },
+    {
+      "qCode": "LIV-09",
+      "domain": "سبل العيش",
+      "subDomain": "ريادة الأعمال",
+      "indicator": "نسبة الأسر غير المشغِّلة الراغبة في بدء مشروع",
+      "kpi": "—",
+      "questionText": "إذا لم تكن تدير مشروعًا حاليًا، فهل يرغب أفراد الأسرة في بدء مشروع؟",
+      "responseOptions": "نعم، بفكرة واضحة / نعم، دون فكرة واضحة / لا رغبة / لا ينطبق"
+    },
+    {
+      "qCode": "LIV-10",
+      "domain": "سبل العيش",
+      "subDomain": "ريادة الأعمال",
+      "indicator": "عوائق ريادة الأعمال",
+      "kpi": "LIV-10 — أكثر عائق لبدء أو تنمية مشروع ذكرًا",
+      "questionText": "ما العائق الرئيسي الذي يمنع هذه الأسرة من بدء مشروع أو تنميته؟",
+      "responseOptions": "نقص رأس المال / نقص المهارات/التدريب / غياب السوق / مشكلات تنظيمية/تراخيص / غياب الإرشاد / أخرى"
+    },
+    {
+      "qCode": "LIV-11",
+      "domain": "سبل العيش",
+      "subDomain": "ريادة الأعمال",
+      "indicator": "الوصول للتمويل",
+      "kpi": "LIV-11 — الوصول إلى المؤسسات المالية النظامية",
+      "questionText": "هل يتوفر لهذه الأسرة حساب بنكي أو ائتمان نظامي من بنك عند الحاجة؟",
+      "responseOptions": "نعم، بسهولة / نعم، بصعوبة / لا يوجد وصول / لا أعلم"
+    },
+    {
+      "qCode": "LIV-12",
+      "domain": "سبل العيش",
+      "subDomain": "ريادة الأعمال",
+      "indicator": "التمويل الأصغر والقنوات البديلة",
+      "kpi": "LIV-12 — الوصول إلى التمويل الأصغر أو التعاونيات (قناة بديلة)",
+      "questionText": "هل يتوفر لهذه الأسرة وصول إلى مؤسسات التمويل الأصغر أو التعاونيات عند الحاجة؟",
+      "responseOptions": "نعم، بسهولة / نعم، بصعوبة / لا يوجد وصول / لا أعلم"
+    },
+    {
+      "qCode": "LIV-13",
+      "domain": "سبل العيش",
+      "subDomain": "المهارات والقدرة المهنية",
+      "indicator": "امتلاك مهارة مهنية",
+      "kpi": "LIV-13 — نسبة أفراد سن العمل ذوي مهارة مهنية قابلة للتسويق",
+      "questionText": "هل يمتلك أفراد الأسرة في سن العمل أي مهارة مهنية أو تقنية (نجارة، خياطة، حرف صيانة)؟",
+      "responseOptions": "نعم / لا / لا أعلم"
+    },
+    {
+      "qCode": "LIV-14",
+      "domain": "سبل العيش",
+      "subDomain": "المهارات والقدرة المهنية",
+      "indicator": "المشاركة في التدريب",
+      "kpi": "LIV-14 — المشاركة في برنامج تدريبي (آخر عامين)",
+      "questionText": "هل شارك أي من أفراد الأسرة في سن العمل في برنامج تدريب وظيفي أو مهارات خلال العامين الماضيين؟",
+      "responseOptions": "نعم / لا"
+    },
+    {
+      "qCode": "LIV-15",
+      "domain": "سبل العيش",
+      "subDomain": "التمكين الاقتصادي للمرأة",
+      "indicator": "مشاركة المرأة في قوة العمل",
+      "kpi": "LIV-15 — نسبة النساء العاملات أو الباحثات عن عمل",
+      "questionText": "هل النساء في هذه الأسرة موظفات أو يعملن لحسابهن أو يبحثن فعليًا عن عمل مأجور؟",
+      "responseOptions": "نعم / لا، باختيارهن / لا، بسبب عوائق / لا ينطبق"
+    },
+    {
+      "qCode": "LIV-16",
+      "domain": "سبل العيش",
+      "subDomain": "التمكين الاقتصادي للمرأة",
+      "indicator": "عوائق عمل المرأة",
+      "kpi": "LIV-16 — العائق الرئيسي أمام المشاركة الاقتصادية للمرأة",
+      "questionText": "إذا كانت النساء في هذه الأسرة يواجهن عوائق للعمل، فما العائق الرئيسي؟",
+      "responseOptions": "رعاية الأطفال/الأعباء المنزلية / أعراف ثقافية/اجتماعية / غياب الفرص القريبة / المواصلات / نقص المهارات / لا ينطبق"
+    },
+    {
+      "qCode": "LIV-17",
+      "domain": "سبل العيش",
+      "subDomain": "التمكين الاقتصادي للمرأة",
+      "indicator": "التحكم في الدخل",
+      "kpi": "LIV-17 — تحكم المرأة في الدخل الذي تكسبه",
+      "questionText": "إذا كانت النساء في هذه الأسرة يكسبن دخلًا، فهل لهن سلطة التصرف في إنفاقه أو ادخاره؟",
+      "responseOptions": "تحكم كامل / قرار مشترك / تحكم محدود / لا ينطبق"
+    },
+    {
+      "qCode": "LIV-18",
+      "domain": "سبل العيش",
+      "subDomain": "ريادة الأعمال",
+      "indicator": "عوائق ريادة الأعمال",
+      "kpi": "LIV-10 — أكثر عائق لبدء أو تنمية مشروع ذكرًا (بُعد إثراء: المحاولة والنتيجة خلف العائق المتصور)",
+      "questionText": "هل حاول أي فرد من هذه الأسرة بدء نشاط مدرّ للدخل أو توسيعه خلال السنوات الثلاث الماضية؟",
+      "responseOptions": "نعم ونجح / نعم لكنه أخفق / فكّر ولم يحاول / لا"
+    },
+    {
+      "qCode": "LIV-19",
+      "domain": "سبل العيش",
+      "subDomain": "سبل العيش",
+      "indicator": "الأمن الغذائي (FIES)",
+      "kpi": "LIV-19 — بند القلق في مقياس FIES",
+      "questionText": "خلال الـ 12 شهرًا الماضية، هل مرّ وقت قلقت فيه من عدم توفر ما يكفي من الطعام بسبب نقص المال أو الموارد؟",
+      "responseOptions": "نعم / لا / لا أعلم / أفضّل عدم الإجابة"
+    },
+    {
+      "qCode": "LIV-20",
+      "domain": "سبل العيش",
+      "subDomain": "سبل العيش",
+      "indicator": "الشباب خارج التعليم والعمل والتدريب (NEET)",
+      "kpi": "LIV-20 — مؤشر NEET",
+      "questionText": "هل يوجد في هذه الأسرة شباب (15–24) ليسوا حاليًا في تعليم أو عمل أو تدريب؟",
+      "responseOptions": "لا / نعم، واحد / نعم، أكثر من واحد"
+    },
+    {
+      "qCode": "LIV-21",
+      "domain": "سبل العيش",
+      "subDomain": "العمل والدخل",
+      "indicator": "شريحة دخل الأسرة",
+      "kpi": "LIV-21 — شريحة دخل الأسرة",
+      "questionText": "ما إجمالي الدخل التقريبي للأسرة من جميع المصادر في الشهر العادي خلال الأشهر الثلاثة الماضية؟",
+      "responseOptions": "أقل من 5,000 ريال / أكثر من 5,000 ريال / لا يوجد دخل / غير منتظم — يتعذر التقدير / أفضّل عدم الإجابة"
+    },
+    {
+      "qCode": "LIV-22",
+      "domain": "سبل العيش",
+      "subDomain": "العمل والدخل",
+      "indicator": "شريحة الإنفاق الأساسي",
+      "kpi": "—",
+      "questionText": "كم أنفقت الأسرة تقريبًا خلال الـ 30 يومًا الماضية على الغذاء والسكن والخدمات والمواصلات والصحة والتعليم؟",
+      "responseOptions": "Open numeric or locally calibrated SAR bands by category / أفضّل عدم الإجابة"
+    },
+    {
+      "qCode": "LIV-23",
+      "domain": "سبل العيش",
+      "subDomain": "العمل والدخل",
+      "indicator": "الديون والمتأخرات",
+      "kpi": "LIV-23 — الديون والمتأخرات",
+      "questionText": "خلال الأشهر الثلاثة الماضية، هل تعذّر على الأسرة سداد أي إيجار أو قرض أو فاتورة خدمات أو التزام أساسي آخر في موعده؟",
+      "responseOptions": "إيجار / قرض / فاتورة كهرباء أو مياه / تكلفة مدرسية / فاتورة طبية / لا شيء / أفضّل عدم الإجابة"
+    },
+    {
+      "qCode": "LIV-24",
+      "domain": "سبل العيش",
+      "subDomain": "العمل والدخل",
+      "indicator": "الصدمات الاقتصادية وآليات التكيف",
+      "kpi": "LIV-24 — الصدمات الاقتصادية وآليات التكيف",
+      "questionText": "خلال الـ 12 شهرًا الماضية، هل تعرضت الأسرة لفقدان وظيفة أو خسارة مشروع أو خسارة محاصيل/ماشية أو مرض جسيم أو صدمة دخل أخرى، وكيف تعاملت معها؟",
+      "responseOptions": "Shock types;coping: Savings / الاقتراض / بيع أصول / تقليل الغذاء أو الأساسيات / دعم خارجي / لم تلزم آلية تكيّف / أخرى — حدد"
+    },
+    {
+      "qCode": "LIV-25",
+      "domain": "سبل العيش",
+      "subDomain": "العمل والدخل",
+      "indicator": "جودة الوظيفة (العمل اللائق)",
+      "kpi": "LIV-25 — جودة الوظيفة",
+      "questionText": "لكل فرد عامل: هل تتوفر في العمل الرئيسي عقود مكتوبة وأجر منتظم وظروف آمنة وتغطية تأمينات اجتماعية؟",
+      "responseOptions": "نعم / لا / لا أعلم / Prefer not to answer — for each dimension"
+    },
+    {
+      "qCode": "LIV-26",
+      "domain": "سبل العيش",
+      "subDomain": "العمل والدخل",
+      "indicator": "الهجرة للعمل والحوالات",
+      "kpi": "—",
+      "questionText": "خلال الـ 12 شهرًا الماضية، هل هاجر أي فرد من الأسرة للعمل، أو استلمت الأسرة حوالات أو أرسلتها؟",
+      "responseOptions": "هجرة للعمل / استلام حوالات / إرسال حوالات / لا شيء / أفضّل عدم الإجابة;frequency and approximate amount bands recorded"
+    },
+    {
+      "qCode": "LIV-27",
+      "domain": "سبل العيش",
+      "subDomain": "ريادة الأعمال",
+      "indicator": "أداء المشاريع الأسرية",
+      "kpi": "LIV-27 — أداء المشاريع",
+      "questionText": "لكل مشروع أسري نشط: مقارنة بما قبل 12 شهرًا، هل ازدادت المبيعات والأرباح وعدد العاملين أم بقيت كما هي أم انخفضت؟",
+      "responseOptions": "ازداد / كما هو / انخفض / المشروع بدأ قبل أقل من 12 شهرًا / لا أعلم"
+    },
+    {
+      "qCode": "INF-01",
+      "domain": "البنية التحتية",
+      "subDomain": "الطرق والنقل",
+      "indicator": "جودة الربط الطرقي",
+      "kpi": "INF-01 — نسبة القرى الموصولة بطريق معبّد أو صالح لجميع الأحوال",
+      "questionText": "هل هذه القرية موصولة بشبكة الطرق الرئيسية بطريق معبّد أو صالح في جميع الأحوال الجوية؟",
+      "responseOptions": "نعم، معبّد / نعم، ممهد/غير معبّد لكنه صالح / لا، يتعذر المرور غالبًا"
+    },
+    {
+      "qCode": "INF-02",
+      "domain": "البنية التحتية",
+      "subDomain": "الطرق والنقل",
+      "indicator": "توفر النقل العام",
+      "kpi": "INF-02 — نسبة الأسر ذات وصول لمواصلات عامة/مشتركة منتظمة",
+      "questionText": "هل تتوفر مواصلات عامة أو مشتركة منتظمة تربط هذه القرية بالمدن/البلدات المجاورة؟",
+      "responseOptions": "نعم، يوميًا / نعم، بجدول محدود / لا توجد خدمة منتظمة"
+    },
+    {
+      "qCode": "INF-03",
+      "domain": "البنية التحتية",
+      "subDomain": "الطرق والنقل",
+      "indicator": "الوصول الموسمي",
+      "kpi": "INF-03 — نسبة السنة التي تكون فيها القرية متاحة بالكامل برًّا",
+      "questionText": "هل توجد أوقات في السنة (كموسم الأمطار) يصعب أو يتعذر فيها الوصول إلى هذه القرية برًّا؟",
+      "responseOptions": "الوصول متاح دائمًا / صعب أحيانًا / يتعذر الوصول كثيرًا"
+    },
+    {
+      "qCode": "INF-04",
+      "domain": "البنية التحتية",
+      "subDomain": "الطرق والنقل",
+      "indicator": "سبب تعذر الوصول الموسمي",
+      "kpi": "—",
+      "questionText": "إذا كانت الإجابة نعم، فما السبب الرئيسي لصعوبة الطريق أو تعذره؟",
+      "responseOptions": "فيضانات / عواصف / تضرر الطريق / أخرى — حدد"
+    },
+    {
+      "qCode": "INF-05",
+      "domain": "البنية التحتية",
+      "subDomain": "الاتصال الرقمي",
+      "indicator": "تغطية شبكة الجوال",
+      "kpi": "INF-05 — نسبة الأسر ذات تغطية جوال موثوقة",
+      "questionText": "هل تغطية شبكة الهاتف المحمول موثوقة في موقع هذه الأسرة؟",
+      "responseOptions": "نعم، إشارة قوية / إشارة ضعيفة/متقطعة / لا توجد تغطية"
+    },
+    {
+      "qCode": "INF-06",
+      "domain": "البنية التحتية",
+      "subDomain": "الاتصال الرقمي",
+      "indicator": "الوصول للإنترنت",
+      "kpi": "INF-06 — توفر الإنترنت وموثوقيته (بند موحد)",
+      "questionText": "هل يتوفر لهذه الأسرة إنترنت عامل (بيانات جوال أو اتصال ثابت)، وكيف تصف جودته عند الحاجة؟",
+      "responseOptions": "جيد ومستقر / صالح مع انقطاعات / ضعيف جدًا / لا يوجد اتصال"
+    },
+    {
+      "qCode": "INF-07",
+      "domain": "البنية التحتية",
+      "subDomain": "الاتصال الرقمي",
+      "indicator": "الإلمام الرقمي",
+      "kpi": "INF-07 — نسبة الأفراد القادرين على المهام الرقمية الأساسية",
+      "questionText": "هل يستطيع أفراد هذه الأسرة استخدام الهاتف الذكي أو الإنترنت للمهام الأساسية (كالمراسلة والتصفح والخدمات البنكية)؟",
+      "responseOptions": "نعم، معظم الأفراد / بعض الأفراد / لا أحد من الأفراد"
+    },
+    {
+      "qCode": "INF-08",
+      "domain": "البنية التحتية",
+      "subDomain": "الإسكان والبيئة العمرانية",
+      "indicator": "ملاءمة السكن",
+      "kpi": "INF-08 — نسبة الأسر في مساكن سليمة إنشائيًا",
+      "questionText": "هل مسكن الأسرة سليم إنشائيًا (سقف وجدران سليمة وحماية من العوامل الجوية)؟",
+      "responseOptions": "نعم، ملائم بالكامل / ملائم جزئيًا / غير ملائم"
+    },
+    {
+      "qCode": "INF-09",
+      "domain": "البنية التحتية",
+      "subDomain": "الإسكان والبيئة العمرانية",
+      "indicator": "الاكتظاظ السكني",
+      "kpi": "INF-09 — الاكتظاظ (أفراد لكل غرفة نوم، محسوب)",
+      "questionText": "كم عدد غرف النوم المنفصلة التي تستخدمها الأسرة؟",
+      "responseOptions": "Open numeric (rooms)"
+    },
+    {
+      "qCode": "INF-10",
+      "domain": "البنية التحتية",
+      "subDomain": "المرافق العامة والمجتمعية",
+      "indicator": "الوصول للسوق",
+      "kpi": "INF-10 — نسبة الأسر على مسافة معقولة من سوق عامل",
+      "questionText": "هل يوجد سوق عامل (للبيع والشراء) على مسافة معقولة من هذه القرية؟",
+      "responseOptions": "نعم، داخل القرية / نعم، قريب (أقل من 10 كم) / لا، بعيد (أكثر من 10 كم)"
+    },
+    {
+      "qCode": "INF-11",
+      "domain": "البنية التحتية",
+      "subDomain": "المرافق العامة والمجتمعية",
+      "indicator": "مكان التجمع المجتمعي",
+      "kpi": "INF-11 — توفر مركز مجتمعي أو مكان تجمع عامل",
+      "questionText": "هل يوجد في هذه القرية مركز مجتمعي عامل أو ساحة عامة أو مكان للتجمع؟",
+      "responseOptions": "نعم، بصيانة جيدة / نعم، بصيانة سيئة / لا"
+    },
+    {
+      "qCode": "INF-12",
+      "domain": "البنية التحتية",
+      "subDomain": "الاتصال الرقمي",
+      "indicator": "الوصول للإنترنت",
+      "kpi": "INF-06 — توفر الإنترنت وموثوقيته (بند موحد) (بُعد إثراء: إنفاق الإنترنت/البيانات (القدرة على التحمل، موضوعي))",
+      "questionText": "كم أنفقت هذه الأسرة تقريبًا على الإنترنت أو بيانات الجوال خلال الـ 30 يومًا الماضية؟",
+      "responseOptions": "Open numeric (SAR) / أفضّل عدم الإجابة"
+    },
+    {
+      "qCode": "INF-13",
+      "domain": "البنية التحتية",
+      "subDomain": "الاتصال الرقمي",
+      "indicator": "الوصول للإنترنت",
+      "kpi": "INF-06 — توفر الإنترنت وموثوقيته (بند موحد) (بُعد إثراء: تقليل الاستخدام أو الفصل بسبب التكلفة)",
+      "questionText": "خلال الأشهر الثلاثة الماضية، هل دفعت التكلفة الأسرة إلى تقليل استخدام الإنترنت أو فصله؟",
+      "responseOptions": "لا / تقليل الاستخدام / فصل مؤقت / لا وصول بسبب التكلفة / أفضّل عدم الإجابة"
+    },
+    {
+      "qCode": "INF-14",
+      "domain": "البنية التحتية",
+      "subDomain": "الإسكان والبيئة العمرانية",
+      "indicator": "الاكتظاظ السكني",
+      "kpi": "INF-09 — الاكتظاظ (أفراد لكل غرفة نوم، محسوب) (بُعد إثراء: المشكلات الإنشائية للمسكن)",
+      "questionText": "هل يعاني المسكن من مشكلات إنشائية (تسرب السقف، تشقق الجدران، سوء التهوية)؟",
+      "responseOptions": "السقف / الجدران / التهوية / رطوبة / لا شيء"
+    },
+    {
+      "qCode": "INF-15",
+      "domain": "البنية التحتية",
+      "subDomain": "المرافق العامة والمجتمعية",
+      "indicator": "الوصول للسوق",
+      "kpi": "INF-10 — نسبة الأسر على مسافة معقولة من سوق عامل (بُعد إثراء: استخدام السوق مقابل توفره)",
+      "questionText": "كم مرة تتسوق هذه الأسرة فعليًا من ذلك السوق؟",
+      "responseOptions": "أسبوعيًا أو أكثر / شهريًا / نادرًا / أبدًا"
+    },
+    {
+      "qCode": "INF-16",
+      "domain": "البنية التحتية",
+      "subDomain": "المرافق العامة والمجتمعية",
+      "indicator": "الوصول للسوق",
+      "kpi": "INF-10 — نسبة الأسر على مسافة معقولة من سوق عامل (بُعد إثراء: كفاية السوق وأسعاره)",
+      "questionText": "هل يوفر السوق احتياجات الأسرة الأساسية بأسعار مقبولة؟",
+      "responseOptions": "نعم / جزئيًا / لا / لا أعلم"
+    },
+    {
+      "qCode": "INF-17",
+      "domain": "البنية التحتية",
+      "subDomain": "الاتصال الرقمي",
+      "indicator": "تغطية شبكة الجوال",
+      "kpi": "INF-05 — نسبة الأسر ذات تغطية جوال موثوقة (بُعد إثراء: صمود الشبكة في الطوارئ)",
+      "questionText": "أثناء الطوارئ أو العواصف، هل تبقى شبكة الجوال صالحة للاستخدام؟",
+      "responseOptions": "نعم / تفشل أحيانًا / تفشل عادةً / لا أعلم"
+    },
+    {
+      "qCode": "INF-18",
+      "domain": "البنية التحتية",
+      "subDomain": "الاتصال الرقمي",
+      "indicator": "تغطية شبكة الجوال",
+      "kpi": "INF-05 — نسبة الأسر ذات تغطية جوال موثوقة (بُعد إثراء: فجوات التغطية المكانية)",
+      "questionText": "هل توجد مواقع معروفة بلا تغطية داخل القرية أو على طريق الوصول إليها؟",
+      "responseOptions": "لا شيء / قليلة / كثيرة / معظم المنطقة"
+    },
+    {
+      "qCode": "INF-19",
+      "domain": "البنية التحتية",
+      "subDomain": "البنية التحتية",
+      "indicator": "أمن الحيازة السكنية",
+      "kpi": "INF-19 — الإسكان والبيئة العمرانية (أمن الحيازة)",
+      "questionText": "هل تمتلك هذه الأسرة مسكنها أم تستأجره أم تشغله دون ترتيب نظامي؟",
+      "responseOptions": "ملك / إيجار (نظامي) / Provided by relatives-employer / دون ترتيب نظامي"
+    },
+    {
+      "qCode": "INF-20",
+      "domain": "البنية التحتية",
+      "subDomain": "المرافق العامة والمجتمعية",
+      "indicator": "إنارة المسارات والشوارع",
+      "kpi": "INF-20 — إنارة الشوارع",
+      "questionText": "ليلًا، هل المسار المعتاد من هذا المسكن إلى مركز القرية أو الطريق الرئيسي مضاء بشكل كافٍ؟",
+      "responseOptions": "مضاء بالكامل / مضاء جزئيًا / غير مضاء / لا يوجد مسار كهذا / لا أعلم"
+    },
+    {
+      "qCode": "INF-21",
+      "domain": "البنية التحتية",
+      "subDomain": "الإسكان والبيئة العمرانية",
+      "indicator": "تصريف مياه الأمطار",
+      "kpi": "INF-21 — تصريف مياه الأمطار",
+      "questionText": "خلال آخر أمطار غزيرة، هل دخلت المياه المسكن أو منعت الوصول إليه بسبب قصور تصريف المياه؟",
+      "responseOptions": "لم تحدث أمطار غزيرة / لا تأثير / تعذّر الوصول إلى المسكن / دخلت المياه المسكن / كلاهما / لا أعلم"
+    },
+    {
+      "qCode": "INF-22",
+      "domain": "البنية التحتية",
+      "subDomain": "الطرق والنقل",
+      "indicator": "مصفوفة أزمنة الوصول للخدمات",
+      "kpi": "INF-22 — مصفوفة زمن الوصول للخدمات الأساسية",
+      "questionText": "باستخدام وسيلة التنقل المعتادة، كم دقيقة باتجاه واحد يلزم للوصول إلى أقرب مرفق صحي ومدرسة وسوق ونقطة خدمات حكومية ومحطة نقل عام؟",
+      "responseOptions": "Open numeric minutes per service / Service not available / لا أعلم"
+    },
+    {
+      "qCode": "INF-23",
+      "domain": "البنية التحتية",
+      "subDomain": "الطرق والنقل",
+      "indicator": "القدرة على تحمل تكلفة النقل",
+      "kpi": "INF-23 — القدرة على تحمل تكلفة المواصلات",
+      "questionText": "خلال الـ 30 يومًا الماضية، هل منعت تكلفة المواصلات أي فرد من الأسرة من الوصول إلى العمل أو التعليم أو الرعاية الصحية أو خدمة حكومية؟",
+      "responseOptions": "العمل / التعليم / الرعاية الصحية / خدمة حكومية / السوق / لا شيء / أفضّل عدم الإجابة"
+    },
+    {
+      "qCode": "INF-24",
+      "domain": "البنية التحتية",
+      "subDomain": "الاتصال الرقمي",
+      "indicator": "الوصول إلى الأجهزة الرقمية",
+      "kpi": "INF-24 — الوصول إلى الأجهزة الرقمية",
+      "questionText": "لكل فرد بعمر 10 سنوات فأكثر: هل يتوفر للفرد وصول منتظم إلى هاتف ذكي أو حاسوب أو جهاز لوحي عامل؟",
+      "responseOptions": "جهاز خاص / جهاز أسري مشترك / جهاز مستعار أو وصول عام / لا وصول منتظم"
+    },
+    {
+      "qCode": "INF-25",
+      "domain": "البنية التحتية",
+      "subDomain": "الإسكان والبيئة العمرانية",
+      "indicator": "الخدمات الأساسية للمسكن",
+      "kpi": "INF-25 — قائمة الخدمات الأساسية للمسكن",
+      "questionText": "هل يتوفر في المسكن كهرباء عاملة ومياه آمنة وصرف صحي وتصريف مياه وباب أو قفل آمن؟",
+      "responseOptions": "Functioning / تعمل جزئيًا / Not functioning / Not present — for each dimension"
+    },
+    {
+      "qCode": "SOC-01",
+      "domain": "التنمية الاجتماعية",
+      "subDomain": "السلامة والأمن الاجتماعي",
+      "indicator": "الأمان الشخصي المتصور",
+      "kpi": "SOC-01 — نسبة الأسر الشاعرة بالأمان نهارًا وليلًا",
+      "questionText": "ما مدى شعور أفراد هذه الأسرة بالأمان عند المشي في هذه القرية نهارًا وليلًا؟",
+      "responseOptions": "غير آمن إطلاقًا / غير آمن / محايد / آمن / آمن جدًا"
+    },
+    {
+      "qCode": "SOC-02",
+      "domain": "التنمية الاجتماعية",
+      "subDomain": "السلامة والأمن الاجتماعي",
+      "indicator": "الوصول للحماية الاجتماعية",
+      "kpi": "SOC-02 — تلقي حماية اجتماعية نظامية (12 شهرًا)",
+      "questionText": "خلال الـ 12 شهرًا الماضية، هل تلقى أي فرد من الأسرة دعمًا من برنامج حكومي أو برنامج حماية اجتماعية نظامي؟",
+      "responseOptions": "نعم / لا، رغم الأهلية / لا، غير مؤهلة / لا يعلم الأهلية"
+    },
+    {
+      "qCode": "SOC-03",
+      "domain": "التنمية الاجتماعية",
+      "subDomain": "الفئات الهشة",
+      "indicator": "وصول كبار السن للرعاية",
+      "kpi": "SOC-03 — نسبة كبار السن ذوي الوصول لرعاية ملائمة",
+      "questionText": "هل يتوفر لكبار السن في هذه الأسرة وصول إلى رعاية أو دعم أو خدمات اجتماعية ملائمة؟",
+      "responseOptions": "نعم / جزئيًا / لا / لا ينطبق"
+    },
+    {
+      "qCode": "SOC-04",
+      "domain": "التنمية الاجتماعية",
+      "subDomain": "الفئات الهشة",
+      "indicator": "إدماج ذوي الإعاقة",
+      "kpi": "SOC-04 — نسبة المرافق العامة الميسّرة لذوي الإعاقة",
+      "questionText": "هل المرافق العامة في هذه القرية (المدارس، المراكز الصحية، المباني العامة) ميسّرة للأشخاص ذوي الإعاقة؟",
+      "responseOptions": "نعم، في الغالب / جزئيًا / غير ميسّر / لا يوجد أشخاص ذوو إعاقة في الأسرة"
+    },
+    {
+      "qCode": "SOC-05",
+      "domain": "التنمية الاجتماعية",
+      "subDomain": "الفئات الهشة",
+      "indicator": "انتشار الإعاقة (مجالات مجموعة واشنطن الوظيفية)",
+      "kpi": "—",
+      "questionText": "هل يعاني أي فرد من الأسرة من صعوبة في الرؤية أو السمع أو المشي أو صعود الدرج أو التذكر أو التركيز أو العناية الذاتية أو التواصل؟",
+      "responseOptions": "نعم / لا"
+    },
+    {
+      "qCode": "SOC-06",
+      "domain": "التنمية الاجتماعية",
+      "subDomain": "حماية الطفل والشباب",
+      "indicator": "الوعي بحماية الطفل",
+      "kpi": "SOC-06 — الوعي بقنوات الإبلاغ عن إساءة الأطفال",
+      "questionText": "هل تعرف كيف أو أين تبلّغ عن حالة إساءة أو إهمال لطفل في هذه المنطقة؟",
+      "responseOptions": "نعم / لا / غير متأكد / أفضّل عدم الإجابة"
+    },
+    {
+      "qCode": "SOC-07",
+      "domain": "التنمية الاجتماعية",
+      "subDomain": "حماية الطفل والشباب",
+      "indicator": "المشاركة المدنية للشباب",
+      "kpi": "SOC-07 — مشاركة الشباب في الأنشطة المدنية/التطوعية",
+      "questionText": "لكل شاب بعمر 15–24: خلال الـ 12 شهرًا الماضية، هل شارك في أي نشاط تطوعي أو مجتمعي أو مدني أو مجموعة شبابية؟",
+      "responseOptions": "نعم / لا"
+    },
+    {
+      "qCode": "SOC-08",
+      "domain": "التنمية الاجتماعية",
+      "subDomain": "حماية الطفل والشباب",
+      "indicator": "انتشار زواج القُصَّر",
+      "kpi": "SOC-08 — نسبة الأسر التي فيها فرد تزوج قبل 18",
+      "questionText": "هل تزوج أي فرد من هذه الأسرة قبل سن الثامنة عشرة؟",
+      "responseOptions": "نعم / لا / أفضّل عدم الإجابة"
+    },
+    {
+      "qCode": "SOC-09",
+      "domain": "التنمية الاجتماعية",
+      "subDomain": "التماسك الاجتماعي",
+      "indicator": "الشعور بالانتماء المجتمعي",
+      "kpi": "SOC-09 — نسبة الأسر ذات شعور قوي بالانتماء/الثقة",
+      "questionText": "ما مدى قوة شعور أسرتك بالانتماء والثقة داخل مجتمع هذه القرية؟",
+      "responseOptions": "ضعيف جدًا / ضعيف / متوسط / قوي / قوي جدًا"
+    },
+    {
+      "qCode": "SOC-10",
+      "domain": "التنمية الاجتماعية",
+      "subDomain": "التماسك الاجتماعي",
+      "indicator": "وقوع النزاعات",
+      "kpi": "SOC-10 — نسبة الأسر المبلغة عن نزاع غير محلول (عام)",
+      "questionText": "هل كانت هذه الأسرة طرفًا في نزاع مجتمعي أو نزاع على أرض أو موارد لم يُحل خلال العام الماضي، أو تأثرت به؟",
+      "responseOptions": "نعم / لا"
+    },
+    {
+      "qCode": "SOC-11",
+      "domain": "التنمية الاجتماعية",
+      "subDomain": "التماسك الاجتماعي",
+      "indicator": "قدرة العمل الجماعي",
+      "kpi": "SOC-11 — نسبة القرى ذات مجموعة مجتمعية فاعلة",
+      "questionText": "هل توجد في هذه القرية مجموعة أو لجنة مجتمعية فاعلة تعالج الاحتياجات المحلية؟",
+      "responseOptions": "نعم، فاعلة / موجودة لكنها غير فاعلة / لا شيء"
+    },
+    {
+      "qCode": "SOC-12",
+      "domain": "التنمية الاجتماعية",
+      "subDomain": "الفئات الهشة",
+      "indicator": "إدماج ذوي الإعاقة",
+      "kpi": "SOC-04 — نسبة المرافق العامة الميسّرة لذوي الإعاقة (بُعد إثراء: التجربة المعاشة لإتاحة الوصول)",
+      "questionText": "هل يواجه أي فرد من الأسرة من ذوي الإعاقة صعوبة في استخدام المرافق العامة في القرية؟",
+      "responseOptions": "لا صعوبة / بعضهم / شديدة / لا يمكن الاستخدام إطلاقًا"
+    },
+    {
+      "qCode": "SOC-13",
+      "domain": "التنمية الاجتماعية",
+      "subDomain": "الفئات الهشة",
+      "indicator": "إدماج ذوي الإعاقة",
+      "kpi": "SOC-04 — نسبة المرافق العامة الميسّرة لذوي الإعاقة (بُعد إثراء: ميزات إتاحة قابلة للتحقق)",
+      "questionText": "ما ميزات إتاحة الوصول المتوفرة في المرافق التي تستخدمها؟ (منحدرات، دورات مياه ميسّرة، لوحات إرشادية)",
+      "responseOptions": "منحدرات / دورات مياه ميسّرة / لوحات إرشادية / لا شيء"
+    },
+    {
+      "qCode": "SOC-14",
+      "domain": "التنمية الاجتماعية",
+      "subDomain": "التماسك الاجتماعي",
+      "indicator": "العزلة الاجتماعية",
+      "kpi": "SOC-14 — العزلة الاجتماعية",
+      "questionText": "خلال الأسابيع الأربعة الماضية، كم مرة شعرت بالعزلة أو بعدم وجود من تلجأ إليه طلبًا للمساعدة؟",
+      "responseOptions": "أبدًا / نادرًا / أحيانًا / غالبًا / دائمًا / أفضّل عدم الإجابة"
+    },
+    {
+      "qCode": "SOC-15",
+      "domain": "التنمية الاجتماعية",
+      "subDomain": "الفئات الهشة",
+      "indicator": "عبء مقدم الرعاية",
+      "kpi": "SOC-15 — عبء مقدم الرعاية",
+      "questionText": "لمقدم الرعاية الرئيسي غير مدفوع الأجر: خلال الأسابيع الأربعة الماضية، كم مرة منعتك مسؤوليات الرعاية من العمل أو الدراسة أو الراحة أو طلب الرعاية الصحية؟",
+      "responseOptions": "أبدًا / نادرًا / أحيانًا / غالبًا / دائمًا / أفضّل عدم الإجابة"
+    },
+    {
+      "qCode": "SOC-16",
+      "domain": "التنمية الاجتماعية",
+      "subDomain": "الفئات الهشة",
+      "indicator": "التمييز والاستبعاد",
+      "kpi": "SOC-16 — التمييز والاستبعاد",
+      "questionText": "خلال الـ 12 شهرًا الماضية، هل شعرت شخصيًا بالاستبعاد أو المعاملة غير العادلة عند محاولة استخدام خدمة عامة أو المشاركة في الحياة المجتمعية؟",
+      "responseOptions": "لا / نعم — مرة واحدة / نعم — أكثر من مرة / أفضّل عدم الإجابة"
+    },
+    {
+      "qCode": "SOC-17",
+      "domain": "التنمية الاجتماعية",
+      "subDomain": "السلامة والأمن الاجتماعي",
+      "indicator": "الوعي بقنوات دعم العنف الأسري",
+      "kpi": "SOC-17 — الوعي بقنوات الدعم (العنف الأسري/القائم على النوع)",
+      "questionText": "هل تعرف خدمة سرية أو خطًا ساخنًا لشخص يتعرض لعنف أسري أو عنف قائم على النوع الاجتماعي؟",
+      "responseOptions": "نعم / لا / غير متأكد / أفضّل عدم الإجابة"
+    },
+    {
+      "qCode": "SOC-18",
+      "domain": "التنمية الاجتماعية",
+      "subDomain": "الفئات الهشة",
+      "indicator": "المشاركة الاجتماعية لكبار السن",
+      "kpi": "SOC-18 — المشاركة الاجتماعية لكبار السن",
+      "questionText": "لكل مسن: خلال الـ 30 يومًا الماضية، هل شارك في أي نشاط أسري أو مجتمعي أو ديني أو اجتماعي خارج المهام المنزلية المعتادة؟",
+      "responseOptions": "أسبوعيًا أو أكثر / 1–3 مرات / لا شيء / غير قادر لأسباب صحية أو تعذر الوصول / أفضّل عدم الإجابة"
+    },
+    {
+      "qCode": "SOC-19",
+      "domain": "التنمية الاجتماعية",
+      "subDomain": "حماية الطفل والشباب",
+      "indicator": "تطلعات الشباب وعوائقها",
+      "kpi": "—",
+      "questionText": "لكل شاب بعمر 15–24: ما الهدف التعليمي أو الوظيفي أو الريادي الرئيسي الذي تريد تحقيقه خلال العامين القادمين، وما العائق الرئيسي؟",
+      "responseOptions": "Goal: Education / وظيفة / مشروع تجاري / مهارات / هجرة / أخرى;plus barrier list"
+    },
+    {
+      "qCode": "CUL-01",
+      "domain": "الثقافة",
+      "subDomain": "التراث الثقافي",
+      "indicator": "وجود أصول تراثية",
+      "kpi": "CUL-01 — نسبة القرى ذات أصول تراثية مادية أو غير مادية محددة",
+      "questionText": "هل يوجد في هذه القرية مواقع تراث ثقافي أو حرف أو تقاليد يجري الاعتراف بها أو صونها فعليًا؟",
+      "responseOptions": "نعم، تُصان بنشاط / موجودة لكنها غير موثقة/معرضة للخطر / لم يُحدد شيء"
+    },
+    {
+      "qCode": "CUL-02",
+      "domain": "الثقافة",
+      "subDomain": "التراث الثقافي",
+      "indicator": "حالة الخطر على التراث",
+      "kpi": "CUL-02 — الخطر المتصور لفقدان الممارسات أو المواقع الثقافية",
+      "questionText": "هل تشعر أن التقاليد أو الحرف أو مواقع التراث المحلية معرضة للاندثار في الجيل القادم؟",
+      "responseOptions": "خطر مرتفع / خطر متوسط / خطر منخفض / لا أعلم"
+    },
+    {
+      "qCode": "CUL-03",
+      "domain": "الثقافة",
+      "subDomain": "البرامج والمشاركة الثقافية",
+      "indicator": "توفر البرامج",
+      "kpi": "CUL-03 — الوعي ببرامج ثقافية/فنية/تراثية يمكن الوصول إليها",
+      "questionText": "هل تعلم بوجود أي برنامج أو فعالية ثقافية أو فنية أو تراثية يمكن الوصول إليها من هذه الأسرة خلال نحو 60 دقيقة؟",
+      "responseOptions": "نعم / لا / لا أعلم"
+    },
+    {
+      "qCode": "CUL-04",
+      "domain": "الثقافة",
+      "subDomain": "البرامج والمشاركة الثقافية",
+      "indicator": "معدل المشاركة",
+      "kpi": "CUL-04 — تكرار المشاركة (12 شهرًا)",
+      "questionText": "هل شارك أي فرد من هذه الأسرة في نشاط ثقافي أو تراثي أو فني محلي خلال الـ 12 شهرًا الماضية؟",
+      "responseOptions": "نعم، أكثر من مرة / نعم، مرة واحدة / لا"
+    },
+    {
+      "qCode": "CUL-05",
+      "domain": "الثقافة",
+      "subDomain": "الهوية المجتمعية",
+      "indicator": "الفخر الثقافي",
+      "kpi": "CUL-05 — الفخر الشخصي بالهوية الثقافية/التراث المحلي",
+      "questionText": "ما مدى فخرك شخصيًا بالهوية الثقافية والتراث المرتبطين بهذه القرية؟",
+      "responseOptions": "غير فخور إطلاقًا / فخور قليلًا / فخور باعتدال / فخور / فخور جدًا"
+    },
+    {
+      "qCode": "CUL-06",
+      "domain": "الثقافة",
+      "subDomain": "الهوية المجتمعية",
+      "indicator": "النقل بين الأجيال",
+      "kpi": "CUL-06 — نقل المهارات/المعارف التقليدية للأجيال الأصغر",
+      "questionText": "هل يجري فعليًا تعليم المهارات أو الحرف أو المعارف التقليدية للأجيال الأصغر في هذه الأسرة/المجتمع؟",
+      "responseOptions": "نعم، بنشاط / إلى حد ما / لا يحدث"
+    },
+    {
+      "qCode": "CUL-07",
+      "domain": "الثقافة",
+      "subDomain": "البرامج والمشاركة الثقافية",
+      "indicator": "توفر البرامج",
+      "kpi": "CUL-03 — الوعي ببرامج ثقافية/فنية/تراثية يمكن الوصول إليها (بُعد إثراء: توفر المقر (بُعد هيكلي))",
+      "questionText": "هل يوجد في القرية مقر صالح للأنشطة الثقافية/المجتمعية؟",
+      "responseOptions": "نعم، ملائم / نعم، محدود / لا / لا أعلم"
+    },
+    {
+      "qCode": "CUL-08",
+      "domain": "الثقافة",
+      "subDomain": "الثقافة",
+      "indicator": "توثيق التراث غير المادي",
+      "kpi": "CUL-08 — توثيق التراث غير المادي",
+      "questionText": "هل وُثّق أو أُرشف رسميًا أي من التراث الثقافي غير المادي لهذه القرية (تاريخ شفهي، ممارسات تقليدية، لهجة محلية)؟",
+      "responseOptions": "نعم، بالكامل / جزئيًا / لا / لا أعلم"
+    },
+    {
+      "qCode": "CUL-09",
+      "domain": "الثقافة",
+      "subDomain": "الهوية المجتمعية",
+      "indicator": "نقل اللغة والتاريخ الشفهي",
+      "kpi": "CUL-09 — نقل اللغة والتاريخ الشفهي",
+      "questionText": "كم مرة يستخدم أفراد الأسرة الأصغر سنًا اللهجة المحلية أو الحكايات أو التقاليد الشفهية مع الأجيال الأكبر؟",
+      "responseOptions": "يوميًا / أسبوعيًا / شهريًا / نادرًا / أبدًا / لا ينطبق"
+    },
+    {
+      "qCode": "CUL-10",
+      "domain": "الثقافة",
+      "subDomain": "البرامج والمشاركة الثقافية",
+      "indicator": "اهتمام الشباب الثقافي",
+      "kpi": "CUL-10 — اهتمام الشباب الثقافي",
+      "questionText": "للشباب بعمر 15–24: ما مدى اهتمامك بتعلّم أو ممارسة حرفة أو تقليد أو لهجة أو نشاط تراثي محلي؟",
+      "responseOptions": "إطلاقًا / قليلًا / باعتدال / جدًا / مهتم للغاية"
+    },
+    {
+      "qCode": "CUL-11",
+      "domain": "الثقافة",
+      "subDomain": "التراث الثقافي",
+      "indicator": "احتياجات دعم حفظة التراث",
+      "kpi": "—",
+      "questionText": "لحفظة التراث الثقافي المحددين: ما الدعم الأكثر حاجة لصون هذا الأصل الثقافي أو نقله؟",
+      "responseOptions": "توثيق / تدريب متدربين / مقر/قاعة / تمويل / مواد خام / اعتراف قانوني / تسويق / أرشفة رقمية / أخرى — حدد"
+    },
+    {
+      "qCode": "CUL-12",
+      "domain": "الثقافة",
+      "subDomain": "البرامج والمشاركة الثقافية",
+      "indicator": "عوائق المشاركة الثقافية",
+      "kpi": "—",
+      "questionText": "لغير المشاركين: ما الذي يمنعك من المشاركة في الأنشطة الثقافية أو التراثية؟",
+      "responseOptions": "لا يوجد برنامج / التوقيت / التكلفة / المواصلات / نقص المعلومات / صعوبة الوصول / غير معني أو غير مهتم / قيود أسرية / أخرى — حدد"
+    },
+    {
+      "qCode": "CUL-13",
+      "domain": "الثقافة",
+      "subDomain": "التراث الثقافي",
+      "indicator": "الاقتصاد التراثي المعيشي",
+      "kpi": "CUL-13 — الإمكانات المعيشية للتراث",
+      "questionText": "خلال الـ 12 شهرًا الماضية، هل كسب أي فرد من الأسرة دخلًا من حرفة محلية أو منتج تراثي أو فعالية ثقافية أو سياحة مرتبطة بالتراث؟",
+      "responseOptions": "نعم — بانتظام / نعم — أحيانًا / لا / أفضّل عدم الإجابة;activity type recorded"
+    },
+    {
+      "qCode": "GOV-01",
+      "domain": "الحوكمة والخدمات",
+      "subDomain": "الوصول للخدمات الحكومية",
+      "indicator": "سهولة الوصول لمراكز الخدمة",
+      "kpi": "GOV-01 — نسبة الأسر المبلغة عن سهولة الوصول لمراكز الخدمة",
+      "questionText": "ما مدى سهولة وصول هذه الأسرة إلى مراكز الخدمات الحكومية (الأحوال المدنية، التراخيص، وغيرها) عند الحاجة؟",
+      "responseOptions": "صعب جدًا / صعب / متوسط / سهل / سهل جدًا"
+    },
+    {
+      "qCode": "GOV-02",
+      "domain": "الحوكمة والخدمات",
+      "subDomain": "الوصول للخدمات الحكومية",
+      "indicator": "اكتمال الوثائق المدنية",
+      "kpi": "GOV-02 — نسبة الأفراد ذوي الوثائق المدنية الكاملة",
+      "questionText": "هل يمتلك جميع أفراد هذه الأسرة وثائق مدنية كاملة (هوية وطنية، شهادة ميلاد، وغيرها)؟",
+      "responseOptions": "نعم، الجميع / بعضها ناقص / لا أعلم"
+    },
+    {
+      "qCode": "GOV-03",
+      "domain": "الحوكمة والخدمات",
+      "subDomain": "الحكومة الرقمية",
+      "indicator": "استخدام الحكومة الإلكترونية",
+      "kpi": "GOV-03 — نسبة الأسر المستخدمة لخدمة حكومية إلكترونية (6 أشهر)",
+      "questionText": "هل استخدمت هذه الأسرة أي خدمة حكومية رقمية (طلبات إلكترونية، منصات هوية رقمية) خلال الأشهر الستة الماضية؟",
+      "responseOptions": "نعم / لا، لكنه على علم / لا، غير مدرك للخيارات"
+    },
+    {
+      "qCode": "GOV-04",
+      "domain": "الحوكمة والخدمات",
+      "subDomain": "الحكومة الرقمية",
+      "indicator": "الرضا عن الخدمات الرقمية",
+      "kpi": "GOV-04 — نسبة الأسر الراضية عن الخدمات الإلكترونية المستخدمة",
+      "questionText": "في حال الاستخدام، ما مدى رضاك عن تجربة الخدمة الحكومية الإلكترونية؟",
+      "responseOptions": "غير راضٍ إطلاقًا / غير راضٍ / محايد / راضٍ / راضٍ جدًا / لا ينطبق"
+    },
+    {
+      "qCode": "GOV-05",
+      "domain": "الحوكمة والخدمات",
+      "subDomain": "المشاركة المجتمعية",
+      "indicator": "المشاركة في الحوكمة المحلية",
+      "kpi": "GOV-05 — نسبة البالغين المشاركين في لجنة أو مجلس أو جمعية محلية",
+      "questionText": "هل يشارك أفراد بالغون من هذه الأسرة في أي لجنة أو مجلس أو جمعية مجتمعية محلية؟",
+      "responseOptions": "نعم، بنشاط / أحيانًا / لا"
+    },
+    {
+      "qCode": "GOV-06",
+      "domain": "الحوكمة والخدمات",
+      "subDomain": "المشاركة المجتمعية",
+      "indicator": "الصوت في القرار المحلي",
+      "kpi": "GOV-06 — القدرة المتصورة للسكان على التأثير في القرارات",
+      "questionText": "هل يشعر سكان هذه القرية بأن لديهم فرصة حقيقية للتأثير في القرارات التي تمس القرية؟",
+      "responseOptions": "لا تأثير إطلاقًا / تأثير محدود / تأثير متوسط / تأثير قوي / تأثير قوي جدًا"
+    },
+    {
+      "qCode": "GOV-07",
+      "domain": "الحوكمة والخدمات",
+      "subDomain": "المساءلة والثقة",
+      "indicator": "الثقة في المؤسسات المحلية",
+      "kpi": "GOV-07 — مستوى الثقة في الجهات الحوكمية/الإدارية المحلية",
+      "questionText": "ما مدى ثقتك في الجهات الإدارية أو الحوكمية المحلية التي تخدم هذه القرية؟",
+      "responseOptions": "لا توجد ثقة / ثقة منخفضة / ثقة متوسطة / ثقة عالية / ثقة عالية جدًا"
+    },
+    {
+      "qCode": "GOV-08",
+      "domain": "الحوكمة والخدمات",
+      "subDomain": "المساءلة والثقة",
+      "indicator": "الوعي بقنوات التظلم",
+      "kpi": "GOV-08 — الوعي بقناة الشكاوى/التظلمات",
+      "questionText": "هل تعرف كيف وأين تقدّم طلب خدمة أو شكوى أو تظلّمًا بشأن الخدمات العامة إلى الجهة المحلية المسؤولة؟",
+      "responseOptions": "نعم / تقريبًا / لا"
+    },
+    {
+      "qCode": "GOV-09",
+      "domain": "الحوكمة والخدمات",
+      "subDomain": "المساءلة والثقة",
+      "indicator": "تحديد قناة الشكوى (تحقق)",
+      "kpi": "—",
+      "questionText": "إذا كانت الإجابة نعم، فأي قناة ستستخدم؟",
+      "responseOptions": "مكتب البلدية / منصة/تطبيق البلاغات الوطني / خط ساخن / المجلس المحلي/العمدة / أخرى — حدد / لا يستطيع تسمية قناة"
+    },
+    {
+      "qCode": "GOV-10",
+      "domain": "الحوكمة والخدمات",
+      "subDomain": "المساءلة والثقة",
+      "indicator": "الثقة في المؤسسات المحلية",
+      "kpi": "GOV-07 — مستوى الثقة في الجهات الحوكمية/الإدارية المحلية (بُعد إثراء: الاستجابة المُختبرة)",
+      "questionText": "خلال الـ 12 شهرًا الماضية، هل قدمت الأسرة أي طلب/شكوى إلى جهة محلية، وماذا كانت النتيجة؟",
+      "responseOptions": "تم الحل / قيد المعالجة / تم تجاهله / لم يقدَّم طلب"
+    },
+    {
+      "qCode": "GOV-11",
+      "domain": "الحوكمة والخدمات",
+      "subDomain": "الحوكمة والخدمات",
+      "indicator": "الوعي بالمنظمات غير الربحية",
+      "kpi": "GOV-11 — الوعي",
+      "questionText": "هل تعلم بوجود منظمات غير ربحية (جمعيات خيرية، جمعيات، تعاونيات) تقدم خدمات في هذه القرية أو قربها؟",
+      "responseOptions": "نعم، عدة منظمات / نعم، واحدة أو اثنتان / لا شيء / لا أعلم"
+    },
+    {
+      "qCode": "GOV-12",
+      "domain": "الحوكمة والخدمات",
+      "subDomain": "الحوكمة والخدمات",
+      "indicator": "الوصول لخدمات القطاع غير الربحي",
+      "kpi": "GOV-12 — الاستفادة",
+      "questionText": "هل تلقت هذه الأسرة أي خدمة أو دعم من منظمة غير ربحية خلال الـ 12 شهرًا الماضية؟",
+      "responseOptions": "نعم / لا، لكنه يعرف كيفية الوصول / لا، ولا يعرف كيفية الوصول / لا أعلم"
+    },
+    {
+      "qCode": "GOV-13",
+      "domain": "الحوكمة والخدمات",
+      "subDomain": "الحوكمة والخدمات",
+      "indicator": "التمثيل المحلي الرسمي",
+      "kpi": "GOV-13 — هيكل التمثيل المحلي",
+      "questionText": "هل يوجد في هذه القرية كيان تمثيلي معترف به رسميًا (مجلس قروي، مكتب عمدة، أو ما شابه) يرفع احتياجات المجتمع إلى سلطات المحافظة أو المنطقة؟",
+      "responseOptions": "نعم، فاعلة / نعم، لكنها غير فاعلة / لا / لا أعلم"
+    },
+    {
+      "qCode": "GOV-14",
+      "domain": "الحوكمة والخدمات",
+      "subDomain": "المساءلة والثقة",
+      "indicator": "الوصول إلى المعلومات العامة",
+      "kpi": "GOV-14 — الوصول إلى المعلومات العامة",
+      "questionText": "خلال الـ 12 شهرًا الماضية، هل تلقيت معلومات واضحة وفي وقتها عن أي خدمة عامة أو شرط أهلية أو مشروع أو قرار محلي يمس أسرتك؟",
+      "responseOptions": "دائمًا / عادةً / أحيانًا / أبدًا / لم تلزم معلومات ذات صلة;information-source list recorded"
+    },
+    {
+      "qCode": "GOV-15",
+      "domain": "الحوكمة والخدمات",
+      "subDomain": "المشاركة المجتمعية",
+      "indicator": "حلقة التغذية الراجعة للمشاورات",
+      "kpi": "GOV-15 — حلقة التغذية الراجعة للمشاورات",
+      "questionText": "لمن شارك في مشاورة: هل أُبلغت لاحقًا بكيفية أخذ مدخلات المجتمع في الاعتبار أو بما تقرر؟",
+      "responseOptions": "نعم، بوضوح / جزئيًا / لا / القرار لم يُتخذ بعد / لا أعلم"
+    },
+    {
+      "qCode": "GOV-16",
+      "domain": "الحوكمة والخدمات",
+      "subDomain": "الوصول للخدمات الحكومية",
+      "indicator": "زمن إنجاز المعاملة",
+      "kpi": "GOV-16 — زمن إنجاز الخدمة",
+      "questionText": "لآخر معاملة حكومية ذات أولوية: كم يومًا تقويميًا مضى من أول طلب حتى الإنجاز أو آخر رد؟",
+      "responseOptions": "Open numeric days / Still pending / No response / لا أعلم"
+    },
+    {
+      "qCode": "GOV-17",
+      "domain": "الحوكمة والخدمات",
+      "subDomain": "المساءلة والثقة",
+      "indicator": "الأمان في تقديم الشكوى",
+      "kpi": "GOV-17 — الثقة في تقديم الشكوى بأمان",
+      "questionText": "ما مدى ثقتك في قدرتك على تقديم شكوى بشأن خدمة عامة دون عواقب سلبية غير عادلة؟",
+      "responseOptions": "غير واثق إطلاقًا / قليلًا / باعتدال / جدًا / واثق تمامًا / أفضّل عدم الإجابة"
+    },
+    {
+      "qCode": "GOV-18",
+      "domain": "الحوكمة والخدمات",
+      "subDomain": "الحوكمة والخدمات",
+      "indicator": "الطلب غير الملبّى على القطاع غير الربحي",
+      "kpi": "GOV-18 — الطلب غير الملبّى على القطاع غير الربحي",
+      "questionText": "خلال الـ 12 شهرًا الماضية، هل احتاجت الأسرة إلى أي دعم اجتماعي أو معيشي أو صحي أو تعليمي أو غيره ولم توفره أي جهة حكومية أو غير ربحية؟",
+      "responseOptions": "Service domains (select all that apply) / لا توجد حاجة غير ملباة / لا أعلم / أفضّل عدم الإجابة"
+    },
+    {
+      "qCode": "GOV-19",
+      "domain": "الحوكمة والخدمات",
+      "subDomain": "الحوكمة والخدمات",
+      "indicator": "ازدواجية الخدمات والتنسيق",
+      "kpi": "GOV-19 — ازدواجية الخدمات والتنسيق",
+      "questionText": "للأسر المتلقية للدعم: خلال الـ 12 شهرًا الماضية، هل قدمت منظمات مختلفة النوع نفسه من الدعم بينما بقيت حاجة مهمة أخرى دون تلبية؟",
+      "responseOptions": "لا ازدواجية / بعض الازدواجية / ازدواجية كبيرة / لا أعلم / أفضّل عدم الإجابة"
+    },
+    {
+      "qCode": "XDM-01",
+      "domain": "عابر للمجالات (نمط أسئلة الحقائق)",
+      "subDomain": "عابر للمجالات",
+      "indicator": "نمط التحقق بالحداثة",
+      "kpi": "—",
+      "questionText": "متى كانت آخر مرة استخدم فيها أحد أفراد الأسرة [الخدمة]؟ (نمط يُطبق على كل مؤشر حقائقي)",
+      "responseOptions": "Recency bands per service"
+    },
+    {
+      "qCode": "XDM-02",
+      "domain": "عابر للمجالات (نمط أسئلة الحقائق)",
+      "subDomain": "عابر للمجالات",
+      "indicator": "نمط تشخيص العوائق",
+      "kpi": "—",
+      "questionText": "ما الذي يمنعك من استخدام الخدمة؟",
+      "responseOptions": "Barrier categories per service"
+    },
+    {
+      "qCode": "XDM-03",
+      "domain": "عابر للمجالات (نمط أسئلة الحقائق)",
+      "subDomain": "عابر للمجالات",
+      "indicator": "سجل أفراد الأسرة (وحدة)",
+      "kpi": "—",
+      "questionText": "يرجى إدراج جميع أفراد الأسرة المعتادين وتسجيل العمر والجنس وصلة القرابة والتعليم والحالة العمالية والصعوبات الوظيفية.",
+      "responseOptions": "Standard coded roster fields"
+    },
+    {
+      "qCode": "XDM-04",
+      "domain": "عابر للمجالات (نمط أسئلة الحقائق)",
+      "subDomain": "عابر للمجالات",
+      "indicator": "البيانات الجغرافية (وحدة)",
+      "kpi": "—",
+      "questionText": "سجّل المنطقة الإدارية والقرية والعنقود وإحداثيات الأسرة ونوع التجمع السكاني والمسافة إلى مركز القرية.",
+      "responseOptions": "Coded geography + coordinates + GPS accuracy"
+    },
+    {
+      "qCode": "XDM-05",
+      "domain": "عابر للمجالات (نمط أسئلة الحقائق)",
+      "subDomain": "عابر للمجالات",
+      "indicator": "اختيار المستجيب والوكالة (وحدة)",
+      "kpi": "—",
+      "questionText": "سجّل صلة المستجيب بالأسرة، والوحدات التي يمكنه الإجابة عنها بموثوقية، وما إذا كانت أي إجابات بالوكالة.",
+      "responseOptions": "Relationship;knowledgeable for module: Yes/No;proxy: Yes/No"
+    },
+    {
+      "qCode": "XDM-06",
+      "domain": "عابر للمجالات (نمط أسئلة الحقائق)",
+      "subDomain": "عابر للمجالات",
+      "indicator": "قالب الحاجة–الاستخدام–العائق",
+      "kpi": "—",
+      "questionText": "لكل خدمة ذات أولوية: هل لزمت الخدمة خلال فترة الاسترجاع؛ وهل استُخدمت؛ ومتى؛ وهل لُبيت الحاجة كاملة؛ وما العوائق التي أثرت على الاستخدام؟",
+      "responseOptions": "Need / Use / Outcome / Barrier / Time / Cost fields tailored by service"
+    },
+    {
+      "qCode": "XDM-07",
+      "domain": "عابر للمجالات (نمط أسئلة الحقائق)",
+      "subDomain": "عابر للمجالات",
+      "indicator": "راية مصدر الدليل (وحدة)",
+      "kpi": "—",
+      "questionText": "لكل مؤشر حقائقي، سجّل ما إذا كان الدليل من ملاحظة أو سجل إداري أو نظم جغرافية أو تقرير مزود خدمة أو تجربة الأسرة أو تصور الأسرة.",
+      "responseOptions": "Source type + date + sample count + population coverage + confidence rating"
+    },
+    {
+      "qCode": "XDM-08",
+      "domain": "عابر للمجالات (نمط أسئلة الحقائق)",
+      "subDomain": "عابر للمجالات",
+      "indicator": "الصدمات الكبرى للأسرة",
+      "kpi": "XDM-08 — الصدمات الكبرى للأسرة",
+      "questionText": "خلال الـ 12 شهرًا الماضية، ما الأحداث الكبرى التي أثرت على دخل الأسرة أو صحتها أو سكنها أو تعليمها أو وصولها إلى الخدمات؟",
+      "responseOptions": "فقدان وظيفة / مرض أو وفاة / صدمة أسعار / كارثة طبيعية / نزوح / نزاع / أخرى — حدد / لا شيء"
+    }
+  ]
+}
