@@ -890,6 +890,11 @@ model Initiative {
   // Optional per client Q16 ("recommend optional, not required, at least
   // for Sprint 3").
   budget              Decimal?  @db.Decimal(14, 2)
+  // Client feedback 2026-09-07 — budget needs an explicit currency, since
+  // funding isn't always SAR. ISO 4217 code; defaults to SAR (this
+  // platform's home currency) so existing/omitted-currency rows still read
+  // correctly.
+  currency            String    @default("SAR") @db.VarChar(3)
   // Client Q15 — owner-controlled, off by default.
   openToOtherEntities Boolean   @default(false) @map("open_to_other_entities")
   createdBy           String    @map("created_by") @db.Uuid
