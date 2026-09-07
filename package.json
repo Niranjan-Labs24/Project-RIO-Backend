@@ -25,6 +25,8 @@
     "ai004:verify-merge": "tsx scripts/ai004-verify-merge.ts",
     "ai004:verify-tenancy": "tsx scripts/ai004-verify-tenancy.ts",
     "nfr010:restore-check": "tsx scripts/restore-check.ts",
+    "ai:oci-smoke": "tsx scripts/oci-genai-smoke.ts",
+    "ai:oci-tasks": "tsx scripts/oci-genai-task-check.ts",
     "ai004:repair-stranded": "tsx scripts/ai004-repair-stranded-candidates.ts",
     "ai004:verify-crossorg": "tsx scripts/ai004-verify-crossorg-coverage.ts",
     "verify:scoring-idempotent": "tsx scripts/verify-scoring-idempotent.ts",

@@ -101,6 +101,49 @@ export const EnvSchema = Type.Object({
   REVIEWER_SLA_HOURS: Type.Number({ default: 48 }),
   REVIEWER_SLA_POLL_INTERVAL_MS: Type.Number({ default: 60_000 }),
   GEMINI_API_KEY: Type.Optional(Type.String()),
+  // ── Which model provider AiService talks to ──────────────────────────
+  //
+  // 'oci_cohere' (the default) is Cohere Command A on OCI Generative AI in
+  // me-riyadh-1, which keeps inference in-Kingdom — the same residency
+  // question SEMANTIC_DUPLICATES_ENABLED below is waiting on, which is why
+  // this is a deployment setting rather than a screen toggle.
+  //
+  // 'gemini' is the fallback, kept so a broken OCI tenancy (an expired API
+  // key, a policy change, a region outage) is one env var away from being
+  // worked around instead of a code change.
+  //
+  // An environment on the default still needs OCI_GENAI_API_KEY and
+  // OCI_GENAI_COMPARTMENT_ID. Without them AI features log a warning and
+  // fall back to manual mode — the same way a missing GEMINI_API_KEY has
+  // always behaved — rather than failing startup. Run `npm run ai:oci-smoke`
+  // in each environment to prove the tenancy before relying on it.
+  //
+  // Whichever is selected, every AI task stays provider-neutral — see
+  // AiTask.responseSchema.
+  AI_PROVIDER: Type.Union([Type.Literal('oci_cohere'), Type.Literal('gemini')], {
+    default: 'oci_cohere',
+  }),
+  // OCI Generative AI service API key — the `sk-...` secret itself, NOT the
+  // key's OCID. Sent as `Authorization: Bearer <key>`; no OCI request
+  // signing is involved. A key only works in the region it was created in.
+  OCI_GENAI_API_KEY: Type.Optional(Type.String()),
+  // The compartment the model is called in. Required by the inference API
+  // even when authenticating with an API key — a request without it is
+  // rejected with "Compartment ID must be provided."
+  OCI_GENAI_COMPARTMENT_ID: Type.Optional(Type.String()),
+  // Region must match the region the API key was issued in, and is what
+  // makes the residency claim true. me-riyadh-1 is in-Kingdom.
+  OCI_GENAI_REGION: Type.String({ default: 'me-riyadh-1' }),
+  OCI_GENAI_MODEL_ID: Type.String({ default: 'cohere.command-a-03-2025' }),
+  // ON_DEMAND bills per request against a shared pool. DEDICATED routes to
+  // a provisioned AI cluster and needs its own endpoint OCID as the model
+  // id, so it is only worth setting once such a cluster exists.
+  OCI_GENAI_SERVING_TYPE: Type.Union([Type.Literal('ON_DEMAND'), Type.Literal('DEDICATED')], {
+    default: 'ON_DEMAND',
+  }),
+  // On-demand inference caps output at 4,000 tokens per run, so this is a
+  // ceiling rather than a target. Tasks that need less say so themselves.
+  OCI_GENAI_MAX_TOKENS: Type.Number({ default: 4000, minimum: 1, maximum: 4000 }),
   // RIO-AI-004 / Q10 — the switch that lets need text leave the platform.
   //
   // Semantic duplicate detection embeds need titles and statements with an
