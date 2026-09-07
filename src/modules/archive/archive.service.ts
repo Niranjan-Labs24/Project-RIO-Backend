@@ -53,6 +53,14 @@ export class ArchiveService {
 
     const orgById = new Map(organisations.map((org) => [org.id, org]));
     const studyById = new Map(studies.map((study) => [study.id, study]));
+    // RIO-DATA-002 — which archive entries have already been imported into
+    // the unified dashboard. `studies` is loaded in full above, so this is a
+    // map build rather than another query.
+    const importedStudyIdByHistoricalId = new Map(
+      studies
+        .filter((study) => study.historicalStudyId !== null)
+        .map((study) => [study.historicalStudyId as string, study.id]),
+    );
     const needsByStudyId = new Map<string, typeof needs>();
     for (const need of needs) {
       const list = needsByStudyId.get(need.studyId) ?? [];
@@ -120,9 +128,15 @@ export class ArchiveService {
           id: hist.id,
           kind: "historical",
           title: hist.title,
-          status: "completed",
+          // RIO-DATA-002 — "imported" means the needs inside the file are
+          // live in the unified dashboard; "completed" means the file is
+          // archived but its contents are still only readable by download.
+          status: importedStudyIdByHistoricalId.has(hist.id) ? "imported" : "completed",
           date: hist.studyDate.toISOString(),
-          studyId: null,
+          // The Study this entry was imported into, so the client can link
+          // straight to the imported needs instead of offering the import
+          // action twice.
+          studyId: importedStudyIdByHistoricalId.get(hist.id) ?? null,
           organizationId: hist.orgId,
           organizationName: org?.name ?? "",
           // A historical entry's own recorded region, not the org's — it
@@ -130,6 +144,7 @@ export class ArchiveService {
           region: hist.region,
           sector: hist.targetSector,
           villages: [],
+          fileName: hist.fileName,
         });
       }
     }
