@@ -97,6 +97,15 @@ export class SurveysService {
         subDomain: string;
         indicator: string | null;
         kpi: string | null;
+        // RIO Arabic Localization (Approach 3, Hybrid) — same client-supplied
+        // columns as questionTextAr/answerOptionsAr above; missed here
+        // originally, so Survey Builder's own SurveyQuestion view (as
+        // opposed to the eligible/recommended Question Bank browse lists,
+        // which read straight off QuestionsService.toQuestionRow and always
+        // had these) showed the indicator/KPI in English even once a survey
+        // was already created.
+        indicatorAr: string | null;
+        kpiAr: string | null;
         priorityWeight?: Prisma.Decimal | null;
       } | null;
     },
@@ -127,6 +136,8 @@ export class SurveysService {
         subDomain: sq.question.subDomain,
         indicator: sq.question.indicator,
         kpi: sq.question.kpi,
+        indicatorAr: sq.question.indicatorAr,
+        kpiAr: sq.question.kpiAr,
         priorityWeight: includeWeight ? (sq.question.priorityWeight?.toNumber() ?? null) : undefined,
         isCustom: false,
         order: sq.order,
@@ -154,6 +165,10 @@ export class SurveysService {
       subDomain: sq.subDomain,
       indicator: null,
       kpi: sq.kpi,
+      // Same reasoning as questionTextAr above — no Arabic column exists
+      // for a custom question's indicator/KPI.
+      indicatorAr: null,
+      kpiAr: null,
       // A custom question has no Question Bank row, so no weight — kept as
       // an explicit key (not omitted) so both branches share one shape.
       priorityWeight: undefined,
