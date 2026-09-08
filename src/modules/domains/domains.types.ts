@@ -62,6 +62,20 @@ export interface PublicDomainOption {
   nameAr: string | null;
 }
 
+/** Just enough for the app-wide domain/sub-domain name→Arabic-name lookup
+ * (useDomainArabicMap on the frontend) — every role needs this to display a
+ * Need/Initiative/Question's plain-string domain/sub-domain in Arabic, but
+ * most roles hold no `methodologyQuestionBank` grant at all (e.g. ngo_admin,
+ * client-confirmed 2026-08-20 — Methodology Configuration is System Admin
+ * only), so gating this lookup behind that permission silently broke Arabic
+ * display for everyone else instead of erroring. Same "name-only, nothing
+ * sensitive" posture as PublicDomainOption, extended with sub-domains. */
+export interface PublicDomainTreeOption {
+  name: string;
+  nameAr: string | null;
+  subDomains: { name: string; nameAr: string | null }[];
+}
+
 export interface CreateDomainPayload {
   code: string;
   name: string;
