@@ -34,7 +34,12 @@ export class DomainsService {
   async createDomain(payload: CreateDomainPayload): Promise<Domain> {
     try {
       const row = await this.prisma.domain.create({
-        data: { code: payload.code, name: payload.name, displayOrder: payload.displayOrder ?? 0 },
+        data: {
+          code: payload.code,
+          name: payload.name,
+          nameAr: payload.nameAr,
+          displayOrder: payload.displayOrder ?? 0,
+        },
       });
       return this.toDomain(row);
     } catch (err) {
@@ -97,7 +102,13 @@ export class DomainsService {
     await this.findDomainOrThrow(domainId);
     try {
       const row = await this.prisma.subDomain.create({
-        data: { domainId, code: payload.code, name: payload.name, displayOrder: payload.displayOrder ?? 0 },
+        data: {
+          domainId,
+          code: payload.code,
+          name: payload.name,
+          nameAr: payload.nameAr,
+          displayOrder: payload.displayOrder ?? 0,
+        },
       });
       return this.toSubDomain(row);
     } catch (err) {
@@ -151,10 +162,25 @@ export class DomainsService {
   }
 
   private toDomain(row: DomainRow): Domain {
-    return { id: row.id, code: row.code, name: row.name, displayOrder: row.displayOrder, isActive: row.isActive };
+    return {
+      id: row.id,
+      code: row.code,
+      name: row.name,
+      nameAr: row.nameAr,
+      displayOrder: row.displayOrder,
+      isActive: row.isActive,
+    };
   }
 
   private toSubDomain(row: SubDomainRow): SubDomain {
-    return { id: row.id, domainId: row.domainId, code: row.code, name: row.name, displayOrder: row.displayOrder, isActive: row.isActive };
+    return {
+      id: row.id,
+      domainId: row.domainId,
+      code: row.code,
+      name: row.name,
+      nameAr: row.nameAr,
+      displayOrder: row.displayOrder,
+      isActive: row.isActive,
+    };
   }
 }

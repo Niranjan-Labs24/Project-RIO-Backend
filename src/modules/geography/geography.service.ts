@@ -126,14 +126,35 @@ export class GeographyService {
   }
 
   private toRegion(row: RegionRow): Region {
-    return { id: row.id, code: row.code, name: row.name, isoCode: row.isoCode, capital: row.capital };
+    return {
+      id: row.id,
+      code: row.code,
+      name: row.name,
+      nameAr: row.nameAr,
+      isoCode: row.isoCode,
+      capital: row.capital,
+    };
   }
 
   private toGovernorate(row: GovernorateRow): Governorate {
-    return { id: row.id, code: row.code, regionId: row.regionId, name: row.name, category: row.category };
+    return {
+      id: row.id,
+      code: row.code,
+      regionId: row.regionId,
+      name: row.name,
+      nameAr: row.nameAr,
+      category: row.category,
+    };
   }
 
   private toCenter(row: CenterRow): Center {
-    return { id: row.id, code: row.code, governorateId: row.governorateId, name: row.name, category: row.category };
+    return {
+      id: row.id,
+      code: row.code,
+      governorateId: row.governorateId,
+      name: row.name,
+      nameAr: row.nameAr,
+      category: row.category,
+    };
   }
 }

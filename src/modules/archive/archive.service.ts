@@ -3,6 +3,7 @@ import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { getOrgStore, requireOrgId } from "../../tenancy/org-context";
 import { roleByKey } from "../../rbac/role-matrix";
 import { AuditService } from "../audit/audit.service";
+import { HistoricalStudiesService } from "../historical-studies/historical-studies.service";
 import { EXPORTABLE_STATUSES } from "../reports/reports.types";
 import type { ArchiveEntry, ListArchiveParams } from "./archive.types";
 
@@ -25,26 +26,33 @@ export class ArchiveService {
   constructor(
     private readonly tenant: TenantPrismaService,
     private readonly audit: AuditService,
+    private readonly historicalStudies: HistoricalStudiesService,
   ) {}
 
   async list(params: ListArchiveParams): Promise<ArchiveEntry[]> {
     const isCrossEntity = this.isCrossEntity();
 
-    const { organisations, studies, reports, needs, historicalStudies } = await (isCrossEntity
-      ? this.tenant.runAsSupervisor(async (tx) => ({
-          organisations: await tx.organisation.findMany(),
-          studies: await tx.study.findMany(),
-          reports: await tx.report.findMany({ where: { status: { in: EXPORTABLE_STATUSES } } }),
-          needs: await tx.need.findMany(),
-          historicalStudies: await tx.historicalStudy.findMany(),
-        }))
-      : this.tenant.runInOrgContext(async (tx) => ({
-          organisations: await tx.organisation.findMany(),
-          studies: await tx.study.findMany(),
-          reports: await tx.report.findMany({ where: { status: { in: EXPORTABLE_STATUSES } } }),
-          needs: await tx.need.findMany(),
-          historicalStudies: await tx.historicalStudy.findMany(),
-        })));
+    const [{ organisations, studies, reports, needs }, historicalStudyEntries] = await Promise.all([
+      isCrossEntity
+        ? this.tenant.runAsSupervisor(async (tx) => ({
+            organisations: await tx.organisation.findMany(),
+            studies: await tx.study.findMany(),
+            reports: await tx.report.findMany({ where: { status: { in: EXPORTABLE_STATUSES } } }),
+            needs: await tx.need.findMany(),
+          }))
+        : this.tenant.runInOrgContext(async (tx) => ({
+            organisations: await tx.organisation.findMany(),
+            studies: await tx.study.findMany(),
+            reports: await tx.report.findMany({ where: { status: { in: EXPORTABLE_STATUSES } } }),
+            needs: await tx.need.findMany(),
+          })),
+      // Reuses HistoricalStudiesService.list()'s own cross-entity-aware
+      // Governorate/Center/uploader-name enrichment (client feedback
+      // 2026-09-04: the Archive table's Governorates column and the
+      // row-detail popup both need this) rather than re-querying the raw
+      // rows and re-implementing that resolution here.
+      this.historicalStudies.list(),
+    ]);
 
     // Non-crossEntity callers only ever see their own org's rows anyway
     // (runInOrgContext is already RLS-scoped) — this just makes the org
@@ -114,22 +122,31 @@ export class ArchiveService {
       }
     }
     if (!params.kind || params.kind === "historical") {
-      for (const hist of historicalStudies) {
-        const org = orgById.get(hist.orgId);
+      for (const hist of historicalStudyEntries) {
         results.push({
           id: hist.id,
           kind: "historical",
           title: hist.title,
           status: "completed",
-          date: hist.studyDate.toISOString(),
+          date: `${hist.studyDate}T00:00:00.000Z`,
           studyId: null,
           organizationId: hist.orgId,
-          organizationName: org?.name ?? "",
+          organizationName: hist.orgName,
           // A historical entry's own recorded region, not the org's — it
           // may cover a different area than the uploading org's home region.
           region: hist.region,
           sector: hist.targetSector,
-          villages: [],
+          // The "Governorates" column reuses `villages` across all three
+          // kinds (see the frontend's villagesColumn label) — a historical
+          // entry's structured Governorate picker is its closest
+          // equivalent to a Study's per-Need village list.
+          villages: hist.governorateNames,
+          governorateNames: hist.governorateNames,
+          centerNames: hist.centerNames,
+          author: hist.author,
+          methodologyVersionLabel: hist.methodologyVersionLabel,
+          uploadedByName: hist.uploadedByName,
+          uploadedAt: hist.uploadedAt,
         });
       }
     }

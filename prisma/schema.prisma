@@ -927,6 +927,11 @@ model Initiative {
   // Optional per client Q16 ("recommend optional, not required, at least
   // for Sprint 3").
   budget              Decimal?  @db.Decimal(14, 2)
+  // Client feedback 2026-09-07 — budget needs an explicit currency, since
+  // funding isn't always SAR. ISO 4217 code; defaults to SAR (this
+  // platform's home currency) so existing/omitted-currency rows still read
+  // correctly.
+  currency            String    @default("SAR") @db.VarChar(3)
   // Client Q15 — owner-controlled, off by default.
   openToOtherEntities Boolean   @default(false) @map("open_to_other_entities")
   createdBy           String    @map("created_by") @db.Uuid
@@ -1219,6 +1224,13 @@ model Domain {
   id           String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   code         String   @unique @db.VarChar(64)
   name         String   @db.VarChar(200)
+  // RIO Arabic Localization — Approach 3 (Hybrid, client-confirmed
+  // 2026-09-04): configurable/master data stores English and Arabic side by
+  // side rather than translating on the fly. Nullable, English-fallback —
+  // no Arabic value has been supplied for Domain/Sub-domain yet, so this
+  // starts empty and is filled in by a System Admin from Methodology
+  // Configuration whenever the client provides it.
+  nameAr       String?  @map("name_ar") @db.VarChar(200)
   displayOrder Int      @default(0) @map("display_order")
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -1234,6 +1246,8 @@ model SubDomain {
   domainId     String   @map("domain_id") @db.Uuid
   code         String   @unique @db.VarChar(64)
   name         String   @db.VarChar(200)
+  // See Domain.nameAr — same reasoning, same starts-empty state.
+  nameAr       String?  @map("name_ar") @db.VarChar(200)
   displayOrder Int      @default(0) @map("display_order")
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -1255,6 +1269,11 @@ model SubDomain {
 model StudyTypeOption {
   id           String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   name         String   @unique @db.VarChar(100)
+  // RIO Arabic Localization — Approach 3 (Hybrid, client-confirmed
+  // 2026-09-04). Client-approved wording seeded directly (see
+  // arabic-translation-client-approved.md); nullable + English-fallback for
+  // any future value added before its Arabic text is supplied.
+  nameAr       String?  @map("name_ar") @db.VarChar(100)
   displayOrder Int      @default(0) @map("display_order")
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -1274,6 +1293,8 @@ model StudyTypeOption {
 model NeedThemeOption {
   id           String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   name         String   @unique @db.VarChar(100)
+  // See StudyTypeOption.nameAr — same reasoning and seeding approach.
+  nameAr       String?  @map("name_ar") @db.VarChar(100)
   displayOrder Int      @default(0) @map("display_order")
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -1288,6 +1309,8 @@ model NeedThemeOption {
 model TargetSectorOption {
   id           String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   name         String   @unique @db.VarChar(100)
+  // See StudyTypeOption.nameAr — same reasoning and seeding approach.
+  nameAr       String?  @map("name_ar") @db.VarChar(100)
   displayOrder Int      @default(0) @map("display_order")
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -1312,6 +1335,13 @@ model Region {
   // what the source data and any future re-import key off of.
   code    Int    @unique
   name    String @db.VarChar(150)
+  // RIO Arabic Localization — Approach 3 (Hybrid, client-confirmed
+  // 2026-09-04). Sourced from the client-supplied
+  // KSA_Geographic_Reference_ENRICHED workbook, which already carries the
+  // official Arabic name for every Region/Governorate/Center alongside the
+  // English one (see prisma/import-arabic-geography.ts) — not a guess or a
+  // machine translation.
+  nameAr  String? @map("name_ar") @db.VarChar(150)
   // ISO 3166-2 subdivision code, e.g. "SA-01".
   isoCode String @unique @map("iso_code") @db.VarChar(10)
   capital String @db.VarChar(150)
@@ -1332,6 +1362,8 @@ model Governorate {
   code     String @unique @db.VarChar(10)
   regionId String @map("region_id") @db.Uuid
   name     String @db.VarChar(150)
+  // See Region.nameAr — same source, same reasoning.
+  nameAr   String? @map("name_ar") @db.VarChar(150)
   // "Amanah (Region capital)" | "Category A" | "Category B" — free text
   // exactly as the source spreadsheet labels it, not a fixed enum, since
   // the source is the sole authority on what categories exist.
@@ -1356,6 +1388,8 @@ model Center {
   code          String @unique @db.VarChar(20)
   governorateId String @map("governorate_id") @db.Uuid
   name          String @db.VarChar(150)
+  // See Region.nameAr — same source, same reasoning.
+  nameAr        String? @map("name_ar") @db.VarChar(150)
   // "Category A" | "Category B".
   category      String @db.VarChar(50)
 
@@ -1852,6 +1886,8 @@ model PriorityScore {
 model DecisionTypeOption {
   id           String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   name         String   @unique @db.VarChar(100)
+  // See StudyTypeOption.nameAr — same reasoning and seeding approach.
+  nameAr       String?  @map("name_ar") @db.VarChar(100)
   displayOrder Int      @default(0) @map("display_order")
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -1878,6 +1914,8 @@ model DecisionTypeOption {
 model GapTypeOption {
   id           String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
   name         String   @unique @db.VarChar(100)
+  // See StudyTypeOption.nameAr — same reasoning and seeding approach.
+  nameAr       String?  @map("name_ar") @db.VarChar(100)
   displayOrder Int      @default(0) @map("display_order")
   isActive     Boolean  @default(true) @map("is_active")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -2350,6 +2388,19 @@ model Question {
   questionText     String  @map("question_text")
   answerType       String  @map("answer_type") @db.VarChar(64)
   answerOptions    Json?   @map("answer_options")
+  // RIO Arabic Localization — Approach 3 (Hybrid, client-confirmed
+  // 2026-09-04). Seeded from Question_Bank.xlsx's own "QB Arabic" sheet,
+  // which the client supplied as a genuine, already-translated parallel
+  // sheet keyed by Q Code (not machine-translated) — matched 1:1 against
+  // this table's `questionId`. `answerOptionsAr` is positionally parallel
+  // to `answerOptions` (same option order, Arabic wording). Nullable +
+  // English-fallback, same as every other Arabic field in this pass — a
+  // future new question added before its Arabic text exists just displays
+  // in English until someone fills it in.
+  questionTextAr   String? @map("question_text_ar")
+  answerOptionsAr  Json?   @map("answer_options_ar")
+  indicatorAr      String? @map("indicator_ar") @db.VarChar(200)
+  kpiAr            String? @map("kpi_ar") @db.VarChar(200)
   // "required" | "conditional" | "required_per_eligible_person" |
   // "not_fielded" | "on_hold" — read from the methodology's own
   // "Mandatory / Optional" column, never hardcoded.
