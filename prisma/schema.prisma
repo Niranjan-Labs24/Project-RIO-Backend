@@ -3665,3 +3665,42 @@ model BackupRun {
   @@index([kind, status, startedAt(sort: Desc)])
   @@map("backup_runs")
 }
+
+// RIO Arabic Localization — Approach 3 (Hybrid), client-confirmed
+// 2026-09-08. Approach 1 (bilingual storage) already covers fixed/
+// configurable content (Study Type, Target Sector, Question Bank,
+// Region/Governorate/Center, ...) via a `nameAr`-style column per table.
+// This table is Approach 2/3's other half: dynamic, user-typed content
+// (Need title/statement, evidence descriptions, decision notes, sharing
+// purposes, ...) that can't be prepared in advance, translated live via
+// Cohere Command A (see TranslationService/AiService) the first time it's
+// viewed in the other language.
+//
+// Content-addressed, not row/field-addressed on purpose: the same English
+// sentence typed into two different Needs' statements only needs
+// translating once. Keyed on a hash of the source text (not the raw text
+// itself, to keep the unique index a fixed, indexable width regardless of
+// how long the source string is) plus the target language — translating
+// once and storing the result permanently is what keeps ongoing Cohere
+// cost near a one-time cost per distinct string rather than growing with
+// every page view (see arabic-localization-approach.md's "Temporary
+// caching vs. permanently storing" note). No orgId/RLS: translated text
+// carries no tenant-specific meaning, same reasoning as Domain/SubDomain.
+model TranslationCache {
+  id             String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  // SHA-256 of `${sourceLocale}:${targetLocale}:${sourceText}` — see
+  // TranslationService.cacheKeyFor. Both locales are folded into the hash
+  // (not just a separate column) so the same source text can never
+  // collide across an en->ar vs. ar->en request sharing one row.
+  cacheKey       String   @unique @map("cache_key") @db.VarChar(64)
+  sourceLocale   String   @map("source_locale") @db.VarChar(5)
+  targetLocale   String   @map("target_locale") @db.VarChar(5)
+  // Kept verbatim alongside the hash — lets a human spot-check what was
+  // actually translated without recomputing the hash, and lets a future
+  // admin screen list/search cached translations by source text.
+  sourceText     String   @map("source_text")
+  translatedText String   @map("translated_text")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("translation_cache")
+}

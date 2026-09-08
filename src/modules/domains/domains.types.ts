@@ -55,6 +55,11 @@ export interface DomainWithSubDomains extends Domain {
  * outside Methodology Configuration needs to see. */
 export interface PublicDomainOption {
   name: string;
+  // RIO Arabic Localization (Approach 3, Hybrid) — the pre-login signup
+  // form's sector dropdown needs this the same as every authenticated Domain
+  // read does; it was omitted here (a `select: { name: true }` predates the
+  // Arabic work) and stayed in English on Sign Up even with Arabic selected.
+  nameAr: string | null;
 }
 
 export interface CreateDomainPayload {

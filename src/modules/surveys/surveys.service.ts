@@ -83,8 +83,16 @@ export class SurveysService {
         id: string;
         questionId: string;
         questionText: string;
+        // RIO Arabic Localization (Approach 3, Hybrid) — client-supplied
+        // Question Bank Arabic text/options, added 2026-09-08 so the
+        // citizen-facing survey can actually show them (see
+        // getPublishedSurveyByNeedId/citizen.service.ts, which previously
+        // dropped these on the way to the citizen despite the DB always
+        // having had them).
+        questionTextAr: string | null;
         answerType: string;
         answerOptions: unknown;
+        answerOptionsAr: unknown;
         domain: string;
         subDomain: string;
         indicator: string | null;
@@ -105,11 +113,16 @@ export class SurveysService {
         bankQuestionId: sq.question.id,
         questionCode: sq.question.questionId,
         questionText: sq.question.questionText,
+        questionTextAr: sq.question.questionTextAr,
         answerType: sq.question.answerType,
         answerOptions:
           typeof sq.question.answerOptions === 'string'
             ? JSON.parse(sq.question.answerOptions)
             : sq.question.answerOptions,
+        answerOptionsAr:
+          typeof sq.question.answerOptionsAr === 'string'
+            ? JSON.parse(sq.question.answerOptionsAr)
+            : sq.question.answerOptionsAr,
         domain: sq.question.domain,
         subDomain: sq.question.subDomain,
         indicator: sq.question.indicator,
@@ -125,9 +138,15 @@ export class SurveysService {
       bankQuestionId: null,
       questionCode: null,
       questionText: sq.customText ?? '',
+      // No manually-entered Arabic column exists for a custom/additional
+      // question (see SurveyQuestion's schema comment) — always null here;
+      // the frontend falls back to AI-translating the English text on
+      // demand for these, same as Need titles.
+      questionTextAr: null,
       answerType: sq.customAnswerType ?? 'long_text',
       answerOptions:
         typeof sq.customOptions === 'string' ? JSON.parse(sq.customOptions) : (sq.customOptions ?? null),
+      answerOptionsAr: null,
       // Null for a custom question saved before this field existed — see
       // the migration/contract comments. Not backfilled; just unset until
       // someone edits it again through the dialog.

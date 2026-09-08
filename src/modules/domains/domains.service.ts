@@ -26,7 +26,7 @@ export class DomainsService {
     const rows = await this.prisma.domain.findMany({
       where: { isActive: true },
       orderBy: { displayOrder: 'asc' },
-      select: { name: true },
+      select: { name: true, nameAr: true },
     });
     return rows;
   }
