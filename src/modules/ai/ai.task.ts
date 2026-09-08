@@ -23,6 +23,13 @@ export interface AiTask<TResponse = unknown> {
   /** Bumped by hand when the prompt changes meaningfully. */
   readonly promptVersion: string;
   readonly systemPrompt: string;
+  /**
+   * Gemini model id, used only when AI_PROVIDER is `gemini`.
+   *
+   * On the OCI Cohere path the model comes from OCI_GENAI_MODEL_ID instead:
+   * there it is a deployment choice (which tenancy, which region, on-demand
+   * or a dedicated cluster) rather than something a single task decides.
+   */
   readonly model: string;
   readonly modelVersion: string;
   /**
@@ -34,9 +41,16 @@ export interface AiTask<TResponse = unknown> {
   /** Retries for transient upstream failures only (429/5xx/timeout). */
   readonly maxRetries: number;
   /**
-   * Gemini response schema. Required for every task: without it the model is
-   * only asked for JSON in prose, and malformed output is discovered at
-   * `JSON.parse` time instead of being prevented.
+   * The output contract, written in Gemini's schema dialect (upper-case type
+   * names). Required for every task: without it the model is only asked for
+   * JSON in prose, and malformed output is discovered at `JSON.parse` time
+   * instead of being prevented.
+   *
+   * Gemini's dialect is the one written here because these nine schemas
+   * predate the OCI move and are the reviewed, stable part of the system.
+   * On the OCI Cohere path `toJsonSchema` in oci-cohere.provider.ts converts
+   * them to standard JSON Schema at call time, so a task never has to know
+   * which provider is configured.
    */
   readonly responseSchema: Record<string, unknown>;
   /** Phantom marker so TResponse participates in inference. */

@@ -58,3 +58,25 @@ export interface CreateHistoricalStudyPayload {
   methodologyVersionLabel: string;
   file: UploadedHistoricalStudyFile;
 }
+
+// RIO-DATA-002 — the outcome of turning an archived pre-platform study
+// (RIO-FR-013) into a real Study + Need rows so it lands in the unified
+// dashboard. The row counts and `errors` are the standard needs-import
+// report flattened in, so the client can render row-level errors exactly as
+// it does for a normal study import.
+export interface HistoricalStudyImportResult {
+  historicalStudyId: string;
+  studyId: string;
+  studyTitle: string;
+  cycleNumber: number;
+  totalRows: number;
+  imported: number;
+  failed: number;
+  errors: Array<{ row: number; message: string; type: 'duplicate' | 'validation' }>;
+}
+
+// File extensions the importer can actually read. PDF is deliberately
+// excluded: the needs module only parses PDFs through a preview-and-confirm
+// flow that needs a human in the loop, which does not fit a one-shot
+// "import this archive entry" action.
+export const IMPORTABLE_HISTORICAL_EXTENSIONS = ['.csv', '.xlsx', '.xls'] as const;

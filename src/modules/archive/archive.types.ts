@@ -25,6 +25,11 @@ export interface ArchiveEntry {
   methodologyVersionLabel?: string;
   uploadedByName?: string | null;
   uploadedAt?: string;
+  /** RIO-DATA-002 — the archived file's name, set only for `historical`
+   * entries. The client needs the extension to know whether the entry can
+   * be imported into the dashboard at all: only one-need-per-row formats
+   * (.csv/.xlsx/.xls) can, so a PDF upload must not be offered the action. */
+  fileName?: string | null;
 }
 
 export interface ListArchiveParams {

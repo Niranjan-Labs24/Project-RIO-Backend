@@ -61,6 +61,15 @@ export class ArchiveService {
 
     const orgById = new Map(organisations.map((org) => [org.id, org]));
     const studyById = new Map(studies.map((study) => [study.id, study]));
+    // RIO-DATA-002 — which archive entries have already been imported into
+    // the unified dashboard. `studies` is loaded in full above, so this is a
+    // map build rather than another query.
+    const importedStudyIdByHistoricalId = new Map(
+      studies
+        .map((study) => ({ study, historicalStudyId: (study as { historicalStudyId?: string | null }).historicalStudyId }))
+        .filter(({ historicalStudyId }) => historicalStudyId !== null && historicalStudyId !== undefined)
+        .map(({ study, historicalStudyId }) => [historicalStudyId as string, study.id]),
+    );
     const needsByStudyId = new Map<string, typeof needs>();
     for (const need of needs) {
       const list = needsByStudyId.get(need.studyId) ?? [];
@@ -127,26 +136,26 @@ export class ArchiveService {
           id: hist.id,
           kind: "historical",
           title: hist.title,
-          status: "completed",
-          date: `${hist.studyDate}T00:00:00.000Z`,
-          studyId: null,
+          // RIO-DATA-002 — "imported" means the needs inside the file are
+          // live in the unified dashboard; "completed" means the file is
+          // archived but its contents are still only readable by download.
+          status: importedStudyIdByHistoricalId.has(hist.id) ? "imported" : "completed",
+          // historicalStudies.list() already normalizes the stored date to an
+          // ISO date string (YYYY-MM-DD), so use it directly here rather than
+          // calling toISOString() on a string.
+          date: hist.studyDate,
+          // The Study this entry was imported into, so the client can link
+          // straight to the imported needs instead of offering the import
+          // action twice.
+          studyId: importedStudyIdByHistoricalId.get(hist.id) ?? null,
           organizationId: hist.orgId,
           organizationName: hist.orgName,
           // A historical entry's own recorded region, not the org's — it
           // may cover a different area than the uploading org's home region.
           region: hist.region,
           sector: hist.targetSector,
-          // The "Governorates" column reuses `villages` across all three
-          // kinds (see the frontend's villagesColumn label) — a historical
-          // entry's structured Governorate picker is its closest
-          // equivalent to a Study's per-Need village list.
-          villages: hist.governorateNames,
-          governorateNames: hist.governorateNames,
-          centerNames: hist.centerNames,
-          author: hist.author,
-          methodologyVersionLabel: hist.methodologyVersionLabel,
-          uploadedByName: hist.uploadedByName,
-          uploadedAt: hist.uploadedAt,
+          villages: [],
+          fileName: hist.fileName,
         });
       }
     }

@@ -1,13 +1,18 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { extname } from 'node:path';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { roleByKey } from '../../rbac/role-matrix';
 import { StudyConfigService } from '../study-config/study-config.service';
 import { EvidenceStorageService } from '../evidence/evidence.storage.service';
-import type {
-  CreateHistoricalStudyPayload,
-  HistoricalStudy,
-  HistoricalStudyRow,
+import { NeedsImportService } from '../needs/needs-import.service';
+import type { ImportNeedsResult } from '../needs/needs-import.types';
+import {
+  IMPORTABLE_HISTORICAL_EXTENSIONS,
+  type CreateHistoricalStudyPayload,
+  type HistoricalStudy,
+  type HistoricalStudyImportResult,
+  type HistoricalStudyRow,
 } from './historical-studies.types';
 
 // RIO-FR-013 (client Q25, confirmed by Ganesh 2026-09-04) — a reference
@@ -18,10 +23,13 @@ import type {
 // table).
 @Injectable()
 export class HistoricalStudiesService {
+  private readonly logger = new Logger(HistoricalStudiesService.name);
+
   constructor(
     private readonly tenant: TenantPrismaService,
     private readonly storage: EvidenceStorageService,
     private readonly studyConfig: StudyConfigService,
+    private readonly needsImport: NeedsImportService,
   ) {}
 
   async create(payload: CreateHistoricalStudyPayload): Promise<HistoricalStudy> {
@@ -116,6 +124,163 @@ export class HistoricalStudiesService {
     }
     const buffer = await this.storage.read(row.storageKey);
     return { row, buffer };
+  }
+
+  // RIO-DATA-002 / FR-17 — import an archived pre-platform study into the
+  // unified dashboard. The BRD is explicit that this must not be an external
+  // BI link; a downloadable attachment (which is all RIO-FR-013 gives) fails
+  // the same test, because you still leave the platform to read the numbers.
+  //
+  // So the needs *inside* the old file become real Need rows under a real
+  // Study flagged `isHistorical`. Modelling it as an ordinary Study is the
+  // whole trick: the dashboard, its filters and FR-003 priority scoring then
+  // apply to imported needs with no special-casing anywhere downstream.
+  async importToDashboard(id: string): Promise<HistoricalStudyImportResult> {
+    const orgId = requireOrgId();
+    const createdBy = requireActor();
+
+    // getFile() lets cross-entity roles read any org's archive entry, which
+    // is right for a download but not for a write: the Study and Needs it
+    // produces are org-scoped rows, so importing someone else's archive
+    // entry would file their data under the caller's org.
+    const { row, buffer } = await this.getFile(id);
+    if (row.orgId !== orgId) {
+      throw new BadRequestException({
+        error: {
+          code: 'CROSS_ORG_IMPORT_FORBIDDEN',
+          message: 'A historical study can only be imported by the entity that uploaded it.',
+        },
+      });
+    }
+
+    const ext = extname(row.fileName).toLowerCase();
+    if (!(IMPORTABLE_HISTORICAL_EXTENSIONS as readonly string[]).includes(ext)) {
+      throw new BadRequestException({
+        error: {
+          code: 'UNSUPPORTED_FILE_TYPE',
+          message:
+            `"${row.fileName}" cannot be imported automatically. Only ` +
+            `${IMPORTABLE_HISTORICAL_EXTENSIONS.join(', ')} files carry one need per row. ` +
+            'Unstructured files must be converted to that shape first — see the migration requirements.',
+        },
+      });
+    }
+
+    // The UNIQUE on studies.historical_study_id is the real guard; this
+    // check exists to return a useful message and the existing studyId
+    // instead of a raw constraint violation.
+    const alreadyImported = await this.tenant.runInOrgContext((tx) =>
+      tx.study.findFirst({ where: { historicalStudyId: id }, select: { id: true, title: true } }),
+    );
+    if (alreadyImported) {
+      throw new BadRequestException({
+        error: {
+          code: 'ALREADY_IMPORTED',
+          message: `"${row.title}" has already been imported as the study "${alreadyImported.title}".`,
+          studyId: alreadyImported.id,
+        },
+      });
+    }
+
+    // Cycle numbers are UNIQUE per org and count forward from 1 for studies
+    // run on the platform. A pre-platform study is not part of that
+    // sequence, so it counts backwards from 0 instead: the first import
+    // reads as "cycle 0", the baseline before cycle 1, and later ones as
+    // -1, -2. This keeps the unique constraint satisfied without ever
+    // renumbering a real cycle.
+    const study = await this.tenant.runInOrgContext(async (tx) => {
+      const minRow = await tx.study.findFirst({
+        where: { orgId },
+        orderBy: { cycleNumber: 'asc' },
+        select: { cycleNumber: true },
+      });
+      const cycleNumber = Math.min(minRow?.cycleNumber ?? 1, 1) - 1;
+
+      const created = await tx.study.create({
+        data: {
+          orgId,
+          title: row.title,
+          cycleNumber,
+          status: 'active',
+          targetSector: row.targetSector,
+          isHistorical: true,
+          historicalStudyDate: row.studyDate,
+          historicalStudyId: row.id,
+          createdBy,
+        },
+      });
+
+      // Carry the archive entry's geography onto the Study so the
+      // dashboard's region/governorate/center filters see the imported
+      // needs. Without this the study aggregates to no region at all.
+      if (row.governorateIds.length > 0) {
+        await tx.studyGovernorate.createMany({
+          data: row.governorateIds.map((governorateId) => ({ studyId: created.id, orgId, governorateId })),
+          skipDuplicates: true,
+        });
+      }
+      if (row.centerIds.length > 0) {
+        await tx.studyCenter.createMany({
+          data: row.centerIds.map((centerId) => ({ studyId: created.id, orgId, centerId })),
+          skipDuplicates: true,
+        });
+      }
+      return created;
+    });
+
+    // From here the Study row exists, so any failure has to clean it up —
+    // an empty historical study in the dashboard is worse than none.
+    let result: ImportNeedsResult;
+    try {
+      result = await this.needsImport.importFromFile(study.id, {
+        originalname: row.fileName,
+        buffer,
+      });
+    } catch (err) {
+      await this.deleteStudyQuietly(study.id);
+      throw err;
+    }
+
+    // Every row failed validation. The Study would be an empty shell, and
+    // the caller needs the row errors to fix the file and retry — which the
+    // `historical_study_id` UNIQUE would otherwise block forever.
+    if (result.imported === 0) {
+      await this.deleteStudyQuietly(study.id);
+      throw new BadRequestException({
+        error: {
+          code: 'NO_ROWS_IMPORTED',
+          message: `No needs could be read from "${row.fileName}". Nothing was added to the dashboard.`,
+          totalRows: result.totalRows,
+          errors: result.errors,
+        },
+      });
+    }
+
+    return {
+      historicalStudyId: row.id,
+      studyId: study.id,
+      studyTitle: study.title,
+      cycleNumber: study.cycleNumber,
+      totalRows: result.totalRows,
+      imported: result.imported,
+      failed: result.failed,
+      errors: result.errors,
+    };
+  }
+
+  // Best-effort rollback of the Study created moments earlier. A failure
+  // here must not mask the original error that triggered the rollback, so it
+  // is logged rather than thrown.
+  private async deleteStudyQuietly(studyId: string): Promise<void> {
+    try {
+      await this.tenant.runInOrgContext((tx) => tx.study.delete({ where: { id: studyId } }));
+    } catch (err) {
+      this.logger.error(
+        `Failed to roll back study ${studyId} after a historical import error: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 
   private isCrossEntity(): boolean {
