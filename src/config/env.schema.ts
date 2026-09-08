@@ -101,11 +101,20 @@ export const EnvSchema = Type.Object({
   REVIEWER_SLA_HOURS: Type.Number({ default: 48 }),
   REVIEWER_SLA_POLL_INTERVAL_MS: Type.Number({ default: 60_000 }),
   GEMINI_API_KEY: Type.Optional(Type.String()),
+  // RIO-AI-004 / Q10 — the switch that lets need text leave the platform.
+  //
+  // Semantic duplicate detection embeds need titles and statements with an
+  // external model. Until the client rules on in-Kingdom residency that is a
+  // deployment decision, not a screen toggle, so it lives here and defaults
+  // OFF: the code ships complete and inert until someone sets this.
+  SEMANTIC_DUPLICATES_ENABLED: Type.Boolean({ default: false }),
   // Periodic pg_dump backup (BackupService). BACKUP_DIR is where dump files
   // are written (created if missing, relative paths resolved from the
   // process cwd). BACKUP_CRON_SCHEDULE is a standard 5-field cron
-  // expression — defaults to weekly (Sundays at 03:00), confirmed working
-  // end-to-end during testing at a faster interval first.
+  // expression — NIGHTLY at 03:00, which is what the 24-hour RPO the client
+  // confirmed under Q32 actually requires. It defaulted to weekly while the
+  // mechanism was being proven end-to-end; leaving it there would have meant
+  // a documented 24-hour RPO backed by a 7-day schedule.
   // ── Survey abandonment tracking + completion reminders (RPT10 Q-2) ──
   // How long a started-but-unsubmitted session may sit idle before it counts
   // as abandoned. A citizen survey is one sitting of a few minutes (see
@@ -132,13 +141,47 @@ export const EnvSchema = Type.Object({
   // reminders. Standard 5-field cron; every 15 minutes by default.
   SURVEY_SESSION_SWEEP_CRON: Type.String({ default: '*/15 * * * *' }),
   BACKUP_DIR: Type.String({ default: './storage/backups' }),
-  BACKUP_CRON_SCHEDULE: Type.String({ default: '0 3 * * 0' }),
+  BACKUP_CRON_SCHEDULE: Type.String({ default: '0 3 * * *' }),
+  // RIO-NFR-010 retention. How long a backup file is kept, and when the sweep
+  // that deletes expired ones runs. The sweep has its own schedule rather than
+  // riding the backup tick: a period with no backups is exactly when disk
+  // pressure builds, so that is the worst time for pruning to also stop.
+  //
+  // 30 days is a starting value, not a client ruling. Q34 covers destination,
+  // encryption and key custody; retention belongs with the same answer.
+  BACKUP_RETENTION_DAYS: Type.Number({ default: 30 }),
+  BACKUP_RETENTION_CRON: Type.String({ default: '30 4 * * *' }),
+  // RIO-NFR-010 — the connection pg_dump uses.
+  //
+  // Separate from DATABASE_URL because a dump needs BYPASSRLS and the
+  // application roles deliberately do not have it: 43 tables FORCE row-level
+  // security, so pg_dump as cnap_owner fails outright ("query would be
+  // affected by row-level security policy"). See
+  // scripts/sql/nfr010-backup-role.sql, which provisions cnap_backup — SELECT
+  // only, BYPASSRLS, nothing else.
+  //
+  // Optional so the app still boots without it; BackupService reports the
+  // missing role in the failure it records rather than dumping the wrong
+  // thing quietly.
+  BACKUP_DATABASE_URL: Type.Optional(Type.String()),
+  // RIO-NFR-010 / Q34 — encryption at rest for backup artefacts.
+  //
+  // Off unless set, deliberately. A backup encrypted with a key nobody has
+  // escrowed is not a backup, it is a tidy way to lose data — so turning this
+  // on is a decision taken together with deciding who holds the key, which is
+  // exactly what Q34 asks. AES-256-GCM, key derived per file with scrypt.
+  BACKUP_ENCRYPTION_KEY: Type.Optional(Type.String()),
   // Optional override for the pg_dump binary — the bare command name is
   // resolved via PATH by default, which is correct in Docker (see
   // Dockerfile) but can silently pick the wrong installed major version on
   // a host machine with multiple Postgres versions (e.g. Homebrew, where
   // `pg_dump` on PATH tracks whichever version is currently linked).
   PG_DUMP_PATH: Type.Optional(Type.String()),
+  // RIO-NFR-010 — `pg_restore --list` reads a dump's table of contents for the
+  // recoverability check. Same PATH caveat as PG_DUMP_PATH, and the same
+  // version sensitivity: pg_restore refuses an archive written by a newer
+  // major version, which would report a perfectly good backup as unreadable.
+  PG_RESTORE_PATH: Type.Optional(Type.String()),
   // RIO-NFR-016 — persisted operational log (system_logs).
   //
   // SYSTEM_LOG_ENABLED is a master kill switch: false turns

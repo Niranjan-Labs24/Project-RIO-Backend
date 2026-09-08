@@ -1,8 +1,10 @@
+import { EXCLUDE_MERGED } from './need-visibility';
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { extname } from 'node:path';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { requireActor, requireOrgId } from '../../tenancy/org-context';
 import { AuditService } from '../audit/audit.service';
+import { DataCleaningService } from '../data-cleaning/data-cleaning.service';
 import { AiDecisionsService } from '../ai-decisions/ai-decisions.service';
 import { NeedSummaryService } from './need-summary.service';
 import { AiService } from '../ai/ai.service';
@@ -71,8 +73,60 @@ export class NeedsImportService {
     private readonly audit: AuditService,
     private readonly aiDecisions: AiDecisionsService,
     private readonly needSummaries: NeedSummaryService,
+    private readonly dataCleaning: DataCleaningService,
     @Optional() @Inject(AiService) private readonly aiService?: AiService,
   ) {}
+
+  /**
+   * RIO-FR-002 — turn this import into one cleaning run covering BOTH halves
+   * of the file: the Needs it created, and the rows it rejected.
+   *
+   * Fire-and-forget. The uploader already has their result; cleaning a 50-row
+   * import must not hold the HTTP response open, and a cleaning failure must
+   * not turn a successful import into an error. DataCleaningService resolves
+   * rather than throwing, so this catch only covers the promise itself.
+   *
+   * Rejected rows matter as much as created ones here. Today the import
+   * reports them in the response and they are gone the moment the page closes;
+   * Q14 asks for "a report per source showing what was flagged", which means
+   * they have to survive as rows. The duplicate case matters most: rejecting a
+   * duplicate outright is what Q11 forbids, and recording it as a reviewable
+   * flag is what brings the import in line with the acceptance criterion.
+   */
+  private scheduleImportCleaning(
+    orgId: string,
+    studyId: string,
+    createdNeedIds: string[],
+    errors: ImportNeedsResult['errors'],
+  ): void {
+    if (createdNeedIds.length === 0 && errors.length === 0) return;
+    this.dataCleaning
+      .cleanImportBatch({
+        orgId,
+        studyId,
+        createdNeedIds,
+        rejectedRows: errors.map((e) => ({
+          rowNumber: e.row,
+          field: e.field ?? 'title',
+          message: e.message,
+          kind: e.type,
+          originalValue: null,
+        })),
+      })
+      .catch((err: Error) => {
+        this.logger.warn(`Data cleaning failed for import into study ${studyId}: ${err.message}`);
+      });
+  }
+
+  /** Which column a validateRow() message is about. */
+  private fieldForValidationError(message: string): string {
+    const lower = message.toLowerCase();
+    if (lower.includes('statement')) return 'statement';
+    if (lower.includes('affected population')) return 'affectedPopulation';
+    if (lower.includes('reference')) return 'referenceId';
+    if (lower.includes('village') || lower.includes('governorate')) return 'village';
+    return 'title';
+  }
 
   async previewPdfFromFile(
     studyId: string,
@@ -147,7 +201,9 @@ export class NeedsImportService {
       });
       if (!study) throw new NotFoundException({ error: { code: 'STUDY_NOT_FOUND', message: 'Study not found' } });
       const existingNeeds = await tx.need.findMany({
-        where: { studyId },
+        // A retired need must not make a new row look like a duplicate of
+        // something that no longer exists in its own right (RIO-AI-004).
+        where: { studyId, ...EXCLUDE_MERGED },
         select: { title: true, village: true, referenceId: true },
       });
       return {
@@ -176,6 +232,7 @@ export class NeedsImportService {
     );
 
     const errors: ImportNeedsResult['errors'] = [];
+    const createdNeedIds: string[] = [];
     let imported = 0;
 
     for (let i = 0; i < items.length; i++) {
@@ -190,11 +247,11 @@ export class NeedsImportService {
       const affectedPopulation = item.affectedPopulation ?? null;
 
       if (!title) {
-        errors.push({ row: rowNum, message: 'Title is required.', type: 'validation' });
+        errors.push({ row: rowNum, message: 'Title is required.', type: 'validation', field: 'title' });
         continue;
       }
       if (!statement) {
-        errors.push({ row: rowNum, message: 'Statement is required.', type: 'validation' });
+        errors.push({ row: rowNum, message: 'Statement is required.', type: 'validation', field: 'statement' });
         continue;
       }
 
@@ -206,6 +263,7 @@ export class NeedsImportService {
             ? `Duplicate Reference ID "${referenceId}" — a Need with this Reference ID already exists in this Study.`
             : 'Duplicate Need — a Need with this Title and Governorate already exists in this Study.',
           type: 'duplicate',
+          field: referenceId ? 'referenceId' : 'title',
         });
         continue;
       }
@@ -238,6 +296,7 @@ export class NeedsImportService {
           }),
         );
         seenKeys.add(key);
+        createdNeedIds.push(created.id);
         imported += 1;
         this.aiDecisions.classifyAutomatically(created.id).catch((err: Error) => {
           this.logger.warn(`Automatic classification failed for imported need ${created.id}: ${err.message}`);
@@ -254,6 +313,7 @@ export class NeedsImportService {
           row: rowNum,
           message: 'Could not save this item — please check its values and try again.',
           type: 'validation',
+          field: 'title',
         });
       }
     }
@@ -267,6 +327,8 @@ export class NeedsImportService {
         changes: [{ field: 'imported', before: null, after: imported }],
       });
     }
+
+    this.scheduleImportCleaning(orgId, studyId, createdNeedIds, errors);
 
     return { totalRows: items.length, imported, failed: errors.length, errors };
   }
@@ -286,7 +348,9 @@ export class NeedsImportService {
       });
       if (!study) throw new NotFoundException({ error: { code: 'STUDY_NOT_FOUND', message: 'Study not found' } });
       const existingNeeds = await tx.need.findMany({
-        where: { studyId },
+        // A retired need must not make a new row look like a duplicate of
+        // something that no longer exists in its own right (RIO-AI-004).
+        where: { studyId, ...EXCLUDE_MERGED },
         select: { title: true, village: true, referenceId: true },
       });
       return {
@@ -320,12 +384,13 @@ export class NeedsImportService {
     );
 
     const errors: ImportNeedsResult['errors'] = [];
+    const createdNeedIds: string[] = [];
     let imported = 0;
 
     for (const row of rows) {
       const validationError = this.validateRow(row);
       if (validationError) {
-        errors.push({ row: row.row, message: validationError, type: 'validation' });
+        errors.push({ row: row.row, message: validationError, type: 'validation', field: this.fieldForValidationError(validationError) });
         continue;
       }
       // validateRow already rejected anything unparseable, so this cannot be
@@ -341,6 +406,7 @@ export class NeedsImportService {
             ? `Duplicate Reference ID "${row.referenceId}" — a Need with this Reference ID already exists in this Study.`
             : 'Duplicate Need — a Need with this Title and Governorate already exists in this Study.',
           type: 'duplicate',
+          field: row.referenceId ? 'referenceId' : 'title',
         });
         continue;
       }
@@ -373,6 +439,7 @@ export class NeedsImportService {
           }),
         );
         seenKeys.add(key);
+        createdNeedIds.push(created.id);
         imported += 1;
         this.aiDecisions.classifyAutomatically(created.id).catch((err: Error) => {
           this.logger.warn(`Automatic classification failed for imported need ${created.id}: ${err.message}`);
@@ -386,6 +453,7 @@ export class NeedsImportService {
           row: row.row,
           message: 'Could not save this row — please check its values and try again.',
           type: 'validation',
+          field: 'title',
         });
       }
     }
@@ -405,6 +473,8 @@ export class NeedsImportService {
         ],
       });
     }
+
+    this.scheduleImportCleaning(orgId, studyId, createdNeedIds, errors);
 
     return { totalRows: rows.length, imported, failed: errors.length, errors };
   }

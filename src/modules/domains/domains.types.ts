@@ -2,6 +2,7 @@ export interface DomainRow {
   id: string;
   code: string;
   name: string;
+  nameAr: string | null;
   displayOrder: number;
   isActive: boolean;
   createdAt: Date;
@@ -13,6 +14,7 @@ export interface SubDomainRow {
   domainId: string;
   code: string;
   name: string;
+  nameAr: string | null;
   displayOrder: number;
   isActive: boolean;
   createdAt: Date;
@@ -23,6 +25,10 @@ export interface Domain {
   id: string;
   code: string;
   name: string;
+  // RIO Arabic Localization — Approach 3 (Hybrid, client-confirmed
+  // 2026-09-04). Null until the client supplies Arabic Domain/Sub-domain
+  // names and an admin enters them — frontend falls back to `name`.
+  nameAr: string | null;
   displayOrder: number;
   isActive: boolean;
 }
@@ -32,6 +38,7 @@ export interface SubDomain {
   domainId: string;
   code: string;
   name: string;
+  nameAr: string | null;
   displayOrder: number;
   isActive: boolean;
 }
@@ -53,23 +60,27 @@ export interface PublicDomainOption {
 export interface CreateDomainPayload {
   code: string;
   name: string;
+  nameAr?: string;
   displayOrder?: number;
 }
 
 export interface UpdateDomainPayload {
   code?: string;
   name?: string;
+  nameAr?: string;
   displayOrder?: number;
 }
 
 export interface CreateSubDomainPayload {
   code: string;
   name: string;
+  nameAr?: string;
   displayOrder?: number;
 }
 
 export interface UpdateSubDomainPayload {
   code?: string;
   name?: string;
+  nameAr?: string;
   displayOrder?: number;
 }

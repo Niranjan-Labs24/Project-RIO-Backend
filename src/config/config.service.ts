@@ -114,6 +114,10 @@ export class ConfigService {
   get geminiApiKey(): string | undefined {
     return this.config.GEMINI_API_KEY;
   }
+  /** See SEMANTIC_DUPLICATES_ENABLED in env.schema.ts — Q10 sits behind this. */
+  get semanticDuplicatesEnabled(): boolean {
+    return this.config.SEMANTIC_DUPLICATES_ENABLED;
+  }
   get twilioAccountSid(): string | undefined {
     return this.config.TWILIO_ACCOUNT_SID;
   }
@@ -150,7 +154,25 @@ export class ConfigService {
   get backupCronSchedule(): string {
     return this.config.BACKUP_CRON_SCHEDULE;
   }
+  get backupRetentionDays(): number {
+    return this.config.BACKUP_RETENTION_DAYS;
+  }
+  get backupRetentionCron(): string {
+    return this.config.BACKUP_RETENTION_CRON;
+  }
+  /** See BACKUP_DATABASE_URL — pg_dump needs a BYPASSRLS role. */
+  get backupDatabaseUrl(): string | undefined {
+    return this.config.BACKUP_DATABASE_URL;
+  }
+  /** See BACKUP_ENCRYPTION_KEY — unset means artefacts are stored in clear. */
+  get backupEncryptionKey(): string | undefined {
+    return this.config.BACKUP_ENCRYPTION_KEY;
+  }
   get pgDumpPath(): string | undefined {
     return this.config.PG_DUMP_PATH;
+  }
+  /** See PG_RESTORE_PATH — used by the recoverability check, not by backups. */
+  get pgRestorePath(): string | undefined {
+    return this.config.PG_RESTORE_PATH;
   }
 }

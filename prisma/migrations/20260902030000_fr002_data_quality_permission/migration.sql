@@ -1,0 +1,24 @@
+-- RIO-FR-002 — a PermissionModule for the Data Quality reviewer queue.
+--
+-- Deliberately NOT a reuse of `dataImport`. That module is about getting rows
+-- INTO the platform, and its grants reflect that: system_admin holds it
+-- read-only, while ngo_admin and ngo_research_officer hold write. Q23 puts
+-- ownership of cleaning decisions and threshold tuning with System Admin and
+-- Data Analyst — exactly the opposite shape. Reusing dataImport would have
+-- meant either handing importers the reviewer's authority or denying it to the
+-- two roles the client named.
+--
+-- Also not `aiReview`: several roles hold that for unrelated
+-- classification-decision access, and the navigation comment on reviewerSla
+-- records what happened last time a screen was gated on it — it leaked to
+-- roles that could not act on anything it showed.
+--
+-- Split across two migrations on purpose: Postgres refuses to USE a new enum
+-- value in the same transaction that adds it, and the grant rows in
+-- 20260902030001 do exactly that.
+
+-- IF NOT EXISTS: a `prisma db push` against a dev database can already have
+-- added this value from schema.prisma, and enum values cannot be removed —
+-- without the guard this migration would be unrunnable on any such database.
+-- (Same reasoning as 20260808090000_add_system_logs.)
+ALTER TYPE "PermissionModule" ADD VALUE IF NOT EXISTS 'dataQuality';

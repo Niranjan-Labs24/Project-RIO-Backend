@@ -1,4 +1,15 @@
 export type AuditAction =
+  // RIO-NFR-010 — the human acts around backups. The machine record of each
+  // run lives in backup_runs, which carries a retention window. These rows do
+  // not expire, because who asked for a backup and who pruned one are business
+  // events rather than telemetry.
+  //
+  // NOTE: no semicolons and no apostrophes anywhere in the comments inside
+  // this union. The frontend contract test extracts it with a regex that stops
+  // at the first semicolon, and a stray one silently yields ZERO actions —
+  // which is how this exact mistake has now been made three times.
+  | 'run_backup'
+  | 'prune_backups'
   | 'create'
   | 'edit'
   | 'approve'
@@ -54,8 +65,42 @@ export type AuditAction =
   // the recurrence factor, so a change here moves priority rankings.
   | 'extract_need_themes'
   | 'override_priority_score'
+  // RIO-FR-002 AC 4 — "reviewer decision is logged". Two actions, not one:
+  // review_cleaning_flag records the DECISION (accept or reject, with the
+  // reviewer note), apply_standardization records that a value was actually
+  // WRITTEN onto a record as a result. A rejection produces the first and not
+  // the second, and an auditor asking "what changed the data" must be able to
+  // filter to the writes.
+  | 'review_cleaning_flag'
+  | 'apply_standardization'
+  // RIO-FR-002 AC 3/AC 4 and RIO-AI-004. A decision on a PROPOSED PAIR, which
+  // is a different thing from a decision on a field-level finding: this one
+  // says two records are or are not the same need. It never merges them —
+  // the merge belongs to AI-004 and will carry its own action.
+  // NOTE for anyone adding a member below: comments inside this union may
+  // contain NEITHER an apostrophe NOR a semicolon. The frontend contract test
+  // (audit-action-labels.test.ts) reads this union out of the source with a
+  // non-greedy match that stops at the FIRST semicolon, then pairs single
+  // quotes to pull out the members. So a stray apostrophe shifts every quote
+  // pair after it, and a stray semicolon truncates the union there and
+  // silently drops every member below.
+  //
+  // Both failure modes surface as "the frontend has labels the backend never
+  // emits", which points nowhere near the real cause. This exact mistake has
+  // now been made twice, the second time by writing that very regex into a
+  // comment here.
+  | 'review_duplicate_candidate'
+  // RIO-AI-004. merge_needs retires one need into another and moves everything
+  // attached to it. undo_need_merge reverses that. Separate from
+  // review_duplicate_candidate because deciding a pair IS a duplicate changes
+  // nothing, while merging changes a great deal — an auditor asking what moved
+  // data must be able to filter to these two alone.
+  | 'merge_needs'
+  | 'undo_need_merge'
   | 'export';
 export type AuditEntityType =
+  // RIO-NFR-010
+  | 'backup_run'
   | 'organization'
   | 'user'
   | 'study'
@@ -83,7 +128,18 @@ export type AuditEntityType =
   // too": every draft/edit/approve/reject/publish of a Terms of Use or Data
   // Sharing Policy version is an auditable governance event in its own right,
   // distinct from `user`-scoped consent acceptance (action: 'consent').
-  | 'consent_policy';
+  | 'consent_policy'
+  // RIO-FR-009 — Initiative create/edit events.
+  | 'initiative'
+  // RIO-FR-002 — one row per data-quality finding a reviewer decided on. Its
+  // own entity type rather than folded into 'need': the decision is about the
+  // finding, and the write it may cause is audited separately against the
+  // record itself.
+  | 'cleaning_flag'
+  // RIO-FR-002 / RIO-AI-004 — one proposed duplicate pair. Its own entity
+  // type rather than 'need': the decision is about the PAIR, and neither need
+  // changed as a result of it.
+  | 'duplicate_candidate';
 
   
   // RIO-AI-003 — one row per suggested summary of a Need's description.
@@ -106,7 +162,12 @@ export interface RecordAuditInput {
   // (e.g. system_admin creating an org/user) so the event is traceable under
   // the AFFECTED org rather than the acting admin's own org. When omitted the
   // event is filed under the caller's ambient org context.
-  organizationId?: string;
+  //
+  // Explicit null means the event belongs to NO single entity and is filed at
+  // platform level. That is different from omitting the field: omitting falls
+  // back to the caller's org, which for an oversight action about two OTHER
+  // entities files it under an organisation that had no part in it.
+  organizationId?: string | null;
   // The submitter's own external tracking id for the entity this event is
   // about (e.g. Need.referenceId) — a first-class, indexed column, not
   // another metadata key. Omit (or null) when the entity has no such

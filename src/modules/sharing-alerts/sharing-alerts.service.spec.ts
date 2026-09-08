@@ -19,6 +19,9 @@ function baseStudyRequest(overrides: Partial<SharingRequest> = {}): SharingReque
     decidedAt: null,
     note: "why",
     decisionNote: null,
+    expiresAt: null,
+    withdrawnBy: null,
+    withdrawnAt: null,
     ...overrides,
   };
 }
@@ -39,6 +42,9 @@ function baseReportRequest(overrides: Partial<ReportSharingRequest> = {}): Repor
     decidedAt: null,
     note: "why",
     decisionNote: null,
+    expiresAt: null,
+    withdrawnBy: null,
+    withdrawnAt: null,
     ...overrides,
   };
 }

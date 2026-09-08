@@ -1,3 +1,4 @@
+import { EXCLUDE_MERGED } from '../needs/need-visibility';
 import { Injectable, Logger } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { Prisma } from '../../generated/prisma';
@@ -337,7 +338,7 @@ export class PriorityV2Service {
     return runner(async (tx) => {
       const [studies, needs, surveys, assessments] = await Promise.all([
         tx.study.findMany(),
-        tx.need.findMany({ orderBy: { updatedAt: 'desc' } }),
+        tx.need.findMany({ where: EXCLUDE_MERGED, orderBy: { updatedAt: 'desc' } }),
         tx.survey.findMany({ orderBy: { createdAt: 'desc' } }),
         tx.villagePriorityAssessment.findMany({
           where: { villageId: '' },

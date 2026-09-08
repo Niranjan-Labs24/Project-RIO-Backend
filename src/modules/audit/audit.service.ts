@@ -67,7 +67,11 @@ export class AuditService {
       if (input.entityId !== null && input.entityId !== undefined && entityId === null) {
         metadata.invalidEntityId = input.entityId;
       }
-      const rawOrgId = input.organizationId ?? store?.orgId ?? null;
+      // `undefined` means "not stated, use the ambient org"; an explicit null
+      // means "platform level, deliberately no org" — so they cannot collapse
+      // into one ?? chain.
+      const rawOrgId =
+        input.organizationId !== undefined ? input.organizationId : (store?.orgId ?? null);
       const isVirtualOrg = !rawOrgId || rawOrgId === '00000000-0000-0000-0000-000000000001';
       const targetOrgId = isVirtualOrg ? null : rawOrgId;
 
@@ -93,7 +97,12 @@ export class AuditService {
       if (targetOrgId) {
         await this.tenant.runAsOrg(targetOrgId, write);
       } else {
-        await this.tenant.runAsSupervisor(write);
+        // A platform-level event belongs to no entity. It must be written on
+        // the read-WRITE client with no org GUC: runAsSupervisor uses
+        // cnap_supervisor, which holds SELECT and nothing else, so this path
+        // failed with "permission denied for table audit_logs" and the catch
+        // below turned every such event into a warning and no row.
+        await this.tenant.runAsSupervisorWrite(write);
       }
     } catch (err) {
       // Audit recording should log a warning but never crash the primary read/write request

@@ -1,0 +1,17 @@
+-- RIO-AI-004 — allow an existing reference alias to be re-pointed.
+--
+-- 20260903000000 granted need_reference_aliases only SELECT and INSERT, on the
+-- reasoning that an alias is permanent and therefore append-only. Running the
+-- merge against real data showed the gap: permanent means the ROW never goes
+-- away, not that its target never changes.
+--
+-- The case is a need that is merged, undone, and merged again — possibly into
+-- a DIFFERENT survivor. Q51 says the retired number resolves to the survivor,
+-- so on the second merge the alias has to follow to the new one. Without
+-- UPDATE the merge fails outright ("permission denied for table
+-- need_reference_aliases"), which is what happened.
+--
+-- Still no DELETE: the row is never removed, which is the part of Q51 that
+-- actually matters — an old report citing the retired number keeps resolving
+-- forever, including after an undo.
+GRANT UPDATE ON "need_reference_aliases" TO cnap_app;

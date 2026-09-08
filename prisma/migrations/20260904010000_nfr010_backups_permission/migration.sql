@@ -1,0 +1,19 @@
+-- RIO-NFR-010 — a PermissionModule for backup administration.
+--
+-- Deliberately NOT a reuse of `systemLogs`. That module is read-and-export by
+-- design: nobody writes an operational log through the API, so it carries no
+-- write grant for anyone, and triggering a backup needs one. Adding write to
+-- systemLogs to get it would have said "this role may write system logs",
+-- which is both untrue and the kind of grant that quietly becomes load-bearing.
+--
+-- Its own module also leaves the client room to move it. Backup administration
+-- is exactly the sort of duty an operations team holds separately from a
+-- System Admin, and Q34 (destination, encryption, key custody) hints they have
+-- opinions about who owns this.
+--
+-- Split across two migrations for the same reason as 20260902030000: Postgres
+-- refuses to USE a new enum value in the transaction that adds it.
+--
+-- IF NOT EXISTS: a `prisma db push` against a dev database can already have
+-- added this value from schema.prisma, and enum values cannot be removed.
+ALTER TYPE "PermissionModule" ADD VALUE IF NOT EXISTS 'backups';

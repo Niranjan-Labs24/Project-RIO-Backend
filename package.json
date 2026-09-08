@@ -16,6 +16,18 @@
     "format": "prettier --write \"{src,test}/**/*.ts\"",
     "test": "vitest run",
     "test:watch": "vitest",
+    "check:fold-parity": "tsx scripts/check-fold-parity.ts",
+    "fr002:smoke": "tsx scripts/fr002-smoke.ts",
+    "fr002:verify-write": "tsx scripts/fr002-verify-write.ts",
+    "fr002:verify-review": "tsx scripts/fr002-verify-review.ts",
+    "fr002:verify-duplicates": "tsx scripts/fr002-verify-duplicates.ts",
+    "fr002:verify-numeric": "tsx scripts/fr002-verify-numeric.ts",
+    "ai004:verify-merge": "tsx scripts/ai004-verify-merge.ts",
+    "ai004:verify-tenancy": "tsx scripts/ai004-verify-tenancy.ts",
+    "nfr010:restore-check": "tsx scripts/restore-check.ts",
+    "ai004:repair-stranded": "tsx scripts/ai004-repair-stranded-candidates.ts",
+    "ai004:verify-crossorg": "tsx scripts/ai004-verify-crossorg-coverage.ts",
+    "verify:scoring-idempotent": "tsx scripts/verify-scoring-idempotent.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
@@ -46,9 +58,10 @@
   "pnpm": {
     "overrides": {
       "deepmerge-ts": ">=8.0.0",
-      "fast-uri": ">=3.1.5",
+      "fast-uri": ">=3.1.6",
       "find-my-way": ">=9.7.0",
-      "minimatch@10.2.5>brace-expansion": ">=5.0.9"
+      "minimatch@10.2.5>brace-expansion": ">=5.0.9",
+      "mysql2": ">=3.24.0"
     }
   },
   "dependencies": {

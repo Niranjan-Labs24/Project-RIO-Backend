@@ -3,6 +3,7 @@ import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { getOrgStore, requireOrgId } from "../../tenancy/org-context";
 import { roleByKey } from "../../rbac/role-matrix";
 import { AuditService } from "../audit/audit.service";
+import { HistoricalStudiesService } from "../historical-studies/historical-studies.service";
 import { EXPORTABLE_STATUSES } from "../reports/reports.types";
 import type { ArchiveEntry, ListArchiveParams } from "./archive.types";
 
@@ -25,24 +26,33 @@ export class ArchiveService {
   constructor(
     private readonly tenant: TenantPrismaService,
     private readonly audit: AuditService,
+    private readonly historicalStudies: HistoricalStudiesService,
   ) {}
 
   async list(params: ListArchiveParams): Promise<ArchiveEntry[]> {
     const isCrossEntity = this.isCrossEntity();
 
-    const { organisations, studies, reports, needs } = await (isCrossEntity
-      ? this.tenant.runAsSupervisor(async (tx) => ({
-          organisations: await tx.organisation.findMany(),
-          studies: await tx.study.findMany(),
-          reports: await tx.report.findMany({ where: { status: { in: EXPORTABLE_STATUSES } } }),
-          needs: await tx.need.findMany(),
-        }))
-      : this.tenant.runInOrgContext(async (tx) => ({
-          organisations: await tx.organisation.findMany(),
-          studies: await tx.study.findMany(),
-          reports: await tx.report.findMany({ where: { status: { in: EXPORTABLE_STATUSES } } }),
-          needs: await tx.need.findMany(),
-        })));
+    const [{ organisations, studies, reports, needs }, historicalStudyEntries] = await Promise.all([
+      isCrossEntity
+        ? this.tenant.runAsSupervisor(async (tx) => ({
+            organisations: await tx.organisation.findMany(),
+            studies: await tx.study.findMany(),
+            reports: await tx.report.findMany({ where: { status: { in: EXPORTABLE_STATUSES } } }),
+            needs: await tx.need.findMany(),
+          }))
+        : this.tenant.runInOrgContext(async (tx) => ({
+            organisations: await tx.organisation.findMany(),
+            studies: await tx.study.findMany(),
+            reports: await tx.report.findMany({ where: { status: { in: EXPORTABLE_STATUSES } } }),
+            needs: await tx.need.findMany(),
+          })),
+      // Reuses HistoricalStudiesService.list()'s own cross-entity-aware
+      // Governorate/Center/uploader-name enrichment (client feedback
+      // 2026-09-04: the Archive table's Governorates column and the
+      // row-detail popup both need this) rather than re-querying the raw
+      // rows and re-implementing that resolution here.
+      this.historicalStudies.list(),
+    ]);
 
     // Non-crossEntity callers only ever see their own org's rows anyway
     // (runInOrgContext is already RLS-scoped) — this just makes the org
@@ -50,6 +60,7 @@ export class ArchiveService {
     const scopedOrgId = isCrossEntity ? null : requireOrgId();
 
     const orgById = new Map(organisations.map((org) => [org.id, org]));
+    const studyById = new Map(studies.map((study) => [study.id, study]));
     const needsByStudyId = new Map<string, typeof needs>();
     for (const need of needs) {
       const list = needsByStudyId.get(need.studyId) ?? [];
@@ -81,7 +92,11 @@ export class ArchiveService {
           organizationId: study.orgId,
           organizationName: org?.name ?? "",
           region: org?.region ?? [],
-          sector: org?.sector ?? null,
+          // RIO-FR-013 (client Q26): "sector" here means the study's own
+          // subject/domain, not the owning entity's sector — someone
+          // filtering for "Health" wants health studies, not studies from
+          // health-sector organisations.
+          sector: study.targetSector ?? null,
           villages: villagesByStudyId.get(study.id) ?? [],
         });
       }
@@ -89,6 +104,7 @@ export class ArchiveService {
     if (!params.kind || params.kind === "report") {
       for (const report of reports) {
         const org = orgById.get(report.orgId);
+        const reportStudy = report.studyId ? studyById.get(report.studyId) : undefined;
         results.push({
           id: report.id,
           kind: "report",
@@ -99,8 +115,38 @@ export class ArchiveService {
           organizationId: report.orgId,
           organizationName: org?.name ?? "",
           region: org?.region ?? [],
-          sector: org?.sector ?? null,
+          // Same subject-based sector as the study branch above (RIO-FR-013, Q26).
+          sector: reportStudy?.targetSector ?? null,
           villages: report.studyId ? (villagesByStudyId.get(report.studyId) ?? []) : [],
+        });
+      }
+    }
+    if (!params.kind || params.kind === "historical") {
+      for (const hist of historicalStudyEntries) {
+        results.push({
+          id: hist.id,
+          kind: "historical",
+          title: hist.title,
+          status: "completed",
+          date: `${hist.studyDate}T00:00:00.000Z`,
+          studyId: null,
+          organizationId: hist.orgId,
+          organizationName: hist.orgName,
+          // A historical entry's own recorded region, not the org's — it
+          // may cover a different area than the uploading org's home region.
+          region: hist.region,
+          sector: hist.targetSector,
+          // The "Governorates" column reuses `villages` across all three
+          // kinds (see the frontend's villagesColumn label) — a historical
+          // entry's structured Governorate picker is its closest
+          // equivalent to a Study's per-Need village list.
+          villages: hist.governorateNames,
+          governorateNames: hist.governorateNames,
+          centerNames: hist.centerNames,
+          author: hist.author,
+          methodologyVersionLabel: hist.methodologyVersionLabel,
+          uploadedByName: hist.uploadedByName,
+          uploadedAt: hist.uploadedAt,
         });
       }
     }
@@ -174,7 +220,8 @@ export class ArchiveService {
       organizationId: study.orgId,
       organizationName: study.org?.name ?? '',
       region: study.org?.region ?? [],
-      sector: study.org?.sector ?? null,
+      // RIO-FR-013 (client Q26): study's own subject, not the owning entity's sector.
+      sector: study.targetSector ?? null,
       villages: study.villages,
       createdAt: study.createdAt.toISOString(),
       updatedAt: study.updatedAt.toISOString(),

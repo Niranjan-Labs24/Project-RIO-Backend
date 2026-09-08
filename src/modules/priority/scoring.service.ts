@@ -119,6 +119,23 @@ export class DeterministicScoringService {
         throw new Error(`No published methodology version found`);
       }
 
+      // ── Make this re-runnable ────────────────────────────────────────
+      // Everything below CREATEs rows, so calling scoreResponse twice used to
+      // append a second ResponseAnswer and a second ResponseSeverityScore for
+      // every question rather than replacing them — silently doubling the
+      // inputs to every rollup and dashboard that reads them.
+      //
+      // That made re-scoring unusable, which in turn blocked two features
+      // that need it: applying a corrected numeric answer (RIO-FR-002) and
+      // recalculating after a duplicate merge (RIO-AI-004). Both were left
+      // audited as "stale" rather than done, purely because of this.
+      //
+      // Clearing first makes the operation idempotent: the response is scored
+      // from its current answers, whatever was there before. ResponseSeverity
+      // Score.responseAnswerId cascades, so the severity rows go with them —
+      // no second delete, and no window where an answer has no score.
+      await tx.responseAnswer.deleteMany({ where: { surveyResponseId } });
+
       // Read raw answers from response JSON
       // Answers is a Record of surveyQuestionId -> answerValue
       const rawAnswers = (response.answers || {}) as Record<string, unknown>;

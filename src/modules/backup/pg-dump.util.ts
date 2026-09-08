@@ -54,7 +54,26 @@ export async function runPgDump({ databaseUrl, backupDir, pgDumpPath, now }: PgD
   // The connection string is passed as a single execFile argument (no
   // shell is invoked), so embedded special characters — e.g. in the
   // password — are never at risk of shell injection.
-  await execFileAsync(pgDumpPath ?? 'pg_dump', [databaseUrl, '-F', 'c', '-f', filePath]);
+  // --enable-row-security is REQUIRED here and is not a convenience flag.
+  //
+  // 43 tables FORCE row-level security. Without this, pg_dump refuses outright
+  // ("query would be affected by row-level security policy") for any role that
+  // cannot bypass RLS, which is every role this platform has.
+  //
+  // WITH it, pg_dump dumps what the connecting role can SEE. That is the whole
+  // danger: a table whose policies do not admit the backup role would be
+  // dumped as EMPTY rather than raising an error, turning a loud failure into a
+  // silent, unusable backup. BackupService therefore refuses to run this at all
+  // unless every RLS-enabled table carries a cnap_backup read policy — see
+  // assertBackupRoleCoverage. Do not call this function without that check.
+  await execFileAsync(pgDumpPath ?? 'pg_dump', [
+    databaseUrl,
+    '--enable-row-security',
+    '-F',
+    'c',
+    '-f',
+    filePath,
+  ]);
   const stats = await stat(filePath);
   return { filePath, fileName, sizeBytes: stats.size };
 }

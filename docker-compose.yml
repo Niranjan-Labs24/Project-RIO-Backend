@@ -92,11 +92,18 @@ services:
       REDIS_URL: redis://redis:6379
       TRUST_PROXY: loopback
       LOG_LEVEL: info
-      # See .env.example — weekly by default; override per-environment via
-      # BACKUP_CRON_SCHEDULE if a faster interval is needed while verifying
-      # a new environment's backup works.
+      # See .env.example — nightly at 03:00, which is what the confirmed
+      # 24-hour RPO requires; override via BACKUP_CRON_SCHEDULE if a faster
+      # interval is needed while verifying a new environment's backup works.
       BACKUP_DIR: /app/storage/backups
-      BACKUP_CRON_SCHEDULE: "${BACKUP_CRON_SCHEDULE:-0 3 * * 0}"
+      BACKUP_CRON_SCHEDULE: "${BACKUP_CRON_SCHEDULE:-0 3 * * *}"
+      # pg_dump cannot read this database as an application role — 47 tables
+      # FORCE row-level security and every application role is NOBYPASSRLS.
+      # Passed through rather than required, so `docker compose up` still
+      # works without it: BackupService then records a failed run naming the
+      # missing variable, which is louder than a container that will not start
+      # for a reason unrelated to serving requests.
+      BACKUP_DATABASE_URL: "${DOCKER_BACKUP_DATABASE_URL:-}"
     # A named volume, not just a container-local directory: the whole point
     # of a backup is to survive the container being recreated (redeployed,
     # crashed and restarted, ...) — an ephemeral path here would silently

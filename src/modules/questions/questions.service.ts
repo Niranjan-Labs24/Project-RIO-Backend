@@ -238,6 +238,16 @@ export class QuestionsService {
     kpi: string | null;
     priorityWeight: Prisma.Decimal | null;
     questionText: string;
+    // RIO Arabic Localization — Approach 3 (Hybrid, client-confirmed
+    // 2026-09-04). Seeded from Question_Bank.xlsx's client-supplied "QB
+    // Arabic" sheet (see prisma/import-question-bank-arabic.ts) — null for
+    // any question added since that import until its Arabic text is
+    // supplied. `answerOptionsAr` is positionally parallel to
+    // `answerOptions`.
+    questionTextAr: string | null;
+    indicatorAr: string | null;
+    kpiAr: string | null;
+    answerOptionsAr: unknown;
     answerType: string;
     answerOptions: unknown;
     requiredOptional: string;
@@ -274,6 +284,11 @@ export class QuestionsService {
       // SurveysService.toQuestionDto's includeWeight for that side).
       priorityWeight: r.priorityWeight?.toNumber() ?? null,
       questionText: r.questionText,
+      questionTextAr: r.questionTextAr,
+      indicatorAr: r.indicatorAr,
+      kpiAr: r.kpiAr,
+      answerOptionsAr:
+        typeof r.answerOptionsAr === 'string' ? JSON.parse(r.answerOptionsAr) : r.answerOptionsAr,
       answerType: r.answerType,
       answerOptions: typeof r.answerOptions === 'string' ? JSON.parse(r.answerOptions) : r.answerOptions,
       requiredOptional: r.requiredOptional,
@@ -369,6 +384,7 @@ export class QuestionsService {
       reviewedAt: _reviewedAt,
       rejectionReason: _rejectionReason,
       answerOptions,
+      answerOptionsAr,
       conditionalRule,
       ...rest
     } = current;
@@ -378,6 +394,7 @@ export class QuestionsService {
         data: {
           ...rest,
           answerOptions: answerOptions === null ? Prisma.JsonNull : answerOptions,
+          answerOptionsAr: answerOptionsAr === null ? Prisma.JsonNull : answerOptionsAr,
           conditionalRule: conditionalRule === null ? Prisma.JsonNull : conditionalRule,
           ...overrides,
           version: version + 1,

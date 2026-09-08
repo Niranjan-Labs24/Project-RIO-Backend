@@ -6,6 +6,11 @@ export interface ImportNeedRowError {
   // required field, etc). Lets the client tell the two apart without
   // string-matching `message`.
   type: 'duplicate' | 'validation';
+  // Which column the problem is in. Added for RIO-FR-002, which turns these
+  // rejections into cleaning_flags rows and needs a real field name for the
+  // flag — sniffing it out of `message` would break the moment that
+  // user-facing text is localised. Optional so no existing caller changes.
+  field?: string;
 }
 
 export interface ImportNeedsResult {

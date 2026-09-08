@@ -5,6 +5,7 @@ import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { PasswordService } from '../../auth/password.service';
 import { SmsService } from '../../sms/sms.service';
 import { AuditService } from '../audit/audit.service';
+import { DataCleaningService } from '../data-cleaning/data-cleaning.service';
 import { SurveysService } from '../surveys/surveys.service';
 import { DeterministicScoringService } from '../priority/scoring.service';
 import { ScoreRollupService } from '../priority/rollup.service';
@@ -39,6 +40,9 @@ export class CitizenService {
     // RIO-NFR-002 — resolves the live citizen-consent notice so a submission
     // can be pinned to the exact version its respondent read.
     private readonly consent: ConsentService,
+    // RIO-FR-002 — cleaning of the submitted response. Best-effort, like
+    // session tracking above.
+    private readonly dataCleaning: DataCleaningService,
   ) {}
 
   // The published Survey Builder survey is the only source of questions for
@@ -427,6 +431,19 @@ export class CitizenService {
     if (payload.sessionId) {
       await this.sessions.markSubmitted(link.orgId, payload.sessionId, row.id);
     }
+
+    // RIO-FR-002 (Q14 — survey responses are one of the three cleaned
+    // sources). Fire-and-forget with an EXPLICIT orgId for the same reason
+    // the scoring calls below take one: this continuation runs detached from
+    // an unauthenticated request, so there is no ambient org context to fall
+    // back on.
+    //
+    // The response's own flags carry a masked contact/mobile and no proposed
+    // value — see survey-response.rules.ts. A citizen's contact details are
+    // not copied into the reviewer's queue.
+    this.dataCleaning.cleanSurveyResponse(row.id, link.orgId).catch((err: Error) => {
+      this.logger.warn(`Data cleaning failed for survey response ${row.id}: ${err.message}`);
+    });
 
     // Score and rollup asynchronously. Both calls take `orgId` explicitly —
     // this continuation runs detached from the citizen's (unauthenticated)

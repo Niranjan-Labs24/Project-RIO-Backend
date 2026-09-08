@@ -1,3 +1,4 @@
+import { EXCLUDE_MERGED } from '../needs/need-visibility';
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore, requireActor } from '../../tenancy/org-context';
@@ -323,12 +324,12 @@ export class NcnpReportService {
       // Kingdom-wide Needs rollup by region — Needs themselves, not
       // Organizations/Surveys (see NcnpNeedsGeography).
       this.tenant.runAsSupervisor((tx) => tx.need.groupBy({ by: ['orgId'], _count: true })),
-      this.tenant.runAsSupervisor((tx) => tx.need.count()),
+      this.tenant.runAsSupervisor((tx) => tx.need.count({ where: EXCLUDE_MERGED })),
       // "Unclassified" = never assigned a Domain at all — Need.domain is
       // the authoritative field (always mirrors needDomains[0], see the
       // schema comment on Need.domain), so null here means literally no
       // classification decision has ever been made for this Need.
-      this.tenant.runAsSupervisor((tx) => tx.need.count({ where: { domain: null } })),
+      this.tenant.runAsSupervisor((tx) => tx.need.count({ where: { domain: null, ...EXCLUDE_MERGED } })),
       this.tenant.runAsSupervisor((tx) => tx.needDomain.groupBy({ by: ['domain', 'subDomain'], _count: true })),
       // orgId is denormalized directly onto NeedDomain (see schema comment),
       // so this is a real (org's region, domain) pair per row without a
