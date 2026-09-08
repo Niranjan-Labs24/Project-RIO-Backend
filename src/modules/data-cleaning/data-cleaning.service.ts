@@ -286,6 +286,9 @@ export class DataCleaningService {
         title: true,
         statement: true,
         village: true,
+        // Only for the domain exemption in need.rules.ts — see
+        // classificationSettled there.
+        status: true,
         domain: true,
         subDomain: true,
         source: true,
@@ -304,6 +307,7 @@ export class DataCleaningService {
         title: need.title,
         statement: need.statement,
         village: need.village,
+        status: need.status,
         domain: need.domain,
         subDomain: need.subDomain,
         source: need.source,
