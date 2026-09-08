@@ -19,10 +19,21 @@
 --
 -- Idempotent: ON CONFLICT so re-running, or a later `prisma:seed` writing the
 -- same rows from ROLE_MATRIX, is a no-op rather than a failure.
+--
+-- Guarded on the role already existing, the same way
+-- 20260717120001_survey_builder_role_grants is. On a from-scratch database
+-- `roles` is only populated by prisma/seed.ts, which runs AFTER
+-- `prisma migrate deploy`, so an unconditional INSERT here would fail on
+-- role_permissions_role_id_fkey. Skipping is harmless: ROLE_MATRIX already
+-- carries these same backups grants, so the seed step writes them moments
+-- later. This only matters as a real backfill on an already-seeded database.
 INSERT INTO "role_permissions" ("id", "role_id", "module", "read", "write", "create", "approve", "export", "share")
-VALUES
-  (uuidv7(), 'role_system_admin',    'backups', true, true,  false, false, true,  false),
-  (uuidv7(), 'role_system_reviewer', 'backups', true, false, false, false, false, false)
+SELECT uuidv7(), v.role_id, 'backups', v."read", v."write", v."create", v.approve, v.export, v.share
+FROM (VALUES
+  ('role_system_admin',    true, true,  false, false, true,  false),
+  ('role_system_reviewer', true, false, false, false, false, false)
+) AS v(role_id, "read", "write", "create", approve, export, share)
+WHERE EXISTS (SELECT 1 FROM "roles" WHERE "roles"."id" = v.role_id)
 ON CONFLICT ("role_id", "module") DO UPDATE
   SET "read"   = EXCLUDED."read",
       "write"  = EXCLUDED."write",
