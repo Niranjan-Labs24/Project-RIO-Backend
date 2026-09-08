@@ -42,12 +42,28 @@
 -- of every tenant's data, which is precisely what a dump is. Q34 (destination,
 -- encryption, key custody) is the same conversation and this belongs in it.
 
+-- NOBYPASSRLS appears on CREATE but deliberately NOT on ALTER. Postgres treats
+-- naming the attribute at all in an ALTER as changing it, and refuses unless
+-- the caller itself holds BYPASSRLS:
+--
+--   ERROR: permission denied to alter role
+--   DETAIL: Only roles with the BYPASSRLS attribute may change the BYPASSRLS
+--           attribute.
+--
+-- cnap_owner does not hold it, so `ALTER ROLE cnap_backup WITH LOGIN
+-- NOBYPASSRLS` fails for a role that already exists. Losing nothing: roles are
+-- CLUSTER-wide while everything else here is per-database, so the ELSE branch
+-- runs whenever these migrations are replayed into a second database on the
+-- same cluster (test/pr27-migration.integration.spec.ts does exactly that) —
+-- and a cnap_backup that exists was created by this same statement, without
+-- BYPASSRLS. Restating the default could only ever be a no-op, and only a role
+-- that could already set BYPASSRLS could have set it.
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'cnap_backup') THEN
     CREATE ROLE cnap_backup WITH LOGIN PASSWORD 'cnap_backup_dev_pw' NOBYPASSRLS;
   ELSE
-    ALTER ROLE cnap_backup WITH LOGIN NOBYPASSRLS;
+    ALTER ROLE cnap_backup WITH LOGIN;
   END IF;
 END $$;
 
