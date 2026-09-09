@@ -21,6 +21,13 @@ import type {
   NcnpReport,
   NcnpVillageScorecard,
 } from './ncnp-report.types';
+import {
+  AGE_BRACKET_LABELS,
+  AGE_BRACKET_ORDER,
+  GENDER_LABELS,
+  NEED_SOURCE_LABELS,
+  REJECTION_REASON_LABELS,
+} from './ncnp-report-labels';
 
 // A dedicated, page-aware PDF layout for the NCNP Consolidated Report — unlike
 // every other report type (which flows through the generic, page-agnostic
@@ -92,56 +99,6 @@ const AGE_BRACKET_COLORS = [
   '0.00 0.51 0.00', // green
   '0.29 0.23 0.65', // violet
 ];
-
-// Display order matches the Prisma AgeBracket enum's declaration order.
-const AGE_BRACKET_LABELS: Record<string, string> = {
-  age_15_24: '15–24',
-  age_25_34: '25–34',
-  age_35_44: '35–44',
-  age_45_54: '45–54',
-  age_55_64: '55–64',
-  age_65_plus: '65+',
-  prefer_not_to_say: 'Prefer not to say',
-};
-
-// Matches the Prisma Gender enum's values.
-const GENDER_LABELS: Record<string, string> = {
-  male: 'Male',
-  female: 'Female',
-  other: 'Other',
-  prefer_not_to_say: 'Prefer not to say',
-};
-const AGE_BRACKET_ORDER = ['age_15_24', 'age_25_34', 'age_35_44', 'age_45_54', 'age_55_64', 'age_65_plus', 'prefer_not_to_say'];
-
-// Matches the Prisma NeedSource enum's values, in the client's own Report
-// Type terminology (Survey / Uploaded Document / ...) rather than the raw
-// enum identifiers — 'manual_entry' is a Need entered directly through a
-// form, i.e. the same "Survey" provenance the client's report-type naming
-// uses (see docs/ncnp-unified-need-record-schema-analysis.md's source_type
-// analysis). 'citizen_input'/'field_survey' have no producing code path yet
-// (see Need.source's own schema comment), kept here anyway so an unexpected
-// value never falls through to the raw enum identifier.
-const NEED_SOURCE_LABELS: Record<string, string> = {
-  manual_entry: 'Survey',
-  file_upload: 'Uploaded Document',
-  citizen_input: 'Citizen Input',
-  field_survey: 'Field Survey',
-};
-
-// Matches the Prisma RejectionReasonCode enum's identifiers — UNSPECIFIED
-// covers surveys rejected before this field existed (see
-// NcnpReportService.buildSurveyAnalytics).
-const REJECTION_REASON_LABELS: Record<string, string> = {
-  REJ_01: 'Incomplete survey design',
-  REJ_02: 'Methodology non-compliance',
-  REJ_03: 'Duplicate of an existing survey',
-  REJ_04: 'Incorrect need or study linkage',
-  REJ_05: 'Out-of-scope geography or target population',
-  REJ_06: 'Data quality concerns',
-  REJ_07: 'Missing required attachments or approvals',
-  REJ_99: 'Other',
-  UNSPECIFIED: 'Unspecified (legacy)',
-};
 
 // Status/priority badge palette — light tint backgrounds paired with the
 // matching dark foreground, mirroring the UI's Badge component variants.
@@ -862,20 +819,27 @@ const KSA_INTERNAL_BORDERS: Array<Array<[number, number]>> = [
 // Real GPS coordinates for KSA's 13 regions — same source as the UI's
 // RegionMap (KSA_Geographic_Reference_EN.xlsx has no lat/lng for
 // governorates, only region-level, hence region-level here too).
+//
+// Keyed by Region.code (the reference workbook's own 1-13 numbering), NOT by
+// region name. The name is a DISPLAY value: every region now carries a
+// populated `name_ar`, so the moment this report renders in Arabic — or any
+// consumer swaps in the localized name — a name-keyed lookup misses on all
+// 13 rows and the map silently loses every marker, with no error to notice.
+// The code is master data and does not move with the display language.
 const KSA_REGION_COORDS: Record<string, { lat: number; lng: number }> = {
-  Riyadh: { lat: 24.7136, lng: 46.6753 },
-  'Makkah Al-Mukarramah': { lat: 21.3891, lng: 39.8579 },
-  'Madinah Al-Munawwarah': { lat: 24.5247, lng: 39.5692 },
-  'Al-Qassim': { lat: 26.326, lng: 43.975 },
-  'Eastern Province': { lat: 26.4207, lng: 50.0888 },
-  Aseer: { lat: 18.2164, lng: 42.5053 },
-  Tabuk: { lat: 28.3835, lng: 36.5662 },
-  Hail: { lat: 27.5219, lng: 41.6961 },
-  'Northern Borders': { lat: 30.9753, lng: 41.0381 },
-  Jazan: { lat: 16.8894, lng: 42.5511 },
-  Najran: { lat: 17.4924, lng: 44.1277 },
-  'Al-Baha': { lat: 20.0129, lng: 41.4676 },
-  'Al-Jouf': { lat: 29.9697, lng: 40.2064 },
+  1: { lat: 24.7136, lng: 46.6753 }, // Riyadh
+  2: { lat: 21.3891, lng: 39.8579 }, // Makkah Al-Mukarramah
+  3: { lat: 24.5247, lng: 39.5692 }, // Madinah Al-Munawwarah
+  4: { lat: 26.326, lng: 43.975 }, // Al-Qassim
+  5: { lat: 26.4207, lng: 50.0888 }, // Eastern Province
+  6: { lat: 18.2164, lng: 42.5053 }, // Aseer
+  7: { lat: 28.3835, lng: 36.5662 }, // Tabuk
+  8: { lat: 27.5219, lng: 41.6961 }, // Hail
+  9: { lat: 30.9753, lng: 41.0381 }, // Northern Borders
+  10: { lat: 16.8894, lng: 42.5511 }, // Jazan
+  11: { lat: 17.4924, lng: 44.1277 }, // Najran
+  12: { lat: 20.0129, lng: 41.4676 }, // Al-Baha
+  13: { lat: 29.9697, lng: 40.2064 }, // Al-Jouf
 };
 
 // A real vector-drawn kingdom map (not a raster/screenshot) — the outline
@@ -885,7 +849,7 @@ const KSA_REGION_COORDS: Record<string, { lat: number; lng: number }> = {
 // same constraint as the UI: no GPS coordinates exist for individual
 // governorates in the platform's reference data, so plotting at that level
 // would mean fabricating coordinates.
-function renderKingdomMap(pdf: Pdf, regionCounts: Array<{ name: string; count: number }>): void {
+function renderKingdomMap(pdf: Pdf, regionCounts: Array<{ code: string; count: number }>): void {
   const w = pdf.rw;
   const h = 150;
   pdf.ensure(h + 10);
@@ -926,7 +890,7 @@ function renderKingdomMap(pdf: Pdf, regionCounts: Array<{ name: string; count: n
   const maxCount = Math.max(1, ...regionCounts.map((r) => r.count));
   const markers = regionCounts
     .map((r) => {
-      const coord = KSA_REGION_COORDS[r.name];
+      const coord = KSA_REGION_COORDS[r.code];
       if (!coord || r.count <= 0) return null;
       const [x, y] = project([coord.lng, coord.lat]);
       const radius = 6 + Math.sqrt(r.count / maxCount) * 9;

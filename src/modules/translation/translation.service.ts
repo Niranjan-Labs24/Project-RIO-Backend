@@ -157,6 +157,42 @@ export class TranslationService {
     return { translatedText, sourceLocale, targetLocale, unchanged: false };
   }
 
+  /**
+   * Cached translations for many strings in ONE query.
+   *
+   * `translate()` is the right shape for a handful of strings, but the report
+   * export asks about ~150 at a time, and a `findUnique` each turned a fully
+   * cached Arabic export into 8.6 seconds of sequential round trips — with
+   * nothing to show for them, since every answer was already stored. One
+   * `findMany` over the same keys does it in a single trip.
+   *
+   * Returns only what is already cached. The caller translates the misses
+   * through `translate()` as before, so nothing about cost or correctness
+   * changes — only the number of queries.
+   */
+  async cachedTranslations(
+    texts: readonly string[],
+    targetLocale: SupportedLocale,
+  ): Promise<Map<string, string>> {
+    const byKey = new Map<string, string>();
+    for (const text of texts) {
+      byKey.set(this.cacheKeyFor(this.detectLocale(text), targetLocale, text), text);
+    }
+    if (byKey.size === 0) return new Map();
+
+    const rows = await this.prisma.translationCache.findMany({
+      where: { cacheKey: { in: [...byKey.keys()] } },
+      select: { cacheKey: true, translatedText: true },
+    });
+
+    const out = new Map<string, string>();
+    for (const row of rows) {
+      const source = byKey.get(row.cacheKey);
+      if (source !== undefined) out.set(source, row.translatedText);
+    }
+    return out;
+  }
+
   private cacheKeyFor(
     sourceLocale: SupportedLocale,
     targetLocale: SupportedLocale,

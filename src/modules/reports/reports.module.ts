@@ -13,6 +13,7 @@ import { ReportSharingModule } from "../report-sharing/report-sharing.module";
 import { ReviewerSlaModule } from "../reviewer-sla/reviewer-sla.module";
 import { SurveySessionsModule } from '../survey-sessions/survey-sessions.module';
 import { NeedsModule } from '../needs/needs.module';
+import { TranslationModule } from '../translation/translation.module';
 
 @Module({
   // NeedsModule exports NeedSummaryService so RPT01/RPT15 can substitute a
@@ -25,6 +26,9 @@ import { NeedsModule } from '../needs/needs.module';
     // RPT10 reads survey abandonment (see load-data-collection-completeness.ts).
     SurveySessionsModule,
     NeedsModule,
+    // RIO-NFR-007: the export path translates a report's free prose (AI
+    // narrative, recommendations, reviewer notes) on the way out.
+    TranslationModule,
   ],
   controllers: [ReportsController, PrioritySummaryController, CombinedReportSummaryController],
   providers: [

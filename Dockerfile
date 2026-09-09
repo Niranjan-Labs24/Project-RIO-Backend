@@ -62,6 +62,17 @@ RUN pnpm install --frozen-lockfile --prod
 # prisma.config.ts (schema/migrations are a CLI-only concern — see README for
 # how migrations are applied; the running app never reads prisma/schema.prisma).
 COPY --from=build /app/dist ./dist
+# The embedded Arabic fonts (RIO-NFR-007). arabic-text.ts resolves them as
+# join(__dirname, '../../../assets/fonts'), which from dist/modules/reports is
+# /app/assets/fonts — outside dist, so `nest build`'s asset globs (nest-cli.json,
+# which covers only generated/prisma) never place them there.
+#
+# Without this line the image has no fonts and getArabicFont() throws ENOENT on
+# the FIRST Arabic glyph in any exported PDF — while working perfectly on every
+# developer machine, because there the process runs from the repo root and the
+# relative path happens to resolve. Exactly the failure mode that makes a
+# missing COPY expensive to find.
+COPY --from=build /app/assets ./assets
 # EvidenceStorageService lazily mkdir -p's subdirectories under
 # EVIDENCE_STORAGE_PATH (default ./storage/evidence, relative to /app) the
 # first time a file is written — pre-create the parent here, owned by the

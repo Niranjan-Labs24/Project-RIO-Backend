@@ -165,8 +165,22 @@ export interface NcnpPriorityOverview {
 
 export interface NcnpNamedBreakdown {
   id: string;
+  /** The master-data row's own stable `code` (Region 1-13, Governorate/Center
+   *  codes from the KSA Geographic Reference), stringified. Carried because
+   *  `name` is a DISPLAY value: once a consumer localizes it (Region.nameAr),
+   *  any lookup keyed on the name silently misses. The kingdom map's
+   *  coordinate table is keyed on this instead — see ncnp-report-pdf.ts. */
+  code: string;
   name: string;
   count: number;
+}
+
+/** Master-data identity for one geography row — the stable `code` plus the
+ *  display `name`, resolved together so a caller never has to choose one and
+ *  then discover it needed the other. */
+export interface NcnpGeoMeta {
+  code: string;
+  name: string;
 }
 
 export interface NcnpGeographyOverview {

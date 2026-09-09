@@ -28,6 +28,27 @@ export interface VillagePriorityResult {
 }
 
 /**
+ * Why a recalculation run produced no VillagePriorityAssessment. Every one
+ * of these is a legitimate "nothing to compute" exit rather than a failure,
+ * but the reviewer pressing Recalculate needs to be told which one was hit
+ * — otherwise the Priority Score panel just sits unchanged at "No priority
+ * score calculated for this need yet" with no way to tell missing responses
+ * apart from missing reference data. Mirrors the frontend's
+ * `RecalculateReason` union in severity-scoring.service.ts.
+ */
+export type RecalculateReason =
+  | 'SURVEY_NOT_FOUND'
+  | 'NO_RESPONSES'
+  | 'NO_METHODOLOGY_VERSION'
+  | 'NO_DOMAIN_PRIORITY_CONFIG'
+  | 'NO_DOMAIN_ROLLUPS';
+
+export interface RecalculateOutcome {
+  success: boolean;
+  reason?: RecalculateReason;
+}
+
+/**
  * Normalize a domain name to UPPER_SNAKE_CASE for key matching.
  * e.g. "Water & Sanitation" → "WATER_SANITATION", "Health" → "HEALTH"
  */
@@ -135,18 +156,22 @@ export class PriorityV2Service {
   /**
    * Calculate and upsert a VillagePriorityAssessment for the given scope.
    * villageId = '' means consolidated (all villages).
+   *
+   * Returns the reason no assessment was written, or null on success — the
+   * early exits below used to be silent `return`s, which is what left the
+   * Priority Score panel unexplained after a "successful" recalculation.
    */
   async calculateVillagePriority(
     studyId: string,
     surveyId: string,
     villageId: string,
-  ): Promise<void> {
-    await this.tenant.runInOrgContext(async (tx) => {
+  ): Promise<RecalculateReason | null> {
+    return this.tenant.runInOrgContext(async (tx): Promise<RecalculateReason | null> => {
       const orgId = requireOrgId();
 
       // Resolve methodology version from survey
       const survey = await tx.survey.findUnique({ where: { id: surveyId } });
-      if (!survey) return;
+      if (!survey) return 'SURVEY_NOT_FOUND';
 
       const mv = await tx.methodologyVersion.findFirst({
         where: survey.methodologyVersion
@@ -154,7 +179,7 @@ export class PriorityV2Service {
           : { status: 'PUBLISHED' },
         orderBy: { createdAt: 'desc' },
       });
-      if (!mv) return;
+      if (!mv) return 'NO_METHODOLOGY_VERSION';
 
       // Load domain priority config for this version
       const configs = await tx.domainPriorityConfig.findMany({
@@ -164,7 +189,7 @@ export class PriorityV2Service {
         this.logger.warn(
           `No DomainPriorityConfig found for version ${mv.version} — skipping village priority calculation.`
         );
-        return;
+        return 'NO_DOMAIN_PRIORITY_CONFIG';
       }
 
       // Load DOMAIN-level rollups for this scope
@@ -202,7 +227,7 @@ export class PriorityV2Service {
         this.logger.warn(
           `No matching domain rollups found for ${studyId}/${surveyId}/${villageId || 'consolidated'} — skipping.`
         );
-        return;
+        return 'NO_DOMAIN_ROLLUPS';
       }
 
       // Upsert VillagePriorityAssessment
@@ -250,11 +275,13 @@ export class PriorityV2Service {
         this.logger.log(
           `Updated VillagePriorityAssessment: ${studyId}/${villageId || 'consolidated'} → ${result.priorityStatus} (${result.priorityScore.toFixed(2)})`
         );
+        return null;
       } else {
         await tx.villagePriorityAssessment.create({ data });
         this.logger.log(
           `Created VillagePriorityAssessment: ${studyId}/${villageId || 'consolidated'} → ${result.priorityStatus} (${result.priorityScore.toFixed(2)})`
         );
+        return null;
       }
     });
   }
@@ -263,7 +290,7 @@ export class PriorityV2Service {
    * Recalculate village priority for all village scopes + consolidated.
    * Called at the end of ScoreRollupService.recalculateStudyScores().
    */
-  async recalculateAll(studyId: string, surveyId: string): Promise<void> {
+  async recalculateAll(studyId: string, surveyId: string): Promise<RecalculateOutcome> {
     // Discover distinct villages from existing domain rollups
     const rollups = await this.tenant.runInOrgContext((tx) =>
       tx.scoreRollup.findMany({
@@ -280,8 +307,11 @@ export class PriorityV2Service {
         await this.calculateVillagePriority(studyId, surveyId, vid);
       }
     }
-    // Consolidated (all villages)
-    await this.calculateVillagePriority(studyId, surveyId, '');
+    // Consolidated (all villages) — this is the scope the Priority Score
+    // panel reads (it asks with no villageId), so its outcome is the one
+    // that decides whether the run has anything to show.
+    const reason = await this.calculateVillagePriority(studyId, surveyId, '');
+    return reason ? { success: false, reason } : { success: true };
   }
 
   /**
