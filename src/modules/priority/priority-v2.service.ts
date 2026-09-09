@@ -297,6 +297,7 @@ export class PriorityV2Service {
       studyId: string;
       studyTitle: string;
       needId: string;
+      needTitle: string;
       // RIO-FR-005 (Q12) — the Need's own analyst-entered Gap Type
       // classification (acute/chronic/structural/seasonal/equity), not to
       // be confused with `score.overrideReason` below — a previous version
@@ -378,6 +379,7 @@ export class PriorityV2Service {
             studyId: need.studyId,
             studyTitle: studyTitleById.get(need.studyId) ?? need.studyId,
             needId: need.id,
+            needTitle: need.title,
             gapType: need.gapType,
             themes: need.themes ?? [],
             urgency: need.urgency ?? null,

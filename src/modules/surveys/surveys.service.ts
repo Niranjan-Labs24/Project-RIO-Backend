@@ -386,7 +386,7 @@ export class SurveysService {
       if (existing) return { survey: existing, created: false };
 
       const row = await tx.survey.create({
-        data: { orgId, needId, studyId: need.studyId, title: `Survey: ${need.title}`, status: 'DRAFT', createdBy: actorId },
+        data: { orgId, needId, studyId: need.studyId, title: need.title, status: 'DRAFT', createdBy: actorId },
       });
       await tx.need.update({ where: { id: needId }, data: { status: 'survey_created' } });
       return { survey: row, created: true };
@@ -728,7 +728,7 @@ Eligible Questions: ${JSON.stringify(
             orgId,
             needId,
             studyId: need.studyId,
-            title: `Survey: ${need.title}`,
+            title: need.title,
             status: 'DRAFT',
             createdBy: actorId,
             methodologyVersion: mv?.version ?? null,
@@ -737,7 +737,7 @@ Eligible Questions: ${JSON.stringify(
       } else {
         existingSurvey = await tx.survey.update({
           where: { id: existingSurvey.id },
-          data: { title: `Survey: ${need.title}` },
+          data: { title: need.title },
         });
       }
 
