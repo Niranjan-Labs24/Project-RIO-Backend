@@ -94,15 +94,25 @@ async function main() {
     where: { methodologyVersion: mv.version, status: 'PUBLISHED' },
   });
   if (publishedSurveys > 0) {
-    // Check if this version already has configs — allow re-import only if
-    // there are currently zero published surveys that have recorded scores.
+    // The guard exists to stop domain *weights* changing under scores that
+    // were already computed with the old ones. A version with zero
+    // DomainPriorityConfig rows has no weights to change — it is simply an
+    // unpopulated version, and blocking it here made that state
+    // unrecoverable: village priority silently computes nothing without
+    // configs, yet the only script that can create them refused to run
+    // precisely because scoring had already happened. First-time population
+    // is allowed; re-weighting after scoring is still rejected.
+    const existingConfigs = await prisma.domainPriorityConfig.count({
+      where: { methodologyVersionId: mv.id },
+    });
     const existingScores = await prisma.responseSeverityScore.count({
       where: { methodologyVersionId: mv.id },
     });
-    if (existingScores > 0) {
+    if (existingConfigs > 0 && existingScores > 0) {
       console.error(
         `\nREJECTED: Version "${mv.version}" is already used by ${publishedSurveys} published survey(s) ` +
-        `with ${existingScores} recorded severity score(s). Domain weights are immutable once scoring has occurred.`
+        `with ${existingScores} recorded severity score(s) and ${existingConfigs} existing domain weight(s). ` +
+        `Domain weights are immutable once scoring has occurred.`
       );
       process.exit(1);
     }

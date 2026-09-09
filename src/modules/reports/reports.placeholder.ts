@@ -2,6 +2,10 @@ import { renderReportExcel } from "./excel-builder";
 import { renderReportPdf } from "./pdf-builder";
 import { buildReportDoc } from "./report-doc";
 import type { ReportTypeCode } from "./reports.types";
+import type { SupportedLocale } from "../translation/translation.types";
+import { localizeDataValues, NO_ALIASES, type MasterDataAliases } from "./i18n/master-data-names";
+import { sweepRemainingEnglish, type SweepStats } from "./i18n/sweep-english";
+import type { Translator } from "./i18n/translate-content";
 
 // Real generators (see reports.service.ts#generateContent + generators/):
 //   RPT01 Individual Survey · RPT02 Collective · RPT03/RPT09 Top-Priority ·
@@ -90,38 +94,62 @@ export async function buildExportStub(
   format: "pdf" | "excel",
   report: { id: string; title: string; reportType: string; content: Record<string, unknown> },
   meta: ExportAuditMeta,
-): Promise<{ filename: string; contentType: string; body: Buffer }> {
+  locale: SupportedLocale = "en",
+  /** Master-data names in the caller's locale. Empty for English, and empty is
+   *  a no-op, so the English path is unchanged. See i18n/master-data-names.ts
+   *  for why this arrives here rather than being read by the provider. */
+  aliases: MasterDataAliases = NO_ALIASES,
+  /** When supplied, a final pass translates anything still English in the
+   *  finished document — including strings the renderers compose themselves,
+   *  which no content-level pass can reach. Omitted, the export behaves exactly
+   *  as before. */
+  translator?: Translator,
+): Promise<{ filename: string; contentType: string; body: Buffer; sweep?: SweepStats }> {
   const auditRows = auditMetaLines(meta).map((r) => ({ label: r.field, value: r.value }));
-  const doc = buildReportDoc(report.title, report.content, auditRows);
+  // The audit labels above are still composed in English here and translated
+  // inside buildReportDoc by the same catalogue lookup as every other label —
+  // so this function has one notion of "a label", not two.
+  // Two passes, in this order and deliberately separate: the catalogue
+  // translates LABEL positions, the alias map translates VALUE positions. A
+  // single pass cannot do both — the catalogue's English keys collide with real
+  // data (the severity band "CRITICAL" against the "Critical" column heading),
+  // so the two must not see each other's territory.
+  let doc = localizeDataValues(
+    buildReportDoc(report.title, report.content, auditRows, locale),
+    aliases,
+  );
+
+  // Last layer before rendering. The three passes above are precise and only
+  // cover what was declared; this catches the rest, cheapest source first, so
+  // the AI only sees genuinely novel prose.
+  let sweep: SweepStats | undefined;
+  if (translator) {
+    const swept = await sweepRemainingEnglish(doc, locale, { aliases, translator });
+    doc = swept.doc;
+    sweep = swept.stats;
+  }
   const ext = format === "pdf" ? "pdf" : "xlsx";
   const filename = `${report.reportType}-${report.id}.${ext}`;
 
   if (format === "pdf") {
-    return { filename, contentType: "application/pdf", body: renderReportPdf(doc) };
+    return { filename, contentType: "application/pdf", body: renderReportPdf(doc, "pages", locale), sweep };
   }
   return {
     filename,
     contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    body: await renderReportExcel(doc),
+    body: await renderReportExcel(doc, locale),
+    sweep,
   };
 }
 
-// TODO(RIO-Reports-RPT13): canned executive-summary narrative pending real
-// LLM/aggregation integration — same placeholder spirit as
-// response-quality's generateAiSummary.
-export function buildExecutiveSummaryNarrative(input: {
-  studyTitle: string;
-  priorityLevel: string | null;
-  responseCount: number;
-}): string {
-  return (
-    `Executive summary (placeholder) for "${input.studyTitle}". ` +
-    `${input.responseCount} response(s) collected. ` +
-    (input.priorityLevel
-      ? `Current placeholder priority level: ${input.priorityLevel}.`
-      : "Priority scoring has not yet been run for this study.")
-  );
-}
+// RPT13's narrative is NOT composed here. It comes from
+// ReportSummaryDataProvider.getExecutiveReport() — the real AI narrative,
+// with providers/compose-executive-summary.ts's deterministic, figure-derived
+// summary as the fallback when the AI is unavailable. A canned
+// buildExecutiveSummaryNarrative() used to live at this spot and emitted
+// "Executive summary (placeholder) for ..."; it had no callers by the time
+// the real generator landed and has been deleted rather than left where a
+// future edit could wire it back in.
 
 // RPT-02..13 content contract: a fixed shape (summary / sections / metrics)
 // that today holds canned placeholder copy and later swaps to real LLM

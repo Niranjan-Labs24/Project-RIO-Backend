@@ -17,6 +17,7 @@ import type {
   NcnpGenderBreakdown,
   NcnpGeographyOverview,
   NcnpMonthlyPoint,
+  NcnpGeoMeta,
   NcnpNamedBreakdown,
   NcnpNeedsGeography,
   NcnpOrgHealth,
@@ -192,7 +193,7 @@ export class NcnpReportService {
     ] = await Promise.all([
       this.tenant.runAsSupervisor((tx) => tx.survey.groupBy({ by: ['status'], _count: true })),
       this.tenant.runAsSupervisor((tx) => tx.survey.groupBy({ by: ['orgId', 'status'], _count: true })),
-      this.tenant.runAsSupervisor((tx) => tx.region.findMany({ select: { id: true, name: true } })),
+      this.tenant.runAsSupervisor((tx) => tx.region.findMany({ select: { id: true, code: true, name: true } })),
       this.tenant.runAsSupervisor((tx) =>
         tx.organisation.findMany({ select: { id: true, regionId: true } }),
       ),
@@ -237,14 +238,18 @@ export class NcnpReportService {
         }),
       ),
       this.tenant.runAsSupervisor((tx) => tx.organisation.groupBy({ by: ['regionId'], _count: true })),
-      this.tenant.runAsSupervisor((tx) => tx.governorate.findMany({ select: { id: true, name: true } })),
+      this.tenant.runAsSupervisor((tx) => tx.governorate.findMany({ select: { id: true, code: true, name: true } })),
       this.tenant.runAsSupervisor((tx) => tx.organisationGovernorate.groupBy({ by: ['governorateId'], _count: true })),
-      this.tenant.runAsSupervisor((tx) => tx.center.findMany({ select: { id: true, name: true } })),
+      this.tenant.runAsSupervisor((tx) => tx.center.findMany({ select: { id: true, code: true, name: true } })),
       this.tenant.runAsSupervisor((tx) => tx.organisationCenter.groupBy({ by: ['centerId'], _count: true })),
       this.tenant.runAsSupervisor((tx) => tx.study.groupBy({ by: ['orgId'], _count: true })),
     ]);
 
-    const regionNameById = new Map(regions.map((r) => [r.id, r.name]));
+    // Region.code is an Int in the schema; stringified here so all three
+    // geography levels expose one uniform `code` type on NcnpNamedBreakdown.
+    const regionMetaById = new Map<string, NcnpGeoMeta>(
+      regions.map((r) => [r.id, { code: r.code == null ? '' : String(r.code), name: r.name }]),
+    );
     const regionIdByOrg = new Map(organisationsWithRegion.map((o) => [o.id, o.regionId]));
 
     // Rejected surveys with no code (rejected before this feature existed,
@@ -262,7 +267,7 @@ export class NcnpReportService {
       surveyStatusGroups,
       surveyStatusByOrgGroups,
       regionIdByOrg,
-      regionNameById,
+      regionMetaById,
       publishedSurveysByOrg,
       totalResponses,
       rejectionReasonCounts,
@@ -270,7 +275,7 @@ export class NcnpReportService {
     const responseAnalytics = this.buildResponseAnalytics(
       monthlyResponses,
       responsesByRegionGroups,
-      regionNameById,
+      regionMetaById,
       genderGroups,
       ageBracketGroups,
       responsesByOrgGroups,
@@ -280,7 +285,7 @@ export class NcnpReportService {
     const priorityOverview = this.buildPriorityOverview(priorityAssessmentSample);
     const geography = this.buildGeography(
       organisationsByRegionGroups,
-      regionNameById,
+      regionMetaById,
       governorates,
       organisationsByGovernorateGroups,
       centers,
@@ -362,31 +367,35 @@ export class NcnpReportService {
       ),
     ]);
 
-    const governorateNameById = new Map(governorates.map((g) => [g.id, g.name]));
-    const centerNameById = new Map(centers.map((c) => [c.id, c.name]));
+    const governorateMetaById = new Map<string, NcnpGeoMeta>(
+      governorates.map((g) => [g.id, { code: g.code, name: g.name }]),
+    );
+    const centerMetaById = new Map<string, NcnpGeoMeta>(
+      centers.map((c) => [c.id, { code: c.code, name: c.name }]),
+    );
 
     const orgSummary = this.buildOrgSummary(organisations, studiesByOrgGroups, surveysByOrgGroups, responsesByOrgGroups);
     const studyOverview = this.buildStudyOverview(studiesByOrgGroups, orgById, totalOrganizations, monthlyStudies);
     const surveyGeography = this.buildSurveyGeography(
       surveysByOrgGroups,
       regionIdByOrg,
-      regionNameById,
+      regionMetaById,
       surveyNeedIds,
       needGovernorateRows,
-      governorateNameById,
+      governorateMetaById,
       needCenterRows,
-      centerNameById,
+      centerMetaById,
     );
     const regionSummary = this.buildRegionSummary(surveyGeography.byRegion, responseAnalytics.responsesByRegion);
 
     const needsGeography = this.buildNeedsGeography(
       needsByOrgGroups,
       regionIdByOrg,
-      regionNameById,
+      regionMetaById,
       needGovernorateRows,
-      governorateNameById,
+      governorateMetaById,
       needCenterRows,
-      centerNameById,
+      centerMetaById,
     );
     const needSubDomains = this.buildSubDomainBreakdown(needSubDomainGroups);
     const criticalNeeds = this.buildCriticalNeeds(
@@ -396,7 +405,7 @@ export class NcnpReportService {
       priorityAssessmentSample,
       evidenceByNeedGroups,
       regionIdByOrg,
-      regionNameById,
+      regionMetaById,
       surveyQuestionIndicators,
     );
     const dataQualityNotes = this.buildDataQualityNotes(
@@ -407,7 +416,7 @@ export class NcnpReportService {
       evidenceByNeedGroups,
       needsUnclassifiedCount,
     );
-    const domainRegionIntersections = this.buildDomainRegionIntersections(needDomainOrgRows, regionIdByOrg, regionNameById);
+    const domainRegionIntersections = this.buildDomainRegionIntersections(needDomainOrgRows, regionIdByOrg, regionMetaById);
 
     return {
       generatedAt: now.toISOString(),
@@ -605,7 +614,7 @@ export class NcnpReportService {
     statusGroups: Array<{ status: string; _count: number }>,
     statusByOrgGroups: Array<{ orgId: string; status: string; _count: number }>,
     regionIdByOrg: Map<string, string | null>,
-    regionNameById: Map<string, string>,
+    regionMetaById: Map<string, NcnpGeoMeta>,
     publishedSurveysByOrg: Array<{ orgId: string; _count: number }>,
     totalResponses: number,
     rejectionReasonCounts: Map<string, number>,
@@ -627,7 +636,7 @@ export class NcnpReportService {
     const statusByRegion: NcnpRegionSurveyStatus[] = Array.from(byRegion.entries())
       .map(([regionId, groups]) => ({
         regionId,
-        regionName: regionNameById.get(regionId) ?? 'Unknown region',
+        regionName: regionMetaById.get(regionId)?.name ?? 'Unknown region',
         count: groups.reduce((sum, g) => sum + g._count, 0),
         status: this.toSurveyStatus(groups),
       }))
@@ -652,7 +661,7 @@ export class NcnpReportService {
   private buildResponseAnalytics(
     monthlyResponses: Array<{ submittedAt: Date }>,
     responsesByRegionGroups: Array<{ regionId: string | null; _count: number }>,
-    regionNameById: Map<string, string>,
+    regionMetaById: Map<string, NcnpGeoMeta>,
     genderGroups: Array<{ gender: string | null; _count: number }>,
     ageBracketGroups: Array<{ ageBracket: string | null; _count: number }>,
     responsesByOrgGroups: Array<{ orgId: string; _count: number }>,
@@ -681,7 +690,7 @@ export class NcnpReportService {
       .filter((g) => g.regionId)
       .map((g) => ({
         regionId: g.regionId as string,
-        regionName: regionNameById.get(g.regionId as string) ?? 'Unknown region',
+        regionName: regionMetaById.get(g.regionId as string)?.name ?? 'Unknown region',
         count: g._count,
       }))
       .sort((a, b) => b.count - a.count);
@@ -822,37 +831,44 @@ export class NcnpReportService {
 
   private buildGeography(
     organisationsByRegionGroups: Array<{ regionId: string | null; _count: number }>,
-    regionNameById: Map<string, string>,
-    governorates: Array<{ id: string; name: string }>,
+    regionMetaById: Map<string, NcnpGeoMeta>,
+    governorates: Array<{ id: string; code: string; name: string }>,
     organisationsByGovernorateGroups: Array<{ governorateId: string; _count: number }>,
-    centers: Array<{ id: string; name: string }>,
+    centers: Array<{ id: string; code: string; name: string }>,
     organisationsByCenterGroups: Array<{ centerId: string; _count: number }>,
     studiesByOrgGroups: Array<{ orgId: string; _count: number }>,
     regionIdByOrg: Map<string, string | null>,
   ): NcnpGeographyOverview {
-    const governorateNameById = new Map(governorates.map((g) => [g.id, g.name]));
-    const centerNameById = new Map(centers.map((c) => [c.id, c.name]));
+    const governorateMetaById = new Map<string, NcnpGeoMeta>(
+      governorates.map((g) => [g.id, { code: g.code, name: g.name }]),
+    );
+    const centerMetaById = new Map<string, NcnpGeoMeta>(
+      centers.map((c) => [c.id, { code: c.code, name: c.name }]),
+    );
 
     const toBreakdown = (
       groups: Array<{ id: string | null; count: number }>,
-      nameById: Map<string, string>,
+      metaById: Map<string, NcnpGeoMeta>,
     ): NcnpNamedBreakdown[] =>
       groups
         .filter((g): g is { id: string; count: number } => Boolean(g.id))
-        .map((g) => ({ id: g.id, name: nameById.get(g.id) ?? 'Unknown', count: g.count }))
+        .map((g) => {
+          const meta = metaById.get(g.id);
+          return { id: g.id, code: meta?.code ?? '', name: meta?.name ?? 'Unknown', count: g.count };
+        })
         .sort((a, b) => b.count - a.count);
 
     const organizationsByRegion = toBreakdown(
       organisationsByRegionGroups.map((g) => ({ id: g.regionId, count: g._count })),
-      regionNameById,
+      regionMetaById,
     );
     const organizationsByGovernorate = toBreakdown(
       organisationsByGovernorateGroups.map((g) => ({ id: g.governorateId, count: g._count })),
-      governorateNameById,
+      governorateMetaById,
     );
     const organizationsByCenter = toBreakdown(
       organisationsByCenterGroups.map((g) => ({ id: g.centerId, count: g._count })),
-      centerNameById,
+      centerMetaById,
     );
 
     // Study has no region field of its own — always derived live from the
@@ -866,7 +882,7 @@ export class NcnpReportService {
     }
     const studiesByRegion = toBreakdown(
       Array.from(studiesByRegionCount.entries()).map(([id, count]) => ({ id, count })),
-      regionNameById,
+      regionMetaById,
     );
 
     return { organizationsByRegion, organizationsByGovernorate, organizationsByCenter, studiesByRegion };
@@ -936,12 +952,12 @@ export class NcnpReportService {
   private buildSurveyGeography(
     surveysByOrgGroups: Array<{ orgId: string; _count: number }>,
     regionIdByOrg: Map<string, string | null>,
-    regionNameById: Map<string, string>,
+    regionMetaById: Map<string, NcnpGeoMeta>,
     surveyNeedIds: Array<{ id: string; needId: string }>,
     needGovernorateRows: Array<{ needId: string; governorateId: string }>,
-    governorateNameById: Map<string, string>,
+    governorateMetaById: Map<string, NcnpGeoMeta>,
     needCenterRows: Array<{ needId: string; centerId: string }>,
-    centerNameById: Map<string, string>,
+    centerMetaById: Map<string, NcnpGeoMeta>,
   ): NcnpSurveyGeography {
     const surveyCountByOrg = new Map(surveysByOrgGroups.map((g) => [g.orgId, g._count]));
 
@@ -984,15 +1000,18 @@ export class NcnpReportService {
       }
     }
 
-    const toBreakdown = (counts: Map<string, number>, nameById: Map<string, string>): NcnpNamedBreakdown[] =>
+    const toBreakdown = (counts: Map<string, number>, metaById: Map<string, NcnpGeoMeta>): NcnpNamedBreakdown[] =>
       Array.from(counts.entries())
-        .map(([id, count]) => ({ id, name: nameById.get(id) ?? 'Unknown', count }))
+        .map(([id, count]) => {
+          const meta = metaById.get(id);
+          return { id, code: meta?.code ?? '', name: meta?.name ?? 'Unknown', count };
+        })
         .sort((a, b) => b.count - a.count);
 
     return {
-      byRegion: toBreakdown(byRegionCount, regionNameById),
-      byGovernorate: toBreakdown(byGovernorateCount, governorateNameById),
-      byCenter: toBreakdown(byCenterCount, centerNameById),
+      byRegion: toBreakdown(byRegionCount, regionMetaById),
+      byGovernorate: toBreakdown(byGovernorateCount, governorateMetaById),
+      byCenter: toBreakdown(byCenterCount, centerMetaById),
     };
   }
 
@@ -1023,11 +1042,11 @@ export class NcnpReportService {
   private buildNeedsGeography(
     needsByOrgGroups: Array<{ orgId: string; _count: number }>,
     regionIdByOrg: Map<string, string | null>,
-    regionNameById: Map<string, string>,
+    regionMetaById: Map<string, NcnpGeoMeta>,
     needGovernorateRows: Array<{ needId: string; governorateId: string }>,
-    governorateNameById: Map<string, string>,
+    governorateMetaById: Map<string, NcnpGeoMeta>,
     needCenterRows: Array<{ needId: string; centerId: string }>,
-    centerNameById: Map<string, string>,
+    centerMetaById: Map<string, NcnpGeoMeta>,
   ): NcnpNeedsGeography {
     const byRegionCount = new Map<string, number>();
     for (const g of needsByOrgGroups) {
@@ -1043,14 +1062,17 @@ export class NcnpReportService {
     for (const row of needCenterRows) {
       byCenterCount.set(row.centerId, (byCenterCount.get(row.centerId) ?? 0) + 1);
     }
-    const toBreakdown = (counts: Map<string, number>, nameById: Map<string, string>): NcnpNamedBreakdown[] =>
+    const toBreakdown = (counts: Map<string, number>, metaById: Map<string, NcnpGeoMeta>): NcnpNamedBreakdown[] =>
       Array.from(counts.entries())
-        .map(([id, count]) => ({ id, name: nameById.get(id) ?? 'Unknown', count }))
+        .map(([id, count]) => {
+          const meta = metaById.get(id);
+          return { id, code: meta?.code ?? '', name: meta?.name ?? 'Unknown', count };
+        })
         .sort((a, b) => b.count - a.count);
     return {
-      byRegion: toBreakdown(byRegionCount, regionNameById),
-      byGovernorate: toBreakdown(byGovernorateCount, governorateNameById),
-      byCenter: toBreakdown(byCenterCount, centerNameById),
+      byRegion: toBreakdown(byRegionCount, regionMetaById),
+      byGovernorate: toBreakdown(byGovernorateCount, governorateMetaById),
+      byCenter: toBreakdown(byCenterCount, centerMetaById),
     };
   }
 
@@ -1085,7 +1107,7 @@ export class NcnpReportService {
     }>,
     evidenceByNeedGroups: Array<{ needId: string; _count: number }>,
     regionIdByOrg: Map<string, string | null>,
-    regionNameById: Map<string, string>,
+    regionMetaById: Map<string, NcnpGeoMeta>,
     surveyQuestionIndicators: Array<{
       surveyId: string;
       question: { indicator: string | null; domain: string; subDomain: string } | null;
@@ -1182,7 +1204,7 @@ export class NcnpReportService {
         source: need.source,
         equityFlag: equityFlagFrom(assessment.domainComponents),
         indicatorId: indicatorFor(assessment.surveyId, need.domain, need.subDomain),
-        unitGeoRegion: regionId ? (regionNameById.get(regionId) ?? null) : null,
+        unitGeoRegion: regionId ? (regionMetaById.get(regionId)?.name ?? null) : null,
         sourceRef: need.referenceId,
       });
     }
@@ -1233,13 +1255,13 @@ export class NcnpReportService {
   private buildDomainRegionIntersections(
     needDomainOrgRows: Array<{ orgId: string; domain: string }>,
     regionIdByOrg: Map<string, string | null>,
-    regionNameById: Map<string, string>,
+    regionMetaById: Map<string, NcnpGeoMeta>,
   ): NcnpDomainRegionIntersection[] {
     const counts = new Map<string, { regionName: string; domainName: string; count: number }>();
     for (const row of needDomainOrgRows) {
       const regionId = regionIdByOrg.get(row.orgId);
       if (!regionId) continue;
-      const regionName = regionNameById.get(regionId) ?? 'Unknown region';
+      const regionName = regionMetaById.get(regionId)?.name ?? 'Unknown region';
       const key = `${regionId}::${row.domain}`;
       const existing = counts.get(key) ?? { regionName, domainName: row.domain, count: 0 };
       existing.count += 1;
