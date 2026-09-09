@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { translateReportContent, type Translator } from './translate-content';
 
 // A translator that records what it was asked for, so the tests can assert on

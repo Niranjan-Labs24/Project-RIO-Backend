@@ -333,4 +333,3 @@ export function localizeReportDoc<T extends ReportDocShape>(doc: T, locale: Supp
 // (DocAnchor has no index signature), and a structural near-copy of a
 // discriminated union is exactly the thing that rots silently.
 type ReportDocShape = ReportDoc;
-type DocSectionShape = DocSection;
