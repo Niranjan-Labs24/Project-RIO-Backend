@@ -13,19 +13,30 @@ interface SeedNeed {
   id: string;
   status?: string;
   urgency?: string | null;
+  /** The need's domain. "Sector" on this map means the need's own domain,
+   *  not Study.targetSector — a study rarely sets that, so filtering on it
+   *  offered a single option. */
   sector?: string | null;
   band?: string | null;
   governorateIds?: string[];
   centerIds?: string[];
-  initiatives?: number;
+  /** Initiative names linked to this need. Named rather than counted so a
+   *  test can assert de-duplication across needs at the same place. */
+  initiatives?: string[];
+  /** Which study this need belongs to — drives the per-place study count. */
+  studyId?: string;
+  /** Owning organisation's name — the NCNP view lists these. */
+  orgName?: string;
+  domain?: string | null;
+  villages?: string[];
   merged?: boolean;
 }
 
 const REGION = { id: 'reg-1', name: 'Riyadh', code: 1 };
 
 function fakeTenant(seed: {
-  governorates?: Array<{ id: string; code: string; name: string; lat: number | null; lng: number | null }>;
-  centers?: Array<{ id: string; code: string; name: string; lat: number | null; lng: number | null }>;
+  governorates?: Array<{ id: string; code: string; name: string; lat: number | null; lng: number | null; accuracyM?: number | null; source?: string | null }>;
+  centers?: Array<{ id: string; code: string; name: string; lat: number | null; lng: number | null; accuracyM?: number | null; source?: string | null }>;
   needs?: SeedNeed[];
 }) {
   const governorates = seed.governorates ?? [];
@@ -44,6 +55,8 @@ function fakeTenant(seed: {
             name: g.name,
             latitude: g.lat,
             longitude: g.lng,
+            coordinateAccuracyM: g.accuracyM ?? null,
+            coordinateSource: g.source ?? null,
             regionId: REGION.id,
             region: REGION,
           }));
@@ -61,6 +74,8 @@ function fakeTenant(seed: {
             name: c.name,
             latitude: c.lat,
             longitude: c.lng,
+            coordinateAccuracyM: c.accuracyM ?? null,
+            coordinateSource: c.source ?? null,
             governorate: { region: { name: REGION.name } },
           }));
       },
@@ -74,15 +89,19 @@ function fakeTenant(seed: {
             id: n.id,
             status: n.status ?? 'draft',
             urgency: n.urgency ?? null,
-            study: { targetSector: n.sector ?? null },
+            studyId: n.studyId ?? 'study-1',
+            domain: n.domain ?? n.sector ?? null,
+            village: n.villages ?? [],
+            org: { name: n.orgName ?? 'Demo NGO' },
+            study: { targetSector: null },
             needGovernorates: (n.governorateIds ?? []).map((governorateId) => ({
               governorateId,
               governorate: { regionId: REGION.id },
             })),
             needCenters: (n.centerIds ?? []).map((centerId) => ({ centerId })),
             priorityScores: n.band ? [{ level: n.band, scoredAt: new Date() }] : [],
-            initiativeLinks: Array.from({ length: n.initiatives ?? 0 }, (_, i) => ({
-              initiativeId: `init-${i}`,
+            initiativeLinks: (n.initiatives ?? []).map((name) => ({
+              initiative: { id: `init-${name}`, name, status: 'active', domain: null },
             })),
           })),
     },
@@ -298,18 +317,63 @@ describe('GeographicDashboardService.getMap', () => {
     });
   });
 
-  it('counts linked initiatives per place (AC4)', async () => {
-    const svc = new GeographicDashboardService(
-      fakeTenant({
-        governorates: [GOV_A],
-        needs: [
-          { id: 'n1', governorateIds: ['gov-a'], initiatives: 2 },
-          { id: 'n2', governorateIds: ['gov-a'], initiatives: 1 },
-        ],
-      }) as never,
-    );
-    const res = await run(() => svc.getMap('governorate'));
-    expect(firstPoint(res).initiativeCount).toBe(3);
+  describe('linked initiatives (AC4)', () => {
+    it('lists the initiatives at a place, not just how many', async () => {
+      const svc = new GeographicDashboardService(
+        fakeTenant({
+          governorates: [GOV_A],
+          needs: [
+            { id: 'n1', governorateIds: ['gov-a'], initiatives: ['Water Access'] },
+            { id: 'n2', governorateIds: ['gov-a'], initiatives: ['Clinic Staffing'] },
+          ],
+        }) as never,
+      );
+      const res = await run(() => svc.getMap('governorate'));
+      expect(firstPoint(res).initiativeCount).toBe(2);
+      expect(firstPoint(res).initiatives.map((i) => i.name)).toEqual([
+        'Clinic Staffing',
+        'Water Access',
+      ]);
+    });
+
+    it('counts an initiative once when two needs at the same place share it', async () => {
+      const svc = new GeographicDashboardService(
+        fakeTenant({
+          governorates: [GOV_A],
+          needs: [
+            { id: 'n1', governorateIds: ['gov-a'], initiatives: ['Water Access'] },
+            { id: 'n2', governorateIds: ['gov-a'], initiatives: ['Water Access'] },
+          ],
+        }) as never,
+      );
+      const res = await run(() => svc.getMap('governorate'));
+      expect(firstPoint(res).initiativeCount).toBe(1);
+      expect(firstPoint(res).initiatives).toHaveLength(1);
+    });
+
+    it('gives each initiative the fields the client needs to link to it', async () => {
+      const svc = new GeographicDashboardService(
+        fakeTenant({
+          governorates: [GOV_A],
+          needs: [{ id: 'n1', governorateIds: ['gov-a'], initiatives: ['Water Access'] }],
+        }) as never,
+      );
+      const res = await run(() => svc.getMap('governorate'));
+      expect(firstPoint(res).initiatives[0]).toMatchObject({
+        id: expect.any(String),
+        name: 'Water Access',
+        status: 'active',
+      });
+    });
+
+    it('reports no initiatives as an empty list rather than undefined', async () => {
+      const svc = new GeographicDashboardService(
+        fakeTenant({ governorates: [GOV_A], needs: [{ id: 'n1', governorateIds: ['gov-a'] }] }) as never,
+      );
+      const res = await run(() => svc.getMap('governorate'));
+      expect(firstPoint(res).initiativeCount).toBe(0);
+      expect(firstPoint(res).initiatives).toEqual([]);
+    });
   });
 
   it('reports the most common sector at a place', async () => {
@@ -326,4 +390,156 @@ describe('GeographicDashboardService.getMap', () => {
     const res = await run(() => svc.getMap('governorate'));
     expect(firstPoint(res).topSector).toBe('Water');
   });
+
+  describe('coordinate accuracy', () => {
+    // 365 of our 1,404 centers sit at their governorate's centre rather than
+    // their own location, some over 100km out. If the map cannot tell those
+    // apart, somebody funds the wrong village.
+    it('marks a governorate-fallback point as approximate and reports its accuracy', async () => {
+      const svc = new GeographicDashboardService(
+        fakeTenant({
+          centers: [
+            { id: 'cen-a', code: '0101-001', name: 'Estimated', lat: 24.7, lng: 46.7, accuracyM: 87000, source: 'governorate-fallback' },
+          ],
+          needs: [{ id: 'n1', centerIds: ['cen-a'] }],
+        }) as never,
+      );
+      const res = await run(() => svc.getMap('center'));
+      expect(firstPoint(res).isApproximate).toBe(true);
+      expect(firstPoint(res).accuracyM).toBe(87000);
+    });
+
+    it('does not mark a geocoded point as approximate', async () => {
+      const svc = new GeographicDashboardService(
+        fakeTenant({
+          centers: [
+            { id: 'cen-a', code: '0101-001', name: 'Surveyed', lat: 24.68, lng: 46.58, accuracyM: 2000, source: 'nominatim' },
+          ],
+          needs: [{ id: 'n1', centerIds: ['cen-a'] }],
+        }) as never,
+      );
+      const res = await run(() => svc.getMap('center'));
+      expect(firstPoint(res).isApproximate).toBe(false);
+      expect(firstPoint(res).accuracyM).toBe(2000);
+    });
+
+    it('treats an overpass rescue as exact, same as a nominatim hit', async () => {
+      const svc = new GeographicDashboardService(
+        fakeTenant({
+          centers: [
+            { id: 'cen-a', code: '0101-001', name: 'Rescued', lat: 24.68, lng: 46.58, accuracyM: 2000, source: 'overpass' },
+          ],
+          needs: [{ id: 'n1', centerIds: ['cen-a'] }],
+        }) as never,
+      );
+      const res = await run(() => svc.getMap('center'));
+      expect(firstPoint(res).isApproximate).toBe(false);
+    });
+
+    it('carries accuracy at governorate level too', async () => {
+      const svc = new GeographicDashboardService(
+        fakeTenant({
+          governorates: [{ ...GOV_A, accuracyM: 45000, source: 'governorate-fallback' }],
+          needs: [{ id: 'n1', governorateIds: ['gov-a'] }],
+        }) as never,
+      );
+      const res = await run(() => svc.getMap('governorate'));
+      expect(firstPoint(res)).toMatchObject({ isApproximate: true, accuracyM: 45000 });
+    });
+  });
+
+
+  describe('study and organisation view (merged into the same response)', () => {
+    // These used to come from a separate component that fetched studies and
+    // then one request per study. Folding them in means one call answers
+    // both of the dashboard's questions.
+    it('counts distinct studies at a place, not needs', async () => {
+      const svc = new GeographicDashboardService(
+        fakeTenant({
+          governorates: [GOV_A],
+          needs: [
+            { id: 'n1', governorateIds: ['gov-a'], studyId: 's1' },
+            { id: 'n2', governorateIds: ['gov-a'], studyId: 's1' },
+            { id: 'n3', governorateIds: ['gov-a'], studyId: 's2' },
+          ],
+        }) as never,
+      );
+      const res = await run(() => svc.getMap('governorate'));
+      expect(firstPoint(res).needCount).toBe(3);
+      expect(firstPoint(res).studyCount).toBe(2);
+    });
+
+    it('lists the organisations working at a place, biggest first', async () => {
+      const svc = new GeographicDashboardService(
+        fakeTenant({
+          governorates: [GOV_A],
+          needs: [
+            { id: 'n1', governorateIds: ['gov-a'], orgName: 'Alpha NGO', studyId: 's1' },
+            { id: 'n2', governorateIds: ['gov-a'], orgName: 'Alpha NGO', studyId: 's2' },
+            { id: 'n3', governorateIds: ['gov-a'], orgName: 'Beta NGO', studyId: 's3' },
+          ],
+        }) as never,
+      );
+      const res = await run(() => svc.getMap('governorate'));
+      expect(firstPoint(res).orgCount).toBe(2);
+      expect(firstPoint(res).workingOrgs).toEqual([
+        { name: 'Alpha NGO', studyCount: 2 },
+        { name: 'Beta NGO', studyCount: 1 },
+      ]);
+    });
+
+    it('counts only reviewer-approved needs as published', async () => {
+      const svc = new GeographicDashboardService(
+        fakeTenant({
+          governorates: [GOV_A],
+          needs: [
+            { id: 'n1', governorateIds: ['gov-a'], status: 'reviewer_approved' },
+            { id: 'n2', governorateIds: ['gov-a'], status: 'draft' },
+            { id: 'n3', governorateIds: ['gov-a'], status: 'ai_classified' },
+          ],
+        }) as never,
+      );
+      const res = await run(() => svc.getMap('governorate'));
+      expect(firstPoint(res).publishedCount).toBe(1);
+    });
+
+    it('reports the most common domain at a place', async () => {
+      const svc = new GeographicDashboardService(
+        fakeTenant({
+          governorates: [GOV_A],
+          needs: [
+            { id: 'n1', governorateIds: ['gov-a'], domain: 'Health' },
+            { id: 'n2', governorateIds: ['gov-a'], domain: 'Health' },
+            { id: 'n3', governorateIds: ['gov-a'], domain: 'Education' },
+          ],
+        }) as never,
+      );
+      const res = await run(() => svc.getMap('governorate'));
+      expect(firstPoint(res).leadingDomain).toBe('Health');
+    });
+
+    it('collects village names once each, sorted', async () => {
+      const svc = new GeographicDashboardService(
+        fakeTenant({
+          governorates: [GOV_A],
+          needs: [
+            { id: 'n1', governorateIds: ['gov-a'], villages: ['Shaqra', 'Thadiq'] },
+            { id: 'n2', governorateIds: ['gov-a'], villages: ['Shaqra'] },
+          ],
+        }) as never,
+      );
+      const res = await run(() => svc.getMap('governorate'));
+      expect(firstPoint(res).villages).toEqual(['Shaqra', 'Thadiq']);
+    });
+
+    it('leaves leadingDomain null when nothing is classified yet', async () => {
+      const svc = new GeographicDashboardService(
+        fakeTenant({ governorates: [GOV_A], needs: [{ id: 'n1', governorateIds: ['gov-a'] }] }) as never,
+      );
+      const res = await run(() => svc.getMap('governorate'));
+      expect(firstPoint(res).leadingDomain).toBeNull();
+      expect(firstPoint(res).villages).toEqual([]);
+    });
+  });
+
 });

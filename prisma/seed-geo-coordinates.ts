@@ -21,7 +21,17 @@ import { PrismaClient } from '../src/generated/prisma';
 import 'dotenv/config';
 
 interface CoordinateFile {
-  coordinates: Record<string, { lat: number; lng: number; source?: string }>;
+  coordinates: Record<
+    string,
+    {
+      lat: number;
+      lng: number;
+      /** 'nominatim' | 'overpass' | 'governorate-fallback'. */
+      source?: string;
+      /** Metres the true location might be from this point. */
+      radius?: number;
+    }
+  >;
 }
 
 type Level = 'governorate' | 'center';
@@ -63,7 +73,14 @@ async function seedLevel(level: Level): Promise<void> {
       noRow.push(code);
       continue;
     }
-    const data = { latitude: point.lat, longitude: point.lng };
+    // Accuracy travels with the point. Dropping it here is what previously
+    // made an estimated location indistinguishable from a surveyed one.
+    const data = {
+      latitude: point.lat,
+      longitude: point.lng,
+      coordinateAccuracyM: point.radius ?? null,
+      coordinateSource: point.source ?? null,
+    };
     if (level === 'governorate') {
       await prisma.governorate.update({ where: { id: row.id }, data });
     } else {

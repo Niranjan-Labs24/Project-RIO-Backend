@@ -1375,6 +1375,12 @@ model Governorate {
   // this map. Seeded by `npm run geo:seed`.
   latitude  Decimal? @db.Decimal(9, 6)
   longitude Decimal? @db.Decimal(9, 6)
+  // RIO-FR-008 — how far the true location might be from the point above,
+  // in metres, and which pass produced it. An exact geocode and a
+  // governorate-centre estimate must not render identically on a map that
+  // funding decisions are read from.
+  coordinateAccuracyM Int?    @map("coordinate_accuracy_m")
+  coordinateSource    String? @map("coordinate_source") @db.VarChar(40)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -1407,6 +1413,12 @@ model Center {
   // the client supplies the data, is a seed run rather than a migration.
   latitude  Decimal? @db.Decimal(9, 6)
   longitude Decimal? @db.Decimal(9, 6)
+  // RIO-FR-008 — how far the true location might be from the point above,
+  // in metres, and which pass produced it. An exact geocode and a
+  // governorate-centre estimate must not render identically on a map that
+  // funding decisions are read from.
+  coordinateAccuracyM Int?    @map("coordinate_accuracy_m")
+  coordinateSource    String? @map("coordinate_source") @db.VarChar(40)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)

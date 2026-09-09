@@ -14,15 +14,14 @@ export class GeographicDashboardController {
   /**
    * RIO-FR-008 — needs aggregated onto map points.
    *
-   * `level` defaults to governorate, which is the finest grain that has
-   * coordinates today. Passing `center` is already supported and starts
-   * returning points as soon as `centers.latitude` is seeded — no release
-   * needed.
+   * `level` defaults to center, the finest grain the client's geographic
+   * reference goes to. Region and governorate roll the same needs up for a
+   * coarser read.
    */
   @Get('map')
   @RequirePermission('reportsDashboards', 'read')
   getMap(
-    @Query('level') level = 'governorate',
+    @Query('level') level = 'center',
     @Query('sector') sector?: string,
     @Query('urgency') urgency?: string,
     @Query('status') status?: string,
