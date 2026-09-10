@@ -4,6 +4,22 @@ import { ConfigService } from '../config/config.service';
 import { redactEmail } from '../common/security/redact';
 import { SystemLogsService } from '../modules/system-logs/system-logs.service';
 
+/**
+ * TODO (later phase — client, Twilio integration): move email off Resend onto
+ * Twilio's Emails API (POST https://comms.twilio.com/v1/Emails, HTTP Basic
+ * auth with the SAME TWILIO_API_KEY_SID/SECRET that SmsService now uses,
+ * `from` = NoReply@impetus.sa on the verified impetus.sa domain).
+ *
+ * Twilio's Emails endpoint is a raw HTTP call (not in the `twilio` SDK) with
+ * a different payload shape ({ from:{address,name}, to:[{address,name}],
+ * content:{subject,html,text} }) and an async 202 + operationId response.
+ * The clean shape is a small EmailProvider interface with Resend and Twilio
+ * implementations selected by a MAIL_PROVIDER env var; each of the six send
+ * methods below keeps building its own subject/text/html and just calls the
+ * provider. SMS was done first (2026-09) per the client's phasing; this is
+ * not started.
+ */
+
 @Injectable()
 export class MailerService {
   private readonly logger = new Logger(MailerService.name);

@@ -80,7 +80,19 @@ export const EnvSchema = Type.Object({
   // SmsService). When TWILIO_ACCOUNT_SID is unset the SMS channel is "not
   // configured", same not-configured/soft-fail convention as Resend above —
   // a mobile number just won't get a text until these are set.
+  //
+  // Two auth modes, checked in this order by SmsService:
+  //   1. API Key   — TWILIO_ACCOUNT_SID + TWILIO_API_KEY_SID + TWILIO_API_KEY_SECRET.
+  //      Preferred: a key is scoped and revocable without rotating the whole
+  //      account. This is the shape the impetus.sa account issues (SK...).
+  //   2. Auth Token — TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN. The account's
+  //      root credential; kept as a fallback for environments that only have it.
+  // TWILIO_FROM_NUMBER is required for SMS in BOTH modes — it is the SMS
+  // sender (a Twilio-provisioned number in E.164, or a Messaging Service SID).
+  // A verified *email* domain / from-address does not apply to SMS.
   TWILIO_ACCOUNT_SID: Type.Optional(Type.String()),
+  TWILIO_API_KEY_SID: Type.Optional(Type.String()),
+  TWILIO_API_KEY_SECRET: Type.Optional(Type.String()),
   TWILIO_AUTH_TOKEN: Type.Optional(Type.String()),
   TWILIO_FROM_NUMBER: Type.Optional(Type.String()),
   // Bounds every outbound Twilio API call (SmsService) — the Twilio SDK's

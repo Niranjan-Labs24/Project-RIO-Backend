@@ -147,6 +147,12 @@ export class ConfigService {
   get twilioAccountSid(): string | undefined {
     return this.config.TWILIO_ACCOUNT_SID;
   }
+  get twilioApiKeySid(): string | undefined {
+    return this.config.TWILIO_API_KEY_SID;
+  }
+  get twilioApiKeySecret(): string | undefined {
+    return this.config.TWILIO_API_KEY_SECRET;
+  }
   get twilioAuthToken(): string | undefined {
     return this.config.TWILIO_AUTH_TOKEN;
   }
