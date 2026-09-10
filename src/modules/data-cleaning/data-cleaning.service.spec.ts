@@ -55,6 +55,10 @@ function need(overrides: Partial<NeedCleaningInput> = {}): NeedCleaningInput {
     title: "Clinic access",
     statement: "No clinic within 20km.",
     village: [],
+    // Past classification, so the domain requirement applies — see
+    // classificationSettled in need.rules.ts. Tests that need the
+    // pre-approval behaviour override this.
+    status: "reviewer_approved",
     domain: "Health",
     subDomain: "Access to Basic Healthcare",
     source: "manual_entry",
@@ -90,6 +94,40 @@ describe("evaluateNeed", () => {
 
   it("reports a missing domain exactly once", () => {
     const flags = evaluateNeed(need({ domain: null, subDomain: null }), CONTEXT);
+    const domainFlags = flags.filter((f) => f.field === "domain");
+    expect(domainFlags).toHaveLength(1);
+    expect(domainFlags[0]?.ruleCode).toBe("MISSING_REQUIRED");
+  });
+
+  // RIO-FR-002 × RIO-AI-001 — `needs.domain` is written for the first time
+  // when a human approves the AI classification, not by the AI itself. Until
+  // then the column is legitimately null, and flagging it reports a field as
+  // missing at the moment it is not yet due.
+  it.each([
+    "draft",
+    "pending_ai_classification",
+    "ai_classified",
+    "ai_classification_failed",
+  ])("does not report a missing domain while classification is unsettled (%s)", (status) => {
+    const flags = evaluateNeed(need({ status, domain: null, subDomain: null }), CONTEXT);
+    expect(flags.filter((f) => f.field === "domain")).toHaveLength(0);
+  });
+
+  it("still reports the other required fields before classification settles", () => {
+    const flags = evaluateNeed(
+      need({ status: "ai_classified", title: "", domain: null, subDomain: null }),
+      CONTEXT,
+    );
+    // The exemption is domain-only: title is written at creation time, so it
+    // is due immediately whatever the classification status says.
+    expect(flags.find((f) => f.field === "title")?.ruleCode).toBe("MISSING_REQUIRED");
+  });
+
+  it("reports a missing domain once the classification has been approved", () => {
+    const flags = evaluateNeed(
+      need({ status: "reviewer_approved", domain: null, subDomain: null }),
+      CONTEXT,
+    );
     const domainFlags = flags.filter((f) => f.field === "domain");
     expect(domainFlags).toHaveLength(1);
     expect(domainFlags[0]?.ruleCode).toBe("MISSING_REQUIRED");

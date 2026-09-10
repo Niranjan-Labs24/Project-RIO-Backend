@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { DataCleaningModule } from '../data-cleaning/data-cleaning.module';
 import { DomainsModule } from '../domains/domains.module';
 import { MethodologyConfigModule } from '../methodology-config/methodology-config.module';
 import { SurveysModule } from '../surveys/surveys.module';
@@ -6,7 +7,7 @@ import { AiDecisionsController, AiDecisionsReviewController, AiReviewController 
 import { AiDecisionsService } from './ai-decisions.service';
 
 @Module({
-  imports: [DomainsModule, SurveysModule, MethodologyConfigModule],
+  imports: [DomainsModule, SurveysModule, MethodologyConfigModule, DataCleaningModule],
   controllers: [AiDecisionsController, AiDecisionsReviewController, AiReviewController],
   providers: [AiDecisionsService],
   exports: [AiDecisionsService],

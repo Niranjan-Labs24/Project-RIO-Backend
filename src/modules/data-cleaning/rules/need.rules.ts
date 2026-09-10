@@ -12,6 +12,11 @@ export interface NeedCleaningInput {
   title: string;
   statement: string;
   village: string[];
+  /**
+   * Where the Need is in the classification workflow. Used only by
+   * classificationSettled() below — the rules are otherwise blind to status.
+   */
+  status: string;
   domain: string | null;
   subDomain: string | null;
   source: string | null;
@@ -50,6 +55,34 @@ function missingFlag(entityId: string, field: string): PendingFlag {
  * this platform's needs for something that is not actually absent, and a queue
  * that is 90% false alarm is a queue nobody reads.
  */
+/**
+ * Has this Need reached the point where `domain` is SUPPOSED to be filled?
+ *
+ * `needs.domain` is not written by the AI. Automatic classification stores its
+ * suggestion in `proposedDomains` and leaves the column null; the column is
+ * written only when a human approves the classification (see
+ * AiDecisionsService's reviewer_approved path). NeedsService.create starts
+ * classification and cleaning within a few lines of each other, and cleaning
+ * always wins that race because classification calls a model.
+ *
+ * So flagging an empty domain before approval reports a field as missing at
+ * the exact moment it is not yet due. Measured on the dev database, that was
+ * 18 open flags, every one on a need past classification and none of them
+ * actionable — over half the queue, and a queue that is mostly false alarm is
+ * a queue nobody reads (same reasoning as hasGeography below).
+ *
+ * The other required fields are not affected: title, statement, geography and
+ * source are all written at creation time, so they are due immediately.
+ */
+function classificationSettled(status: string): boolean {
+  return (
+    status !== "draft" &&
+    status !== "pending_ai_classification" &&
+    status !== "ai_classified" &&
+    status !== "ai_classification_failed"
+  );
+}
+
 function hasGeography(need: NeedCleaningInput): boolean {
   return (
     need.village.some((v) => v.trim().length > 0) ||
@@ -66,6 +99,14 @@ export function evaluateNeed(
   const { settings } = context;
   const required = new Set(settings.requiredNeedFields);
   const soft = new Set(settings.softNeedFields);
+
+  // `domain` is only DUE once a classification has been approved — see
+  // classificationSettled. Dropping it from the required set before any rule
+  // reads it keeps the exemption in one place: both the vocabulary branch and
+  // the no-vocabulary fallback below consult `required`, and a check in only
+  // one of them would leave the flag reachable on a deployment with no
+  // methodology data loaded.
+  if (!classificationSettled(need.status)) required.delete("domain");
 
   // ── Missing core fields (AC 1) ──────────────────────────────────────────
   if (required.has("title") && !need.title?.trim()) flags.push(missingFlag(need.id, "title"));
