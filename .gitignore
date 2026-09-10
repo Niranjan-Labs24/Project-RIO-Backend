@@ -25,3 +25,7 @@ claude*.md
 **/claude*.md
 # TLS dev certs / private keys — never commit keys
 certs/
+
+# RIO-FR-008 — cached geoBoundaries downloads for scripts/build-geo-coordinates.mjs.
+# The derived governorate-coordinates.json IS committed; these raw files are not.
+prisma/data/.geoboundaries/
