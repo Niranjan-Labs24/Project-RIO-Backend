@@ -46,6 +46,7 @@ import { SharingModule } from './modules/sharing/sharing.module';
 import { ReportSharingModule } from './modules/report-sharing/report-sharing.module';
 import { InitiativesModule } from './modules/initiatives/initiatives.module';
 import { HistoricalStudiesModule } from './modules/historical-studies/historical-studies.module';
+import { GeographicDashboardModule } from './modules/geographic-dashboard/geographic-dashboard.module';
 import { SharingAlertsModule } from './modules/sharing-alerts/sharing-alerts.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { ArchiveModule } from './modules/archive/archive.module';
@@ -119,6 +120,7 @@ import { AppController } from './app.controller';
     ReportSharingModule,
     InitiativesModule,
     HistoricalStudiesModule,
+    GeographicDashboardModule,
     SharingAlertsModule,
     ReportsModule,
     ArchiveModule,

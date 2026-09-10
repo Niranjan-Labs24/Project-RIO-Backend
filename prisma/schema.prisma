@@ -1384,6 +1384,19 @@ model Governorate {
   // exactly as the source spreadsheet labels it, not a fixed enum, since
   // the source is the sole authority on what categories exist.
   category String @db.VarChar(50)
+  // RIO-FR-008 — where to draw this place on the Geographic Dashboard.
+  // Nullable because the KSA Geographic Reference workbook ships no
+  // coordinates at all; a place without one is simply not plotted, which is
+  // safer than plotting it somewhere wrong when funding priority is read off
+  // this map. Seeded by `npm run geo:seed`.
+  latitude  Decimal? @db.Decimal(9, 6)
+  longitude Decimal? @db.Decimal(9, 6)
+  // RIO-FR-008 — how far the true location might be from the point above,
+  // in metres, and which pass produced it. An exact geocode and a
+  // governorate-centre estimate must not render identically on a map that
+  // funding decisions are read from.
+  coordinateAccuracyM Int?    @map("coordinate_accuracy_m")
+  coordinateSource    String? @map("coordinate_source") @db.VarChar(40)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -1408,6 +1421,20 @@ model Center {
   nameAr        String? @map("name_ar") @db.VarChar(150)
   // "Category A" | "Category B".
   category      String @db.VarChar(50)
+  // RIO-FR-008 — same purpose as Governorate.latitude/longitude, but these
+  // stay null for now: no public dataset publishes center-level coordinates
+  // for Saudi Arabia (geoBoundaries has no ADM3, and geocoding the English
+  // transliterations misses roughly three quarters of them). The columns
+  // exist already so that moving the dashboard down to center level, once
+  // the client supplies the data, is a seed run rather than a migration.
+  latitude  Decimal? @db.Decimal(9, 6)
+  longitude Decimal? @db.Decimal(9, 6)
+  // RIO-FR-008 — how far the true location might be from the point above,
+  // in metres, and which pass produced it. An exact geocode and a
+  // governorate-centre estimate must not render identically on a map that
+  // funding decisions are read from.
+  coordinateAccuracyM Int?    @map("coordinate_accuracy_m")
+  coordinateSource    String? @map("coordinate_source") @db.VarChar(40)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
