@@ -2,7 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { Prisma } from '../../generated/prisma';
 import { PrismaService } from '../../prisma/prisma.service';
 import type {
-  CreateDomainPayload, CreateSubDomainPayload, Domain, DomainRow, DomainWithSubDomains, PublicDomainOption, SubDomain, SubDomainRow,
+  CreateDomainPayload, CreateSubDomainPayload, Domain, DomainRow, DomainWithSubDomains, PublicDomainOption, PublicDomainTreeOption, SubDomain, SubDomainRow,
   UpdateDomainPayload, UpdateSubDomainPayload,
 } from './domains.types';
 
@@ -26,7 +26,28 @@ export class DomainsService {
     const rows = await this.prisma.domain.findMany({
       where: { isActive: true },
       orderBy: { displayOrder: 'asc' },
-      select: { name: true },
+      select: { name: true, nameAr: true },
+    });
+    return rows;
+  }
+
+  // Active domain/sub-domain names + Arabic names only, gated by
+  // authentication alone (no `methodologyQuestionBank` grant required) — see
+  // PublicDomainTreeOption's own comment for why this exists as a second
+  // route alongside the `methodologyQuestionBank`-gated `/tree`.
+  async listActiveTree(): Promise<PublicDomainTreeOption[]> {
+    const rows = await this.prisma.domain.findMany({
+      where: { isActive: true },
+      orderBy: { displayOrder: 'asc' },
+      select: {
+        name: true,
+        nameAr: true,
+        subDomains: {
+          where: { isActive: true },
+          orderBy: { displayOrder: 'asc' },
+          select: { name: true, nameAr: true },
+        },
+      },
     });
     return rows;
   }

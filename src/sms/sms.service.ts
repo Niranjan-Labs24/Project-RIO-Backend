@@ -17,13 +17,30 @@ export class SmsService {
     // missing recorder degrades to stdout-only, never to a crash.
     @Optional() private readonly systemLogs?: SystemLogsService,
   ) {
-    const sid = this.config.twilioAccountSid;
-    const token = this.config.twilioAuthToken;
+    const accountSid = this.config.twilioAccountSid;
+    const apiKeySid = this.config.twilioApiKeySid;
+    const apiKeySecret = this.config.twilioApiKeySecret;
+    const authToken = this.config.twilioAuthToken;
     this.fromNumber = this.config.twilioFromNumber;
-    if (!sid || !token || !this.fromNumber) return; // not configured — sendOtpCode returns false
+
+    // A from-number is non-negotiable for SMS regardless of auth mode.
+    if (!accountSid || !this.fromNumber) return; // not configured — sendOtpCode returns false
+
     // Bounds every request this client makes (Twilio's own SDK default is
     // 30s otherwise) — see SMS_TIMEOUT_MS in env.schema.ts.
-    this.client = Twilio(sid, token, { timeout: this.config.smsTimeoutMs });
+    const opts = { timeout: this.config.smsTimeoutMs };
+
+    if (apiKeySid && apiKeySecret) {
+      // API-Key auth: username = key SID, password = key secret, and the
+      // account SID passed explicitly since the key alone doesn't carry it.
+      // Preferred — a key is independently revocable.
+      this.client = Twilio(apiKeySid, apiKeySecret, { ...opts, accountSid });
+    } else if (authToken) {
+      // Legacy/fallback: the account's root Auth Token.
+      this.client = Twilio(accountSid, authToken, opts);
+    }
+    // else: account SID + from-number present but no usable credential —
+    // stays "not configured", same soft-fail path as above.
   }
 
   /**

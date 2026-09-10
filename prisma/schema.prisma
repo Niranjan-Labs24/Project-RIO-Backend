@@ -579,6 +579,16 @@ model Study {
   targetSector String? @map("target_sector") @db.VarChar(100)
   archivedBy String? @map("archived_by") @db.Uuid
   archiveReason String? @map("archive_reason") @db.VarChar(500)
+  // RIO-DATA-002 — a Study that represents a pre-platform study imported
+  // from the Archive (RIO-FR-013) rather than a cycle run on the platform.
+  // Modelling it as a normal Study is the whole point: the unified
+  // dashboard, its filters and FR-003 priority scoring then apply to
+  // imported needs with no special-casing. `historicalStudyDate` is when
+  // the original study was conducted — `createdAt` is only the import date,
+  // which is useless for comparing 2023 against 2026.
+  isHistorical Boolean @default(false) @map("is_historical")
+  historicalStudyDate DateTime? @map("historical_study_date") @db.Date
+  historicalStudyId String? @unique @map("historical_study_id") @db.Uuid
   createdBy String      @map("created_by") @db.Uuid
   createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -614,9 +624,11 @@ model Study {
   evidenceDocumentSummaries  EvidenceDocumentSummary[]
   combinedReportSummaries    CombinedReportSummary[]
   cleaningRuns               CleaningRun[]
+  historicalStudy            HistoricalStudy? @relation(fields: [historicalStudyId], references: [id], onDelete: SetNull)
 
   @@unique([orgId, cycleNumber])
   @@index([orgId])
+  @@index([orgId, isHistorical])
   @@map("studies")
 }
 
@@ -797,6 +809,15 @@ model Need {
   // still-blocked follow-up once that dataset arrives.
   affectedPeople     Int? @map("affected_people")
   affectedHouseholds Int? @map("affected_households")
+  // RIO-AI-004 — the merge engine's migration
+  // (20260903000000_ai004_merge_engine) added both of these columns to the
+  // `needs` table, but they were never mirrored here, so every service that
+  // reads or filters them failed to compile. A retired need points at its
+  // survivor; every list, count and score must exclude
+  // `mergedIntoNeedId IS NOT NULL`. The survivor keeps the retired need's
+  // reference ids so DATA-003 lookups still resolve after a merge.
+  mergedIntoNeedId     String?  @map("merged_into_need_id") @db.Uuid
+  absorbedReferenceIds String[] @default([]) @map("absorbed_reference_ids")
   createdBy String     @map("created_by") @db.Uuid
   createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -826,36 +847,27 @@ model Need {
   decisions NeedDecision[]
   aiSuggestions AiSuggestion[]
   evidenceDocuments EvidenceDocument[]
+  // RIO-FR-009 (need -> initiative linkage + analytical states) and
+  // RIO-AI-004 (semantic duplicate detection + merge engine) added the
+  // child tables and their migrations, but not these back-relation arrays,
+  // which Prisma requires on both sides of every relation. Without them
+  // `prisma validate` fails with 8 errors and no client can be generated.
+  // Relation names match the ones already declared on the child side, which
+  // is mandatory for the two models that point at Need twice.
+  analyticalStatusEvents NeedAnalyticalStatusEvent[]
+  needInitiatives        NeedInitiative[]
+  mergedInto             Need?                @relation("NeedMergedInto", fields: [mergedIntoNeedId], references: [id], onDelete: Restrict)
+  mergedFrom             Need[]               @relation("NeedMergedInto")
+  duplicateCandidatesAsA DuplicateCandidate[] @relation("DuplicateCandidateNeedA")
+  duplicateCandidatesAsB DuplicateCandidate[] @relation("DuplicateCandidateNeedB")
+  mergesAsSurvivor       NeedMerge[]          @relation("NeedMergeSurvivor")
+  mergesAsRetired        NeedMerge[]          @relation("NeedMergeRetired")
+  referenceAliases       NeedReferenceAlias[]
+  embeddings             NeedEmbedding[]
 
   @@index([orgId])
   @@index([studyId])
   @@map("needs")
-  // RIO-AI-004 — merge. `mergedIntoNeedId` being set IS the merged state:
-  // deliberately not a new NeedStatus value, so a retired need keeps the
-  // workflow status it actually had ("a reviewer_approved need that turned out
-  // to duplicate another" is truer than overwriting it with "merged"). EVERY
-  // list, count and score must exclude `mergedIntoNeedId: { not: null }`.
-  mergedIntoNeedId String? @map("merged_into_need_id") @db.Uuid
-  mergedInto       Need?   @relation("NeedMergedInto", fields: [mergedIntoNeedId], references: [id], onDelete: Restrict)
-  mergedFrom       Need[]  @relation("NeedMergedInto")
-  // Q51 — "both external references are retained on the survivor". The
-  // retired need's submitter reference lands here rather than overwriting
-  // `referenceId`, which is what the submitter's own records say and which
-  // other systems match on.
-  absorbedReferenceIds String[] @default([]) @map("absorbed_reference_ids")
-  mergesAsSurvivor NeedMerge[]          @relation("NeedMergeSurvivor")
-  mergesAsRetired  NeedMerge[]          @relation("NeedMergeRetired")
-  referenceAliases NeedReferenceAlias[]
-  embeddings       NeedEmbedding[]
-  // RIO-FR-002 / RIO-AI-004 — the shared duplicate queue (Q40). Two arrays
-  // because a candidate stores an ORDERED pair (need_a_id < need_b_id, so a
-  // pair can never sit in the queue twice); a Need appears on whichever side
-  // its uuid sorts to, and readers must look at both.
-  duplicateCandidatesAsA DuplicateCandidate[] @relation("DuplicateCandidateNeedA")
-  duplicateCandidatesAsB DuplicateCandidate[] @relation("DuplicateCandidateNeedB")
-  // RIO-FR-009 (from feat/sprint-3) — dropped by the same merge conflict.
-  initiativeLinks NeedInitiative[]
-  analyticalStatusEvents NeedAnalyticalStatusEvent[]
 }
 
 // RIO-FR-009 (client Q17) — the five analytical statuses fixed by the
@@ -1017,6 +1029,10 @@ model HistoricalStudy {
   uploadedAt DateTime @default(now()) @map("uploaded_at") @db.Timestamptz(6)
 
   org Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  // RIO-DATA-002 — at most one Study is ever imported from an archive entry
+  // (enforced by the UNIQUE on studies.historical_study_id). Prisma still
+  // models the back-relation as a list; the service reads `[0]`.
+  importedStudies Study[]
 
   @@index([orgId])
   @@map("historical_studies")
@@ -3649,4 +3665,43 @@ model BackupRun {
   @@index([startedAt(sort: Desc)])
   @@index([kind, status, startedAt(sort: Desc)])
   @@map("backup_runs")
+}
+
+// RIO Arabic Localization — Approach 3 (Hybrid), client-confirmed
+// 2026-09-08. Approach 1 (bilingual storage) already covers fixed/
+// configurable content (Study Type, Target Sector, Question Bank,
+// Region/Governorate/Center, ...) via a `nameAr`-style column per table.
+// This table is Approach 2/3's other half: dynamic, user-typed content
+// (Need title/statement, evidence descriptions, decision notes, sharing
+// purposes, ...) that can't be prepared in advance, translated live via
+// Cohere Command A (see TranslationService/AiService) the first time it's
+// viewed in the other language.
+//
+// Content-addressed, not row/field-addressed on purpose: the same English
+// sentence typed into two different Needs' statements only needs
+// translating once. Keyed on a hash of the source text (not the raw text
+// itself, to keep the unique index a fixed, indexable width regardless of
+// how long the source string is) plus the target language — translating
+// once and storing the result permanently is what keeps ongoing Cohere
+// cost near a one-time cost per distinct string rather than growing with
+// every page view (see arabic-localization-approach.md's "Temporary
+// caching vs. permanently storing" note). No orgId/RLS: translated text
+// carries no tenant-specific meaning, same reasoning as Domain/SubDomain.
+model TranslationCache {
+  id             String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  // SHA-256 of `${sourceLocale}:${targetLocale}:${sourceText}` — see
+  // TranslationService.cacheKeyFor. Both locales are folded into the hash
+  // (not just a separate column) so the same source text can never
+  // collide across an en->ar vs. ar->en request sharing one row.
+  cacheKey       String   @unique @map("cache_key") @db.VarChar(64)
+  sourceLocale   String   @map("source_locale") @db.VarChar(5)
+  targetLocale   String   @map("target_locale") @db.VarChar(5)
+  // Kept verbatim alongside the hash — lets a human spot-check what was
+  // actually translated without recomputing the hash, and lets a future
+  // admin screen list/search cached translations by source text.
+  sourceText     String   @map("source_text")
+  translatedText String   @map("translated_text")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("translation_cache")
 }

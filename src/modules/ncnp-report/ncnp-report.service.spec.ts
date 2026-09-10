@@ -29,9 +29,9 @@ interface FakeNeed {
 interface FakeEvidence { needId: string }
 interface FakeResponseQuality { confidenceFlag: string; isDuplicate?: boolean }
 interface FakeSurveyQuestion { surveyId: string; indicator?: string | null; domain?: string; subDomain?: string }
-interface FakeRegion { id: string; name: string }
-interface FakeGovernorate { id: string; name: string }
-interface FakeCenter { id: string; name: string }
+interface FakeRegion { id: string; code: number; name: string }
+interface FakeGovernorate { id: string; code: string; name: string }
+interface FakeCenter { id: string; code: string; name: string }
 interface FakeOrgGovernorate { orgId: string; governorateId: string }
 interface FakeOrgCenter { orgId: string; centerId: string }
 interface FakeVillagePriorityAssessment {
@@ -395,7 +395,7 @@ describe('NcnpReportService', () => {
           { id: 'o1', name: 'Org 1', isActive: true, createdAt: new Date(), updatedAt: new Date(), regionId: 'r1' },
           { id: 'o2', name: 'Org 2', isActive: true, createdAt: new Date(), updatedAt: new Date(), regionId: null },
         ],
-        regions: [{ id: 'r1', name: 'Riyadh' }],
+        regions: [{ id: 'r1', code: 1, name: 'Riyadh' }],
         surveys: [
           { id: 's1', orgId: 'o1', status: 'PUBLISHED', createdAt: new Date() },
           { id: 's2', orgId: 'o1', status: 'DRAFT', createdAt: new Date() },
@@ -455,7 +455,7 @@ describe('NcnpReportService', () => {
   it('buckets the response trend by month and reports real gender/region distributions', async () => {
     const service = new NcnpReportService(
       fakeTenant({
-        regions: [{ id: 'r1', name: 'Riyadh' }],
+        regions: [{ id: 'r1', code: 1, name: 'Riyadh' }],
         responses: [
           { id: 'r1', orgId: 'o1', submittedAt: new Date('2026-06-05'), regionId: 'r1', gender: 'male' },
           { id: 'r2', orgId: 'o1', submittedAt: new Date('2026-06-20'), regionId: 'r1', gender: 'female' },
@@ -614,9 +614,9 @@ describe('NcnpReportService', () => {
           { id: 'o1', name: 'Org 1', isActive: true, createdAt: new Date(), updatedAt: new Date(), regionId: 'r1' },
           { id: 'o2', name: 'Org 2', isActive: true, createdAt: new Date(), updatedAt: new Date(), regionId: 'r1' },
         ],
-        regions: [{ id: 'r1', name: 'Riyadh' }],
-        governorates: [{ id: 'g1', name: 'Al-Kharj' }],
-        centers: [{ id: 'c1', name: 'Al-Hayathim' }],
+        regions: [{ id: 'r1', code: 1, name: 'Riyadh' }],
+        governorates: [{ id: 'g1', code: '0102', name: 'Al-Kharj' }],
+        centers: [{ id: 'c1', code: '0102-001', name: 'Al-Hayathim' }],
         orgGovernorates: [{ orgId: 'o1', governorateId: 'g1' }, { orgId: 'o2', governorateId: 'g1' }],
         orgCenters: [{ orgId: 'o1', centerId: 'c1' }],
         studies: [
@@ -629,17 +629,17 @@ describe('NcnpReportService', () => {
 
     const report = (await runAs('system_admin', () => service.getReport())) as {
       geography: {
-        organizationsByRegion: Array<{ id: string; name: string; count: number }>;
-        organizationsByGovernorate: Array<{ id: string; name: string; count: number }>;
-        organizationsByCenter: Array<{ id: string; name: string; count: number }>;
-        studiesByRegion: Array<{ id: string; name: string; count: number }>;
+        organizationsByRegion: Array<{ id: string; code: string; name: string; count: number }>;
+        organizationsByGovernorate: Array<{ id: string; code: string; name: string; count: number }>;
+        organizationsByCenter: Array<{ id: string; code: string; name: string; count: number }>;
+        studiesByRegion: Array<{ id: string; code: string; name: string; count: number }>;
       };
     };
 
-    expect(report.geography.organizationsByRegion).toEqual([{ id: 'r1', name: 'Riyadh', count: 2 }]);
-    expect(report.geography.organizationsByGovernorate).toEqual([{ id: 'g1', name: 'Al-Kharj', count: 2 }]);
-    expect(report.geography.organizationsByCenter).toEqual([{ id: 'c1', name: 'Al-Hayathim', count: 1 }]);
-    expect(report.geography.studiesByRegion).toEqual([{ id: 'r1', name: 'Riyadh', count: 2 }]);
+    expect(report.geography.organizationsByRegion).toEqual([{ id: 'r1', code: '1', name: 'Riyadh', count: 2 }]);
+    expect(report.geography.organizationsByGovernorate).toEqual([{ id: 'g1', code: '0102', name: 'Al-Kharj', count: 2 }]);
+    expect(report.geography.organizationsByCenter).toEqual([{ id: 'c1', code: '0102-001', name: 'Al-Hayathim', count: 1 }]);
+    expect(report.geography.studiesByRegion).toEqual([{ id: 'r1', code: '1', name: 'Riyadh', count: 2 }]);
   });
 
   it('exports a real, non-empty PDF and Excel file built from the live report', async () => {
@@ -679,9 +679,9 @@ describe('NcnpReportService', () => {
           { id: 'o1', name: 'Org 1', isActive: true, createdAt: staleDate, updatedAt: staleDate, regionId: 'r1' },
           { id: 'o2', name: 'Org 2', isActive: false, createdAt: staleDate, updatedAt: staleDate, regionId: 'r1' },
         ],
-        regions: [{ id: 'r1', name: 'Riyadh' }],
-        governorates: [{ id: 'g1', name: 'Al-Kharj' }],
-        centers: [{ id: 'c1', name: 'Al-Hayathim' }],
+        regions: [{ id: 'r1', code: 1, name: 'Riyadh' }],
+        governorates: [{ id: 'g1', code: '0102', name: 'Al-Kharj' }],
+        centers: [{ id: 'c1', code: '0102-001', name: 'Al-Hayathim' }],
         studies: [
           { id: 's1', orgId: 'o1', status: 'active', createdAt: staleDate, updatedAt: staleDate },
           { id: 's2', orgId: 'o1', status: 'active', createdAt: staleDate, updatedAt: staleDate },
@@ -711,7 +711,7 @@ describe('NcnpReportService', () => {
         byResponses: Array<{ organizationId: string; studyCount: number; surveyCount: number; responseCount: number; isActive: boolean }>;
       };
       studyOverview: { topOrgsByStudyCount: Array<{ organizationId: string; studyCount: number }>; totalOrganizations: number };
-      surveyGeography: { byRegion: Array<{ id: string; count: number }>; byGovernorate: Array<{ id: string; name: string; count: number }>; byCenter: Array<{ id: string; name: string; count: number }> };
+      surveyGeography: { byRegion: Array<{ id: string; code: string; name: string; count: number }>; byGovernorate: Array<{ id: string; code: string; name: string; count: number }>; byCenter: Array<{ id: string; code: string; name: string; count: number }> };
       regionSummary: Array<{ regionId: string; surveyCount: number; responseCount: number; avgResponsesPerSurvey: number }>;
     };
 
@@ -728,9 +728,9 @@ describe('NcnpReportService', () => {
     expect(report.studyOverview.topOrgsByStudyCount[0]).toEqual({ organizationId: 'o1', organizationName: 'Org 1', studyCount: 2 });
     expect(report.studyOverview.totalOrganizations).toBe(2);
 
-    expect(report.surveyGeography.byRegion).toEqual([{ id: 'r1', name: 'Riyadh', count: 2 }]);
-    expect(report.surveyGeography.byGovernorate).toEqual([{ id: 'g1', name: 'Al-Kharj', count: 2 }]);
-    expect(report.surveyGeography.byCenter).toEqual([{ id: 'c1', name: 'Al-Hayathim', count: 2 }]);
+    expect(report.surveyGeography.byRegion).toEqual([{ id: 'r1', code: '1', name: 'Riyadh', count: 2 }]);
+    expect(report.surveyGeography.byGovernorate).toEqual([{ id: 'g1', code: '0102', name: 'Al-Kharj', count: 2 }]);
+    expect(report.surveyGeography.byCenter).toEqual([{ id: 'c1', code: '0102-001', name: 'Al-Hayathim', count: 2 }]);
 
     expect(report.regionSummary).toEqual([{ regionId: 'r1', regionName: 'Riyadh', surveyCount: 2, responseCount: 1, avgResponsesPerSurvey: 0.5 }]);
   });
@@ -746,9 +746,9 @@ describe('NcnpReportService', () => {
     const service = new NcnpReportService(
       fakeTenant({
         organisations: [{ id: 'o1', name: 'Org 1', isActive: true, createdAt: staleDate, updatedAt: staleDate, regionId: 'r1' }],
-        regions: [{ id: 'r1', name: 'Riyadh' }],
-        governorates: [{ id: 'g1', name: 'Al-Kharj' }, { id: 'g2', name: 'Al-Quwayiyah' }],
-        centers: [{ id: 'c1', name: 'Al-Hayathim' }, { id: 'c2', name: 'Dhurma' }],
+        regions: [{ id: 'r1', code: 1, name: 'Riyadh' }],
+        governorates: [{ id: 'g1', code: '0102', name: 'Al-Kharj' }, { id: 'g2', code: '0103', name: 'Al-Quwayiyah' }],
+        centers: [{ id: 'c1', code: '0102-001', name: 'Al-Hayathim' }, { id: 'c2', code: '0103-001', name: 'Dhurma' }],
         orgGovernorates: [{ orgId: 'o1', governorateId: 'g1' }, { orgId: 'o1', governorateId: 'g2' }],
         orgCenters: [{ orgId: 'o1', centerId: 'c1' }, { orgId: 'o1', centerId: 'c2' }],
         surveys: [{ id: 'sv1', orgId: 'o1', needId: 'n1', status: 'PUBLISHED', createdAt: staleDate }],
@@ -759,20 +759,20 @@ describe('NcnpReportService', () => {
     );
 
     const report = (await runAs('system_admin', () => service.getReport())) as {
-      surveyGeography: { byGovernorate: Array<{ id: string; name: string; count: number }>; byCenter: Array<{ id: string; name: string; count: number }> };
+      surveyGeography: { byGovernorate: Array<{ id: string; code: string; name: string; count: number }>; byCenter: Array<{ id: string; code: string; name: string; count: number }> };
     };
 
-    expect(report.surveyGeography.byGovernorate).toEqual([{ id: 'g1', name: 'Al-Kharj', count: 1 }]);
-    expect(report.surveyGeography.byCenter).toEqual([{ id: 'c1', name: 'Al-Hayathim', count: 1 }]);
+    expect(report.surveyGeography.byGovernorate).toEqual([{ id: 'g1', code: '0102', name: 'Al-Kharj', count: 1 }]);
+    expect(report.surveyGeography.byCenter).toEqual([{ id: 'c1', code: '0102-001', name: 'Al-Hayathim', count: 1 }]);
   });
 
   it('rolls up Needs (not orgs/surveys) by region/governorate/center, and breaks needs down by sub-domain', async () => {
     const service = new NcnpReportService(
       fakeTenant({
         organisations: [{ id: 'o1', name: 'Org 1', isActive: true, createdAt: new Date(), updatedAt: new Date(), regionId: 'r1' }],
-        regions: [{ id: 'r1', name: 'Riyadh' }],
-        governorates: [{ id: 'g1', name: 'Al-Kharj' }],
-        centers: [{ id: 'c1', name: 'Al-Hayathim' }],
+        regions: [{ id: 'r1', code: 1, name: 'Riyadh' }],
+        governorates: [{ id: 'g1', code: '0102', name: 'Al-Kharj' }],
+        centers: [{ id: 'c1', code: '0102-001', name: 'Al-Hayathim' }],
         needs: [
           { id: 'n1', title: 'Need 1', orgId: 'o1', domain: 'Health', subDomain: 'Access to Basic Healthcare' },
           { id: 'n2', title: 'Need 2', orgId: 'o1', domain: 'Health', subDomain: 'Access to Basic Healthcare' },
@@ -791,17 +791,17 @@ describe('NcnpReportService', () => {
 
     const report = (await runAs('system_admin', () => service.getReport())) as {
       needsGeography: {
-        byRegion: Array<{ id: string; name: string; count: number }>;
-        byGovernorate: Array<{ id: string; name: string; count: number }>;
-        byCenter: Array<{ id: string; name: string; count: number }>;
+        byRegion: Array<{ id: string; code: string; name: string; count: number }>;
+        byGovernorate: Array<{ id: string; code: string; name: string; count: number }>;
+        byCenter: Array<{ id: string; code: string; name: string; count: number }>;
       };
       needSubDomains: Array<{ domainName: string; subDomainName: string; needCount: number }>;
       domainRegionIntersections: Array<{ regionName: string; domainName: string; needCount: number }>;
     };
 
-    expect(report.needsGeography.byRegion).toEqual([{ id: 'r1', name: 'Riyadh', count: 3 }]);
-    expect(report.needsGeography.byGovernorate).toEqual([{ id: 'g1', name: 'Al-Kharj', count: 2 }]);
-    expect(report.needsGeography.byCenter).toEqual([{ id: 'c1', name: 'Al-Hayathim', count: 1 }]);
+    expect(report.needsGeography.byRegion).toEqual([{ id: 'r1', code: '1', name: 'Riyadh', count: 3 }]);
+    expect(report.needsGeography.byGovernorate).toEqual([{ id: 'g1', code: '0102', name: 'Al-Kharj', count: 2 }]);
+    expect(report.needsGeography.byCenter).toEqual([{ id: 'c1', code: '0102-001', name: 'Al-Hayathim', count: 1 }]);
     expect(report.needSubDomains).toEqual([
       { domainName: 'Health', subDomainName: 'Access to Basic Healthcare', needCount: 2 },
       { domainName: 'Education', subDomainName: 'Access to Schools', needCount: 1 },
@@ -816,7 +816,7 @@ describe('NcnpReportService', () => {
     const service = new NcnpReportService(
       fakeTenant({
         organisations: [{ id: 'o1', name: 'Org 1', isActive: true, createdAt: new Date(), updatedAt: new Date(), regionId: 'r1' }],
-        regions: [{ id: 'r1', name: 'Riyadh' }],
+        regions: [{ id: 'r1', code: 1, name: 'Riyadh' }],
         needs: [
           { id: 'n1', title: 'Water shortage in Village A', orgId: 'o1', domain: 'Water & Sanitation', subDomain: 'Drinking Water Access', source: 'manual_entry', referenceId: 'FIELD-FORM-001' },
           { id: 'n2', title: 'School access in Village B', orgId: 'o1', domain: 'Education', subDomain: 'Access to Schools', source: 'file_upload' },
@@ -881,7 +881,7 @@ describe('NcnpReportService', () => {
     const service = new NcnpReportService(
       fakeTenant({
         organisations: [{ id: 'o1', name: 'Org 1', isActive: true, createdAt: new Date(), updatedAt: new Date(), regionId: 'r1' }],
-        regions: [{ id: 'r1', name: 'Riyadh' }],
+        regions: [{ id: 'r1', code: 1, name: 'Riyadh' }],
         needs: [{ id: 'n1', title: 'Maternal health need', orgId: 'o1', domain: 'Health', subDomain: 'Maternal & Child Health' }],
         surveys: [{ id: 'sv1', orgId: 'o1', needId: 'n1', status: 'PUBLISHED', createdAt: new Date() }],
         // Inserted in this order — Infrastructure questions come first, same

@@ -85,8 +85,12 @@ export class PriorityController {
     @Param("studyId", new UuidParamPipe()) studyId: string,
     @Param("surveyId", new UuidParamPipe()) surveyId: string
   ) {
-    await this.rollupService.recalculateStudyScores(studyId, surveyId);
-    return { success: true };
+    // Pass the pipeline's outcome straight through: a run can complete as a
+    // successful HTTP call and still compute nothing (no responses yet,
+    // methodology reference data missing). The frontend renders `reason` as
+    // a specific message; returning a bare `{ success: true }` here left it
+    // with nothing to say but "produced no priority score".
+    return this.rollupService.recalculateStudyScores(studyId, surveyId);
   }
 
   @Get("studies/:studyId/surveys/:surveyId/village-priority")

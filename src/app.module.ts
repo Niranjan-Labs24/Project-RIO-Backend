@@ -50,6 +50,7 @@ import { GeographicDashboardModule } from './modules/geographic-dashboard/geogra
 import { SharingAlertsModule } from './modules/sharing-alerts/sharing-alerts.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { ArchiveModule } from './modules/archive/archive.module';
+import { TranslationModule } from './modules/translation/translation.module';
 import { ReviewerSlaModule } from './modules/reviewer-sla/reviewer-sla.module';
 import { CollectiveDashboardModule } from './modules/collective-dashboard/collective-dashboard.module';
 import { AiModule } from './modules/ai/ai.module';
@@ -123,6 +124,7 @@ import { AppController } from './app.controller';
     SharingAlertsModule,
     ReportsModule,
     ArchiveModule,
+    TranslationModule,
     ReviewerSlaModule,
     CollectiveDashboardModule,
     AiModule,

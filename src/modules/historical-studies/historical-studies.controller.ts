@@ -15,7 +15,7 @@ import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { MAX_EVIDENCE_FILE_SIZE_BYTES } from '../evidence/evidence.storage.service';
 import { HistoricalStudiesService } from './historical-studies.service';
-import type { HistoricalStudy } from './historical-studies.types';
+import type { HistoricalStudy, HistoricalStudyImportResult } from './historical-studies.types';
 
 interface CreateHistoricalStudyBody {
   title?: string;
@@ -82,6 +82,19 @@ export class HistoricalStudiesController {
         buffer: file.buffer,
       },
     });
+  }
+
+  // RIO-DATA-002 — turn this archive entry into a Study + Need rows in the
+  // unified dashboard. Gated on dataCollection:write, the same permission as
+  // the ordinary /needs/import path this reuses, rather than on the archive:
+  // the archive row itself is untouched (it stays append-only), and what the
+  // call actually produces is Need data.
+  @Post(':id/import')
+  @RequirePermission('dataCollection', 'write')
+  importToDashboard(
+    @Param('id', new UuidParamPipe()) id: string,
+  ): Promise<HistoricalStudyImportResult> {
+    return this.historicalStudies.importToDashboard(id);
   }
 
   @Get(':id/file')

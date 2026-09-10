@@ -114,12 +114,44 @@ export class ConfigService {
   get geminiApiKey(): string | undefined {
     return this.config.GEMINI_API_KEY;
   }
+  /** See AI_PROVIDER in env.schema.ts. Defaults to in-Kingdom OCI Cohere. */
+  get aiProvider(): 'oci_cohere' | 'gemini' {
+    return this.config.AI_PROVIDER;
+  }
+  get ociGenAiApiKey(): string | undefined {
+    return this.config.OCI_GENAI_API_KEY;
+  }
+  get ociGenAiCompartmentId(): string | undefined {
+    return this.config.OCI_GENAI_COMPARTMENT_ID;
+  }
+  get ociGenAiRegion(): string {
+    return this.config.OCI_GENAI_REGION;
+  }
+  get ociGenAiModelId(): string {
+    return this.config.OCI_GENAI_MODEL_ID;
+  }
+  get ociGenAiServingType(): 'ON_DEMAND' | 'DEDICATED' {
+    return this.config.OCI_GENAI_SERVING_TYPE;
+  }
+  get ociGenAiMaxTokens(): number {
+    return this.config.OCI_GENAI_MAX_TOKENS;
+  }
+  /** Inference host for the configured region. */
+  get ociGenAiChatUrl(): string {
+    return `https://inference.generativeai.${this.config.OCI_GENAI_REGION}.oci.oraclecloud.com/20231130/actions/chat`;
+  }
   /** See SEMANTIC_DUPLICATES_ENABLED in env.schema.ts — Q10 sits behind this. */
   get semanticDuplicatesEnabled(): boolean {
     return this.config.SEMANTIC_DUPLICATES_ENABLED;
   }
   get twilioAccountSid(): string | undefined {
     return this.config.TWILIO_ACCOUNT_SID;
+  }
+  get twilioApiKeySid(): string | undefined {
+    return this.config.TWILIO_API_KEY_SID;
+  }
+  get twilioApiKeySecret(): string | undefined {
+    return this.config.TWILIO_API_KEY_SECRET;
   }
   get twilioAuthToken(): string | undefined {
     return this.config.TWILIO_AUTH_TOKEN;

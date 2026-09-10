@@ -550,10 +550,12 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
   // distribution + top priorities come from the same VillagePriorityAssessment
   // rows the Priority Dashboard reads (so the two reconcile); anomalies from
   // ResponseQualityResult flags; reviewer notes from decided AiDecisions. An
-  // org with no needs yet returns real zeros (not the Sample-Village mock);
-  // only an unexpected error falls back to the mock so the screen never dies.
-  // The aggregate is org-wide — scoped by the tenant context, not by `query`,
-  // which is why the parameter is unused (it was only read by the old fallback).
+  // org with no needs yet returns real zeros. There is no mock fallback: an
+  // unexpected error goes through rethrow() like every other method here, so
+  // a fault surfaces as a fault instead of as fixture data nothing in the
+  // export marks as fake. The aggregate is org-wide — scoped by the tenant
+  // context, not by `query`, which is why the parameter is unused (it was
+  // only ever read by the removed fallback).
   async getCollectiveDashboard(_query: ScopedReportQuery): Promise<CollectiveDashboardData> {
     try {
       // Authoritative scores — identical to the Priority Dashboard's rows.

@@ -22,6 +22,11 @@ import { collectiveGenerator } from "./generators/collective.generator";
 import { sharingStatusGenerator } from "./generators/sharing-status.generator";
 import { topPriorityGenerator } from "./generators/top-priority.generator";
 import { dataQualityGenerator } from "./generators/data-quality.generator";
+import type { SupportedLocale } from "../translation/translation.types";
+import { loadMasterDataAliases, type MasterDataAliases } from "./i18n/master-data-names";
+import { translateReportContent } from "./i18n/translate-content";
+import { TranslationService } from "../translation/translation.service";
+import { combinedEvidenceGenerator, evidenceDocumentGenerator } from "./generators/evidence-reports.generator";
 import { ReportDataProvider } from "./providers/report-data.provider";
 import {
   EXPORTABLE_STATUSES,
@@ -105,6 +110,7 @@ export class ReportsService {
     private readonly audit: AuditService,
     private readonly reportData: ReportDataProvider,
     private readonly reportSummary: ReportSummaryService,
+    private readonly translation: TranslationService,
   ) {}
 
   /**
@@ -438,7 +444,11 @@ export class ReportsService {
     return this.hydrateOne(row as unknown as ReportRow);
   }
 
-  async export(id: string, format: ExportFormat): Promise<{ filename: string; contentType: string; body: Buffer }> {
+  async export(
+    id: string,
+    format: ExportFormat,
+    locale: SupportedLocale = "en",
+  ): Promise<{ filename: string; contentType: string; body: Buffer }> {
     const store = getOrgStore();
     // RIO-RBAC-002 (AC1, fixed 2026-08-23) — export is a download of
     // already-released content, not a data mutation, so this extends
@@ -479,36 +489,96 @@ export class ReportsService {
           entityId: row.id,
           entityLabel: row.title,
           organizationId: row.orgId,
-          metadata: { format },
+          metadata: { format, locale },
         });
       }
       const auditMeta = await this.tenant.runAsSupervisor((tx) => this.resolveExportAuditMeta(row!, tx));
+      const aliases = await this.masterDataAliases(locale, true);
       return buildExportStub(
         format,
-        { id: row.id, title: row.title, reportType: row.reportType, content: row.content as Record<string, unknown> },
+        { id: row.id, title: row.title, reportType: row.reportType, content: await this.localizedContent(row, locale) },
         auditMeta,
+        locale,
+        aliases,
+        this.translation,
       );
     }
 
     await this.audit.record({
       action: "share", entityType: "report", entityId: row.id, entityLabel: row.title,
-      metadata: { format },
+      metadata: { format, locale },
       // A share does not mutate the report, so there is no field that moved.
       // The pair records what was released and in what form — before: null
       // reads as "not previously exported in this action", which is what the
       // detail view needs to show something meaningful instead of nothing.
       changes: [
         { field: "Exported format", before: null, after: format },
+        { field: "Export locale", before: null, after: locale },
         { field: "Report status at export", before: null, after: row.status },
         { field: "Scope", before: null, after: "own organization" },
       ],
     });
     const auditMeta = await this.tenant.runInOrgContext((tx) => this.resolveExportAuditMeta(row!, tx));
+    const aliases = await this.masterDataAliases(locale, false);
     return buildExportStub(
       format,
-      { id: row.id, title: row.title, reportType: row.reportType, content: row.content as Record<string, unknown> },
+      { id: row.id, title: row.title, reportType: row.reportType, content: await this.localizedContent(row, locale) },
       auditMeta,
+      locale,
+      aliases,
+      this.translation,
     );
+  }
+
+  /**
+   * A report's content with its free prose in `locale`.
+   *
+   * Only the fields declared as prose in i18n/translate-content.ts are sent —
+   * AI narrative, recommendations, evidence summaries, reviewer notes. Figures,
+   * enum values and the deterministic methodology sentences are never sent:
+   * each distinct number in one would become a permanent cache entry, and the
+   * numbers have to reconcile with the Priority Dashboard.
+   *
+   * Never fails an export. TranslationService returns the source text when the
+   * AI provider is unavailable, so a degraded export is half-English rather
+   * than a 500 — which is the right trade for a download, but must not be
+   * silent, hence the tally.
+   */
+  private async localizedContent(
+    row: ReportRow,
+    locale: SupportedLocale,
+  ): Promise<Record<string, unknown>> {
+    const content = row.content as Record<string, unknown>;
+    const { content: translated, requested, failed } = await translateReportContent(
+      content,
+      locale,
+      this.translation,
+    );
+    if (failed > 0) {
+      this.logger.warn(
+        `Report ${row.id} exported in ${locale} with ${failed}/${requested} string(s) ` +
+          `untranslated — the AI provider returned them unchanged.`,
+      );
+    }
+    return translated;
+  }
+
+  /**
+   * Arabic names for the master data this report prints, or an empty map for
+   * English (which makes the localisation pass a no-op).
+   *
+   * Read at export rather than at generation because a report's content is
+   * frozen as JSONB when it is created, long before anyone chooses an export
+   * language — see i18n/master-data-names.ts. Master data is reference data
+   * with no per-org rows, but the read still goes through a tenant context
+   * because every query in this service does; `crossOrg` picks the same one
+   * the surrounding export path already used.
+   */
+  private masterDataAliases(locale: SupportedLocale, crossOrg: boolean): Promise<MasterDataAliases> {
+    const run = crossOrg
+      ? this.tenant.runAsSupervisor.bind(this.tenant)
+      : this.tenant.runInOrgContext.bind(this.tenant);
+    return run((tx) => loadMasterDataAliases(tx as never, locale));
   }
 
   // Every field renders conditionally in the export itself (see
@@ -559,6 +629,7 @@ export class ReportsService {
   async exportForApprovedSharingGrant(
     id: string,
     format: ExportFormat,
+    locale: SupportedLocale = "en",
   ): Promise<{ filename: string; contentType: string; body: Buffer }> {
     const row = (await this.tenant.runAsSupervisor((tx) =>
       tx.report.findUnique({ where: { id } }),
@@ -577,18 +648,23 @@ export class ReportsService {
     }
     await this.audit.record({
       action: "share", entityType: "report", entityId: row.id, entityLabel: row.title,
-      metadata: { format, crossOrg: true },
+      metadata: { format, locale, crossOrg: true },
       changes: [
         { field: "Exported format", before: null, after: format },
+        { field: "Export locale", before: null, after: locale },
         { field: "Report status at export", before: null, after: row.status },
         { field: "Scope", before: null, after: "cross-organization (approved sharing grant)" },
       ],
     });
     const auditMeta = await this.tenant.runAsSupervisor((tx) => this.resolveExportAuditMeta(row, tx));
+    const aliases = await this.masterDataAliases(locale, true);
     return buildExportStub(
       format,
-      { id: row.id, title: row.title, reportType: row.reportType, content: row.content as Record<string, unknown> },
+      { id: row.id, title: row.title, reportType: row.reportType, content: await this.localizedContent(row, locale) },
       auditMeta,
+      locale,
+      aliases,
+      this.translation,
     );
   }
 
@@ -662,283 +738,18 @@ export class ReportsService {
     if (reportType === "RPT03" || reportType === "RPT09") return topPriorityGenerator(providerCtx);
     if (reportType === "RPT10") return dataQualityGenerator(providerCtx);
 
+    // RPT16 / RPT17 — evidence documents (plus, for RPT16, the quantitative
+    // half). Assembled in generators/evidence-reports.generator.ts like every
+    // other type; the transaction is opened here so `loadFacts` below can read
+    // the snapshot inside it.
     if (reportType === "RPT17" || reportType === "RPT16") {
       if (!studyId) throw new BadRequestException({ error: { code: "STUDY_ID_REQUIRED", message: `${reportType} requires studyId` } });
-      const orgId = requireOrgId();
-      const generatedBy = requireActor();
-
-      // RPT16 is evidence + scoring. RPT17 is evidence ONLY: it is a
-      // qualitative, document-derived report and must not carry survey-based
-      // severity, priority or top-priority figures anywhere, because those
-      // would read as if the documents had produced a score.
-      const isCombined = reportType === "RPT16";
-
-      return this.tenant.runInOrgContext(async (tx) => {
-        const study = await tx.study.findUnique({ where: { id: studyId } });
-        if (!study) throw new NotFoundException(`Study with id ${studyId} not found.`);
-
-        const org = await tx.organisation.findUnique({ where: { id: orgId } });
-
-        // The study's centers, for the Center rung of the geography hierarchy.
-        // Read straight from study_centers rather than threaded through the
-        // ReportData snapshot, whose `study` block carries region/governorate
-        // but no center — this keeps the lookup local to these two reports.
-        const studyCenters = await tx.studyCenter.findMany({
-          where: { studyId, orgId },
-          include: { center: true },
-        });
-        const centerNames = [...new Set(studyCenters.map((c) => c.center.name))];
-
-        const docs = await tx.evidenceDocument.findMany({
-          where: { studyId, orgId },
-          include: { summaries: { orderBy: { createdAt: "desc" }, take: 1 } },
-          orderBy: { createdAt: "desc" },
-        });
-
-        const latestCombined = reportType === "RPT16"
-          ? await tx.combinedReportSummary.findFirst({
-              where: { studyId, orgId },
-              orderBy: { createdAt: "desc" },
-            })
-          : null;
-
-        // The score-based AI narrative. RPT16 is the union of the score report
-        // and the evidence report, so it carries this alongside the combined
-        // narrative — the combined one is a synthesis and does not restate
-        // everything the score summary said.
-        const latestScore = isCombined
-          ? await tx.aiPrioritySummary.findFirst({
-              where: { studyId, orgId },
-              orderBy: { createdAt: "desc" },
-            })
-          : null;
-
-        const formattedDocs = docs.map((d) => {
-          const latestSummary = d.summaries[0];
-          const rawOutput = latestSummary?.officerEditedOutputJson || latestSummary?.aiOutputJson;
-          let parsedOutput = null;
-          if (typeof rawOutput === "string") {
-            try { parsedOutput = JSON.parse(rawOutput); } catch { parsedOutput = null; }
-          } else {
-            parsedOutput = rawOutput;
-          }
-          return {
-            id: d.id,
-            title: d.title,
-            documentType: d.documentType,
-            sourceReferenceId: d.sourceReferenceId,
-            collectedDate: d.collectedDate ? d.collectedDate.toISOString().substring(0, 10) : "Data not available",
-            description: d.description || "",
-            summaryStatus: latestSummary?.status || "NO_SUMMARY",
-            aiSummary: parsedOutput,
-          };
-        });
-
-        const parseOutput = (raw: unknown): unknown => {
-          if (typeof raw === "string") {
-            try { return JSON.parse(raw); } catch { return null; }
-          }
-          return raw ?? null;
-        };
-
-        const combinedParsed = latestCombined
-          ? parseOutput(latestCombined.officerEditedOutputJson || latestCombined.aiOutputJson)
-          : null;
-        const scoreParsed = latestScore
-          ? parseOutput(latestScore.officerEditedOutputJson || latestScore.aiOutputJson)
-          : null;
-
-        const reportTitle = reportType === "RPT17"
-          ? `${study.title} — Evidence Document Report`
-          : `${study.title} — Combined Quantitative & Evidence Report`;
-
-        // Real scoring facts for this study. Null when the study has not been
-        // scored yet, in which case the quantitative sections are reported as
-        // unavailable rather than filled with placeholder figures.
-        const facts = await this.loadStudyQuantitativeFacts(tx, studyId);
-
-        const NOT_AVAILABLE = "Data not available for this study.";
-
-        // Recommendations come from the officer-facing summaries — never
-        // invented here. RPT16 unions the combined narrative's list with the
-        // score summary's, since the report carries both halves; identical
-        // interventions are kept once (case/whitespace-insensitive) so a
-        // recommendation both summaries make is not printed twice.
-        const asRecommendationText = (r: unknown) =>
-          typeof r === "string"
-            ? r
-            : String((r as { intervention?: string })?.intervention ?? "");
-        // The two summaries name this differently: the combined narrative uses
-        // `recommendations`, the score narrative uses `draftNextSteps` (a
-        // required string[] in its response schema). Both are the same domain —
-        // interventions / next steps — so both feed the one list.
-        const readRecommendations = (parsed: unknown): string[] => {
-          const shape = (parsed ?? {}) as { recommendations?: unknown; draftNextSteps?: unknown };
-          return [
-            ...(Array.isArray(shape.recommendations) ? shape.recommendations : []),
-            ...(Array.isArray(shape.draftNextSteps) ? shape.draftNextSteps : []),
-          ]
-            .map(asRecommendationText)
-            .filter(Boolean);
-        };
-
-        const recommendations: string[] = [];
-        const seenRecommendations = new Set<string>();
-        for (const rec of [
-          ...readRecommendations(combinedParsed),
-          ...readRecommendations(scoreParsed),
-        ]) {
-          const key = rec.trim().toLowerCase();
-          if (!key || seenRecommendations.has(key)) continue;
-          seenRecommendations.add(key);
-          recommendations.push(rec);
-        }
-
-        // The nested narratives keep everything except their own
-        // `recommendations` array — that content is hoisted to the single
-        // top-level list above, so it renders once rather than in three places.
-        const stripRecommendations = (parsed: unknown): unknown => {
-          if (!parsed || typeof parsed !== "object") return parsed;
-          const { recommendations: _dropped, draftNextSteps: _alsoDropped, ...rest } = parsed as Record<string, unknown>;
-          return rest;
-        };
-
-        return {
-          title: reportTitle,
-          content: {
-            header: {
-              studyName: study.title,
-              entityName: org?.name || "Community Assessment Platform",
-              methodologyVersion:
-                facts?.study.methodologyVersionLabel ?? study.methodologyVersionId ?? NOT_AVAILABLE,
-              cycleNumber: study.cycleNumber ?? 1,
-              dateTime: new Date().toISOString(),
-            },
-            // Structured Region → Governorate → Center, from the study's own
-            // selection.
-            //
-            // `regions` is the map payload: the same {id, name, count} shape
-            // the NCNP report's RegionMap consumes, so both reports plot the
-            // study on the Kingdom map with the existing component. `name`
-            // must be the master Region name (e.g. "Northern Borders") — that
-            // is the key RegionMap looks up coordinates by. Region level only:
-            // the platform holds no governorate GPS data, and inventing it is
-            // avoided here as everywhere else.
-            //
-            // The count is what the marker means for each report: documents
-            // for the evidence report, documents plus scored domains for the
-            // combined one.
-            geography: {
-              region: facts?.study.regionName ?? NOT_AVAILABLE,
-              governorate: facts?.study.governorateName ?? NOT_AVAILABLE,
-              center: centerNames.length ? centerNames.join(", ") : NOT_AVAILABLE,
-              regions: facts?.study.regionName
-                ? [
-                    {
-                      id: facts.study.regionName,
-                      name: facts.study.regionName,
-                      count: isCombined
-                        ? formattedDocs.length + (facts?.severity.domainSeverityScores.length ?? 0)
-                        : formattedDocs.length,
-                    },
-                  ]
-                : [],
-              mapUnitLabel: isCombined
-                ? ["data point", "data points"]
-                : ["document", "documents"],
-            },
-            // Field names follow the canonical ResponseQuality contract, not
-            // ad-hoc ones: ResponseQualityBlock and responseQualityRows both
-            // read `overallConfidence` / `validResponseRatePct` / `dontKnowBand`,
-            // and rendered "—" for three of six tiles while this block emitted
-            // `confidence` and omitted the other two.
-            responseQuality: facts
-              ? {
-                  submittedResponses: facts.responseQuality.submittedResponseCount,
-                  validResponses: facts.responseQuality.validResponseCount,
-                  overallConfidence: facts.responseQuality.confidenceLevel,
-                  confidenceReason: facts.responseQuality.confidenceReason,
-                  validResponseRatePct:
-                    facts.responseQuality.submittedResponseCount > 0
-                      ? Math.round(
-                          (facts.responseQuality.validResponseCount /
-                            facts.responseQuality.submittedResponseCount) *
-                            100,
-                        )
-                      : 0,
-                  dontKnowRate: facts.responseQuality.dontKnowRate * 100,
-                  dontKnowBand: facts.responseQuality.dontKnowBand,
-                  population: facts.study.population,
-                  requiredSampleSize: facts.study.requiredSampleSize,
-                  minimumDetectableEffect: facts.study.minimumDetectableEffect,
-                }
-              : { note: NOT_AVAILABLE },
-            // ── Scoring half: RPT16 only ──
-            // Omitted entirely (not nulled) for RPT17 — report-doc.ts and the
-            // frontend renderer both decide section-by-section on key presence,
-            // so absent keys mean the scoring sections never render.
-            ...(!isCombined
-              ? {}
-              : {
-            severity: facts
-              ? {
-                  label: facts.severity.severityBand,
-                  overallVillageNeedsIndex: facts.severity.overallVillageNeedsIndex,
-                  // Severity is joined to the priority rollup's performance and
-                  // weight per domain, so one table carries the full
-                  // Domain/KPI result set the report requires.
-                  domains: facts.severity.domainSeverityScores.map((d) => {
-                    const perf = facts.priority.domainPerformanceScores.find(
-                      (p) => p.domainKey === d.domainKey,
-                    );
-                    const submitted = d.validResponseCount + d.excludedResponseCount;
-                    return {
-                      name: d.domainName,
-                      domainCode: d.domainKey,
-                      severityScore: d.severityScore,
-                      performanceScore: perf?.performanceScore ?? null,
-                      weight: perf?.weight ?? null,
-                      kpiCount: d.kpiCount,
-                      confidence: d.confidenceLevel,
-                      confidencePct:
-                        submitted > 0 ? Math.round((d.validResponseCount / submitted) * 100) : null,
-                      isCriticalDomain: perf?.isCriticalDomain ?? false,
-                    };
-                  }),
-                }
-              : { note: NOT_AVAILABLE },
-            priority: facts
-              ? {
-                  villagePriorityScore: facts.priority.villagePriorityScore,
-                  priorityStatus: facts.priority.priorityStatus,
-                  overrideApplied: facts.priority.overrideApplied,
-                  overrideReason: facts.priority.overrideReason,
-                }
-              : { note: NOT_AVAILABLE },
-            topPriorities: (facts?.severity.topKpis ?? []).map((k) => ({
-              rank: k.rank,
-              needStatement: k.kpiName,
-              score: k.severityScore,
-              domain: k.domainName,
-            })),
-            combinedSummarySection: stripRecommendations(combinedParsed),
-            scoreSummarySection: stripRecommendations(scoreParsed),
-                }),
-            evidenceSection: {
-              totalDocuments: formattedDocs.length,
-              documents: formattedDocs,
-            },
-            recommendations,
-            approval: {
-              generatedBy,
-              generatedAt: new Date().toISOString(),
-              status: "DRAFT",
-            },
-            filters,
-            reportKind: REPORT_TYPE_META[reportType].kind,
-          },
-        };
-      });
+      const evidenceCtx = { studyId, orgId: requireOrgId(), generatedBy: requireActor(), filters };
+      return this.tenant.runInOrgContext((tx) =>
+        reportType === "RPT16"
+          ? combinedEvidenceGenerator({ ...evidenceCtx, tx, loadFacts: () => this.loadStudyQuantitativeFacts(tx, studyId) })
+          : evidenceDocumentGenerator({ ...evidenceCtx, tx, loadFacts: () => this.loadStudyQuantitativeFacts(tx, studyId) }),
+      );
     }
 
     // Exhaustiveness guard: PlaceholderReportType deliberately excludes every

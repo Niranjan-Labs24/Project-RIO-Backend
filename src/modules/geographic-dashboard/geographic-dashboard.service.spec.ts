@@ -100,7 +100,7 @@ function fakeTenant(seed: {
             })),
             needCenters: (n.centerIds ?? []).map((centerId) => ({ centerId })),
             priorityScores: n.band ? [{ level: n.band, scoredAt: new Date() }] : [],
-            initiativeLinks: (n.initiatives ?? []).map((name) => ({
+            needInitiatives: (n.initiatives ?? []).map((name) => ({
               initiative: { id: `init-${name}`, name, status: 'active', domain: null },
             })),
           })),

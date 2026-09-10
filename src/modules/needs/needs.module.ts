@@ -16,8 +16,12 @@ import { NeedThemesModule } from './need-themes.module';
   imports: [GeographyModule, AiDecisionsModule, AiModule, StudyConfigModule, MethodologyConfigModule, NeedThemesModule, DataCleaningModule],
   controllers: [NeedsController, NeedSummaryController],
   providers: [NeedsService, NeedsImportService, NeedSummaryService],
-  // Exported so the Reports module can resolve a Need's confirmed summary when
-  // building RPT01/RPT15 — see report-summary-data.provider.ts.
-  exports: [NeedSummaryService],
+  // NeedSummaryService is exported so the Reports module can resolve a Need's
+  // confirmed summary when building RPT01/RPT15 — see
+  // report-summary-data.provider.ts. NeedsImportService is exported so the
+  // Historical Studies module can reuse the exact same parser, validation
+  // and dedupe path for RIO-DATA-002 prior-study imports rather than growing
+  // a second, drifting copy of it.
+  exports: [NeedSummaryService, NeedsImportService],
 })
 export class NeedsModule {}

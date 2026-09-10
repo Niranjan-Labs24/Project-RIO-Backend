@@ -151,15 +151,22 @@ export class UsersService {
   async listForOrg(organizationId: string, opts: { limit?: number; offset?: number } = {}): Promise<OrgUser[]> {
     this.assertCrossEntity();
     const { take, skip } = this.page(opts);
-    const rows = (await this.tenant.runAsSupervisor((tx) =>
-      tx.user.findMany({ where: { orgId: organizationId }, orderBy: { createdAt: 'asc' }, take, skip }),
-    )) as UserRow[];
+    const [rows, org] = (await this.tenant.runAsSupervisor((tx) =>
+      Promise.all([
+        tx.user.findMany({ where: { orgId: organizationId }, orderBy: { createdAt: 'asc' }, take, skip }),
+        tx.organisation.findUnique({ where: { id: organizationId }, select: { name: true } }),
+      ]),
+    )) as [UserRow[], { name: string } | null];
 
     await this.audit.record({
       action: 'SYSTEM_ADMIN_VIEWED_ORGANIZATION_USERS',
       entityType: 'organization',
       entityId: organizationId,
-      entityLabel: organizationId,
+      // The organisation's name, not its id — a raw UUID in the audit
+      // timeline (client-reported 2026-09-10) told the reader nothing about
+      // which org was viewed, unlike every other org-scoped audit action
+      // here (see SYSTEM_ADMIN_VIEWED_ORGANIZATION in organizations.service.ts).
+      entityLabel: org?.name ?? organizationId,
       organizationId,
     });
 

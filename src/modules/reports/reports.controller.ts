@@ -81,10 +81,19 @@ export class ReportsController {
     return this.reports.archive(id);
   }
 
+  // `locale` is the language the caller is VIEWING the app in, so the export
+  // reads the same as the screen it was requested from. Anything but "ar"
+  // (including absent, for every existing caller) means English — a bad value
+  // must not fail a download, and there is no third language to guess at.
   @Get(":id/export")
   @RequirePermission("reportsDashboards", "export")
-  async export(@Param("id", new UuidParamPipe()) id: string, @Query("format") format: ExportFormat, @Res() res: Response): Promise<void> {
-    const file = await this.reports.export(id, format);
+  async export(
+    @Param("id", new UuidParamPipe()) id: string,
+    @Query("format") format: ExportFormat,
+    @Res() res: Response,
+    @Query("locale") locale?: string,
+  ): Promise<void> {
+    const file = await this.reports.export(id, format, locale === "ar" ? "ar" : "en");
     res.set({
       "Content-Type": file.contentType,
       "Content-Disposition": `attachment; filename="${file.filename}"`,

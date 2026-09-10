@@ -83,12 +83,29 @@ export class SurveysService {
         id: string;
         questionId: string;
         questionText: string;
+        // RIO Arabic Localization (Approach 3, Hybrid) — client-supplied
+        // Question Bank Arabic text/options, added 2026-09-08 so the
+        // citizen-facing survey can actually show them (see
+        // getPublishedSurveyByNeedId/citizen.service.ts, which previously
+        // dropped these on the way to the citizen despite the DB always
+        // having had them).
+        questionTextAr: string | null;
         answerType: string;
         answerOptions: unknown;
+        answerOptionsAr: unknown;
         domain: string;
         subDomain: string;
         indicator: string | null;
         kpi: string | null;
+        // RIO Arabic Localization (Approach 3, Hybrid) — same client-supplied
+        // columns as questionTextAr/answerOptionsAr above; missed here
+        // originally, so Survey Builder's own SurveyQuestion view (as
+        // opposed to the eligible/recommended Question Bank browse lists,
+        // which read straight off QuestionsService.toQuestionRow and always
+        // had these) showed the indicator/KPI in English even once a survey
+        // was already created.
+        indicatorAr: string | null;
+        kpiAr: string | null;
         priorityWeight?: Prisma.Decimal | null;
       } | null;
     },
@@ -105,15 +122,22 @@ export class SurveysService {
         bankQuestionId: sq.question.id,
         questionCode: sq.question.questionId,
         questionText: sq.question.questionText,
+        questionTextAr: sq.question.questionTextAr,
         answerType: sq.question.answerType,
         answerOptions:
           typeof sq.question.answerOptions === 'string'
             ? JSON.parse(sq.question.answerOptions)
             : sq.question.answerOptions,
+        answerOptionsAr:
+          typeof sq.question.answerOptionsAr === 'string'
+            ? JSON.parse(sq.question.answerOptionsAr)
+            : sq.question.answerOptionsAr,
         domain: sq.question.domain,
         subDomain: sq.question.subDomain,
         indicator: sq.question.indicator,
         kpi: sq.question.kpi,
+        indicatorAr: sq.question.indicatorAr,
+        kpiAr: sq.question.kpiAr,
         priorityWeight: includeWeight ? (sq.question.priorityWeight?.toNumber() ?? null) : undefined,
         isCustom: false,
         order: sq.order,
@@ -125,9 +149,15 @@ export class SurveysService {
       bankQuestionId: null,
       questionCode: null,
       questionText: sq.customText ?? '',
+      // No manually-entered Arabic column exists for a custom/additional
+      // question (see SurveyQuestion's schema comment) — always null here;
+      // the frontend falls back to AI-translating the English text on
+      // demand for these, same as Need titles.
+      questionTextAr: null,
       answerType: sq.customAnswerType ?? 'long_text',
       answerOptions:
         typeof sq.customOptions === 'string' ? JSON.parse(sq.customOptions) : (sq.customOptions ?? null),
+      answerOptionsAr: null,
       // Null for a custom question saved before this field existed — see
       // the migration/contract comments. Not backfilled; just unset until
       // someone edits it again through the dialog.
@@ -135,6 +165,10 @@ export class SurveysService {
       subDomain: sq.subDomain,
       indicator: null,
       kpi: sq.kpi,
+      // Same reasoning as questionTextAr above — no Arabic column exists
+      // for a custom question's indicator/KPI.
+      indicatorAr: null,
+      kpiAr: null,
       // A custom question has no Question Bank row, so no weight — kept as
       // an explicit key (not omitted) so both branches share one shape.
       priorityWeight: undefined,
@@ -352,7 +386,7 @@ export class SurveysService {
       if (existing) return { survey: existing, created: false };
 
       const row = await tx.survey.create({
-        data: { orgId, needId, studyId: need.studyId, title: `Survey: ${need.title}`, status: 'DRAFT', createdBy: actorId },
+        data: { orgId, needId, studyId: need.studyId, title: need.title, status: 'DRAFT', createdBy: actorId },
       });
       await tx.need.update({ where: { id: needId }, data: { status: 'survey_created' } });
       return { survey: row, created: true };
@@ -694,7 +728,7 @@ Eligible Questions: ${JSON.stringify(
             orgId,
             needId,
             studyId: need.studyId,
-            title: `Survey: ${need.title}`,
+            title: need.title,
             status: 'DRAFT',
             createdBy: actorId,
             methodologyVersion: mv?.version ?? null,
@@ -703,7 +737,7 @@ Eligible Questions: ${JSON.stringify(
       } else {
         existingSurvey = await tx.survey.update({
           where: { id: existingSurvey.id },
-          data: { title: `Survey: ${need.title}` },
+          data: { title: need.title },
         });
       }
 

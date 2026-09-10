@@ -338,7 +338,7 @@ export class GeographicDashboardService {
           needCenters: { select: { centerId: true } },
           // Latest score decides the band; earlier ones are history.
           priorityScores: { select: { level: true, scoredAt: true }, orderBy: { scoredAt: 'desc' }, take: 1 },
-          initiativeLinks: {
+          needInitiatives: {
             select: {
               initiative: { select: { id: true, name: true, status: true, domain: true } },
             },
@@ -360,7 +360,7 @@ export class GeographicDashboardService {
       governorateIds: n.needGovernorates.map((g) => g.governorateId),
       centerIds: n.needCenters.map((c) => c.centerId),
       regionIds: [...new Set(n.needGovernorates.map((g) => g.governorate.regionId))],
-      initiatives: n.initiativeLinks.map((x) => x.initiative),
+      initiatives: n.needInitiatives.map((x) => x.initiative),
       studyId: n.studyId,
       orgName: n.org.name,
       domain: n.domain,
