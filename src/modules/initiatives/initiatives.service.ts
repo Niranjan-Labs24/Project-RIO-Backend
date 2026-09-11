@@ -130,7 +130,7 @@ export class InitiativesService {
     const orgId = requireOrgId();
     const linkedBy = requireActor();
 
-    await this.tenant.runInOrgContext(async (tx) => {
+    const { need, initiative } = await this.tenant.runInOrgContext(async (tx) => {
       const need = await tx.need.findUnique({ where: { id: needId } });
       if (!need) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
       const initiative = await tx.initiative.findUnique({ where: { id: initiativeId } });
@@ -150,6 +150,18 @@ export class InitiativesService {
           data: { needId, orgId, fromStatus: need.analyticalStatus, toStatus: 'linked_to_initiative', changedBy: linkedBy },
         });
       }
+      return { need, initiative };
+    });
+
+    // RIO-FR-007 — the central Audit Trail must cover linkage the same as
+    // any other need edit; the needAnalyticalStatusEvent row above is a
+    // separate, status-only history and does not appear in Audit Log.
+    await this.audit.record({
+      action: 'edit',
+      entityType: 'need',
+      entityId: need.id,
+      entityLabel: need.title.slice(0, 80),
+      changes: [{ field: 'Linked Initiative', before: null, after: initiative.name }],
     });
   }
 
@@ -163,9 +175,13 @@ export class InitiativesService {
     const orgId = requireOrgId();
     const changedBy = requireActor();
 
-    await this.tenant.runInOrgContext(async (tx) => {
+    const { need, initiative } = await this.tenant.runInOrgContext(async (tx) => {
       const need = await tx.need.findUnique({ where: { id: needId } });
       if (!need) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+      // Read before delete so the audit entry can name which initiative was
+      // removed — after deleteMany, the join row (and any label derived from
+      // it) is gone.
+      const initiative = await tx.initiative.findUnique({ where: { id: initiativeId } });
 
       await tx.needInitiative.deleteMany({ where: { needId, initiativeId } });
 
@@ -176,6 +192,17 @@ export class InitiativesService {
           data: { needId, orgId, fromStatus: 'linked_to_initiative', toStatus: 'open_gap', changedBy },
         });
       }
+      return { need, initiative };
+    });
+
+    // RIO-FR-007 — same reasoning as linkNeed above: unlinking must appear
+    // in the central Audit Trail, not just the need's own status-history.
+    await this.audit.record({
+      action: 'edit',
+      entityType: 'need',
+      entityId: need.id,
+      entityLabel: need.title.slice(0, 80),
+      changes: [{ field: 'Linked Initiative', before: initiative?.name ?? initiativeId, after: null }],
     });
   }
 

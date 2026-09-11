@@ -139,7 +139,11 @@ export type AuditEntityType =
   // RIO-FR-002 / RIO-AI-004 — one proposed duplicate pair. Its own entity
   // type rather than 'need': the decision is about the PAIR, and neither need
   // changed as a result of it.
-  | 'duplicate_candidate';
+  | 'duplicate_candidate'
+  // RIO-RBAC-002 — a Center/NCNP Supervisor permission grant/revoke. The
+  // module's own comment specifies this exact audit requirement (grant id,
+  // approver, reason, expiry); see PermissionGrantsService.create/revoke.
+  | 'permission_grant';
 
   
   // RIO-AI-003 — one row per suggested summary of a Need's description.

@@ -22,6 +22,7 @@ interface FakeNeed {
   id: string;
   orgId: string;
   analyticalStatus: string;
+  title: string;
 }
 interface FakeLink {
   needId: string;
@@ -227,12 +228,13 @@ describe('InitiativesService.create/list — visibility (RIO-FR-009, Q15)', () =
 
 describe('InitiativesService — linking a Need (RIO-FR-009, Q17/Q18)', () => {
   function seedNeed(): FakeNeed {
-    return { id: 'need-1', orgId: 'org-a', analyticalStatus: 'open_gap' };
+    return { id: 'need-1', orgId: 'org-a', analyticalStatus: 'open_gap', title: 'Test Need' };
   }
 
   it('linking sets the Need to linked_to_initiative and logs a status event with an actor', async () => {
     const tenant = fakeTenant({ orgs: ORGS, needs: [seedNeed()] });
-    const svc = new InitiativesService(tenant as never, fakeAudit() as never);
+    const audit = fakeAudit();
+    const svc = new InitiativesService(tenant as never, audit as never);
     const initiative = await runAsOrg('org-a', 'user-1', () => svc.create({ name: 'Road repair' }));
 
     await runAsOrg('org-a', 'user-2', () => svc.linkNeed('need-1', initiative.id));
@@ -242,6 +244,12 @@ describe('InitiativesService — linking a Need (RIO-FR-009, Q17/Q18)', () => {
     const history = await runAsOrg('org-a', 'user-2', () => svc.listAnalyticalStatusHistory('need-1'));
     expect(history).toHaveLength(1);
     expect(history[0]).toMatchObject({ fromStatus: 'open_gap', toStatus: 'linked_to_initiative', changedBy: 'user-2' });
+
+    // RIO-FR-007 — linking must also appear in the central Audit Trail, not
+    // just the Need's own status-history above.
+    const linkAuditEntries = audit.calls.filter((c) => c.entityType === 'need');
+    expect(linkAuditEntries).toHaveLength(1);
+    expect(linkAuditEntries[0]).toMatchObject({ action: 'edit', entityType: 'need', entityLabel: 'Test Need' });
   });
 
   it('linking the same pair twice does not duplicate the link or re-log the status change', async () => {
@@ -270,7 +278,8 @@ describe('InitiativesService — linking a Need (RIO-FR-009, Q17/Q18)', () => {
 
   it('unlinking the last remaining link reverts the Need to open_gap', async () => {
     const tenant = fakeTenant({ orgs: ORGS, needs: [seedNeed()] });
-    const svc = new InitiativesService(tenant as never, fakeAudit() as never);
+    const audit = fakeAudit();
+    const svc = new InitiativesService(tenant as never, audit as never);
     const initiative = await runAsOrg('org-a', 'user-1', () => svc.create({ name: 'Road repair' }));
     await runAsOrg('org-a', 'user-2', () => svc.linkNeed('need-1', initiative.id));
 
@@ -281,6 +290,12 @@ describe('InitiativesService — linking a Need (RIO-FR-009, Q17/Q18)', () => {
     const history = await runAsOrg('org-a', 'user-3', () => svc.listAnalyticalStatusHistory('need-1'));
     expect(history).toHaveLength(2);
     expect(history[1]).toMatchObject({ fromStatus: 'linked_to_initiative', toStatus: 'open_gap', changedBy: 'user-3' });
+
+    // RIO-FR-007 — unlinking must also appear in the central Audit Trail:
+    // one 'need' entry for the link above, one for this unlink.
+    const needAuditEntries = audit.calls.filter((c) => c.entityType === 'need');
+    expect(needAuditEntries).toHaveLength(2);
+    expect(needAuditEntries[1]).toMatchObject({ action: 'edit', entityType: 'need', entityLabel: 'Test Need' });
   });
 
   it('unlinking one of several links keeps the Need linked_to_initiative', async () => {
@@ -298,7 +313,7 @@ describe('InitiativesService — linking a Need (RIO-FR-009, Q17/Q18)', () => {
   });
 
   it('unlinking never downgrades a Need already documented_in_study (sticky milestone)', async () => {
-    const need: FakeNeed = { id: 'need-1', orgId: 'org-a', analyticalStatus: 'documented_in_study' };
+    const need: FakeNeed = { id: 'need-1', orgId: 'org-a', analyticalStatus: 'documented_in_study', title: 'Test Need' };
     const tenant = fakeTenant({ orgs: ORGS, needs: [need] });
     const svc = new InitiativesService(tenant as never, fakeAudit() as never);
     const initiative = await runAsOrg('org-a', 'user-1', () => svc.create({ name: 'Road repair' }));
@@ -313,7 +328,7 @@ describe('InitiativesService — linking a Need (RIO-FR-009, Q17/Q18)', () => {
 
 describe('InitiativesService.listLinkedInitiatives', () => {
   it('returns only the initiatives actually linked to this Need, not every visible one', async () => {
-    const need = { id: 'need-1', orgId: 'org-a', analyticalStatus: 'open_gap' };
+    const need = { id: 'need-1', orgId: 'org-a', analyticalStatus: 'open_gap', title: 'Test Need' };
     const tenant = fakeTenant({ orgs: ORGS, needs: [need] });
     const svc = new InitiativesService(tenant as never, fakeAudit() as never);
     const linked = await runAsOrg('org-a', 'user-1', () => svc.create({ name: 'Road repair' }));
@@ -327,7 +342,7 @@ describe('InitiativesService.listLinkedInitiatives', () => {
   });
 
   it('returns an empty array when the Need has no links', async () => {
-    const tenant = fakeTenant({ orgs: ORGS, needs: [{ id: 'need-1', orgId: 'org-a', analyticalStatus: 'open_gap' }] });
+    const tenant = fakeTenant({ orgs: ORGS, needs: [{ id: 'need-1', orgId: 'org-a', analyticalStatus: 'open_gap', title: 'Test Need' }] });
     const svc = new InitiativesService(tenant as never, fakeAudit() as never);
 
     const result = await runAsOrg('org-a', 'user-1', () => svc.listLinkedInitiatives('need-1'));
