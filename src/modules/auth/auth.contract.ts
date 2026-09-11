@@ -21,6 +21,42 @@ export const LoginBody = registerSchema(
 );
 export type LoginDto = Static<typeof LoginBody>;
 
+/**
+ * RIO MFA — "Sign in with OTP". `identifier` is either the account's email
+ * or its mobile number, exactly as the login form's single input accepts
+ * either; AuthService.requestLoginOtp decides which channel to use by
+ * matching it against the stored email/mobileNumber. Same generic-response
+ * posture as ForgotPasswordBody: a non-existent or OTP-ineligible account
+ * gets the same reply as a real one, so this endpoint cannot be used to
+ * enumerate accounts.
+ */
+export const RequestLoginOtpBody = registerSchema(
+  'RequestLoginOtpBody',
+  T.Object(
+    { identifier: T.String({ minLength: 1, maxLength: 320 }) },
+    { additionalProperties: false },
+  ),
+);
+export type RequestLoginOtpDto = Static<typeof RequestLoginOtpBody>;
+
+/**
+ * Verifies the code and, on success, issues a session exactly like
+ * POST /auth/login. `identifier` is resent rather than a challengeId — see
+ * AuthService.verifyLoginOtp — so a client never holds a value that itself
+ * confirms an account exists.
+ */
+export const VerifyLoginOtpBody = registerSchema(
+  'VerifyLoginOtpBody',
+  T.Object(
+    {
+      identifier: T.String({ minLength: 1, maxLength: 320 }),
+      code: T.String({ minLength: 4, maxLength: 8 }),
+    },
+    { additionalProperties: false },
+  ),
+);
+export type VerifyLoginOtpDto = Static<typeof VerifyLoginOtpBody>;
+
 // Not a fixed enum: `sector` is validated against the live, active Domain
 // list from Methodology Configuration (see AuthService.signup —
 // DomainsService.listDomains()), or the literal "other". Mirrors
@@ -87,6 +123,11 @@ export const SignupBody = registerSchema(
       purpose: T.Optional(T.String({ maxLength: 500 })),
       registrationNumber: T.String({ minLength: 1, maxLength: 100 }),
       email: T.String({ format: 'email' }),
+      // RIO MFA — optional mobile number for the first NGO Admin, so their
+      // account is eligible for "Sign in with OTP" over SMS from day one.
+      // Loosely bounded (not a strict E.164 pattern): AuthService.signup
+      // normalizes it the same way CitizenService.normalizeMobile() does.
+      mobileNumber: T.Optional(T.String({ maxLength: 32 })),
       // Required, not optional — a signup payload without it is a 400 from
       // the validation pipe before any org row is created.
       consent: ConsentAcceptanceBody,

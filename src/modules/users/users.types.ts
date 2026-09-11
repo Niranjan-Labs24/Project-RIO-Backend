@@ -8,6 +8,8 @@ export interface OrgUser {
   id: string;
   name: string;
   email: string;
+  /** RIO MFA — null when this user hasn't supplied one (no OTP-over-SMS sign-in). */
+  mobileNumber: string | null;
   role: OrgUserRole;
   status: 'active' | 'invited' | 'disabled';
   createdAt: string;
@@ -17,6 +19,8 @@ export interface InviteUserPayload {
   name: string;
   email: string;
   roleId: string;
+  /** RIO MFA — optional at invite time; enables "Sign in with OTP" for this user. */
+  mobileNumber?: string;
 }
 
 /** Same shape as auth's SignupResponseView — a temporary password is
@@ -31,6 +35,8 @@ export interface UpdateUserPayload {
   name?: string;
   roleId?: string;
   status?: 'active' | 'invited';
+  /** RIO MFA — set/change/clear ('' clears it) an existing user's mobile number. */
+  mobileNumber?: string;
 }
 
 // System-Admin cross-org create.
@@ -60,6 +66,7 @@ export interface UserRow {
   orgId: string;
   name: string;
   email: string;
+  mobileNumber?: string | null;
   roleId: string;
   status: 'active' | 'invited' | 'disabled';
   createdAt: Date;
