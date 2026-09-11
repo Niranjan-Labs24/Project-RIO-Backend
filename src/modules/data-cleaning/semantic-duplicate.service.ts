@@ -1,12 +1,12 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
-import { createHash } from "node:crypto";
-import { Prisma } from "../../generated/prisma";
-import { requireActor, requireOrgId } from "../../tenancy/org-context";
-import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
-import { CleaningContextService } from "./cleaning-context.service";
-import { cosineSimilarity, type EmbeddingProvider } from "./embedding-provider";
-import { EMBEDDING_PROVIDER } from "./embedding-provider.token";
-import { foldText, trigramSimilarity } from "./normalizers";
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { createHash } from 'node:crypto';
+import { Prisma } from '../../generated/prisma';
+import { requireActor, requireOrgId } from '../../tenancy/org-context';
+import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
+import { CleaningContextService } from './cleaning-context.service';
+import { cosineSimilarity, type EmbeddingProvider } from './embedding-provider';
+import { EMBEDDING_PROVIDER } from './embedding-provider.token';
+import { foldText, trigramSimilarity } from './normalizers';
 
 /**
  * RIO-AI-004 — the SEMANTIC duplicate pass, and the half of AC 2 the literal
@@ -92,17 +92,17 @@ export function gatePair(
   b: PairCandidate,
 ): { ok: true } | { ok: false; reason: string } {
   if (a.domain && b.domain && a.domain !== b.domain) {
-    return { ok: false, reason: "DIFFERENT_DOMAIN" };
+    return { ok: false, reason: 'DIFFERENT_DOMAIN' };
   }
   // Sub-domain only when the domains agree — otherwise it is already blocked.
   if (a.subDomain && b.subDomain && a.subDomain !== b.subDomain) {
-    return { ok: false, reason: "DIFFERENT_SUB_DOMAIN" };
+    return { ok: false, reason: 'DIFFERENT_SUB_DOMAIN' };
   }
 
   // One implementation, shared with the indexed path. Two copies of this rule
   // would be the rio_fold_text problem again.
   if (!periodsCompatible(a.text, b.text)) {
-    return { ok: false, reason: "DIFFERENT_PERIOD" };
+    return { ok: false, reason: 'DIFFERENT_PERIOD' };
   }
 
   return { ok: true };
@@ -140,7 +140,7 @@ const MAX_EMBEDDINGS_PER_RUN = 200;
 @Injectable()
 export class SemanticDuplicateService {
   private readonly logger = new Logger(SemanticDuplicateService.name);
-  private readonly detectorVersion = "semantic-v1";
+  private readonly detectorVersion = 'semantic-v1';
   /** Resolved once per process by hasPgvector(). */
   private pgvectorAvailable: boolean | null = null;
 
@@ -168,7 +168,7 @@ export class SemanticDuplicateService {
         embedded: 0,
         compared: 0,
         proposed: 0,
-        skippedReason: "SEMANTIC_PROVIDER_DISABLED",
+        skippedReason: 'SEMANTIC_PROVIDER_DISABLED',
       };
     }
 
@@ -189,7 +189,7 @@ export class SemanticDuplicateService {
         embedded,
         compared,
         proposed,
-        skippedReason: embedded === 0 ? "NO_NEEDS_IN_SCOPE" : "NOT_ENOUGH_NEEDS_TO_COMPARE",
+        skippedReason: embedded === 0 ? 'NO_NEEDS_IN_SCOPE' : 'NOT_ENOUGH_NEEDS_TO_COMPARE',
       };
     }
 
@@ -213,7 +213,7 @@ export class SemanticDuplicateService {
       tx.need.findMany({
         where: { mergedIntoNeedId: null },
         select: { id: true, title: true, statement: true },
-        orderBy: { internalRefSeq: "asc" },
+        orderBy: { internalRefSeq: 'asc' },
       }),
     );
 
@@ -285,8 +285,10 @@ export class SemanticDuplicateService {
     // fallback reads on a server without pgvector, and dropping it would make
     // the feature unavailable there rather than merely slower.
     if (await this.hasPgvector(orgId)) {
-      await this.tenant.runAsOrg(orgId, (tx) =>
-        tx.$executeRaw`
+      await this.tenant.runAsOrg(
+        orgId,
+        (tx) =>
+          tx.$executeRaw`
           UPDATE need_embeddings
              SET embedding = vector::text::vector
            WHERE embedding_version = ${this.embeddings.embeddingVersion}
@@ -343,29 +345,64 @@ export class SemanticDuplicateService {
    * PostgreSQL 18 reports `extension "vector" is not available` — the binaries
    * are not compiled in — while a container or a managed instance with it
    * enabled takes the indexed path. Both must work, so both are implemented.
+   *
+   * ─── Why the WIDTH is checked too, not just presence ──────────────────────
+   * A vector column is typed by dimension, and the provider's width is
+   * configuration (OCI_GENAI_EMBED_DIMENSIONS) while the column's is whatever
+   * the last migration declared. They can disagree — a deployment that swaps
+   * AI_PROVIDER back to Gemini's 768 against a vector(1024) column is the
+   * obvious case, and a re-ruling on Q10 is the next one.
+   *
+   * Disagreement is NOT an error. It means this server cannot use the index
+   * for these vectors, which is exactly the situation the JSONB fallback
+   * already exists for. Treating it as absence keeps detection working and
+   * merely slower, where the alternative is refreshEmbeddings' populate step
+   * raising "expected N dimensions" on every scan and the reviewer getting a
+   * failed run instead of an unindexed one.
    */
   private async hasPgvector(orgId: string): Promise<boolean> {
     if (this.pgvectorAvailable !== null) return this.pgvectorAvailable;
     try {
-      const rows = await this.tenant.runAsOrg(orgId, (tx) =>
-        tx.$queryRaw<{ present: boolean }[]>`
-          SELECT EXISTS (
-            SELECT 1 FROM pg_extension WHERE extname = 'vector'
-          ) AND EXISTS (
-            SELECT 1 FROM information_schema.columns
-             WHERE table_name = 'need_embeddings' AND column_name = 'embedding'
-          ) AS present
+      // atttypmod carries the declared dimension for a pgvector column, so
+      // one catalogue query answers both questions. NULL when the column is
+      // absent, which reads as "not available" below without a second case.
+      const rows = await this.tenant.runAsOrg(
+        orgId,
+        (tx) =>
+          tx.$queryRaw<{ installed: boolean; column_dimensions: number | null }[]>`
+          SELECT
+            EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') AS installed,
+            (SELECT a.atttypmod
+               FROM pg_attribute a
+               JOIN pg_class c ON c.oid = a.attrelid
+              WHERE c.relname = 'need_embeddings'
+                AND a.attname = 'embedding'
+                AND a.attnum > 0
+                AND NOT a.attisdropped) AS column_dimensions
         `,
       );
-      this.pgvectorAvailable = rows[0]?.present === true;
+      const installed = rows[0]?.installed === true;
+      const columnDimensions = rows[0]?.column_dimensions ?? null;
+      this.pgvectorAvailable = installed && columnDimensions === this.embeddings.dimensions;
+
+      if (installed && columnDimensions !== null && !this.pgvectorAvailable) {
+        // Distinct from "not installed", because the fix is different: this
+        // one is a migration, not an extension.
+        this.logger.warn(
+          `need_embeddings.embedding is vector(${columnDimensions}) but ` +
+            `${this.embeddings.modelName} returns ${this.embeddings.dimensions}. ` +
+            `Comparing in the application. Migrate the column to ` +
+            `${this.embeddings.dimensions} to restore the indexed path.`,
+        );
+      }
     } catch {
       // A catalogue query that fails is not a reason to fail the scan.
       this.pgvectorAvailable = false;
     }
     this.logger.log(
       this.pgvectorAvailable
-        ? "pgvector present: comparing in Postgres against the HNSW index."
-        : "pgvector absent: comparing in the application. Install it to move this into the database.",
+        ? 'pgvector present: comparing in Postgres against the HNSW index.'
+        : 'pgvector absent: comparing in the application. Install it to move this into the database.',
     );
     return this.pgvectorAvailable;
   }
@@ -398,8 +435,10 @@ export class SemanticDuplicateService {
     actor: string,
     threshold: number,
   ): Promise<{ compared: number; proposed: number; blocked: number }> {
-    const seeds = await this.tenant.runAsOrg(orgId, (tx) =>
-      tx.$queryRaw<SeedRow[]>`
+    const seeds = await this.tenant.runAsOrg(
+      orgId,
+      (tx) =>
+        tx.$queryRaw<SeedRow[]>`
         SELECT e.need_id, n.study_id, n.title, n.statement, e.vector::text AS vector_text
           FROM need_embeddings e
           JOIN needs n ON n.id = e.need_id
@@ -415,8 +454,10 @@ export class SemanticDuplicateService {
     let blocked = 0;
 
     for (const seed of seeds) {
-      const neighbours = await this.tenant.runAsOrg(orgId, (tx) =>
-        tx.$queryRaw<NeighbourRow[]>`
+      const neighbours = await this.tenant.runAsOrg(
+        orgId,
+        (tx) =>
+          tx.$queryRaw<NeighbourRow[]>`
           SELECT b.need_id, nb.study_id, nb.title, nb.statement,
                  1 - (b.embedding <=> ${seed.vector_text}::vector) AS score
             FROM need_embeddings b
@@ -550,14 +591,14 @@ export class SemanticDuplicateService {
     return this.tenant.runAsOrg(orgId, async (tx) => {
       const existing = await tx.duplicateCandidate.findUnique({
         where: {
-          needAId_needBId_method: { needAId: lo.needId, needBId: hi.needId, method: "semantic" },
+          needAId_needBId_method: { needAId: lo.needId, needBId: hi.needId, method: 'semantic' },
         },
         select: { id: true, status: true },
       });
       if (existing) {
         // A reviewer's decision is final for this pair and this method. Only a
         // still-pending proposal gets its score refreshed.
-        if (existing.status !== "pending") return false;
+        if (existing.status !== 'pending') return false;
         await tx.duplicateCandidate.update({
           where: { id: existing.id },
           data: { score, threshold, detectorVersion: this.detectorVersion },
@@ -573,7 +614,7 @@ export class SemanticDuplicateService {
           orgId,
           needId: lo.needId,
           studyId: lo.studyId,
-          type: "duplicate_detection",
+          type: 'duplicate_detection',
           confidence: score,
           // Both signals, and what their disagreement means. A reviewer
           // reading this months later should be able to tell a reworded
@@ -602,8 +643,8 @@ export class SemanticDuplicateService {
           needBId: hi.needId,
           needAOrgId: orgId,
           needBOrgId: orgId,
-          scope: lo.studyId === hi.studyId ? "within_study" : "within_org",
-          method: "semantic",
+          scope: lo.studyId === hi.studyId ? 'within_study' : 'within_org',
+          method: 'semantic',
           score,
           threshold,
           detectorVersion: this.detectorVersion,
@@ -637,6 +678,6 @@ export class SemanticDuplicateService {
   }
 
   private hash(text: string): string {
-    return createHash("sha256").update(text).digest("hex");
+    return createHash('sha256').update(text).digest('hex');
   }
 }
