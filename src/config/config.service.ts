@@ -144,6 +144,9 @@ export class ConfigService {
   get semanticDuplicatesEnabled(): boolean {
     return this.config.SEMANTIC_DUPLICATES_ENABLED;
   }
+  get emailOtpEnabled(): boolean {
+    return this.config.EMAIL_OTP_ENABLED;
+  }
   get twilioAccountSid(): string | undefined {
     return this.config.TWILIO_ACCOUNT_SID;
   }

@@ -254,6 +254,7 @@ model Organisation {
   surveyLinks            PublicSurveyLink[]
   otpChallenges          CitizenOtpChallenge[]
   passwordResetTokens    PasswordResetToken[]
+  staffOtpChallenges     StaffOtpChallenge[]
   surveyResponses        SurveyResponse[]
   surveySessions         SurveySession[]
   surveySessionEvents    SurveySessionEvent[]
@@ -292,6 +293,12 @@ model User {
   status                 UserStatus @default(invited)
   passwordHash           String?    @map("password_hash") @db.VarChar(255)
   mustChangePassword     Boolean    @default(false) @map("must_change_password")
+  // RIO MFA/OTP sign-in — captured optionally at signup (NGO Admin) or at
+  // invite time (any role). E.164 format (e.g. "+9665XXXXXXXX"), normalized
+  // the same way CitizenService.normalizeMobile() strips punctuation.
+  // Nullable: a user who never supplied one simply can't use "Sign in with
+  // OTP" over SMS and falls back to password (or email OTP, once enabled).
+  mobileNumber           String?    @map("mobile_number") @db.VarChar(32)
   consentedAt            DateTime?  @map("consented_at") @db.Timestamptz(6)
   // The policy version accepted at `consentedAt` — kept alongside the
   // timestamp (denormalized from ConsentAcceptance) so a version bump can be
@@ -316,9 +323,35 @@ model User {
   role             Role                @relation(fields: [roleId], references: [id])
   consents         ConsentAcceptance[]
   passwordResetTokens PasswordResetToken[]
+  otpChallenges    StaffOtpChallenge[]
   @@index([orgId])
   @@index([roleId])
   @@map("users")
+}
+
+// RIO MFA — "Sign in with OTP" for staff (any of the 10+ roles), as opposed
+// to CitizenOtpChallenge (the public survey respondent flow, unrelated
+// table). Same shape/lifecycle as PasswordResetToken: created org-less (the
+// requester is identified only by email or mobile — see
+// AuthService.requestLoginOtp), consumed once, never deleted.
+model StaffOtpChallenge {
+  id         String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  orgId      String    @map("org_id") @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  // 'sms' (live) or 'email' (config exists, sending gated off by
+  // EMAIL_OTP_ENABLED until the client's email provider is set up).
+  channel    String    @db.VarChar(16)
+  codeHash   String    @map("code_hash") @db.VarChar(255)
+  attempts   Int       @default(0)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz(6)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  org  Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([orgId])
+  @@index([userId])
+  @@map("staff_otp_challenges")
 }
 
 // Forgot-password flow. The raw token is emailed to the user and never

@@ -8,10 +8,11 @@ import { CSRF_COOKIE_NAME, csrfCookieOptions, SESSION_COOKIE_NAME, sessionCookie
 import { CsrfExempt } from '../../common/guards/csrf.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import {
-  ChangePasswordBody, ConsentBody, ForgotPasswordBody, LoginBody, ResetPasswordBody, SignupBody,
-  VerifyRegistrationNumberBody,
-  type ChangePasswordDto, type ConsentDto, type ForgotPasswordDto, type LoginDto, type ResetPasswordDto,
-  type SignupDto, type VerifyRegistrationNumberDto, type VerifyRegistrationNumberView,
+  ChangePasswordBody, ConsentBody, ForgotPasswordBody, LoginBody, RequestLoginOtpBody, ResetPasswordBody, SignupBody,
+  VerifyLoginOtpBody, VerifyRegistrationNumberBody,
+  type ChangePasswordDto, type ConsentDto, type ForgotPasswordDto, type LoginDto, type RequestLoginOtpDto,
+  type ResetPasswordDto, type SignupDto, type VerifyLoginOtpDto, type VerifyRegistrationNumberDto,
+  type VerifyRegistrationNumberView,
 } from './auth.contract';
 import { NicRegistryService } from '../nic-registry/nic-registry.service';
 import { AuthService } from './auth.service';
@@ -105,6 +106,36 @@ export class AuthController {
     @Body(new TypeBoxValidationPipe(ResetPasswordBody)) body: ResetPasswordDto,
   ): Promise<{ message: string }> {
     return this.auth.resetPassword(body);
+  }
+
+  // RIO MFA — "Sign in with OTP". Open routes, same reasoning as
+  // login/forgot-password: no session exists yet. Rate-limited well below
+  // login's 5/60 — each successful request costs a real SMS send, so this
+  // also bounds spend, not just abuse.
+  @Post('otp/request')
+  @Public()
+  @RateLimit(5, 3600)
+  @HttpCode(200)
+  @CsrfExempt()
+  requestLoginOtp(
+    @Body(new TypeBoxValidationPipe(RequestLoginOtpBody)) body: RequestLoginOtpDto,
+  ): Promise<{ message: string; devCode?: string }> {
+    return this.auth.requestLoginOtp(body);
+  }
+
+  @Post('otp/verify')
+  @Public()
+  @RateLimit(10, 60)
+  @HttpCode(200)
+  @CsrfExempt()
+  async verifyLoginOtp(
+    @Body(new TypeBoxValidationPipe(VerifyLoginOtpBody)) body: VerifyLoginOtpDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<SessionContext> {
+    const session = await this.auth.verifyLoginOtp(body);
+    res.cookie(SESSION_COOKIE_NAME, session.token, sessionCookieOptions(this.config.nodeEnv === 'production'));
+    res.cookie(CSRF_COOKIE_NAME, randomBytes(18).toString('base64url'), csrfCookieOptions(this.config.nodeEnv === 'production'));
+    return session;
   }
 
   @Get('me')

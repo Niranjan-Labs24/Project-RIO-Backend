@@ -367,13 +367,31 @@ export class PriorityV2Service {
       : this.tenant.runInOrgContext.bind(this.tenant);
 
     return runner(async (tx) => {
-      const [studies, needs, surveys, assessments] = await Promise.all([
+      const [studies, needs, surveys, assessments, priorityScores] = await Promise.all([
         tx.study.findMany(),
         tx.need.findMany({ where: EXCLUDE_MERGED, orderBy: { updatedAt: 'desc' } }),
         tx.survey.findMany({ orderBy: { createdAt: 'desc' } }),
         tx.villagePriorityAssessment.findMany({
           where: { villageId: '' },
           orderBy: { calculatedAt: 'desc' },
+        }),
+        // RIO-FR-005 defect fix (Pass 3 QA) — a Need's own signed-off score
+        // (PriorityService.score()/approve(), the "2. Priority Score" tab
+        // on the Need's Insights page) lives in `priority_scores` and was
+        // never read here at all; this list used to source `score`
+        // exclusively from VillagePriorityAssessment (a separate
+        // survey/village rollup pipeline that feeds RPT14 reports), so a
+        // Need could be fully scored and approved on its own Insights page
+        // and still show "Not scored yet" here forever. Per the schema's
+        // own comment on `PriorityScore.approvedBy` ("never publicly
+        // visible ... until approved"), an approved row here is exactly
+        // the kind of thing this dashboard is supposed to surface.
+        // Consolidated only (surveyLinkId: null), approved only, latest
+        // first — same semantics as PriorityService.listForOrg() already
+        // uses for its (unused-by-any-UI) approved-score read path.
+        tx.priorityScore.findMany({
+          where: { surveyLinkId: null, approvedAt: { not: null } },
+          orderBy: { scoredAt: 'desc' },
         }),
       ]);
 
@@ -399,21 +417,31 @@ export class PriorityV2Service {
           latestAssessmentBySurveyId.set(assessment.surveyId, assessment);
         }
       }
+      const latestApprovedScoreByNeedId = new Map<string, (typeof priorityScores)[number]>();
+      for (const score of priorityScores) {
+        if (!latestApprovedScoreByNeedId.has(score.needId)) {
+          latestApprovedScoreByNeedId.set(score.needId, score);
+        }
+      }
 
       return needs
         .filter((need) => !gapType || need.gapType === gapType)
         .map((need) => {
           const survey = surveyByNeedId.get(need.id);
           const assessment = survey ? latestAssessmentBySurveyId.get(survey.id) : undefined;
-          return {
-            studyId: need.studyId,
-            studyTitle: studyTitleById.get(need.studyId) ?? need.studyId,
-            needId: need.id,
-            needTitle: need.title,
-            gapType: need.gapType,
-            themes: need.themes ?? [],
-            urgency: need.urgency ?? null,
-            score: assessment
+          // A Need's own approved PriorityScore (the per-Need, human-signed-
+          // off score) takes precedence over the VillagePriorityAssessment
+          // rollup when both exist — it's the more authoritative, directly
+          // reviewer-approved number for this exact Need.
+          const priorityScore = latestApprovedScoreByNeedId.get(need.id);
+          const score = priorityScore
+            ? {
+                overallScore: priorityScore.overrideScore ?? priorityScore.overallScore,
+                level: priorityScore.level,
+                overrideReason: priorityScore.overrideReason,
+                scoredAt: priorityScore.scoredAt.toISOString(),
+              }
+            : assessment
               ? {
                   overallScore: Math.round(Number(assessment.priorityScore) * 10) / 10,
                   level: (assessment.overrideApplied
@@ -426,7 +454,16 @@ export class PriorityV2Service {
                   overrideReason: assessment.overrideReason,
                   scoredAt: assessment.calculatedAt.toISOString(),
                 }
-              : null,
+              : null;
+          return {
+            studyId: need.studyId,
+            studyTitle: studyTitleById.get(need.studyId) ?? need.studyId,
+            needId: need.id,
+            needTitle: need.title,
+            gapType: need.gapType,
+            themes: need.themes ?? [],
+            urgency: need.urgency ?? null,
+            score,
           };
         });
     });

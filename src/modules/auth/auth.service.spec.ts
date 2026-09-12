@@ -55,6 +55,11 @@ const VALID_CONSENT = { usePolicyVersion: 'v1', dataSharingVersion: 'v1' };
 // every fixture here logs in as ngo_admin, so this is never actually called.
 const permissionGrantsStub = { listActiveGrantsForUser: vi.fn(async () => []) };
 
+// RIO MFA — never exercised by the existing login/signup fixtures, so a
+// bare stub (never called) is enough for the constructor's widened arity,
+// same reasoning as repoStub/mailerStub above.
+const smsStub = { sendLoginOtpCode: vi.fn() };
+
 const orgFixture = {
   id: 'o1', name: 'Demo NGO', logoUrl: null, region: ['North'], email: 'admin@demo-ngo.org',
   sector: 'wash', villages: ['A'], isActive: true, createdAt: new Date('2026-01-01T00:00:00Z'),
@@ -82,7 +87,7 @@ describe('AuthService.login', () => {
   });
 
   it('returns a SessionContext with token, user, org and role on valid credentials', async () => {
-    const svc = new AuthService(fakeTenant(user) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never, permissionGrantsStub as never);
+    const svc = new AuthService(fakeTenant(user) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never, permissionGrantsStub as never, smsStub as never);
     const session = await svc.login('admin@demo-ngo.org', 'Passw0rd!');
     expect(session.token).toBeTruthy();
     expect(tokens.verify(session.token).sub).toBe('u1');
@@ -96,18 +101,18 @@ describe('AuthService.login', () => {
   });
 
   it('throws 401 on a wrong password', async () => {
-    const svc = new AuthService(fakeTenant(user) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never, permissionGrantsStub as never);
+    const svc = new AuthService(fakeTenant(user) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never, permissionGrantsStub as never, smsStub as never);
     await expect(svc.login('admin@demo-ngo.org', 'wrong')).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('throws 401 when the user does not exist', async () => {
-    const svc = new AuthService(fakeTenant(null) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never, permissionGrantsStub as never);
+    const svc = new AuthService(fakeTenant(null) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never, permissionGrantsStub as never, smsStub as never);
     await expect(svc.login('nobody@x.org', 'whatever')).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
   it('refuses valid credentials when the org is deactivated (403 ORG_INACTIVE)', async () => {
     const inactive = { ...user, org: { ...orgFixture, isActive: false } };
-    const svc = new AuthService(fakeTenant(inactive) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never, permissionGrantsStub as never);
+    const svc = new AuthService(fakeTenant(inactive) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never, permissionGrantsStub as never, smsStub as never);
     await expect(svc.login('admin@demo-ngo.org', 'Passw0rd!')).rejects.toBeInstanceOf(ForbiddenException);
   });
 });
@@ -147,7 +152,7 @@ describe('AuthService.consent', () => {
 
   it('stamps both consent pairs on the user and snapshots each policy separately', async () => {
     const { tenant, created, userUpdates } = consentTenant();
-    const svc = new AuthService(tenant as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never, permissionGrantsStub as never);
+    const svc = new AuthService(tenant as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never, permissionGrantsStub as never, smsStub as never);
     const res = await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'u1' }, () => svc.consent());
 
     expect(res.policyVersion).toBe('v1');
@@ -172,7 +177,7 @@ describe('AuthService.consent', () => {
   it('records a separate audit event per consent kind', async () => {
     const { tenant } = consentTenant();
     const audit = { record: vi.fn() };
-    const svc = new AuthService(tenant as never, passwords, tokens, audit as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never, permissionGrantsStub as never);
+    const svc = new AuthService(tenant as never, passwords, tokens, audit as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never, permissionGrantsStub as never, smsStub as never);
     await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'u1' }, () => svc.consent());
 
     expect(audit.record).toHaveBeenCalledTimes(2);
@@ -196,7 +201,7 @@ describe('AuthService.signup', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    service = new AuthService(tenant as never, passwords as never, tokens as never, audit as never, repo as never, mailer as never, config, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never, permissionGrantsStub as never);
+    service = new AuthService(tenant as never, passwords as never, tokens as never, audit as never, repo as never, mailer as never, config, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never, permissionGrantsStub as never, smsStub as never);
   });
 
   // RIO-FR-010 (client-confirmed): self-registration requires Center
@@ -429,7 +434,7 @@ describe('AuthService.changePassword', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    service = new AuthService(tenant as never, passwords as never, tokens, audit as never, repo as never, mailer as never, config, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never, permissionGrantsStub as never);
+    service = new AuthService(tenant as never, passwords as never, tokens, audit as never, repo as never, mailer as never, config, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never, permissionGrantsStub as never, smsStub as never);
   });
 
   it('changePassword: rejects a wrong current password with 401 INVALID_CURRENT_PASSWORD', async () => {

@@ -12,7 +12,15 @@ import type {
   AssignNgoAdminPayload, CreateForOrgPayload, InviteUserPayload, InviteUserResponse, OrgUser, UpdateUserPayload, UpdateUserRolePayload, UpdateUserStatusPayload, UserRow,
 } from './users.types';
 
-const DIFF_FIELDS = ['name', 'roleId', 'status'] as const;
+const DIFF_FIELDS = ['name', 'roleId', 'status', 'mobileNumber'] as const;
+
+// RIO MFA — same punctuation-stripping normalization as
+// CitizenService.normalizeMobile(), kept in step so a number captured here
+// at invite/signup time matches however AuthService.requestLoginOtp
+// normalizes what a user later types into "Sign in with OTP".
+function normalizeMobile(mobile: string): string {
+  return mobile.trim().replace(/[\s\-()]/g, '');
+}
 
 @Injectable()
 export class UsersService {
@@ -44,7 +52,10 @@ export class UsersService {
       this.tenant.runInOrgContext(async (tx) => {
         const org = await tx.organisation.findUnique({ where: { id: orgId } });
         const user = await tx.user.create({
-          data: { orgId, name: payload.name, email: payload.email, roleId: role.id, status: UserStatus.invited },
+          data: {
+            orgId, name: payload.name, email: payload.email, roleId: role.id, status: UserStatus.invited,
+            mobileNumber: payload.mobileNumber ? normalizeMobile(payload.mobileNumber) : null,
+          },
         });
         return { created: user, orgName: org?.name ?? '' };
       }),
@@ -62,6 +73,7 @@ export class UsersService {
         { field: 'Email', before: null, after: created.email },
         { field: 'Role', before: null, after: role.name },
         { field: 'Status', before: null, after: created.status },
+        ...(created.mobileNumber ? [{ field: 'Mobile number', before: null, after: created.mobileNumber }] : []),
       ],
     });
     const credentials = await this.provisionTemporaryPassword(created.id, created.email, orgName, orgId);
@@ -469,7 +481,10 @@ export class UsersService {
       this.tenant.runAsOrg(payload.organizationId, async (tx) => {
         const org = await tx.organisation.findUnique({ where: { id: payload.organizationId } });
         const user = await tx.user.create({
-          data: { orgId: payload.organizationId, name: payload.name, email: payload.email, roleId: role.id, status: UserStatus.invited },
+          data: {
+            orgId: payload.organizationId, name: payload.name, email: payload.email, roleId: role.id, status: UserStatus.invited,
+            mobileNumber: payload.mobileNumber ? normalizeMobile(payload.mobileNumber) : null,
+          },
         });
         return { created: user, orgName: org?.name ?? '' };
       }),
@@ -483,6 +498,7 @@ export class UsersService {
         { field: 'Email', before: null, after: created.email },
         { field: 'Role', before: null, after: role.name },
         { field: 'Status', before: null, after: created.status },
+        ...(created.mobileNumber ? [{ field: 'Mobile number', before: null, after: created.mobileNumber }] : []),
       ],
     });
     const credentials = await this.provisionTemporaryPassword(created.id, created.email, orgName, payload.organizationId);
@@ -558,6 +574,7 @@ export class UsersService {
     if (patch.name !== undefined) data.name = patch.name;
     if (patch.roleId !== undefined) data.roleId = patch.roleId;
     if (patch.status !== undefined) data.status = patch.status as UserStatus;
+    if (patch.mobileNumber !== undefined) data.mobileNumber = patch.mobileNumber ? normalizeMobile(patch.mobileNumber) : null;
     if (patch.roleId !== undefined || patch.status !== undefined) data.sessionVersion = { increment: 1 };
     return data;
   }
@@ -577,7 +594,7 @@ export class UsersService {
   private toOrgUser(row: UserRow): OrgUser {
     const role = ROLE_MATRIX.find((r) => r.id === row.roleId);
     return {
-      id: row.id, name: row.name, email: row.email,
+      id: row.id, name: row.name, email: row.email, mobileNumber: row.mobileNumber ?? null,
       role: role ? { id: role.id, key: role.key, name: role.name } : { id: row.roleId, key: 'unknown', name: 'Unknown' },
       status: row.status, createdAt: row.createdAt.toISOString(),
     };

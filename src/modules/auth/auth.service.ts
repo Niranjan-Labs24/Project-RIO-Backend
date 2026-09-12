@@ -1,5 +1,5 @@
-import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
-import { randomBytes, createHash } from 'node:crypto';
+import { BadRequestException, ForbiddenException, GoneException, HttpException, HttpStatus, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { randomBytes, createHash, randomInt } from 'node:crypto';
 import { ConsentPolicyKind, UserStatus } from '../../generated/prisma';
 import { ConsentService } from '../consent/consent.service';
 import {
@@ -21,17 +21,23 @@ import { ConfigService } from '../../config/config.service';
 import { MailerService } from '../../mailer/mailer.service';
 import { AuthRepository, conflictFor, DEFAULT_TEMP_PASSWORD, type ConsentAcceptanceInput } from './auth.repository';
 import type { SessionContext, SessionOrg, SessionUser, SignupPendingApprovalView } from './session.types';
-import type { ChangePasswordDto, ConsentDto, ForgotPasswordDto, ResetPasswordDto, SignupDto } from './auth.contract';
+import type { ChangePasswordDto, ConsentDto, ForgotPasswordDto, RequestLoginOtpDto, ResetPasswordDto, SignupDto, VerifyLoginOtpDto } from './auth.contract';
+import { SmsService } from '../../sms/sms.service';
 
 const MAX_FAILED = 5;
 const LOCK_MINUTES = 15;
 const PASSWORD_RESET_TTL_MINUTES = 30;
+// RIO MFA — same TTL/attempt budget as CitizenService's OTP challenge,
+// applied here to StaffOtpChallenge for the exact same reasons.
+const LOGIN_OTP_TTL_MINUTES = 10;
+const LOGIN_OTP_MAX_ATTEMPTS = 5;
 
 // The subset of a user row (with its org) this service reads.
 interface UserWithOrg {
   id: string;
   name: string;
   email: string;
+  mobileNumber: string | null;
   roleId: string;
   status: UserStatus;
   passwordHash: string | null;
@@ -80,6 +86,8 @@ export class AuthService {
     // kind during signup and the post-login re-prompt.
     private readonly consentPolicies: ConsentService,
     private readonly permissionGrants: PermissionGrantsService,
+    // RIO MFA — "Sign in with OTP" over SMS.
+    private readonly sms: SmsService,
   ) {}
 
   async login(email: string, password: string): Promise<SessionContext> {
@@ -408,6 +416,7 @@ export class AuthService {
       // Normalized, not dto.registrationNumber — see assertRegistered.
       registrationNumber,
       email: dto.email,
+      mobileNumber: dto.mobileNumber ? this.normalizeMobile(dto.mobileNumber) : null,
       passwordHash: placeholderPasswordHash,
       regionId: dto.regionId,
       governorateIds: dto.governorateIds,
@@ -588,6 +597,135 @@ export class AuthService {
       changes: [{ field: 'Password', before: null, after: null }], organizationId: row.orgId,
     });
     return { message: 'Password reset.' };
+  }
+
+  // RIO MFA — "Sign in with OTP". Same normalization CitizenService and
+  // UsersService use, kept in step so a number matches regardless of which
+  // path captured it (signup, invite, or a later profile edit).
+  private normalizeMobile(mobile: string): string {
+    return mobile.trim().replace(/[\s\-()]/g, '');
+  }
+
+  // Resolves `identifier` (whatever the single "Sign in with OTP" input
+  // held) against the stored email/mobileNumber, and reports which channel
+  // it matched on — 'sms' or 'email' — without ever telling the caller
+  // whether a match happened. Shared by request/verify so both sides agree
+  // on the same eligible-user definition.
+  private async findOtpEligibleUser(identifier: string): Promise<{ user: UserWithOrg; channel: 'sms' | 'email' } | null> {
+    const raw = identifier.trim();
+    const asEmail = raw.toLowerCase();
+    const asMobile = this.normalizeMobile(raw);
+    const found = (await this.tenant.runAsSupervisor((tx) =>
+      tx.user.findFirst({
+        where: { OR: [{ email: asEmail }, ...(asMobile ? [{ mobileNumber: asMobile }] : [])] },
+        include: { org: { include: { orgGovernorates: true, orgCenters: true } } },
+      }),
+    )) as UserWithOrg | null;
+    if (!found || !found.org.isActive || found.status === UserStatus.disabled) return null;
+    const channel: 'sms' | 'email' = found.email.toLowerCase() === asEmail ? 'email' : 'sms';
+    // A channel with nothing to deliver to (no mobile on file, or email OTP
+    // not yet enabled — see below) is not eligible, even though the account
+    // itself exists.
+    if (channel === 'sms' && !found.mobileNumber) return null;
+    return { user: found, channel };
+  }
+
+  /**
+   * RIO MFA — requests a one-time code for "Sign in with OTP". Same
+   * generic-response security posture as forgotPassword: a non-existent,
+   * disabled, or OTP-ineligible account (no mobile on file, or the
+   * email-OTP channel not yet enabled) gets the exact same reply as an
+   * eligible one, so this endpoint can't be used to enumerate accounts or
+   * probe which channel a given identifier resolves to.
+   *
+   * Email delivery is deliberately not wired up yet (client decision — SMS
+   * first, email deferred): the config flag
+   * (`ConfigService.emailOtpEnabled`) and MailerService.sendLoginOtpEmail
+   * both exist so flipping it on later is a one-line change, but until then
+   * an `identifier` that only matches by email is treated the same as no
+   * match at all (never a distinguishable error, for the same
+   * non-enumeration reason as above).
+   */
+  async requestLoginOtp(dto: RequestLoginOtpDto): Promise<{ message: string; devCode?: string }> {
+    const generic = { message: 'If this account can sign in with a one-time code, one was sent.' };
+    const match = await this.findOtpEligibleUser(dto.identifier);
+    if (!match) return generic;
+    const { user, channel } = match;
+    if (channel === 'email' && !this.config.emailOtpEnabled) return generic;
+
+    const code = randomInt(100_000, 999_999).toString();
+    const codeHash = await this.passwords.hash(code);
+    const expiresAt = new Date(Date.now() + LOGIN_OTP_TTL_MINUTES * 60 * 1000);
+    await this.tenant.runAsOrg(user.org.id, async (tx) => {
+      // Only one outstanding code per user at a time — mirrors
+      // forgotPassword's invalidate-then-create step.
+      await tx.staffOtpChallenge.updateMany({
+        where: { userId: user.id, consumedAt: null },
+        data: { consumedAt: new Date() },
+      });
+      await tx.staffOtpChallenge.create({
+        data: { orgId: user.org.id, userId: user.id, channel, codeHash, expiresAt },
+      });
+    });
+
+    const delivered =
+      channel === 'sms'
+        ? await this.sms.sendLoginOtpCode(user.mobileNumber as string, code)
+        : await this.mailer.sendLoginOtpEmail(user.email, code);
+    return {
+      ...generic,
+      // Dev-only reveal, same reasoning/guard as CitizenService.requestOtp:
+      // never blocks a local/test run on a real phone or a configured
+      // mailer, and never logged.
+      devCode: !delivered && this.config.nodeEnv !== 'production' ? code : undefined,
+    };
+  }
+
+  /** Verifies the code and, on success, issues a session exactly like login(). */
+  async verifyLoginOtp(dto: VerifyLoginOtpDto): Promise<SessionContext> {
+    const invalid = () =>
+      new BadRequestException({ error: { code: 'OTP_INCORRECT', message: 'Incorrect or expired verification code.' } });
+    const match = await this.findOtpEligibleUser(dto.identifier);
+    if (!match) throw invalid();
+    const { user, channel } = match;
+    if (channel === 'email' && !this.config.emailOtpEnabled) throw invalid();
+
+    const challenge = await this.tenant.runAsSupervisor((tx) =>
+      tx.staffOtpChallenge.findFirst({
+        where: { userId: user.id, channel, consumedAt: null },
+        orderBy: { createdAt: 'desc' },
+      }),
+    );
+    if (!challenge) throw invalid();
+    if (challenge.expiresAt.getTime() < Date.now()) {
+      throw new GoneException({ error: { code: 'OTP_EXPIRED', message: 'This verification code has expired.' } });
+    }
+    if (challenge.attempts >= LOGIN_OTP_MAX_ATTEMPTS) throw invalid();
+
+    const matches = await this.passwords.verify(challenge.codeHash, dto.code);
+    const changed = await this.tenant.runAsOrg(user.org.id, (tx) =>
+      tx.staffOtpChallenge.updateMany({
+        where: { id: challenge.id, consumedAt: null, expiresAt: { gt: new Date() }, attempts: { lt: LOGIN_OTP_MAX_ATTEMPTS } },
+        data: matches ? { consumedAt: new Date() } : { attempts: { increment: 1 } },
+      }),
+    );
+    if (changed.count !== 1 || !matches) throw invalid();
+
+    // From here on, identical to the tail of login(): reset lockout state,
+    // stamp lastLoginAt, populate the request store, audit, issue a session.
+    await this.tenant.runAsOrg(user.org.id, (tx) =>
+      tx.user.update({ where: { id: user.id }, data: { failedLoginAttempts: 0, lockedUntil: null, lastLoginAt: new Date() } }),
+    );
+    const role = this.roleOf(user.roleId);
+    const store = getOrgStore();
+    if (store) {
+      store.orgId = user.org.id;
+      store.actorId = user.id;
+      store.role = role.key;
+    }
+    await this.audit.record({ action: 'login', entityType: 'user', entityId: user.id, entityLabel: user.email, metadata: { via: 'otp', channel } });
+    const token = this.tokens.sign({ sub: user.id, orgId: user.org.id, roleKey: role.key, sessionVersion: user.sessionVersion });
+    return this.buildSession(user, role, token);
   }
 
   // `sector` must match an active Methodology Configuration Domain name

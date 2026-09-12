@@ -163,6 +163,13 @@ export const EnvSchema = Type.Object({
   // deployment decision, not a screen toggle, so it lives here and defaults
   // OFF: the code ships complete and inert until someone sets this.
   SEMANTIC_DUPLICATES_ENABLED: Type.Boolean({ default: false }),
+  // RIO MFA — "Sign in with OTP" over email. The SMS channel is live as
+  // soon as a user has a mobileNumber on file; email delivery is code-complete
+  // (MailerService.sendLoginOtpEmail) but deliberately gated off by default —
+  // client decision (2026-09): ship SMS first, wire up email once a provider
+  // is actually configured for it. Flip this to true once RESEND_API_KEY (or
+  // whatever mailer is live at that point) is ready to carry OTP traffic.
+  EMAIL_OTP_ENABLED: Type.Boolean({ default: false }),
   // Periodic pg_dump backup (BackupService). BACKUP_DIR is where dump files
   // are written (created if missing, relative paths resolved from the
   // process cwd). BACKUP_CRON_SCHEDULE is a standard 5-field cron

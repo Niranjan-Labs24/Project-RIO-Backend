@@ -10,6 +10,7 @@ import { GeographyModule } from '../geography/geography.module';
 import { NicRegistryModule } from '../nic-registry/nic-registry.module';
 import { ConsentModule } from '../consent/consent.module';
 import { PermissionGrantsModule } from '../permission-grants/permission-grants.module';
+import { SmsModule } from '../../sms/sms.module';
 
 // JwtModule is registered globally in AppModule, so TokenService resolves here.
 // ConfigService, TenantPrismaService, AuditService come from @Global() modules.
@@ -21,6 +22,9 @@ import { PermissionGrantsModule } from '../permission-grants/permission-grants.m
     NicRegistryModule,
     ConsentModule,
     PermissionGrantsModule,
+    // RIO MFA — "Sign in with OTP" over SMS reuses the same SmsService the
+    // citizen public-survey flow already uses.
+    SmsModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, AuthRepository, PasswordService, TokenService],

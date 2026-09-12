@@ -111,6 +111,37 @@ export class MailerService {
    * reached. `replyTo` is the enquirer, so a reply reaches the person asking
    * rather than the noreply mailbox.
    */
+  /**
+   * RIO MFA — "Sign in with OTP" over email. Code-complete but deliberately
+   * inert until `EMAIL_OTP_ENABLED=true` (client decision — SMS ships
+   * first): AuthService.requestLoginOtp never calls this while the flag is
+   * off, so `this.client` being configured or not doesn't matter yet
+   * either way. Kept here (rather than left unwritten) so turning email OTP
+   * on later is a config flip, not a new send method.
+   */
+  async sendLoginOtpEmail(email: string, code: string): Promise<boolean> {
+    if (!this.client) return false;
+    try {
+      const { error } = await this.client.emails.send({
+        from: this.config.mailFrom,
+        to: email,
+        subject: 'Your RIO sign-in code',
+        text: `Your RIO sign-in verification code is ${code}. It expires in 10 minutes. If you didn't request this, ignore this email.`,
+        html: `<p>Your RIO sign-in verification code is <strong>${code}</strong>. It expires in 10 minutes.</p><p>If you didn't request this, ignore this email.</p>`,
+      });
+      if (error) {
+        this.logger.error(`Failed to email login OTP code to ${redactEmail(email)}: ${error.name} ${error.message}`);
+        this.recordSendFailure('login_otp', redactEmail(email), { providerError: `${error.name}: ${error.message}` });
+        return false;
+      }
+      return true;
+    } catch (err) {
+      this.logger.error(`Failed to email login OTP code to ${redactEmail(email)}`, err as Error);
+      this.recordSendFailure('login_otp', redactEmail(email), {}, err);
+      return false;
+    }
+  }
+
   async sendContactRequest(recipients: string[], enquiry: ContactEnquiryInput): Promise<boolean> {
     if (!this.client) return false;
     if (recipients.length === 0) return false;
