@@ -156,6 +156,31 @@ export const EnvSchema = Type.Object({
   // On-demand inference caps output at 4,000 tokens per run, so this is a
   // ceiling rather than a target. Tasks that need less say so themselves.
   OCI_GENAI_MAX_TOKENS: Type.Number({ default: 4000, minimum: 1, maximum: 4000 }),
+  // ── Embeddings (RIO-AI-004 semantic duplicate detection) ─────────────
+  //
+  // A SEPARATE model from OCI_GENAI_MODEL_ID: Command A is a chat model and
+  // cannot embed. This is the one Q10 actually rules on, because embedding is
+  // what sends need text — including text written by members of the public —
+  // out of the platform. Served from the same region, compartment and key, so
+  // an in-Kingdom chat deployment stays in-Kingdom when it embeds.
+  //
+  // multilingual, not english: need titles and statements are Arabic and
+  // English in the same table, and cross-language duplicate detection is the
+  // entire reason the semantic pass exists — the literal pass scores an Arabic
+  // need against its English twin at 0.000. embed-english-v3.0 would make this
+  // feature no better than the pass it supplements.
+  //
+  // Verify both values with `npm run ai:oci-embed-smoke` before relying on
+  // them: which models a tenancy serves ON_DEMAND varies by region, and the
+  // script reports the width the model actually returns.
+  OCI_GENAI_EMBED_MODEL_ID: Type.String({ default: 'cohere.embed-multilingual-v3.0' }),
+  // Must match what the model returns; the adapter refuses a batch whose width
+  // disagrees rather than storing vectors nothing can compare.
+  //
+  // Also matches need_embeddings.embedding's declared width — see migration
+  // 20260911000000. A mismatch is not an error: SemanticDuplicateService
+  // detects it and compares in the application instead of against the index.
+  OCI_GENAI_EMBED_DIMENSIONS: Type.Number({ default: 1024, minimum: 1, maximum: 4096 }),
   // RIO-AI-004 / Q10 — the switch that lets need text leave the platform.
   //
   // Semantic duplicate detection embeds need titles and statements with an
@@ -257,12 +282,7 @@ export const EnvSchema = Type.Object({
   // — they are always recorded regardless of this setting.
   SYSTEM_LOG_ENABLED: Type.Boolean({ default: true }),
   SYSTEM_LOG_MIN_LEVEL: Type.Union(
-    [
-      Type.Literal('fatal'),
-      Type.Literal('error'),
-      Type.Literal('warn'),
-      Type.Literal('info'),
-    ],
+    [Type.Literal('fatal'), Type.Literal('error'), Type.Literal('warn'), Type.Literal('info')],
     { default: 'info' },
   ),
   SYSTEM_LOG_SAMPLE_RATE: Type.Number({ default: 0, minimum: 0, maximum: 1 }),

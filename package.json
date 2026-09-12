@@ -26,6 +26,7 @@
     "ai004:verify-tenancy": "tsx scripts/ai004-verify-tenancy.ts",
     "nfr010:restore-check": "tsx scripts/restore-check.ts",
     "ai:oci-smoke": "tsx scripts/oci-genai-smoke.ts",
+    "ai:oci-embed-smoke": "tsx scripts/oci-genai-embed-smoke.ts",
     "ai:oci-tasks": "tsx scripts/oci-genai-task-check.ts",
     "ai:prove": "tsx scripts/ai-prove-provider.ts",
     "geo:seed": "tsx prisma/seed-geo-coordinates.ts",

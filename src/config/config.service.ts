@@ -140,6 +140,25 @@ export class ConfigService {
   get ociGenAiChatUrl(): string {
     return `https://inference.generativeai.${this.config.OCI_GENAI_REGION}.oci.oraclecloud.com/20231130/actions/chat`;
   }
+  /**
+   * Embedding host for the configured region — the same inference host the
+   * chat path uses, a different action.
+   *
+   * Split from ociGenAiChatUrl rather than parameterised because the two are
+   * called by different modules with different failure behaviour: a chat
+   * failure degrades AI features to manual mode, an embedding failure means
+   * "no semantic proposals this run".
+   */
+  get ociGenAiEmbedUrl(): string {
+    return `https://inference.generativeai.${this.config.OCI_GENAI_REGION}.oci.oraclecloud.com/20231130/actions/embedText`;
+  }
+  /** See OCI_GENAI_EMBED_MODEL_ID — an embedding model, not OCI_GENAI_MODEL_ID. */
+  get ociGenAiEmbedModelId(): string {
+    return this.config.OCI_GENAI_EMBED_MODEL_ID;
+  }
+  get ociGenAiEmbedDimensions(): number {
+    return this.config.OCI_GENAI_EMBED_DIMENSIONS;
+  }
   /** See SEMANTIC_DUPLICATES_ENABLED in env.schema.ts — Q10 sits behind this. */
   get semanticDuplicatesEnabled(): boolean {
     return this.config.SEMANTIC_DUPLICATES_ENABLED;
