@@ -99,6 +99,21 @@ export class ConfigService {
   get mailFrom(): string {
     return this.config.MAIL_FROM;
   }
+  get mailProvider(): 'resend' | 'twilio' {
+    return this.config.MAIL_PROVIDER;
+  }
+  get twilioEmailApiKeySid(): string | undefined {
+    return this.config.TWILIO_EMAIL_API_KEY_SID;
+  }
+  get twilioEmailApiKeySecret(): string | undefined {
+    return this.config.TWILIO_EMAIL_API_KEY_SECRET;
+  }
+  get twilioEmailFromAddress(): string {
+    return this.config.TWILIO_EMAIL_FROM_ADDRESS;
+  }
+  get twilioEmailFromName(): string {
+    return this.config.TWILIO_EMAIL_FROM_NAME;
+  }
   get csrfEnforce(): boolean {
     return this.config.CSRF_ENFORCE;
   }
