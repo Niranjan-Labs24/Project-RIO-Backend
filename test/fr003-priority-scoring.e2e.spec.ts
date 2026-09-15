@@ -79,6 +79,12 @@ describe("FR-003 priority scoring (e2e)", () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(AiService)
       .useValue({
+        // Whatever AiService a test stands in for still has to answer
+        // "which model actually ran" — the services under test record it on
+        // the row they write, and a stub without it throws inside a catch,
+        // which shows up as a summary or decision that silently never
+        // appears rather than as a failure pointing here.
+        resolveModelName: () => 'cohere.command-a-03-2025',
         run: async (task: { name: string }) => {
           if (task.name === "need-theme-extraction") {
             return { response: { themes: THEMES, rationale: "stub" } };
@@ -148,6 +154,18 @@ describe("FR-003 priority scoring (e2e)", () => {
     const id = randomUUID();
     await owner.$transaction(async (tx) => {
       await tx.$executeRawUnsafe(`SET LOCAL app.current_org_id = '${need!.orgId}'`);
+      // A PUBLISHED survey alongside the score, because the two cannot be
+      // separated in the real flow: PriorityService.score() refuses with
+      // SURVEY_NOT_FOUND unless one exists, and PriorityV2Service.listForOrg()
+      // now lists only Needs that have one. Seeding the score without it
+      // would build a state the application cannot produce, and the row would
+      // (correctly) never reach the dashboard.
+      await tx.$executeRawUnsafe(
+        `INSERT INTO surveys
+           (org_id, need_id, study_id, title, status, created_by, updated_at)
+         VALUES ($1::uuid, $2::uuid, $3::uuid, $4, 'PUBLISHED', $5::uuid, now())`,
+        need!.orgId, needId, need!.studyId, 'Scored survey', need!.createdBy,
+      );
       await tx.$executeRawUnsafe(
         `INSERT INTO priority_scores
            (id, org_id, need_id, study_id, overall_score, level, gap_type, factors, scored_at)

@@ -43,6 +43,12 @@ describe("Need -> AI classification unclear -> allDomainsSelected (e2e)", () => 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(AiService)
       .useValue({
+        // Whatever AiService a test stands in for still has to answer
+        // "which model actually ran" — the services under test record it on
+        // the row they write, and a stub without it throws inside a catch,
+        // which surfaces as a summary or decision that silently never
+        // appears rather than as a failure pointing here.
+        resolveModelName: () => 'cohere.command-a-03-2025',
         // The AI genuinely ran here — it just declined, exactly the shape
         // classification.ai.ts's classifyNeedWithAi expects for a decline
         // (classified: false, no domain/subDomain), not an exception.
@@ -191,6 +197,12 @@ describe("Need -> AI service failure -> ai_classification_failed + Retry (e2e)",
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(AiService)
       .useValue({
+        // Whatever AiService a test stands in for still has to answer
+        // "which model actually ran" — the services under test record it on
+        // the row they write, and a stub without it throws inside a catch,
+        // which surfaces as a summary or decision that silently never
+        // appears rather than as a failure pointing here.
+        resolveModelName: () => 'cohere.command-a-03-2025',
         // Simulates a genuine technical failure (timeout, upstream outage,
         // rate limit) — the AI never actually produced a classified/
         // declined response at all.

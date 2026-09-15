@@ -905,7 +905,9 @@ ${extra}`;
           scopeFilters: scopeFilters as Prisma.InputJsonValue,
           promptVersion,
           promptHash,
-          modelName: task.model,
+          // The provider's model, not the task literal's: `task.model` names
+          // Gemini, while the OCI path is served by Cohere Command A.
+          modelName: this.aiService.resolveModelName(task),
           modelVersion: task.modelVersion,
           inputReportDataHash: reportDataHash,
           inputEvidenceSnapshotHash: evidenceHash,

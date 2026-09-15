@@ -340,7 +340,9 @@ export class PriorityService {
         urgency: need.urgency ?? null,
         // This v1 path (unused by any UI — see PriorityDashboardEntry's own
         // comment) has no override-reason concept of its own.
-        score: score ? { ...score, overrideReason: null } : null,
+        score: score
+          ? { ...score, overrideReason: null, source: "priorityScore" as const }
+          : null,
       };
     });
   }

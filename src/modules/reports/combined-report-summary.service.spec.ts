@@ -27,6 +27,7 @@ describe("CombinedReportSummaryService", () => {
     };
 
     mockAi = {
+      resolveModelName: vi.fn(() => "cohere.command-a-03-2025"),
       run: vi.fn().mockResolvedValue({
         response: {
           header: { studyName: "Test Study", entityName: "Org", methodologyVersion: "v1.0", cycleNumber: 1, generatedAt: new Date().toISOString() },

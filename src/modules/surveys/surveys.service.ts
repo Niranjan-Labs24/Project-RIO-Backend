@@ -711,7 +711,9 @@ Eligible Questions: ${JSON.stringify(
           suggestedQuestionIds: finalQuestions.map((q) => q.questionId),
           confidence,
           reason,
-          modelName: 'gemini-2.5-flash',
+          // Resolved from the provider rather than hardcoded: the task literal
+          // names Gemini, but the OCI path is answered by Cohere Command A.
+          modelName: this.ai.resolveModelName(SURVEY_QUESTION_RECOMMENDATION_TASK),
           promptVersion: '1.0.0',
           rawResponse: raw as Prisma.InputJsonValue,
           createdBy: actorId,
