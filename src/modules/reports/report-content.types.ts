@@ -4,9 +4,8 @@
 // These types mirror the team's AI-summary mock (RPT-2026-001). They are
 // produced by the ReportDataProvider seam (see providers/report-data.provider.ts),
 // implemented by ReportSummaryDataProvider against real analytics tables —
-// the mock implementation (MockReportDataProvider/MockReportApiClient) has
-// been removed now that the real provider is in place. "Body changes,
-// contract doesn't."
+// the mock implementations that once backed this seam have all been removed
+// now that the real provider is in place. "Body changes, contract doesn't."
 
 import type {
   CalculationBasisBlock,
@@ -168,8 +167,11 @@ export interface QualitativeEvidenceItem {
   summary: string;
 }
 
-/** AI-narrative block — flows through the provider's AI seam. Mock text now,
- *  real LLM later, same shape. */
+/** AI-narrative block — flows through the provider's AI seam, which serves a
+ *  REAL AI narrative. When the provider is unavailable (or its cached output
+ *  was written against a superseded prompt and was rejected), the fields fall
+ *  back to composeDeterministicNarrative()'s summary, composed from the
+ *  report's own figures — never to canned copy. */
 export interface AiSummaryBlock {
   executiveSummary: string;
   keyFindings: string;
@@ -286,7 +288,9 @@ export interface ApprovalBlock {
   reviewerApprovedAt: string | null; // ISO-8601
 }
 
-/** Full Village Report (RPT14) content — deep-equals the RPT-2026-001 mock. */
+/** Full Village Report (RPT14) content. Shape-compatible with the original
+ *  RPT-2026-001 AI-summary mock the contract was designed against; the data
+ *  filling it is real (ReportSummaryDataProvider.getVillageReport). */
 export interface VillageReportContent {
   header: ReportHeader;
   village: VillageIdentity;

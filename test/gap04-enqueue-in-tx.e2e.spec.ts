@@ -111,6 +111,7 @@ describe('GAP-04 transactional enqueue in submitResponse (lossless + shape + dra
       fakeAudit(),
       fakeSessions(),
       fakeConsent(),
+      { cleanSurveyResponse: async () => undefined } as never, // dataCleaning
     );
 
     await runner.onModuleInit();

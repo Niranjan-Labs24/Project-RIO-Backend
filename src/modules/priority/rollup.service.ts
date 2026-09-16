@@ -3,7 +3,7 @@ import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { Prisma, type Question } from '../../generated/prisma';
 import { DeterministicScoringService, type ParsedAnswer } from './scoring.service';
-import { PriorityV2Service } from './priority-v2.service';
+import { PriorityV2Service, type RecalculateOutcome, type RecalculateReason } from './priority-v2.service';
 import { MethodologyConfigService } from '../methodology-config/methodology-config.service';
 import type { ConfidenceFlagSettings } from '../methodology-config/methodology-config.types';
 
@@ -61,7 +61,11 @@ export class ScoreRollupService {
   /**
    * Run a complete recalculation for all responses under a given study/survey.
    */
-  async recalculateStudyScores(studyId: string, surveyId: string): Promise<void> {
+  async recalculateStudyScores(studyId: string, surveyId: string): Promise<RecalculateOutcome> {
+    // Set by the transaction body's early exits below. The body used to
+    // `return` silently, so the endpoint reported `{ success: true }` for a
+    // run that scored nothing at all.
+    let earlyExit: RecalculateReason | null = null;
     await this.tenant.runInOrgContext(async (tx) => {
       // Find the survey first — responses are scoped to *its* Need, not the
       // whole study. A study can hold many Needs, each with its own
@@ -76,7 +80,7 @@ export class ScoreRollupService {
           }
         }
       });
-      if (!survey) return;
+      if (!survey) { earlyExit = 'SURVEY_NOT_FOUND'; return; }
 
       const responses = await tx.surveyResponse.findMany({
         where: { needId: survey.needId },
@@ -84,7 +88,7 @@ export class ScoreRollupService {
       });
 
       const responseIds = responses.map(r => r.id);
-      if (responseIds.length === 0) return;
+      if (responseIds.length === 0) { earlyExit = 'NO_RESPONSES'; return; }
 
       // Clear existing answers and scores for these responses
       await tx.responseAnswer.deleteMany({
@@ -98,7 +102,7 @@ export class ScoreRollupService {
         where: survey.methodologyVersion ? { version: survey.methodologyVersion } : { status: 'PUBLISHED' },
         orderBy: { createdAt: 'desc' }
       });
-      if (!mv) return;
+      if (!mv) { earlyExit = 'NO_METHODOLOGY_VERSION'; return; }
 
       const lookups = await tx.scoringLookup.findMany({
         where: { methodologyVersionId: mv.id, isActive: true }
@@ -308,8 +312,10 @@ export class ScoreRollupService {
       await this.calculateRollups(studyId, surveyId, null, { tx, orgId: survey.orgId });
     });
 
+    if (earlyExit) return { success: false, reason: earlyExit };
+
     // Call priority v2 recalculation
-    await this.priorityV2.recalculateAll(studyId, surveyId);
+    const outcome = await this.priorityV2.recalculateAll(studyId, surveyId);
 
     // RIO-NFR-004: audit every scoring recalculation so prioritisation
     // outcomes are traceable to their triggering event, actor, and time.
@@ -320,6 +326,8 @@ export class ScoreRollupService {
       entityLabel: `Score rollup for study ${studyId}`,
       metadata: { studyId, surveyId },
     });
+
+    return outcome;
   }
 
   /**

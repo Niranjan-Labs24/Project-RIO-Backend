@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { requireActor } from '../../tenancy/org-context';
 import { roleById } from '../../rbac/role-matrix';
+import { AuditService } from '../audit/audit.service';
 import type { CreatePermissionGrantPayload, PermissionGrant } from './permission-grants.types';
 
 // RIO-RBAC-002 (client-confirmed) — the exact audit-log fields specified:
@@ -30,6 +31,7 @@ export class PermissionGrantsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tenant: TenantPrismaService,
+    private readonly audit: AuditService,
   ) {}
 
   // The one method PermissionGuard actually calls — kept intentionally
@@ -136,6 +138,27 @@ export class PermissionGrantsService {
         expiresAt: payload.expiresAt ? new Date(payload.expiresAt) : null,
       },
     });
+
+    // RIO-RBAC-002 (client-confirmed) — this module's own top comment
+    // specifies the audit trail must carry "Grant ID, approver, stated
+    // reason/scope, and expiry" for the grant itself; organizationId: null
+    // since a grant is explicitly cross-entity, not scoped to whichever org
+    // the System Admin happens to be acting as at the time.
+    await this.audit.record({
+      action: 'create',
+      entityType: 'permission_grant',
+      entityId: row.id,
+      entityLabel: `${grantee.name} — ${payload.module}:${payload.action}`,
+      organizationId: null,
+      changes: [
+        { field: 'Grantee', before: null, after: grantee.name },
+        { field: 'Module', before: null, after: payload.module },
+        { field: 'Action', before: null, after: payload.action },
+        { field: 'Reason', before: null, after: payload.reason },
+        { field: 'Expires', before: null, after: row.expiresAt ? row.expiresAt.toISOString() : 'Never' },
+      ],
+    });
+
     const now = Date.now();
     return this.toGrant(row, new Map(), now);
   }
@@ -153,6 +176,17 @@ export class PermissionGrantsService {
       where: { id },
       data: { revokedAt: new Date(), revokedBy },
     });
+
+    const grantee = await this.tenant.runAsSupervisor((tx) => tx.user.findUnique({ where: { id: row.granteeId } }));
+    await this.audit.record({
+      action: 'edit',
+      entityType: 'permission_grant',
+      entityId: row.id,
+      entityLabel: `${grantee?.name ?? row.granteeId} — ${row.module}:${row.action}`,
+      organizationId: null,
+      changes: [{ field: 'Status', before: 'Active', after: 'Revoked' }],
+    });
+
     const now = Date.now();
     return this.toGrant(row, new Map(), now);
   }

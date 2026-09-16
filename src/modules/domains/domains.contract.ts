@@ -10,6 +10,9 @@ export const CreateDomainBody = registerSchema(
     {
       code: T.String({ minLength: 1, maxLength: 64 }),
       name: T.String({ minLength: 1, maxLength: 200 }),
+      // RIO Arabic Localization (Approach 3, Hybrid) — optional so a Domain
+      // can be created in English first and given Arabic later.
+      nameAr: T.Optional(T.String({ minLength: 1, maxLength: 200 })),
       displayOrder: T.Optional(T.Integer({ minimum: 0 })),
     },
     { additionalProperties: false },
@@ -23,6 +26,7 @@ export const UpdateDomainBody = registerSchema(
     {
       code: T.Optional(T.String({ minLength: 1, maxLength: 64 })),
       name: T.Optional(T.String({ minLength: 1, maxLength: 200 })),
+      nameAr: T.Optional(T.String({ minLength: 1, maxLength: 200 })),
       displayOrder: T.Optional(T.Integer({ minimum: 0 })),
     },
     { additionalProperties: false },
@@ -36,6 +40,7 @@ export const CreateSubDomainBody = registerSchema(
     {
       code: T.String({ minLength: 1, maxLength: 64 }),
       name: T.String({ minLength: 1, maxLength: 200 }),
+      nameAr: T.Optional(T.String({ minLength: 1, maxLength: 200 })),
       displayOrder: T.Optional(T.Integer({ minimum: 0 })),
     },
     { additionalProperties: false },
@@ -49,6 +54,7 @@ export const UpdateSubDomainBody = registerSchema(
     {
       code: T.Optional(T.String({ minLength: 1, maxLength: 64 })),
       name: T.Optional(T.String({ minLength: 1, maxLength: 200 })),
+      nameAr: T.Optional(T.String({ minLength: 1, maxLength: 200 })),
       displayOrder: T.Optional(T.Integer({ minimum: 0 })),
     },
     { additionalProperties: false },

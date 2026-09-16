@@ -1,7 +1,9 @@
+import { EXCLUDE_MERGED } from '../needs/need-visibility';
 import { Injectable, Logger } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { Prisma } from '../../generated/prisma';
 import { getOrgStore, requireOrgId } from '../../tenancy/org-context';
+import { DEFAULT_THRESHOLDS, mapPriorityLevel, type ScoringThresholds } from './scoring';
 
 /**
  * Per-domain snapshot stored in VillagePriorityAssessment.domainComponents.
@@ -24,6 +26,27 @@ export interface VillagePriorityResult {
   overrideApplied: boolean;
   overrideReason: string | null;
   domainComponents: DomainPriorityComponent[];
+}
+
+/**
+ * Why a recalculation run produced no VillagePriorityAssessment. Every one
+ * of these is a legitimate "nothing to compute" exit rather than a failure,
+ * but the reviewer pressing Recalculate needs to be told which one was hit
+ * — otherwise the Priority Score panel just sits unchanged at "No priority
+ * score calculated for this need yet" with no way to tell missing responses
+ * apart from missing reference data. Mirrors the frontend's
+ * `RecalculateReason` union in severity-scoring.service.ts.
+ */
+export type RecalculateReason =
+  | 'SURVEY_NOT_FOUND'
+  | 'NO_RESPONSES'
+  | 'NO_METHODOLOGY_VERSION'
+  | 'NO_DOMAIN_PRIORITY_CONFIG'
+  | 'NO_DOMAIN_ROLLUPS';
+
+export interface RecalculateOutcome {
+  success: boolean;
+  reason?: RecalculateReason;
 }
 
 /**
@@ -134,18 +157,22 @@ export class PriorityV2Service {
   /**
    * Calculate and upsert a VillagePriorityAssessment for the given scope.
    * villageId = '' means consolidated (all villages).
+   *
+   * Returns the reason no assessment was written, or null on success — the
+   * early exits below used to be silent `return`s, which is what left the
+   * Priority Score panel unexplained after a "successful" recalculation.
    */
   async calculateVillagePriority(
     studyId: string,
     surveyId: string,
     villageId: string,
-  ): Promise<void> {
-    await this.tenant.runInOrgContext(async (tx) => {
+  ): Promise<RecalculateReason | null> {
+    return this.tenant.runInOrgContext(async (tx): Promise<RecalculateReason | null> => {
       const orgId = requireOrgId();
 
       // Resolve methodology version from survey
       const survey = await tx.survey.findUnique({ where: { id: surveyId } });
-      if (!survey) return;
+      if (!survey) return 'SURVEY_NOT_FOUND';
 
       const mv = await tx.methodologyVersion.findFirst({
         where: survey.methodologyVersion
@@ -153,7 +180,7 @@ export class PriorityV2Service {
           : { status: 'PUBLISHED' },
         orderBy: { createdAt: 'desc' },
       });
-      if (!mv) return;
+      if (!mv) return 'NO_METHODOLOGY_VERSION';
 
       // Load domain priority config for this version
       const configs = await tx.domainPriorityConfig.findMany({
@@ -163,7 +190,7 @@ export class PriorityV2Service {
         this.logger.warn(
           `No DomainPriorityConfig found for version ${mv.version} — skipping village priority calculation.`
         );
-        return;
+        return 'NO_DOMAIN_PRIORITY_CONFIG';
       }
 
       // Load DOMAIN-level rollups for this scope
@@ -201,7 +228,7 @@ export class PriorityV2Service {
         this.logger.warn(
           `No matching domain rollups found for ${studyId}/${surveyId}/${villageId || 'consolidated'} — skipping.`
         );
-        return;
+        return 'NO_DOMAIN_ROLLUPS';
       }
 
       // Upsert VillagePriorityAssessment
@@ -249,11 +276,13 @@ export class PriorityV2Service {
         this.logger.log(
           `Updated VillagePriorityAssessment: ${studyId}/${villageId || 'consolidated'} → ${result.priorityStatus} (${result.priorityScore.toFixed(2)})`
         );
+        return null;
       } else {
         await tx.villagePriorityAssessment.create({ data });
         this.logger.log(
           `Created VillagePriorityAssessment: ${studyId}/${villageId || 'consolidated'} → ${result.priorityStatus} (${result.priorityScore.toFixed(2)})`
         );
+        return null;
       }
     });
   }
@@ -262,7 +291,7 @@ export class PriorityV2Service {
    * Recalculate village priority for all village scopes + consolidated.
    * Called at the end of ScoreRollupService.recalculateStudyScores().
    */
-  async recalculateAll(studyId: string, surveyId: string): Promise<void> {
+  async recalculateAll(studyId: string, surveyId: string): Promise<RecalculateOutcome> {
     // Discover distinct villages from existing domain rollups
     const rollups = await this.tenant.runInOrgContext((tx) =>
       tx.scoreRollup.findMany({
@@ -279,8 +308,11 @@ export class PriorityV2Service {
         await this.calculateVillagePriority(studyId, surveyId, vid);
       }
     }
-    // Consolidated (all villages)
-    await this.calculateVillagePriority(studyId, surveyId, '');
+    // Consolidated (all villages) — this is the scope the Priority Score
+    // panel reads (it asks with no villageId), so its outcome is the one
+    // that decides whether the run has anything to show.
+    const reason = await this.calculateVillagePriority(studyId, surveyId, '');
+    return reason ? { success: false, reason } : { success: true };
   }
 
   /**
@@ -296,10 +328,6 @@ export class PriorityV2Service {
       studyId: string;
       studyTitle: string;
       needId: string;
-      /** The Need's own title. Every Need under one Study shares that Study's
-       *  name, so a list keyed only on studyTitle repeats the same string on
-       *  every row and tells the reviewer nothing about which need they are
-       *  looking at. */
       needTitle: string;
       // RIO-FR-005 (Q12) — the Need's own analyst-entered Gap Type
       // classification (acute/chronic/structural/seasonal/equity), not to
@@ -316,6 +344,12 @@ export class PriorityV2Service {
         level: 'critical' | 'high' | 'medium' | 'low';
         overrideReason: string | null;
         scoredAt: string;
+        // Which pipeline produced `overallScore`. The two do not agree on
+        // direction — `priorityScore` is a severity (high = urgent) while
+        // `villageRollup` is a performance figure (low = urgent) — so any
+        // consumer that does arithmetic on the number, rather than just
+        // displaying it, has to know which one it is holding.
+        source: 'priorityScore' | 'villageRollup';
       } | null;
     }>
   > {
@@ -340,40 +374,140 @@ export class PriorityV2Service {
       : this.tenant.runInOrgContext.bind(this.tenant);
 
     return runner(async (tx) => {
-      const [studies, needs, assessments] = await Promise.all([
+      const [studies, needs, surveys, assessments, priorityScores, config] = await Promise.all([
         tx.study.findMany(),
-        tx.need.findMany({ orderBy: { updatedAt: 'desc' } }),
-        // RIO-FR-003 — the org-wide list reads PriorityScore, the per-need
-        // explainable score the reviewer signs off, NOT
-        // VillagePriorityAssessment.
-        //
-        // Those are different things and had opposite polarity: the
-        // assessment is a per-VILLAGE performance score where low means
-        // urgent, while this list is per NEED and follows the methodology's
-        // severity convention where high means urgent. Reading the assessment
-        // here meant every need showed "Not scored yet" whenever the village
-        // pipeline had not been run, even with a fully scored need sitting in
-        // priority_scores — which is exactly what was on screen.
+        tx.need.findMany({ where: EXCLUDE_MERGED, orderBy: { updatedAt: 'desc' } }),
+        tx.survey.findMany({ orderBy: { createdAt: 'desc' } }),
+        tx.villagePriorityAssessment.findMany({
+          where: { villageId: '' },
+          orderBy: { calculatedAt: 'desc' },
+        }),
+        // RIO-FR-005 defect fix (Pass 3 QA) — a Need's own signed-off score
+        // (PriorityService.score()/approve(), the "2. Priority Score" tab
+        // on the Need's Insights page) lives in `priority_scores` and was
+        // never read here at all; this list used to source `score`
+        // exclusively from VillagePriorityAssessment (a separate
+        // survey/village rollup pipeline that feeds RPT14 reports), so a
+        // Need could be fully scored and approved on its own Insights page
+        // and still show "Not scored yet" here forever. Per the schema's
+        // own comment on `PriorityScore.approvedBy` ("never publicly
+        // visible ... until approved"), an approved row here is exactly
+        // the kind of thing this dashboard is supposed to surface.
+        // Consolidated only (surveyLinkId: null), approved only, latest
+        // first — same semantics as PriorityService.listForOrg() already
+        // uses for its (unused-by-any-UI) approved-score read path.
         tx.priorityScore.findMany({
-          where: { surveyLinkId: null },
+          where: { surveyLinkId: null, approvedAt: { not: null } },
           orderBy: { scoredAt: 'desc' },
         }),
+        // Read here rather than through MethodologyConfigService: this method
+        // already runs everything it needs in one transaction, and injecting
+        // that service into this one only to read four numbers would add a
+        // module dependency for no behavioural gain.
+        tx.methodologyConfig.findFirst(),
       ]);
 
+      const raw = (config?.priorityThresholds ?? {}) as Partial<ScoringThresholds>;
+      const thresholds: ScoringThresholds = {
+        criticalSeverity: raw.criticalSeverity ?? DEFAULT_THRESHOLDS.criticalSeverity,
+        highSeverity: raw.highSeverity ?? DEFAULT_THRESHOLDS.highSeverity,
+        equityHighSeverity: raw.equityHighSeverity ?? DEFAULT_THRESHOLDS.equityHighSeverity,
+        mediumSeverity: raw.mediumSeverity ?? DEFAULT_THRESHOLDS.mediumSeverity,
+      };
+
       const studyTitleById = new Map(studies.map((s) => [s.id, s.title]));
-      // PriorityScore is keyed on needId, so no survey indirection is needed —
-      // `scoredAt: desc` above means the first row seen per need is its latest.
-      const latestScoreByNeedId = new Map<string, (typeof assessments)[number]>();
-      for (const score of assessments) {
-        if (!latestScoreByNeedId.has(score.needId)) {
-          latestScoreByNeedId.set(score.needId, score);
+      const surveyByNeedId = new Map<string, (typeof surveys)[number]>();
+      // RIO-FR-011: a Need can now have more than one Survey row
+      // (versioning) — VillagePriorityAssessment rows key off the
+      // PUBLISHED survey's id (that's the one whose responses were
+      // scored), so picking a newer DRAFT here would silently show "no
+      // score yet" for a need that's actually fully scored. PUBLISHED
+      // first, newest-created as the tiebreak/fallback.
+      const orderedSurveys = [...surveys].sort((a, b) => {
+        if (a.status === 'PUBLISHED' && b.status !== 'PUBLISHED') return -1;
+        if (b.status === 'PUBLISHED' && a.status !== 'PUBLISHED') return 1;
+        return b.createdAt.getTime() - a.createdAt.getTime();
+      });
+      for (const survey of orderedSurveys) {
+        if (!surveyByNeedId.has(survey.needId)) surveyByNeedId.set(survey.needId, survey);
+      }
+      const latestAssessmentBySurveyId = new Map<string, (typeof assessments)[number]>();
+      for (const assessment of assessments) {
+        if (!latestAssessmentBySurveyId.has(assessment.surveyId)) {
+          latestAssessmentBySurveyId.set(assessment.surveyId, assessment);
+        }
+      }
+      const latestApprovedScoreByNeedId = new Map<string, (typeof priorityScores)[number]>();
+      for (const score of priorityScores) {
+        if (!latestApprovedScoreByNeedId.has(score.needId)) {
+          latestApprovedScoreByNeedId.set(score.needId, score);
         }
       }
 
+      // Only Needs that have a PUBLISHED survey.
+      //
+      // A priority score cannot exist without one: PriorityService.score()
+      // looks up `survey.findFirst({ needId, status: 'PUBLISHED' })` and
+      // throws SURVEY_NOT_FOUND when there is none. So a Need with no
+      // published survey can never be anything but "Not scored yet" on this
+      // list, and listing it only buries the Needs a reviewer can actually
+      // act on — 226 rows to find 5 that were scoreable.
+      //
+      // Needs whose survey is still DRAFT or SUBMITTED belong on the Study's
+      // own Needs table, which is where that stage of the work is tracked.
+      const publishedNeedIds = new Set(
+        surveys.filter((survey) => survey.status === 'PUBLISHED').map((survey) => survey.needId),
+      );
+
       return needs
+        .filter((need) => publishedNeedIds.has(need.id))
         .filter((need) => !gapType || need.gapType === gapType)
         .map((need) => {
-          const score = latestScoreByNeedId.get(need.id);
+          const survey = surveyByNeedId.get(need.id);
+          const assessment = survey ? latestAssessmentBySurveyId.get(survey.id) : undefined;
+          // A Need's own approved PriorityScore (the per-Need, human-signed-
+          // off score) takes precedence over the VillagePriorityAssessment
+          // rollup when both exist — it's the more authoritative, directly
+          // reviewer-approved number for this exact Need.
+          const priorityScore = latestApprovedScoreByNeedId.get(need.id);
+          const score = priorityScore
+            ? {
+                overallScore: priorityScore.overrideScore ?? priorityScore.overallScore,
+                // Banded from the number actually shown, not from the stored
+                // `level`. That column is the engine's band for the COMPUTED
+                // score and is deliberately never rewritten (AC 5 - the two
+                // must stay distinguishable), so an overridden need rendered
+                // as "85 / Medium": the reviewer's 85 next to the band for the
+                // engine's 64. The dashboard's level tiles and its level
+                // filter both read this field, so a stale band mis-counted and
+                // mis-filtered the need, not just mis-labelled it.
+                //
+                // Equity is passed as false for an override: that flag lifts a
+                // borderline COMPUTED score, and a reviewer who types a number
+                // has already made the judgement it stands in for.
+                level:
+                  priorityScore.overrideScore === null
+                    ? priorityScore.level
+                    : mapPriorityLevel(priorityScore.overrideScore, false, thresholds),
+                overrideReason: priorityScore.overrideReason,
+                scoredAt: priorityScore.scoredAt.toISOString(),
+                source: 'priorityScore' as const,
+              }
+            : assessment
+              ? {
+                  overallScore: Math.round(Number(assessment.priorityScore) * 10) / 10,
+                  level: (assessment.overrideApplied
+                    ? 'critical'
+                    : assessment.priorityStatus.toLowerCase()) as
+                    | 'critical'
+                    | 'high'
+                    | 'medium'
+                    | 'low',
+                  overrideReason: assessment.overrideReason,
+                  scoredAt: assessment.calculatedAt.toISOString(),
+                  source: 'villageRollup' as const,
+                }
+              : null;
           return {
             studyId: need.studyId,
             studyTitle: studyTitleById.get(need.studyId) ?? need.studyId,
@@ -382,17 +516,7 @@ export class PriorityV2Service {
             gapType: need.gapType,
             themes: need.themes ?? [],
             urgency: need.urgency ?? null,
-            score: score
-              ? {
-                  // The reviewer's override wins where there is one — that is
-                  // the number the need is ranked on, and the computed value
-                  // stays available on the need's own breakdown panel.
-                  overallScore: score.overrideScore ?? score.overallScore,
-                  level: score.level,
-                  overrideReason: score.overrideReason,
-                  scoredAt: score.scoredAt.toISOString(),
-                }
-              : null,
+            score,
           };
         });
     });

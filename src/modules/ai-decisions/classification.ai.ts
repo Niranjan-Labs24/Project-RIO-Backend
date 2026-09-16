@@ -42,9 +42,10 @@ ${JSON.stringify(candidates)}`;
   }
 
   return {
-    // Recorded from the task itself so the stored decision always names the
-    // model that actually ran.
-    modelName: NEED_CLASSIFICATION_TASK.model,
+    // Resolved from the provider, not read off the task: `task.model` names
+    // Gemini on every task, but on the OCI path Cohere Command A answers and
+    // that name is what the reviewer sees under the suggestion.
+    modelName: ai.resolveModelName(NEED_CLASSIFICATION_TASK),
     modelVersion: NEED_CLASSIFICATION_TASK.modelVersion,
     suggestion: {
       domains: [response.domain],

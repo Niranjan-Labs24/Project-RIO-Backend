@@ -14,6 +14,9 @@ export interface ReportSharingRequestRow {
   decidedAt: Date | null;
   note: string | null;
   decisionNote: string | null;
+  expiresAt: Date | null;
+  withdrawnBy: string | null;
+  withdrawnAt: Date | null;
 }
 
 export interface ReportSharingRequest {
@@ -31,6 +34,10 @@ export interface ReportSharingRequest {
   decidedAt: string | null;
   note: string | null;
   decisionNote: string | null;
+  /** RIO-FR-014 (client Q30) — null means access never expires on its own. */
+  expiresAt: string | null;
+  withdrawnBy: string | null;
+  withdrawnAt: string | null;
 }
 
 export interface CreateReportSharingRequestPayload {
@@ -42,6 +49,8 @@ export interface CreateReportSharingRequestPayload {
 
 export interface DecideReportSharingRequestPayload {
   note?: string;
+  /** Only meaningful on approve — an optional expiry the owner sets at approval time (RIO-FR-014, Q30). */
+  expiresAt?: string;
 }
 
 // Read-only snapshot of the shared Report's own already-flattened content —

@@ -95,7 +95,10 @@ export class DocumentSummaryService {
     // Prompt text, model settings and version all come from the declared task,
     // so the recorded promptVersion can never name a prompt other than the one
     // that ran. promptHash pins the exact text.
-    const { promptVersion, model: modelName, modelVersion } = EVIDENCE_DOCUMENT_SUMMARY_TASK;
+    const { promptVersion, modelVersion } = EVIDENCE_DOCUMENT_SUMMARY_TASK;
+    // Resolved from the provider, not the task literal: every task names a
+    // Gemini model, while the OCI path is answered by Cohere Command A.
+    const modelName = this.ai.resolveModelName(EVIDENCE_DOCUMENT_SUMMARY_TASK);
 
     const chunkSummariesFormatted = doc.chunks
       .map((c) => `- [${c.sectionReference || `Chunk #${c.chunkIndex + 1}`}]: ${c.chunkText.substring(0, 500)}`)

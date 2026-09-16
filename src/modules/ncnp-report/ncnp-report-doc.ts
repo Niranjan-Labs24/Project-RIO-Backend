@@ -1,5 +1,12 @@
 import type { DocSection, ReportDoc } from '../reports/report-doc';
 import type { NcnpOrgSummaryRow, NcnpReport } from './ncnp-report.types';
+import {
+  AGE_BRACKET_LABELS,
+  AGE_BRACKET_ORDER,
+  GENDER_LABELS,
+  NEED_SOURCE_LABELS,
+  REJECTION_REASON_LABELS,
+} from './ncnp-report-labels';
 
 function fmtDate(iso: string): string {
   const d = new Date(iso);
@@ -11,53 +18,6 @@ function pct(stat: { current: number; previous: number; changePct: number | null
   const sign = stat.changePct > 0 ? '+' : '';
   return `${stat.current} (${sign}${stat.changePct.toFixed(1)}% vs. prior period)`;
 }
-
-// Matches the Prisma RejectionReasonCode enum's identifiers — UNSPECIFIED
-// covers surveys rejected before this field existed (see
-// NcnpReportService.buildSurveyAnalytics). Kept local to this file (not
-// shared with ncnp-report-pdf.ts) — each renderer here is self-contained.
-const REJECTION_REASON_LABELS: Record<string, string> = {
-  REJ_01: 'Incomplete survey design',
-  REJ_02: 'Methodology non-compliance',
-  REJ_03: 'Duplicate of an existing survey',
-  REJ_04: 'Incorrect need or study linkage',
-  REJ_05: 'Out-of-scope geography or target population',
-  REJ_06: 'Data quality concerns',
-  REJ_07: 'Missing required attachments or approvals',
-  REJ_99: 'Other',
-  UNSPECIFIED: 'Unspecified (legacy)',
-};
-
-// Display order matches the Prisma AgeBracket enum's declaration order.
-const AGE_BRACKET_LABELS: Record<string, string> = {
-  age_15_24: '15–24',
-  age_25_34: '25–34',
-  age_35_44: '35–44',
-  age_45_54: '45–54',
-  age_55_64: '55–64',
-  age_65_plus: '65+',
-  prefer_not_to_say: 'Prefer not to say',
-};
-
-// Matches the Prisma Gender enum's values.
-const GENDER_LABELS: Record<string, string> = {
-  male: 'Male',
-  female: 'Female',
-  other: 'Other',
-  prefer_not_to_say: 'Prefer not to say',
-};
-const AGE_BRACKET_ORDER = ['age_15_24', 'age_25_34', 'age_35_44', 'age_45_54', 'age_55_64', 'age_65_plus', 'prefer_not_to_say'];
-
-// Matches the Prisma NeedSource enum's values, in the client's own Report
-// Type terminology — see ncnp-report-pdf.ts's copy of this same map for why
-// 'manual_entry' displays as "Survey" and why 'citizen_input'/'field_survey'
-// are kept even though nothing produces them yet.
-const NEED_SOURCE_LABELS: Record<string, string> = {
-  manual_entry: 'Survey',
-  file_upload: 'Uploaded Document',
-  citizen_input: 'Citizen Input',
-  field_survey: 'Field Survey',
-};
 
 // Maps the live NcnpReport payload into the same render-agnostic ReportDoc
 // model every other report export already uses (see report-doc.ts) — reuses

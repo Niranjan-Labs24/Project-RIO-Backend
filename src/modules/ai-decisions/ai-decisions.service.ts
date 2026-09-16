@@ -7,6 +7,7 @@ import { AiService } from '../ai/ai.service';
 import { DomainsService } from '../domains/domains.service';
 import { SurveysService } from '../surveys/surveys.service';
 import { MethodologyConfigService } from '../methodology-config/methodology-config.service';
+import { DataCleaningService } from '../data-cleaning/data-cleaning.service';
 import type { AiClassificationSettings } from '../methodology-config/methodology-config.types';
 import { resolveConfidenceBand } from './confidence-band';
 import { AiClassificationDeclinedError, classifyNeedWithAi } from './classification.ai';
@@ -44,6 +45,8 @@ export class AiDecisionsService {
     private readonly domains: DomainsService,
     private readonly surveys: SurveysService,
     private readonly methodologyConfig: MethodologyConfigService,
+    // RIO-FR-002 � re-cleaning after a classification decision, see review().
+    private readonly dataCleaning: DataCleaningService,
   ) {}
 
   // Called once, synchronously, right after NeedsService.create() commits
@@ -341,7 +344,7 @@ export class AiDecisionsService {
     // Filled inside the transaction, read by the audit record after it commits.
     let aiSuggestionLabel: string | null = null;
     let decidedLabel: string | null = null;
-    const { updated, needTitle } = await this.tenant.runInOrgContext(async (tx) => {
+    const { updated, needTitle, needId, needOrgId } = await this.tenant.runInOrgContext(async (tx) => {
       const existing = (await tx.aiDecision.findUnique({ where: { id } })) as unknown as AiDecisionRow | null;
       if (!existing) throw new NotFoundException({ error: { code: 'AI_DECISION_NOT_FOUND', message: 'AI decision not found' } });
       // A decision can only be reviewed once — without this, a second
@@ -460,7 +463,7 @@ export class AiDecisionsService {
           data: { status: 'pending_ai_classification', proposedDomains: Prisma.JsonNull, proposedReason: null },
         });
       }
-      return { updated: row, needTitle: need.title };
+      return { updated: row, needTitle: need.title, needId: row.needId, needOrgId: need.orgId };
     });
     // 'approved' surfaces as the 'approve' audit action (so an Audit Log
     // filter on Approved actually finds it) — 'modified'/'rejected' are
@@ -482,6 +485,28 @@ export class AiDecisionsService {
         { field: 'Reviewer notes', before: null, after: payload.notes ?? null },
       ],
     });
+    // RIO-FR-002 � re-clean the Need now that the decision has landed.
+    //
+    // `needs.domain` is written for the first time on the approve/modify path
+    // above, so the cleaning flags raised at creation � when the column was
+    // still null � are stale from this moment on. DataCleaningService
+    // supersedes a pending flag that no longer applies, but only when it runs,
+    // and nothing else re-runs it after a classification decision. Without
+    // this call a MISSING_REQUIRED domain flag stays in the reviewer's queue
+    // permanently, un-actionable, even though the field is now filled.
+    //
+    // Also correct on the reject path: the Need goes back to
+    // pending_ai_classification, and re-cleaning simply re-evaluates it under
+    // the same rules.
+    //
+    // Fire-and-forget with an EXPLICIT orgId, exactly as NeedsService.create
+    // does it: cleaning must never fail or delay a review decision that has
+    // already committed. cleanNeed swallows its own errors; the catch is for
+    // the promise itself.
+    this.dataCleaning.cleanNeed(needId, needOrgId, 'manual_entry').catch((err: Error) => {
+      this.logger.warn(`Re-cleaning after classification review failed for need ${needId}: ${err.message}`);
+    });
+
     return this.toAiDecision(updated, await this.aiClassificationSettings());
   }
 

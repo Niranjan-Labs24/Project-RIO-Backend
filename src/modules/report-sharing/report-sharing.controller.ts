@@ -67,6 +67,12 @@ export class ReportSharingController {
     return this.reportSharing.reject(id, body ?? {});
   }
 
+  @Patch(":id/withdraw")
+  @RequirePermission("archiveSharingAudit", "approve")
+  withdraw(@Param("id", new UuidParamPipe()) id: string): Promise<ReportSharingRequest> {
+    return this.reportSharing.withdraw(id);
+  }
+
   @Get(":id/shared-report")
   @RequirePermission("archiveSharingAudit", "read")
   getSharedSnapshot(@Param("id", new UuidParamPipe()) id: string): Promise<SharedReportSnapshot> {

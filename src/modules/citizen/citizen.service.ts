@@ -1,4 +1,4 @@
-import { BadRequestException, GoneException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, GoneException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomInt } from 'node:crypto';
 import { Prisma } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
@@ -6,6 +6,7 @@ import { ConfigService } from '../../config/config.service';
 import { PasswordService } from '../../auth/password.service';
 import { SmsService } from '../../sms/sms.service';
 import { AuditService } from '../audit/audit.service';
+import { DataCleaningService } from '../data-cleaning/data-cleaning.service';
 import { SurveysService } from '../surveys/surveys.service';
 import { computeBlindIndex, encryptPii } from './citizen-pii.crypto';
 import { SurveySessionsService } from '../survey-sessions/survey-sessions.service';
@@ -23,6 +24,8 @@ const SECONDS_PER_QUESTION = 20;
 
 @Injectable()
 export class CitizenService {
+  private readonly logger = new Logger(CitizenService.name);
+
   constructor(
     private readonly tenant: TenantPrismaService,
     private readonly config: ConfigService,
@@ -36,6 +39,9 @@ export class CitizenService {
     // RIO-NFR-002 — resolves the live citizen-consent notice so a submission
     // can be pinned to the exact version its respondent read.
     private readonly consent: ConsentService,
+    // RIO-FR-002 — cleaning of the submitted response. Best-effort, like
+    // session tracking above.
+    private readonly dataCleaning: DataCleaningService,
   ) {}
 
   // The published Survey Builder survey is the only source of questions for
@@ -58,19 +64,40 @@ export class CitizenService {
       });
     }
 
-    const questions = survey.questions.map((q: { answerType: string; answerOptions: string[] | null; id: string; questionText: string; isRequired: boolean }) => {
-      const { type, options } = this.mapAnswerTypeForCitizen(q.answerType, q.answerOptions);
-      return {
-        // The SurveyQuestion row's own id — the one identity that exists
-        // for both a Question Bank question and an additional one, which
-        // has no Question row to key off.
-        code: q.id,
-        text: q.questionText,
-        type,
-        options,
-        required: q.isRequired,
-      };
-    });
+    const questions = survey.questions.map(
+      (q: {
+        answerType: string;
+        answerOptions: string[] | null;
+        // RIO Arabic Localization (Approach 3, Hybrid) — added 2026-09-08.
+        // These already existed on `toQuestionDto`'s output (Question Bank's
+        // client-supplied Arabic text/options), they just never reached the
+        // citizen — this resolver dropped them on the way through, which is
+        // why a citizen choosing Arabic still saw every question in English.
+        questionTextAr: string | null;
+        answerOptionsAr: string[] | null;
+        id: string;
+        questionText: string;
+        isRequired: boolean;
+      }) => {
+        const { type, options, optionsAr } = this.mapAnswerTypeForCitizen(
+          q.answerType,
+          q.answerOptions,
+          q.answerOptionsAr,
+        );
+        return {
+          // The SurveyQuestion row's own id — the one identity that exists
+          // for both a Question Bank question and an additional one, which
+          // has no Question row to key off.
+          code: q.id,
+          text: q.questionText,
+          textAr: q.questionTextAr,
+          type,
+          options,
+          optionsAr,
+          required: q.isRequired,
+        };
+      },
+    );
 
     return {
       studyId: link.studyId,
@@ -89,21 +116,31 @@ export class CitizenService {
   // short_text/multiple_choice/checkbox/yes_no/rating) onto the citizen
   // flow's rendering type — single_choice (pick one), multi_choice (pick
   // several), scale (1-5), or free text.
+  // `optionsAr` is positionally parallel to `options` (same order, same
+  // length) whenever it's present — the frontend indexes into it rather
+  // than matching by value, since the *submitted* answer must always stay
+  // the canonical English option (whatever downstream scoring/reporting
+  // already expects), only the *displayed* label follows the UI locale.
+  // Null wherever no Arabic option list was supplied (custom/additional
+  // questions, or the synthesized Yes/No and 1-5 fallbacks below, which
+  // have no Arabic equivalent to supply from the DB and are static UI
+  // strings the frontend should localize itself, not content to translate).
   private mapAnswerTypeForCitizen(
     answerType: string,
     answerOptions: string[] | null,
-  ): { type: string; options?: string[] } {
+    answerOptionsAr: string[] | null,
+  ): { type: string; options?: string[]; optionsAr?: string[] | null } {
     switch (answerType) {
       case 'select':
       case 'multiple_choice':
-        return { type: 'single_choice', options: answerOptions ?? [] };
+        return { type: 'single_choice', options: answerOptions ?? [], optionsAr: answerOptionsAr };
       case 'checkbox':
-        return { type: 'multi_choice', options: answerOptions ?? [] };
+        return { type: 'multi_choice', options: answerOptions ?? [], optionsAr: answerOptionsAr };
       case 'boolean':
       case 'yes_no':
-        return { type: 'single_choice', options: answerOptions ?? ['Yes', 'No'] };
+        return { type: 'single_choice', options: answerOptions ?? ['Yes', 'No'], optionsAr: answerOptions ? answerOptionsAr : null };
       case 'rating':
-        return { type: 'scale', options: answerOptions ?? ['1', '2', '3', '4', '5'] };
+        return { type: 'scale', options: answerOptions ?? ['1', '2', '3', '4', '5'], optionsAr: answerOptions ? answerOptionsAr : null };
       default:
         return { type: 'text' };
     }
@@ -497,6 +534,20 @@ export class CitizenService {
     // continuation — see ScoreResponseTask, which is exactly this logic
     // (scoringEngine.scoreResponse + rollupService.calculateRollups) made
     // retryable and crash-safe.
+
+    // RIO-FR-002 (Q14 — survey responses are one of the three cleaned
+    // sources). Fire-and-forget with an EXPLICIT orgId for the same reason
+    // GAP-04's job payload takes one: this continuation runs detached from
+    // an unauthenticated request, so there is no ambient org context to fall
+    // back on.
+    //
+    // The response's own flags carry a masked contact/mobile and no proposed
+    // value — see survey-response.rules.ts. A citizen's contact details are
+    // not copied into the reviewer's queue.
+    this.dataCleaning.cleanSurveyResponse(row.id, link.orgId).catch((err: Error) => {
+      this.logger.warn(`Data cleaning failed for survey response ${row.id}: ${err.message}`);
+    });
+
     return { id: row.id, submittedAt: row.submittedAt.toISOString() };
   }
 

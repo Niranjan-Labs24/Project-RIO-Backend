@@ -23,6 +23,6 @@ import { EvidenceFileCleanupService } from "./evidence-file-cleanup.service";
     // CitizenPiiRetentionService/SystemLogsRetentionService/BackupService.
     EvidenceFileCleanupService,
   ],
-  exports: [EvidenceDocumentsService, DocumentSummaryService],
+  exports: [EvidenceDocumentsService, DocumentSummaryService, EvidenceStorageService],
 })
 export class EvidenceModule {}

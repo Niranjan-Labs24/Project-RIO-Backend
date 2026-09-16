@@ -3,11 +3,26 @@
 The operational half of the pilot: what the platform promises to be up for, when
 it is deliberately taken down, and what happened when it went down by accident.
 
-> **Status: the availability target is not agreed yet.** The ticket says
-> "target to be confirmed during technical design" and that confirmation has not
-> come back. Everything below is in place and usable; the one number that turns
-> AC 1 from "we can measure this" into "we met this" is still open. See
-> [Open decisions](#open-decisions).
+---
+
+## The target
+
+*Satisfies AC 1.*
+
+**99.5%, measured monthly.** Confirmed by the client; this supersedes the
+ticket's "target to be confirmed during technical design".
+
+| | |
+|---|---|
+| Target | 99.5% |
+| Measured over | A calendar month |
+| Downtime budget | **3h 36m per 30-day month** (0.5% of 43,200 minutes) |
+| What counts | `full` and `partial` scope incidents — see the log below |
+| What does not | Announced maintenance inside the window, and `degraded` scope |
+
+The budget is what makes the number operational rather than decorative: one
+overrunning migration can spend most of a month's allowance, which is why the
+maintenance window below is a hard boundary rather than a guideline.
 
 ---
 
@@ -122,11 +137,11 @@ These block sign-off, not the work.
 
 | # | Question | Who | Why it blocks |
 |---|---|---|---|
-| 1 | **What availability level are we committing to?** 99%, 99.5%, or business-hours-only? | Client / technical design track | AC 1 is unverifiable without a number. 99% and 99.5% are ~7h and ~3.5h of monthly downtime — very different operational commitments. |
-| 2 | Measured over what period — monthly or the whole pilot? | Client | A single bad day can fail a monthly target and pass a pilot-long one. |
+| ~~1~~ | ~~What availability level are we committing to?~~ | — | **Answered: 99.5%, monthly.** See [The target](#the-target). |
+| ~~2~~ | ~~Measured over what period?~~ | — | **Answered: calendar month.** |
 | 3 | Is the Friday 02:00–04:00 window acceptable to the entities? | Client | Proposed here, not agreed. |
 | 4 | Who provisions and watches the uptime monitor? | Labs24 / client | Nothing is polling the probes today, so nothing would detect an outage out of hours. |
 
-Until question 1 is answered, the honest status of AC 1 is **"we can measure
-it, we have not been told what to measure against"** — not "met" and not
-"failed".
+With the target set, AC 1 is measurable and agreed. It is not yet *demonstrated*:
+question 4 is what turns it from a commitment into a reported number, because
+nothing polls the probes today and an out-of-hours outage would go unrecorded.

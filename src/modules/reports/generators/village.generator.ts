@@ -3,7 +3,7 @@ import type { VillageReportContent } from "../report-content.types";
 import type { GeneratedReport, GeneratorCtx } from "./index";
 
 // RPT14 Village Report. Thin by design: resolve the village, ask the provider
-// for the content (mock now, real analytics later), title it. All the data —
+// for the content, title it. All the data —
 // severity, priority, the critical-domain override, KPIs, AI summary — comes
 // from ctx.provider.getVillageReport(); the generator never computes a number.
 // That's what makes the report reconcile with the Village Priority dashboard:

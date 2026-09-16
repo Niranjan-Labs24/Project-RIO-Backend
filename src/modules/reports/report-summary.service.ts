@@ -340,7 +340,24 @@ export class ReportSummaryService {
   }> {
     const villageId = scopeFilters.villageId || '';
 
-    return this.tenant.runInOrgContext(async (tx) => {
+    // RIO-RBAC-002 — System Admin/Reviewer/Center Supervisor reach the AI
+    // Priority Summary and Combined Summary tabs from a cross-org Study
+    // (Studies list, Priority Dashboard, ...), same as StudiesService.list()
+    // already handles. A plain org-scoped read here 404'd every such view
+    // ("Study not found") even though the study genuinely exists — RLS was
+    // silently filtering it out under the viewer's own (unrelated) org. This
+    // whole function is read-only, so the SELECT-only supervisor client is
+    // safe to use for the entire transaction.
+    const store = getOrgStore();
+    const isCrossOrgReader =
+      store?.role === 'system_admin' ||
+      store?.role === 'system_reviewer' ||
+      store?.role === 'center_supervisor';
+    const runner = isCrossOrgReader
+      ? this.tenant.runAsSupervisor.bind(this.tenant)
+      : this.tenant.runInOrgContext.bind(this.tenant);
+
+    return runner(async (tx) => {
       const study = await tx.study.findUnique({
         where: { id: studyId },
         include: {
@@ -888,7 +905,9 @@ ${extra}`;
           scopeFilters: scopeFilters as Prisma.InputJsonValue,
           promptVersion,
           promptHash,
-          modelName: task.model,
+          // The provider's model, not the task literal's: `task.model` names
+          // Gemini, while the OCI path is served by Cohere Command A.
+          modelName: this.aiService.resolveModelName(task),
           modelVersion: task.modelVersion,
           inputReportDataHash: reportDataHash,
           inputEvidenceSnapshotHash: evidenceHash,

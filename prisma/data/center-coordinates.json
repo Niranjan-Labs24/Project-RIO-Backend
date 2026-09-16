@@ -1,0 +1,8328 @@
+{
+  "_comment": "Center coordinates for RIO-FR-008. Geocoded from the client ENRICHED workbook Arabic query column via Nominatim, validated against the parent governorate polygon; unfound centers fall back to their governorate centre with a 40km radius and a status saying so.",
+  "_generated": "2026-09-08",
+  "coordinates": {
+    "0101-001": {
+      "lat": 24.684146,
+      "lng": 46.582611,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0101-002": {
+      "lat": 24.402222,
+      "lng": 46.836667,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0101-003": {
+      "lat": 24.460556,
+      "lng": 47.0025,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0101-004": {
+      "lat": 25.001667,
+      "lng": 46.588056,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0101-005": {
+      "lat": 24.440166,
+      "lng": 46.978746,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0101-006": {
+      "lat": 24.601468,
+      "lng": 47.138515,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0102-001": {
+      "lat": 24.878069,
+      "lng": 46.373483,
+      "source": "governorate-fallback",
+      "radius": 33712
+    },
+    "0102-002": {
+      "lat": 24.794167,
+      "lng": 46.423333,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0102-003": {
+      "lat": 24.898654,
+      "lng": 46.299256,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0102-004": {
+      "lat": 24.878069,
+      "lng": 46.373483,
+      "source": "governorate-fallback",
+      "radius": 33712
+    },
+    "0102-005": {
+      "lat": 24.991605,
+      "lng": 46.232075,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0102-006": {
+      "lat": 24.991667,
+      "lng": 46.2075,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0103-001": {
+      "lat": 24.16555,
+      "lng": 47.237637,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0122-001": {
+      "lat": 24.077461,
+      "lng": 47.165904,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0103-002": {
+      "lat": 24.214926,
+      "lng": 47.294052,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0103-003": {
+      "lat": 24.182111,
+      "lng": 47.327748,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0103-004": {
+      "lat": 23.867866,
+      "lng": 47.651528,
+      "source": "governorate-fallback",
+      "radius": 104356
+    },
+    "0122-002": {
+      "lat": 24.098102,
+      "lng": 47.17225,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0122-003": {
+      "lat": 24.133357,
+      "lng": 47.152952,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0103-005": {
+      "lat": 24.192511,
+      "lng": 47.27009,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0103-006": {
+      "lat": 24.322137,
+      "lng": 47.165702,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0103-007": {
+      "lat": 23.867866,
+      "lng": 47.651528,
+      "source": "governorate-fallback",
+      "radius": 104356
+    },
+    "0103-008": {
+      "lat": 24.185697,
+      "lng": 47.297789,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0122-004": {
+      "lat": 24.080839,
+      "lng": 46.872227,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0122-005": {
+      "lat": 23.919511,
+      "lng": 46.838154,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0103-009": {
+      "lat": 23.867866,
+      "lng": 47.651528,
+      "source": "governorate-fallback",
+      "radius": 104356
+    },
+    "0103-010": {
+      "lat": 24.195833,
+      "lng": 47.380556,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0103-011": {
+      "lat": 23.867866,
+      "lng": 47.651528,
+      "source": "governorate-fallback",
+      "radius": 104356
+    },
+    "0103-012": {
+      "lat": 24.206646,
+      "lng": 47.256157,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0103-013": {
+      "lat": 23.867866,
+      "lng": 47.651528,
+      "source": "governorate-fallback",
+      "radius": 104356
+    },
+    "0103-014": {
+      "lat": 24.238428,
+      "lng": 47.243648,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0103-015": {
+      "lat": 23.867866,
+      "lng": 47.651528,
+      "source": "governorate-fallback",
+      "radius": 104356
+    },
+    "0122-006": {
+      "lat": 23.876188,
+      "lng": 47.068047,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0103-016": {
+      "lat": 23.867866,
+      "lng": 47.651528,
+      "source": "governorate-fallback",
+      "radius": 104356
+    },
+    "0103-017": {
+      "lat": 23.867866,
+      "lng": 47.651528,
+      "source": "governorate-fallback",
+      "radius": 104356
+    },
+    "0103-018": {
+      "lat": 23.867866,
+      "lng": 47.651528,
+      "source": "governorate-fallback",
+      "radius": 104356
+    },
+    "0103-019": {
+      "lat": 23.867866,
+      "lng": 47.651528,
+      "source": "governorate-fallback",
+      "radius": 104356
+    },
+    "0103-020": {
+      "lat": 24.176212,
+      "lng": 47.297201,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0122-007": {
+      "lat": 23.962511,
+      "lng": 47.116306,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0104-001": {
+      "lat": 25.180556,
+      "lng": 44.600278,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-002": {
+      "lat": 25.019795,
+      "lng": 43.819495,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-003": {
+      "lat": 23.908916,
+      "lng": 44.634665,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-004": {
+      "lat": 24.789276,
+      "lng": 43.771935,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-005": {
+      "lat": 24.304769,
+      "lng": 43.520613,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0104-006": {
+      "lat": 24.247209,
+      "lng": 44.67195,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-007": {
+      "lat": 24.67688,
+      "lng": 43.676379,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-008": {
+      "lat": 24.722573,
+      "lng": 44.290981,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-009": {
+      "lat": 24.447243,
+      "lng": 44.709207,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0104-010": {
+      "lat": 24.926339,
+      "lng": 44.707858,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-011": {
+      "lat": 24.535197,
+      "lng": 44.273637,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0104-012": {
+      "lat": 24.805451,
+      "lng": 43.528302,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-013": {
+      "lat": 24.886883,
+      "lng": 43.290529,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0104-014": {
+      "lat": 25.143952,
+      "lng": 43.482521,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-015": {
+      "lat": 24.530503,
+      "lng": 43.318225,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-016": {
+      "lat": 25.106143,
+      "lng": 44.681094,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0104-017": {
+      "lat": 24.662811,
+      "lng": 43.529201,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-018": {
+      "lat": 25.246111,
+      "lng": 43.92,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-019": {
+      "lat": 24.579167,
+      "lng": 43.551111,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0104-020": {
+      "lat": 24.646924,
+      "lng": 44.158096,
+      "source": "governorate-fallback",
+      "radius": 150956
+    },
+    "0104-021": {
+      "lat": 24.540884,
+      "lng": 43.585797,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-022": {
+      "lat": 24.646924,
+      "lng": 44.158096,
+      "source": "governorate-fallback",
+      "radius": 150956
+    },
+    "0104-023": {
+      "lat": 25.383027,
+      "lng": 44.461907,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-024": {
+      "lat": 24.29632,
+      "lng": 43.741367,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0104-025": {
+      "lat": 24.275342,
+      "lng": 44.186521,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-026": {
+      "lat": 25.024465,
+      "lng": 44.861607,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-027": {
+      "lat": 25.378218,
+      "lng": 44.495612,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-028": {
+      "lat": 24.646924,
+      "lng": 44.158096,
+      "source": "governorate-fallback",
+      "radius": 150956
+    },
+    "0104-029": {
+      "lat": 25.270546,
+      "lng": 44.577261,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-030": {
+      "lat": 24.735429,
+      "lng": 43.788075,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-031": {
+      "lat": 25.081293,
+      "lng": 44.614681,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-032": {
+      "lat": 25.295918,
+      "lng": 43.885346,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0104-033": {
+      "lat": 24.646924,
+      "lng": 44.158096,
+      "source": "governorate-fallback",
+      "radius": 150956
+    },
+    "0104-034": {
+      "lat": 24.6438,
+      "lng": 43.967501,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-035": {
+      "lat": 25.403603,
+      "lng": 44.495233,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-036": {
+      "lat": 24.369457,
+      "lng": 45.01337,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-037": {
+      "lat": 25.077274,
+      "lng": 44.112349,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-038": {
+      "lat": 24.835857,
+      "lng": 43.646925,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-039": {
+      "lat": 24.867216,
+      "lng": 43.716613,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-040": {
+      "lat": 25.173039,
+      "lng": 43.47684,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-041": {
+      "lat": 24.837538,
+      "lng": 43.518908,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-042": {
+      "lat": 24.898406,
+      "lng": 43.521931,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-043": {
+      "lat": 24.646924,
+      "lng": 44.158096,
+      "source": "governorate-fallback",
+      "radius": 150956
+    },
+    "0104-044": {
+      "lat": 24.078578,
+      "lng": 43.476648,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0104-045": {
+      "lat": 24.770013,
+      "lng": 43.688151,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0104-046": {
+      "lat": 25.489662,
+      "lng": 44.468032,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-047": {
+      "lat": 24.646924,
+      "lng": 44.158096,
+      "source": "governorate-fallback",
+      "radius": 150956
+    },
+    "0104-048": {
+      "lat": 24.992032,
+      "lng": 43.409438,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0104-049": {
+      "lat": 24.646924,
+      "lng": 44.158096,
+      "source": "governorate-fallback",
+      "radius": 150956
+    },
+    "0104-050": {
+      "lat": 25.389487,
+      "lng": 44.149552,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0104-051": {
+      "lat": 25.448889,
+      "lng": 44.155749,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-052": {
+      "lat": 25.51108,
+      "lng": 44.373674,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-053": {
+      "lat": 24.51105,
+      "lng": 43.789073,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0104-054": {
+      "lat": 25.362784,
+      "lng": 44.533988,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-055": {
+      "lat": 24.522122,
+      "lng": 43.951336,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-056": {
+      "lat": 24.343889,
+      "lng": 44.808056,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0104-057": {
+      "lat": 24.575368,
+      "lng": 43.933797,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-058": {
+      "lat": 24.356391,
+      "lng": 44.50184,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0104-059": {
+      "lat": 24.574561,
+      "lng": 43.623284,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0104-060": {
+      "lat": 24.723418,
+      "lng": 43.624922,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-061": {
+      "lat": 25.342552,
+      "lng": 44.22032,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-062": {
+      "lat": 24.646924,
+      "lng": 44.158096,
+      "source": "governorate-fallback",
+      "radius": 150956
+    },
+    "0104-063": {
+      "lat": 24.152457,
+      "lng": 43.425613,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-064": {
+      "lat": 24.812323,
+      "lng": 43.571522,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-065": {
+      "lat": 24.551182,
+      "lng": 43.621624,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0104-066": {
+      "lat": 24.637258,
+      "lng": 43.69369,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-067": {
+      "lat": 24.897898,
+      "lng": 44.548105,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-068": {
+      "lat": 25.451143,
+      "lng": 44.426227,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-069": {
+      "lat": 25.066389,
+      "lng": 44.702222,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-070": {
+      "lat": 24.773422,
+      "lng": 43.693487,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-071": {
+      "lat": 24.772407,
+      "lng": 43.768853,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-072": {
+      "lat": 25.285553,
+      "lng": 44.569915,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-073": {
+      "lat": 24.646924,
+      "lng": 44.158096,
+      "source": "governorate-fallback",
+      "radius": 150956
+    },
+    "0104-074": {
+      "lat": 24.646924,
+      "lng": 44.158096,
+      "source": "governorate-fallback",
+      "radius": 150956
+    },
+    "0104-075": {
+      "lat": 25.114382,
+      "lng": 43.5947,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0104-076": {
+      "lat": 24.646924,
+      "lng": 44.158096,
+      "source": "governorate-fallback",
+      "radius": 150956
+    },
+    "0104-077": {
+      "lat": 24.662132,
+      "lng": 43.562853,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-078": {
+      "lat": 25.10715,
+      "lng": 43.469123,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-079": {
+      "lat": 24.636427,
+      "lng": 43.703734,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0104-080": {
+      "lat": 24.646924,
+      "lng": 44.158096,
+      "source": "governorate-fallback",
+      "radius": 150956
+    },
+    "0104-081": {
+      "lat": 24.511573,
+      "lng": 43.586854,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0104-082": {
+      "lat": 24.678751,
+      "lng": 43.674901,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0104-083": {
+      "lat": 23.809095,
+      "lng": 44.646975,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-084": {
+      "lat": 25.410359,
+      "lng": 44.465091,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-085": {
+      "lat": 25.081658,
+      "lng": 44.284565,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-086": {
+      "lat": 24.257772,
+      "lng": 43.745019,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0104-087": {
+      "lat": 24.646924,
+      "lng": 44.158096,
+      "source": "governorate-fallback",
+      "radius": 150956
+    },
+    "0104-088": {
+      "lat": 25.211886,
+      "lng": 44.221279,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-089": {
+      "lat": 24.668189,
+      "lng": 43.66079,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-090": {
+      "lat": 24.946025,
+      "lng": 43.838873,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-091": {
+      "lat": 25.024512,
+      "lng": 44.397558,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0104-092": {
+      "lat": 24.646924,
+      "lng": 44.158096,
+      "source": "governorate-fallback",
+      "radius": 150956
+    },
+    "0104-093": {
+      "lat": 23.950539,
+      "lng": 43.720062,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-094": {
+      "lat": 24.792062,
+      "lng": 44.816936,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0104-095": {
+      "lat": 24.598149,
+      "lng": 44.366405,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-096": {
+      "lat": 24.49448,
+      "lng": 43.618862,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-097": {
+      "lat": 25.236975,
+      "lng": 44.471618,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-098": {
+      "lat": 24.646924,
+      "lng": 44.158096,
+      "source": "governorate-fallback",
+      "radius": 150956
+    },
+    "0104-099": {
+      "lat": 24.546118,
+      "lng": 43.877251,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-100": {
+      "lat": 24.646924,
+      "lng": 44.158096,
+      "source": "governorate-fallback",
+      "radius": 150956
+    },
+    "0104-101": {
+      "lat": 25.087345,
+      "lng": 43.775949,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-102": {
+      "lat": 25.090559,
+      "lng": 43.52957,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-103": {
+      "lat": 24.694419,
+      "lng": 43.201627,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0104-104": {
+      "lat": 24.646924,
+      "lng": 44.158096,
+      "source": "governorate-fallback",
+      "radius": 150956
+    },
+    "0105-001": {
+      "lat": 25.597684,
+      "lng": 45.617926,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0105-002": {
+      "lat": 25.679849,
+      "lng": 45.45154,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0105-003": {
+      "lat": 25.617451,
+      "lng": 45.565428,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0105-004": {
+      "lat": 26.506329,
+      "lng": 45.353878,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0105-005": {
+      "lat": 25.704435,
+      "lng": 45.867726,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0105-006": {
+      "lat": 25.924621,
+      "lng": 45.331817,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0105-007": {
+      "lat": 25.776046,
+      "lng": 45.16101,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0105-008": {
+      "lat": 26.766034,
+      "lng": 44.993146,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0105-009": {
+      "lat": 26.883856,
+      "lng": 45.318362,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0105-010": {
+      "lat": 26.408532,
+      "lng": 45.632931,
+      "source": "governorate-fallback",
+      "radius": 157073
+    },
+    "0105-011": {
+      "lat": 26.150266,
+      "lng": 46.160126,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0105-012": {
+      "lat": 25.554006,
+      "lng": 45.688149,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0105-013": {
+      "lat": 26.41854,
+      "lng": 45.168457,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0105-014": {
+      "lat": 25.567885,
+      "lng": 45.639061,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0105-015": {
+      "lat": 26.408532,
+      "lng": 45.632931,
+      "source": "governorate-fallback",
+      "radius": 157073
+    },
+    "0105-016": {
+      "lat": 26.408532,
+      "lng": 45.632931,
+      "source": "governorate-fallback",
+      "radius": 157073
+    },
+    "0105-017": {
+      "lat": 25.661565,
+      "lng": 45.539741,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0105-018": {
+      "lat": 25.873109,
+      "lng": 45.107546,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0105-019": {
+      "lat": 25.597142,
+      "lng": 45.606196,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0105-020": {
+      "lat": 26.408532,
+      "lng": 45.632931,
+      "source": "governorate-fallback",
+      "radius": 157073
+    },
+    "0105-021": {
+      "lat": 26.408532,
+      "lng": 45.632931,
+      "source": "governorate-fallback",
+      "radius": 157073
+    },
+    "0105-022": {
+      "lat": 25.624149,
+      "lng": 45.569606,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0105-023": {
+      "lat": 25.618229,
+      "lng": 45.692992,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0105-024": {
+      "lat": 25.826506,
+      "lng": 45.805381,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0105-025": {
+      "lat": 25.57537,
+      "lng": 45.641362,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0105-026": {
+      "lat": 25.559549,
+      "lng": 45.381907,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0105-027": {
+      "lat": 26.408532,
+      "lng": 45.632931,
+      "source": "governorate-fallback",
+      "radius": 157073
+    },
+    "0105-028": {
+      "lat": 25.801477,
+      "lng": 45.265163,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0105-029": {
+      "lat": 26.408532,
+      "lng": 45.632931,
+      "source": "governorate-fallback",
+      "radius": 157073
+    },
+    "0105-030": {
+      "lat": 25.913074,
+      "lng": 45.903774,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0105-031": {
+      "lat": 26.466325,
+      "lng": 45.164799,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0105-032": {
+      "lat": 26.678272,
+      "lng": 45.340607,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0105-033": {
+      "lat": 26.408532,
+      "lng": 45.632931,
+      "source": "governorate-fallback",
+      "radius": 157073
+    },
+    "0105-034": {
+      "lat": 26.112325,
+      "lng": 45.802903,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0105-035": {
+      "lat": 27.342808,
+      "lng": 45.022029,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0105-036": {
+      "lat": 26.862439,
+      "lng": 45.241804,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0106-001": {
+      "lat": 23.407129,
+      "lng": 43.92605,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0106-002": {
+      "lat": 23.301634,
+      "lng": 44.422712,
+      "source": "governorate-fallback",
+      "radius": 205252
+    },
+    "0106-003": {
+      "lat": 23.653074,
+      "lng": 44.747653,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0106-004": {
+      "lat": 24.270556,
+      "lng": 45.181389,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0106-005": {
+      "lat": 23.481275,
+      "lng": 44.368272,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0106-006": {
+      "lat": 24.390278,
+      "lng": 45.306667,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0106-007": {
+      "lat": 24.009322,
+      "lng": 45.196702,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0106-008": {
+      "lat": 23.845507,
+      "lng": 45.64606,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0106-009": {
+      "lat": 23.259195,
+      "lng": 44.646926,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0106-010": {
+      "lat": 23.711599,
+      "lng": 44.592442,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0106-011": {
+      "lat": 23.301634,
+      "lng": 44.422712,
+      "source": "governorate-fallback",
+      "radius": 205252
+    },
+    "0106-012": {
+      "lat": 23.737752,
+      "lng": 44.568981,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0106-013": {
+      "lat": 24.266138,
+      "lng": 45.085358,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0106-014": {
+      "lat": 23.719366,
+      "lng": 44.668782,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0106-015": {
+      "lat": 23.301634,
+      "lng": 44.422712,
+      "source": "governorate-fallback",
+      "radius": 205252
+    },
+    "0106-016": {
+      "lat": 23.301634,
+      "lng": 44.422712,
+      "source": "governorate-fallback",
+      "radius": 205252
+    },
+    "0106-017": {
+      "lat": 23.680197,
+      "lng": 44.887982,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0106-018": {
+      "lat": 23.301634,
+      "lng": 44.422712,
+      "source": "governorate-fallback",
+      "radius": 205252
+    },
+    "0106-019": {
+      "lat": 23.480738,
+      "lng": 44.36553,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0106-020": {
+      "lat": 23.463475,
+      "lng": 44.341733,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0106-021": {
+      "lat": 23.994844,
+      "lng": 44.947666,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0106-022": {
+      "lat": 23.986234,
+      "lng": 45.184781,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0106-023": {
+      "lat": 23.301634,
+      "lng": 44.422712,
+      "source": "governorate-fallback",
+      "radius": 205252
+    },
+    "0106-024": {
+      "lat": 23.301634,
+      "lng": 44.422712,
+      "source": "governorate-fallback",
+      "radius": 205252
+    },
+    "0106-025": {
+      "lat": 23.855198,
+      "lng": 44.728206,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0106-026": {
+      "lat": 24.15043,
+      "lng": 45.247273,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0106-027": {
+      "lat": 24.222847,
+      "lng": 44.900681,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0106-028": {
+      "lat": 23.979679,
+      "lng": 45.068857,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0106-029": {
+      "lat": 23.763927,
+      "lng": 45.081282,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0106-030": {
+      "lat": 23.849087,
+      "lng": 45.38731,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0106-031": {
+      "lat": 23.301634,
+      "lng": 44.422712,
+      "source": "governorate-fallback",
+      "radius": 205252
+    },
+    "0106-032": {
+      "lat": 24.381389,
+      "lng": 45.9,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0106-033": {
+      "lat": 24.550518,
+      "lng": 45.705776,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0106-034": {
+      "lat": 23.510345,
+      "lng": 44.391447,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0106-035": {
+      "lat": 23.301634,
+      "lng": 44.422712,
+      "source": "governorate-fallback",
+      "radius": 205252
+    },
+    "0106-036": {
+      "lat": 23.301634,
+      "lng": 44.422712,
+      "source": "governorate-fallback",
+      "radius": 205252
+    },
+    "0106-037": {
+      "lat": 23.840686,
+      "lng": 44.79142,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0106-038": {
+      "lat": 23.989271,
+      "lng": 45.164298,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0106-039": {
+      "lat": 23.301634,
+      "lng": 44.422712,
+      "source": "governorate-fallback",
+      "radius": 205252
+    },
+    "0106-040": {
+      "lat": 23.301634,
+      "lng": 44.422712,
+      "source": "governorate-fallback",
+      "radius": 205252
+    },
+    "0106-041": {
+      "lat": 23.25186,
+      "lng": 44.949896,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0106-042": {
+      "lat": 23.301634,
+      "lng": 44.422712,
+      "source": "governorate-fallback",
+      "radius": 205252
+    },
+    "0106-043": {
+      "lat": 23.301634,
+      "lng": 44.422712,
+      "source": "governorate-fallback",
+      "radius": 205252
+    },
+    "0106-044": {
+      "lat": 23.301634,
+      "lng": 44.422712,
+      "source": "governorate-fallback",
+      "radius": 205252
+    },
+    "0106-045": {
+      "lat": 23.301634,
+      "lng": 44.422712,
+      "source": "governorate-fallback",
+      "radius": 205252
+    },
+    "0106-046": {
+      "lat": 23.580056,
+      "lng": 43.783793,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0106-047": {
+      "lat": 23.301634,
+      "lng": 44.422712,
+      "source": "governorate-fallback",
+      "radius": 205252
+    },
+    "0106-048": {
+      "lat": 23.301634,
+      "lng": 44.422712,
+      "source": "governorate-fallback",
+      "radius": 205252
+    },
+    "0107-001": {
+      "lat": 20.389237,
+      "lng": 45.07618,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0107-002": {
+      "lat": 19.783164,
+      "lng": 45.140355,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0107-003": {
+      "lat": 21.584795,
+      "lng": 44.090825,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0107-004": {
+      "lat": 21.056692,
+      "lng": 44.607418,
+      "source": "governorate-fallback",
+      "radius": 221455
+    },
+    "0107-005": {
+      "lat": 21.056692,
+      "lng": 44.607418,
+      "source": "governorate-fallback",
+      "radius": 221455
+    },
+    "0107-006": {
+      "lat": 21.056692,
+      "lng": 44.607418,
+      "source": "governorate-fallback",
+      "radius": 221455
+    },
+    "0107-007": {
+      "lat": 21.657357,
+      "lng": 43.979539,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0107-008": {
+      "lat": 21.056692,
+      "lng": 44.607418,
+      "source": "governorate-fallback",
+      "radius": 221455
+    },
+    "0107-009": {
+      "lat": 21.774938,
+      "lng": 43.85206,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0108-001": {
+      "lat": 21.982778,
+      "lng": 45.961389,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0108-002": {
+      "lat": 22.435812,
+      "lng": 46.192125,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0108-003": {
+      "lat": 22.023293,
+      "lng": 46.562091,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0108-004": {
+      "lat": 22.003988,
+      "lng": 46.565927,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0108-005": {
+      "lat": 22.085136,
+      "lng": 46.851078,
+      "source": "governorate-fallback",
+      "radius": 196561
+    },
+    "0108-006": {
+      "lat": 22.753393,
+      "lng": 46.266689,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0108-007": {
+      "lat": 22.382234,
+      "lng": 46.272487,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0108-008": {
+      "lat": 22.085136,
+      "lng": 46.851078,
+      "source": "governorate-fallback",
+      "radius": 196561
+    },
+    "0108-009": {
+      "lat": 22.085136,
+      "lng": 46.851078,
+      "source": "governorate-fallback",
+      "radius": 196561
+    },
+    "0108-010": {
+      "lat": 22.605314,
+      "lng": 46.376209,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0108-011": {
+      "lat": 22.569404,
+      "lng": 46.528733,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0108-012": {
+      "lat": 22.209419,
+      "lng": 46.693783,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0108-013": {
+      "lat": 22.085136,
+      "lng": 46.851078,
+      "source": "governorate-fallback",
+      "radius": 196561
+    },
+    "0108-014": {
+      "lat": 22.24661,
+      "lng": 46.72653,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0108-015": {
+      "lat": 22.221683,
+      "lng": 46.773179,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0108-016": {
+      "lat": 22.057168,
+      "lng": 46.67072,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0108-017": {
+      "lat": 22.089939,
+      "lng": 46.703268,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0108-018": {
+      "lat": 22.085136,
+      "lng": 46.851078,
+      "source": "governorate-fallback",
+      "radius": 196561
+    },
+    "0108-019": {
+      "lat": 22.085136,
+      "lng": 46.851078,
+      "source": "governorate-fallback",
+      "radius": 196561
+    },
+    "0108-020": {
+      "lat": 22.085136,
+      "lng": 46.851078,
+      "source": "governorate-fallback",
+      "radius": 196561
+    },
+    "0108-021": {
+      "lat": 22.085136,
+      "lng": 46.851078,
+      "source": "governorate-fallback",
+      "radius": 196561
+    },
+    "0108-022": {
+      "lat": 22.22884,
+      "lng": 46.692623,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0108-023": {
+      "lat": 22.085136,
+      "lng": 46.851078,
+      "source": "governorate-fallback",
+      "radius": 196561
+    },
+    "0108-024": {
+      "lat": 22.085136,
+      "lng": 46.851078,
+      "source": "governorate-fallback",
+      "radius": 196561
+    },
+    "0108-025": {
+      "lat": 22.413548,
+      "lng": 46.609621,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0108-026": {
+      "lat": 22.085136,
+      "lng": 46.851078,
+      "source": "governorate-fallback",
+      "radius": 196561
+    },
+    "0108-027": {
+      "lat": 22.085136,
+      "lng": 46.851078,
+      "source": "governorate-fallback",
+      "radius": 196561
+    },
+    "0108-028": {
+      "lat": 22.085136,
+      "lng": 46.851078,
+      "source": "governorate-fallback",
+      "radius": 196561
+    },
+    "0109-001": {
+      "lat": 26.339807,
+      "lng": 44.784887,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0109-002": {
+      "lat": 26.299517,
+      "lng": 44.834961,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0109-003": {
+      "lat": 26.944848,
+      "lng": 44.56847,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0109-004": {
+      "lat": 26.211046,
+      "lng": 44.580051,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0109-005": {
+      "lat": 26.846439,
+      "lng": 44.64235,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0110-001": {
+      "lat": 25.295689,
+      "lng": 45.523388,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0110-002": {
+      "lat": 25.220535,
+      "lng": 45.276373,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0110-003": {
+      "lat": 25.499553,
+      "lng": 45.338831,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0110-004": {
+      "lat": 25.375318,
+      "lng": 45.136996,
+      "source": "governorate-fallback",
+      "radius": 75427
+    },
+    "0110-005": {
+      "lat": 25.375318,
+      "lng": 45.136996,
+      "source": "governorate-fallback",
+      "radius": 75427
+    },
+    "0110-006": {
+      "lat": 25.375318,
+      "lng": 45.136996,
+      "source": "governorate-fallback",
+      "radius": 75427
+    },
+    "0110-007": {
+      "lat": 25.375318,
+      "lng": 45.136996,
+      "source": "governorate-fallback",
+      "radius": 75427
+    },
+    "0110-008": {
+      "lat": 25.271845,
+      "lng": 45.440871,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0110-009": {
+      "lat": 25.331161,
+      "lng": 45.196584,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0110-010": {
+      "lat": 25.529318,
+      "lng": 45.256441,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0110-011": {
+      "lat": 25.339137,
+      "lng": 45.178553,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0111-001": {
+      "lat": 23.22384,
+      "lng": 46.694779,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0111-002": {
+      "lat": 23.470552,
+      "lng": 46.830747,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0111-003": {
+      "lat": 23.22384,
+      "lng": 46.694779,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0111-004": {
+      "lat": 22.986099,
+      "lng": 46.095198,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0111-005": {
+      "lat": 23.461229,
+      "lng": 46.816552,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0111-006": {
+      "lat": 23.227366,
+      "lng": 46.389624,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0111-007": {
+      "lat": 23.22384,
+      "lng": 46.694779,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0111-008": {
+      "lat": 23.265694,
+      "lng": 46.662354,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0112-001": {
+      "lat": 23.067148,
+      "lng": 42.872966,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0112-002": {
+      "lat": 24.118252,
+      "lng": 43.260662,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0112-003": {
+      "lat": 24.159857,
+      "lng": 42.890823,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0112-004": {
+      "lat": 23.744307,
+      "lng": 42.895223,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0112-005": {
+      "lat": 24.651659,
+      "lng": 42.272593,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0112-006": {
+      "lat": 24.348365,
+      "lng": 43.276132,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0112-007": {
+      "lat": 23.599637,
+      "lng": 42.403956,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0112-008": {
+      "lat": 24.356152,
+      "lng": 43.002329,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0112-009": {
+      "lat": 23.971245,
+      "lng": 43.331944,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0112-010": {
+      "lat": 23.657367,
+      "lng": 42.581023,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0112-011": {
+      "lat": 23.700366,
+      "lng": 42.831437,
+      "source": "governorate-fallback",
+      "radius": 163946
+    },
+    "0112-012": {
+      "lat": 24.632697,
+      "lng": 42.20476,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0112-013": {
+      "lat": 24.098123,
+      "lng": 42.949914,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0112-014": {
+      "lat": 23.700366,
+      "lng": 42.831437,
+      "source": "governorate-fallback",
+      "radius": 163946
+    },
+    "0112-015": {
+      "lat": 24.527357,
+      "lng": 42.494729,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0112-016": {
+      "lat": 24.362353,
+      "lng": 42.425303,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0112-017": {
+      "lat": 24.394908,
+      "lng": 42.148024,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0112-018": {
+      "lat": 23.70266,
+      "lng": 43.134384,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0112-019": {
+      "lat": 23.700366,
+      "lng": 42.831437,
+      "source": "governorate-fallback",
+      "radius": 163946
+    },
+    "0112-020": {
+      "lat": 24.124088,
+      "lng": 43.290768,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0112-021": {
+      "lat": 24.186401,
+      "lng": 43.174038,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0112-022": {
+      "lat": 24.115813,
+      "lng": 43.270104,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0112-023": {
+      "lat": 24.455619,
+      "lng": 42.933008,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0112-024": {
+      "lat": 24.529577,
+      "lng": 42.865529,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0112-025": {
+      "lat": 24.550124,
+      "lng": 42.956821,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0112-026": {
+      "lat": 23.986331,
+      "lng": 42.470627,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0112-027": {
+      "lat": 23.683251,
+      "lng": 43.118263,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0112-028": {
+      "lat": 24.422035,
+      "lng": 42.692957,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0112-029": {
+      "lat": 23.700366,
+      "lng": 42.831437,
+      "source": "governorate-fallback",
+      "radius": 163946
+    },
+    "0112-030": {
+      "lat": 23.866923,
+      "lng": 42.699823,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0112-031": {
+      "lat": 24.284202,
+      "lng": 42.876672,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0113-001": {
+      "lat": 20.398609,
+      "lng": 45.414973,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0113-002": {
+      "lat": 20.5328,
+      "lng": 47.601,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0113-003": {
+      "lat": 20.409138,
+      "lng": 45.431358,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0113-004": {
+      "lat": 20.589081,
+      "lng": 45.738972,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0114-001": {
+      "lat": 24.470651,
+      "lng": 46.429177,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0114-002": {
+      "lat": 24.493111,
+      "lng": 46.161625,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0114-003": {
+      "lat": 24.670138,
+      "lng": 45.84034,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0114-004": {
+      "lat": 24.520519,
+      "lng": 46.132687,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0114-005": {
+      "lat": 24.507601,
+      "lng": 45.886265,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0114-006": {
+      "lat": 24.531031,
+      "lng": 46.223249,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0114-007": {
+      "lat": 24.712178,
+      "lng": 45.938071,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0115-001": {
+      "lat": 24.168611,
+      "lng": 46.186944,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0115-002": {
+      "lat": 24.027222,
+      "lng": 46.298889,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0115-003": {
+      "lat": 24.128041,
+      "lng": 46.249408,
+      "source": "governorate-fallback",
+      "radius": 67805
+    },
+    "0115-004": {
+      "lat": 24.180278,
+      "lng": 46.358333,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0115-005": {
+      "lat": 24.480493,
+      "lng": 46.056688,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0115-006": {
+      "lat": 24.431688,
+      "lng": 46.197001,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0115-007": {
+      "lat": 24.470851,
+      "lng": 45.849544,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0115-008": {
+      "lat": 24.128041,
+      "lng": 46.249408,
+      "source": "governorate-fallback",
+      "radius": 67805
+    },
+    "0116-001": {
+      "lat": 26.367623,
+      "lng": 47.244227,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0116-002": {
+      "lat": 25.572384,
+      "lng": 46.975608,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0116-003": {
+      "lat": 26.565771,
+      "lng": 47.071177,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0116-004": {
+      "lat": 25.955349,
+      "lng": 46.497746,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0116-005": {
+      "lat": 26.379167,
+      "lng": 47.323056,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0116-006": {
+      "lat": 25.554462,
+      "lng": 47.234791,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0116-007": {
+      "lat": 25.410256,
+      "lng": 47.212155,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0116-008": {
+      "lat": 25.100627,
+      "lng": 47.569413,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0116-009": {
+      "lat": 25.573272,
+      "lng": 47.125214,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0116-010": {
+      "lat": 25.843182,
+      "lng": 46.585758,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0117-001": {
+      "lat": 25.160833,
+      "lng": 45.796944,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0117-002": {
+      "lat": 25.286111,
+      "lng": 45.954167,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0117-003": {
+      "lat": 25.416104,
+      "lng": 46.100456,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0117-004": {
+      "lat": 25.417792,
+      "lng": 46.051567,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0117-005": {
+      "lat": 25.199919,
+      "lng": 45.857203,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0117-006": {
+      "lat": 25.291308,
+      "lng": 45.785568,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0117-007": {
+      "lat": 25.509143,
+      "lng": 46.040059,
+      "source": "governorate-fallback",
+      "radius": 76280
+    },
+    "0117-008": {
+      "lat": 25.491467,
+      "lng": 46.1887,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0117-009": {
+      "lat": 24.969467,
+      "lng": 45.756235,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0118-001": {
+      "lat": 25.142222,
+      "lng": 46.264167,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0118-002": {
+      "lat": 25.078834,
+      "lng": 46.345318,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0118-003": {
+      "lat": 25.101862,
+      "lng": 46.19303,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0118-004": {
+      "lat": 24.883871,
+      "lng": 45.890163,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0118-005": {
+      "lat": 25.081918,
+      "lng": 46.282049,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0118-006": {
+      "lat": 25.324432,
+      "lng": 46.168624,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0118-007": {
+      "lat": 25.270058,
+      "lng": 46.10743,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0119-001": {
+      "lat": 23.614804,
+      "lng": 46.638912,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0119-002": {
+      "lat": 23.457866,
+      "lng": 46.182035,
+      "source": "governorate-fallback",
+      "radius": 80680
+    },
+    "0119-003": {
+      "lat": 23.232666,
+      "lng": 45.822077,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0119-004": {
+      "lat": 23.339359,
+      "lng": 45.953365,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0120-001": {
+      "lat": 26.143333,
+      "lng": 44.914444,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0120-002": {
+      "lat": 25.937431,
+      "lng": 44.884176,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0120-003": {
+      "lat": 25.857728,
+      "lng": 44.726409,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0121-001": {
+      "lat": 25.167246,
+      "lng": 45.395853,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0121-002": {
+      "lat": 25.118353,
+      "lng": 45.490897,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0121-003": {
+      "lat": 24.512123,
+      "lng": 45.383907,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0121-004": {
+      "lat": 24.615735,
+      "lng": 45.257311,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0123-001": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0123-002": {
+      "lat": 23.55326,
+      "lng": 45.54791,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0123-003": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0123-004": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0123-005": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0123-006": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0123-007": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0123-008": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0123-009": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0123-010": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0123-011": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0123-012": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0123-013": {
+      "lat": 23.672125,
+      "lng": 45.256721,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0123-014": {
+      "lat": 23.683626,
+      "lng": 45.233288,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0123-015": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0123-016": {
+      "lat": 23.797518,
+      "lng": 45.285008,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0123-017": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0123-018": {
+      "lat": 23.61475,
+      "lng": 45.093807,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0123-019": {
+      "lat": 23.266603,
+      "lng": 45.218551,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0123-020": {
+      "lat": 23.368768,
+      "lng": 45.392854,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0123-021": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0123-022": {
+      "lat": 22.862562,
+      "lng": 44.978485,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0123-023": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0123-024": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0123-025": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0123-026": {
+      "lat": 22.552721,
+      "lng": 44.343798,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0123-027": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0123-028": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0123-029": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0123-030": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0123-031": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0123-032": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0123-033": {
+      "lat": 23.247915,
+      "lng": 45.562109,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0123-034": {
+      "lat": 23.229864,
+      "lng": 45.543368,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0123-035": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0123-036": {
+      "lat": 22.982441,
+      "lng": 45.444764,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0123-037": {
+      "lat": 22.830876,
+      "lng": 45.538418,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0123-038": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0123-039": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0123-040": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0123-041": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0123-042": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "governorate-fallback",
+      "radius": 131485
+    },
+    "0201-001": {
+      "lat": 21.678581,
+      "lng": 40.133401,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0201-002": {
+      "lat": 21.617429,
+      "lng": 40.111482,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0201-003": {
+      "lat": 21.44719,
+      "lng": 39.988812,
+      "source": "governorate-fallback",
+      "radius": 64350
+    },
+    "0201-004": {
+      "lat": 21.560399,
+      "lng": 39.956588,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0201-005": {
+      "lat": 21.480044,
+      "lng": 40.109491,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0201-006": {
+      "lat": 21.666056,
+      "lng": 40.016308,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0202-001": {
+      "lat": 22.283345,
+      "lng": 39.112814,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0203-001": {
+      "lat": 21.352895,
+      "lng": 40.277324,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0203-002": {
+      "lat": 22.496037,
+      "lng": 40.43733,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0203-003": {
+      "lat": 21.626389,
+      "lng": 40.415278,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0203-004": {
+      "lat": 21.069444,
+      "lng": 40.311944,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0203-005": {
+      "lat": 21.758084,
+      "lng": 40.650979,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0203-006": {
+      "lat": 21.361924,
+      "lng": 40.849325,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0203-007": {
+      "lat": 21.812748,
+      "lng": 40.681314,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0203-008": {
+      "lat": 21.071111,
+      "lng": 41.006944,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0203-009": {
+      "lat": 22.621002,
+      "lng": 40.561633,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0203-010": {
+      "lat": 21.799275,
+      "lng": 40.669726,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0203-011": {
+      "lat": 22.5025,
+      "lng": 40.766944,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0203-012": {
+      "lat": 21.126111,
+      "lng": 40.840833,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0203-013": {
+      "lat": 22.31,
+      "lng": 40.601944,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0203-014": {
+      "lat": 21.87548,
+      "lng": 41.013634,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0203-015": {
+      "lat": 21.682865,
+      "lng": 40.673102,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0203-016": {
+      "lat": 21.282888,
+      "lng": 40.411516,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0203-017": {
+      "lat": 21.271242,
+      "lng": 40.789575,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0203-018": {
+      "lat": 22.379308,
+      "lng": 40.714947,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0204-001": {
+      "lat": 18.9725,
+      "lng": 41.311667,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0204-002": {
+      "lat": 18.7,
+      "lng": 41.333333,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0204-003": {
+      "lat": 19.537426,
+      "lng": 41.050501,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0204-004": {
+      "lat": 19.191467,
+      "lng": 41.266323,
+      "source": "governorate-fallback",
+      "radius": 111432
+    },
+    "0204-005": {
+      "lat": 19.191467,
+      "lng": 41.266323,
+      "source": "governorate-fallback",
+      "radius": 111432
+    },
+    "0204-006": {
+      "lat": 19.606155,
+      "lng": 40.921385,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0204-007": {
+      "lat": 19.191467,
+      "lng": 41.266323,
+      "source": "governorate-fallback",
+      "radius": 111432
+    },
+    "0204-008": {
+      "lat": 19.192345,
+      "lng": 41.204585,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0204-009": {
+      "lat": 19.191467,
+      "lng": 41.266323,
+      "source": "governorate-fallback",
+      "radius": 111432
+    },
+    "0216-001": {
+      "lat": 19.653218,
+      "lng": 41.808531,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0205-001": {
+      "lat": 20.303024,
+      "lng": 40.458939,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0205-002": {
+      "lat": 19.920683,
+      "lng": 40.740174,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0205-003": {
+      "lat": 20.517148,
+      "lng": 39.871099,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0205-004": {
+      "lat": 20.424206,
+      "lng": 40.330362,
+      "source": "governorate-fallback",
+      "radius": 104975
+    },
+    "0205-005": {
+      "lat": 20.706229,
+      "lng": 39.908668,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0205-006": {
+      "lat": 20.721734,
+      "lng": 40.563799,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0205-007": {
+      "lat": 20.424206,
+      "lng": 40.330362,
+      "source": "governorate-fallback",
+      "radius": 104975
+    },
+    "0205-008": {
+      "lat": 20.424206,
+      "lng": 40.330362,
+      "source": "governorate-fallback",
+      "radius": 104975
+    },
+    "0205-009": {
+      "lat": 20.424206,
+      "lng": 40.330362,
+      "source": "governorate-fallback",
+      "radius": 104975
+    },
+    "0205-010": {
+      "lat": 20.424206,
+      "lng": 40.330362,
+      "source": "governorate-fallback",
+      "radius": 104975
+    },
+    "0205-011": {
+      "lat": 20.424206,
+      "lng": 40.330362,
+      "source": "governorate-fallback",
+      "radius": 104975
+    },
+    "0206-001": {
+      "lat": 23.013704,
+      "lng": 39.731476,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0206-002": {
+      "lat": 23.115132,
+      "lng": 38.841644,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0206-003": {
+      "lat": 22.913432,
+      "lng": 39.23489,
+      "source": "governorate-fallback",
+      "radius": 91198
+    },
+    "0206-004": {
+      "lat": 22.35074,
+      "lng": 39.15478,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0206-005": {
+      "lat": 23.108569,
+      "lng": 39.071245,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0206-006": {
+      "lat": 22.913432,
+      "lng": 39.23489,
+      "source": "governorate-fallback",
+      "radius": 91198
+    },
+    "0207-001": {
+      "lat": 21.922449,
+      "lng": 39.353566,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0207-002": {
+      "lat": 21.98702,
+      "lng": 39.99442,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0207-003": {
+      "lat": 21.796667,
+      "lng": 39.683333,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0207-004": {
+      "lat": 22.086838,
+      "lng": 40.018689,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0207-005": {
+      "lat": 21.847827,
+      "lng": 40.145893,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0207-006": {
+      "lat": 21.645472,
+      "lng": 39.761862,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0207-007": {
+      "lat": 21.67869,
+      "lng": 39.8978,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0207-008": {
+      "lat": 21.825562,
+      "lng": 40.446455,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0208-001": {
+      "lat": 22.286792,
+      "lng": 39.578381,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0208-002": {
+      "lat": 22.310843,
+      "lng": 39.309564,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0208-003": {
+      "lat": 21.957882,
+      "lng": 39.460445,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0208-004": {
+      "lat": 22.170556,
+      "lng": 39.550556,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0208-005": {
+      "lat": 22.286792,
+      "lng": 39.578381,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0208-006": {
+      "lat": 22.286792,
+      "lng": 39.578381,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0208-007": {
+      "lat": 21.93659,
+      "lng": 39.89968,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0208-008": {
+      "lat": 21.989137,
+      "lng": 39.539243,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0208-009": {
+      "lat": 22.084462,
+      "lng": 39.801862,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0209-001": {
+      "lat": 22.437591,
+      "lng": 39.866159,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0209-002": {
+      "lat": 22.418863,
+      "lng": 39.917888,
+      "source": "governorate-fallback",
+      "radius": 53299
+    },
+    "0209-003": {
+      "lat": 22.418863,
+      "lng": 39.917888,
+      "source": "governorate-fallback",
+      "radius": 53299
+    },
+    "0209-004": {
+      "lat": 22.3503,
+      "lng": 39.688474,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0210-001": {
+      "lat": 22.197662,
+      "lng": 42.284355,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0210-002": {
+      "lat": 22.082294,
+      "lng": 42.162759,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0210-003": {
+      "lat": 21.816969,
+      "lng": 42.355714,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0211-001": {
+      "lat": 21.092105,
+      "lng": 42.803314,
+      "source": "governorate-fallback",
+      "radius": 144268
+    },
+    "0211-002": {
+      "lat": 21.092105,
+      "lng": 42.803314,
+      "source": "governorate-fallback",
+      "radius": 144268
+    },
+    "0211-003": {
+      "lat": 21.197831,
+      "lng": 42.736652,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0211-004": {
+      "lat": 21.092105,
+      "lng": 42.803314,
+      "source": "governorate-fallback",
+      "radius": 144268
+    },
+    "0211-005": {
+      "lat": 20.77936,
+      "lng": 42.343538,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0211-006": {
+      "lat": 20.77936,
+      "lng": 42.343538,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0211-007": {
+      "lat": 20.771673,
+      "lng": 42.664159,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0212-001": {
+      "lat": 20.758227,
+      "lng": 41.696379,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0212-002": {
+      "lat": 21.089284,
+      "lng": 41.560668,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0212-003": {
+      "lat": 21.445766,
+      "lng": 41.787726,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0212-004": {
+      "lat": 21.37307,
+      "lng": 41.759313,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0212-005": {
+      "lat": 21.227241,
+      "lng": 41.600203,
+      "source": "governorate-fallback",
+      "radius": 85169
+    },
+    "0212-006": {
+      "lat": 21.334836,
+      "lng": 41.764912,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0212-007": {
+      "lat": 20.892936,
+      "lng": 41.43501,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0212-008": {
+      "lat": 21.199282,
+      "lng": 41.618981,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0212-009": {
+      "lat": 21.179484,
+      "lng": 41.651196,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0213-001": {
+      "lat": 20.68892,
+      "lng": 39.536888,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0213-002": {
+      "lat": 21.053212,
+      "lng": 39.990303,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0213-003": {
+      "lat": 20.983694,
+      "lng": 39.827969,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0213-004": {
+      "lat": 21.162331,
+      "lng": 40.029463,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0214-001": {
+      "lat": 22.723371,
+      "lng": 42.168706,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0214-002": {
+      "lat": 22.089167,
+      "lng": 41.272222,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0214-003": {
+      "lat": 22.831667,
+      "lng": 41.118889,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0214-006": {
+      "lat": 22.63781,
+      "lng": 41.381944,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0214-008": {
+      "lat": 22.819444,
+      "lng": 41.145324,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0214-009": {
+      "lat": 21.833217,
+      "lng": 41.214867,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0214-010": {
+      "lat": 23.384598,
+      "lng": 41.404798,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0214-012": {
+      "lat": 22.62771,
+      "lng": 41.353786,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0214-014": {
+      "lat": 22.81513,
+      "lng": 41.131901,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0214-016": {
+      "lat": 23.093472,
+      "lng": 41.808566,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0215-001": {
+      "lat": 20.946618,
+      "lng": 40.809354,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0215-002": {
+      "lat": 20.466674,
+      "lng": 41.068731,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0215-003": {
+      "lat": 20.831617,
+      "lng": 41.025571,
+      "source": "governorate-fallback",
+      "radius": 76011
+    },
+    "0215-004": {
+      "lat": 20.59739,
+      "lng": 41.050059,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0215-005": {
+      "lat": 20.933994,
+      "lng": 41.201434,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0215-006": {
+      "lat": 20.881227,
+      "lng": 40.981237,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0216-002": {
+      "lat": 19.424201,
+      "lng": 41.716046,
+      "source": "governorate-fallback",
+      "radius": 43627
+    },
+    "0216-003": {
+      "lat": 19.424201,
+      "lng": 41.716046,
+      "source": "governorate-fallback",
+      "radius": 43627
+    },
+    "0216-004": {
+      "lat": 19.424201,
+      "lng": 41.716046,
+      "source": "governorate-fallback",
+      "radius": 43627
+    },
+    "0217-001": {
+      "lat": 20.436175,
+      "lng": 40.830231,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0217-002": {
+      "lat": 20.436175,
+      "lng": 40.830231,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0217-003": {
+      "lat": 20.436175,
+      "lng": 40.830231,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0217-004": {
+      "lat": 20.436175,
+      "lng": 40.830231,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0301-001": {
+      "lat": 24.829722,
+      "lng": 39.159722,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0301-002": {
+      "lat": 24.637415,
+      "lng": 39.30785,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0301-003": {
+      "lat": 25.056863,
+      "lng": 38.977544,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0301-004": {
+      "lat": 24.22,
+      "lng": 39.281389,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0301-005": {
+      "lat": 24.504779,
+      "lng": 39.695744,
+      "source": "governorate-fallback",
+      "radius": 150519
+    },
+    "0301-006": {
+      "lat": 24.350476,
+      "lng": 38.9444,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0301-007": {
+      "lat": 24.726944,
+      "lng": 40.151389,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0301-008": {
+      "lat": 23.980277,
+      "lng": 39.420125,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0301-009": {
+      "lat": 24.624285,
+      "lng": 39.827023,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0301-010": {
+      "lat": 24.504779,
+      "lng": 39.695744,
+      "source": "governorate-fallback",
+      "radius": 150519
+    },
+    "0301-011": {
+      "lat": 23.981667,
+      "lng": 40.368056,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0301-012": {
+      "lat": 24.196871,
+      "lng": 40.001218,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0301-013": {
+      "lat": 24.376312,
+      "lng": 39.071243,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0301-014": {
+      "lat": 24.084599,
+      "lng": 40.478966,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0301-015": {
+      "lat": 23.966656,
+      "lng": 40.101497,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0301-016": {
+      "lat": 24.899722,
+      "lng": 40.104167,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0302-001": {
+      "lat": 24.328026,
+      "lng": 38.428553,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0302-002": {
+      "lat": 24.32391,
+      "lng": 38.423582,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0302-003": {
+      "lat": 24.400254,
+      "lng": 38.202344,
+      "source": "governorate-fallback",
+      "radius": 102894
+    },
+    "0302-004": {
+      "lat": 24.735824,
+      "lng": 38.01459,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0302-005": {
+      "lat": 24.644759,
+      "lng": 37.530923,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0302-006": {
+      "lat": 24.359542,
+      "lng": 37.901948,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0302-007": {
+      "lat": 23.736164,
+      "lng": 38.546887,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0302-008": {
+      "lat": 24.660054,
+      "lng": 38.411529,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0302-009": {
+      "lat": 24.400254,
+      "lng": 38.202344,
+      "source": "governorate-fallback",
+      "radius": 102894
+    },
+    "0302-010": {
+      "lat": 24.400254,
+      "lng": 38.202344,
+      "source": "governorate-fallback",
+      "radius": 102894
+    },
+    "0302-011": {
+      "lat": 24.430569,
+      "lng": 38.792832,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0303-001": {
+      "lat": 26.467332,
+      "lng": 38.075384,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0303-002": {
+      "lat": 26.841302,
+      "lng": 37.951125,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0303-003": {
+      "lat": 26.706517,
+      "lng": 37.91315,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0303-004": {
+      "lat": 26.816274,
+      "lng": 37.876887,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0303-005": {
+      "lat": 26.509634,
+      "lng": 37.9961,
+      "source": "governorate-fallback",
+      "radius": 134052
+    },
+    "0303-006": {
+      "lat": 26.509634,
+      "lng": 37.9961,
+      "source": "governorate-fallback",
+      "radius": 134052
+    },
+    "0303-007": {
+      "lat": 26.434034,
+      "lng": 37.223354,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0303-008": {
+      "lat": 26.377564,
+      "lng": 37.827887,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0303-009": {
+      "lat": 25.886065,
+      "lng": 38.217242,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0303-010": {
+      "lat": 26.509634,
+      "lng": 37.9961,
+      "source": "governorate-fallback",
+      "radius": 134052
+    },
+    "0303-011": {
+      "lat": 26.029565,
+      "lng": 37.688097,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0303-012": {
+      "lat": 26.201083,
+      "lng": 37.972105,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0304-001": {
+      "lat": 23.548569,
+      "lng": 40.97818,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0304-002": {
+      "lat": 22.842694,
+      "lng": 40.444694,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0304-003": {
+      "lat": 23.548569,
+      "lng": 40.97818,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0304-004": {
+      "lat": 24.229586,
+      "lng": 41.737265,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0304-005": {
+      "lat": 23.548569,
+      "lng": 40.97818,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0304-006": {
+      "lat": 23.548569,
+      "lng": 40.97818,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0304-007": {
+      "lat": 23.953401,
+      "lng": 40.982882,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0304-008": {
+      "lat": 22.602352,
+      "lng": 40.413151,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0304-009": {
+      "lat": 23.548569,
+      "lng": 40.97818,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0304-010": {
+      "lat": 23.548569,
+      "lng": 40.97818,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0304-011": {
+      "lat": 23.548569,
+      "lng": 40.97818,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0304-012": {
+      "lat": 23.548569,
+      "lng": 40.97818,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0304-013": {
+      "lat": 23.548569,
+      "lng": 40.97818,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0304-014": {
+      "lat": 23.548569,
+      "lng": 40.97818,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0304-015": {
+      "lat": 23.548569,
+      "lng": 40.97818,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0304-016": {
+      "lat": 23.934559,
+      "lng": 40.626733,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0304-017": {
+      "lat": 23.99245,
+      "lng": 41.82191,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0304-018": {
+      "lat": 23.711488,
+      "lng": 41.623485,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0305-001": {
+      "lat": 24.085541,
+      "lng": 39.095239,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0305-002": {
+      "lat": 23.885,
+      "lng": 38.9025,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0305-003": {
+      "lat": 23.850284,
+      "lng": 38.928149,
+      "source": "governorate-fallback",
+      "radius": 91007
+    },
+    "0305-004": {
+      "lat": 23.575057,
+      "lng": 38.603364,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0305-005": {
+      "lat": 24.072963,
+      "lng": 39.162626,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0305-006": {
+      "lat": 23.824722,
+      "lng": 39.1425,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0305-007": {
+      "lat": 24.365017,
+      "lng": 38.866583,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0305-008": {
+      "lat": 24.210507,
+      "lng": 38.867949,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0306-001": {
+      "lat": 26.067789,
+      "lng": 39.364004,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0306-002": {
+      "lat": 25.264462,
+      "lng": 39.32856,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0306-003": {
+      "lat": 25.919999,
+      "lng": 39.361753,
+      "source": "governorate-fallback",
+      "radius": 130548
+    },
+    "0306-004": {
+      "lat": 26.076651,
+      "lng": 38.886098,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0306-005": {
+      "lat": 26.436046,
+      "lng": 39.245751,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0306-006": {
+      "lat": 25.527959,
+      "lng": 39.339466,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0306-007": {
+      "lat": 26.194694,
+      "lng": 39.654443,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0306-008": {
+      "lat": 25.147405,
+      "lng": 39.308656,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0306-009": {
+      "lat": 25.919999,
+      "lng": 39.361753,
+      "source": "governorate-fallback",
+      "radius": 130548
+    },
+    "0307-001": {
+      "lat": 24.609802,
+      "lng": 41.614358,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0307-002": {
+      "lat": 25.065774,
+      "lng": 40.441717,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0307-003": {
+      "lat": 25.305528,
+      "lng": 40.984345,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0307-004": {
+      "lat": 24.665083,
+      "lng": 41.96914,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0307-005": {
+      "lat": 25.034133,
+      "lng": 41.228001,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0307-006": {
+      "lat": 24.799444,
+      "lng": 41.699113,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0307-007": {
+      "lat": 24.945028,
+      "lng": 41.6028,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0307-008": {
+      "lat": 24.330176,
+      "lng": 41.268862,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0307-009": {
+      "lat": 25.018463,
+      "lng": 40.695663,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0307-010": {
+      "lat": 25.027126,
+      "lng": 41.913369,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0308-001": {
+      "lat": 23.830035,
+      "lng": 39.636863,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0308-002": {
+      "lat": 23.298501,
+      "lng": 39.852564,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0308-003": {
+      "lat": 23.198611,
+      "lng": 39.558056,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0308-004": {
+      "lat": 23.639267,
+      "lng": 39.743923,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0308-005": {
+      "lat": 23.007799,
+      "lng": 39.891015,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0308-006": {
+      "lat": 23.431086,
+      "lng": 39.228412,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0308-007": {
+      "lat": 23.655228,
+      "lng": 39.446361,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0308-008": {
+      "lat": 23.09905,
+      "lng": 39.773717,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0309-001": {
+      "lat": 25.534658,
+      "lng": 38.405542,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0309-002": {
+      "lat": 25.388155,
+      "lng": 38.352048,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0309-003": {
+      "lat": 25.103703,
+      "lng": 38.5,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0309-004": {
+      "lat": 25.633296,
+      "lng": 37.871933,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0309-005": {
+      "lat": 25.35098,
+      "lng": 38.346284,
+      "source": "governorate-fallback",
+      "radius": 95875
+    },
+    "0309-006": {
+      "lat": 25.35098,
+      "lng": 38.346284,
+      "source": "governorate-fallback",
+      "radius": 95875
+    },
+    "0309-007": {
+      "lat": 25.35098,
+      "lng": 38.346284,
+      "source": "governorate-fallback",
+      "radius": 95875
+    },
+    "0309-008": {
+      "lat": 25.35098,
+      "lng": 38.346284,
+      "source": "governorate-fallback",
+      "radius": 95875
+    },
+    "0309-009": {
+      "lat": 25.307039,
+      "lng": 38.283927,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0309-010": {
+      "lat": 24.792985,
+      "lng": 38.34368,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0401-001": {
+      "lat": 26.378766,
+      "lng": 43.836294,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0401-002": {
+      "lat": 26.283322,
+      "lng": 43.867879,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0401-003": {
+      "lat": 26.459739,
+      "lng": 43.963721,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0401-004": {
+      "lat": 26.059822,
+      "lng": 42.660148,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0401-005": {
+      "lat": 26.40663,
+      "lng": 43.758185,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0401-006": {
+      "lat": 26.867788,
+      "lng": 43.703422,
+      "source": "governorate-fallback",
+      "radius": 179573
+    },
+    "0401-007": {
+      "lat": 26.887446,
+      "lng": 43.636258,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0401-008": {
+      "lat": 27.217334,
+      "lng": 43.718333,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0401-009": {
+      "lat": 27.363851,
+      "lng": 43.60571,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0401-010": {
+      "lat": 27.256485,
+      "lng": 43.400979,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0401-011": {
+      "lat": 25.254557,
+      "lng": 43.285466,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0401-012": {
+      "lat": 25.563611,
+      "lng": 43.352778,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0401-013": {
+      "lat": 26.375547,
+      "lng": 44.236104,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0401-014": {
+      "lat": 26.867788,
+      "lng": 43.703422,
+      "source": "governorate-fallback",
+      "radius": 179573
+    },
+    "0401-015": {
+      "lat": 26.318283,
+      "lng": 43.78076,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0401-016": {
+      "lat": 26.232551,
+      "lng": 43.889494,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0401-017": {
+      "lat": 26.29261,
+      "lng": 43.896567,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0401-018": {
+      "lat": 26.318855,
+      "lng": 43.883783,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0401-019": {
+      "lat": 27.208448,
+      "lng": 43.833752,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0401-020": {
+      "lat": 25.840148,
+      "lng": 43.369126,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0401-021": {
+      "lat": 25.954567,
+      "lng": 44.265244,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0401-022": {
+      "lat": 25.569851,
+      "lng": 44.313927,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0401-023": {
+      "lat": 26.781858,
+      "lng": 43.46685,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0401-024": {
+      "lat": 26.070048,
+      "lng": 43.62446,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0401-025": {
+      "lat": 26.010305,
+      "lng": 43.368567,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0401-026": {
+      "lat": 26.028611,
+      "lng": 43.274167,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0401-027": {
+      "lat": 26.03018,
+      "lng": 43.157581,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0402-001": {
+      "lat": 26.134907,
+      "lng": 43.979054,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0402-002": {
+      "lat": 25.946627,
+      "lng": 44.013263,
+      "source": "governorate-fallback",
+      "radius": 41779
+    },
+    "0402-003": {
+      "lat": 26.182727,
+      "lng": 43.981754,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0402-004": {
+      "lat": 26.063206,
+      "lng": 44.132204,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0403-001": {
+      "lat": 25.859497,
+      "lng": 43.507798,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0403-002": {
+      "lat": 25.421668,
+      "lng": 43.379774,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0403-003": {
+      "lat": 25.412062,
+      "lng": 43.382228,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0403-004": {
+      "lat": 25.86353,
+      "lng": 43.475332,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0403-005": {
+      "lat": 25.841362,
+      "lng": 43.483379,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0403-006": {
+      "lat": 25.568752,
+      "lng": 43.565211,
+      "source": "governorate-fallback",
+      "radius": 51598
+    },
+    "0404-001": {
+      "lat": 25.809383,
+      "lng": 44.316677,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0404-002": {
+      "lat": 25.729116,
+      "lng": 44.302134,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0404-003": {
+      "lat": 25.57962,
+      "lng": 44.024265,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0404-004": {
+      "lat": 25.604888,
+      "lng": 44.061017,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0404-005": {
+      "lat": 25.426191,
+      "lng": 43.892549,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0404-006": {
+      "lat": 25.451429,
+      "lng": 43.874486,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0404-007": {
+      "lat": 25.457397,
+      "lng": 44.014838,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0405-001": {
+      "lat": 26.127763,
+      "lng": 43.669378,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0405-002": {
+      "lat": 26.251482,
+      "lng": 43.609719,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0405-003": {
+      "lat": 26.443709,
+      "lng": 43.253492,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0405-004": {
+      "lat": 26.609811,
+      "lng": 42.644122,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0405-005": {
+      "lat": 26.317722,
+      "lng": 43.673741,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0405-006": {
+      "lat": 26.56083,
+      "lng": 42.654302,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0405-007": {
+      "lat": 26.55859,
+      "lng": 42.78188,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0405-008": {
+      "lat": 26.636993,
+      "lng": 42.67878,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0405-009": {
+      "lat": 26.595833,
+      "lng": 42.735833,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0405-010": {
+      "lat": 26.321182,
+      "lng": 43.276348,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0406-001": {
+      "lat": 25.866678,
+      "lng": 43.814088,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0406-002": {
+      "lat": 25.52837,
+      "lng": 43.836981,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0406-003": {
+      "lat": 25.49477,
+      "lng": 43.849026,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0406-004": {
+      "lat": 25.762617,
+      "lng": 43.787922,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0407-001": {
+      "lat": 26.880391,
+      "lng": 44.154436,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0407-002": {
+      "lat": 27.023029,
+      "lng": 44.075798,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0407-003": {
+      "lat": 27.139823,
+      "lng": 43.976677,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0407-004": {
+      "lat": 26.975919,
+      "lng": 44.09865,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0407-005": {
+      "lat": 26.825347,
+      "lng": 44.179868,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0407-006": {
+      "lat": 26.830782,
+      "lng": 44.188,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0407-007": {
+      "lat": 26.864394,
+      "lng": 44.167962,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0407-008": {
+      "lat": 26.690729,
+      "lng": 44.32801,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0407-009": {
+      "lat": 26.597578,
+      "lng": 44.274364,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0407-010": {
+      "lat": 27.414339,
+      "lng": 44.29332,
+      "source": "governorate-fallback",
+      "radius": 117941
+    },
+    "0407-011": {
+      "lat": 27.346136,
+      "lng": 44.329826,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0408-001": {
+      "lat": 25.858416,
+      "lng": 42.801661,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0408-002": {
+      "lat": 25.444503,
+      "lng": 42.703693,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0408-003": {
+      "lat": 25.653252,
+      "lng": 42.652112,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0408-004": {
+      "lat": 25.741571,
+      "lng": 43.177538,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0408-005": {
+      "lat": 25.940481,
+      "lng": 42.949821,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0408-006": {
+      "lat": 25.550541,
+      "lng": 42.701552,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0408-007": {
+      "lat": 25.709344,
+      "lng": 42.72595,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0408-008": {
+      "lat": 25.755125,
+      "lng": 42.769582,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0408-009": {
+      "lat": 25.495894,
+      "lng": 43.068831,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0408-010": {
+      "lat": 25.493199,
+      "lng": 42.996753,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0408-011": {
+      "lat": 25.514368,
+      "lng": 42.963426,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0408-012": {
+      "lat": 25.550293,
+      "lng": 42.832433,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0408-013": {
+      "lat": 25.632104,
+      "lng": 43.016701,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0408-014": {
+      "lat": 25.62603,
+      "lng": 43.043726,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0408-015": {
+      "lat": 25.382501,
+      "lng": 42.723668,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0408-016": {
+      "lat": 25.295149,
+      "lng": 42.575032,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0408-017": {
+      "lat": 25.20715,
+      "lng": 42.820202,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0408-018": {
+      "lat": 25.617067,
+      "lng": 42.542727,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0408-019": {
+      "lat": 25.487603,
+      "lng": 42.308501,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0408-020": {
+      "lat": 25.196132,
+      "lng": 42.304047,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0408-021": {
+      "lat": 25.198298,
+      "lng": 42.224169,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0408-022": {
+      "lat": 25.409211,
+      "lng": 42.088244,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0408-023": {
+      "lat": 25.359461,
+      "lng": 42.029155,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0408-024": {
+      "lat": 25.41973,
+      "lng": 42.30814,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0408-025": {
+      "lat": 25.573025,
+      "lng": 42.716968,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0408-026": {
+      "lat": 25.523315,
+      "lng": 42.716077,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0408-027": {
+      "lat": 25.380619,
+      "lng": 43.002583,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0408-028": {
+      "lat": 25.425463,
+      "lng": 42.828617,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0408-029": {
+      "lat": 25.507718,
+      "lng": 42.693129,
+      "source": "governorate-fallback",
+      "radius": 87937
+    },
+    "0408-030": {
+      "lat": 25.507718,
+      "lng": 42.693129,
+      "source": "governorate-fallback",
+      "radius": 87937
+    },
+    "0408-031": {
+      "lat": 25.688976,
+      "lng": 42.348442,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0408-032": {
+      "lat": 25.632674,
+      "lng": 42.275978,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0409-001": {
+      "lat": 26.664271,
+      "lng": 43.284491,
+      "source": "governorate-fallback",
+      "radius": 61075
+    },
+    "0409-002": {
+      "lat": 26.533056,
+      "lng": 43.602222,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0409-003": {
+      "lat": 26.525556,
+      "lng": 43.691111,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0409-004": {
+      "lat": 26.677707,
+      "lng": 43.307631,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0409-005": {
+      "lat": 26.905848,
+      "lng": 43.359909,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0409-006": {
+      "lat": 26.531236,
+      "lng": 43.571944,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0409-007": {
+      "lat": 26.791339,
+      "lng": 43.229342,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0409-008": {
+      "lat": 26.664271,
+      "lng": 43.284491,
+      "source": "governorate-fallback",
+      "radius": 61075
+    },
+    "0410-001": {
+      "lat": 26.515556,
+      "lng": 42.589722,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0410-002": {
+      "lat": 26.393889,
+      "lng": 42.338611,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0410-003": {
+      "lat": 26.358802,
+      "lng": 42.374783,
+      "source": "governorate-fallback",
+      "radius": 82444
+    },
+    "0410-004": {
+      "lat": 26.015167,
+      "lng": 43.027551,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0411-001": {
+      "lat": 25.833675,
+      "lng": 44.590739,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0411-002": {
+      "lat": 26.499102,
+      "lng": 44.309458,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0412-001": {
+      "lat": 25.640165,
+      "lng": 41.618002,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0412-002": {
+      "lat": 25.95413,
+      "lng": 42.128038,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0412-003": {
+      "lat": 26.006498,
+      "lng": 42.344007,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0412-004": {
+      "lat": 26.055708,
+      "lng": 42.241845,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0412-005": {
+      "lat": 25.844512,
+      "lng": 42.201273,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0412-006": {
+      "lat": 25.784017,
+      "lng": 42.036969,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0412-007": {
+      "lat": 25.878415,
+      "lng": 41.918469,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0412-008": {
+      "lat": 25.668001,
+      "lng": 41.723833,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0412-009": {
+      "lat": 25.594196,
+      "lng": 41.41777,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0412-010": {
+      "lat": 25.606964,
+      "lng": 41.905782,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0412-011": {
+      "lat": 25.655548,
+      "lng": 42.013013,
+      "source": "governorate-fallback",
+      "radius": 100391
+    },
+    "0412-012": {
+      "lat": 25.950921,
+      "lng": 41.953429,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0412-013": {
+      "lat": 25.655548,
+      "lng": 42.013013,
+      "source": "governorate-fallback",
+      "radius": 100391
+    },
+    "0413-001": {
+      "lat": 24.816842,
+      "lng": 42.92181,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0413-002": {
+      "lat": 24.837792,
+      "lng": 42.861238,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0413-003": {
+      "lat": 24.750716,
+      "lng": 46.571517,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0413-004": {
+      "lat": 24.714539,
+      "lng": 42.892144,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0413-005": {
+      "lat": 25.047501,
+      "lng": 43.000147,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0413-006": {
+      "lat": 24.969617,
+      "lng": 42.943265,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0413-007": {
+      "lat": 25.105543,
+      "lng": 42.645219,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0413-008": {
+      "lat": 24.92789,
+      "lng": 42.415101,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0413-009": {
+      "lat": 24.875467,
+      "lng": 43.094065,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0413-010": {
+      "lat": 25.052334,
+      "lng": 42.387,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0413-011": {
+      "lat": 24.89648,
+      "lng": 43.021746,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0413-012": {
+      "lat": 24.903194,
+      "lng": 42.16804,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0413-013": {
+      "lat": 25.158764,
+      "lng": 42.556222,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0501-003": {
+      "lat": 26.296653,
+      "lng": 50.120215,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0502-001": {
+      "lat": 25.355072,
+      "lng": 49.610104,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0502-002": {
+      "lat": 25.977396,
+      "lng": 48.86878,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0502-003": {
+      "lat": 23.301459,
+      "lng": 48.971733,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0502-004": {
+      "lat": 23.303587,
+      "lng": 49.252553,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0502-005": {
+      "lat": 23.124997,
+      "lng": 48.968405,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0502-006": {
+      "lat": 25.257345,
+      "lng": 49.689215,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0502-007": {
+      "lat": 26.027834,
+      "lng": 48.852408,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0502-008": {
+      "lat": 23.156911,
+      "lng": 49.326841,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0502-009": {
+      "lat": 25.607645,
+      "lng": 49.564949,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0502-010": {
+      "lat": 25.140477,
+      "lng": 49.299903,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0502-011": {
+      "lat": 24.141899,
+      "lng": 49.052984,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0502-012": {
+      "lat": 25.086794,
+      "lng": 48.041582,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0502-013": {
+      "lat": 24.537237,
+      "lng": 49.327501,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0502-014": {
+      "lat": 22.321984,
+      "lng": 49.520832,
+      "source": "governorate-fallback",
+      "radius": 463610
+    },
+    "0502-015": {
+      "lat": 25.929613,
+      "lng": 48.966015,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0502-016": {
+      "lat": 22.321984,
+      "lng": 49.520832,
+      "source": "governorate-fallback",
+      "radius": 463610
+    },
+    "0502-017": {
+      "lat": 24.267778,
+      "lng": 49.648056,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0502-018": {
+      "lat": 24.969533,
+      "lng": 49.518393,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0502-019": {
+      "lat": 25.279376,
+      "lng": 49.773775,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0502-020": {
+      "lat": 25.6438,
+      "lng": 50.2149,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0502-021": {
+      "lat": 25.554124,
+      "lng": 47.984703,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0502-022": {
+      "lat": 22.321984,
+      "lng": 49.520832,
+      "source": "governorate-fallback",
+      "radius": 463610
+    },
+    "0503-001": {
+      "lat": 28.309716,
+      "lng": 46.127502,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0503-002": {
+      "lat": 28.613723,
+      "lng": 45.361153,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0503-003": {
+      "lat": 28.255509,
+      "lng": 46.163827,
+      "source": "governorate-fallback",
+      "radius": 192385
+    },
+    "0503-004": {
+      "lat": 29.078333,
+      "lng": 46.6375,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0503-005": {
+      "lat": 28.110439,
+      "lng": 46.716127,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0503-006": {
+      "lat": 28.655963,
+      "lng": 45.222348,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0503-007": {
+      "lat": 27.838897,
+      "lng": 45.980618,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0503-008": {
+      "lat": 28.122048,
+      "lng": 45.667071,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0503-009": {
+      "lat": 27.8225,
+      "lng": 47.5125,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0503-010": {
+      "lat": 28.78472,
+      "lng": 47.484636,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0503-011": {
+      "lat": 27.860987,
+      "lng": 44.898723,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0503-012": {
+      "lat": 28.532749,
+      "lng": 45.802065,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0503-013": {
+      "lat": 27.929346,
+      "lng": 45.377623,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0503-014": {
+      "lat": 28.255509,
+      "lng": 46.163827,
+      "source": "governorate-fallback",
+      "radius": 192385
+    },
+    "0503-015": {
+      "lat": 28.560312,
+      "lng": 45.550825,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0503-016": {
+      "lat": 28.255509,
+      "lng": 46.163827,
+      "source": "governorate-fallback",
+      "radius": 192385
+    },
+    "0511-001": {
+      "lat": 27.142339,
+      "lng": 47.094691,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0511-002": {
+      "lat": 27.142339,
+      "lng": 47.094691,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0511-003": {
+      "lat": 27.142339,
+      "lng": 47.094691,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0511-004": {
+      "lat": 27.142339,
+      "lng": 47.094691,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0511-005": {
+      "lat": 27.142339,
+      "lng": 47.094691,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0504-001": {
+      "lat": 26.870885,
+      "lng": 49.312208,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0504-002": {
+      "lat": 26.940268,
+      "lng": 49.330003,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0504-003": {
+      "lat": 27.31185,
+      "lng": 48.988088,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0505-001": {
+      "lat": 26.475,
+      "lng": 50.041633,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0505-002": {
+      "lat": 26.648464,
+      "lng": 49.946659,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0505-003": {
+      "lat": 26.475951,
+      "lng": 50.006676,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0505-004": {
+      "lat": 26.629122,
+      "lng": 49.918998,
+      "source": "governorate-fallback",
+      "radius": 24649
+    },
+    "0506-001": {
+      "lat": 26.220396,
+      "lng": 50.234988,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0507-001": {
+      "lat": 27.938744,
+      "lng": 48.663031,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0507-002": {
+      "lat": 28.117501,
+      "lng": 47.926911,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0509-001": {
+      "lat": 25.975349,
+      "lng": 49.485869,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0509-002": {
+      "lat": 26.066829,
+      "lng": 49.545822,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0509-003": {
+      "lat": 26.066829,
+      "lng": 49.545822,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0509-004": {
+      "lat": 26.066829,
+      "lng": 49.545822,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0509-005": {
+      "lat": 26.066829,
+      "lng": 49.545822,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0509-006": {
+      "lat": 26.066829,
+      "lng": 49.545822,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0509-007": {
+      "lat": 26.074167,
+      "lng": 49.448889,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0509-008": {
+      "lat": 26.066829,
+      "lng": 49.545822,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0509-009": {
+      "lat": 26.03071,
+      "lng": 49.458021,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0509-010": {
+      "lat": 26.015792,
+      "lng": 49.143316,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0510-001": {
+      "lat": 26.983611,
+      "lng": 48.387222,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0510-002": {
+      "lat": 27.272778,
+      "lng": 48.425,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0510-003": {
+      "lat": 26.61116,
+      "lng": 48.626645,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0510-004": {
+      "lat": 26.763441,
+      "lng": 48.280886,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0510-005": {
+      "lat": 27.159808,
+      "lng": 48.60827,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0510-006": {
+      "lat": 27.378561,
+      "lng": 48.335227,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0510-007": {
+      "lat": 27.105092,
+      "lng": 48.529325,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0510-008": {
+      "lat": 26.939518,
+      "lng": 48.582377,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0510-009": {
+      "lat": 26.877458,
+      "lng": 48.723369,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0510-010": {
+      "lat": 26.907621,
+      "lng": 48.420819,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0510-011": {
+      "lat": 26.808179,
+      "lng": 48.336391,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0510-012": {
+      "lat": 26.982981,
+      "lng": 48.424312,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0510-013": {
+      "lat": 27.216298,
+      "lng": 48.424953,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0510-014": {
+      "lat": 26.950003,
+      "lng": 48.50753,
+      "source": "governorate-fallback",
+      "radius": 128583
+    },
+    "0510-015": {
+      "lat": 27.871388,
+      "lng": 48.259609,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0510-016": {
+      "lat": 26.950003,
+      "lng": 48.50753,
+      "source": "governorate-fallback",
+      "radius": 128583
+    },
+    "0510-017": {
+      "lat": 26.401944,
+      "lng": 48.751667,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0510-018": {
+      "lat": 26.675492,
+      "lng": 48.630581,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0510-019": {
+      "lat": 26.950003,
+      "lng": 48.50753,
+      "source": "governorate-fallback",
+      "radius": 128583
+    },
+    "0510-020": {
+      "lat": 26.946051,
+      "lng": 48.77313,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0510-021": {
+      "lat": 26.950003,
+      "lng": 48.50753,
+      "source": "governorate-fallback",
+      "radius": 128583
+    },
+    "0510-022": {
+      "lat": 27.011766,
+      "lng": 48.458112,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0510-023": {
+      "lat": 26.950003,
+      "lng": 48.50753,
+      "source": "governorate-fallback",
+      "radius": 128583
+    },
+    "0510-024": {
+      "lat": 26.950003,
+      "lng": 48.50753,
+      "source": "governorate-fallback",
+      "radius": 128583
+    },
+    "0511-006": {
+      "lat": 27.142339,
+      "lng": 47.094691,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0511-007": {
+      "lat": 27.142339,
+      "lng": 47.094691,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0511-008": {
+      "lat": 27.142339,
+      "lng": 47.094691,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0511-009": {
+      "lat": 27.142339,
+      "lng": 47.094691,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0511-010": {
+      "lat": 27.142339,
+      "lng": 47.094691,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0511-011": {
+      "lat": 27.142339,
+      "lng": 47.094691,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0511-012": {
+      "lat": 27.142339,
+      "lng": 47.094691,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0511-013": {
+      "lat": 27.142339,
+      "lng": 47.094691,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0511-014": {
+      "lat": 27.142339,
+      "lng": 47.094691,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0511-015": {
+      "lat": 27.142339,
+      "lng": 47.094691,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0511-016": {
+      "lat": 27.142339,
+      "lng": 47.094691,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0511-017": {
+      "lat": 27.142339,
+      "lng": 47.094691,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0511-018": {
+      "lat": 27.142339,
+      "lng": 47.094691,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0511-019": {
+      "lat": 27.142339,
+      "lng": 47.094691,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0511-020": {
+      "lat": 27.142339,
+      "lng": 47.094691,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0511-021": {
+      "lat": 27.142339,
+      "lng": 47.094691,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0512-001": {
+      "lat": 24.406359,
+      "lng": 50.838994,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0512-002": {
+      "lat": 24.740833,
+      "lng": 50.758333,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0512-003": {
+      "lat": 24.133029,
+      "lng": 51.567585,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0512-004": {
+      "lat": 23.870487,
+      "lng": 50.745905,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0512-005": {
+      "lat": 21.2355,
+      "lng": 55.2648,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0601-001": {
+      "lat": 18.265593,
+      "lng": 42.367559,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0601-002": {
+      "lat": 18.633756,
+      "lng": 42.324066,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0601-003": {
+      "lat": 18.344493,
+      "lng": 42.494776,
+      "source": "governorate-fallback",
+      "radius": 159305
+    },
+    "0601-004": {
+      "lat": 17.896821,
+      "lng": 42.387282,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0601-005": {
+      "lat": 18.367534,
+      "lng": 42.361893,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0601-006": {
+      "lat": 18.778487,
+      "lng": 42.249429,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0601-007": {
+      "lat": 17.57966,
+      "lng": 43.325618,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0601-008": {
+      "lat": 17.998515,
+      "lng": 42.770443,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0601-009": {
+      "lat": 18.344493,
+      "lng": 42.494776,
+      "source": "governorate-fallback",
+      "radius": 159305
+    },
+    "0601-010": {
+      "lat": 18.001658,
+      "lng": 41.679927,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0601-011": {
+      "lat": 17.875028,
+      "lng": 42.573156,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0601-012": {
+      "lat": 18.344493,
+      "lng": 42.494776,
+      "source": "governorate-fallback",
+      "radius": 159305
+    },
+    "0601-013": {
+      "lat": 18.711337,
+      "lng": 42.49049,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0601-014": {
+      "lat": 18.894392,
+      "lng": 42.304963,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0601-015": {
+      "lat": 17.926326,
+      "lng": 42.709533,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0601-016": {
+      "lat": 17.910298,
+      "lng": 42.643219,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0601-017": {
+      "lat": 17.786807,
+      "lng": 42.829601,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0601-018": {
+      "lat": 18.237566,
+      "lng": 42.533055,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0602-001": {
+      "lat": 18.658064,
+      "lng": 42.851253,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0602-002": {
+      "lat": 18.561616,
+      "lng": 42.698363,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0602-003": {
+      "lat": 18.698868,
+      "lng": 42.982709,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0602-004": {
+      "lat": 18.791944,
+      "lng": 42.873611,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0602-005": {
+      "lat": 18.658064,
+      "lng": 42.851253,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0602-006": {
+      "lat": 18.697466,
+      "lng": 42.527231,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0602-007": {
+      "lat": 18.658064,
+      "lng": 42.851253,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0602-008": {
+      "lat": 18.411205,
+      "lng": 42.668653,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0603-001": {
+      "lat": 19.839219,
+      "lng": 42.570645,
+      "source": "governorate-fallback",
+      "radius": 109924
+    },
+    "0603-002": {
+      "lat": 19.861697,
+      "lng": 42.491483,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0603-003": {
+      "lat": 19.36695,
+      "lng": 42.803513,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0603-004": {
+      "lat": 20.036938,
+      "lng": 42.304492,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0603-005": {
+      "lat": 20.060103,
+      "lng": 42.516355,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0603-006": {
+      "lat": 19.839219,
+      "lng": 42.570645,
+      "source": "governorate-fallback",
+      "radius": 109924
+    },
+    "0603-007": {
+      "lat": 19.839219,
+      "lng": 42.570645,
+      "source": "governorate-fallback",
+      "radius": 109924
+    },
+    "0603-008": {
+      "lat": 20.285867,
+      "lng": 42.80886,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0603-009": {
+      "lat": 20.16482,
+      "lng": 41.916921,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0603-010": {
+      "lat": 19.545325,
+      "lng": 42.27897,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0603-011": {
+      "lat": 20.111195,
+      "lng": 42.657115,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0603-012": {
+      "lat": 19.839219,
+      "lng": 42.570645,
+      "source": "governorate-fallback",
+      "radius": 109924
+    },
+    "0603-013": {
+      "lat": 19.645983,
+      "lng": 42.455467,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0603-014": {
+      "lat": 19.839219,
+      "lng": 42.570645,
+      "source": "governorate-fallback",
+      "radius": 109924
+    },
+    "0603-015": {
+      "lat": 19.470241,
+      "lng": 42.532291,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0603-016": {
+      "lat": 20.144484,
+      "lng": 42.632956,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0604-001": {
+      "lat": 19.380519,
+      "lng": 42.047743,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0604-002": {
+      "lat": 19.272856,
+      "lng": 42.253243,
+      "source": "governorate-fallback",
+      "radius": 42761
+    },
+    "0604-003": {
+      "lat": 19.272856,
+      "lng": 42.253243,
+      "source": "governorate-fallback",
+      "radius": 42761
+    },
+    "0605-001": {
+      "lat": 18.337222,
+      "lng": 41.981389,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0605-002": {
+      "lat": 18.468722,
+      "lng": 41.939313,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0605-003": {
+      "lat": 18.468722,
+      "lng": 41.939313,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0605-004": {
+      "lat": 18.468722,
+      "lng": 41.939313,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0605-005": {
+      "lat": 18.468722,
+      "lng": 41.939313,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0605-006": {
+      "lat": 18.468722,
+      "lng": 41.939313,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0605-007": {
+      "lat": 18.468722,
+      "lng": 41.939313,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0605-008": {
+      "lat": 18.676662,
+      "lng": 41.838753,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0605-009": {
+      "lat": 18.538338,
+      "lng": 42.044879,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0606-001": {
+      "lat": 17.750994,
+      "lng": 43.155716,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0606-002": {
+      "lat": 17.968719,
+      "lng": 43.154587,
+      "source": "governorate-fallback",
+      "radius": 56012
+    },
+    "0606-003": {
+      "lat": 18.337017,
+      "lng": 43.278708,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0606-004": {
+      "lat": 17.968719,
+      "lng": 43.154587,
+      "source": "governorate-fallback",
+      "radius": 56012
+    },
+    "0606-005": {
+      "lat": 17.968719,
+      "lng": 43.154587,
+      "source": "governorate-fallback",
+      "radius": 56012
+    },
+    "0606-006": {
+      "lat": 17.968719,
+      "lng": 43.154587,
+      "source": "governorate-fallback",
+      "radius": 56012
+    },
+    "0606-007": {
+      "lat": 18.053333,
+      "lng": 43.057778,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0606-008": {
+      "lat": 17.968719,
+      "lng": 43.154587,
+      "source": "governorate-fallback",
+      "radius": 56012
+    },
+    "0606-009": {
+      "lat": 18.047934,
+      "lng": 43.018299,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0606-010": {
+      "lat": 17.63389,
+      "lng": 43.161537,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0607-001": {
+      "lat": 19.647885,
+      "lng": 43.659661,
+      "source": "governorate-fallback",
+      "radius": 163492
+    },
+    "0607-002": {
+      "lat": 19.626,
+      "lng": 44.2224,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0607-003": {
+      "lat": 19.967709,
+      "lng": 44.04871,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0607-004": {
+      "lat": 19.647885,
+      "lng": 43.659661,
+      "source": "governorate-fallback",
+      "radius": 163492
+    },
+    "0607-005": {
+      "lat": 19.03026,
+      "lng": 43.600815,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0607-006": {
+      "lat": 19.467742,
+      "lng": 43.804408,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0607-007": {
+      "lat": 19.373229,
+      "lng": 43.452238,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0607-008": {
+      "lat": 18.578859,
+      "lng": 43.91043,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0607-009": {
+      "lat": 18.362982,
+      "lng": 43.796692,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0607-010": {
+      "lat": 18.906192,
+      "lng": 43.62735,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0607-011": {
+      "lat": 18.561691,
+      "lng": 43.741341,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0607-012": {
+      "lat": 19.647885,
+      "lng": 43.659661,
+      "source": "governorate-fallback",
+      "radius": 163492
+    },
+    "0607-013": {
+      "lat": 18.621631,
+      "lng": 43.614826,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0607-014": {
+      "lat": 18.866299,
+      "lng": 43.944546,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0607-015": {
+      "lat": 19.668488,
+      "lng": 43.200029,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0609-001": {
+      "lat": 18.13634,
+      "lng": 42.317138,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0609-002": {
+      "lat": 18.089207,
+      "lng": 42.226975,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0609-003": {
+      "lat": 17.800276,
+      "lng": 41.944715,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0609-004": {
+      "lat": 18.35368,
+      "lng": 42.069599,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0609-005": {
+      "lat": 18.095035,
+      "lng": 42.138768,
+      "source": "governorate-fallback",
+      "radius": 50739
+    },
+    "0610-001": {
+      "lat": 18.085573,
+      "lng": 42.802538,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0610-002": {
+      "lat": 18.14731,
+      "lng": 42.963323,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0610-003": {
+      "lat": 18.116877,
+      "lng": 42.887859,
+      "source": "governorate-fallback",
+      "radius": 27160
+    },
+    "0611-001": {
+      "lat": 17.646201,
+      "lng": 43.505178,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0611-002": {
+      "lat": 17.556245,
+      "lng": 43.458902,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0611-003": {
+      "lat": 17.665928,
+      "lng": 43.312784,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0611-004": {
+      "lat": 17.806524,
+      "lng": 43.454503,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0611-005": {
+      "lat": 17.501693,
+      "lng": 43.621817,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0611-006": {
+      "lat": 17.646201,
+      "lng": 43.505178,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0611-007": {
+      "lat": 17.646201,
+      "lng": 43.505178,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0611-008": {
+      "lat": 17.646201,
+      "lng": 43.505178,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0611-009": {
+      "lat": 17.646201,
+      "lng": 43.505178,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0612-001": {
+      "lat": 19.740258,
+      "lng": 41.919675,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0612-002": {
+      "lat": 19.56052,
+      "lng": 42.077493,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0612-003": {
+      "lat": 19.694174,
+      "lng": 42.023879,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0612-004": {
+      "lat": 19.774304,
+      "lng": 41.873929,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0612-005": {
+      "lat": 19.583333,
+      "lng": 41.883333,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0612-006": {
+      "lat": 19.410812,
+      "lng": 42.006003,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0612-007": {
+      "lat": 19.715793,
+      "lng": 41.952925,
+      "source": "governorate-fallback",
+      "radius": 50454
+    },
+    "0612-008": {
+      "lat": 19.531146,
+      "lng": 41.89795,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0612-009": {
+      "lat": 19.715793,
+      "lng": 41.952925,
+      "source": "governorate-fallback",
+      "radius": 50454
+    },
+    "0613-001": {
+      "lat": 19.044922,
+      "lng": 41.775574,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0613-002": {
+      "lat": 19.121901,
+      "lng": 41.844371,
+      "source": "governorate-fallback",
+      "radius": 36262
+    },
+    "0613-003": {
+      "lat": 19.102496,
+      "lng": 41.636316,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0613-004": {
+      "lat": 19.121901,
+      "lng": 41.844371,
+      "source": "governorate-fallback",
+      "radius": 36262
+    },
+    "0613-005": {
+      "lat": 19.121901,
+      "lng": 41.844371,
+      "source": "governorate-fallback",
+      "radius": 36262
+    },
+    "0614-001": {
+      "lat": 18.303314,
+      "lng": 43.504839,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0614-002": {
+      "lat": 18.961348,
+      "lng": 43.21012,
+      "source": "governorate-fallback",
+      "radius": 85407
+    },
+    "0614-003": {
+      "lat": 19.099552,
+      "lng": 43.309752,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0614-004": {
+      "lat": 18.83587,
+      "lng": 43.242281,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0614-005": {
+      "lat": 18.961348,
+      "lng": 43.21012,
+      "source": "governorate-fallback",
+      "radius": 85407
+    },
+    "0614-006": {
+      "lat": 18.715691,
+      "lng": 43.188408,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0615-001": {
+      "lat": 18.390041,
+      "lng": 41.610639,
+      "source": "governorate-fallback",
+      "radius": 65278
+    },
+    "0615-002": {
+      "lat": 18.119995,
+      "lng": 41.571579,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0615-003": {
+      "lat": 18.472188,
+      "lng": 41.668494,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0616-001": {
+      "lat": 18.911536,
+      "lng": 41.827144,
+      "source": "governorate-fallback",
+      "radius": 45672
+    },
+    "0616-002": {
+      "lat": 18.911536,
+      "lng": 41.827144,
+      "source": "governorate-fallback",
+      "radius": 45672
+    },
+    "0617-001": {
+      "lat": 19.154574,
+      "lng": 42.536101,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0701-001": {
+      "lat": 29.04314,
+      "lng": 37.768847,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0701-002": {
+      "lat": 27.983536,
+      "lng": 36,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0701-003": {
+      "lat": 29.161944,
+      "lng": 36.075833,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0701-004": {
+      "lat": 28.527076,
+      "lng": 35.670481,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0701-005": {
+      "lat": 28.640211,
+      "lng": 37.116597,
+      "source": "governorate-fallback",
+      "radius": 256484
+    },
+    "0701-006": {
+      "lat": 28.888262,
+      "lng": 38.660924,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0701-007": {
+      "lat": 27.469873,
+      "lng": 36.815626,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0701-008": {
+      "lat": 28.654701,
+      "lng": 35.305229,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0701-009": {
+      "lat": 28.451678,
+      "lng": 36.732468,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0701-010": {
+      "lat": 27.801996,
+      "lng": 36.544503,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0701-011": {
+      "lat": 28.640211,
+      "lng": 37.116597,
+      "source": "governorate-fallback",
+      "radius": 256484
+    },
+    "0701-012": {
+      "lat": 29.046369,
+      "lng": 36.166799,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0701-013": {
+      "lat": 28.640211,
+      "lng": 37.116597,
+      "source": "governorate-fallback",
+      "radius": 256484
+    },
+    "0701-014": {
+      "lat": 28.989605,
+      "lng": 37.110485,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0701-015": {
+      "lat": 29.69798,
+      "lng": 37.546085,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0701-016": {
+      "lat": 28.415679,
+      "lng": 35.53751,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0701-017": {
+      "lat": 28.640211,
+      "lng": 37.116597,
+      "source": "governorate-fallback",
+      "radius": 256484
+    },
+    "0701-018": {
+      "lat": 28.156604,
+      "lng": 35.722856,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0704-001": {
+      "lat": 27.616739,
+      "lng": 38.85881,
+      "source": "governorate-fallback",
+      "radius": 165371
+    },
+    "0704-002": {
+      "lat": 27.616739,
+      "lng": 38.85881,
+      "source": "governorate-fallback",
+      "radius": 165371
+    },
+    "0704-003": {
+      "lat": 27.616739,
+      "lng": 38.85881,
+      "source": "governorate-fallback",
+      "radius": 165371
+    },
+    "0701-019": {
+      "lat": 28.640211,
+      "lng": 37.116597,
+      "source": "governorate-fallback",
+      "radius": 256484
+    },
+    "0702-001": {
+      "lat": 25.948311,
+      "lng": 37.219962,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0702-002": {
+      "lat": 26.769134,
+      "lng": 36.689149,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0702-003": {
+      "lat": 26.844607,
+      "lng": 36.917195,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0702-004": {
+      "lat": 26.662286,
+      "lng": 36.949172,
+      "source": "governorate-fallback",
+      "radius": 125972
+    },
+    "0702-005": {
+      "lat": 26.380966,
+      "lng": 37.045694,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0702-006": {
+      "lat": 26.607297,
+      "lng": 36.851476,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0702-007": {
+      "lat": 26.662286,
+      "lng": 36.949172,
+      "source": "governorate-fallback",
+      "radius": 125972
+    },
+    "0702-008": {
+      "lat": 26.3819,
+      "lng": 36.4398,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0702-009": {
+      "lat": 26.64454,
+      "lng": 36.400987,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0702-010": {
+      "lat": 26.209586,
+      "lng": 37.361582,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0702-011": {
+      "lat": 27.097708,
+      "lng": 37.190289,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0702-012": {
+      "lat": 27.021494,
+      "lng": 37.264286,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0702-013": {
+      "lat": 27.150785,
+      "lng": 37.054778,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0702-014": {
+      "lat": 27.295704,
+      "lng": 37.25551,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0703-001": {
+      "lat": 28.067064,
+      "lng": 35.176777,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0703-002": {
+      "lat": 27.399911,
+      "lng": 36.503241,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0703-003": {
+      "lat": 28.030656,
+      "lng": 35.242029,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0703-004": {
+      "lat": 27.849583,
+      "lng": 35.89845,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0703-005": {
+      "lat": 27.693051,
+      "lng": 35.483463,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0703-006": {
+      "lat": 27.710926,
+      "lng": 35.674098,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0703-007": {
+      "lat": 27.607654,
+      "lng": 36.428171,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0703-008": {
+      "lat": 27.268373,
+      "lng": 36.457953,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0703-009": {
+      "lat": 27.525353,
+      "lng": 35.993921,
+      "source": "governorate-fallback",
+      "radius": 122711
+    },
+    "0703-010": {
+      "lat": 27.249704,
+      "lng": 35.93231,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0703-011": {
+      "lat": 27.525353,
+      "lng": 35.993921,
+      "source": "governorate-fallback",
+      "radius": 122711
+    },
+    "0703-012": {
+      "lat": 28.138539,
+      "lng": 35.379047,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0703-013": {
+      "lat": 27.864418,
+      "lng": 35.344812,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0703-014": {
+      "lat": 27.525353,
+      "lng": 35.993921,
+      "source": "governorate-fallback",
+      "radius": 122711
+    },
+    "0703-015": {
+      "lat": 28.235833,
+      "lng": 35.356111,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0704-004": {
+      "lat": 26.866923,
+      "lng": 38.883748,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0704-005": {
+      "lat": 27.466091,
+      "lng": 38.896894,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0704-006": {
+      "lat": 27.002572,
+      "lng": 38.494874,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0704-007": {
+      "lat": 27.616739,
+      "lng": 38.85881,
+      "source": "governorate-fallback",
+      "radius": 165371
+    },
+    "0704-008": {
+      "lat": 28.04693,
+      "lng": 39.108244,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0704-009": {
+      "lat": 28.264788,
+      "lng": 38.982104,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0704-010": {
+      "lat": 27.616739,
+      "lng": 38.85881,
+      "source": "governorate-fallback",
+      "radius": 165371
+    },
+    "0704-011": {
+      "lat": 26.981167,
+      "lng": 38.772488,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0704-012": {
+      "lat": 27.616739,
+      "lng": 38.85881,
+      "source": "governorate-fallback",
+      "radius": 165371
+    },
+    "0705-001": {
+      "lat": 25.297066,
+      "lng": 37.433,
+      "source": "governorate-fallback",
+      "radius": 108000
+    },
+    "0705-002": {
+      "lat": 24.80429,
+      "lng": 37.731379,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0705-003": {
+      "lat": 24.704375,
+      "lng": 37.605004,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0705-004": {
+      "lat": 25.297066,
+      "lng": 37.433,
+      "source": "governorate-fallback",
+      "radius": 108000
+    },
+    "0705-005": {
+      "lat": 25.297066,
+      "lng": 37.433,
+      "source": "governorate-fallback",
+      "radius": 108000
+    },
+    "0705-006": {
+      "lat": 25.296138,
+      "lng": 37.310614,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0705-007": {
+      "lat": 25.660074,
+      "lng": 37.231094,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0705-008": {
+      "lat": 25.297066,
+      "lng": 37.433,
+      "source": "governorate-fallback",
+      "radius": 108000
+    },
+    "0705-009": {
+      "lat": 24.750489,
+      "lng": 37.236169,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0705-010": {
+      "lat": 25.457767,
+      "lng": 37.338517,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0705-011": {
+      "lat": 24.82342,
+      "lng": 37.472393,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0705-012": {
+      "lat": 25.297066,
+      "lng": 37.433,
+      "source": "governorate-fallback",
+      "radius": 108000
+    },
+    "0705-013": {
+      "lat": 24.648275,
+      "lng": 37.332809,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0705-014": {
+      "lat": 25.197918,
+      "lng": 37.528904,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0705-015": {
+      "lat": 25.297066,
+      "lng": 37.433,
+      "source": "governorate-fallback",
+      "radius": 108000
+    },
+    "0706-001": {
+      "lat": 29.022397,
+      "lng": 35.360409,
+      "source": "governorate-fallback",
+      "radius": 67165
+    },
+    "0706-002": {
+      "lat": 29.022397,
+      "lng": 35.360409,
+      "source": "governorate-fallback",
+      "radius": 67165
+    },
+    "0706-003": {
+      "lat": 29.150357,
+      "lng": 35.402121,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0706-004": {
+      "lat": 28.859735,
+      "lng": 35.477148,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0706-005": {
+      "lat": 29.129542,
+      "lng": 35.055565,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0706-006": {
+      "lat": 29.022397,
+      "lng": 35.360409,
+      "source": "governorate-fallback",
+      "radius": 67165
+    },
+    "0707-004": {
+      "lat": 28.402421,
+      "lng": 34.744746,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0801-001": {
+      "lat": 28.016854,
+      "lng": 40.952988,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0801-002": {
+      "lat": 28.067222,
+      "lng": 41.108333,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0801-003": {
+      "lat": 27.777224,
+      "lng": 41.423634,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0801-004": {
+      "lat": 27.809572,
+      "lng": 41.429272,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0801-005": {
+      "lat": 27.516466,
+      "lng": 41.601137,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0801-006": {
+      "lat": 27.415343,
+      "lng": 41.619026,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0801-007": {
+      "lat": 27.62504,
+      "lng": 41.698678,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0801-008": {
+      "lat": 27.331667,
+      "lng": 41.459722,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0801-009": {
+      "lat": 27.395841,
+      "lng": 41.573186,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0801-010": {
+      "lat": 26.798473,
+      "lng": 41.672626,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0801-011": {
+      "lat": 27.083175,
+      "lng": 41.810179,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0801-012": {
+      "lat": 27.846003,
+      "lng": 41.724992,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0801-013": {
+      "lat": 28.378122,
+      "lng": 41.28984,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0801-014": {
+      "lat": 28.057758,
+      "lng": 41.987927,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0801-015": {
+      "lat": 27.450335,
+      "lng": 41.971426,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0802-001": {
+      "lat": 28.259575,
+      "lng": 42.92038,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0802-003": {
+      "lat": 27.610914,
+      "lng": 43.172308,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0802-004": {
+      "lat": 27.4725,
+      "lng": 42.998889,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0802-006": {
+      "lat": 28.699284,
+      "lng": 42.312342,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0802-007": {
+      "lat": 27.842178,
+      "lng": 42.776101,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0802-008": {
+      "lat": 27.890386,
+      "lng": 42.681883,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0802-009": {
+      "lat": 28.829486,
+      "lng": 42.02029,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0802-010": {
+      "lat": 27.447841,
+      "lng": 43.401303,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0802-011": {
+      "lat": 27.682931,
+      "lng": 42.551833,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0802-012": {
+      "lat": 27.726667,
+      "lng": 42.564167,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0803-001": {
+      "lat": 26.761855,
+      "lng": 41.494619,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0803-002": {
+      "lat": 27.023663,
+      "lng": 41.319806,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0803-003": {
+      "lat": 26.920427,
+      "lng": 41.12636,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0803-004": {
+      "lat": 26.772636,
+      "lng": 41.305623,
+      "source": "governorate-fallback",
+      "radius": 67639
+    },
+    "0803-005": {
+      "lat": 26.671815,
+      "lng": 41.535037,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0803-006": {
+      "lat": 26.772636,
+      "lng": 41.305623,
+      "source": "governorate-fallback",
+      "radius": 67639
+    },
+    "0804-001": {
+      "lat": 27.067151,
+      "lng": 43.024349,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0804-002": {
+      "lat": 27.028333,
+      "lng": 42.171667,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0804-003": {
+      "lat": 27.275441,
+      "lng": 43.176659,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0804-004": {
+      "lat": 27.297502,
+      "lng": 42.273561,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0804-005": {
+      "lat": 27.113229,
+      "lng": 42.518809,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0804-006": {
+      "lat": 27.153784,
+      "lng": 42.466469,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0804-007": {
+      "lat": 27.251729,
+      "lng": 42.2687,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0804-008": {
+      "lat": 27.173686,
+      "lng": 42.292352,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0804-009": {
+      "lat": 27.065924,
+      "lng": 42.241779,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0804-010": {
+      "lat": 26.918871,
+      "lng": 42.174435,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0804-011": {
+      "lat": 27.039167,
+      "lng": 41.975278,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0804-012": {
+      "lat": 26.778337,
+      "lng": 42.695061,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0804-013": {
+      "lat": 27.138226,
+      "lng": 42.540189,
+      "source": "governorate-fallback",
+      "radius": 96912
+    },
+    "0804-014": {
+      "lat": 27.138226,
+      "lng": 42.540189,
+      "source": "governorate-fallback",
+      "radius": 96912
+    },
+    "0805-001": {
+      "lat": 27.046905,
+      "lng": 40.425961,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0805-002": {
+      "lat": 26.94104,
+      "lng": 40.181963,
+      "source": "governorate-fallback",
+      "radius": 102341
+    },
+    "0805-003": {
+      "lat": 26.94104,
+      "lng": 40.181963,
+      "source": "governorate-fallback",
+      "radius": 102341
+    },
+    "0805-004": {
+      "lat": 27.340512,
+      "lng": 39.915304,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0805-005": {
+      "lat": 26.920709,
+      "lng": 40.228499,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0805-006": {
+      "lat": 26.814075,
+      "lng": 39.750928,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0805-007": {
+      "lat": 26.642376,
+      "lng": 40.473112,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0805-008": {
+      "lat": 26.94104,
+      "lng": 40.181963,
+      "source": "governorate-fallback",
+      "radius": 102341
+    },
+    "0805-009": {
+      "lat": 26.879765,
+      "lng": 40.324262,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0806-001": {
+      "lat": 27.716634,
+      "lng": 40.652134,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0806-002": {
+      "lat": 27.656389,
+      "lng": 41.293889,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0806-003": {
+      "lat": 27.161667,
+      "lng": 40.904444,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0806-004": {
+      "lat": 27.287548,
+      "lng": 40.967607,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0806-005": {
+      "lat": 27.321426,
+      "lng": 41.059288,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0806-006": {
+      "lat": 27.485185,
+      "lng": 40.903748,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0806-007": {
+      "lat": 27.667506,
+      "lng": 40.22741,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0806-008": {
+      "lat": 27.509963,
+      "lng": 40.770776,
+      "source": "governorate-fallback",
+      "radius": 95459
+    },
+    "0807-001": {
+      "lat": 26.536164,
+      "lng": 42.148048,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0807-002": {
+      "lat": 26.59045,
+      "lng": 42.470893,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0807-003": {
+      "lat": 26.536164,
+      "lng": 42.148048,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0807-004": {
+      "lat": 26.789085,
+      "lng": 42.059382,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0807-005": {
+      "lat": 26.536164,
+      "lng": 42.148048,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "0807-006": {
+      "lat": 26.598923,
+      "lng": 42.030774,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0807-007": {
+      "lat": 26.262207,
+      "lng": 41.909816,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0807-008": {
+      "lat": 26.269723,
+      "lng": 42.167778,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0807-009": {
+      "lat": 26.668636,
+      "lng": 41.95162,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0807-010": {
+      "lat": 26.890365,
+      "lng": 42.087169,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0807-011": {
+      "lat": 26.841446,
+      "lng": 42.160547,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0808-001": {
+      "lat": 25.994754,
+      "lng": 40.816635,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0808-002": {
+      "lat": 26.41108,
+      "lng": 40.547971,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0808-003": {
+      "lat": 25.941986,
+      "lng": 40.736779,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0808-004": {
+      "lat": 25.615529,
+      "lng": 40.635645,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0808-005": {
+      "lat": 26.040618,
+      "lng": 40.622217,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0808-006": {
+      "lat": 25.875028,
+      "lng": 40.741826,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0808-007": {
+      "lat": 26.15501,
+      "lng": 40.275571,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0808-008": {
+      "lat": 25.790499,
+      "lng": 40.600019,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0808-009": {
+      "lat": 25.512196,
+      "lng": 40.334347,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0808-010": {
+      "lat": 25.950147,
+      "lng": 40.511581,
+      "source": "governorate-fallback",
+      "radius": 107531
+    },
+    "0805-010": {
+      "lat": 26.531168,
+      "lng": 40.542217,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0808-011": {
+      "lat": 26.488358,
+      "lng": 40.598077,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0808-012": {
+      "lat": 25.70958,
+      "lng": 40.37746,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0808-013": {
+      "lat": 26.044117,
+      "lng": 40.325897,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0808-014": {
+      "lat": 25.943406,
+      "lng": 40.788194,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0808-015": {
+      "lat": 26.137828,
+      "lng": 40.532032,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0808-016": {
+      "lat": 25.670885,
+      "lng": 40.734342,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0808-017": {
+      "lat": 26.264892,
+      "lng": 40.445566,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0808-018": {
+      "lat": 25.749633,
+      "lng": 41.099034,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0808-019": {
+      "lat": 26.000681,
+      "lng": 40.964023,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0808-020": {
+      "lat": 25.766877,
+      "lng": 41.004889,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0809-001": {
+      "lat": 26.022669,
+      "lng": 41.802967,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0809-002": {
+      "lat": 25.870856,
+      "lng": 41.442181,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0809-003": {
+      "lat": 26.164837,
+      "lng": 41.393529,
+      "source": "governorate-fallback",
+      "radius": 88069
+    },
+    "0809-004": {
+      "lat": 26.147579,
+      "lng": 41.381442,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0809-005": {
+      "lat": 26.109062,
+      "lng": 41.375525,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0809-006": {
+      "lat": 26.164837,
+      "lng": 41.393529,
+      "source": "governorate-fallback",
+      "radius": 88069
+    },
+    "0809-007": {
+      "lat": 25.9794,
+      "lng": 41.21075,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0809-008": {
+      "lat": 26.45921,
+      "lng": 41.091679,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0809-009": {
+      "lat": 26.14474,
+      "lng": 41.121261,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0901-001": {
+      "lat": 31.326779,
+      "lng": 41.443634,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0901-002": {
+      "lat": 30.696266,
+      "lng": 41.596962,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0901-003": {
+      "lat": 31.180312,
+      "lng": 39.96301,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0902-001": {
+      "lat": 28.762464,
+      "lng": 43.736017,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0902-002": {
+      "lat": 28.883651,
+      "lng": 44.739773,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0902-003": {
+      "lat": 29.168343,
+      "lng": 43.5715,
+      "source": "governorate-fallback",
+      "radius": 213348
+    },
+    "0902-004": {
+      "lat": 29.192745,
+      "lng": 44.715978,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0902-005": {
+      "lat": 29.825076,
+      "lng": 42.740045,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0902-006": {
+      "lat": 29.856944,
+      "lng": 43.140278,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0902-007": {
+      "lat": 29.168343,
+      "lng": 43.5715,
+      "source": "governorate-fallback",
+      "radius": 213348
+    },
+    "0902-008": {
+      "lat": 29.168343,
+      "lng": 43.5715,
+      "source": "governorate-fallback",
+      "radius": 213348
+    },
+    "0902-009": {
+      "lat": 28.679848,
+      "lng": 44.687419,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0902-010": {
+      "lat": 29.3008,
+      "lng": 44.032722,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0902-011": {
+      "lat": 29.498106,
+      "lng": 43.638308,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0902-012": {
+      "lat": 29.956437,
+      "lng": 43.081456,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0902-013": {
+      "lat": 28.651774,
+      "lng": 44.073806,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0902-014": {
+      "lat": 29.229771,
+      "lng": 43.354162,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0902-015": {
+      "lat": 28.817407,
+      "lng": 44.037078,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0902-016": {
+      "lat": 28.461497,
+      "lng": 44.332017,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0902-017": {
+      "lat": 29.573574,
+      "lng": 43.632138,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0903-001": {
+      "lat": 31.480445,
+      "lng": 38.40256,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0904-001": {
+      "lat": 30.461469,
+      "lng": 42.62766,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0904-002": {
+      "lat": 30.229444,
+      "lng": 42.301944,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0904-003": {
+      "lat": 30.502938,
+      "lng": 41.934952,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0904-004": {
+      "lat": 30.080219,
+      "lng": 42.128413,
+      "source": "governorate-fallback",
+      "radius": 128322
+    },
+    "0904-005": {
+      "lat": 29.540952,
+      "lng": 42.096502,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "0904-006": {
+      "lat": 29.687222,
+      "lng": 42.104722,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "0904-007": {
+      "lat": 30.080219,
+      "lng": 42.128413,
+      "source": "governorate-fallback",
+      "radius": 128322
+    },
+    "1001-001": {
+      "lat": 17.577471,
+      "lng": 42.633347,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "1002-001": {
+      "lat": 17.268876,
+      "lng": 42.538907,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "1002-002": {
+      "lat": 17.13738,
+      "lng": 42.441809,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "1002-003": {
+      "lat": 17.259773,
+      "lng": 42.75738,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1003-001": {
+      "lat": 16.914178,
+      "lng": 42.84544,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1004-001": {
+      "lat": 16.670434,
+      "lng": 43.078955,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1004-002": {
+      "lat": 16.535417,
+      "lng": 42.800222,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1005-001": {
+      "lat": 16.875412,
+      "lng": 43.135117,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1006-001": {
+      "lat": 17.135636,
+      "lng": 42.827319,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1007-001": {
+      "lat": 17.597599,
+      "lng": 42.865853,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1007-002": {
+      "lat": 17.554025,
+      "lng": 42.897583,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1007-003": {
+      "lat": 17.629189,
+      "lng": 42.912868,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1007-004": {
+      "lat": 17.645103,
+      "lng": 42.827648,
+      "source": "governorate-fallback",
+      "radius": 27750
+    },
+    "1007-005": {
+      "lat": 17.652255,
+      "lng": 42.705376,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1008-001": {
+      "lat": 17.516667,
+      "lng": 42.7,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1008-002": {
+      "lat": 17.459875,
+      "lng": 42.557204,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "1008-003": {
+      "lat": 17.402888,
+      "lng": 42.476483,
+      "source": "governorate-fallback",
+      "radius": 43190
+    },
+    "1010-001": {
+      "lat": 17.468891,
+      "lng": 43.035057,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1010-003": {
+      "lat": 17.370997,
+      "lng": 43.191178,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1010-004": {
+      "lat": 17.316205,
+      "lng": 43.218091,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1010-005": {
+      "lat": 17.452917,
+      "lng": 43.165468,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1010-006": {
+      "lat": 17.375054,
+      "lng": 43.11737,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1011-001": {
+      "lat": 16.76993,
+      "lng": 42.748118,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1012-001": {
+      "lat": 17.242114,
+      "lng": 42.983092,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1012-002": {
+      "lat": 17.376661,
+      "lng": 43.073535,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1013-001": {
+      "lat": 17.055826,
+      "lng": 43.196517,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1013-002": {
+      "lat": 16.960897,
+      "lng": 43.114006,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "1013-003": {
+      "lat": 17.128231,
+      "lng": 43.058581,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1014-001": {
+      "lat": 17.754515,
+      "lng": 42.071795,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1014-002": {
+      "lat": 17.721753,
+      "lng": 42.026011,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1014-003": {
+      "lat": 17.713504,
+      "lng": 42.24251,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1014-004": {
+      "lat": 17.530458,
+      "lng": 42.285433,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1015-001": {
+      "lat": 16.418437,
+      "lng": 42.826305,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1016-001": {
+      "lat": 17.431684,
+      "lng": 42.911773,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1016-002": {
+      "lat": 17.477795,
+      "lng": 42.893652,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1016-003": {
+      "lat": 17.467667,
+      "lng": 42.841296,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1016-004": {
+      "lat": 17.466198,
+      "lng": 42.907882,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1016-005": {
+      "lat": 17.432202,
+      "lng": 42.964893,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1101-001": {
+      "lat": 17.593328,
+      "lng": 44.082146,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1101-002": {
+      "lat": 17.586985,
+      "lng": 44.175514,
+      "source": "governorate-fallback",
+      "radius": 60323
+    },
+    "1101-003": {
+      "lat": 17.597967,
+      "lng": 44.240227,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1101-004": {
+      "lat": 17.757828,
+      "lng": 44.46435,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1101-005": {
+      "lat": 17.814631,
+      "lng": 44.445491,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1101-006": {
+      "lat": 17.553209,
+      "lng": 44.519348,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1102-001": {
+      "lat": 17.057509,
+      "lng": 47.088146,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "1102-002": {
+      "lat": 17.7294,
+      "lng": 46.1439,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1102-003": {
+      "lat": 18.49361,
+      "lng": 46.50833,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1102-004": {
+      "lat": 18.546557,
+      "lng": 48.048005,
+      "source": "governorate-fallback",
+      "radius": 365489
+    },
+    "1102-005": {
+      "lat": 17.725666,
+      "lng": 47.213915,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1102-006": {
+      "lat": 18.546557,
+      "lng": 48.048005,
+      "source": "governorate-fallback",
+      "radius": 365489
+    },
+    "1102-007": {
+      "lat": 18.546557,
+      "lng": 48.048005,
+      "source": "governorate-fallback",
+      "radius": 365489
+    },
+    "1102-008": {
+      "lat": 18.546557,
+      "lng": 48.048005,
+      "source": "governorate-fallback",
+      "radius": 365489
+    },
+    "1102-009": {
+      "lat": 18.546557,
+      "lng": 48.048005,
+      "source": "governorate-fallback",
+      "radius": 365489
+    },
+    "1102-010": {
+      "lat": 18.546557,
+      "lng": 48.048005,
+      "source": "governorate-fallback",
+      "radius": 365489
+    },
+    "1102-011": {
+      "lat": 17.380543,
+      "lng": 46.705456,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1102-012": {
+      "lat": 18.546557,
+      "lng": 48.048005,
+      "source": "governorate-fallback",
+      "radius": 365489
+    },
+    "1102-013": {
+      "lat": 18.546557,
+      "lng": 48.048005,
+      "source": "governorate-fallback",
+      "radius": 365489
+    },
+    "1102-014": {
+      "lat": 18.546557,
+      "lng": 48.048005,
+      "source": "governorate-fallback",
+      "radius": 365489
+    },
+    "1102-015": {
+      "lat": 18.546557,
+      "lng": 48.048005,
+      "source": "governorate-fallback",
+      "radius": 365489
+    },
+    "1102-016": {
+      "lat": 19.11079,
+      "lng": 50.130325,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1103-001": {
+      "lat": 17.764206,
+      "lng": 43.966255,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1103-002": {
+      "lat": 17.871844,
+      "lng": 44.183969,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1103-003": {
+      "lat": 17.786341,
+      "lng": 44.034734,
+      "source": "governorate-fallback",
+      "radius": 31444
+    },
+    "1104-001": {
+      "lat": 17.7335,
+      "lng": 43.7573,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1104-002": {
+      "lat": 17.595184,
+      "lng": 43.73138,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1104-003": {
+      "lat": 18.010905,
+      "lng": 43.896904,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1104-004": {
+      "lat": 17.816288,
+      "lng": 43.752156,
+      "source": "governorate-fallback",
+      "radius": 40708
+    },
+    "1104-005": {
+      "lat": 17.816288,
+      "lng": 43.752156,
+      "source": "governorate-fallback",
+      "radius": 40708
+    },
+    "1105-001": {
+      "lat": 18.8623,
+      "lng": 45.1103,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1105-002": {
+      "lat": 18.955068,
+      "lng": 45.102074,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "1105-003": {
+      "lat": 18.898854,
+      "lng": 45.152557,
+      "source": "governorate-fallback",
+      "radius": 154882
+    },
+    "1105-004": {
+      "lat": 18.544924,
+      "lng": 45.330908,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1105-005": {
+      "lat": 19.141329,
+      "lng": 46.276955,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1105-006": {
+      "lat": 18.898854,
+      "lng": 45.152557,
+      "source": "governorate-fallback",
+      "radius": 154882
+    },
+    "1105-007": {
+      "lat": 18.74275,
+      "lng": 44.158079,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1106-001": {
+      "lat": 18.140616,
+      "lng": 44.122403,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1106-002": {
+      "lat": 18.244972,
+      "lng": 44.455753,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1106-003": {
+      "lat": 18.297386,
+      "lng": 43.870254,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1106-004": {
+      "lat": 18.369913,
+      "lng": 44.771283,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1106-005": {
+      "lat": 18.137956,
+      "lng": 43.861649,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1106-006": {
+      "lat": 18.447122,
+      "lng": 44.796316,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "1107-001": {
+      "lat": 17.573254,
+      "lng": 45.982531,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1107-002": {
+      "lat": 17.562156,
+      "lng": 45.1928,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1107-003": {
+      "lat": 18.016962,
+      "lng": 45.103289,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1107-004": {
+      "lat": 18.126662,
+      "lng": 45.427331,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1107-005": {
+      "lat": 18.2408,
+      "lng": 45.5361,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1107-006": {
+      "lat": 17.70994,
+      "lng": 45.442159,
+      "source": "governorate-fallback",
+      "radius": 129393
+    },
+    "1107-007": {
+      "lat": 18.039518,
+      "lng": 45.767991,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1107-008": {
+      "lat": 17.535941,
+      "lng": 44.434032,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1201-001": {
+      "lat": 19.822534,
+      "lng": 41.715055,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1201-002": {
+      "lat": 20.024353,
+      "lng": 41.478752,
+      "source": "governorate-fallback",
+      "radius": 18440
+    },
+    "1202-001": {
+      "lat": 19.868606,
+      "lng": 41.541701,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1202-002": {
+      "lat": 19.999876,
+      "lng": 41.733388,
+      "source": "governorate-fallback",
+      "radius": 41587
+    },
+    "1202-003": {
+      "lat": 19.999876,
+      "lng": 41.733388,
+      "source": "governorate-fallback",
+      "radius": 41587
+    },
+    "1202-004": {
+      "lat": 19.78937,
+      "lng": 41.768427,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1202-005": {
+      "lat": 19.932675,
+      "lng": 41.679597,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1203-001": {
+      "lat": 20.097952,
+      "lng": 41.305489,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1203-002": {
+      "lat": 20.234689,
+      "lng": 41.245422,
+      "source": "governorate-fallback",
+      "radius": 25158
+    },
+    "1203-003": {
+      "lat": 20.337139,
+      "lng": 41.198027,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1203-004": {
+      "lat": 20.234689,
+      "lng": 41.245422,
+      "source": "governorate-fallback",
+      "radius": 25158
+    },
+    "1204-001": {
+      "lat": 19.544812,
+      "lng": 41.15504,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "1204-002": {
+      "lat": 19.746413,
+      "lng": 41.322238,
+      "source": "governorate-fallback",
+      "radius": 42014
+    },
+    "1204-003": {
+      "lat": 19.746413,
+      "lng": 41.322238,
+      "source": "governorate-fallback",
+      "radius": 42014
+    },
+    "1204-004": {
+      "lat": 19.746413,
+      "lng": 41.322238,
+      "source": "governorate-fallback",
+      "radius": 42014
+    },
+    "1204-005": {
+      "lat": 19.746413,
+      "lng": 41.322238,
+      "source": "governorate-fallback",
+      "radius": 42014
+    },
+    "1204-006": {
+      "lat": 19.746413,
+      "lng": 41.322238,
+      "source": "governorate-fallback",
+      "radius": 42014
+    },
+    "1205-001": {
+      "lat": 20.444,
+      "lng": 41.933721,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1205-002": {
+      "lat": 20.654359,
+      "lng": 41.689703,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1205-003": {
+      "lat": 20.728508,
+      "lng": 41.539196,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1205-004": {
+      "lat": 20.751748,
+      "lng": 41.547724,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "1205-005": {
+      "lat": 20.420884,
+      "lng": 41.691793,
+      "source": "governorate-fallback",
+      "radius": 58409
+    },
+    "1205-006": {
+      "lat": 20.420884,
+      "lng": 41.691793,
+      "source": "governorate-fallback",
+      "radius": 58409
+    },
+    "1206-001": {
+      "lat": 20.067159,
+      "lng": 41.188617,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1206-002": {
+      "lat": 19.944202,
+      "lng": 41.173927,
+      "source": "governorate-fallback",
+      "radius": 38151
+    },
+    "1206-003": {
+      "lat": 19.944202,
+      "lng": 41.173927,
+      "source": "governorate-fallback",
+      "radius": 38151
+    },
+    "1206-004": {
+      "lat": 19.804766,
+      "lng": 41.116697,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1206-005": {
+      "lat": 20.000644,
+      "lng": 41.210348,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1207-001": {
+      "lat": 20.169375,
+      "lng": 41.405619,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1207-002": {
+      "lat": 20.462693,
+      "lng": 41.348072,
+      "source": "governorate-fallback",
+      "radius": 40950
+    },
+    "1207-003": {
+      "lat": 20.462693,
+      "lng": 41.348072,
+      "source": "governorate-fallback",
+      "radius": 40950
+    },
+    "1207-004": {
+      "lat": 20.381589,
+      "lng": 41.393005,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "1207-005": {
+      "lat": 20.462693,
+      "lng": 41.348072,
+      "source": "governorate-fallback",
+      "radius": 40950
+    },
+    "1208-001": {
+      "lat": 20.082977,
+      "lng": 41.370562,
+      "source": "governorate-fallback",
+      "radius": 11452
+    },
+    "1208-002": {
+      "lat": 20.122161,
+      "lng": 41.37641,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1209-001": {
+      "lat": 19.608987,
+      "lng": 41.449265,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "1209-002": {
+      "lat": 19.608987,
+      "lng": 41.449265,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "1209-003": {
+      "lat": 19.540448,
+      "lng": 41.361923,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1210-001": {
+      "lat": 20.155059,
+      "lng": 41.01762,
+      "source": "governorate-fallback",
+      "radius": 34236
+    },
+    "1210-002": {
+      "lat": 20.155059,
+      "lng": 41.01762,
+      "source": "governorate-fallback",
+      "radius": 34236
+    },
+    "1210-003": {
+      "lat": 20.166166,
+      "lng": 41.15982,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1210-004": {
+      "lat": 20.155059,
+      "lng": 41.01762,
+      "source": "governorate-fallback",
+      "radius": 34236
+    },
+    "1301-001": {
+      "lat": 30.117261,
+      "lng": 40.388811,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1301-002": {
+      "lat": 29.800833,
+      "lng": 40.443889,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1301-003": {
+      "lat": 30.022016,
+      "lng": 40.066634,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1301-004": {
+      "lat": 29.255227,
+      "lng": 41.444745,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1301-005": {
+      "lat": 30.050692,
+      "lng": 39.915489,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1301-006": {
+      "lat": 30.659324,
+      "lng": 40.562196,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1301-007": {
+      "lat": 30.168056,
+      "lng": 40.296944,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1301-008": {
+      "lat": 30.070317,
+      "lng": 40.718794,
+      "source": "governorate-fallback",
+      "radius": 166046
+    },
+    "1301-009": {
+      "lat": 30.31,
+      "lng": 40.196389,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "1301-010": {
+      "lat": 30.063335,
+      "lng": 40.320771,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1301-011": {
+      "lat": 30.071667,
+      "lng": 40.393889,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1301-012": {
+      "lat": 29.857578,
+      "lng": 40.416573,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1301-013": {
+      "lat": 30.070317,
+      "lng": 40.718794,
+      "source": "governorate-fallback",
+      "radius": 166046
+    },
+    "1301-014": {
+      "lat": 30.070317,
+      "lng": 40.718794,
+      "source": "governorate-fallback",
+      "radius": 166046
+    },
+    "1302-001": {
+      "lat": 31.454449,
+      "lng": 37.158921,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1302-002": {
+      "lat": 30.716111,
+      "lng": 37.980278,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "1302-003": {
+      "lat": 31.115402,
+      "lng": 37.776053,
+      "source": "governorate-fallback",
+      "radius": 121898
+    },
+    "1302-004": {
+      "lat": 31.078996,
+      "lng": 37.625122,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "1302-005": {
+      "lat": 31.424897,
+      "lng": 37.985777,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1302-006": {
+      "lat": 31.115402,
+      "lng": 37.776053,
+      "source": "governorate-fallback",
+      "radius": 121898
+    },
+    "1302-007": {
+      "lat": 30.833727,
+      "lng": 37.866833,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1302-008": {
+      "lat": 31.115402,
+      "lng": 37.776053,
+      "source": "governorate-fallback",
+      "radius": 121898
+    },
+    "1303-001": {
+      "lat": 29.889869,
+      "lng": 39.305832,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1303-002": {
+      "lat": 29.878889,
+      "lng": 39.463333,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1303-003": {
+      "lat": 29.667363,
+      "lng": 39.670529,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1303-004": {
+      "lat": 29.300904,
+      "lng": 39.92173,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1303-005": {
+      "lat": 29.477319,
+      "lng": 39.655676,
+      "source": "governorate-fallback",
+      "radius": 40000
+    },
+    "1304-001": {
+      "lat": 30.294167,
+      "lng": 38.701389,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "1304-002": {
+      "lat": 29.711305,
+      "lng": 38.375857,
+      "source": "overpass",
+      "radius": 2000
+    },
+    "1304-003": {
+      "lat": 30.039034,
+      "lng": 38.453866,
+      "source": "governorate-fallback",
+      "radius": 137337
+    },
+    "1304-004": {
+      "lat": 30.039034,
+      "lng": 38.453866,
+      "source": "governorate-fallback",
+      "radius": 137337
+    },
+    "1304-005": {
+      "lat": 29.820996,
+      "lng": 38.923409,
+      "source": "nominatim",
+      "radius": 2000
+    },
+    "1304-006": {
+      "lat": 30.039034,
+      "lng": 38.453866,
+      "source": "governorate-fallback",
+      "radius": 137337
+    }
+  }
+}

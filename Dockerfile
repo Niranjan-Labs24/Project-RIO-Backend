@@ -27,7 +27,8 @@ FROM node:24-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83
 WORKDIR /app
 RUN corepack enable
 ENV NODE_ENV=production
-# BackupService shells out to `pg_dump` (see src/modules/backup) — not
+# BackupService shells out to `pg_dump`, and the recoverability check to
+# `pg_restore --list` (see src/modules/backup) — neither is
 # available on node:24-slim by default. The db service runs postgres:18
 # (see db/Dockerfile), and pg_dump generally needs to be >= the server's
 # major version, which the base image's own Debian repos aren't guaranteed
@@ -61,6 +62,17 @@ RUN pnpm install --frozen-lockfile --prod
 # prisma.config.ts (schema/migrations are a CLI-only concern — see README for
 # how migrations are applied; the running app never reads prisma/schema.prisma).
 COPY --from=build /app/dist ./dist
+# The embedded Arabic fonts (RIO-NFR-007). arabic-text.ts resolves them as
+# join(__dirname, '../../../assets/fonts'), which from dist/modules/reports is
+# /app/assets/fonts — outside dist, so `nest build`'s asset globs (nest-cli.json,
+# which covers only generated/prisma) never place them there.
+#
+# Without this line the image has no fonts and getArabicFont() throws ENOENT on
+# the FIRST Arabic glyph in any exported PDF — while working perfectly on every
+# developer machine, because there the process runs from the repo root and the
+# relative path happens to resolve. Exactly the failure mode that makes a
+# missing COPY expensive to find.
+COPY --from=build /app/assets ./assets
 # EvidenceStorageService lazily mkdir -p's subdirectories under
 # EVIDENCE_STORAGE_PATH (default ./storage/evidence, relative to /app) the
 # first time a file is written — pre-create the parent here, owned by the

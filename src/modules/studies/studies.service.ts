@@ -599,6 +599,14 @@ export class StudiesService {
       requiredSampleSize: row.requiredSampleSize,
       minimumDetectableEffect: row.minimumDetectableEffect,
       cycleNumber: row.cycleNumber,
+      // RIO-DATA-002 — lets the unified dashboard separate imported
+      // pre-platform studies from cycles run on the platform, and compare
+      // the two by the date each study was actually conducted.
+      isHistorical: row.isHistorical,
+      historicalStudyDate: row.historicalStudyDate
+        ? row.historicalStudyDate.toISOString().slice(0, 10)
+        : null,
+      historicalStudyId: row.historicalStudyId,
       createdBy: row.createdBy,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),

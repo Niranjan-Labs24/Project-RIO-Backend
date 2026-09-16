@@ -112,6 +112,9 @@ function makeService(overrides: { activeNotice?: unknown; noticeError?: Error } 
     audit as never,
     sessions as never,
     consent as never,
+    // RIO-FR-002 cleaning — fire-and-forget after the transaction, with its
+    // own spec. Stubbed so it resolves; these tests are about consent.
+    { cleanSurveyResponse: vi.fn(async () => undefined) } as never,
   );
 
   // The link/challenge lookups hit the DB through private helpers; stubbing

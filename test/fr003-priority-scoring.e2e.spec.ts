@@ -79,6 +79,12 @@ describe("FR-003 priority scoring (e2e)", () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(AiService)
       .useValue({
+        // Whatever AiService a test stands in for still has to answer
+        // "which model actually ran" — the services under test record it on
+        // the row they write, and a stub without it throws inside a catch,
+        // which shows up as a summary or decision that silently never
+        // appears rather than as a failure pointing here.
+        resolveModelName: () => 'cohere.command-a-03-2025',
         run: async (task: { name: string }) => {
           if (task.name === "need-theme-extraction") {
             return { response: { themes: THEMES, rationale: "stub" } };
@@ -148,6 +154,18 @@ describe("FR-003 priority scoring (e2e)", () => {
     const id = randomUUID();
     await owner.$transaction(async (tx) => {
       await tx.$executeRawUnsafe(`SET LOCAL app.current_org_id = '${need!.orgId}'`);
+      // A PUBLISHED survey alongside the score, because the two cannot be
+      // separated in the real flow: PriorityService.score() refuses with
+      // SURVEY_NOT_FOUND unless one exists, and PriorityV2Service.listForOrg()
+      // now lists only Needs that have one. Seeding the score without it
+      // would build a state the application cannot produce, and the row would
+      // (correctly) never reach the dashboard.
+      await tx.$executeRawUnsafe(
+        `INSERT INTO surveys
+           (org_id, need_id, study_id, title, status, created_by, updated_at)
+         VALUES ($1::uuid, $2::uuid, $3::uuid, $4, 'PUBLISHED', $5::uuid, now())`,
+        need!.orgId, needId, need!.studyId, 'Scored survey', need!.createdBy,
+      );
       await tx.$executeRawUnsafe(
         `INSERT INTO priority_scores
            (id, org_id, need_id, study_id, overall_score, level, gap_type, factors, scored_at)
@@ -371,6 +389,46 @@ describe("FR-003 priority scoring (e2e)", () => {
       .set("x-csrf-token", analystCsrf)
       .send({ overrideScore: 90, reason: "Too late." })
       .expect(400);
+  }, TEST_TIMEOUT_MS);
+
+  // Regression for a real defect found in Pass 3 QA (UI-verified with 17 real
+  // public-survey responses before being traced to source): the Priority
+  // Dashboard list (`GET /api/priority-scores`, backed by
+  // PriorityV2Service#listForOrg) used to source its `score` field
+  // exclusively from VillagePriorityAssessment — a separate survey/village
+  // rollup pipeline that feeds RPT14 reports — and never queried
+  // `priority_scores` at all. A Need could be fully scored and approved on
+  // its own Insights page (PriorityService#score/#approve) and still show
+  // "Not scored yet" on this list forever, because the list never looked at
+  // the table the sign-off wrote to.
+  it("a Need's own approved priority score appears on the Priority Dashboard list", async () => {
+    const needId = await createNeed();
+    const scoreId = await seedScore(needId, 62);
+
+    // Unapproved yet — must not leak onto the public dashboard list (same
+    // "never publicly visible until approved" rule the schema documents on
+    // PriorityScore.approvedBy).
+    const beforeApproval = await request(app.getHttpServer())
+      .get("/api/priority-scores")
+      .set("Cookie", analystCookies)
+      .expect(200);
+    const rowBefore = beforeApproval.body.find((r: { needId: string }) => r.needId === needId);
+    expect(rowBefore?.score ?? null).toBeNull();
+
+    await request(app.getHttpServer())
+      .patch(`/api/priority-scores/${scoreId}/approve`)
+      .set("Cookie", analystCookies)
+      .set("x-csrf-token", analystCsrf)
+      .expect(200);
+
+    const afterApproval = await request(app.getHttpServer())
+      .get("/api/priority-scores")
+      .set("Cookie", analystCookies)
+      .expect(200);
+    const rowAfter = afterApproval.body.find((r: { needId: string }) => r.needId === needId);
+    expect(rowAfter?.score).toBeTruthy();
+    expect(rowAfter.score.overallScore).toBe(62);
+    expect(rowAfter.score.level).toBe("medium");
   }, TEST_TIMEOUT_MS);
 
   it("the database refuses an override with no reason, whatever the service does", async () => {
