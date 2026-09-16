@@ -6,7 +6,7 @@ import { PriorityService } from "./priority.service";
 import { DeterministicScoringService } from "./scoring.service";
 import { ScoreRollupService } from "./rollup.service";
 import { PriorityV2Service } from "./priority-v2.service";
-import { VillageAggregationService } from "./village-aggregation.service";
+import { CenterAggregationService } from "./center-aggregation.service";
 
 @Module({
   imports: [MethodologyConfigModule, NeedThemesModule],
@@ -16,9 +16,9 @@ import { VillageAggregationService } from "./village-aggregation.service";
     DeterministicScoringService,
     ScoreRollupService,
     PriorityV2Service,
-    VillageAggregationService,
+    CenterAggregationService,
   ],
-  // VillageAggregationService exported so RIO-FR-008 (Sprint 3, interactive
+  // CenterAggregationService exported so RIO-FR-008 (Sprint 3, interactive
   // village map) can import PriorityModule and inject it directly rather
   // than re-implementing the same village-level aggregation.
   // PriorityService exported for RIO-AI-004: Q24 requires current scores to
@@ -29,7 +29,7 @@ import { VillageAggregationService } from "./village-aggregation.service";
     DeterministicScoringService,
     ScoreRollupService,
     PriorityV2Service,
-    VillageAggregationService,
+    CenterAggregationService,
   ],
 })
 export class PriorityModule {}

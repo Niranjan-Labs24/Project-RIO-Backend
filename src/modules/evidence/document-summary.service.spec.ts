@@ -3,6 +3,9 @@ import { orgContext } from "../../tenancy/org-context";
 import { DocumentSummaryService } from "./document-summary.service";
 import { EVIDENCE_DOCUMENT_SUMMARY_TASK } from "../ai/prompts/evidence-document-summary.task";
 
+// What the OCI path actually serves — see AiService.resolveModelName.
+const OCI_MODEL = "cohere.command-a-03-2025";
+
 describe("DocumentSummaryService", () => {
   let service: DocumentSummaryService;
   let mockTenant: any;
@@ -36,7 +39,10 @@ describe("DocumentSummaryService", () => {
       },
       combinedReportSummary: { updateMany: vi.fn() },
     };
-    mockAi = { run: vi.fn() };
+    // resolveModelName reports the model that actually answered. It is not
+    // the task's literal: every task names a Gemini model, while the OCI path
+    // is served by the configured Cohere deployment.
+    mockAi = { run: vi.fn(), resolveModelName: vi.fn(() => OCI_MODEL) };
     mockAudit = { record: vi.fn().mockResolvedValue(undefined) };
     service = new DocumentSummaryService(mockTenant, mockAi, mockAudit);
   });
@@ -80,6 +86,8 @@ describe("DocumentSummaryService", () => {
 
     const stored = mockTenant.evidenceDocumentSummary.create.mock.calls[0][0].data;
     expect(stored.promptVersion).toBe(EVIDENCE_DOCUMENT_SUMMARY_TASK.promptVersion);
-    expect(stored.modelName).toBe(EVIDENCE_DOCUMENT_SUMMARY_TASK.model);
+    // The provider's model, NOT EVIDENCE_DOCUMENT_SUMMARY_TASK.model — the
+    // point of storing it is being able to say which model produced this text.
+    expect(stored.modelName).toBe(OCI_MODEL);
   });
 });

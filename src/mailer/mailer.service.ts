@@ -5,25 +5,117 @@ import { redactEmail } from '../common/security/redact';
 import { SystemLogsService } from '../modules/system-logs/system-logs.service';
 
 /**
- * TODO (later phase — client, Twilio integration): move email off Resend onto
- * Twilio's Emails API (POST https://comms.twilio.com/v1/Emails, HTTP Basic
- * auth with the SAME TWILIO_API_KEY_SID/SECRET that SmsService now uses,
- * `from` = NoReply@impetus.sa on the verified impetus.sa domain).
- *
- * Twilio's Emails endpoint is a raw HTTP call (not in the `twilio` SDK) with
- * a different payload shape ({ from:{address,name}, to:[{address,name}],
- * content:{subject,html,text} }) and an async 202 + operationId response.
- * The clean shape is a small EmailProvider interface with Resend and Twilio
- * implementations selected by a MAIL_PROVIDER env var; each of the six send
- * methods below keeps building its own subject/text/html and just calls the
- * provider. SMS was done first (2026-09) per the client's phasing; this is
- * not started.
+ * Client-agnostic shape both providers below satisfy, so every one of the
+ * seven send methods in this file can keep calling
+ * `this.client.emails.send(mail)` unchanged regardless of which provider is
+ * actually configured — only the constructor and this adapter know which
+ * one is in play.
  */
+interface EmailSendResult {
+  error?: { name: string; message: string };
+}
+interface EmailMail {
+  from: string;
+  to: string | string[];
+  subject: string;
+  text: string;
+  html: string;
+  bcc?: string | string[];
+  replyTo?: string;
+  attachments?: { filename: string; content: Buffer; contentId?: string }[];
+}
+interface EmailClientLike {
+  emails: { send(mail: EmailMail): Promise<EmailSendResult> };
+}
+
+/**
+ * Twilio's Emails API (POST https://comms.twilio.com/v1/Emails) — a raw HTTP
+ * call, not in the `twilio` SDK, with HTTP Basic auth against a SEPARATE
+ * API-Key pair from the one SmsService uses (TWILIO_EMAIL_API_KEY_SID/SECRET,
+ * the "rio" key issued for the Comms/Emails product under the impetus.sa
+ * account). `from` is always the verified impetus.sa sending address, not
+ * MAIL_FROM — Twilio rejects sends from an unverified address the same way
+ * Resend's sandbox mode rejects sends to an unverified recipient.
+ *
+ * The endpoint replies 202 + an operationId (queued, not "delivered"); any
+ * other status is treated as a send failure. Attachment mapping (used only
+ * by sendSurveyLink's inline QR code) is best-effort and has not been
+ * confirmed against a real Twilio response — verify before relying on it.
+ */
+class TwilioEmailClient implements EmailClientLike {
+  constructor(
+    private readonly apiKeySid: string,
+    private readonly apiKeySecret: string,
+    private readonly fromAddress: string,
+    private readonly fromName: string,
+  ) {}
+
+  emails = {
+    send: async (mail: EmailMail): Promise<EmailSendResult> => {
+      try {
+        const toAddresses = Array.isArray(mail.to) ? mail.to : [mail.to];
+        const payload: Record<string, unknown> = {
+          from: { address: this.fromAddress, name: this.fromName },
+          to: toAddresses.map((address) => ({ address })),
+          content: { subject: mail.subject, html: mail.html, text: mail.text },
+        };
+        if (mail.bcc) {
+          const bccAddresses = Array.isArray(mail.bcc) ? mail.bcc : [mail.bcc];
+          payload.bcc = bccAddresses.map((address) => ({ address }));
+        }
+        if (mail.replyTo) {
+          payload.replyTo = { address: mail.replyTo };
+        }
+        if (mail.attachments?.length) {
+          payload.attachments = mail.attachments.map((a) => ({
+            filename: a.filename,
+            content: a.content.toString('base64'),
+            contentId: a.contentId,
+          }));
+        }
+        const auth = Buffer.from(`${this.apiKeySid}:${this.apiKeySecret}`).toString('base64');
+        const res = await fetch('https://comms.twilio.com/v1/Emails', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Basic ${auth}` },
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) return {};
+        const body = await res.text().catch(() => '');
+        return { error: { name: `HTTP_${res.status}`, message: body || res.statusText } };
+      } catch (err) {
+        return {
+          error: {
+            name: 'TWILIO_EMAIL_REQUEST_FAILED',
+            message: err instanceof Error ? err.message : String(err),
+          },
+        };
+      }
+    },
+  };
+}
+
+/**
+ * Thin adapter so Resend satisfies the same EmailClientLike shape as
+ * TwilioEmailClient — Resend types `error` as `null` (not `undefined`) when
+ * absent, which is the only mismatch.
+ */
+class ResendEmailClient implements EmailClientLike {
+  private readonly resend: Resend;
+  constructor(apiKey: string) {
+    this.resend = new Resend(apiKey);
+  }
+  emails = {
+    send: async (mail: EmailMail): Promise<EmailSendResult> => {
+      const { error } = await this.resend.emails.send(mail);
+      return error ? { error: { name: error.name, message: error.message } } : {};
+    },
+  };
+}
 
 @Injectable()
 export class MailerService {
   private readonly logger = new Logger(MailerService.name);
-  private readonly client?: Resend;
+  private readonly client?: EmailClientLike;
 
   constructor(
     private readonly config: ConfigService,
@@ -32,9 +124,21 @@ export class MailerService {
     // missing recorder degrades to stdout-only, never to a crash.
     @Optional() private readonly systemLogs?: SystemLogsService,
   ) {
+    if (this.config.mailProvider === 'twilio') {
+      const sid = this.config.twilioEmailApiKeySid;
+      const secret = this.config.twilioEmailApiKeySecret;
+      if (!sid || !secret) return; // not configured — every send method returns false
+      this.client = new TwilioEmailClient(
+        sid,
+        secret,
+        this.config.twilioEmailFromAddress,
+        this.config.twilioEmailFromName,
+      );
+      return;
+    }
     const apiKey = this.config.resendApiKey;
     if (!apiKey) return; // not configured — sendTemporaryPassword returns false
-    this.client = new Resend(apiKey);
+    this.client = new ResendEmailClient(apiKey);
   }
 
   async sendTemporaryPassword(email: string, orgName: string, tempPassword: string): Promise<boolean> {
@@ -318,7 +422,7 @@ export class MailerService {
       eventCode: 'MAILER_SEND_FAILED',
       message: `Failed to send ${kind} email to ${recipient}`,
       error,
-      context: { ...context, provider: 'resend', kind, recipient },
+      context: { ...context, provider: this.config.mailProvider, kind, recipient },
     });
   }
 }

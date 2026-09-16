@@ -76,6 +76,30 @@ export const EnvSchema = Type.Object({
   // temp-password reveal.
   RESEND_API_KEY: Type.Optional(Type.String()),
   MAIL_FROM: Type.String({ default: 'RIO <no-reply@rio.local>' }),
+  // Which email transport MailerService sends through. 'resend' (default)
+  // keeps existing environments working unchanged. 'twilio' routes every
+  // send method through Twilio's Emails API (POST comms.twilio.com/v1/Emails)
+  // instead — the impetus.sa account's real provider, once
+  // TWILIO_EMAIL_API_KEY_SID/SECRET below are set. Resend's sandbox mode can
+  // only deliver to its own verified address, which is why invite/temp-
+  // password emails to real recipients were silently failing under it.
+  MAIL_PROVIDER: Type.Union([Type.Literal('resend'), Type.Literal('twilio')], {
+    default: 'resend',
+  }),
+  // Twilio Emails API credentials — a SEPARATE API key from the
+  // TWILIO_API_KEY_SID/SECRET pair above (those are for SMS/Programmable
+  // Messaging). This is the "rio" API key issued under the impetus.sa
+  // account for the Comms/Emails product specifically. Auth is HTTP Basic
+  // (apiKeySid:apiKeySecret) directly against comms.twilio.com, not the
+  // `twilio` SDK. When either is unset, MailerService falls back to
+  // RESEND_API_KEY's configured/not-configured behavior.
+  TWILIO_EMAIL_API_KEY_SID: Type.Optional(Type.String()),
+  TWILIO_EMAIL_API_KEY_SECRET: Type.Optional(Type.String()),
+  // Must be a verified sending address/domain on the Twilio account, or
+  // every send will be rejected the same way Resend's sandbox mode rejects
+  // unverified recipients.
+  TWILIO_EMAIL_FROM_ADDRESS: Type.String({ default: 'NoReply@impetus.sa' }),
+  TWILIO_EMAIL_FROM_NAME: Type.String({ default: 'RIO' }),
   // Twilio (SMS OTP delivery for the citizen public survey flow — see
   // SmsService). When TWILIO_ACCOUNT_SID is unset the SMS channel is "not
   // configured", same not-configured/soft-fail convention as Resend above —

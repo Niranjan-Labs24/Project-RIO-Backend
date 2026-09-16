@@ -1,0 +1,259 @@
+import { EXCLUDE_MERGED } from '../needs/need-visibility';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
+import { getOrgStore } from '../../tenancy/org-context';
+import { DEFAULT_THRESHOLDS, mapPriorityLevel, type ScoringThresholds } from './scoring';
+import type { CenterComparisonEntry, PriorityScoreRow } from './priority.types';
+
+// RIO-FR-005 (Q9) — cross-entity comparison scope, same convention as
+// StudiesService's isCrossOrgReader branch: system_admin, system_reviewer
+// (also platform-wide, no tenant org of its own), and center_supervisor (the
+// confirmed "NCNP" role) read across every org via the supervisor client;
+// every other role stays inside their own org's RLS-scoped data.
+const CROSS_ENTITY_COMPARISON_ROLES = new Set(['system_admin', 'system_reviewer', 'center_supervisor']);
+
+/**
+ * RIO-FR-005 — comparing places against each other, and the aggregate
+ * RIO-FR-008's map plots.
+ *
+ * ─── Why Center, not village ────────────────────────────────────────────────
+ * `Need.village` is free text a researcher types. Nothing validates it, the
+ * same place is spelled several ways, and the client confirmed (Sprint 3
+ * clarifications Q2) that no authoritative village dataset exists on their
+ * side or in any open source. Grouping on that string groups on a typo as
+ * readily as on a place.
+ *
+ * Center is the smallest unit the platform actually has authoritative data
+ * for: 1,404 of them in the client's own KSA Geographic Reference, each with
+ * a stable code, a parent governorate and region, and geocoded coordinates.
+ * A Need is linked to its Center through NeedCenter — a real foreign key, not
+ * a string. So the comparison groups on Center and reports the village names
+ * underneath as labels, which is what they honestly are.
+ *
+ * ─── Why the average of Priority Scores ─────────────────────────────────────
+ * This used to read VillagePriorityAssessment — a second, separate score with
+ * its own domain weights AND the opposite polarity (there, low meant urgent).
+ * Two scores for one question caused a real bug: the Priority Dashboard read
+ * the wrong one and showed "Not scored yet" for needs that were fully scored.
+ *
+ * There is one priority number in this platform, the per-Need PriorityScore
+ * that FR-003 defines and a reviewer signs off. A place's score is the mean
+ * of its needs' scores. Same 0-100 scale, same direction (high = urgent),
+ * same bands from the same configured thresholds — so a centre reading 85
+ * and a need reading 85 mean the same thing.
+ *
+ * That also removes this path's dependency on DomainPriorityConfig, which is
+ * only seeded for a retired methodology version, so every study created
+ * against the live one produced no assessment at all.
+ */
+@Injectable()
+export class CenterAggregationService {
+  constructor(private readonly tenant: TenantPrismaService) {}
+
+  async compareCenters(studyIds: string[]): Promise<CenterComparisonEntry[]> {
+    const byCenter = await this.aggregateByCenter(studyIds);
+    return Array.from(byCenter.values()).sort((a, b) =>
+      a.centerName.localeCompare(b.centerName),
+    );
+  }
+
+  /**
+   * The shared aggregation step, keyed by centre id rather than returned as a
+   * sorted array — FR-008's map looks one centre's aggregate up directly on
+   * marker click rather than scanning a list.
+   */
+  async aggregateByCenter(studyIds: string[]): Promise<Map<string, CenterComparisonEntry>> {
+    if (studyIds.length === 0) {
+      throw new BadRequestException({
+        error: { code: 'NO_STUDIES_SELECTED', message: 'Select at least one study to compare.' },
+      });
+    }
+
+    const store = getOrgStore();
+    const crossEntity = store?.role ? CROSS_ENTITY_COMPARISON_ROLES.has(store.role) : false;
+    const runner = crossEntity
+      ? this.tenant.runAsSupervisor.bind(this.tenant)
+      : this.tenant.runInOrgContext.bind(this.tenant);
+
+    const { needs, scores, centers, thresholds } = await runner(async (tx) => {
+      const studies = await tx.study.findMany({
+        where: { id: { in: studyIds } },
+        select: { id: true },
+      });
+      const foundIds = new Set(studies.map((s) => s.id));
+      const missing = studyIds.filter((id) => !foundIds.has(id));
+      if (missing.length > 0) {
+        throw new NotFoundException({
+          error: {
+            code: 'STUDY_NOT_FOUND',
+            message: `Study not found or not accessible: ${missing.join(', ')}`,
+          },
+        });
+      }
+
+      const needs = await tx.need.findMany({
+        where: { studyId: { in: studyIds }, ...EXCLUDE_MERGED },
+        include: { needCenters: { select: { centerId: true } } },
+      });
+
+      // Approved scores only: an unapproved number has not cleared the
+      // FR-003 human-review gate, and averaging it into a place's headline
+      // figure would publish it through the back door.
+      const scores = await tx.priorityScore.findMany({
+        where: {
+          studyId: { in: studyIds },
+          surveyLinkId: null,
+          approvedAt: { not: null },
+        },
+        orderBy: { scoredAt: 'desc' },
+      });
+
+      const centerIds = [...new Set(needs.flatMap((n) => n.needCenters.map((c) => c.centerId)))];
+      const centers = centerIds.length
+        ? await tx.center.findMany({
+            where: { id: { in: centerIds } },
+            select: {
+              id: true,
+              name: true,
+              nameAr: true,
+              governorate: {
+                select: { name: true, nameAr: true, region: { select: { name: true, nameAr: true } } },
+              },
+            },
+          })
+        : [];
+
+      const config = await tx.methodologyConfig.findFirst();
+      const raw = (config?.priorityThresholds ?? {}) as Partial<ScoringThresholds>;
+      const thresholds: ScoringThresholds = {
+        criticalSeverity: raw.criticalSeverity ?? DEFAULT_THRESHOLDS.criticalSeverity,
+        highSeverity: raw.highSeverity ?? DEFAULT_THRESHOLDS.highSeverity,
+        equityHighSeverity: raw.equityHighSeverity ?? DEFAULT_THRESHOLDS.equityHighSeverity,
+        mediumSeverity: raw.mediumSeverity ?? DEFAULT_THRESHOLDS.mediumSeverity,
+      };
+
+      return { needs, scores, centers, thresholds };
+    });
+
+    const latestScoreByNeed = new Map<string, PriorityScoreRow>();
+    for (const row of scores as unknown as PriorityScoreRow[]) {
+      if (!latestScoreByNeed.has(row.needId)) latestScoreByNeed.set(row.needId, row);
+    }
+    const centerById = new Map(centers.map((c) => [c.id, c]));
+
+    // Running totals per centre, and per domain within it. Kept alongside the
+    // entry rather than on it so the public shape carries only averages.
+    const totals = new Map<string, { sum: number; count: number }>();
+    const domainTotals = new Map<string, Map<string, { sum: number; count: number }>>();
+
+    const byCenter = new Map<string, CenterComparisonEntry>();
+
+    for (const need of needs) {
+      const scoreRow = latestScoreByNeed.get(need.id);
+      // The reviewer's override is the number this need is ranked on, so it
+      // is the number that feeds the place's mean too.
+      const effective = scoreRow ? (scoreRow.overrideScore ?? scoreRow.overallScore) : null;
+      const domainKey = need.domain ?? '(unclassified)';
+
+      // A Need with no Center cannot be placed. Reported under a single
+      // bucket rather than dropped, so the totals still add up to the study's
+      // real need count — the same rule FR-008's map uses for unmapped needs.
+      const linked = need.needCenters.length > 0 ? need.needCenters.map((c) => c.centerId) : [UNPLACED];
+
+      for (const centerId of linked) {
+        let entry = byCenter.get(centerId);
+        if (!entry) {
+          const center = centerById.get(centerId);
+          entry = {
+            centerId,
+            centerName: center?.name ?? UNPLACED_LABEL,
+            centerNameAr: center?.nameAr ?? null,
+            governorateName: center?.governorate.name ?? null,
+            governorateNameAr: center?.governorate.nameAr ?? null,
+            regionName: center?.governorate.region?.name ?? null,
+            regionNameAr: center?.governorate.region?.nameAr ?? null,
+            villages: [],
+            studyIds: [],
+            priorityScore: null,
+            priorityStatus: null,
+            scoredNeedCount: 0,
+            domainBreakdown: [],
+            criticalNeedCount: 0,
+            highNeedCount: 0,
+            needTypeCounts: {},
+            totalNeedCount: 0,
+            affectedPeople: null,
+            affectedHouseholds: null,
+          };
+          byCenter.set(centerId, entry);
+          totals.set(centerId, { sum: 0, count: 0 });
+          domainTotals.set(centerId, new Map());
+        }
+
+        if (!entry.studyIds.includes(need.studyId)) entry.studyIds.push(need.studyId);
+        // Village names are labels here, not keys — see the class comment.
+        for (const v of need.village) if (v && !entry.villages.includes(v)) entry.villages.push(v);
+
+        entry.totalNeedCount += 1;
+        entry.needTypeCounts[domainKey] = (entry.needTypeCounts[domainKey] ?? 0) + 1;
+
+        if (effective !== null) {
+          const t = totals.get(centerId)!;
+          t.sum += effective;
+          t.count += 1;
+          entry.scoredNeedCount += 1;
+
+          const perDomain = domainTotals.get(centerId)!;
+          const d = perDomain.get(domainKey) ?? { sum: 0, count: 0 };
+          d.sum += effective;
+          d.count += 1;
+          perDomain.set(domainKey, d);
+
+          const level = mapPriorityLevel(effective, false, thresholds);
+          if (level === 'critical') entry.criticalNeedCount += 1;
+          else if (level === 'high') entry.highNeedCount += 1;
+        }
+
+        // RIO-FR-005 (Round 4, client-confirmed 2026-08-24) — sum only the
+        // Needs that actually have a manually entered value; stays null (not
+        // 0) until at least one does, so the UI can tell "no data yet" apart
+        // from "confirmed zero".
+        if (need.affectedPeople !== null) {
+          entry.affectedPeople = (entry.affectedPeople ?? 0) + need.affectedPeople;
+        }
+        if (need.affectedHouseholds !== null) {
+          entry.affectedHouseholds = (entry.affectedHouseholds ?? 0) + need.affectedHouseholds;
+        }
+      }
+    }
+
+    for (const [centerId, entry] of byCenter) {
+      const t = totals.get(centerId)!;
+      if (t.count > 0) {
+        const mean = t.sum / t.count;
+        entry.priorityScore = Math.round(mean * 10) / 10;
+        entry.priorityStatus = mapPriorityLevel(mean, false, thresholds);
+      }
+      const perDomain = domainTotals.get(centerId)!;
+      entry.domainBreakdown = [...perDomain.entries()]
+        .map(([domain, d]) => {
+          const mean = d.sum / d.count;
+          return {
+            domain,
+            needCount: d.count,
+            averageScore: Math.round(mean * 10) / 10,
+            level: mapPriorityLevel(mean, false, thresholds),
+          };
+        })
+        // Worst first — that is the order a reviewer scanning a place reads in.
+        .sort((a, b) => b.averageScore - a.averageScore);
+      entry.villages.sort((a, b) => a.localeCompare(b));
+    }
+
+    return byCenter;
+  }
+}
+
+/** Sentinel key for Needs with no Center link — see the loop above. */
+const UNPLACED = '(unplaced)';
+const UNPLACED_LABEL = '(no centre recorded)';

@@ -162,7 +162,12 @@ ${redacted}`;
       );
     }
 
-    const { promptVersion, model: modelName, modelVersion } = NEED_STATEMENT_SUMMARY_TASK;
+    const { promptVersion, modelVersion } = NEED_STATEMENT_SUMMARY_TASK;
+    // Not NEED_STATEMENT_SUMMARY_TASK.model — that names Gemini on every task,
+    // while the OCI path is served by Cohere Command A. This string is shown
+    // to the reviewer as "Suggested by <model>", so it has to be the one that
+    // actually produced the text.
+    const modelName = this.ai.resolveModelName(NEED_STATEMENT_SUMMARY_TASK);
 
     const created = await this.tenant.runInOrgContext(async (tx) => {
       // A fresh generation supersedes any older DRAFT for this Need, so the

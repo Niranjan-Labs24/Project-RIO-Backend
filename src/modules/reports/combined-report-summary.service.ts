@@ -239,9 +239,13 @@ export class CombinedReportSummaryService {
     });
 
     const inputHash = crypto.createHash("sha256").update(inputDataToHash).digest("hex");
-    // Prompt, schema and model settings all come from the declared task, so the
-    // recorded promptVersion always matches the prompt that ran.
-    const { promptVersion, model: modelName, modelVersion } = COMBINED_REPORT_SUMMARY_TASK;
+    // Prompt and schema come from the declared task, so the recorded
+    // promptVersion always matches the prompt that ran. The MODEL does not:
+    // every task literal names Gemini, while the OCI path is answered by
+    // Cohere Command A, so it is resolved from the provider. This value is
+    // also embedded in the generated summary's own `aiModel` field below.
+    const { promptVersion, modelVersion } = COMBINED_REPORT_SUMMARY_TASK;
+    const modelName = this.ai.resolveModelName(COMBINED_REPORT_SUMMARY_TASK);
 
     const docSummariesFormatted = selectedDocSummaries.map((s) => ({
       title: s.documentTitle,

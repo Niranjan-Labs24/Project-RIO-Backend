@@ -195,12 +195,25 @@ async function seedStudyConfigOptions(): Promise<void> {
     });
   }
 
-  // The 5 original RIO-FR-005 Q12 values — seeded here (rather than left
-  // empty like Study Type/Target Sector) since they're already real,
-  // in-use data (existing Need.gapType values, frontend i18n keys), not
-  // placeholders. This just makes the existing list editable going
-  // forward; it isn't a data migration.
-  const gapTypes = ['acute', 'chronic', 'structural', 'seasonal', 'equity'];
+  // The RIO-FR-005 Q12 values — seeded here (rather than left empty like
+  // Study Type/Target Sector) since they're already real, in-use data
+  // (existing Need.gapType values), not placeholders. This just makes the
+  // existing list editable going forward; it isn't a data migration.
+  //
+  // Order and spelling follow the client-approved list that
+  // import-arabic-config-lists.ts translates, so the two agree on what a
+  // row is called — an option seeded under a different name would get no
+  // Arabic label and read as an untranslated key in the Arabic UI.
+  // `Conflict-related` was on that approved list but missing here, so the
+  // option never existed for an analyst to pick.
+  const gapTypes = [
+    'acute',
+    'Conflict-related',
+    'chronic',
+    'structural',
+    'seasonal',
+    'equity',
+  ];
   for (const [index, name] of gapTypes.entries()) {
     await prisma.gapTypeOption.upsert({
       where: { name },

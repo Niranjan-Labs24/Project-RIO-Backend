@@ -75,6 +75,12 @@ describe("Need statement summarisation (e2e)", () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(AiService)
       .useValue({
+        // Whatever AiService a test stands in for still has to answer
+        // "which model actually ran" — the services under test record it on
+        // the row they write, and a stub without it throws inside a catch,
+        // which surfaces as a summary or decision that silently never
+        // appears rather than as a failure pointing here.
+        resolveModelName: () => 'cohere.command-a-03-2025',
         run: async (task: { name: string }) => {
           if (task.name === "need-statement-summary") {
             return {

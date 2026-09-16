@@ -43,9 +43,32 @@ export class AiService {
   constructor(private readonly config: ConfigService) {}
 
   /**
-   * Runs one declared AI task. Model, temperature, timeout and retry budget all
-   * come from the task, so each use case is tuned independently rather than
-   * sharing one global profile.
+   * The model that will actually answer this task, for the audit record.
+   *
+   * NOT the same as `task.model`. Every task literal still names a Gemini
+   * model because that was the only provider when they were written, and on
+   * the Gemini path that name really is the model. On the OCI path it is
+   * ignored (see buildOciRequest) — the model there is a deployment choice,
+   * `OCI_GENAI_MODEL_ID`, currently Cohere Command A.
+   *
+   * So anything writing a model name onto a stored decision, summary or
+   * suggestion must call this rather than reading `task.model`, or the audit
+   * trail names a provider that never saw the request. That is not cosmetic:
+   * the whole point of recording the model is being able to say afterwards
+   * which one produced a given answer.
+   */
+  resolveModelName(task: AiTask<unknown>): string {
+    return this.config.aiProvider === 'oci_cohere'
+      ? this.config.ociGenAiModelId
+      : task.model;
+  }
+
+  /**
+   * Runs one declared AI task. Temperature, timeout and retry budget all come
+   * from the task, so each use case is tuned independently rather than sharing
+   * one global profile. The model comes from the task on the Gemini path and
+   * from configuration on the OCI path — `resolveModelName` above is the one
+   * answer to "which model actually ran".
    */
   async run<TResponse>(
     task: AiTask<TResponse>,

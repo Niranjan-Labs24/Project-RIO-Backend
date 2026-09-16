@@ -3,6 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { Prisma } from '../../generated/prisma';
 import { getOrgStore, requireOrgId } from '../../tenancy/org-context';
+import { DEFAULT_THRESHOLDS, mapPriorityLevel, type ScoringThresholds } from './scoring';
 
 /**
  * Per-domain snapshot stored in VillagePriorityAssessment.domainComponents.
@@ -343,6 +344,12 @@ export class PriorityV2Service {
         level: 'critical' | 'high' | 'medium' | 'low';
         overrideReason: string | null;
         scoredAt: string;
+        // Which pipeline produced `overallScore`. The two do not agree on
+        // direction — `priorityScore` is a severity (high = urgent) while
+        // `villageRollup` is a performance figure (low = urgent) — so any
+        // consumer that does arithmetic on the number, rather than just
+        // displaying it, has to know which one it is holding.
+        source: 'priorityScore' | 'villageRollup';
       } | null;
     }>
   > {
@@ -367,7 +374,7 @@ export class PriorityV2Service {
       : this.tenant.runInOrgContext.bind(this.tenant);
 
     return runner(async (tx) => {
-      const [studies, needs, surveys, assessments, priorityScores] = await Promise.all([
+      const [studies, needs, surveys, assessments, priorityScores, config] = await Promise.all([
         tx.study.findMany(),
         tx.need.findMany({ where: EXCLUDE_MERGED, orderBy: { updatedAt: 'desc' } }),
         tx.survey.findMany({ orderBy: { createdAt: 'desc' } }),
@@ -393,7 +400,20 @@ export class PriorityV2Service {
           where: { surveyLinkId: null, approvedAt: { not: null } },
           orderBy: { scoredAt: 'desc' },
         }),
+        // Read here rather than through MethodologyConfigService: this method
+        // already runs everything it needs in one transaction, and injecting
+        // that service into this one only to read four numbers would add a
+        // module dependency for no behavioural gain.
+        tx.methodologyConfig.findFirst(),
       ]);
+
+      const raw = (config?.priorityThresholds ?? {}) as Partial<ScoringThresholds>;
+      const thresholds: ScoringThresholds = {
+        criticalSeverity: raw.criticalSeverity ?? DEFAULT_THRESHOLDS.criticalSeverity,
+        highSeverity: raw.highSeverity ?? DEFAULT_THRESHOLDS.highSeverity,
+        equityHighSeverity: raw.equityHighSeverity ?? DEFAULT_THRESHOLDS.equityHighSeverity,
+        mediumSeverity: raw.mediumSeverity ?? DEFAULT_THRESHOLDS.mediumSeverity,
+      };
 
       const studyTitleById = new Map(studies.map((s) => [s.id, s.title]));
       const surveyByNeedId = new Map<string, (typeof surveys)[number]>();
@@ -424,7 +444,23 @@ export class PriorityV2Service {
         }
       }
 
+      // Only Needs that have a PUBLISHED survey.
+      //
+      // A priority score cannot exist without one: PriorityService.score()
+      // looks up `survey.findFirst({ needId, status: 'PUBLISHED' })` and
+      // throws SURVEY_NOT_FOUND when there is none. So a Need with no
+      // published survey can never be anything but "Not scored yet" on this
+      // list, and listing it only buries the Needs a reviewer can actually
+      // act on — 226 rows to find 5 that were scoreable.
+      //
+      // Needs whose survey is still DRAFT or SUBMITTED belong on the Study's
+      // own Needs table, which is where that stage of the work is tracked.
+      const publishedNeedIds = new Set(
+        surveys.filter((survey) => survey.status === 'PUBLISHED').map((survey) => survey.needId),
+      );
+
       return needs
+        .filter((need) => publishedNeedIds.has(need.id))
         .filter((need) => !gapType || need.gapType === gapType)
         .map((need) => {
           const survey = surveyByNeedId.get(need.id);
@@ -437,9 +473,25 @@ export class PriorityV2Service {
           const score = priorityScore
             ? {
                 overallScore: priorityScore.overrideScore ?? priorityScore.overallScore,
-                level: priorityScore.level,
+                // Banded from the number actually shown, not from the stored
+                // `level`. That column is the engine's band for the COMPUTED
+                // score and is deliberately never rewritten (AC 5 - the two
+                // must stay distinguishable), so an overridden need rendered
+                // as "85 / Medium": the reviewer's 85 next to the band for the
+                // engine's 64. The dashboard's level tiles and its level
+                // filter both read this field, so a stale band mis-counted and
+                // mis-filtered the need, not just mis-labelled it.
+                //
+                // Equity is passed as false for an override: that flag lifts a
+                // borderline COMPUTED score, and a reviewer who types a number
+                // has already made the judgement it stands in for.
+                level:
+                  priorityScore.overrideScore === null
+                    ? priorityScore.level
+                    : mapPriorityLevel(priorityScore.overrideScore, false, thresholds),
                 overrideReason: priorityScore.overrideReason,
                 scoredAt: priorityScore.scoredAt.toISOString(),
+                source: 'priorityScore' as const,
               }
             : assessment
               ? {
@@ -453,6 +505,7 @@ export class PriorityV2Service {
                     | 'low',
                   overrideReason: assessment.overrideReason,
                   scoredAt: assessment.calculatedAt.toISOString(),
+                  source: 'villageRollup' as const,
                 }
               : null;
           return {
