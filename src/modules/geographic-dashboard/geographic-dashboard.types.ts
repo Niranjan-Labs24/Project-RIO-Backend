@@ -115,3 +115,57 @@ export interface GeoMapResponse {
     statuses: string[];
   };
 }
+
+/**
+ * What a point's drill-down can list. The map panel shows three figures —
+ * needs, studies, published — and each one opens the rows behind it, so the
+ * kinds mirror those figures exactly rather than inventing a fourth view.
+ *
+ * `published` is the same set as `needs` narrowed to those that cleared
+ * review, not a separate entity: see GeoMapPoint.publishedCount, which counts
+ * needs whose status is reviewer_approved.
+ */
+export const GEO_ITEM_KINDS = ['needs', 'studies', 'published'] as const;
+export type GeoItemKind = (typeof GEO_ITEM_KINDS)[number];
+
+/** A need listed under a map point, with what the panel needs to identify it
+ *  and enough ids to link through to the real record. */
+export interface GeoNeedItem {
+  id: string;
+  title: string;
+  status: string;
+  urgency: string | null;
+  domain: string | null;
+  band: PriorityBand | null;
+  /** The study the need belongs to — the detail route needs both ids. */
+  studyId: string;
+  studyTitle: string;
+  /** Only distinguishing for a cross-entity viewer; an org sees only itself. */
+  orgName: string;
+}
+
+/** A study listed under a map point. `needCount` is scoped to THIS point, not
+ *  the study's total, so the number agrees with what the panel is showing. */
+export interface GeoStudyItem {
+  id: string;
+  title: string;
+  needCount: number;
+  orgName: string;
+}
+
+export interface GeoPointItemsResponse {
+  pointId: string;
+  pointName: string;
+  level: GeoLevel;
+  kind: GeoItemKind;
+  /** Rows before the cap below, so the client can say "showing 50 of 367"
+   *  instead of quietly truncating. */
+  total: number;
+  needs?: GeoNeedItem[];
+  studies?: GeoStudyItem[];
+}
+
+/** A panel list is for orientation, not for browsing an entire dataset — a
+ *  point with 367 needs must not ship 367 rows into a popup. The client links
+ *  through to the real screens for the rest. */
+export const MAX_ITEMS_PER_POINT = 50;

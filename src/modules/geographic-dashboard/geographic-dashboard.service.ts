@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore } from '../../tenancy/org-context';
 import { roleByKey } from '../../rbac/role-matrix';
@@ -12,6 +12,11 @@ import {
   type GeoMapOrgSummary,
   type GeoMapResponse,
   type PriorityBand,
+  MAX_ITEMS_PER_POINT,
+  type GeoItemKind,
+  type GeoNeedItem,
+  type GeoStudyItem,
+  type GeoPointItemsResponse,
 } from './geographic-dashboard.types';
 
 /** A need reduced to the fields the map actually aggregates on. */
@@ -30,6 +35,12 @@ interface MapNeed {
   domain: string | null;
   villages: string[];
   isPublished: boolean;
+  // Carried for the per-point drill-down (getPointItems) rather than the map
+  // itself, which only ever counts. Selected in the same query because that
+  // query already walks every need: a second pass to fetch titles for one
+  // point would re-run the whole tenant-scoped read to answer a click.
+  title: string;
+  studyTitle: string;
 }
 
 /** One plottable place, whatever level it came from. */
@@ -151,8 +162,7 @@ export class GeographicDashboardService {
       // Same field as leadingDomain now that "sector" means the need's
       // domain; kept as its own property because the client labels the two
       // differently (a filter chip vs a headline).
-      const topSector =
-        [...b.sectors.entries()].sort((a, c) => c[1] - a[1])[0]?.[0] ?? null;
+      const topSector = [...b.sectors.entries()].sort((a, c) => c[1] - a[1])[0]?.[0] ?? null;
       points.push({
         id: place.id,
         code: place.code,
@@ -175,8 +185,7 @@ export class GeographicDashboardService {
         studyCount: b.studyIds.size,
         orgCount: b.orgStudies.size,
         publishedCount: b.published,
-        leadingDomain:
-          [...b.domains.entries()].sort((x, y) => y[1] - x[1])[0]?.[0] ?? null,
+        leadingDomain: [...b.domains.entries()].sort((x, y) => y[1] - x[1])[0]?.[0] ?? null,
         workingOrgs: [...b.orgStudies.entries()]
           .map(([name, studies]): GeoMapOrgSummary => ({ name, studyCount: studies.size }))
           .sort((x, y) => y.studyCount - x.studyCount)
@@ -200,6 +209,98 @@ export class GeographicDashboardService {
     };
   }
 
+  /**
+   * The rows behind one point's figures.
+   *
+   * Deliberately rebuilt from loadNeeds() and the same filter predicate as
+   * getMap rather than from a query of its own: the panel's "2 Needs" and the
+   * list that opens from it have to be the same two needs. A second query with
+   * its own WHERE clause is exactly how those two drift apart — a merged
+   * duplicate excluded from the map but present in the list, or a filter the
+   * drill-down forgets to apply.
+   *
+   * The cost is loading the tenant's needs to answer a click on one point.
+   * That is the same read the map itself just did, and correctness here is
+   * worth more than a narrower query that can disagree with the picture.
+   */
+  async getPointItems(
+    pointId: string,
+    level: GeoLevel,
+    kind: GeoItemKind,
+    filters: GeoMapFilters = {},
+  ): Promise<GeoPointItemsResponse> {
+    const [places, needs] = await Promise.all([this.loadPlaces(level), this.loadNeeds()]);
+
+    const place = places.find((p) => p.id === pointId);
+    if (!place) {
+      throw new NotFoundException({
+        error: {
+          code: 'GEO_POINT_NOT_FOUND',
+          message: `No ${level} with id ${pointId}.`,
+        },
+      });
+    }
+
+    const here = needs.filter(
+      (n) =>
+        (!filters.sector || n.sector === filters.sector) &&
+        (!filters.urgency || n.urgency === filters.urgency) &&
+        (!filters.status || n.status === filters.status) &&
+        this.idsForLevel(n, level).includes(pointId) &&
+        // `published` narrows the same set rather than selecting a different
+        // one, matching how publishedCount is derived on the map point.
+        (kind !== 'published' || n.isPublished),
+    );
+
+    const base = { pointId, pointName: place.name, level, kind };
+
+    if (kind === 'studies') {
+      const byStudy = new Map<string, GeoStudyItem>();
+      for (const n of here) {
+        const existing = byStudy.get(n.studyId);
+        if (existing) existing.needCount++;
+        else
+          byStudy.set(n.studyId, {
+            id: n.studyId,
+            title: n.studyTitle,
+            // Scoped to this point, so the figure agrees with the panel
+            // rather than reporting the study's total across the country.
+            needCount: 1,
+            orgName: n.orgName,
+          });
+      }
+      const studies = [...byStudy.values()].sort(
+        (a, b) => b.needCount - a.needCount || a.title.localeCompare(b.title),
+      );
+      return {
+        ...base,
+        total: studies.length,
+        studies: studies.slice(0, MAX_ITEMS_PER_POINT),
+      };
+    }
+
+    // Worst-scored first: a panel that opens on "low" when something critical
+    // sits further down buries the one row a reader opened it for. Unscored
+    // needs have no band and sort last.
+    const rank = (b: PriorityBand | null) =>
+      b === null ? PRIORITY_BANDS.length : PRIORITY_BANDS.indexOf(b);
+    const items: GeoNeedItem[] = here
+      .map((n) => ({
+        id: n.id,
+        title: n.title,
+        status: n.status,
+        urgency: n.urgency,
+        domain: n.domain,
+        band: n.band,
+        studyId: n.studyId,
+        studyTitle: n.studyTitle,
+        orgName: n.orgName,
+      }))
+      .sort((a, b) => rank(a.band) - rank(b.band) || a.title.localeCompare(b.title));
+
+    return { ...base, total: items.length, needs: items.slice(0, MAX_ITEMS_PER_POINT) };
+  }
+
   private idsForLevel(need: MapNeed, level: GeoLevel): string[] {
     if (level === 'center') return need.centerIds;
     if (level === 'region') return need.regionIds;
@@ -220,9 +321,17 @@ export class GeographicDashboardService {
         // its people are than a geometric centre would be.
         const govs = await tx.governorate.findMany({
           where: { latitude: { not: null }, longitude: { not: null } },
-          select: { regionId: true, latitude: true, longitude: true, region: { select: { id: true, name: true, code: true } } },
+          select: {
+            regionId: true,
+            latitude: true,
+            longitude: true,
+            region: { select: { id: true, name: true, code: true } },
+          },
         });
-        const byRegion = new Map<string, { sumLat: number; sumLng: number; n: number; name: string; code: string }>();
+        const byRegion = new Map<
+          string,
+          { sumLat: number; sumLng: number; n: number; name: string; code: string }
+        >();
         for (const g of govs) {
           const r = byRegion.get(g.regionId) ?? {
             sumLat: 0,
@@ -327,17 +436,24 @@ export class GeographicDashboardService {
         where: { mergedIntoNeedId: null },
         select: {
           id: true,
+          title: true,
           status: true,
           urgency: true,
           studyId: true,
           domain: true,
           village: true,
           org: { select: { name: true } },
-          study: { select: { targetSector: true } },
-          needGovernorates: { select: { governorateId: true, governorate: { select: { regionId: true } } } },
+          study: { select: { targetSector: true, title: true } },
+          needGovernorates: {
+            select: { governorateId: true, governorate: { select: { regionId: true } } },
+          },
           needCenters: { select: { centerId: true } },
           // Latest score decides the band; earlier ones are history.
-          priorityScores: { select: { level: true, scoredAt: true }, orderBy: { scoredAt: 'desc' }, take: 1 },
+          priorityScores: {
+            select: { level: true, scoredAt: true },
+            orderBy: { scoredAt: 'desc' },
+            take: 1,
+          },
           needInitiatives: {
             select: {
               initiative: { select: { id: true, name: true, status: true, domain: true } },
@@ -368,6 +484,8 @@ export class GeographicDashboardService {
       // "Published" here means the need cleared human review, which is the
       // sense the old regional panel used.
       isPublished: n.status === 'reviewer_approved',
+      title: n.title,
+      studyTitle: n.study.title,
     }));
   }
 }
