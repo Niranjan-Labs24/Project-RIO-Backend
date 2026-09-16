@@ -21,6 +21,8 @@ import { regionGenerator } from "./generators/region.generator";
 import { executiveGenerator } from "./generators/executive.generator";
 import { collectiveGenerator } from "./generators/collective.generator";
 import { sharingStatusGenerator } from "./generators/sharing-status.generator";
+import { topPriorityGenerator } from "./generators/top-priority.generator";
+import { dataQualityGenerator } from "./generators/data-quality.generator";
 import { ReportDataProvider } from "./providers/report-data.provider";
 import {
   EXPORTABLE_STATUSES,
@@ -48,6 +50,33 @@ function formatAssessmentPeriod(min: Date | null, max: Date | null): string | un
   const from = fmt(min);
   const to = fmt(max);
   return from === to ? from : `${from} - ${to}`;
+}
+
+/**
+ * The methodology version a stored report was generated against (AC 5).
+ *
+ * Every core generator writes `header.methodologyVersion`; the survey-scoped
+ * ones additionally carry `survey.methodologyVersion`. Placeholder content has
+ * neither, and returns null rather than a guess — an invented version stamp is
+ * worse than a missing one, because it would be believed.
+ */
+function methodologyVersionOf(content: unknown): string | null {
+  if (typeof content !== "object" || content === null) return null;
+  const c = content as Record<string, unknown>;
+
+  const header = c.header;
+  if (typeof header === "object" && header !== null) {
+    const v = (header as Record<string, unknown>).methodologyVersion;
+    if (typeof v === "string" && v.trim()) return v;
+  }
+
+  const survey = c.survey;
+  if (typeof survey === "object" && survey !== null) {
+    const v = (survey as Record<string, unknown>).methodologyVersion;
+    if (typeof v === "string" && v.trim()) return v;
+  }
+
+  return null;
 }
 
 // Minimal shape both runInOrgContext and runAsSupervisor transaction clients
@@ -134,7 +163,14 @@ export class ReportsService {
 
     const orgId = requireOrgId();
     const generatedBy = requireActor();
-    const filters = payload.filters ?? {};
+    // An optionally survey-scoped type (RPT10) expresses its scope through
+    // filters.surveyId — the one channel the provider reads — so a surveyId
+    // named on the payload is folded in here rather than travelling by a
+    // second route the provider would have to learn about.
+    const filters = {
+      ...(payload.filters ?? {}),
+      ...(meta.supportsSurveyId && payload.surveyId ? { surveyId: payload.surveyId } : {}),
+    };
 
     const { title, content } = await this.generateContent(
       payload.reportType,
@@ -152,7 +188,7 @@ export class ReportsService {
           studyId: payload.studyId ?? null,
           // Only persisted for survey-scoped types — a stray surveyId on a
           // study-scoped type would make the list column lie.
-          surveyId: meta.requiresSurveyId ? (payload.surveyId ?? null) : null,
+          surveyId: meta.requiresSurveyId || meta.supportsSurveyId ? (payload.surveyId ?? null) : null,
           filters: filters as unknown as Prisma.InputJsonValue,
           content: content as unknown as Prisma.InputJsonValue,
           generatedBy,
@@ -172,12 +208,16 @@ export class ReportsService {
 
   async list(params: ListReportsParams): Promise<Report[]> {
     const store = getOrgStore();
-    const isSysAdmin = store?.role === "system_admin";
+    // RIO-RBAC-002 (AC1, fixed 2026-08-23) — center_supervisor holds
+    // reportsDashboards:read+export with crossEntity:true, but this branch
+    // used to check `=== 'system_admin'` literally — see
+    // StudiesService.list's identical comment for the full story.
+    const isCrossOrgReader = store?.role === "system_admin" || store?.role === "center_supervisor";
 
     const take = Math.min(Math.max(params.limit ?? 100, 1), 200);
     const skip = Math.max(params.offset ?? 0, 0);
 
-    if (isSysAdmin) {
+    if (isCrossOrgReader) {
       const where = {
         ...(params.organizationId ? { orgId: params.organizationId } : {}),
         ...(params.reportType ? { reportType: params.reportType } : {}),
@@ -193,18 +233,24 @@ export class ReportsService {
           skip,
         }),
       );
-      await this.audit.record({
-        action: "SYSTEM_ADMIN_VIEWED_REPORT",
-        entityType: "report",
-        // `null`, never the string "all" — audit_logs.entity_id is a UUID
-        // column, so the sentinel made Postgres reject the INSERT and
-        // AuditService.record() swallowed it as a warning, silently losing
-        // every cross-org report view. Same shape as SurveysService.list.
-        entityId: params.organizationId ?? null,
-        entityLabel: params.organizationId ? "Organization Reports" : "All Platform Reports",
-        organizationId: params.organizationId,
-        metadata: { scope: params.organizationId ? "organization" : "all" },
-      });
+      // RIO-RBAC-002 (Round 5, client-confirmed 2026-08-24) — Supervisor
+      // view access isn't logged; the NGO's own onboarding consent already
+      // covers Center/NCNP's right to see/preview their data. Only System
+      // Admin's cross-org view is still logged.
+      if (store?.role === "system_admin") {
+        await this.audit.record({
+          action: "SYSTEM_ADMIN_VIEWED_REPORT",
+          entityType: "report",
+          // `null`, never the string "all" — audit_logs.entity_id is a UUID
+          // column, so the sentinel made Postgres reject the INSERT and
+          // AuditService.record() swallowed it as a warning, silently losing
+          // every cross-org report view. Same shape as SurveysService.list.
+          entityId: params.organizationId ?? null,
+          entityLabel: params.organizationId ? "Organization Reports" : "All Platform Reports",
+          organizationId: params.organizationId,
+          metadata: { scope: params.organizationId ? "organization" : "all" },
+        });
+      }
       return this.hydrate(rows as unknown as ReportRow[], true);
     }
 
@@ -226,20 +272,25 @@ export class ReportsService {
 
   async getById(id: string): Promise<Report> {
     const store = getOrgStore();
-    const isSysAdmin = store?.role === "system_admin";
+    // RIO-RBAC-002 (AC1, fixed 2026-08-23) — see list()'s comment above.
+    const isCrossOrgReader = store?.role === "system_admin" || store?.role === "center_supervisor";
 
-    if (isSysAdmin) {
+    if (isCrossOrgReader) {
       const row = (await this.tenant.runAsSupervisor((tx) =>
         tx.report.findUnique({ where: { id } }),
       )) as ReportRow | null;
       if (!row) throw new NotFoundException({ error: { code: "REPORT_NOT_FOUND", message: "Report not found" } });
-      await this.audit.record({
-        action: "SYSTEM_ADMIN_VIEWED_REPORT",
-        entityType: "report",
-        entityId: id,
-        entityLabel: row.title,
-        organizationId: row.orgId,
-      });
+      // RIO-RBAC-002 (Round 5, client-confirmed 2026-08-24) — Supervisor
+      // view access isn't logged; see list()'s comment above.
+      if (store?.role === "system_admin") {
+        await this.audit.record({
+          action: "SYSTEM_ADMIN_VIEWED_REPORT",
+          entityType: "report",
+          entityId: id,
+          entityLabel: row.title,
+          organizationId: row.orgId,
+        });
+      }
       return this.hydrateOne(row, true);
     }
 
@@ -398,10 +449,14 @@ export class ReportsService {
 
   async export(id: string, format: ExportFormat): Promise<{ filename: string; contentType: string; body: Buffer }> {
     const store = getOrgStore();
-    const isSysAdmin = store?.role === "system_admin";
+    // RIO-RBAC-002 (AC1, fixed 2026-08-23) — export is a download of
+    // already-released content, not a data mutation, so this extends
+    // unconditionally like the read paths above (center_supervisor holds
+    // reportsDashboards:export statically).
+    const isCrossOrgReader = store?.role === "system_admin" || store?.role === "center_supervisor";
 
     let row: ReportRow | null = null;
-    if (isSysAdmin) {
+    if (isCrossOrgReader) {
       row = (await this.tenant.runAsSupervisor((tx) =>
         tx.report.findUnique({ where: { id } }),
       )) as ReportRow | null;
@@ -431,15 +486,20 @@ export class ReportsService {
       });
     }
 
-    if (isSysAdmin) {
-      await this.audit.record({
-        action: "SYSTEM_ADMIN_DOWNLOADED_REPORT",
-        entityType: "report",
-        entityId: row.id,
-        entityLabel: row.title,
-        organizationId: row.orgId,
-        metadata: { format },
-      });
+    if (isCrossOrgReader) {
+      // RIO-RBAC-002 (Round 5, client-confirmed 2026-08-24) — Supervisor
+      // access (including export/download) isn't logged; see list()'s
+      // comment above.
+      if (store?.role === "system_admin") {
+        await this.audit.record({
+          action: "SYSTEM_ADMIN_DOWNLOADED_REPORT",
+          entityType: "report",
+          entityId: row.id,
+          entityLabel: row.title,
+          organizationId: row.orgId,
+          metadata: { format },
+        });
+      }
       const auditMeta = await this.tenant.runAsSupervisor((tx) => this.resolveExportAuditMeta(row!, tx));
       return buildExportStub(
         format,
@@ -493,6 +553,11 @@ export class ReportsService {
       reviewedByRole: row.reviewedBy ? (roleById.get(row.reviewedBy) ?? null) : null,
       reviewedAt: row.reviewedAt ? row.reviewedAt.toISOString() : null,
       archivedAt: row.archivedAt ? row.archivedAt.toISOString() : null,
+      // AC 5. Read from the stored content's own header — the version the
+      // generator ran against, frozen at generation time. Deliberately NOT the
+      // study's current methodologyVersion: that moves on, and stamping it here
+      // would relabel an archived report with rules it was never scored under.
+      methodologyVersion: methodologyVersionOf(row.content),
     };
   }
 
@@ -616,6 +681,12 @@ export class ReportsService {
     if (reportType === "RPT13") return executiveGenerator(providerCtx);
     if (reportType === "RPT02") return collectiveGenerator(providerCtx);
     if (reportType === "RPT12") return sharingStatusGenerator(providerCtx);
+    // RPT03 (Top Needs View) and RPT09 (Priority Ranking) are the same report
+    // under the BRD's two names — one ranked list off one scoring engine. They
+    // share a generator rather than diverging into two lists that would have to
+    // be kept reconciled with each other.
+    if (reportType === "RPT03" || reportType === "RPT09") return topPriorityGenerator(providerCtx);
+    if (reportType === "RPT10") return dataQualityGenerator(providerCtx);
 
     if (reportType === "RPT17" || reportType === "RPT16") {
       if (!studyId) throw new BadRequestException({ error: { code: "STUDY_ID_REQUIRED", message: `${reportType} requires studyId` } });

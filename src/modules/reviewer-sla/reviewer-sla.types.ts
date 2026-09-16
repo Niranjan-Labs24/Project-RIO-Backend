@@ -49,7 +49,12 @@ export type SlaAlertType =
   | "ai_classification"
   | "survey_approval" | "survey_ready_to_publish" | "survey_rejected"
   | "report_approval" | "report_released" | "report_rejected"
-  | "evidence_document_uploaded";
+  | "evidence_document_uploaded"
+  //  - need_summary_approval: a suggested Need-description summary (RIO-AI-003)
+  //    sitting in DRAFT awaiting confirmation — org-wide, shown to whoever
+  //    holds aiReview:approve (human_reviewer). Deliberately has NO SLA clock:
+  //    see listPendingNeedSummaryAlerts.
+  | "need_summary_approval";
 
 export interface SlaAlert {
   id: string;

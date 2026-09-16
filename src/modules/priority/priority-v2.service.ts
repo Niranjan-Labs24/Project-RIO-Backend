@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { Prisma } from '../../generated/prisma';
-import { requireOrgId } from '../../tenancy/org-context';
+import { getOrgStore, requireOrgId } from '../../tenancy/org-context';
 
 /**
  * Per-domain snapshot stored in VillagePriorityAssessment.domainComponents.
@@ -291,76 +291,110 @@ export class PriorityV2Service {
    * LOW natively; a triggered critical-domain override is the one case that
    * warrants standing out as its own bucket on this landing page).
    */
-  async listForOrg(): Promise<
+  async listForOrg(gapType?: string): Promise<
     Array<{
       studyId: string;
       studyTitle: string;
       needId: string;
+      /** The Need's own title. Every Need under one Study shares that Study's
+       *  name, so a list keyed only on studyTitle repeats the same string on
+       *  every row and tells the reviewer nothing about which need they are
+       *  looking at. */
+      needTitle: string;
+      // RIO-FR-005 (Q12) — the Need's own analyst-entered Gap Type
+      // classification (acute/chronic/structural/seasonal/equity), not to
+      // be confused with `score.overrideReason` below — a previous version
+      // of this method conflated the two under one `gapType` key, which
+      // was really always the critical-domain override reason string.
+      gapType: string | null;
+      // RIO-FR-003 AC 6 — the dashboard filters and groups by theme, so the
+      // themes travel with the row rather than needing a second fetch per need.
+      themes: string[];
+      urgency: string | null;
       score: {
         overallScore: number;
         level: 'critical' | 'high' | 'medium' | 'low';
-        gapType: string | null;
+        overrideReason: string | null;
         scoredAt: string;
       } | null;
     }>
   > {
-    return this.tenant.runInOrgContext(async (tx) => {
-      const [studies, needs, surveys, assessments] = await Promise.all([
+    // RIO-RBAC-002 (client-confirmed 2026-08-29) — System Admin, System
+    // Reviewer, and Center Supervisor are all crossEntity roles with no
+    // tenant org of their own (System Admin/Reviewer's home org is Platform
+    // Administration), so the Priority Dashboard must show every org's
+    // Needs for them, not just whatever their own (empty) org has. None of
+    // the queries below carry an explicit org filter either way — under
+    // runInOrgContext that's implicit (RLS scopes it to the caller's own
+    // org); under runAsSupervisor (RLS bypassed) the exact same unfiltered
+    // queries naturally return every org's rows instead. No dedicated audit
+    // logging here, matching StudiesService/SurveysService's identical
+    // Reviewer/Supervisor read-access exemption (RBAC-002 Round 5).
+    const store = getOrgStore();
+    const isCrossOrgReader =
+      store?.role === 'system_admin' ||
+      store?.role === 'system_reviewer' ||
+      store?.role === 'center_supervisor';
+    const runner = isCrossOrgReader
+      ? this.tenant.runAsSupervisor.bind(this.tenant)
+      : this.tenant.runInOrgContext.bind(this.tenant);
+
+    return runner(async (tx) => {
+      const [studies, needs, assessments] = await Promise.all([
         tx.study.findMany(),
         tx.need.findMany({ orderBy: { updatedAt: 'desc' } }),
-        tx.survey.findMany({ orderBy: { createdAt: 'desc' } }),
-        tx.villagePriorityAssessment.findMany({
-          where: { villageId: '' },
-          orderBy: { calculatedAt: 'desc' },
+        // RIO-FR-003 — the org-wide list reads PriorityScore, the per-need
+        // explainable score the reviewer signs off, NOT
+        // VillagePriorityAssessment.
+        //
+        // Those are different things and had opposite polarity: the
+        // assessment is a per-VILLAGE performance score where low means
+        // urgent, while this list is per NEED and follows the methodology's
+        // severity convention where high means urgent. Reading the assessment
+        // here meant every need showed "Not scored yet" whenever the village
+        // pipeline had not been run, even with a fully scored need sitting in
+        // priority_scores — which is exactly what was on screen.
+        tx.priorityScore.findMany({
+          where: { surveyLinkId: null },
+          orderBy: { scoredAt: 'desc' },
         }),
       ]);
 
       const studyTitleById = new Map(studies.map((s) => [s.id, s.title]));
-      const surveyByNeedId = new Map<string, (typeof surveys)[number]>();
-      // RIO-FR-011: a Need can now have more than one Survey row
-      // (versioning) — VillagePriorityAssessment rows key off the
-      // PUBLISHED survey's id (that's the one whose responses were
-      // scored), so picking a newer DRAFT here would silently show "no
-      // score yet" for a need that's actually fully scored. PUBLISHED
-      // first, newest-created as the tiebreak/fallback.
-      const orderedSurveys = [...surveys].sort((a, b) => {
-        if (a.status === 'PUBLISHED' && b.status !== 'PUBLISHED') return -1;
-        if (b.status === 'PUBLISHED' && a.status !== 'PUBLISHED') return 1;
-        return b.createdAt.getTime() - a.createdAt.getTime();
-      });
-      for (const survey of orderedSurveys) {
-        if (!surveyByNeedId.has(survey.needId)) surveyByNeedId.set(survey.needId, survey);
-      }
-      const latestAssessmentBySurveyId = new Map<string, (typeof assessments)[number]>();
-      for (const assessment of assessments) {
-        if (!latestAssessmentBySurveyId.has(assessment.surveyId)) {
-          latestAssessmentBySurveyId.set(assessment.surveyId, assessment);
+      // PriorityScore is keyed on needId, so no survey indirection is needed —
+      // `scoredAt: desc` above means the first row seen per need is its latest.
+      const latestScoreByNeedId = new Map<string, (typeof assessments)[number]>();
+      for (const score of assessments) {
+        if (!latestScoreByNeedId.has(score.needId)) {
+          latestScoreByNeedId.set(score.needId, score);
         }
       }
 
-      return needs.map((need) => {
-        const survey = surveyByNeedId.get(need.id);
-        const assessment = survey ? latestAssessmentBySurveyId.get(survey.id) : undefined;
-        return {
-          studyId: need.studyId,
-          studyTitle: studyTitleById.get(need.studyId) ?? need.studyId,
-          needId: need.id,
-          score: assessment
-            ? {
-                overallScore: Math.round(Number(assessment.priorityScore) * 10) / 10,
-                level: (assessment.overrideApplied
-                  ? 'critical'
-                  : assessment.priorityStatus.toLowerCase()) as
-                  | 'critical'
-                  | 'high'
-                  | 'medium'
-                  | 'low',
-                gapType: assessment.overrideReason,
-                scoredAt: assessment.calculatedAt.toISOString(),
-              }
-            : null,
-        };
-      });
+      return needs
+        .filter((need) => !gapType || need.gapType === gapType)
+        .map((need) => {
+          const score = latestScoreByNeedId.get(need.id);
+          return {
+            studyId: need.studyId,
+            studyTitle: studyTitleById.get(need.studyId) ?? need.studyId,
+            needId: need.id,
+            needTitle: need.title,
+            gapType: need.gapType,
+            themes: need.themes ?? [],
+            urgency: need.urgency ?? null,
+            score: score
+              ? {
+                  // The reviewer's override wins where there is one — that is
+                  // the number the need is ranked on, and the computed value
+                  // stays available on the need's own breakdown panel.
+                  overallScore: score.overrideScore ?? score.overallScore,
+                  level: score.level,
+                  overrideReason: score.overrideReason,
+                  scoredAt: score.scoredAt.toISOString(),
+                }
+              : null,
+          };
+        });
     });
   }
 

@@ -60,19 +60,21 @@ export const EnvSchema = Type.Object({
   DB_SSL_REJECT_UNAUTHORIZED: Type.Boolean({ default: false }),
   // Optional CA/chain PEM path to trust when verifying a non-system-CA cert.
   DB_SSL_CA: Type.Optional(Type.String()),
-  // RIO-NFR-006 — connection-pool sizing. `@prisma/adapter-pg` wraps a plain
-  // `pg.Pool`, which defaults to `max: 10` when unset — the exact bottleneck
-  // the 2026-07-27 load test reproduced (`Unable to start a transaction in
-  // the given time` under concurrency; see load-test/README.md). Two
-  // separate runtime pools exist (cnap_app, cnap_supervisor — the owner
-  // connection is CLI-only, never held open at runtime), so size each with
-  // Postgres's own `max_connections` in mind: (this pool's max) + (the other
-  // pool's max) + a margin for other services must stay under
-  // `max_connections`. Defaults raised from the library default of 10 to 20
-  // each — comfortable headroom under the load test's `max_connections: 100`
-  // dev box, tune further once a production-sized Postgres instance exists.
-  DB_POOL_MAX: Type.Integer({ default: 20, minimum: 1 }),
-  DB_SUPERVISOR_POOL_MAX: Type.Integer({ default: 20, minimum: 1 }),
+  // pg.Pool `max` for the two runtime pools (PrismaService / SupervisorPrismaService).
+  // Undocumented pg default is 10 — far too small once every request (even a
+  // read) opens its own interactive transaction for the per-request RLS org
+  // context (see TenantPrismaService). Reproduced directly under real
+  // concurrency: RIO-NFR-005's 2026-08-27 500-concurrent-session re-test
+  // failed 94% of virtual users with "Unable to start a transaction in the
+  // given time" once queueing exceeded Prisma's ~2s transaction maxWait.
+  // Bounded above by Postgres's own max_connections, shared across both
+  // pools plus migrations/admin/background-worker connections — raising
+  // these does not substitute for right-sizing Postgres itself, and in a
+  // multi-instance deployment each instance needs its own budget out of the
+  // same shared ceiling (a connection pooler like PgBouncer is the real
+  // production answer once there's more than one app instance).
+  DB_POOL_MAX_APP: Type.Number({ default: 60, minimum: 1, maximum: 500 }),
+  DB_POOL_MAX_SUPERVISOR: Type.Number({ default: 15, minimum: 1, maximum: 500 }),
   // Frontend origin allowed to send credentialed (cookie) requests. Single
   // explicit origin — credentials mode forbids a wildcard.
   CORS_ORIGIN: Type.String({ default: 'http://localhost:3000' }),
@@ -124,6 +126,31 @@ export const EnvSchema = Type.Object({
   // process cwd). BACKUP_CRON_SCHEDULE is a standard 5-field cron
   // expression — defaults to weekly (Sundays at 03:00), confirmed working
   // end-to-end during testing at a faster interval first.
+  // ── Survey abandonment tracking + completion reminders (RPT10 Q-2) ──
+  // How long a started-but-unsubmitted session may sit idle before it counts
+  // as abandoned. A citizen survey is one sitting of a few minutes (see
+  // SECONDS_PER_QUESTION in CitizenService), and the OTP itself expires after
+  // 10 — 120 minutes is well past any realistic pause, so a session crossing
+  // it is genuinely gone rather than slow. Configurable because a longer
+  // survey may warrant a longer grace period; RPT10 prints the value it used.
+  SURVEY_ABANDONMENT_IDLE_MINUTES: Type.Number({ default: 120, minimum: 5, maximum: 10_080 }),
+  // Completion reminders. OFF by default: a reminder is an outbound message
+  // to a citizen who did not finish, and no environment should start sending
+  // those because it deployed a new build. Switch on per environment once the
+  // client confirms the wording and the cadence.
+  SURVEY_REMINDERS_ENABLED: Type.Boolean({ default: false }),
+  // A reminder goes out well before the abandonment threshold — the point is
+  // to recover the response, which means reaching the respondent while the
+  // link is still on their phone, not after they are already counted as lost.
+  SURVEY_REMINDER_IDLE_MINUTES: Type.Number({ default: 30, minimum: 5, maximum: 10_080 }),
+  // Hard cap per session. Two nudges is the outer edge of helpful; beyond
+  // that a respondent who stopped on purpose is being harassed.
+  SURVEY_REMINDER_MAX: Type.Number({ default: 2, minimum: 0, maximum: 5 }),
+  // Minimum gap between two reminders to the same session.
+  SURVEY_REMINDER_COOLDOWN_MINUTES: Type.Number({ default: 1440, minimum: 30, maximum: 20_160 }),
+  // Sweep cadence — classifies stale sessions as ABANDONED and sends any due
+  // reminders. Standard 5-field cron; every 15 minutes by default.
+  SURVEY_SESSION_SWEEP_CRON: Type.String({ default: '*/15 * * * *' }),
   BACKUP_DIR: Type.String({ default: './storage/backups' }),
   BACKUP_CRON_SCHEDULE: Type.String({ default: '0 3 * * 0' }),
   // Optional override for the pg_dump binary — the bare command name is

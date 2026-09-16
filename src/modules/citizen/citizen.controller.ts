@@ -3,6 +3,8 @@ import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import { Public } from '../../auth/public.decorator';
 import { RateLimit } from '../../common/guards/rate-limit.guard';
 import { CheckDuplicateBody, RequestOtpBody, SubmitResponseBody, VerifyOtpBody } from './citizen.contract';
+import { RecordSessionEventBody, type RecordSessionEventDto } from '../survey-sessions/survey-sessions.contract';
+import type { RecordEventResult, StartSessionResult } from '../survey-sessions/survey-sessions.types';
 import { CitizenService } from './citizen.service';
 import type {
   CheckDuplicatePayload, CheckDuplicateResult, RequestOtpPayload, RequestOtpResult, ResolvedSurvey,
@@ -21,6 +23,31 @@ export class CitizenController {
   @Get(':token')
   resolveSurvey(@Param('token') token: string): Promise<ResolvedSurvey> {
     return this.citizen.resolveSurvey(token);
+  }
+
+  // ── Abandonment tracking (RPT10 Q-2, client answer 24 Aug) ──
+  // Opened when the citizen page loads, so a sitting that is never submitted
+  // still leaves a record THAT it happened. Nothing about the answers is
+  // posted to either route — see RecordSessionEventBody, which has no field
+  // that could carry one.
+  //
+  // Rate limits are generous relative to the OTP routes: this is telemetry a
+  // single respondent legitimately posts once per step, and throttling it
+  // would silently bias the drop-off figures towards "abandoned early".
+  @Post(':token/sessions')
+  @RateLimit(10, 60)
+  startSession(@Param('token') token: string): Promise<StartSessionResult | null> {
+    return this.citizen.startSession(token);
+  }
+
+  @Post(':token/sessions/:sessionId/events')
+  @RateLimit(60, 60)
+  recordSessionEvent(
+    @Param('token') token: string,
+    @Param('sessionId') sessionId: string,
+    @Body(new TypeBoxValidationPipe(RecordSessionEventBody)) body: RecordSessionEventDto,
+  ): Promise<RecordEventResult> {
+    return this.citizen.recordSessionEvent(token, sessionId, body);
   }
 
   @Post(':token/check-duplicate')

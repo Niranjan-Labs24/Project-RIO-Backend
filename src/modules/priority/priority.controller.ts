@@ -3,11 +3,15 @@ import { Controller, Get, Param, Patch, Post, Query, Body, UseInterceptors, Uplo
 import { FileInterceptor } from "@nestjs/platform-express";
 import { RequirePermission } from "../../common/guards/permission.guard";
 import { TypeBoxValidationPipe } from "../../contract/validation.pipe";
-import { CreateMethodologyVersionBody, type CreateMethodologyVersionDto } from "./priority.contract";
+import {
+  CreateMethodologyVersionBody, type CreateMethodologyVersionDto,
+  OverridePriorityScoreBody, type OverridePriorityScoreDto,
+} from "./priority.contract";
 import { PriorityService } from "./priority.service";
 import { ScoreRollupService } from "./rollup.service";
 import { PriorityV2Service } from "./priority-v2.service";
-import type { PriorityDashboardEntry, PriorityScore } from "./priority.types";
+import { VillageAggregationService } from "./village-aggregation.service";
+import type { PriorityDashboardEntry, PriorityScore, VillageComparisonEntry } from "./priority.types";
 
 @Controller()
 export class PriorityController {
@@ -27,6 +31,21 @@ export class PriorityController {
   @RequirePermission("priorityScoring", "read")
   getLatest(@Param("needId", new UuidParamPipe()) needId: string, @Query("surveyLinkId") surveyLinkId?: string): Promise<PriorityScore | null> {
     return this.priority.getLatest(needId, surveyLinkId);
+  }
+
+  /**
+   * RIO-FR-003 AC 5. Gated on `priorityScoring:approve`, not `write`: an
+   * override is a reviewer decision about the number, the same class of act as
+   * approving it. Whoever can only run the scoring engine should not be able
+   * to overrule what it produced.
+   */
+  @Patch("priority-scores/:id/override")
+  @RequirePermission("priorityScoring", "approve")
+  override(
+    @Param("id", new UuidParamPipe()) id: string,
+    @Body(new TypeBoxValidationPipe(OverridePriorityScoreBody)) body: OverridePriorityScoreDto,
+  ): Promise<PriorityScore> {
+    return this.priority.override(id, body.overrideScore, body.reason);
   }
 
   @Get("studies/:studyId/surveys/:surveyId/severity-dashboard")
@@ -80,8 +99,15 @@ export class PriorityController {
     return this.priorityV2.getVillagePriority(studyId, surveyId, villageId || null);
   }
 
+  // Gated on studySurvey:read, not methodologyQuestionBank:read — this list
+  // only feeds the Study create/edit form's mandatory Methodology Version
+  // picklist. NGO Admin (and every other role that can view/create a
+  // Study) has no methodologyQuestionBank access by design, which left the
+  // picklist permanently empty and Study creation permanently blocked for
+  // them. methodologyQuestionBank:read stays the gate for anything that
+  // manages methodology content itself (create/edit versions).
   @Get("methodology-versions")
-  @RequirePermission("methodologyQuestionBank", "read")
+  @RequirePermission("studySurvey", "read")
   async getMethodologyVersions() {
     return this.priority.listMethodologyVersions();
   }
@@ -114,12 +140,24 @@ export class PriorityDashboardController {
   constructor(
     private readonly priority: PriorityService,
     private readonly priorityV2: PriorityV2Service,
+    private readonly villageAggregation: VillageAggregationService,
   ) {}
 
+  // RIO-FR-005 (Q12) — `gapType` filters to Needs whose analyst-entered
+  // Gap Type classification matches exactly one of the five fixed values.
   @Get()
   @RequirePermission("priorityScoring", "read")
-  list(): Promise<PriorityDashboardEntry[]> {
-    return this.priorityV2.listForOrg();
+  list(@Query("gapType") gapType?: string): Promise<PriorityDashboardEntry[]> {
+    return this.priorityV2.listForOrg(gapType);
+  }
+
+  // RIO-FR-005 (Q9) — village comparison. studyIds is a comma-separated
+  // query param, e.g. ?studyIds=id-a,id-b,id-c.
+  @Get("village-comparison")
+  @RequirePermission("priorityScoring", "read")
+  compareVillages(@Query("studyIds") studyIds?: string): Promise<VillageComparisonEntry[]> {
+    const ids = (studyIds ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    return this.villageAggregation.compareVillages(ids);
   }
 
   @Patch(":id/approve")

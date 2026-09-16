@@ -4,6 +4,8 @@ import { AuditService } from '../audit/audit.service';
 import { Prisma, type Question } from '../../generated/prisma';
 import { DeterministicScoringService, type ParsedAnswer } from './scoring.service';
 import { PriorityV2Service } from './priority-v2.service';
+import { MethodologyConfigService } from '../methodology-config/methodology-config.service';
+import type { ConfidenceFlagSettings } from '../methodology-config/methodology-config.types';
 
 // Shared shape for the KPI/Indicator/Sub-Domain/Domain rollup maps below —
 // each level aggregates its children into exactly this, one level at a time
@@ -23,20 +25,37 @@ export class ScoreRollupService {
     private readonly tenant: TenantPrismaService,
     private readonly audit: AuditService,
     private readonly scoringEngine: DeterministicScoringService,
-    private readonly priorityV2: PriorityV2Service
+    private readonly priorityV2: PriorityV2Service,
+    private readonly methodologyConfig: MethodologyConfigService,
   ) {}
 
   /**
    * RIO-FR-024 dual confidence criterion (Sample Size Reference sheet,
-   * signed off by Dr. Zulfiqar): LOW if below the absolute floor (10 valid
-   * responses) OR below the study's own population-based required sample
-   * (Cochran + finite population correction, computed once at study
-   * creation — see StudiesService/sample-size.ts). `requiredSampleSize` is
-   * null for studies created before this field existed, in which case only
-   * the absolute floor and the don't-know rate apply.
+   * signed off by Dr. Zulfiqar): LOW if below the absolute floor (System
+   * Admin-configurable via Methodology Configuration — see
+   * MethodologyConfig.confidenceFlagSettings, RIO-NFR-017) OR below the
+   * study's own population-based required sample (Cochran + finite
+   * population correction, computed once at study creation — see
+   * StudiesService/sample-size.ts). `requiredSampleSize` is null for
+   * studies created before this field existed, in which case only the
+   * absolute floor and the don't-know rate apply.
+   *
+   * Previously hardcoded to 10 / 0.20 here — silently diverging from
+   * whatever a System Admin actually configured on the Config screen,
+   * since nothing re-read this method against a config change (RIO-NFR-017
+   * fix, 2026-08-23).
    */
-  private isLowConfidence(validCount: number, dontKnowRate: number, requiredSampleSize: number | null): boolean {
-    return validCount < 10 || (requiredSampleSize != null && validCount < requiredSampleSize) || dontKnowRate > 0.20;
+  private isLowConfidence(
+    validCount: number,
+    dontKnowRate: number,
+    requiredSampleSize: number | null,
+    settings: ConfidenceFlagSettings,
+  ): boolean {
+    return (
+      validCount < settings.minRespondentsForStandardConfidence ||
+      (requiredSampleSize != null && validCount < requiredSampleSize) ||
+      dontKnowRate > settings.dontKnowRatioThreshold
+    );
   }
 
   /**
@@ -101,8 +120,19 @@ export class ScoreRollupService {
         }
 
         const orgId = r.orgId;
-        const resolvedVillageId = r.need.village?.[0] || null;
+        // A Need (and its responses) can name more than one village — every
+        // village named gets full credit for this response, not just the
+        // first. Previously took only `village?.[0]`, so a second (or
+        // third) village on the same Need silently got zero
+        // ResponseAnswer/ResponseSeverityScore rows and therefore no
+        // rollup or VillagePriorityAssessment at all — it just sat at
+        // "not yet scored" forever with no error, even though the
+        // response that should have scored it existed. `[null]` preserves
+        // the original no-village (study-wide-only) behavior when a Need
+        // names none.
+        const resolvedVillageIds = r.need.village.length > 0 ? r.need.village : [null];
 
+        for (const resolvedVillageId of resolvedVillageIds) {
         for (const { question, rawAnswer } of questionMappings) {
           const qId = question.questionId;
           // Guaranteed present: questionMappings and answersMap are built from
@@ -260,6 +290,7 @@ export class ScoreRollupService {
             });
           }
         }
+        }
       }
 
       // Re-run rollups for all distinct villages and also study-wide.
@@ -267,7 +298,10 @@ export class ScoreRollupService {
       // own transaction — nesting a second `$transaction` inside this
       // still-open one meant its reads couldn't see the rows just written
       // above (not yet committed), so rollups silently came back empty.
-      const distinctVillages = Array.from(new Set(responses.map(r => r.need.village?.[0]).filter(Boolean))) as string[];
+      // Flattened across every village a response's Need names, not just
+      // the first (see resolvedVillageIds above) — a second village here
+      // previously never got its own rollup computed at all.
+      const distinctVillages = Array.from(new Set(responses.flatMap(r => r.need.village))) as string[];
       for (const v of distinctVillages) {
         await this.calculateRollups(studyId, surveyId, v, { tx, orgId: survey.orgId });
       }
@@ -307,6 +341,10 @@ export class ScoreRollupService {
     villageId: string | null,
     options?: { tx?: Prisma.TransactionClient; orgId?: string },
   ): Promise<void> {
+    // Fetched once per call, outside the tx — MethodologyConfig is global
+    // reference data (no orgId/RLS), not part of this run's tenant-scoped
+    // transaction.
+    const { confidenceFlagSettings } = await this.methodologyConfig.getRaw();
     const body = async (tx: Prisma.TransactionClient) => {
       // Find methodology version used by the survey
       const survey = await tx.survey.findUnique({
@@ -389,7 +427,7 @@ export class ScoreRollupService {
 
         const totalForDkRate = validCount + dontKnowCount;
         const dontKnowRate = totalForDkRate > 0 ? (dontKnowCount / totalForDkRate) : 0;
-        const confidenceLevel = this.isLowConfidence(validCount, dontKnowRate, requiredSampleSize) ? 'LOW' : 'STANDARD';
+        const confidenceLevel = this.isLowConfidence(validCount, dontKnowRate, requiredSampleSize, confidenceFlagSettings) ? 'LOW' : 'STANDARD';
 
         questionRollups.set(qId, {
           severityScore: avgScore,
@@ -448,7 +486,7 @@ export class ScoreRollupService {
         const avgDkCount = Math.round(childRollups.reduce((acc, curr) => acc + curr!.dontKnowCount, 0) / childRollups.length);
         const avgDkRate = childRollups.reduce((acc, curr) => acc + curr!.dontKnowRate, 0) / childRollups.length;
         const avgNaCount = Math.round(childRollups.reduce((acc, curr) => acc + curr!.notApplicableCount, 0) / childRollups.length);
-        const confidenceLevel = this.isLowConfidence(avgValidCount, avgDkRate, requiredSampleSize) ? 'LOW' : 'STANDARD';
+        const confidenceLevel = this.isLowConfidence(avgValidCount, avgDkRate, requiredSampleSize, confidenceFlagSettings) ? 'LOW' : 'STANDARD';
 
         kpiRollups.set(kpiName, { severityScore: kpiScore, confidenceLevel, validResponseCount: avgValidCount, dontKnowRate: avgDkRate });
 
@@ -496,7 +534,7 @@ export class ScoreRollupService {
 
         const avgValidCount = Math.round(childRollups.reduce((acc, curr) => acc + curr!.validResponseCount, 0) / childRollups.length);
         const avgDkRate = childRollups.reduce((acc, curr) => acc + curr!.dontKnowRate, 0) / childRollups.length;
-        const confidenceLevel = this.isLowConfidence(avgValidCount, avgDkRate, requiredSampleSize) ? 'LOW' : 'STANDARD';
+        const confidenceLevel = this.isLowConfidence(avgValidCount, avgDkRate, requiredSampleSize, confidenceFlagSettings) ? 'LOW' : 'STANDARD';
 
         indicatorRollups.set(indName, { severityScore: indScore, confidenceLevel, validResponseCount: avgValidCount, dontKnowRate: avgDkRate });
 
@@ -544,7 +582,7 @@ export class ScoreRollupService {
 
         const avgValidCount = Math.round(childRollups.reduce((acc, curr) => acc + curr!.validResponseCount, 0) / childRollups.length);
         const avgDkRate = childRollups.reduce((acc, curr) => acc + curr!.dontKnowRate, 0) / childRollups.length;
-        const confidenceLevel = this.isLowConfidence(avgValidCount, avgDkRate, requiredSampleSize) ? 'LOW' : 'STANDARD';
+        const confidenceLevel = this.isLowConfidence(avgValidCount, avgDkRate, requiredSampleSize, confidenceFlagSettings) ? 'LOW' : 'STANDARD';
 
         subDomainRollups.set(subName, { severityScore: subScore, confidenceLevel, validResponseCount: avgValidCount, dontKnowRate: avgDkRate });
 
@@ -592,7 +630,7 @@ export class ScoreRollupService {
 
         const avgValidCount = Math.round(childRollups.reduce((acc, curr) => acc + curr!.validResponseCount, 0) / childRollups.length);
         const avgDkRate = childRollups.reduce((acc, curr) => acc + curr!.dontKnowRate, 0) / childRollups.length;
-        const confidenceLevel = this.isLowConfidence(avgValidCount, avgDkRate, requiredSampleSize) ? 'LOW' : 'STANDARD';
+        const confidenceLevel = this.isLowConfidence(avgValidCount, avgDkRate, requiredSampleSize, confidenceFlagSettings) ? 'LOW' : 'STANDARD';
 
         domainRollups.set(domName, { severityScore: domScore, confidenceLevel, validResponseCount: avgValidCount, dontKnowRate: avgDkRate });
 
@@ -626,7 +664,7 @@ export class ScoreRollupService {
 
         const avgValidCount = Math.round(childRollups.reduce((acc, curr) => acc + curr.validResponseCount, 0) / childRollups.length);
         const avgDkRate = childRollups.reduce((acc, curr) => acc + curr.dontKnowRate, 0) / childRollups.length;
-        const confidenceLevel = this.isLowConfidence(avgValidCount, avgDkRate, requiredSampleSize) ? 'LOW' : 'STANDARD';
+        const confidenceLevel = this.isLowConfidence(avgValidCount, avgDkRate, requiredSampleSize, confidenceFlagSettings) ? 'LOW' : 'STANDARD';
 
         await this.upsertRollup(tx, {
           orgId: survey.orgId,

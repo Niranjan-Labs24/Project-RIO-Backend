@@ -62,7 +62,10 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('entityTeam', { read: true, write: true, create: true }),
     perm('rolesPermissions'),
     perm('onboardingConsent', { read: true, write: true, create: true, approve: true, export: true, share: true }),
-    perm('methodologyQuestionBank', RO),
+    // Client-confirmed (2026-08-20): Methodology Configuration belongs at
+    // NCNP Admin (System Admin) level only — NGO Admin previously had
+    // read-only access here, which the client flagged as the wrong level.
+    perm('methodologyQuestionBank'),
     perm('studySurvey', { read: true, write: true, create: true, export: true, share: true }),
     perm('dataCollection', { read: true, write: true, create: true, export: true }),
     perm('dataImport', { read: true, write: true, create: true, approve: true, export: true, share: true }),
@@ -160,7 +163,10 @@ export const ROLE_MATRIX: RoleDef[] = [
     // RIO-RBAC-001 matrix (Aug 11): view-only on Organization/Users now
     // (was none).
     perm('entityTeam', RO), perm('rolesPermissions'), perm('onboardingConsent'),
-    perm('methodologyQuestionBank', RO),
+    // RIO-FR-012 (Q31, client-confirmed 2026-08-20): Human Reviewer approves
+    // or rejects a pending Question Bank change NCNP Admin submitted —
+    // `approve`, not `write` (Reviewer never initiates a change directly).
+    perm('methodologyQuestionBank', { read: true, approve: true }),
     // Matrix: Studies = View + Approve only for this role now — the
     // `create` grant that let the Approver generate public links
     // themselves is removed per the confirmed matrix.
@@ -178,7 +184,15 @@ export const ROLE_MATRIX: RoleDef[] = [
     // specifically. This role never triggers classification/Retry itself
     // (no `write`) — that's still the Researcher's own action.
     perm('aiReview', { read: true, approve: true }),
-    perm('priorityScoring', RO),
+    // `approve` ADDED per Q28 (client-confirmed): "Human Reviewer should
+    // hold this [priority score approval] authority, per the approved
+    // Roles & Permissions baseline ('approves or amends the AI's
+    // classification/priority/duplicate detection before publication')."
+    // No `write`/`create` — per Q27, this role doesn't directly edit the
+    // computed score/tier/components, only approves it (or attaches a note/
+    // flags low-confidence, routing it back to Data Analyst — a separate,
+    // already-built flow, not gated on this permission).
+    perm('priorityScoring', { read: true, approve: true }),
     // Reviewer's work starts at Studies/Reviewer-SLA, not an executive
     // dashboard, but they still need read access to Reports/Archive/Sharing
     // once a study's classification/review work is done. `export` —
@@ -229,11 +243,20 @@ export const ROLE_MATRIX: RoleDef[] = [
     // flag covering three distinct actions, not something separately asked
     // for but accepted as harmless overlap.
     perm('aiReview', { read: true, write: true }),
-    // Confirmed (Jagannathan, Aug 12): Data Analyst "reviews and validates"
-    // the Priority Score (PriorityDashboardController's :id/approve) and
-    // generates the AI Summary (PrioritySummaryController's
-    // generate/save/confirm) — both require create/write/approve on this
-    // module, superseding the module table's narrower View/Export-only row.
+    // `approve` KEPT here despite Q28 (client-confirmed) saying approval
+    // authority belongs to Human Reviewer — see that role's own
+    // priorityScoring grant, which now also holds `approve`. The code
+    // gates two different actions on this one flag: PATCH .../override
+    // (Data Analyst investigating/adjusting a score, per Q27 — "routes it
+    // to NCNP Admin/Data Analyst for investigation") and PATCH .../approve
+    // (Human Reviewer signing off, per Q28). There's no separate permission
+    // action to split these cleanly today, so both roles hold `approve` —
+    // Data Analyst keeps Override working (confirmed by
+    // fr003-priority-scoring.e2e.spec's AC 4/AC 5), Human Reviewer gains
+    // the ability to actually approve. Not a fully exclusive split per
+    // either client answer, but the closest fit without introducing a new
+    // permission action — flagged as a follow-up if the client wants a
+    // stricter separation later.
     perm('priorityScoring', { read: true, write: true, create: true, approve: true, export: true }),
     // Confirmed matrix: Reports = View/Create/Edit/Export/Share — `share`
     // added (was missing), no `approve` (matches the confirmed row exactly).
@@ -244,7 +267,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('surveyBuilder', RO), perm('ncnpReport'),
     perm('auditLog'),
   ] },
-  { id: 'role_system_admin', key: 'system_admin', name: 'System Admin', description: 'Manages accounts, roles, permissions, audit log, and configuration settings.', crossEntity: true, permissions: [
+  { id: 'role_system_admin', key: 'system_admin', name: 'System Admin', description: 'Platform-wide operational authority: manages accounts, roles, permissions, audit log, and Edit rights over all configured/reference data (Methodology/Question Bank, Onboarding Consent & Data Sharing Policy content, and other configured databases) — System Reviewer holds the governance approval gate over the sensitive subset of that same data.', crossEntity: true, permissions: [
     perm('entityTeam', { read: true, write: true, create: true, export: true }),
     // RIO-RBAC-001 matrix (Aug 11): System Admin gets real write/create on
     // Roles & Permissions, Studies, Needs, Survey Builder, Question Bank
@@ -253,7 +276,13 @@ export const ROLE_MATRIX: RoleDef[] = [
     // match the confirmed matrix's "V/C/E(/Ap/Ex/Sh)" rows for System Admin
     // across those modules.
     perm('rolesPermissions', { read: true, write: true, create: true }),
-    perm('onboardingConsent', RO), perm('methodologyQuestionBank', { read: true, write: true, create: true }),
+    // RIO-RBAC-002 (client-confirmed, Round — governance split): System
+    // Admin drafts/edits consent & data-sharing policy content; System
+    // Reviewer holds the approve/publish gate below. Previously read-only
+    // here, which made drafting a new policy version impossible for the
+    // one role responsible for it.
+    perm('onboardingConsent', { read: true, write: true, create: true }),
+    perm('methodologyQuestionBank', { read: true, write: true, create: true }),
     perm('studySurvey', { read: true, write: true, create: true, approve: true, export: true, share: true }),
     perm('dataCollection', { read: true, write: true, create: true, approve: true, export: true, share: true }),
     perm('dataImport', RO), perm('citizenChannel', RO),
@@ -340,27 +369,44 @@ export const ROLE_MATRIX: RoleDef[] = [
   // needs it — no merge-confirm/reject action exists anywhere yet (see the
   // NCNP Report Review implementation plan), so nothing beyond `read` is
   // granted for it today.
-  { id: 'role_system_reviewer', key: 'system_reviewer', name: 'System Reviewer', description: 'Reviews the NCNP Compiled Report — approves or rejects (with mandatory notes) before System Admin publishes it. Read-only everywhere else.', crossEntity: true, permissions: [
-    // RIO-RBAC-001 matrix (Aug 11): view-only on Organization/Users now
-    // (was none) — matches the confirmed "System Reviewer: V" row.
-    perm('entityTeam', RO), perm('rolesPermissions'), perm('onboardingConsent'), perm('methodologyQuestionBank', RO),
-    perm('studySurvey', RO), perm('dataCollection', RO), perm('dataImport', RO), perm('citizenChannel'),
+  // RIO-RBAC-002 (client-confirmed, 2026-08-27 round) — no separate "NCNP
+  // Admin" role: the governance/final-authority level is added onto this
+  // role instead, so the matrix stays at 10 roles, not 11. System Reviewer
+  // now holds two things: (1) the pre-existing NCNP Compiled Report
+  // review/approve/reject gate, and (2) final approval authority over a
+  // *narrow, named subset* of governance-sensitive configured data — it
+  // does NOT get System Admin's general Edit authority over every
+  // configured database, only an Approve gate on the specific modules
+  // listed below. Also resolves this file's own earlier flagged warning on
+  // `reportsDashboards`: client confirmed View + Export only, no Approve —
+  // the general RPT01-14 Reports feature stays outside this role's
+  // approval gate, exactly as previously guessed defensively.
+  { id: 'role_system_reviewer', key: 'system_reviewer', name: 'System Reviewer', description: 'Platform-wide (not tied to one entity). Reviews and approves/rejects the NCNP Compiled Report (mandatory notes on rejection) before System Admin publishes it, and holds final approval authority over governance-sensitive configured data (roles, onboarding consent/data-sharing policy, methodology/question bank publication, citizen consent). View-only or no access everywhere else.', crossEntity: true, permissions: [
+    // Client-confirmed: View + Approve (sign-off on new org/tenant creation).
+    perm('entityTeam', { read: true, approve: true }),
+    // Client-confirmed: View + Approve (sign-off on any new role created
+    // during operations). Previously no access at all.
+    perm('rolesPermissions', { read: true, approve: true }),
+    // Client-confirmed: View + Approve — System Admin drafts/edits consent
+    // & data-sharing policy content, System Reviewer approves/publishes.
+    // Previously no access at all.
+    perm('onboardingConsent', { read: true, approve: true }),
+    // Client-confirmed: View + Approve — System Admin edits Methodology/
+    // Question Bank config, System Reviewer gives final sign-off before it
+    // goes live. Was view-only.
+    perm('methodologyQuestionBank', { read: true, approve: true }),
+    perm('studySurvey', RO), perm('dataCollection', RO), perm('dataImport', RO),
+    // Client-confirmed: View + Approve — governance sign-off on the citizen
+    // consent form specifically, not day-to-day channel operation.
+    // Previously no access at all.
+    perm('citizenChannel', { read: true, approve: true }),
     perm('aiReview', RO), perm('priorityScoring', RO),
-    // ⚠️ FLAGGED, NOT IMPLEMENTED AS LITERALLY GIVEN: the confirmed matrix
-    // lists Reports = View/Approve/Export for System Reviewer. Deliberately
-    // NOT adding `approve` here — this module (reportsDashboards) is the
-    // general RPT01-14 Reports feature, not the NCNP Compiled Report
-    // (that's the separate `ncnpReport` module below, which already grants
-    // this role `approve`). Per this file's own prior documented warning,
-    // reportsDashboards:approve has no additional crossEntity scoping in
-    // ReportsController, so granting it here would let a System Reviewer
-    // approve/reject/archive any org's RPT01-14 reports — a cross-tenant
-    // capability this role was deliberately never given. Recommend
-    // confirming with the client whether "Reports: Approve" in the matrix
-    // meant the NCNP report specifically (already covered) before granting
-    // this literally.
+    // Client-confirmed: View + Export, no Approve — the general RPT01-14
+    // Reports feature stays outside this role's approval gate (the NCNP
+    // Compiled Report is the separate `ncnpReport` module below).
     perm('reportsDashboards', { read: true, export: true }),
-    perm('archiveSharingAudit'),
+    // Client-confirmed: View only.
+    perm('archiveSharingAudit', RO),
     perm('surveyBuilder', RO),
     perm('ncnpReport', { read: true, approve: true }),
     perm('auditLog'),
@@ -372,6 +418,15 @@ export const LOGIN_ROLE_KEYS = ROLE_MATRIX.filter((r) => r.key !== 'citizen_gues
 
 export function roleByKey(key: string): RoleDef | undefined {
   return ROLE_MATRIX.find((r) => r.key === key);
+}
+
+// `User.roleId` stores the full role id (e.g. 'role_center_supervisor'),
+// not the short `key` `can()`/`getOrgStore().role` use — this is the
+// matching lookup for callers that only have the id (e.g.
+// PermissionGrantsService validating a grantee's role before creating a
+// grant for them).
+export function roleById(id: string): RoleDef | undefined {
+  return ROLE_MATRIX.find((r) => r.id === id);
 }
 export function can(roleKey: string | undefined, module: PermissionModule, action: PermissionAction): boolean {
   if (!roleKey) return false;

@@ -51,12 +51,11 @@ export class ConfigService {
   get dbSslCaPath(): string | undefined {
     return this.config.DB_SSL_CA;
   }
-  // RIO-NFR-006 — see env.schema.ts's DB_POOL_MAX comment.
-  get dbPoolMax(): number {
-    return this.config.DB_POOL_MAX;
+  get dbPoolMaxApp(): number {
+    return this.config.DB_POOL_MAX_APP;
   }
-  get dbSupervisorPoolMax(): number {
-    return this.config.DB_SUPERVISOR_POOL_MAX;
+  get dbPoolMaxSupervisor(): number {
+    return this.config.DB_POOL_MAX_SUPERVISOR;
   }
   get port(): number {
     return this.config.PORT;
@@ -130,6 +129,24 @@ export class ConfigService {
   }
   get smsTimeoutMs(): number {
     return this.config.SMS_TIMEOUT_MS;
+  }
+  get surveyAbandonmentIdleMinutes(): number {
+    return this.config.SURVEY_ABANDONMENT_IDLE_MINUTES;
+  }
+  get surveyRemindersEnabled(): boolean {
+    return this.config.SURVEY_REMINDERS_ENABLED;
+  }
+  get surveyReminderIdleMinutes(): number {
+    return this.config.SURVEY_REMINDER_IDLE_MINUTES;
+  }
+  get surveyReminderMax(): number {
+    return this.config.SURVEY_REMINDER_MAX;
+  }
+  get surveyReminderCooldownMinutes(): number {
+    return this.config.SURVEY_REMINDER_COOLDOWN_MINUTES;
+  }
+  get surveySessionSweepCron(): string {
+    return this.config.SURVEY_SESSION_SWEEP_CRON;
   }
   get backupDir(): string {
     return this.config.BACKUP_DIR;

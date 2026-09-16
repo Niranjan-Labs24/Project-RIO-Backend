@@ -15,12 +15,18 @@ function makeContext(req: { headers?: Record<string, string>; cookies?: Record<s
   } as never;
 }
 
-function makeGuard(isPublic = false, user: object | null = {
-  orgId: 'o1', roleId: 'role_ngo_admin', sessionVersion: 0, org: { isActive: true },
-}) {
+function makeGuard(
+  isPublic = false,
+  user: object | null = { orgId: 'o1', roleId: 'role_ngo_admin', sessionVersion: 0, org: { isActive: true } },
+  organisation: { isActive: boolean } | null = { isActive: true },
+) {
   const reflector = { getAllAndOverride: () => isPublic } as never;
   const tenant = {
-    runAsSupervisor: (fn: (tx: object) => unknown) => fn({ user: { findUnique: () => Promise.resolve(user) } }),
+    runAsSupervisor: (fn: (tx: object) => unknown) =>
+      fn({
+        user: { findUnique: () => Promise.resolve(user) },
+        organisation: { findUnique: () => Promise.resolve(organisation) },
+      }),
   } as never;
   return new JwtAuthGuard(tokens, reflector, tenant);
 }
@@ -57,5 +63,57 @@ describe('JwtAuthGuard', () => {
 
   it('ignores an invalid stale cookie on a public route', async () => {
     await expect(makeGuard(true).canActivate(makeContext({ cookies: { rio_session: 'bad' } }))).resolves.toBe(true);
+  });
+
+  describe('x-act-as-org (crossEntity caller acting on behalf of a chosen org)', () => {
+    it('lets a crossEntity role (system_admin) override orgId to a valid active org', async () => {
+      const user = { orgId: 'own-org', roleId: 'role_system_admin', sessionVersion: 0, org: { isActive: true } };
+      const token = tokens.sign({ sub: 'u1', orgId: 'own-org', roleKey: 'system_admin' });
+      await orgContext.run({ requestId: 'r' }, async () => {
+        await expect(
+          makeGuard(false, user, { isActive: true }).canActivate(
+            makeContext({ headers: { authorization: `Bearer ${token}`, 'x-act-as-org': 'target-org' } }),
+          ),
+        ).resolves.toBe(true);
+        expect(orgContext.getStore()).toMatchObject({ orgId: 'target-org', role: 'system_admin' });
+      });
+    });
+
+    it('ignores the header for a non-crossEntity role (never trusted)', async () => {
+      const user = { orgId: 'own-org', roleId: 'role_ngo_admin', sessionVersion: 0, org: { isActive: true } };
+      const token = tokens.sign({ sub: 'u1', orgId: 'own-org', roleKey: 'ngo_admin' });
+      await orgContext.run({ requestId: 'r' }, async () => {
+        await expect(
+          makeGuard(false, user, { isActive: true }).canActivate(
+            makeContext({ headers: { authorization: `Bearer ${token}`, 'x-act-as-org': 'target-org' } }),
+          ),
+        ).resolves.toBe(true);
+        expect(orgContext.getStore()).toMatchObject({ orgId: 'own-org' });
+      });
+    });
+
+    it('rejects when the target org does not exist', async () => {
+      const user = { orgId: 'own-org', roleId: 'role_system_admin', sessionVersion: 0, org: { isActive: true } };
+      const token = tokens.sign({ sub: 'u1', orgId: 'own-org', roleKey: 'system_admin' });
+      await orgContext.run({ requestId: 'r' }, async () => {
+        await expect(
+          makeGuard(false, user, null).canActivate(
+            makeContext({ headers: { authorization: `Bearer ${token}`, 'x-act-as-org': 'missing-org' } }),
+          ),
+        ).rejects.toThrow();
+      });
+    });
+
+    it('rejects when the target org is inactive', async () => {
+      const user = { orgId: 'own-org', roleId: 'role_system_admin', sessionVersion: 0, org: { isActive: true } };
+      const token = tokens.sign({ sub: 'u1', orgId: 'own-org', roleKey: 'system_admin' });
+      await orgContext.run({ requestId: 'r' }, async () => {
+        await expect(
+          makeGuard(false, user, { isActive: false }).canActivate(
+            makeContext({ headers: { authorization: `Bearer ${token}`, 'x-act-as-org': 'inactive-org' } }),
+          ),
+        ).rejects.toThrow();
+      });
+    });
   });
 });

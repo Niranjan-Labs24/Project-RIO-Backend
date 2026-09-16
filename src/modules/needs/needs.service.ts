@@ -1,14 +1,20 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
-import { requireActor, requireOrgId } from '../../tenancy/org-context';
+import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { AuditService } from '../audit/audit.service';
 import type { AuditChange } from '../audit/audit.types';
 import { GeographyService } from '../geography/geography.service';
 import { AiDecisionsService } from '../ai-decisions/ai-decisions.service';
+import { StudyConfigService } from '../study-config/study-config.service';
+import { resolveConfidenceBand, type ConfidenceBand } from '../ai-decisions/confidence-band';
+import { MethodologyConfigService } from '../methodology-config/methodology-config.service';
+import { NeedThemesService } from './need-themes.service';
+import { NeedSummaryService } from './need-summary.service';
 import { NEED_EDITABLE_STATUSES, type CreateNeedPayload, type Need, type NeedRow, type UpdateNeedPayload } from './needs.types';
 
-const DIFF_FIELDS = ['title', 'statement', 'village', 'referenceId'] as const;
+
+const DIFF_FIELDS = ['title', 'statement', 'village', 'referenceId', 'affectedPeople', 'affectedHouseholds','affectedPopulation'] as const;
 
 // RIO-DATA-003: system-generated internal reference, derived from the
 // `internalRefSeq` autoincrement column so there's a single source of
@@ -24,6 +30,9 @@ const DIFF_FIELD_LABELS: Record<(typeof DIFF_FIELDS)[number], string> = {
   statement: 'Statement',
   village: 'Village',
   referenceId: 'Reference ID',
+  affectedPopulation: 'Affected Population',
+  affectedPeople: 'Affected People',
+  affectedHouseholds: 'Affected Households',
 };
 
 // Raw shape Prisma returns once `needGovernorates`/`needCenters` are
@@ -54,6 +63,10 @@ export class NeedsService {
     private readonly audit: AuditService,
     private readonly geography: GeographyService,
     private readonly aiDecisions: AiDecisionsService,
+    private readonly studyConfig: StudyConfigService,
+    private readonly methodologyConfig: MethodologyConfigService,
+    private readonly needThemes: NeedThemesService,
+    private readonly needSummaries: NeedSummaryService,
   ) {}
 
   // A Study can hold many Needs — each one runs its own independent
@@ -86,6 +99,9 @@ export class NeedsService {
           village: payload.village ?? [],
           source: 'manual_entry',
           referenceId: payload.referenceId ?? null,
+          affectedPopulation: payload.affectedPopulation ?? null,
+          affectedPeople: payload.affectedPeople ?? null,
+          affectedHouseholds: payload.affectedHouseholds ?? null,
           createdBy,
           status: 'pending_ai_classification',
           needGovernorates: {
@@ -116,6 +132,7 @@ export class NeedsService {
         { field: 'Title', before: null, after: created.title },
         { field: 'Statement', before: null, after: created.statement },
         { field: 'Village', before: null, after: created.village },
+        { field: 'Affected Population', before: null, after: created.affectedPopulation },
         { field: 'Source', before: null, after: created.source },
         { field: 'Status', before: null, after: created.status },
       ],
@@ -134,6 +151,23 @@ export class NeedsService {
     // catch only needs to log.
     this.aiDecisions.classifyAutomatically(created.id).catch((err: Error) => {
       this.logger.warn(`Automatic classification failed for need ${created.id}: ${err.message}`);
+    });
+
+    // RIO-AI-003's auto-suggest, for the manual-entry path. Fire-and-forget for
+    // the same reason as classification above, and additionally because
+    // summarisation is assistive: the Need is already persisted and must not be
+    // rolled back if the model is unavailable. maybeGenerateForNeed swallows
+    // its own failures, so this catch only covers the promise itself.
+    this.needSummaries.maybeGenerateForNeed(created.id, 'manual_entry').catch((err: Error) => {
+      this.logger.warn(`Need summary generation failed for need ${created.id}: ${err.message}`);
+    });
+
+    // RIO-FR-003 AC 6. Fire-and-forget for the same reason as the two above,
+    // and additionally because the recurrence factor reads themes at SCORING
+    // time — a need created before extraction finishes simply scores without
+    // them, and picks them up on its next scoring run.
+    this.needThemes.maybeExtractForNeed(created.id).catch((err: Error) => {
+      this.logger.warn(`Theme extraction failed for need ${created.id}: ${err.message}`);
     });
 
     return this.toNeed(this.toNeedRow(created), await this.resolveUserName(created.createdBy));
@@ -189,19 +223,59 @@ export class NeedsService {
   }
 
   async listByStudyId(studyId: string): Promise<Need[]> {
-    const rows = (await this.tenant.runInOrgContext((tx) =>
-      tx.need.findMany({ where: { studyId }, orderBy: { createdAt: 'asc' }, include: GEO_INCLUDE }),
-    )) as RawNeedWithGeo[];
-    const names = await this.resolveUserNames(rows.map((r) => r.createdBy));
-    return rows.map((row) => this.toNeed(this.toNeedRow(row), names.get(row.createdBy) ?? null));
+    // RIO-RBAC-002 (client-confirmed 2026-08-29) — same isCrossOrgReader
+    // split as getById below, extended to system_reviewer (also
+    // crossEntity:true, also platform-wide with no tenant org of its own).
+    // Without this, StudiesService.list()'s cross-org branch could return a
+    // study belonging to another org, but this call — always RLS-scoped —
+    // then silently found zero needs for it. That's what was actually
+    // breaking the needs-count column on /studies, and blocking Public
+    // Surveys and Survey Builder entirely for these roles, since both chain
+    // through this same per-study needs lookup.
+    const store = getOrgStore();
+    const isCrossOrgReader =
+      store?.role === 'system_admin' ||
+      store?.role === 'system_reviewer' ||
+      store?.role === 'center_supervisor';
+    const rows = (isCrossOrgReader
+      ? await this.tenant.runAsSupervisor((tx) =>
+          tx.need.findMany({ where: { studyId }, orderBy: { createdAt: 'asc' }, include: GEO_INCLUDE }),
+        )
+      : await this.tenant.runInOrgContext((tx) =>
+          tx.need.findMany({ where: { studyId }, orderBy: { createdAt: 'asc' }, include: GEO_INCLUDE }),
+        )) as RawNeedWithGeo[];
+    const [names, confidences] = await Promise.all([
+      this.resolveUserNames(rows.map((r) => r.createdBy)),
+      this.resolveAiConfidence(rows.map((r) => r.id)),
+    ]);
+    return rows.map((row) =>
+      this.toNeed(this.toNeedRow(row), names.get(row.createdBy) ?? null, confidences.get(row.id) ?? null),
+    );
   }
 
   async getById(needId: string): Promise<Need> {
-    const row = (await this.tenant.runInOrgContext((tx) =>
-      tx.need.findUnique({ where: { id: needId }, include: GEO_INCLUDE }),
-    )) as RawNeedWithGeo | null;
+    // RIO-RBAC-002 (client-confirmed, 2026-08-27 round; system_reviewer
+    // added 2026-08-29) — System Admin and System Reviewer are both
+    // platform-wide with no tenant org of their own, and Center Supervisor
+    // is cross-entity read; mirrors StudiesService.getById's identical
+    // isCrossOrgReader split. Without this, following a link into a Need
+    // outside one's own org (e.g. to create a Public Survey Link there) got
+    // a 404 before ever reaching that action's own X-Act-As-Org check.
+    const store = getOrgStore();
+    const isCrossOrgReader =
+      store?.role === 'system_admin' ||
+      store?.role === 'system_reviewer' ||
+      store?.role === 'center_supervisor';
+    const row = (isCrossOrgReader
+      ? await this.tenant.runAsSupervisor((tx) => tx.need.findUnique({ where: { id: needId }, include: GEO_INCLUDE }))
+      : await this.tenant.runInOrgContext((tx) => tx.need.findUnique({ where: { id: needId }, include: GEO_INCLUDE }))
+    ) as RawNeedWithGeo | null;
     if (!row) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
-    return this.toNeed(this.toNeedRow(row), await this.resolveUserName(row.createdBy));
+    const [createdByName, confidences] = await Promise.all([
+      this.resolveUserName(row.createdBy, isCrossOrgReader),
+      this.resolveAiConfidence([row.id]),
+    ]);
+    return this.toNeed(this.toNeedRow(row), createdByName, confidences.get(row.id) ?? null);
   }
 
   async update(needId: string, patch: UpdateNeedPayload): Promise<Need> {
@@ -226,6 +300,9 @@ export class NeedsService {
           ...(patch.statement !== undefined ? { statement: patch.statement } : {}),
           ...(patch.village !== undefined ? { village: patch.village } : {}),
           ...(patch.referenceId !== undefined ? { referenceId: patch.referenceId } : {}),
+          ...(patch.affectedPopulation !== undefined ? { affectedPopulation: patch.affectedPopulation } : {}),
+          ...(patch.affectedPeople !== undefined ? { affectedPeople: patch.affectedPeople } : {}),
+          ...(patch.affectedHouseholds !== undefined ? { affectedHouseholds: patch.affectedHouseholds } : {}),
         },
       });
       if (patch.governorateIds !== undefined) {
@@ -272,6 +349,103 @@ export class NeedsService {
       });
     }
 
+    // RIO-AI-003: a summary of the OLD statement is not a summary of this Need
+    // any more. Awaited, unlike the fire-and-forget generation below it,
+    // because leaving a superseded summary marked CONFIRMED for even a moment
+    // is what would let a stale wording reach a report generated in that
+    // window. Only the statement matters here — retitling or moving geography
+    // does not invalidate a description summary.
+    if (changes.some((c) => c.field === DIFF_FIELD_LABELS.statement)) {
+      await this.needSummaries.markStaleForNeed(updated.id);
+      // The statement is what themes are derived from, so a rewrite can change
+      // what the need is about — and therefore its recurrence count.
+      this.needThemes.maybeExtractForNeed(updated.id).catch((err: Error) => {
+        this.logger.warn(`Theme re-extraction failed for need ${updated.id}: ${err.message}`);
+      });
+      this.needSummaries.maybeGenerateForNeed(updated.id, 'manual_entry').catch((err: Error) => {
+        this.logger.warn(`Need summary regeneration failed for need ${updated.id}: ${err.message}`);
+      });
+    }
+
+    return this.toNeed(updated, await this.resolveUserName(updated.createdBy));
+  }
+
+  // RIO-FR-005 (Q12) — analyst-entered, so deliberately NOT gated behind
+  // NEED_EDITABLE_STATUSES the way title/statement/geography are above:
+  // gap classification is a priority-scoring-stage judgment call that can
+  // legitimately be entered/revised any time after a Need exists, not just
+  // during the pre-classification editing window.
+  // Same pattern as StudiesService.assertValidStudyType — an empty active
+  // list means nothing validates yet (never true here since GapTypeOption
+  // is seeded with 5 defaults, but kept consistent with the shared
+  // convention rather than a special case).
+  private async assertValidGapType(value: string | null): Promise<void> {
+    if (value === null) return;
+    const names = await this.studyConfig.listActiveGapTypeNames();
+    if (names.length > 0 && !names.includes(value)) {
+      throw new BadRequestException({
+        error: { code: 'INVALID_GAP_TYPE', message: `"${value}" is not a configured Gap Type.` },
+      });
+    }
+  }
+
+  async setGapType(needId: string, gapType: string | null): Promise<Need> {
+    await this.assertValidGapType(gapType);
+    const updated = await this.tenant.runInOrgContext(async (tx) => {
+      const currentRaw = (await tx.need.findUnique({ where: { id: needId }, include: GEO_INCLUDE })) as RawNeedWithGeo | null;
+      if (!currentRaw) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+      const before = currentRaw.gapType;
+      const updatedRaw = (await tx.need.update({
+        where: { id: needId },
+        data: { gapType },
+        include: GEO_INCLUDE,
+      })) as RawNeedWithGeo;
+      if (before !== gapType) {
+        await this.audit.record({
+          action: 'edit',
+          entityType: 'need',
+          entityId: needId,
+          entityLabel: currentRaw.title.slice(0, 80),
+          changes: [{ field: 'gapType', before, after: gapType }],
+          sourceRef: currentRaw.referenceId,
+        });
+      }
+      return this.toNeedRow(updatedRaw);
+    });
+    return this.toNeed(updated, await this.resolveUserName(updated.createdBy));
+  }
+
+  /**
+   * RIO-FR-003 AC 1 — the urgency level a human assigns.
+   *
+   * Deliberately its own action rather than a field on update(): urgency is a
+   * priority judgement, not Need data, so it carries the same
+   * priorityScoring:write gate as gap type above rather than
+   * dataCollection:write. It is also settable after a Need is locked for
+   * editing, because the judgement can change while the facts do not.
+   */
+  async setUrgency(needId: string, urgency: string | null): Promise<Need> {
+    const updated = await this.tenant.runInOrgContext(async (tx) => {
+      const currentRaw = (await tx.need.findUnique({ where: { id: needId }, include: GEO_INCLUDE })) as RawNeedWithGeo | null;
+      if (!currentRaw) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+      const before = currentRaw.urgency;
+      const updatedRaw = (await tx.need.update({
+        where: { id: needId },
+        data: { urgency },
+        include: GEO_INCLUDE,
+      })) as RawNeedWithGeo;
+      if (before !== urgency) {
+        await this.audit.record({
+          action: 'edit',
+          entityType: 'need',
+          entityId: needId,
+          entityLabel: currentRaw.title.slice(0, 80),
+          changes: [{ field: 'urgency', before, after: urgency }],
+          sourceRef: currentRaw.referenceId,
+        });
+      }
+      return this.toNeedRow(updatedRaw);
+    });
     return this.toNeed(updated, await this.resolveUserName(updated.createdBy));
   }
 
@@ -303,6 +477,7 @@ export class NeedsService {
         { field: 'Title', before: removed.title, after: null },
         { field: 'Statement', before: removed.statement, after: null },
         { field: 'Village', before: removed.village, after: null },
+        { field: 'Affected Population', before: removed.affectedPopulation, after: null },
         { field: 'Source', before: removed.source, after: null },
         { field: 'Status', before: removed.status, after: null },
       ],
@@ -347,17 +522,63 @@ export class NeedsService {
 
   // Same pattern as EvidenceService's own actor-name resolution — the
   // creator is always in the same org as the Need (RLS-scoped lookup).
-  private async resolveUserName(userId: string): Promise<string | null> {
-    const names = await this.resolveUserNames([userId]);
+  private async resolveUserName(userId: string, crossOrg = false): Promise<string | null> {
+    const names = await this.resolveUserNames([userId], crossOrg);
     return names.get(userId) ?? null;
   }
 
-  private async resolveUserNames(userIds: string[]): Promise<Map<string, string>> {
+  /**
+   * RIO-AI-001 — the latest `need_classification` AiDecision's confidence for
+   * each of `needIds`, already banded.
+   *
+   * One query for the whole page rather than one per Need: the Needs list
+   * renders this for every row, and a per-row lookup would turn a single list
+   * request into N+1. Ordered ascending and written into the map as it goes,
+   * so the LAST write per need wins — i.e. the newest decision, which is the
+   * one a re-classification produced.
+   */
+  private async resolveAiConfidence(
+    needIds: string[],
+  ): Promise<Map<string, { confidence: number | null; band: ConfidenceBand }>> {
+    const distinct = [...new Set(needIds)];
+    const out = new Map<string, { confidence: number | null; band: ConfidenceBand }>();
+    if (distinct.length === 0) return out;
+
+    const [rows, settings] = await Promise.all([
+      this.tenant.runInOrgContext((tx) =>
+        tx.aiDecision.findMany({
+          where: { needId: { in: distinct }, touchpoint: 'need_classification' },
+          orderBy: { createdAt: 'asc' },
+          select: { needId: true, confidence: true },
+        }),
+      ),
+      this.methodologyConfig.getRaw(),
+    ]);
+
+    for (const row of rows) {
+      const confidence = row.confidence === null ? null : Number(row.confidence);
+      out.set(row.needId, {
+        confidence,
+        band: resolveConfidenceBand(confidence, settings.aiClassificationSettings),
+      });
+    }
+    return out;
+  }
+
+  // `crossOrg` — RIO-RBAC-002: the creator of a Need read via the
+  // cross-org-reader path below (System Admin/Center Supervisor viewing a
+  // Need outside their own org) belongs to THAT org, not the ambient one —
+  // `runInOrgContext` would RLS-filter them out entirely, silently
+  // resolving to no name. `runAsSupervisor` (SELECT-only, no RLS) is the
+  // same bypass Studies' getById already uses for its own cross-org read.
+  private async resolveUserNames(userIds: string[], crossOrg = false): Promise<Map<string, string>> {
     const distinctIds = [...new Set(userIds)];
     if (distinctIds.length === 0) return new Map();
-    const users = await this.tenant.runInOrgContext((tx) =>
-      tx.user.findMany({ where: { id: { in: distinctIds } }, select: { id: true, name: true } }),
-    );
+    const query = (tx: Prisma.TransactionClient) =>
+      tx.user.findMany({ where: { id: { in: distinctIds } }, select: { id: true, name: true } });
+    const users = crossOrg
+      ? await this.tenant.runAsSupervisor(query)
+      : await this.tenant.runInOrgContext(query);
     return new Map(users.map((u) => [u.id, u.name]));
   }
 
@@ -385,10 +606,15 @@ export class NeedsService {
     };
   }
 
-  private toNeed(row: NeedRow, createdByName: string | null): Need {
+  private toNeed(
+    row: NeedRow,
+    createdByName: string | null,
+    aiConfidence: { confidence: number | null; band: ConfidenceBand } | null = null,
+  ): Need {
     return {
       id: row.id,
       studyId: row.studyId,
+      orgId: row.orgId,
       title: row.title,
       statement: row.statement,
       village: row.village,
@@ -397,6 +623,7 @@ export class NeedsService {
       source: row.source,
       referenceId: row.referenceId,
       internalReferenceId: formatInternalReferenceId(row.internalRefSeq),
+      affectedPopulation: row.affectedPopulation,
       status: row.status,
       domain: row.domain,
       subDomain: row.subDomain,
@@ -404,12 +631,23 @@ export class NeedsService {
       needDomains: row.needDomains,
       aiSuggestedDomain: row.aiSuggestedDomain,
       aiSuggestedSubDomain: row.aiSuggestedSubDomain,
+      // Null band = no classification has run for this Need at all. Callers
+      // that don't resolve it (create/update, where the caller already knows
+      // no new decision exists) pass nothing and get null — never a
+      // default-banded 'standard', which would read as "the AI was confident".
+      aiConfidence: aiConfidence?.confidence ?? null,
+      aiConfidenceBand: aiConfidence?.band ?? null,
       classifiedAt: row.classifiedAt ? row.classifiedAt.toISOString() : null,
       classificationError: row.classificationError,
       proposedDomains: Array.isArray(row.proposedDomains)
         ? (row.proposedDomains as Array<{ domain: string; subDomain: string }>)
         : null,
       proposedReason: row.proposedReason,
+      gapType: row.gapType,
+      urgency: row.urgency ?? null,
+      themes: row.themes ?? [],
+      affectedPeople: row.affectedPeople,
+      affectedHouseholds: row.affectedHouseholds,
       createdBy: row.createdBy,
       createdByName,
       createdAt: row.createdAt.toISOString(),

@@ -106,7 +106,9 @@ describe("RPT16 / RPT15 report document", () => {
   const headings = doc.sections.map((s) => ("heading" in s ? s.heading : "columns"));
   const allHeadings = doc.sections
     .flatMap((s) => (s.kind === "columns" ? s.children : [s]))
-    .map((s) => ("heading" in s ? s.heading : ""));
+    // `?? ""` because pageBreak's heading is optional — without it the array is
+    // (string | undefined)[] and every .startsWith below is unsound.
+    .map((s) => ("heading" in s ? (s.heading ?? "") : ""));
 
   it("renders as a structured report rather than a generic flatten", () => {
     // The generic branch emits a single "Summary" keyvalue block; the structured
@@ -174,7 +176,9 @@ describe("RPT16 / RPT15 report document", () => {
     const built = buildReportDoc("Evidence Report", evidenceOnly, AUDIT);
     const builtHeadings = built.sections
       .flatMap((s) => (s.kind === "columns" ? s.children : [s]))
-      .map((s) => ("heading" in s ? s.heading : ""));
+      // `?? ""` because pageBreak's heading is optional — without it the array is
+    // (string | undefined)[] and every .startsWith below is unsound.
+    .map((s) => ("heading" in s ? (s.heading ?? "") : ""));
     expect(builtHeadings).toContain("Evidence Documents");
     expect(builtHeadings).toContain("Region / Governorate");
     expect(JSON.stringify(built)).not.toContain("78.4");

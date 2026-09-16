@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildReportDoc } from "./report-doc";
+import { renderReportPdf } from "./pdf-builder";
 
 // RIO-FR-024: population/requiredSampleSize/minimumDetectableEffect must
 // appear in the exported Response Quality block, since they're computed
@@ -67,6 +68,18 @@ describe("Response Quality — RIO-FR-024 sample-size rows", () => {
     expect(blob).toContain("94");
     expect(blob).toContain("Minimum detectable effect");
     expect(blob).toContain("±14.4 pts");
+  });
+
+  it("prints the plus-minus sign as ASCII, not as question marks, in the PDF", () => {
+    // Base Helvetica has no plus-minus glyph, and the renderer's UTF-8 ->
+    // Latin-1 step turned its two bytes into two question marks: the MDE row
+    // read "??14.4 pts", which looks like a rendering fault sitting on top of
+    // a statistical figure. The document keeps the real sign (the web viewer
+    // can draw it); only the PDF folds it.
+    const doc = buildReportDoc("water", CONTENT_WITH_SAMPLE_SIZE, []);
+    const pdf = renderReportPdf(doc).toString("latin1");
+    expect(pdf).toContain("+/-14.4 pts");
+    expect(pdf).not.toContain("??");
   });
 
   it("omits the three rows entirely for a study with no sample-size data (pre-existing studies)", () => {

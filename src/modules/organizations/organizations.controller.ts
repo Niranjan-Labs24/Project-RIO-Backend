@@ -54,11 +54,13 @@ export class OrganizationsController {
     return this.orgs.updateStatus(id, body);
   }
 
-  // RIO-FR-010 (client-confirmed): approves a self-registered entity —
-  // separate from updateStatus above, since this also issues the entity's
-  // real temporary password (see OrganizationsService.approve).
+  // RIO-FR-010 + RIO-RBAC-002 (client-confirmed, governance email): sign-off
+  // on new organisation/tenant registration is System Reviewer's approval
+  // authority, not System Admin's edit authority — gated on `approve`, not
+  // `write`, separate from updateStatus above since this also issues the
+  // entity's real temporary password (see OrganizationsService.approve).
   @Patch(':id/approve')
-  @RequirePermission('entityTeam', 'write')
+  @RequirePermission('entityTeam', 'approve')
   approve(@Param('id', new UuidParamPipe()) id: string): Promise<OrganizationSummary> {
     return this.orgs.approve(id);
   }

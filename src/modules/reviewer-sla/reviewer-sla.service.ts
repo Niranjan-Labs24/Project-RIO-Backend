@@ -44,7 +44,7 @@ export class ReviewerSlaService {
 
   async listAlerts(): Promise<SlaAlert[]> {
     const role = getOrgStore()?.role;
-    const [surveyAlerts, reportAlerts, evidenceAlerts] = await Promise.all([
+    const [surveyAlerts, reportAlerts, evidenceAlerts, summaryAlerts] = await Promise.all([
       can(role, "surveyBuilder", "approve")
         ? this.listSurveyApprovalAlerts()
         : this.listOwnSurveyStatusAlerts(),
@@ -62,12 +62,19 @@ export class ReviewerSlaService {
       can(role, "priorityScoring", "create")
         ? this.listPendingEvidenceSummaryAlerts()
         : Promise.resolve([]),
+      // aiReview:approve is the precise gate — it matches exactly who can act
+      // on the alert (NeedSummaryController.confirm checks the same grant).
+      // The Research Officer who wrote the need holds aiReview:write, not
+      // :approve, so they never see a to-do they cannot complete.
+      can(role, "aiReview", "approve")
+        ? this.listPendingNeedSummaryAlerts()
+        : Promise.resolve([]),
     ]);
     // Each list is already sorted per its own convention (oldest-first for
     // a still-open queue, newest-first for already-resolved items) —
     // interleave both same-convention lists together rather than imposing
     // one global sort that would mix the two meanings.
-    return [...surveyAlerts, ...reportAlerts, ...evidenceAlerts].sort((a, b) => {
+    return [...surveyAlerts, ...reportAlerts, ...evidenceAlerts, ...summaryAlerts].sort((a, b) => {
       const aTime = new Date(a.createdAt).getTime();
       const bTime = new Date(b.createdAt).getTime();
       // Not folding priorityScoring:create into this flag: data_analyst
@@ -330,5 +337,52 @@ export class ReviewerSlaService {
     }));
 
     return alerts.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  }
+
+  /**
+   * RIO-AI-003 — suggested Need-description summaries still awaiting a
+   * reviewer's confirmation.
+   *
+   * These deliberately carry NO SLA clock: `dueAt` mirrors `createdAt` and the
+   * status is always "pending", following listPendingEvidenceSummaryAlerts'
+   * precedent rather than the survey/report queues'.
+   *
+   * Two reasons. First, an unconfirmed summary blocks nothing — reports fall
+   * back to the original statement (see
+   * NeedSummaryService.getConfirmedTextForNeed), unlike an unapproved survey,
+   * which halts data collection. Second, these alerts feed
+   * slaComplianceFromAlerts, which is what RPT02 and the Collective Dashboard
+   * publish as the organisation's SLA compliance percentage. Giving an
+   * assistive, non-blocking suggestion a breach clock would move a
+   * client-facing number for a reason nobody asked for.
+   */
+  private async listPendingNeedSummaryAlerts(): Promise<SlaAlert[]> {
+    const { pending, studies } = await this.tenant.runInOrgContext(async (tx) => {
+      const pending = await tx.needStatementSummary.findMany({
+        where: { status: "DRAFT" },
+        orderBy: { generatedAt: "asc" },
+        include: { need: { select: { statement: true } } },
+      });
+      const studyIds = Array.from(new Set(pending.map((row) => row.studyId)));
+      const studyRows = await tx.study.findMany({ where: { id: { in: studyIds } } });
+      return { pending, studies: studyRows };
+    });
+
+    const studyById = new Map(studies.map((study) => [study.id, study]));
+
+    return pending.map((row) => ({
+      id: row.id,
+      type: "need_summary_approval" as const,
+      needId: row.needId,
+      studyId: row.studyId,
+      surveyId: null,
+      reportId: null,
+      studyTitle: studyById.get(row.studyId)?.title ?? row.studyId,
+      needStatement: row.need?.statement ?? null,
+      touchpoint: "need_summary_approval",
+      createdAt: row.generatedAt.toISOString(),
+      dueAt: row.generatedAt.toISOString(),
+      status: "pending" as const,
+    }));
   }
 }
