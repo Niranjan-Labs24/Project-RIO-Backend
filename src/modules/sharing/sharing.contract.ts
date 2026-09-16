@@ -25,6 +25,9 @@ export const DecideSharingRequestBody = registerSchema(
   T.Object(
     {
       note: T.Optional(T.String({ maxLength: 1000 })),
+      // RIO-FR-014 (client Q30) — optional expiry set by the owner at
+      // approval time; omitted means access never expires on its own.
+      expiresAt: T.Optional(T.String({ format: "date-time" })),
     },
     { additionalProperties: false },
   ),

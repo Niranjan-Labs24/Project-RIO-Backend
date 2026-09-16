@@ -143,11 +143,26 @@ function collectiveTenant(fx: {
   return { runInOrgContext: <T>(fn: (t: unknown) => Promise<T>) => fn(tx) };
 }
 
+// Village-rollup rows: a PERFORMANCE figure where low = urgent, which is why
+// 30 bands as "high" and 80 as "low". `source` says so explicitly, and the
+// severity column inverts these — see the priorityScore fixture below for the
+// rows that must NOT be inverted.
 const populatedPriority = {
   listForOrg: async () => [
-    { studyId: "st1", studyTitle: "Water Study", needId: "n1", score: { overallScore: 30, level: "high", gapType: null, scoredAt: "2026-07-22T00:00:00Z" } },
-    { studyId: "st1", studyTitle: "Water Study", needId: "n2", score: { overallScore: 80, level: "low", gapType: null, scoredAt: "2026-07-22T00:00:00Z" } },
+    { studyId: "st1", studyTitle: "Water Study", needId: "n1", score: { overallScore: 30, level: "high", gapType: null, scoredAt: "2026-07-22T00:00:00Z", source: "villageRollup" } },
+    { studyId: "st1", studyTitle: "Water Study", needId: "n2", score: { overallScore: 80, level: "low", gapType: null, scoredAt: "2026-07-22T00:00:00Z", source: "villageRollup" } },
     { studyId: "st1", studyTitle: "Water Study", needId: "n3", score: null }, // unscored — counted in needCount, not in distribution
+  ],
+};
+
+// The other source listForOrg draws on: the Need's own approved PriorityScore,
+// already a severity (high = urgent). 88 bands as critical, and the severity
+// column must show 88, not 12.
+const priorityScoreSourced = {
+  listForOrg: async () => [
+    { studyId: "st1", studyTitle: "Water Study", needId: "n1", score: { overallScore: 88, level: "critical", gapType: null, scoredAt: "2026-07-22T00:00:00Z", source: "priorityScore" } },
+    { studyId: "st1", studyTitle: "Water Study", needId: "n2", score: { overallScore: 45, level: "medium", gapType: null, scoredAt: "2026-07-22T00:00:00Z", source: "priorityScore" } },
+    { studyId: "st1", studyTitle: "Water Study", needId: "n3", score: null },
   ],
 };
 
@@ -155,9 +170,14 @@ function populatedTenant() {
   return collectiveTenant({
     needCount: 3,
     needs: [
-      { id: "n1", statement: "Clean water access", title: "W", domain: "Water & Sanitation", village: ["Ad-Dilam"], studyId: "st1" },
-      { id: "n2", statement: "School supplies", title: "E", domain: "Education", village: [], studyId: "st1" },
-      { id: "n3", statement: "Unscored need", title: "U", domain: null, village: [], studyId: "st1" },
+      // Shaped the way the application stores them: `title` is the short name
+      // a researcher gives the Need and `statement` is the full narrative. The
+      // fixture used to have these the other way round, with the readable text
+      // in `statement` and a single letter as the title, which is why the
+      // top-priorities label assertions below read from the long field.
+      { id: "n1", title: "Clean water access", statement: "Households in the eastern quarter have no piped connection and buy from tankers.", domain: "Water & Sanitation", village: ["Ad-Dilam"], studyId: "st1" },
+      { id: "n2", title: "School supplies", statement: "The primary school has no learning materials for the current term.", domain: "Education", village: [], studyId: "st1" },
+      { id: "n3", title: "Unscored need", statement: "Recorded during the field visit; not yet scored.", domain: null, village: [], studyId: "st1" },
     ],
     quality: [
       { confidenceFlag: "low", isDuplicate: false },
@@ -197,6 +217,30 @@ describe("ReportSummaryDataProvider.getCollectiveDashboard", () => {
       { author: "Reviewer Demo", note: "Validate water access.", at: "2026-07-22T10:20:00.000Z" },
     ]);
     expect(d.trends).toHaveLength(1);
+  });
+
+  // Regression: the severity column used to invert EVERY row, which was right
+  // while the village rollup was the only source. Once a Need's own approved
+  // PriorityScore started feeding this list, inverting those rows turned the
+  // column upside-down — a need scoring 88 (critical) was published as
+  // severity 12, the lowest number in the table, and sorted there too.
+  it("does not invert severity for rows sourced from the Need's own PriorityScore", async () => {
+    const provider = makeProvider(summaryStub, populatedTenant(), priorityScoreSourced);
+
+    const d = await provider.getCollectiveDashboard(query);
+
+    expect(d.topPriorities[0]).toMatchObject({ rank: 1, label: "Clean water access", severityScore: 88 });
+    expect(d.topPriorities[1]).toMatchObject({ rank: 2, label: "School supplies", severityScore: 45 });
+  });
+
+  it("still inverts severity for rows sourced from the village rollup", async () => {
+    const provider = makeProvider(summaryStub, populatedTenant(), populatedPriority);
+
+    const d = await provider.getCollectiveDashboard(query);
+
+    // 100 − 30 and 100 − 80: a performance score read as higher-is-worse.
+    expect(d.topPriorities[0]).toMatchObject({ severityScore: 70 });
+    expect(d.topPriorities[1]).toMatchObject({ severityScore: 20 });
   });
 
   it("returns real zeros for an org with no needs", async () => {

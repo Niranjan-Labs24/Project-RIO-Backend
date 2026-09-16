@@ -54,10 +54,13 @@ export interface PriorityScore {
 }
 
 // Org-wide dashboard row — every Need, whether or not it's been scored yet
-// (a Need with no VillagePriorityAssessment must still show up, just
-// unscored). Backed by PriorityV2Service.listForOrg() (the real,
-// methodology-driven village-priority pipeline) — not the older
-// PriorityService/PriorityScore placeholder, which no UI writes to anymore.
+// (an unscored Need must still show up, just without a score).
+//
+// Backed by PriorityV2Service.listForOrg(), which fills `score` from one of
+// two pipelines, in this order:
+//   1. the Need's own APPROVED PriorityScore — per-need, reviewer-signed-off;
+//   2. failing that, the village-priority rollup (VillagePriorityAssessment).
+// They run in opposite directions, so `score.source` records which one it was.
 export interface PriorityDashboardEntry {
   studyId: string;
   studyTitle: string;
@@ -77,23 +80,55 @@ export interface PriorityDashboardEntry {
     level: "critical" | "high" | "medium" | "low";
     overrideReason: string | null;
     scoredAt: string;
+    // Which pipeline produced `overallScore`, and therefore which way the
+    // number runs: `priorityScore` is a severity (high = urgent),
+    // `villageRollup` a performance figure (low = urgent). Anything that
+    // does arithmetic on the number rather than just showing it must read
+    // this first — see ReportSummaryDataProvider's severity conversion.
+    source: "priorityScore" | "villageRollup";
   } | null;
 }
 
 // RIO-FR-005 (Q9) — client-confirmed comparison metrics: "Priority Score,
 // Needs Index, Critical/High Priority counts, Domain-wise severity, need
 // type, and affected population."
-export interface VillageComparisonEntry {
-  village: string;
+/** One Domain's mean within a Centre. Same scale and direction as every
+ *  other priority number here: 0-100, high = urgent. */
+export interface CenterDomainBreakdown {
+  domain: string;
+  needCount: number;
+  averageScore: number;
+  level: 'critical' | 'high' | 'medium' | 'low';
+}
+
+/** Grouped by Centre rather than by `Need.village`: village is free text a
+ *  researcher types with nothing validating it, while Centre is a real
+ *  foreign key into the client's own geographic reference. Village names
+ *  travel as labels in `villages`. See CenterAggregationService's comment for
+ *  the full reasoning, including why the score is the mean of the Needs' own
+ *  PriorityScores rather than a second separately-computed figure. */
+export interface CenterComparisonEntry {
+  centerId: string;
+  centerName: string;
+  centerNameAr: string | null;
+  governorateName: string | null;
+  governorateNameAr: string | null;
+  regionName: string | null;
+  regionNameAr: string | null;
+  /** The village names the Needs at this Centre carry — display labels, not
+   *  a grouping key. */
+  villages: string[];
   studyIds: string[];
-  /** Latest VillagePriorityAssessment for this village across the given
-   * studies — null if none has been calculated yet (e.g. no survey
-   * published/scored for that village). "Needs Index" in the client's own
-   * wording is this same figure — the methodology has one aggregate
-   * per-village score, not two separate ones. */
+  /** Mean of this Centre's approved Need PriorityScores (override where the
+   *  reviewer set one). Null until at least one Need here has an approved
+   *  score. "Needs Index" in the client's wording is this figure. */
   priorityScore: number | null;
-  priorityStatus: string | null;
-  domainComponents: unknown | null;
+  priorityStatus: 'critical' | 'high' | 'medium' | 'low' | null;
+  /** How many of `totalNeedCount` actually carried an approved score — the
+   *  mean above is over these, so a place scored on 2 of 9 needs is not
+   *  mistaken for one scored on all 9. */
+  scoredNeedCount: number;
+  domainBreakdown: CenterDomainBreakdown[];
   criticalNeedCount: number;
   highNeedCount: number;
   /** Need count grouped by its approved Domain — the closest existing
@@ -101,10 +136,9 @@ export interface VillageComparisonEntry {
   needTypeCounts: Record<string, number>;
   totalNeedCount: number;
   // RIO-FR-005 (Round 4, client-confirmed 2026-08-24) — sum of each Need's
-  // manually entered Need.affectedPeople/affectedHouseholds for this
-  // village. Null when none of the village's Needs have either value
-  // entered yet, rather than a fabricated 0 — see
-  // VillageAggregationService.aggregateByVillage.
+  // manually entered Need.affectedPeople/affectedHouseholds at this Centre.
+  // Null when none of them have either value entered yet, rather than a
+  // fabricated 0 — see CenterAggregationService.aggregateByCenter.
   affectedPeople: number | null;
   affectedHouseholds: number | null;
 }

@@ -550,10 +550,12 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
   // distribution + top priorities come from the same VillagePriorityAssessment
   // rows the Priority Dashboard reads (so the two reconcile); anomalies from
   // ResponseQualityResult flags; reviewer notes from decided AiDecisions. An
-  // org with no needs yet returns real zeros (not the Sample-Village mock);
-  // only an unexpected error falls back to the mock so the screen never dies.
-  // The aggregate is org-wide — scoped by the tenant context, not by `query`,
-  // which is why the parameter is unused (it was only read by the old fallback).
+  // org with no needs yet returns real zeros. There is no mock fallback: an
+  // unexpected error goes through rethrow() like every other method here, so
+  // a fault surfaces as a fault instead of as fixture data nothing in the
+  // export marks as fake. The aggregate is org-wide — scoped by the tenant
+  // context, not by `query`, which is why the parameter is unused (it was
+  // only ever read by the removed fallback).
   async getCollectiveDashboard(_query: ScopedReportQuery): Promise<CollectiveDashboardData> {
     try {
       // Authoritative scores — identical to the Priority Dashboard's rows.
@@ -620,19 +622,49 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
       ];
 
       // Top priorities: most-urgent first (critical → high → medium → low),
-      // then by weighted severity. v2's priorityScore is performance-weighted
-      // (lower = more urgent), so severity = 100 − score reads higher-is-worse
-      // in the "Severity" column, consistent with the per-scope reports.
+      // then by severity. The "Severity" column reads higher-is-worse.
+      //
+      // listForOrg() draws on two pipelines that run in OPPOSITE directions,
+      // so the conversion depends on which one produced the row — that is what
+      // `score.source` is for:
+      //
+      //   villageRollup  — a per-village PERFORMANCE figure, low = urgent.
+      //                    Invert it: severity = 100 − score.
+      //   priorityScore  — the Need's own severity, high = urgent already.
+      //                    Use it as-is.
+      //
+      // This used to invert everything, which was right while the village
+      // rollup was the only source. Once the Need's own approved PriorityScore
+      // started feeding this list, inverting those rows turned the column
+      // upside-down: a need scoring 88 (critical) was displayed as severity 12,
+      // the lowest figure in the table, and the sort below ranked it that way
+      // too.
+      const severityOf = (score: (typeof scored)[number]['score']) =>
+        score.source === 'villageRollup'
+          ? Math.round(100 - score.overallScore)
+          : Math.round(score.overallScore);
       const levelRank = { critical: 0, high: 1, medium: 2, low: 3 } as const;
       const topPriorities = [...scored]
-        .map((e) => ({ e, severity: Math.round(100 - e.score.overallScore) }))
+        .map((e) => ({ e, severity: severityOf(e.score) }))
         .sort((a, b) => levelRank[a.e.score.level] - levelRank[b.e.score.level] || b.severity - a.severity)
         .slice(0, 5)
         .map(({ e, severity }, i) => {
           const need = needById.get(e.needId);
           return {
             rank: i + 1,
-            label: need?.statement || need?.title || "Need",
+            // Title, not statement. This is one cell in a five-row table, and
+            // `statement` is the full narrative a researcher typed: 764
+            // characters on average here and 3,204 at the longest, against a
+            // title capped at 300 by the schema and averaging 42. Reading the
+            // statement first turned a single row into a screen-high wall of
+            // text and pushed the other four rows out of view. It also showed
+            // the escaped line breaks the narrative was typed with, which this
+            // cell renders literally rather than as paragraphs.
+            //
+            // Statement stays as the fallback for a Need with no title, but
+            // every Need in the database has one (checked: 0 of 282 missing),
+            // and the column is required on the create form.
+            label: need?.title || need?.statement || "Need",
             domain: need?.domain || "Unclassified",
             severityScore: severity,
             entity: need?.village?.[0] || e.studyTitle,
@@ -681,7 +713,14 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
       (await this.tenant.runInOrgContext((tx) =>
         tx.survey.findFirst({ where: { studyId }, orderBy: { createdAt: "desc" } }),
       ));
-    if (!survey) throw new Error(`no survey for study ${studyId}`);
+    // A study with no Survey at all is the most un-scored a study can be, so
+    // it takes the same route as one whose survey has no scores: `no-data`,
+    // which rethrow() turns into STUDY_NOT_SCORED (409). It used to throw a
+    // plain Error, which fell through to a raw 500 — the caller got an
+    // "internal error" for what is really just "make a survey first", a
+    // state every study passes through between creation and its first
+    // survey.
+    if (!survey) throw new Error('no-data');
     return survey.id;
   }
 

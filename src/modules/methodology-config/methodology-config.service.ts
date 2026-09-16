@@ -295,6 +295,13 @@ export class MethodologyConfigService {
           this.readAiClassificationSettings(row) as unknown as Prisma.InputJsonValue,
         aiSummarySettings:
           this.readAiSummarySettings(row) as unknown as Prisma.InputJsonValue,
+        // RIO-FR-002. Snapshotted for the same reason as the families above:
+        // RIO-NFR-017 asks for a history of EVERY configuration change, and a
+        // history row that omits the only thing that changed is worse than no
+        // row at all. Without this, editing a cleaning threshold produced a
+        // history entry that looked identical to the one before it.
+        dataCleaningSettings:
+          (row.dataCleaningSettings ?? {}) as unknown as Prisma.InputJsonValue,
         changedBy,
       },
     });

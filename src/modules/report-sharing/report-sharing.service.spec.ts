@@ -72,13 +72,16 @@ interface FakeRow {
   ownerOrgId: string;
   requestingOrgId: string;
   reportId: string;
-  status: "pending" | "approved" | "rejected" | "expired";
+  status: "pending" | "approved" | "rejected" | "expired" | "withdrawn";
   requestedBy: string;
   requestedAt: Date;
   decidedBy: string | null;
   decidedAt: Date | null;
   note: string | null;
   decisionNote: string | null;
+  expiresAt?: Date | null;
+  withdrawnBy?: string | null;
+  withdrawnAt?: Date | null;
 }
 
 function fakePrisma(initial: FakeRow[] = []) {
@@ -279,6 +282,91 @@ describe("ReportSharingService.decide (approve/reject)", () => {
   });
 });
 
+describe("ReportSharingService.approve — optional expiry (RIO-FR-014, Q30)", () => {
+  function seedPending(): FakeRow {
+    return {
+      id: "rsr-1", ownerOrgId: "org-owner", requestingOrgId: "org-requester", reportId: APPROVED_REPORT.id,
+      status: "pending", requestedBy: "user-1", requestedAt: new Date(),
+      decidedBy: null, decidedAt: null, note: "why", decisionNote: null,
+    };
+  }
+
+  it("approving with no expiresAt leaves access open-ended", async () => {
+    const svc = new ReportSharingService(
+      fakePrisma([seedPending()]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
+      fakeReportsService([APPROVED_REPORT]) as never,
+    );
+    const result = await runAsOrg("org-owner", "user-2", () => svc.approve("rsr-1"));
+    expect(result.expiresAt).toBeNull();
+  });
+
+  it("approving with an expiresAt stores it", async () => {
+    const svc = new ReportSharingService(
+      fakePrisma([seedPending()]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
+      fakeReportsService([APPROVED_REPORT]) as never,
+    );
+    const result = await runAsOrg("org-owner", "user-2", () =>
+      svc.approve("rsr-1", { expiresAt: "2027-01-01T00:00:00.000Z" }),
+    );
+    expect(result.expiresAt).toBe("2027-01-01T00:00:00.000Z");
+  });
+
+  it("rejects an unparsable expiry date", async () => {
+    const svc = new ReportSharingService(
+      fakePrisma([seedPending()]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
+      fakeReportsService([APPROVED_REPORT]) as never,
+    );
+    await expect(
+      runAsOrg("org-owner", "user-2", () => svc.approve("rsr-1", { expiresAt: "not-a-date" })),
+    ).rejects.toMatchObject({ response: { error: { code: "INVALID_EXPIRY_DATE" } } });
+  });
+});
+
+describe("ReportSharingService.withdraw (RIO-FR-014, Q30)", () => {
+  function seedApproved(): FakeRow {
+    return {
+      id: "rsr-1", ownerOrgId: "org-owner", requestingOrgId: "org-requester", reportId: APPROVED_REPORT.id,
+      status: "approved", requestedBy: "user-1", requestedAt: new Date(),
+      decidedBy: "user-2", decidedAt: new Date(), note: "why", decisionNote: null,
+    };
+  }
+
+  it("only the owning org can withdraw", async () => {
+    const svc = new ReportSharingService(
+      fakePrisma([seedApproved()]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
+      fakeReportsService([APPROVED_REPORT]) as never,
+    );
+    await expect(
+      runAsOrg("org-requester", "user-1", () => svc.withdraw("rsr-1")),
+    ).rejects.toMatchObject({ response: { error: { code: "FORBIDDEN" } } });
+  });
+
+  it("cannot withdraw a request that was never approved", async () => {
+    const row = { ...seedApproved(), status: "pending" as const, decidedBy: null, decidedAt: null };
+    const svc = new ReportSharingService(
+      fakePrisma([row]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
+      fakeReportsService([APPROVED_REPORT]) as never,
+    );
+    await expect(
+      runAsOrg("org-owner", "user-2", () => svc.withdraw("rsr-1")),
+    ).rejects.toMatchObject({ response: { error: { code: "REPORT_SHARING_NOT_APPROVED" } } });
+  });
+
+  it("withdraws approved access, stamps who/when, and audits both orgs", async () => {
+    const audit = fakeAudit();
+    const svc = new ReportSharingService(
+      fakePrisma([seedApproved()]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, audit as never,
+      fakeReportsService([APPROVED_REPORT]) as never,
+    );
+    const result = await runAsOrg("org-owner", "user-3", () => svc.withdraw("rsr-1"));
+
+    expect(result.status).toBe("withdrawn");
+    expect(result.withdrawnBy).toBe("user-3");
+    expect(result.withdrawnAt).not.toBeNull();
+    expect(audit.calls).toHaveLength(2);
+  });
+});
+
 describe("ReportSharingService.getSharedSnapshot", () => {
   it("refuses to reveal an unapproved request's snapshot (never shared without approval)", async () => {
     const row = {
@@ -308,6 +396,22 @@ describe("ReportSharingService.getSharedSnapshot", () => {
     await expect(
       runAsOrg("org-owner", "user-2", () => svc.getSharedSnapshot("rsr-1")),
     ).rejects.toMatchObject({ response: { error: { code: "FORBIDDEN" } } });
+  });
+
+  it("refuses to reveal a snapshot once the approval has expired (RIO-FR-014, Q30)", async () => {
+    const row = {
+      id: "rsr-1", ownerOrgId: "org-owner", requestingOrgId: "org-requester", reportId: APPROVED_REPORT.id,
+      status: "approved" as const, requestedBy: "user-1", requestedAt: new Date(),
+      decidedBy: "user-2", decidedAt: new Date(), note: null, decisionNote: null,
+      expiresAt: new Date("2020-01-01T00:00:00.000Z"),
+    };
+    const svc = new ReportSharingService(
+      fakePrisma([row]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
+      fakeReportsService([APPROVED_REPORT]) as never,
+    );
+    await expect(
+      runAsOrg("org-requester", "user-1", () => svc.getSharedSnapshot("rsr-1")),
+    ).rejects.toMatchObject({ response: { error: { code: "SHARING_EXPIRED" } } });
   });
 
   it("returns the report content plus owner org / generated-by names once approved", async () => {

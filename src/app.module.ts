@@ -25,6 +25,7 @@ import { OrganizationsModule } from './modules/organizations/organizations.modul
 import { UsersModule } from './modules/users/users.module';
 import { ConsentModule } from './modules/consent/consent.module';
 import { StudiesModule } from './modules/studies/studies.module';
+import { DataCleaningModule } from './modules/data-cleaning/data-cleaning.module';
 import { NeedsModule } from './modules/needs/needs.module';
 import { EvidenceModule } from './modules/evidence/evidence.module';
 import { AiDecisionsModule } from './modules/ai-decisions/ai-decisions.module';
@@ -43,9 +44,13 @@ import { ResponseQualityModule } from './modules/response-quality/response-quali
 import { PriorityModule } from './modules/priority/priority.module';
 import { SharingModule } from './modules/sharing/sharing.module';
 import { ReportSharingModule } from './modules/report-sharing/report-sharing.module';
+import { InitiativesModule } from './modules/initiatives/initiatives.module';
+import { HistoricalStudiesModule } from './modules/historical-studies/historical-studies.module';
+import { GeographicDashboardModule } from './modules/geographic-dashboard/geographic-dashboard.module';
 import { SharingAlertsModule } from './modules/sharing-alerts/sharing-alerts.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { ArchiveModule } from './modules/archive/archive.module';
+import { TranslationModule } from './modules/translation/translation.module';
 import { ReviewerSlaModule } from './modules/reviewer-sla/reviewer-sla.module';
 import { CollectiveDashboardModule } from './modules/collective-dashboard/collective-dashboard.module';
 import { AiModule } from './modules/ai/ai.module';
@@ -96,6 +101,7 @@ import { AppController } from './app.controller';
     ConsentModule,
     StudiesModule,
     NeedsModule,
+    DataCleaningModule,
     EvidenceModule,
     AiDecisionsModule,
     DomainsModule,
@@ -113,9 +119,13 @@ import { AppController } from './app.controller';
     PriorityModule,
     SharingModule,
     ReportSharingModule,
+    InitiativesModule,
+    HistoricalStudiesModule,
+    GeographicDashboardModule,
     SharingAlertsModule,
     ReportsModule,
     ArchiveModule,
+    TranslationModule,
     ReviewerSlaModule,
     CollectiveDashboardModule,
     AiModule,

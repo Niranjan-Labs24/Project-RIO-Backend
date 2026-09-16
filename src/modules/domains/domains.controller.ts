@@ -9,7 +9,7 @@ import {
 } from './domains.contract';
 import { DomainsService } from './domains.service';
 import type {
-  CreateDomainPayload, CreateSubDomainPayload, Domain, DomainWithSubDomains, PublicDomainOption, SubDomain, UpdateDomainPayload, UpdateSubDomainPayload,
+  CreateDomainPayload, CreateSubDomainPayload, Domain, DomainWithSubDomains, PublicDomainOption, PublicDomainTreeOption, SubDomain, UpdateDomainPayload, UpdateSubDomainPayload,
 } from './domains.types';
 
 // Reads open to nearly every role (methodologyQuestionBank RO is granted
@@ -32,6 +32,22 @@ export class DomainsController {
   @Public()
   listPublicDomains(): Promise<PublicDomainOption[]> {
     return this.domains.listActiveNames();
+  }
+
+  // Same "name-only, nothing sensitive" posture as `/public` above, extended
+  // with sub-domains — the app-wide Arabic name lookup (useDomainArabicMap
+  // on the frontend) needs both, from every role, most of which hold no
+  // `methodologyQuestionBank` grant at all (e.g. ngo_admin — Methodology
+  // Configuration is System Admin only, client-confirmed 2026-08-20).
+  // Gating this lookup behind that permission silently broke Arabic display
+  // of a Need/Initiative/Question's domain for every such role — the
+  // frontend hook's own try/catch just swallowed the 403 and fell back to
+  // showing the raw English name forever, with no visible error anywhere.
+  @Get('public/tree')
+  @CsrfExempt()
+  @Public()
+  listPublicDomainTree(): Promise<PublicDomainTreeOption[]> {
+    return this.domains.listActiveTree();
   }
 
   @Get()

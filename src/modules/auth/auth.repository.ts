@@ -30,6 +30,8 @@ export interface CreateOrgAdminInput {
   purpose?: string;
   registrationNumber: string;
   email: string;
+  // RIO MFA — optional, normalized mobile number for the new NGO Admin.
+  mobileNumber?: string | null;
   passwordHash: string;
   regionId: string;
   governorateIds: string[];
@@ -140,6 +142,7 @@ export class AuthRepository {
             roleId: 'role_ngo_admin',
             name: `${input.organizationName} Admin`,
             email: input.email,
+            mobileNumber: input.mobileNumber ?? null,
             status: UserStatus.active,
             passwordHash: input.passwordHash,
             mustChangePassword: true,

@@ -51,6 +51,7 @@ function makeService(challenge: Record<string, unknown>, fakeTx = makeFakeTx()) 
       { record: vi.fn(), recordWithTx: vi.fn() } as never, // audit
       { markSubmitted: vi.fn() } as never, // sessions
       { getActiveCitizenPolicy: vi.fn(async () => ACTIVE_CONSENT) } as never, // consent
+      { cleanSurveyResponse: vi.fn(async () => undefined) } as never, // dataCleaning
     ),
     fakeTx,
   };

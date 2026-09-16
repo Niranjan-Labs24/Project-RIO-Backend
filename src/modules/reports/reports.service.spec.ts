@@ -46,11 +46,18 @@ function makeHarness() {
     runAsSupervisor: <T>(fn: (t: typeof tx) => Promise<T>) => fn(tx),
   };
   const audit = { record: async (input: (typeof auditCalls)[number]) => { auditCalls.push(input); } };
+  // The translator is a pass-through: these specs assert export authorisation
+  // and audit behaviour, not localisation, and every call here is in English —
+  // where translateReportContent short-circuits before touching it anyway.
+  const translation = {
+    translate: async (text: string) => ({ translatedText: text, unchanged: true }),
+  };
   const service = new ReportsService(
     tenant as never,
     audit as never,
     {} as never,
     {} as never,
+    translation as never,
   );
   return { service, store, auditCalls, userFindManyCalls };
 }

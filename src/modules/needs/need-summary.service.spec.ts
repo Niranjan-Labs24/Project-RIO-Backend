@@ -70,6 +70,9 @@ function makeService(opts: {
       if (opts.aiThrows) throw opts.aiThrows;
       return { response: { summary: opts.aiSummary ?? 'Short summary.', preservedFacts: [], omittedForLength: false } };
     },
+    // The stored summary records the model that actually answered, which on
+    // the OCI path is the configured Cohere deployment, not the task literal.
+    resolveModelName: () => 'cohere.command-a-03-2025',
   };
   const audit = { record: async (a: Row) => { audits.push(a); } };
   const methodologyConfig = {

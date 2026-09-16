@@ -1,5 +1,7 @@
 import { flattenReportContent } from "./report-content-flatten";
+import { localizeReportDoc } from "./i18n/report-labels";
 import { severityBandOf } from "./providers/severity-bands";
+import type { SupportedLocale } from "../translation/translation.types";
 
 // Normalized, render-agnostic report document. The PDF and Excel renderers
 // both consume this, so layout logic lives in one place and the two exports
@@ -1630,10 +1632,25 @@ function chapterize(sections: DocSection[]): Array<{ name: string; sections: Doc
  * reference artefact: the interactivity is built from PDF link annotations, so
  * it survives being exported, shared and opened offline.
  */
+/**
+ * `locale` localises the document's LABEL positions — headings, column names,
+ * key/value labels, audit rows — against the same catalogue the on-screen
+ * viewer uses (see i18n/report-labels.ts). It deliberately does NOT touch
+ * values, table cells or category names: those are data, and some of them
+ * collide by text with real labels.
+ *
+ * Defaults to "en" so every existing caller and test is unaffected.
+ *
+ * The renderers stay locale-agnostic: by the time renderReportPdf sees this
+ * document its strings are already in the target language. Right-to-left PAGE
+ * LAYOUT is a separate concern and is not done here — see arabic-text.ts's own
+ * scope note.
+ */
 export function buildReportDoc(
   title: string,
   content: Record<string, unknown>,
   audit: Array<{ label: string; value: string }>,
+  locale: SupportedLocale = "en",
 ): ReportDoc {
   const { headerBand, sections: body, drillSections } = buildReportSections(content);
   const chapters = chapterize(body);
@@ -1641,7 +1658,10 @@ export function buildReportDoc(
   // One chapter (or none) is not worth a contents page — a box grid listing a
   // single entry is furniture, not navigation.
   if (chapters.length < 2) {
-    return { title, headerBand, sections: [...body, ...drillSections], audit };
+    return localizeReportDoc(
+      { title, headerBand, sections: [...body, ...drillSections], audit },
+      locale,
+    );
   }
 
   const docChapters: DocChapter[] = chapters.map((c) => ({
@@ -1664,13 +1684,16 @@ export function buildReportDoc(
   // `sections` keeps the whole report in reading order. The PDF renderer uses
   // `chapters` to lay them out as collapsible layers; Excel and the on-screen
   // viewer consume `sections` and are unaffected by the chapter split.
-  return {
-    title,
-    headerBand,
-    sections: docChapters.flatMap((c) => c.sections),
-    audit,
-    chapters: docChapters,
-  };
+  return localizeReportDoc(
+    {
+      title,
+      headerBand,
+      sections: docChapters.flatMap((c) => c.sections),
+      audit,
+      chapters: docChapters,
+    },
+    locale,
+  );
 }
 
 
@@ -2026,7 +2049,7 @@ function buildReportSections(
     }
     if (domains) {
       if (domains.length >= 3) radar = domainRadar(domains);
-      bars = barsSection("Domain Severity (0-100)", domains, "name", "severityScore", 100);
+      bars = barsSection("Domain Severity (0–100)", domains, "name", "severityScore", 100);
       // Each domain row drills into its own detail page when the hierarchy that
       // backs those pages is present. `domainCode` here and `domainKey` in the
       // hierarchy are the same methodology key under two field names.

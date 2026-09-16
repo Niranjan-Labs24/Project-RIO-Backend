@@ -99,6 +99,30 @@ export class ConfigService {
   get mailFrom(): string {
     return this.config.MAIL_FROM;
   }
+  get mailProvider(): 'resend' | 'twilio' | 'sendgrid' {
+    return this.config.MAIL_PROVIDER;
+  }
+  get twilioEmailApiKeySid(): string | undefined {
+    return this.config.TWILIO_EMAIL_API_KEY_SID;
+  }
+  get twilioEmailApiKeySecret(): string | undefined {
+    return this.config.TWILIO_EMAIL_API_KEY_SECRET;
+  }
+  get twilioEmailFromAddress(): string {
+    return this.config.TWILIO_EMAIL_FROM_ADDRESS;
+  }
+  get twilioEmailFromName(): string {
+    return this.config.TWILIO_EMAIL_FROM_NAME;
+  }
+  get sendgridApiKey(): string | undefined {
+    return this.config.SENDGRID_API_KEY;
+  }
+  get sendgridFromAddress(): string | undefined {
+    return this.config.SENDGRID_FROM_ADDRESS;
+  }
+  get sendgridFromName(): string {
+    return this.config.SENDGRID_FROM_NAME;
+  }
   get csrfEnforce(): boolean {
     return this.config.CSRF_ENFORCE;
   }
@@ -118,8 +142,66 @@ export class ConfigService {
   get geminiApiKey(): string | undefined {
     return this.config.GEMINI_API_KEY;
   }
+  /** See AI_PROVIDER in env.schema.ts. Defaults to in-Kingdom OCI Cohere. */
+  get aiProvider(): 'oci_cohere' | 'gemini' {
+    return this.config.AI_PROVIDER;
+  }
+  get ociGenAiApiKey(): string | undefined {
+    return this.config.OCI_GENAI_API_KEY;
+  }
+  get ociGenAiCompartmentId(): string | undefined {
+    return this.config.OCI_GENAI_COMPARTMENT_ID;
+  }
+  get ociGenAiRegion(): string {
+    return this.config.OCI_GENAI_REGION;
+  }
+  get ociGenAiModelId(): string {
+    return this.config.OCI_GENAI_MODEL_ID;
+  }
+  get ociGenAiServingType(): 'ON_DEMAND' | 'DEDICATED' {
+    return this.config.OCI_GENAI_SERVING_TYPE;
+  }
+  get ociGenAiMaxTokens(): number {
+    return this.config.OCI_GENAI_MAX_TOKENS;
+  }
+  /** Inference host for the configured region. */
+  get ociGenAiChatUrl(): string {
+    return `https://inference.generativeai.${this.config.OCI_GENAI_REGION}.oci.oraclecloud.com/20231130/actions/chat`;
+  }
+  /**
+   * Embedding host for the configured region — the same inference host the
+   * chat path uses, a different action.
+   *
+   * Split from ociGenAiChatUrl rather than parameterised because the two are
+   * called by different modules with different failure behaviour: a chat
+   * failure degrades AI features to manual mode, an embedding failure means
+   * "no semantic proposals this run".
+   */
+  get ociGenAiEmbedUrl(): string {
+    return `https://inference.generativeai.${this.config.OCI_GENAI_REGION}.oci.oraclecloud.com/20231130/actions/embedText`;
+  }
+  /** See OCI_GENAI_EMBED_MODEL_ID — an embedding model, not OCI_GENAI_MODEL_ID. */
+  get ociGenAiEmbedModelId(): string {
+    return this.config.OCI_GENAI_EMBED_MODEL_ID;
+  }
+  get ociGenAiEmbedDimensions(): number {
+    return this.config.OCI_GENAI_EMBED_DIMENSIONS;
+  }
+  /** See SEMANTIC_DUPLICATES_ENABLED in env.schema.ts — Q10 sits behind this. */
+  get semanticDuplicatesEnabled(): boolean {
+    return this.config.SEMANTIC_DUPLICATES_ENABLED;
+  }
+  get emailOtpEnabled(): boolean {
+    return this.config.EMAIL_OTP_ENABLED;
+  }
   get twilioAccountSid(): string | undefined {
     return this.config.TWILIO_ACCOUNT_SID;
+  }
+  get twilioApiKeySid(): string | undefined {
+    return this.config.TWILIO_API_KEY_SID;
+  }
+  get twilioApiKeySecret(): string | undefined {
+    return this.config.TWILIO_API_KEY_SECRET;
   }
   get twilioAuthToken(): string | undefined {
     return this.config.TWILIO_AUTH_TOKEN;
@@ -154,8 +236,26 @@ export class ConfigService {
   get backupCronSchedule(): string {
     return this.config.BACKUP_CRON_SCHEDULE;
   }
+  get backupRetentionDays(): number {
+    return this.config.BACKUP_RETENTION_DAYS;
+  }
+  get backupRetentionCron(): string {
+    return this.config.BACKUP_RETENTION_CRON;
+  }
+  /** See BACKUP_DATABASE_URL — pg_dump needs a BYPASSRLS role. */
+  get backupDatabaseUrl(): string | undefined {
+    return this.config.BACKUP_DATABASE_URL;
+  }
+  /** See BACKUP_ENCRYPTION_KEY — unset means artefacts are stored in clear. */
+  get backupEncryptionKey(): string | undefined {
+    return this.config.BACKUP_ENCRYPTION_KEY;
+  }
   get pgDumpPath(): string | undefined {
     return this.config.PG_DUMP_PATH;
+  }
+  /** See PG_RESTORE_PATH — used by the recoverability check, not by backups. */
+  get pgRestorePath(): string | undefined {
+    return this.config.PG_RESTORE_PATH;
   }
   // RIO-NFR-002 / AD-17 — AES-256-GCM key for citizen PII encryption at rest.
   get encryptionKey(): string {

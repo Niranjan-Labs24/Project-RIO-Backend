@@ -1,3 +1,4 @@
+import { EXCLUDE_MERGED } from '../../needs/need-visibility';
 import type { TenantPrismaService } from "../../../tenancy/tenant-prisma.service";
 import type { PortfolioBlock } from "../report-content.types";
 
@@ -41,7 +42,7 @@ export async function buildPortfolioBlock(
       governorates,
     ] = await Promise.all([
       tx.study.count(),
-      tx.need.count(),
+      tx.need.count({ where: EXCLUDE_MERGED }),
       tx.need.groupBy({ by: ["status"], _count: { _all: true } }),
       tx.survey.count(),
       tx.survey.groupBy({ by: ["status"], _count: { _all: true } }),
@@ -54,7 +55,7 @@ export async function buildPortfolioBlock(
       tx.reportSharingRequest.groupBy({ by: ["status"], _count: { _all: true } }),
       // Villages have no master table (Need.village is a string[]), so the
       // distinct set has to be folded in memory — select only that column.
-      tx.need.findMany({ select: { village: true } }),
+      tx.need.findMany({ where: EXCLUDE_MERGED, select: { village: true } }),
       tx.needGovernorate.findMany({ select: { governorateId: true } }),
     ]);
 

@@ -1,5 +1,7 @@
 import type { DocSection, DocTile, ReportDoc } from "./report-doc";
 import { hasArabic, shapeArabicAware, shapedWidth, getArabicFont, type ShapedChunk } from "./arabic-text";
+import type { SupportedLocale } from "../translation/translation.types";
+import { label } from "./i18n/report-labels";
 
 // Dependency-free vector PDF renderer for a ReportDoc: a compact, professional
 // 1–2 page layout — masthead, section headings, key/value blocks, tables, and
@@ -153,6 +155,35 @@ export class Pdf {
   rx = LEFT;
   rw = CONTENT_W;
 
+  // RIO-NFR-007 — page direction.
+  //
+  // Every rectangular thing this renderer draws (text runs, cell and row
+  // backgrounds, bars, rules) is positioned by a left edge inside the current
+  // column [rx, rx + rw]. Mirroring is therefore ONE formula applied at the
+  // three primitives that place those edges, rather than per-section geometry
+  // scattered through 1,500 lines:
+  //
+  //     x' = rx + rw - (x - rx) - width
+  //
+  // Because text and the boxes behind it go through the same formula, they stay
+  // registered with each other: a right-aligned Arabic cell still sits inside
+  // its own shaded background, and a bar that grew rightwards now grows
+  // leftwards from the right edge, which is what an RTL reader expects.
+  //
+  // EVERY primitive mirrors, including the circular ones. Exempting them was
+  // the first attempt and it was wrong: a pie's disc stayed at the left margin
+  // while its legend — drawn with text() — mirrored to the right, so the two
+  // landed on top of each other and the chart read as a solid blob with a label
+  // through it. A figure and the text that describes it have to move together;
+  // "a disc is symmetric so it does not matter" ignores that its POSITION does.
+  dir: "ltr" | "rtl" = "ltr";
+
+  /** Mirror a left edge within the current column. Identity in LTR. */
+  private mx(x: number, width: number): number {
+    if (this.dir === "ltr") return x;
+    return this.rx + this.rw - (x - this.rx) - width;
+  }
+
   // `knownAnchorIds` comes from a first render pass. Drill targets are almost
   // always FORWARD references — an index is drawn before the detail pages it
   // points at — so a single pass cannot know whether a target will exist. See
@@ -291,6 +322,9 @@ export class Pdf {
     // text and rects/rules share one top-down origin (otherwise divider rules
     // strike through the following row's glyphs).
     const baseline = this.y + size * 0.76;
+    // Mirrored by the run's own measured width, so a right-aligned line ends at
+    // the column's right edge instead of starting there.
+    x = this.mx(x, this.dir === "rtl" ? textWidth(str, size, bold) : 0);
     if (hasArabic(str)) {
       this.textArabicAware(x, baseline, size, bold, str, color);
       return;
@@ -334,6 +368,9 @@ export class Pdf {
   // would be too heavy.
   strokeRect(x: number, w: number, h: number, color: string, thickness = 1): void {
     const top = this.y;
+    // NOT mirrored here: it delegates to strokePath, which mirrors every vertex
+    // itself. Doing both would reflect the rectangle twice and put it back
+    // where it started.
     this.strokePath(
       [
         [x, top],
@@ -347,7 +384,7 @@ export class Pdf {
     );
   }
   rect(x: number, w: number, h: number, color: string): void {
-    this.ops.push(`${color} rg ${x} ${this.py(this.y + h)} ${w} ${h} re f`);
+    this.ops.push(`${color} rg ${this.mx(x, w)} ${this.py(this.y + h)} ${w} ${h} re f`);
   }
   rule(color = ACCENT, thickness = 1.2): void {
     this.rect(this.rx, this.rw, thickness, color);
@@ -367,7 +404,7 @@ export class Pdf {
     return end;
   }
   pie(xLeft: number, r: number, slices: number[], colors: string[] = PIE_COLORS): void {
-    const cx = xLeft + r;
+    const cx = this.mx(xLeft, 2 * r) + r;
     const cyCenter = this.y + r;
     const total = slices.reduce((s, v) => s + v, 0) || 1;
     let a0 = -Math.PI / 2;
@@ -423,6 +460,7 @@ export class Pdf {
   }
 
   disc(cxAbs: number, cyFromTop: number, r: number, color: string): void {
+    cxAbs = this.mx(cxAbs, 0);
     const steps = 48;
     const pts = [`${(cxAbs + r).toFixed(2)} ${this.py(cyFromTop).toFixed(2)} m`];
     for (let s = 1; s <= steps; s++) {
@@ -433,6 +471,7 @@ export class Pdf {
   }
   strokePath(points: Array<[number, number]>, color: string, width: number, close = false): void {
     if (points.length === 0) return;
+    points = points.map(([x, y]): [number, number] => [this.mx(x, 0), y]);
     const [x0, y0] = points[0]!;
     const parts = [`${color} RG ${width} w ${x0.toFixed(2)} ${this.py(y0).toFixed(2)} m`];
     for (let i = 1; i < points.length; i++) {
@@ -448,6 +487,7 @@ export class Pdf {
   // country-outline fill.
   fillPolygon(points: Array<[number, number]>, color: string): void {
     if (points.length === 0) return;
+    points = points.map(([x, y]): [number, number] => [this.mx(x, 0), y]);
     const [x0, y0] = points[0]!;
     const parts = [`${color} rg ${x0.toFixed(2)} ${this.py(y0).toFixed(2)} m`];
     for (let i = 1; i < points.length; i++) {
@@ -1205,21 +1245,23 @@ function renderPass(
   doc: ReportDoc,
   knownAnchorIds?: ReadonlySet<string>,
   mode: PdfInteractivity = "pages",
+  locale: SupportedLocale = "en",
 ): Pdf {
   const pdf = new Pdf(knownAnchorIds);
+  pdf.dir = locale === "ar" ? "rtl" : "ltr";
   renderHeader(pdf, doc);
 
   if (doc.chapters?.length) {
     // Page 1 is the contents grid; each chapter follows.
-    renderContentsPage(pdf, doc.chapters, mode);
+    renderContentsPage(pdf, doc.chapters, mode, locale);
     if (doc.audit.length) {
-      renderSection(pdf, { kind: "keyvalue", heading: "Audit Trail", rows: doc.audit });
+      renderSection(pdf, { kind: "keyvalue", heading: label("pdf.auditTrail", locale), rows: doc.audit });
     }
     const canvasPage = pdf.pageCount; // first page after the contents
     // In layer mode chapters overlay onto the same canvas pages, so the file
     // does not grow to the sum of every chapter's length.
     pdf.overlay = mode === "layers";
-    doc.chapters.forEach((chapter, i) => renderChapter(pdf, chapter, i, canvasPage, mode));
+    doc.chapters.forEach((chapter, i) => renderChapter(pdf, chapter, i, canvasPage, mode, locale));
     pdf.overlay = false;
     return pdf;
   }
@@ -1228,7 +1270,7 @@ function renderPass(
     renderSection(pdf, section);
     pdf.y += 6;
   }
-  if (doc.audit.length) renderSection(pdf, { kind: "keyvalue", heading: "Audit Trail", rows: doc.audit });
+  if (doc.audit.length) renderSection(pdf, { kind: "keyvalue", heading: label("pdf.auditTrail", locale), rows: doc.audit });
   return pdf;
 }
 
@@ -1256,9 +1298,10 @@ function renderContentsPage(
   pdf: Pdf,
   chapters: ReportDoc["chapters"] = [],
   mode: PdfInteractivity = "pages",
+  locale: SupportedLocale = "en",
 ): void {
   pdf.anchor(CONTENTS_ANCHOR);
-  heading(pdf, "Contents");
+  heading(pdf, label("pdf.contents", locale));
 
   const COLS = 2;
   const GAP = 12;
@@ -1285,7 +1328,7 @@ function renderContentsPage(
     pdf.y = top + 26;
     pdf.text(x + 30, 8, false, truncate(c.summary, 8, tileW - 44), GRAY);
     pdf.y = top + 39;
-    pdf.text(x + 30, 8, true, "Open >", ACCENT);
+    pdf.text(x + 30, 8, true, label("pdf.open", locale), ACCENT);
 
     pdf.y = top;
     // In "pages" mode the box is a plain jump — no layer state to change.
@@ -1301,11 +1344,7 @@ function renderContentsPage(
   pdf.y = top0 + rows * (TILE_H + GAP) + 4;
   renderNote(
     pdf,
-    mode === "layers"
-      ? "Click a box to open that section; Close returns here. Sections stay hidden until " +
-          "opened, which requires Adobe Acrobat Reader — a browser's built-in PDF viewer " +
-          "cannot open them."
-      : "Click a box to open that section. Each section has a link back to this page.",
+    label(mode === "layers" ? "pdf.contentsHintLayers" : "pdf.contentsHint", locale),
   );
 }
 
@@ -1319,6 +1358,7 @@ function renderChapter(
   index: number,
   canvasPage: number,
   mode: PdfInteractivity,
+  locale: SupportedLocale = "en",
 ): void {
   if (mode === "layers") {
     pdf.gotoPage(canvasPage);
@@ -1335,7 +1375,9 @@ function renderChapter(
   pdf.rect(pdf.rx, pdf.rw, 22, LIGHT);
   pdf.y = barTop + 6;
   pdf.text(pdf.rx + 8, 11, true, truncate(chapter.name, 11, pdf.rw - 120));
-  const closeLabel = mode === "layers" ? "< Close" : "< Contents";
+  // Composed by the renderer, so it never reached the document localisation.
+  // The chevron flips with the page direction along with the words.
+  const closeLabel = label(mode === "layers" ? "pdf.close" : "pdf.backToContents", locale);
   const closeW = textWidth(closeLabel, 9) + 10;
   pdf.text(pdf.rx + pdf.rw - closeW, 9, true, closeLabel, ACCENT);
   pdf.y = barTop;
@@ -1355,7 +1397,15 @@ function renderChapter(
   if (mode === "layers") pdf.endLayer();
 }
 
-export function renderReportPdf(doc: ReportDoc, mode: PdfInteractivity = "pages"): Buffer {
+/**
+ * `locale` sets the page DIRECTION only — the document reaching here is already
+ * translated. See Pdf.dir for what mirroring does and does not cover.
+ */
+export function renderReportPdf(
+  doc: ReportDoc,
+  mode: PdfInteractivity = "pages",
+  locale: SupportedLocale = "en",
+): Buffer {
   // Two passes. The first discovers which anchors the document actually
   // materialises; the second draws the links, now that a forward reference can
   // be recognised as valid.
@@ -1364,12 +1414,12 @@ export function renderReportPdf(doc: ReportDoc, mode: PdfInteractivity = "pages"
   // that the first does not is the ">" drill affordance, which is placed at the
   // current y and advances nothing. So the anchor positions the second pass
   // records are the positions the emitted pages actually have.
-  const discovery = renderPass(doc, undefined, mode);
+  const discovery = renderPass(doc, undefined, mode, locale);
   const ids = discovery.anchorIds();
   // Nothing drillable — skip the second pass entirely rather than paying for it
   // on every ordinary report.
   if (ids.size === 0) return discovery.build();
-  return renderPass(doc, ids, mode).build();
+  return renderPass(doc, ids, mode, locale).build();
 }
 
 export interface LayerInfo {

@@ -75,9 +75,12 @@ describe('ROLE_MATRIX', () => {
     // archiveSharingAudit:read kept for Archive/Sharing oversight; export moved out.
     expect(can('system_admin', 'archiveSharingAudit', 'read')).toBe(true);
     expect(can('system_admin', 'archiveSharingAudit', 'export')).toBe(false);
+    // RIO-FR-013 (client Q25) — System Admin can upload a historical study
+    // on an entity's behalf, same as it can already create a Study for any
+    // org. `write` is dedicated to that action and gates nothing else.
+    expect(can('system_admin', 'archiveSharingAudit', 'write')).toBe(true);
     // Sharing's request/decide actions stay out of reach.
     expect(can('system_admin', 'archiveSharingAudit', 'create')).toBe(false);
-    expect(can('system_admin', 'archiveSharingAudit', 'write')).toBe(false);
     expect(can('system_admin', 'archiveSharingAudit', 'approve')).toBe(false);
     expect(can('system_admin', 'archiveSharingAudit', 'share')).toBe(false);
   });

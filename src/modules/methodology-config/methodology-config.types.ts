@@ -107,6 +107,9 @@ export interface MethodologyConfigRow {
   aiClassificationSettings: unknown;
   aiSummarySettings: unknown;
   priorityFactorScales: unknown;
+  // RIO-FR-002 — the cleaning rule set. Optional because a row read before
+  // this column existed has none, and recordHistory falls back to {}.
+  dataCleaningSettings?: unknown;
   updatedAt: Date;
   updatedBy: string | null;
 }

@@ -5,7 +5,7 @@ import {
 } from "@nestjs/common";
 import crypto from "crypto";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
-import { requireActor, requireOrgId } from "../../tenancy/org-context";
+import { getOrgStore, requireActor, requireOrgId } from "../../tenancy/org-context";
 import { AuditService } from "../audit/audit.service";
 import { AiService } from "../ai/ai.service";
 import { COMBINED_REPORT_SUMMARY_TASK } from "../ai/prompts/combined-report-summary.task";
@@ -76,45 +76,59 @@ export class CombinedReportSummaryService {
   ) {}
 
   async getCombinedReportContext(studyId: string) {
-    const orgId = requireOrgId();
+    // RIO-RBAC-002 — System Admin/Reviewer/Center Supervisor reach this same
+    // Combined Summary tab from a cross-org Study (Studies list, Priority
+    // Dashboard, ...), same as StudiesService.list() already handles. A
+    // plain org-scoped read here made every such view 404 with "Study with
+    // id ... not found." even though the study genuinely exists — RLS was
+    // silently filtering it out under the viewer's own (unrelated) org.
+    // Read-only, so the SELECT-only supervisor client is safe.
+    const store = getOrgStore();
+    const isCrossOrgReader =
+      store?.role === "system_admin" ||
+      store?.role === "system_reviewer" ||
+      store?.role === "center_supervisor";
 
-    const study = await this.tenant.runInOrgContext((tx) =>
-      tx.study.findFirst({
-        where: { id: studyId, orgId },
+    const include = {
+      org: true,
+      methodologyVersion: true,
+      studyGovernorates: { include: { governorate: true } },
+      evidenceDocuments: {
+        where: { studyId },
         include: {
-          org: true,
-          methodologyVersion: true,
-          studyGovernorates: { include: { governorate: true } },
-          evidenceDocuments: {
-            where: { studyId },
-            include: {
-              summaries: {
-                orderBy: { createdAt: "desc" },
-                take: 1,
-              },
-            },
-          },
-          // All score summaries for the study, newest first. The combined
-          // report lets the officer choose which one to combine, so the whole
-          // list is returned rather than just the most recent.
-          aiPrioritySummaries: {
-            orderBy: { createdAt: "desc" },
-          },
-          combinedReportSummaries: {
-            orderBy: { createdAt: "desc" },
+          summaries: {
+            orderBy: { createdAt: "desc" as const },
             take: 1,
+          },
+        },
+      },
+      // All score summaries for the study, newest first. The combined
+      // report lets the officer choose which one to combine, so the whole
+      // list is returned rather than just the most recent.
+      aiPrioritySummaries: {
+        orderBy: { createdAt: "desc" as const },
+      },
+      combinedReportSummaries: {
+        orderBy: { createdAt: "desc" as const },
+        take: 1,
+        include: {
+          sources: {
             include: {
-              sources: {
-                include: {
-                  document: true,
-                  documentSummary: true,
-                },
-              },
+              document: true,
+              documentSummary: true,
             },
           },
         },
-      }),
-    );
+      },
+    };
+
+    const study = isCrossOrgReader
+      ? await this.tenant.runAsSupervisor((tx) =>
+          tx.study.findFirst({ where: { id: studyId }, include }),
+        )
+      : await this.tenant.runInOrgContext((tx) =>
+          tx.study.findFirst({ where: { id: studyId, orgId: requireOrgId() }, include }),
+        );
 
     if (!study) throw new NotFoundException(`Study with id ${studyId} not found.`);
 
@@ -225,9 +239,13 @@ export class CombinedReportSummaryService {
     });
 
     const inputHash = crypto.createHash("sha256").update(inputDataToHash).digest("hex");
-    // Prompt, schema and model settings all come from the declared task, so the
-    // recorded promptVersion always matches the prompt that ran.
-    const { promptVersion, model: modelName, modelVersion } = COMBINED_REPORT_SUMMARY_TASK;
+    // Prompt and schema come from the declared task, so the recorded
+    // promptVersion always matches the prompt that ran. The MODEL does not:
+    // every task literal names Gemini, while the OCI path is answered by
+    // Cohere Command A, so it is resolved from the provider. This value is
+    // also embedded in the generated summary's own `aiModel` field below.
+    const { promptVersion, modelVersion } = COMBINED_REPORT_SUMMARY_TASK;
+    const modelName = this.ai.resolveModelName(COMBINED_REPORT_SUMMARY_TASK);
 
     const docSummariesFormatted = selectedDocSummaries.map((s) => ({
       title: s.documentTitle,

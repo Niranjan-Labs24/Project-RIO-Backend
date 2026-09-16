@@ -1,0 +1,871 @@
+{
+  "_comment": "Governorate centroids derived from geoBoundaries gbOpen SAU ADM2 (CC-BY 4.0). Keyed by the KSA Geographic Reference Gov Code. Regenerate with scripts/_build-governorate-coords.mjs.",
+  "_source": "https://www.geoboundaries.org/api/current/gbOpen/SAU/ADM2/",
+  "_generated": "2026-09-08",
+  "coordinates": {
+    "1001": {
+      "lat": 17.673826,
+      "lng": 42.531248,
+      "source": "Jazan",
+      "match": "exact"
+    },
+    "1002": {
+      "lat": 17.237378,
+      "lng": 42.648711,
+      "source": "Sabya",
+      "match": "exact"
+    },
+    "1003": {
+      "lat": 16.965677,
+      "lng": 42.827686,
+      "source": "Abu Arish",
+      "match": "exact"
+    },
+    "1004": {
+      "lat": 16.613398,
+      "lng": 42.94907,
+      "source": "Samtah",
+      "match": "exact"
+    },
+    "1005": {
+      "lat": 16.793122,
+      "lng": 43.14993,
+      "source": "Al Harth",
+      "match": "exact"
+    },
+    "1006": {
+      "lat": 17.130502,
+      "lng": 42.824354,
+      "source": "Damad",
+      "match": "exact"
+    },
+    "1007": {
+      "lat": 17.645103,
+      "lng": 42.827648,
+      "source": "Ar Rayth",
+      "match": "exact"
+    },
+    "1008": {
+      "lat": 17.402888,
+      "lng": 42.476483,
+      "source": "Baysh",
+      "match": "exact"
+    },
+    "1009": {
+      "lat": 16.729528,
+      "lng": 42.01056,
+      "source": "Farasan",
+      "match": "exact"
+    },
+    "1011": {
+      "lat": 16.757956,
+      "lng": 42.852588,
+      "source": "Ahad Al Masarihah",
+      "match": "exact"
+    },
+    "1012": {
+      "lat": 17.283366,
+      "lng": 42.997285,
+      "source": "Al Aydabi",
+      "match": "exact"
+    },
+    "1013": {
+      "lat": 17.037961,
+      "lng": 43.084441,
+      "source": "Al Aridah",
+      "match": "exact"
+    },
+    "1014": {
+      "lat": 17.753486,
+      "lng": 42.199582,
+      "source": "Ad Darb",
+      "match": "exact"
+    },
+    "1015": {
+      "lat": 16.484876,
+      "lng": 42.911155,
+      "source": "At Tuwal",
+      "match": "exact"
+    },
+    "1016": {
+      "lat": 17.456233,
+      "lng": 42.895065,
+      "source": "Harub",
+      "match": "exact"
+    },
+    "1017": {
+      "lat": 17.235936,
+      "lng": 43.100669,
+      "source": "Fayfa",
+      "match": "exact"
+    },
+    "1101": {
+      "lat": 17.586985,
+      "lng": 44.175514,
+      "source": "Najran",
+      "match": "exact"
+    },
+    "1102": {
+      "lat": 18.546557,
+      "lng": 48.048005,
+      "source": "Sharurah",
+      "match": "exact"
+    },
+    "1103": {
+      "lat": 17.786341,
+      "lng": 44.034734,
+      "source": "Hubuna",
+      "match": "exact"
+    },
+    "1104": {
+      "lat": 17.816288,
+      "lng": 43.752156,
+      "source": "Badr Al Janub",
+      "match": "exact"
+    },
+    "1105": {
+      "lat": 18.898854,
+      "lng": 45.152557,
+      "source": "Yadamah",
+      "match": "exact"
+    },
+    "1106": {
+      "lat": 18.193536,
+      "lng": 44.602002,
+      "source": "Thar",
+      "match": "exact"
+    },
+    "1107": {
+      "lat": 17.70994,
+      "lng": 45.442159,
+      "source": "Khubash",
+      "match": "exact"
+    },
+    "1201": {
+      "lat": 20.024353,
+      "lng": 41.478752,
+      "source": "Al Bahah",
+      "match": "phonetic"
+    },
+    "1202": {
+      "lat": 19.999876,
+      "lng": 41.733388,
+      "source": "Biljurashi",
+      "match": "phonetic"
+    },
+    "1203": {
+      "lat": 20.234689,
+      "lng": 41.245422,
+      "source": "Al Mandaq",
+      "match": "exact"
+    },
+    "1204": {
+      "lat": 19.746413,
+      "lng": 41.322238,
+      "source": "Al Mukhwah",
+      "match": "phonetic"
+    },
+    "1205": {
+      "lat": 20.420884,
+      "lng": 41.691793,
+      "source": "Al Aqiq",
+      "match": "exact"
+    },
+    "1206": {
+      "lat": 19.944202,
+      "lng": 41.173927,
+      "source": "Qilwah",
+      "match": "exact"
+    },
+    "1207": {
+      "lat": 20.462693,
+      "lng": 41.348072,
+      "source": "Al Qara",
+      "match": "phonetic"
+    },
+    "1208": {
+      "lat": 20.082977,
+      "lng": 41.370562,
+      "source": "Bani Hasan",
+      "match": "exact"
+    },
+    "1209": {
+      "lat": 19.608987,
+      "lng": 41.449265,
+      "source": "Farat Ghamid Az Zinad",
+      "match": "alias"
+    },
+    "1210": {
+      "lat": 20.155059,
+      "lng": 41.01762,
+      "source": "Al Hajrah",
+      "match": "exact"
+    },
+    "1301": {
+      "lat": 30.070317,
+      "lng": 40.718794,
+      "source": "Sakaka",
+      "match": "exact"
+    },
+    "1302": {
+      "lat": 31.115402,
+      "lng": 37.776053,
+      "source": "Al Qurayyat",
+      "match": "exact"
+    },
+    "1303": {
+      "lat": 29.477319,
+      "lng": 39.655676,
+      "source": "Dawamat Al Jandal",
+      "match": "alias"
+    },
+    "1304": {
+      "lat": 30.039034,
+      "lng": 38.453866,
+      "source": "Tubarjal",
+      "match": "phonetic"
+    },
+    "0101": {
+      "lat": 24.701133,
+      "lng": 47.041841,
+      "source": "Riyadh",
+      "match": "exact"
+    },
+    "0102": {
+      "lat": 24.878069,
+      "lng": 46.373483,
+      "source": "Ad Diriyah",
+      "match": "exact"
+    },
+    "0103": {
+      "lat": 23.867866,
+      "lng": 47.651528,
+      "source": "Al Kharj",
+      "match": "exact"
+    },
+    "0104": {
+      "lat": 24.646924,
+      "lng": 44.158096,
+      "source": "Ad Duwadimi",
+      "match": "phonetic"
+    },
+    "0105": {
+      "lat": 26.408532,
+      "lng": 45.632931,
+      "source": "Al Majmaah",
+      "match": "exact"
+    },
+    "0106": {
+      "lat": 23.301634,
+      "lng": 44.422712,
+      "source": "Al Quwayiyah",
+      "match": "exact"
+    },
+    "0107": {
+      "lat": 21.056692,
+      "lng": 44.607418,
+      "source": "Wadi Ad Dawasir",
+      "match": "exact"
+    },
+    "0108": {
+      "lat": 22.085136,
+      "lng": 46.851078,
+      "source": "Al Aflaj",
+      "match": "exact"
+    },
+    "0109": {
+      "lat": 26.524159,
+      "lng": 44.693036,
+      "source": "Az Zulfi",
+      "match": "exact"
+    },
+    "0110": {
+      "lat": 25.375318,
+      "lng": 45.136996,
+      "source": "Shaqra",
+      "match": "exact"
+    },
+    "0111": {
+      "lat": 23.22384,
+      "lng": 46.694779,
+      "source": "Hawtat Bani Tamim",
+      "match": "fuzzy"
+    },
+    "0112": {
+      "lat": 23.700366,
+      "lng": 42.831437,
+      "source": "Afif",
+      "match": "exact"
+    },
+    "0113": {
+      "lat": 20.285904,
+      "lng": 46.451465,
+      "source": "As Sulayyil",
+      "match": "exact"
+    },
+    "0114": {
+      "lat": 24.659209,
+      "lng": 46.115442,
+      "source": "Duruma",
+      "match": "phonetic"
+    },
+    "0115": {
+      "lat": 24.128041,
+      "lng": 46.249408,
+      "source": "Al Muzahimiyah",
+      "match": "exact"
+    },
+    "0116": {
+      "lat": 25.761055,
+      "lng": 47.078985,
+      "source": "Rumah",
+      "match": "exact"
+    },
+    "0117": {
+      "lat": 25.509143,
+      "lng": 46.040059,
+      "source": "Thadiq",
+      "match": "exact"
+    },
+    "0118": {
+      "lat": 25.2264,
+      "lng": 46.252721,
+      "source": "Huraymila",
+      "match": "exact"
+    },
+    "0119": {
+      "lat": 23.457866,
+      "lng": 46.182035,
+      "source": "Al Hariq",
+      "match": "exact"
+    },
+    "0120": {
+      "lat": 25.985197,
+      "lng": 44.887898,
+      "source": "Al Ghat",
+      "match": "exact"
+    },
+    "0121": {
+      "lat": 24.857936,
+      "lng": 45.426309,
+      "source": "Marat",
+      "match": "exact"
+    },
+    "0122": {
+      "lat": 23.952,
+      "lng": 46.904007,
+      "source": "Ad Dilam",
+      "match": "exact"
+    },
+    "0123": {
+      "lat": 23.01605,
+      "lng": 45.161162,
+      "source": "Ar Rayn",
+      "match": "exact"
+    },
+    "0201": {
+      "lat": 21.44719,
+      "lng": 39.988812,
+      "source": "Makkah Al Mukarramah",
+      "match": "exact"
+    },
+    "0202": {
+      "lat": 21.652396,
+      "lng": 39.204046,
+      "source": "Jiddah",
+      "match": "phonetic"
+    },
+    "0203": {
+      "lat": 22.378367,
+      "lng": 41.459825,
+      "source": "Al Taif",
+      "match": "exact"
+    },
+    "0204": {
+      "lat": 19.191467,
+      "lng": 41.266323,
+      "source": "Al Qunfudhah",
+      "match": "exact"
+    },
+    "0205": {
+      "lat": 20.424206,
+      "lng": 40.330362,
+      "source": "Al Lith",
+      "match": "exact"
+    },
+    "0206": {
+      "lat": 22.913432,
+      "lng": 39.23489,
+      "source": "Rabigh",
+      "match": "exact"
+    },
+    "0207": {
+      "lat": 21.908409,
+      "lng": 39.913258,
+      "source": "Al Jumum",
+      "match": "exact"
+    },
+    "0208": {
+      "lat": 22.286792,
+      "lng": 39.578381,
+      "source": "Khulays",
+      "match": "phonetic"
+    },
+    "0209": {
+      "lat": 22.418863,
+      "lng": 39.917888,
+      "source": "Al Kamil",
+      "match": "exact"
+    },
+    "0210": {
+      "lat": 21.98371,
+      "lng": 42.590005,
+      "source": "Al Khurmah",
+      "match": "exact"
+    },
+    "0211": {
+      "lat": 21.092105,
+      "lng": 42.803314,
+      "source": "Ranyah",
+      "match": "exact"
+    },
+    "0212": {
+      "lat": 21.227241,
+      "lng": 41.600203,
+      "source": "Turubah",
+      "match": "phonetic"
+    },
+    "0213": {
+      "lat": 21.050938,
+      "lng": 39.705647,
+      "source": "Bahrah",
+      "match": "exact"
+    },
+    "0215": {
+      "lat": 20.831617,
+      "lng": 41.025571,
+      "source": "Maysan",
+      "match": "exact"
+    },
+    "0216": {
+      "lat": 19.424201,
+      "lng": 41.716046,
+      "source": "Al Ardiyat",
+      "match": "exact"
+    },
+    "0217": {
+      "lat": 20.436175,
+      "lng": 40.830231,
+      "source": "Adam",
+      "match": "phonetic"
+    },
+    "0301": {
+      "lat": 24.504779,
+      "lng": 39.695744,
+      "source": "Al Madinah Al Munawwarah",
+      "match": "exact"
+    },
+    "0302": {
+      "lat": 24.400254,
+      "lng": 38.202344,
+      "source": "Yanbu",
+      "match": "exact"
+    },
+    "0303": {
+      "lat": 26.509634,
+      "lng": 37.9961,
+      "source": "Al Ula",
+      "match": "phonetic"
+    },
+    "0304": {
+      "lat": 23.548569,
+      "lng": 40.97818,
+      "source": "Al Mahd",
+      "match": "alias"
+    },
+    "0305": {
+      "lat": 23.850284,
+      "lng": 38.928149,
+      "source": "Badr",
+      "match": "exact"
+    },
+    "0306": {
+      "lat": 25.919999,
+      "lng": 39.361753,
+      "source": "Khaybar",
+      "match": "exact"
+    },
+    "0307": {
+      "lat": 24.865084,
+      "lng": 41.099073,
+      "source": "Al Hinakiyah",
+      "match": "phonetic"
+    },
+    "0308": {
+      "lat": 23.402778,
+      "lng": 39.665258,
+      "source": "Wadi Al Fara",
+      "match": "exact"
+    },
+    "0309": {
+      "lat": 25.35098,
+      "lng": 38.346284,
+      "source": "Al Is",
+      "match": "phonetic"
+    },
+    "0401": {
+      "lat": 26.867788,
+      "lng": 43.703422,
+      "source": "Buraydah",
+      "match": "exact"
+    },
+    "0402": {
+      "lat": 25.946627,
+      "lng": 44.013263,
+      "source": "Unayzah",
+      "match": "exact"
+    },
+    "0403": {
+      "lat": 25.568752,
+      "lng": 43.565211,
+      "source": "Ar Rass",
+      "match": "exact"
+    },
+    "0404": {
+      "lat": 25.654186,
+      "lng": 44.152103,
+      "source": "Al Midhnab",
+      "match": "phonetic"
+    },
+    "0405": {
+      "lat": 26.409143,
+      "lng": 43.146319,
+      "source": "Al Bukayriyah",
+      "match": "exact"
+    },
+    "0406": {
+      "lat": 25.791306,
+      "lng": 43.779043,
+      "source": "Al Badai",
+      "match": "exact"
+    },
+    "0407": {
+      "lat": 27.414339,
+      "lng": 44.29332,
+      "source": "Al Asyah",
+      "match": "exact"
+    },
+    "0408": {
+      "lat": 25.507718,
+      "lng": 42.693129,
+      "source": "An Nabhaniyah",
+      "match": "exact"
+    },
+    "0409": {
+      "lat": 26.664271,
+      "lng": 43.284491,
+      "source": "Uyun Al Jiwa",
+      "match": "exact"
+    },
+    "0410": {
+      "lat": 26.358802,
+      "lng": 42.374783,
+      "source": "Riyadh Al Khabra",
+      "match": "exact"
+    },
+    "0411": {
+      "lat": 26.001227,
+      "lng": 44.47153,
+      "source": "Ash Shimasiyah",
+      "match": "exact"
+    },
+    "0412": {
+      "lat": 25.655548,
+      "lng": 42.013013,
+      "source": "Uqlat As Suqur",
+      "match": "exact"
+    },
+    "0413": {
+      "lat": 24.889599,
+      "lng": 42.678095,
+      "source": "Dariyah",
+      "match": "phonetic"
+    },
+    "0502": {
+      "lat": 22.321984,
+      "lng": 49.520832,
+      "source": "Al Ahsa Governorate",
+      "match": "exact"
+    },
+    "0503": {
+      "lat": 28.255509,
+      "lng": 46.163827,
+      "source": "Hafar Al Batin Governorate",
+      "match": "phonetic"
+    },
+    "0504": {
+      "lat": 26.940268,
+      "lng": 49.330003,
+      "source": "Al Jubayl Governorate",
+      "match": "phonetic"
+    },
+    "0505": {
+      "lat": 26.629122,
+      "lng": 49.918998,
+      "source": "Al Qatif Governorate",
+      "match": "exact"
+    },
+    "0506": {
+      "lat": 26.20183,
+      "lng": 50.167274,
+      "source": "Al Khubar Governorate",
+      "match": "phonetic"
+    },
+    "0507": {
+      "lat": 28.118142,
+      "lng": 48.184397,
+      "source": "Al Khafji Governorate",
+      "match": "exact"
+    },
+    "0508": {
+      "lat": 26.778505,
+      "lng": 49.956799,
+      "source": "Ras Tannurah Governorate",
+      "match": "fuzzy"
+    },
+    "0509": {
+      "lat": 26.066829,
+      "lng": 49.545822,
+      "source": "Abqaiq Governorate",
+      "match": "phonetic"
+    },
+    "0510": {
+      "lat": 26.950003,
+      "lng": 48.50753,
+      "source": "Al Nuayriyah Governorate",
+      "match": "exact"
+    },
+    "0511": {
+      "lat": 27.142339,
+      "lng": 47.094691,
+      "source": "Qaryah Al Ulya Governorate",
+      "match": "fuzzy"
+    },
+    "0512": {
+      "lat": 21.734712,
+      "lng": 52.959909,
+      "source": "Al Udayd Governorate",
+      "match": "exact"
+    },
+    "0601": {
+      "lat": 18.344493,
+      "lng": 42.494776,
+      "source": "Abha",
+      "match": "exact"
+    },
+    "0602": {
+      "lat": 18.658064,
+      "lng": 42.851253,
+      "source": "Khamis Mushayt",
+      "match": "alias"
+    },
+    "0603": {
+      "lat": 19.839219,
+      "lng": 42.570645,
+      "source": "Bishah",
+      "match": "exact"
+    },
+    "0604": {
+      "lat": 19.272856,
+      "lng": 42.253243,
+      "source": "An Namas",
+      "match": "exact"
+    },
+    "0605": {
+      "lat": 18.468722,
+      "lng": 41.939313,
+      "source": "Muhayil",
+      "match": "alias"
+    },
+    "0606": {
+      "lat": 17.968719,
+      "lng": 43.154587,
+      "source": "Sarat Abidah",
+      "match": "exact"
+    },
+    "0607": {
+      "lat": 19.647885,
+      "lng": 43.659661,
+      "source": "Tathlith",
+      "match": "exact"
+    },
+    "0609": {
+      "lat": 18.095035,
+      "lng": 42.138768,
+      "source": "Rijal Al Ma",
+      "match": "phonetic"
+    },
+    "0610": {
+      "lat": 18.116877,
+      "lng": 42.887859,
+      "source": "Ahad Rufaydah",
+      "match": "exact"
+    },
+    "0611": {
+      "lat": 17.646201,
+      "lng": 43.505178,
+      "source": "Zahran Al Janub",
+      "match": "fuzzy"
+    },
+    "0612": {
+      "lat": 19.715793,
+      "lng": 41.952925,
+      "source": "Balqarn",
+      "match": "exact"
+    },
+    "0613": {
+      "lat": 19.121901,
+      "lng": 41.844371,
+      "source": "Al Majardah",
+      "match": "phonetic"
+    },
+    "0614": {
+      "lat": 18.961348,
+      "lng": 43.21012,
+      "source": "Tarib",
+      "match": "exact"
+    },
+    "0615": {
+      "lat": 18.390041,
+      "lng": 41.610639,
+      "source": "Al Birk",
+      "match": "exact"
+    },
+    "0616": {
+      "lat": 18.911536,
+      "lng": 41.827144,
+      "source": "Bariq",
+      "match": "exact"
+    },
+    "0617": {
+      "lat": 19.040204,
+      "lng": 42.307682,
+      "source": "Tanumah",
+      "match": "exact"
+    },
+    "0618": {
+      "lat": 18.015644,
+      "lng": 43.504618,
+      "source": "Al Harjah",
+      "match": "phonetic"
+    },
+    "0701": {
+      "lat": 28.640211,
+      "lng": 37.116597,
+      "source": "Tabuk",
+      "match": "exact"
+    },
+    "0702": {
+      "lat": 26.662286,
+      "lng": 36.949172,
+      "source": "Al Wajh",
+      "match": "exact"
+    },
+    "0703": {
+      "lat": 27.525353,
+      "lng": 35.993921,
+      "source": "Duba",
+      "match": "exact"
+    },
+    "0704": {
+      "lat": 27.616739,
+      "lng": 38.85881,
+      "source": "Tayma",
+      "match": "exact"
+    },
+    "0705": {
+      "lat": 25.297066,
+      "lng": 37.433,
+      "source": "Umluj",
+      "match": "exact"
+    },
+    "0706": {
+      "lat": 29.022397,
+      "lng": 35.360409,
+      "source": "Haqil",
+      "match": "phonetic"
+    },
+    "0801": {
+      "lat": 28.136413,
+      "lng": 40.930596,
+      "source": "Hail",
+      "match": "exact"
+    },
+    "0803": {
+      "lat": 26.772636,
+      "lng": 41.305623,
+      "source": "Al Ghazalah",
+      "match": "exact"
+    },
+    "0804": {
+      "lat": 27.138226,
+      "lng": 42.540189,
+      "source": "Ash Shinan",
+      "match": "exact"
+    },
+    "0805": {
+      "lat": 26.94104,
+      "lng": 40.181963,
+      "source": "Ash Shamli",
+      "match": "exact"
+    },
+    "0806": {
+      "lat": 27.509963,
+      "lng": 40.770776,
+      "source": "Mawqaq",
+      "match": "exact"
+    },
+    "0807": {
+      "lat": 26.536164,
+      "lng": 42.148048,
+      "source": "Simira",
+      "match": "phonetic"
+    },
+    "0808": {
+      "lat": 25.950147,
+      "lng": 40.511581,
+      "source": "Al Hait",
+      "match": "exact"
+    },
+    "0809": {
+      "lat": 26.164837,
+      "lng": 41.393529,
+      "source": "As Sulaymi",
+      "match": "exact"
+    },
+    "0901": {
+      "lat": 31.198747,
+      "lng": 40.78398,
+      "source": "Arar",
+      "match": "exact"
+    },
+    "0902": {
+      "lat": 29.168343,
+      "lng": 43.5715,
+      "source": "Rafha",
+      "match": "exact"
+    },
+    "0903": {
+      "lat": 31.508411,
+      "lng": 39.048081,
+      "source": "Turayf",
+      "match": "phonetic"
+    },
+    "0904": {
+      "lat": 30.080219,
+      "lng": 42.128413,
+      "source": "Al Uwayqilah",
+      "match": "exact"
+    }
+  }
+}

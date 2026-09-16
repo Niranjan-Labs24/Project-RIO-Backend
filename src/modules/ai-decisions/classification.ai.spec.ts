@@ -11,7 +11,12 @@ const SUBJECT = { statement: 'No clinic within 40km.', village: ['Al-Jumum North
 
 /** Minimal AiService stand-in: returns whatever the test hands it. */
 function fakeAi(response: Record<string, unknown>) {
-  return { run: async () => ({ response }) } as never;
+  // resolveModelName reports the model that actually answered — on the OCI
+  // path that is the configured Cohere deployment, not the task's literal.
+  return {
+    run: async () => ({ response }),
+    resolveModelName: () => 'cohere.command-a-03-2025',
+  } as never;
 }
 
 describe('classifyNeedWithAi', () => {

@@ -1,4 +1,11 @@
-import fontkit from "fontkit";
+// Namespace import, not a default import. fontkit ships no `default` export:
+// under the CommonJS build `esModuleInterop` wraps the module object and
+// `fontkit.openSync` happens to resolve, but under ESM the default is
+// undefined and every call throws "Cannot read properties of undefined
+// (reading 'openSync')". That crashed the first PDF export that actually
+// contained Arabic text — which only happened once Arabic master data was
+// seeded, since before that this loader was never reached.
+import * as fontkit from "fontkit";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import bidiFactory from "bidi-js";
@@ -163,7 +170,33 @@ function reorderRuns<T extends { level: number }>(runs: T[]): T[] {
  * returned in final visual (left-to-right drawing) order for the whole
  * string, so a caller just draws them one after another.
  */
+// Shaping is pure and deterministic — the same string at the same weight always
+// produces the same glyphs — but it is not cheap: bidi reordering plus a
+// fontkit layout pass per run.
+//
+// It is also called far more often than it looks. pdf-builder's wrap()/fits()
+// binary-search a line's width, and every probe re-shapes the whole string;
+// the RTL mirror then measures each run a second time to place it. An Arabic
+// RPT01 render was taking 22 seconds against 1.5 for the English one, and
+// essentially all of it was re-shaping strings that had already been shaped.
+//
+// Cleared wholesale rather than evicted per entry: a report is a bounded number
+// of distinct strings, and a simple cap keeps a long-lived process from growing
+// without bound across many exports.
+const SHAPE_CACHE = new Map<string, ShapedChunk[]>();
+const SHAPE_CACHE_MAX = 20_000;
+
 export function shapeArabicAware(str: string, weight: "regular" | "bold" = "regular"): ShapedChunk[] {
+  const key = `${weight} ${str}`;
+  const hit = SHAPE_CACHE.get(key);
+  if (hit) return hit;
+  const shaped = shapeUncached(str, weight);
+  if (SHAPE_CACHE.size >= SHAPE_CACHE_MAX) SHAPE_CACHE.clear();
+  SHAPE_CACHE.set(key, shaped);
+  return shaped;
+}
+
+function shapeUncached(str: string, weight: "regular" | "bold"): ShapedChunk[] {
   const runs = splitRuns(str);
   const visualRuns = reorderRuns(runs);
   const { font } = getArabicFont(weight);

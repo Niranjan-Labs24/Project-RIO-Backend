@@ -14,6 +14,15 @@ export interface StudyRow {
   requiredSampleSize: number | null;
   minimumDetectableEffect: number | null;
   cycleNumber: number;
+  // RIO-DATA-002 — set when this Study represents a pre-platform study
+  // imported from the Archive (RIO-FR-013) rather than a cycle run on the
+  // platform. `historicalStudyDate` is when the original study was
+  // conducted; `createdAt` is only when it was imported, which is useless
+  // for comparing an old study against a current one. The unified
+  // dashboard's historical/current split reads all three.
+  isHistorical: boolean;
+  historicalStudyDate: Date | null;
+  historicalStudyId: string | null;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
@@ -50,6 +59,16 @@ export interface Study {
   requiredSampleSize: number | null;
   minimumDetectableEffect: number | null;
   cycleNumber: number;
+  // RIO-DATA-002 — set when this Study represents a pre-platform study
+  // imported from the Archive (RIO-FR-013) rather than a cycle run on the
+  // platform. `historicalStudyDate` is when the original study was
+  // conducted; `createdAt` is only when it was imported, which is useless
+  // for comparing an old study against a current one. The unified
+  // dashboard's historical/current split reads all three.
+  isHistorical: boolean;
+  /** ISO date (YYYY-MM-DD) the original study was conducted. */
+  historicalStudyDate: string | null;
+  historicalStudyId: string | null;
   createdBy: string;
   createdAt: string;
   updatedAt: string;

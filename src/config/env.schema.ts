@@ -92,11 +92,62 @@ export const EnvSchema = Type.Object({
   // temp-password reveal.
   RESEND_API_KEY: Type.Optional(Type.String()),
   MAIL_FROM: Type.String({ default: 'RIO <no-reply@rio.local>' }),
+  // Which email transport MailerService sends through. 'resend' (default)
+  // keeps existing environments working unchanged. 'twilio' routes every
+  // send method through Twilio's Emails API (POST comms.twilio.com/v1/Emails)
+  // instead — the impetus.sa account's real provider, once
+  // TWILIO_EMAIL_API_KEY_SID/SECRET below are set. Resend's sandbox mode can
+  // only deliver to its own verified address, which is why invite/temp-
+  // password emails to real recipients were silently failing under it.
+  // 'sendgrid' routes through SendGrid's own Mail Send API instead — the
+  // client's Indian Twilio trial account (2026-09-16) only exposes email
+  // sending via SendGrid, not the native comms.twilio.com Emails API used
+  // by the impetus.sa account above, and the two are unrelated products
+  // with different keys/auth despite both being under the Twilio umbrella.
+  MAIL_PROVIDER: Type.Union(
+    [Type.Literal('resend'), Type.Literal('twilio'), Type.Literal('sendgrid')],
+    { default: 'resend' },
+  ),
+  // Twilio Emails API credentials — a SEPARATE API key from the
+  // TWILIO_API_KEY_SID/SECRET pair above (those are for SMS/Programmable
+  // Messaging). This is the "rio" API key issued under the impetus.sa
+  // account for the Comms/Emails product specifically. Auth is HTTP Basic
+  // (apiKeySid:apiKeySecret) directly against comms.twilio.com, not the
+  // `twilio` SDK. When either is unset, MailerService falls back to
+  // RESEND_API_KEY's configured/not-configured behavior.
+  TWILIO_EMAIL_API_KEY_SID: Type.Optional(Type.String()),
+  TWILIO_EMAIL_API_KEY_SECRET: Type.Optional(Type.String()),
+  // Must be a verified sending address/domain on the Twilio account, or
+  // every send will be rejected the same way Resend's sandbox mode rejects
+  // unverified recipients.
+  TWILIO_EMAIL_FROM_ADDRESS: Type.String({ default: 'NoReply@impetus.sa' }),
+  TWILIO_EMAIL_FROM_NAME: Type.String({ default: 'RIO' }),
+  // SendGrid Mail Send API (POST api.sendgrid.com/v3/mail/send) — Bearer
+  // token auth, a plain API key (starts "SG."), not the SID/Secret Basic-
+  // auth pair the two Twilio-branded options above use. FROM/REPLY-TO must
+  // be a verified sender on that SendGrid account or Twilio/SendGrid
+  // rejects the send the same way the other two providers do for their own
+  // unverified-sender case.
+  SENDGRID_API_KEY: Type.Optional(Type.String()),
+  SENDGRID_FROM_ADDRESS: Type.Optional(Type.String()),
+  SENDGRID_FROM_NAME: Type.String({ default: 'RIO' }),
   // Twilio (SMS OTP delivery for the citizen public survey flow — see
   // SmsService). When TWILIO_ACCOUNT_SID is unset the SMS channel is "not
   // configured", same not-configured/soft-fail convention as Resend above —
   // a mobile number just won't get a text until these are set.
+  //
+  // Two auth modes, checked in this order by SmsService:
+  //   1. API Key   — TWILIO_ACCOUNT_SID + TWILIO_API_KEY_SID + TWILIO_API_KEY_SECRET.
+  //      Preferred: a key is scoped and revocable without rotating the whole
+  //      account. This is the shape the impetus.sa account issues (SK...).
+  //   2. Auth Token — TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN. The account's
+  //      root credential; kept as a fallback for environments that only have it.
+  // TWILIO_FROM_NUMBER is required for SMS in BOTH modes — it is the SMS
+  // sender (a Twilio-provisioned number in E.164, or a Messaging Service SID).
+  // A verified *email* domain / from-address does not apply to SMS.
   TWILIO_ACCOUNT_SID: Type.Optional(Type.String()),
+  TWILIO_API_KEY_SID: Type.Optional(Type.String()),
+  TWILIO_API_KEY_SECRET: Type.Optional(Type.String()),
   TWILIO_AUTH_TOKEN: Type.Optional(Type.String()),
   TWILIO_FROM_NUMBER: Type.Optional(Type.String()),
   // Bounds every outbound Twilio API call (SmsService) — the Twilio SDK's
@@ -121,11 +172,95 @@ export const EnvSchema = Type.Object({
   REVIEWER_SLA_HOURS: Type.Number({ default: 48 }),
   REVIEWER_SLA_POLL_INTERVAL_MS: Type.Number({ default: 60_000 }),
   GEMINI_API_KEY: Type.Optional(Type.String()),
+  // ── Which model provider AiService talks to ──────────────────────────
+  //
+  // 'oci_cohere' (the default) is Cohere Command A on OCI Generative AI in
+  // me-riyadh-1, which keeps inference in-Kingdom — the same residency
+  // question SEMANTIC_DUPLICATES_ENABLED below is waiting on, which is why
+  // this is a deployment setting rather than a screen toggle.
+  //
+  // 'gemini' is the fallback, kept so a broken OCI tenancy (an expired API
+  // key, a policy change, a region outage) is one env var away from being
+  // worked around instead of a code change.
+  //
+  // An environment on the default still needs OCI_GENAI_API_KEY and
+  // OCI_GENAI_COMPARTMENT_ID. Without them AI features log a warning and
+  // fall back to manual mode — the same way a missing GEMINI_API_KEY has
+  // always behaved — rather than failing startup. Run `npm run ai:oci-smoke`
+  // in each environment to prove the tenancy before relying on it.
+  //
+  // Whichever is selected, every AI task stays provider-neutral — see
+  // AiTask.responseSchema.
+  AI_PROVIDER: Type.Union([Type.Literal('oci_cohere'), Type.Literal('gemini')], {
+    default: 'oci_cohere',
+  }),
+  // OCI Generative AI service API key — the `sk-...` secret itself, NOT the
+  // key's OCID. Sent as `Authorization: Bearer <key>`; no OCI request
+  // signing is involved. A key only works in the region it was created in.
+  OCI_GENAI_API_KEY: Type.Optional(Type.String()),
+  // The compartment the model is called in. Required by the inference API
+  // even when authenticating with an API key — a request without it is
+  // rejected with "Compartment ID must be provided."
+  OCI_GENAI_COMPARTMENT_ID: Type.Optional(Type.String()),
+  // Region must match the region the API key was issued in, and is what
+  // makes the residency claim true. me-riyadh-1 is in-Kingdom.
+  OCI_GENAI_REGION: Type.String({ default: 'me-riyadh-1' }),
+  OCI_GENAI_MODEL_ID: Type.String({ default: 'cohere.command-a-03-2025' }),
+  // ON_DEMAND bills per request against a shared pool. DEDICATED routes to
+  // a provisioned AI cluster and needs its own endpoint OCID as the model
+  // id, so it is only worth setting once such a cluster exists.
+  OCI_GENAI_SERVING_TYPE: Type.Union([Type.Literal('ON_DEMAND'), Type.Literal('DEDICATED')], {
+    default: 'ON_DEMAND',
+  }),
+  // On-demand inference caps output at 4,000 tokens per run, so this is a
+  // ceiling rather than a target. Tasks that need less say so themselves.
+  OCI_GENAI_MAX_TOKENS: Type.Number({ default: 4000, minimum: 1, maximum: 4000 }),
+  // ── Embeddings (RIO-AI-004 semantic duplicate detection) ─────────────
+  //
+  // A SEPARATE model from OCI_GENAI_MODEL_ID: Command A is a chat model and
+  // cannot embed. This is the one Q10 actually rules on, because embedding is
+  // what sends need text — including text written by members of the public —
+  // out of the platform. Served from the same region, compartment and key, so
+  // an in-Kingdom chat deployment stays in-Kingdom when it embeds.
+  //
+  // multilingual, not english: need titles and statements are Arabic and
+  // English in the same table, and cross-language duplicate detection is the
+  // entire reason the semantic pass exists — the literal pass scores an Arabic
+  // need against its English twin at 0.000. embed-english-v3.0 would make this
+  // feature no better than the pass it supplements.
+  //
+  // Verify both values with `npm run ai:oci-embed-smoke` before relying on
+  // them: which models a tenancy serves ON_DEMAND varies by region, and the
+  // script reports the width the model actually returns.
+  OCI_GENAI_EMBED_MODEL_ID: Type.String({ default: 'cohere.embed-multilingual-v3.0' }),
+  // Must match what the model returns; the adapter refuses a batch whose width
+  // disagrees rather than storing vectors nothing can compare.
+  //
+  // Also matches need_embeddings.embedding's declared width — see migration
+  // 20260911000000. A mismatch is not an error: SemanticDuplicateService
+  // detects it and compares in the application instead of against the index.
+  OCI_GENAI_EMBED_DIMENSIONS: Type.Number({ default: 1024, minimum: 1, maximum: 4096 }),
+  // RIO-AI-004 / Q10 — the switch that lets need text leave the platform.
+  //
+  // Semantic duplicate detection embeds need titles and statements with an
+  // external model. Until the client rules on in-Kingdom residency that is a
+  // deployment decision, not a screen toggle, so it lives here and defaults
+  // OFF: the code ships complete and inert until someone sets this.
+  SEMANTIC_DUPLICATES_ENABLED: Type.Boolean({ default: false }),
+  // RIO MFA — "Sign in with OTP" over email. The SMS channel is live as
+  // soon as a user has a mobileNumber on file; email delivery is code-complete
+  // (MailerService.sendLoginOtpEmail) but deliberately gated off by default —
+  // client decision (2026-09): ship SMS first, wire up email once a provider
+  // is actually configured for it. Flip this to true once RESEND_API_KEY (or
+  // whatever mailer is live at that point) is ready to carry OTP traffic.
+  EMAIL_OTP_ENABLED: Type.Boolean({ default: false }),
   // Periodic pg_dump backup (BackupService). BACKUP_DIR is where dump files
   // are written (created if missing, relative paths resolved from the
   // process cwd). BACKUP_CRON_SCHEDULE is a standard 5-field cron
-  // expression — defaults to weekly (Sundays at 03:00), confirmed working
-  // end-to-end during testing at a faster interval first.
+  // expression — NIGHTLY at 03:00, which is what the 24-hour RPO the client
+  // confirmed under Q32 actually requires. It defaulted to weekly while the
+  // mechanism was being proven end-to-end; leaving it there would have meant
+  // a documented 24-hour RPO backed by a 7-day schedule.
   // ── Survey abandonment tracking + completion reminders (RPT10 Q-2) ──
   // How long a started-but-unsubmitted session may sit idle before it counts
   // as abandoned. A citizen survey is one sitting of a few minutes (see
@@ -152,13 +287,47 @@ export const EnvSchema = Type.Object({
   // reminders. Standard 5-field cron; every 15 minutes by default.
   SURVEY_SESSION_SWEEP_CRON: Type.String({ default: '*/15 * * * *' }),
   BACKUP_DIR: Type.String({ default: './storage/backups' }),
-  BACKUP_CRON_SCHEDULE: Type.String({ default: '0 3 * * 0' }),
+  BACKUP_CRON_SCHEDULE: Type.String({ default: '0 3 * * *' }),
+  // RIO-NFR-010 retention. How long a backup file is kept, and when the sweep
+  // that deletes expired ones runs. The sweep has its own schedule rather than
+  // riding the backup tick: a period with no backups is exactly when disk
+  // pressure builds, so that is the worst time for pruning to also stop.
+  //
+  // 30 days is a starting value, not a client ruling. Q34 covers destination,
+  // encryption and key custody; retention belongs with the same answer.
+  BACKUP_RETENTION_DAYS: Type.Number({ default: 30 }),
+  BACKUP_RETENTION_CRON: Type.String({ default: '30 4 * * *' }),
+  // RIO-NFR-010 — the connection pg_dump uses.
+  //
+  // Separate from DATABASE_URL because a dump needs BYPASSRLS and the
+  // application roles deliberately do not have it: 43 tables FORCE row-level
+  // security, so pg_dump as cnap_owner fails outright ("query would be
+  // affected by row-level security policy"). See
+  // scripts/sql/nfr010-backup-role.sql, which provisions cnap_backup — SELECT
+  // only, BYPASSRLS, nothing else.
+  //
+  // Optional so the app still boots without it; BackupService reports the
+  // missing role in the failure it records rather than dumping the wrong
+  // thing quietly.
+  BACKUP_DATABASE_URL: Type.Optional(Type.String()),
+  // RIO-NFR-010 / Q34 — encryption at rest for backup artefacts.
+  //
+  // Off unless set, deliberately. A backup encrypted with a key nobody has
+  // escrowed is not a backup, it is a tidy way to lose data — so turning this
+  // on is a decision taken together with deciding who holds the key, which is
+  // exactly what Q34 asks. AES-256-GCM, key derived per file with scrypt.
+  BACKUP_ENCRYPTION_KEY: Type.Optional(Type.String()),
   // Optional override for the pg_dump binary — the bare command name is
   // resolved via PATH by default, which is correct in Docker (see
   // Dockerfile) but can silently pick the wrong installed major version on
   // a host machine with multiple Postgres versions (e.g. Homebrew, where
   // `pg_dump` on PATH tracks whichever version is currently linked).
   PG_DUMP_PATH: Type.Optional(Type.String()),
+  // RIO-NFR-010 — `pg_restore --list` reads a dump's table of contents for the
+  // recoverability check. Same PATH caveat as PG_DUMP_PATH, and the same
+  // version sensitivity: pg_restore refuses an archive written by a newer
+  // major version, which would report a perfectly good backup as unreadable.
+  PG_RESTORE_PATH: Type.Optional(Type.String()),
   // RIO-NFR-016 — persisted operational log (system_logs).
   //
   // SYSTEM_LOG_ENABLED is a master kill switch: false turns
@@ -172,12 +341,7 @@ export const EnvSchema = Type.Object({
   // — they are always recorded regardless of this setting.
   SYSTEM_LOG_ENABLED: Type.Boolean({ default: true }),
   SYSTEM_LOG_MIN_LEVEL: Type.Union(
-    [
-      Type.Literal('fatal'),
-      Type.Literal('error'),
-      Type.Literal('warn'),
-      Type.Literal('info'),
-    ],
+    [Type.Literal('fatal'), Type.Literal('error'), Type.Literal('warn'), Type.Literal('info')],
     { default: 'info' },
   ),
   SYSTEM_LOG_SAMPLE_RATE: Type.Number({ default: 0, minimum: 0, maximum: 1 }),

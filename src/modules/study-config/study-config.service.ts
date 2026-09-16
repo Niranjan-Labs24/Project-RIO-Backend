@@ -178,12 +178,16 @@ export class StudyConfigService {
   // Prisma delegate avoids maintaining two copies of the same try/catch and
   // not-found handling.
   private async createOption(
-    delegate: { create: (args: { data: { name: string; displayOrder?: number } }) => Promise<StudyConfigOptionRow> },
+    delegate: {
+      create: (args: {
+        data: { name: string; nameAr?: string; displayOrder?: number };
+      }) => Promise<StudyConfigOptionRow>;
+    },
     payload: CreateStudyConfigOptionPayload,
   ): Promise<StudyConfigOptionRow> {
     try {
       return await delegate.create({
-        data: { name: payload.name, displayOrder: payload.displayOrder },
+        data: { name: payload.name, nameAr: payload.nameAr, displayOrder: payload.displayOrder },
       });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
@@ -197,7 +201,10 @@ export class StudyConfigService {
 
   private async updateOption(
     delegate: {
-      update: (args: { where: { id: string }; data: { name?: string; displayOrder?: number } }) => Promise<StudyConfigOptionRow>;
+      update: (args: {
+        where: { id: string };
+        data: { name?: string; nameAr?: string; displayOrder?: number };
+      }) => Promise<StudyConfigOptionRow>;
     },
     id: string,
     payload: UpdateStudyConfigOptionPayload,
@@ -205,7 +212,7 @@ export class StudyConfigService {
     try {
       return await delegate.update({
         where: { id },
-        data: { name: payload.name, displayOrder: payload.displayOrder },
+        data: { name: payload.name, nameAr: payload.nameAr, displayOrder: payload.displayOrder },
       });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError) {
@@ -238,6 +245,12 @@ export class StudyConfigService {
   }
 
   private toOption(row: StudyConfigOptionRow): StudyConfigOption {
-    return { id: row.id, name: row.name, displayOrder: row.displayOrder, isActive: row.isActive };
+    return {
+      id: row.id,
+      name: row.name,
+      nameAr: row.nameAr,
+      displayOrder: row.displayOrder,
+      isActive: row.isActive,
+    };
   }
 }

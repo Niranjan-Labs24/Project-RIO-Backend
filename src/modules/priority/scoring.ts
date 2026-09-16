@@ -29,8 +29,31 @@
 /** Priority level bands as defined in the methodology brief. */
 export type PriorityLevel = 'critical' | 'high' | 'medium' | 'low';
 
-/** Gap classification for a detected need gap. */
-export type GapType = 'acute' | 'chronic' | 'structural' | 'seasonal' | 'inequity_linked';
+/** Gap classification for a detected need gap.
+ *
+ * Kept in step with the client-approved list that
+ * prisma/import-arabic-config-lists.ts populates GapTypeOption from
+ * (RIO-Reference-docs/arabic-translation-client-approved.md). Two
+ * corrections against what this type used to declare:
+ *
+ *   - `equity`, not `inequity_linked`. The seed and the approved list both
+ *     say `equity`; this type was the only place using the longer spelling,
+ *     and nothing produced it, so a value under the old name would have
+ *     reached the UI with no matching option row to label it.
+ *   - `Conflict-related` added. It is on the approved list but was in
+ *     neither the type nor the seed, so the option never existed to pick.
+ *
+ * Note the UI reads labels from GapTypeOption (name/nameAr) rather than
+ * from this union — these strings are the option NAMES, which is why
+ * `Conflict-related` keeps the approved list's exact casing rather than
+ * being lower-cased for consistency with its neighbours. */
+export type GapType =
+  | 'acute'
+  | 'Conflict-related'
+  | 'chronic'
+  | 'structural'
+  | 'seasonal'
+  | 'equity';
 
 export interface ScoringThresholds {
   /** >= this severity is always Critical. */
@@ -84,7 +107,7 @@ export function determineGapType(level: PriorityLevel, cycleNumber: number = 1):
   if (cycleNumber === 1) {
     // TODO(RIO-Priority): cycle 1 has no history to compare against, so
     // every high/critical gap is provisionally "acute". Chronic/structural/
-    // seasonal/inequity_linked all require a later cycle's trend.
+    // seasonal/equity all require a later cycle's trend.
     return 'acute';
   }
   // TODO(RIO-Priority): multi-cycle comparison not implemented yet.

@@ -10,8 +10,8 @@ import {
 import { PriorityService } from "./priority.service";
 import { ScoreRollupService } from "./rollup.service";
 import { PriorityV2Service } from "./priority-v2.service";
-import { VillageAggregationService } from "./village-aggregation.service";
-import type { PriorityDashboardEntry, PriorityScore, VillageComparisonEntry } from "./priority.types";
+import { CenterAggregationService } from "./center-aggregation.service";
+import type { CenterComparisonEntry, PriorityDashboardEntry, PriorityScore } from "./priority.types";
 
 @Controller()
 export class PriorityController {
@@ -85,8 +85,12 @@ export class PriorityController {
     @Param("studyId", new UuidParamPipe()) studyId: string,
     @Param("surveyId", new UuidParamPipe()) surveyId: string
   ) {
-    await this.rollupService.recalculateStudyScores(studyId, surveyId);
-    return { success: true };
+    // Pass the pipeline's outcome straight through: a run can complete as a
+    // successful HTTP call and still compute nothing (no responses yet,
+    // methodology reference data missing). The frontend renders `reason` as
+    // a specific message; returning a bare `{ success: true }` here left it
+    // with nothing to say but "produced no priority score".
+    return this.rollupService.recalculateStudyScores(studyId, surveyId);
   }
 
   @Get("studies/:studyId/surveys/:surveyId/village-priority")
@@ -140,7 +144,7 @@ export class PriorityDashboardController {
   constructor(
     private readonly priority: PriorityService,
     private readonly priorityV2: PriorityV2Service,
-    private readonly villageAggregation: VillageAggregationService,
+    private readonly centerAggregation: CenterAggregationService,
   ) {}
 
   // RIO-FR-005 (Q12) — `gapType` filters to Needs whose analyst-entered
@@ -151,13 +155,17 @@ export class PriorityDashboardController {
     return this.priorityV2.listForOrg(gapType);
   }
 
-  // RIO-FR-005 (Q9) — village comparison. studyIds is a comma-separated
-  // query param, e.g. ?studyIds=id-a,id-b,id-c.
-  @Get("village-comparison")
+  // RIO-FR-005 (Q9) — place comparison. studyIds is a comma-separated
+  // query param, e.g. ?studyIds=id-a,id-b,id-c. Grouped by Centre, not by
+  // `Need.village`: village is unvalidated free text, Centre is a real key
+  // into the client's geographic reference — see CenterAggregationService.
+  // The old `village-comparison` path is kept as an alias so an existing
+  // bookmark or client build does not 404 on the rename.
+  @Get(["center-comparison", "village-comparison"])
   @RequirePermission("priorityScoring", "read")
-  compareVillages(@Query("studyIds") studyIds?: string): Promise<VillageComparisonEntry[]> {
+  compareCenters(@Query("studyIds") studyIds?: string): Promise<CenterComparisonEntry[]> {
     const ids = (studyIds ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-    return this.villageAggregation.compareVillages(ids);
+    return this.centerAggregation.compareCenters(ids);
   }
 
   @Patch(":id/approve")

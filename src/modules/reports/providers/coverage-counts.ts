@@ -1,3 +1,4 @@
+import { EXCLUDE_MERGED } from '../../needs/need-visibility';
 import type { TenantPrismaService } from "../../../tenancy/tenant-prisma.service";
 import type { CoverageBlock } from "../report-content.types";
 
@@ -64,7 +65,7 @@ export async function buildCoverageBlock(
     ] = await Promise.all([
       tx.study.findUnique({ where: { id: studyId }, select: { title: true, cycleNumber: true, villages: true } }),
       tx.need.findUnique({ where: { id: needId }, select: { village: true } }),
-      tx.need.count({ where: { studyId } }),
+      tx.need.count({ where: { studyId, ...EXCLUDE_MERGED } }),
       tx.survey.count({ where: { studyId } }),
       // Bank vs custom questions: a SurveyQuestion row is a Question Bank entry
       // when questionId is set, and a study-specific "additional" question when

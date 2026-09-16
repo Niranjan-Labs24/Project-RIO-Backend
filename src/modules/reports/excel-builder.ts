@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import ExcelJS from "exceljs";
 import type { DocSection, ReportDoc } from "./report-doc";
 import { hasArabic } from "./arabic-text";
+import type { SupportedLocale } from "../translation/translation.types";
 
 // RIO-NFR-007 / RIO-NFR-008 — Excel (unlike the PDF path) needs no font
 // embedding: exceljs writes plain Unicode strings into the workbook's XML,
@@ -13,6 +14,25 @@ import { hasArabic } from "./arabic-text";
 // contains Arabic, alongside the existing wrapText/vertical-top styling.
 function arabicAlignment(value: string): Partial<ExcelJS.Alignment> {
   return hasArabic(value) ? { horizontal: "right", readingOrder: "rtl" } : {};
+}
+
+// RIO-NFR-007 — SHEET-level right-to-left, which is a different thing from the
+// per-cell alignment above.
+//
+// `arabicAlignment` fixes one cell whose own text is Arabic. This flips the
+// worksheet: column A moves to the right edge, columns run right-to-left, and
+// the freeze/scroll origin follows. Without it an Arabic workbook reads as a
+// left-to-right table that happens to contain Arabic — the columns are still
+// in English reading order, so the first column a reader's eye lands on is the
+// last one in the row.
+//
+// Set through a helper rather than at each addWorksheet call because the
+// workbook creates sheets in seven places, and a sheet that missed the flip
+// would be the one page of the export that reads backwards.
+function newSheet(wb: ExcelJS.Workbook, name: string, locale: SupportedLocale): ExcelJS.Worksheet {
+  const sheet = wb.addWorksheet(name);
+  if (locale === "ar") sheet.views = [{ rightToLeft: true }];
+  return sheet;
 }
 
 const ACCENT = "FF1F5A99";
@@ -65,10 +85,11 @@ function addTableSheet(
   rows: string[][],
   // Anchor id per row, already resolved to sheet names. A row whose target has
   // no sheet gets no link rather than a broken reference.
-  rowLinkSheets?: Array<string | null>,
+  rowLinkSheets: Array<string | null> | undefined,
+  locale: SupportedLocale,
 ): void {
   const hasLinks = rowLinkSheets?.some((t) => t !== null) === true;
-  const sheet = wb.addWorksheet(uniqueSheetName(wb, heading));
+  const sheet = newSheet(wb, uniqueSheetName(wb, heading), locale);
   sheet.columns = [
     ...columns.map((c) => ({ header: c, key: c, width: Math.max(16, Math.min(40, c.length + 6)) })),
     // The drill column is what carries the PDF's clickable row into the
@@ -95,8 +116,12 @@ function addTableSheet(
   });
 }
 
-function addBarsSheet(wb: ExcelJS.Workbook, s: Extract<DocSection, { kind: "bars" }>): void {
-  const sheet = wb.addWorksheet(uniqueSheetName(wb, s.heading));
+function addBarsSheet(
+  wb: ExcelJS.Workbook,
+  s: Extract<DocSection, { kind: "bars" }>,
+  locale: SupportedLocale,
+): void {
+  const sheet = newSheet(wb, uniqueSheetName(wb, s.heading), locale);
   sheet.columns = [
     { header: "Item", key: "label", width: 34 },
     { header: "Value", key: "value", width: 16 },
@@ -123,12 +148,20 @@ function addBarsSheet(wb: ExcelJS.Workbook, s: Extract<DocSection, { kind: "bars
   }
 }
 
-export async function renderReportExcel(doc: ReportDoc): Promise<Buffer> {
+/**
+ * `locale` flips every worksheet right-to-left (see newSheet). Defaults to
+ * English so existing callers and tests are unaffected; the document reaching
+ * here is already translated, so this is purely the reading DIRECTION.
+ */
+export async function renderReportExcel(
+  doc: ReportDoc,
+  locale: SupportedLocale = "en",
+): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = "RIO";
   wb.created = new Date();
 
-  const summary = wb.addWorksheet("Summary");
+  const summary = newSheet(wb, "Summary", locale);
   summary.columns = [
     { header: "Field", key: "field", width: 34 },
     { header: "Value", key: "value", width: 70 },
@@ -204,7 +237,7 @@ export async function renderReportExcel(doc: ReportDoc): Promise<Buffer> {
         // One worksheet per drill target — the workbook equivalent of the
         // PDF's materialised page.
         const name = anchorSheets.get(s.anchorId) ?? drillSheetName(s.anchorId, s.heading);
-        detail = wb.getWorksheet(name) ?? wb.addWorksheet(name);
+        detail = wb.getWorksheet(name) ?? newSheet(wb, name, locale);
         detail.columns = [
           { header: "Field", key: "field", width: 34 },
           { header: "Value", key: "value", width: 70 },
@@ -235,7 +268,7 @@ export async function renderReportExcel(doc: ReportDoc): Promise<Buffer> {
       case "navGrid": {
         // The index grid becomes a sheet of hyperlinks — the same set of jumps
         // the PDF's tiles offer.
-        const sheet = wb.addWorksheet(uniqueSheetName(wb, s.heading));
+        const sheet = newSheet(wb, uniqueSheetName(wb, s.heading), locale);
         sheet.columns = [
           { header: "Item", key: "label", width: 40 },
           { header: "Summary", key: "sub", width: 46 },
@@ -264,10 +297,11 @@ export async function renderReportExcel(doc: ReportDoc): Promise<Buffer> {
           s.columns,
           s.rows,
           s.rowLinks?.map((t) => sheetFor(t)),
+          locale,
         );
         break;
       case "bars":
-        addBarsSheet(wb, s);
+        addBarsSheet(wb, s, locale);
         break;
       case "pie": {
         const total = s.slices.reduce((a, b) => a + b.value, 0) || 1;
@@ -276,7 +310,7 @@ export async function renderReportExcel(doc: ReportDoc): Promise<Buffer> {
           heading: s.heading,
           max: Math.max(1, ...s.slices.map((sl) => sl.value)),
           bars: s.slices.map((sl) => ({ label: `${sl.label} (${Math.round((sl.value / total) * 100)}%)`, value: sl.value })),
-        });
+        }, locale);
         break;
       }
       case "gauge":
@@ -284,7 +318,7 @@ export async function renderReportExcel(doc: ReportDoc): Promise<Buffer> {
         kv(s.heading, `${s.value} / ${s.max}${s.sub ? ` (${s.sub})` : ""}`, true);
         break;
       case "radar": {
-        const sheet = wb.addWorksheet(uniqueSheetName(wb, s.heading));
+        const sheet = newSheet(wb, uniqueSheetName(wb, s.heading), locale);
         sheet.columns = [
           { header: "Domain", key: "axis", width: 28 },
           ...s.series.map((se, i) => ({ header: se.name, key: `s${i}`, width: 16 })),
@@ -322,7 +356,7 @@ export async function renderReportExcel(doc: ReportDoc): Promise<Buffer> {
       // comparison the PDF draws as paired bars, in the form a spreadsheet
       // user can actually sort and filter.
       case "groupedBars": {
-        const sheet = wb.addWorksheet(uniqueSheetName(wb, s.heading));
+        const sheet = newSheet(wb, uniqueSheetName(wb, s.heading), locale);
         sheet.columns = [
           { header: "Metric", key: "group", width: 30 },
           ...s.series.map((se, i) => ({ header: se.name, key: `s${i}`, width: 18 })),

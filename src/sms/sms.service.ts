@@ -17,13 +17,30 @@ export class SmsService {
     // missing recorder degrades to stdout-only, never to a crash.
     @Optional() private readonly systemLogs?: SystemLogsService,
   ) {
-    const sid = this.config.twilioAccountSid;
-    const token = this.config.twilioAuthToken;
+    const accountSid = this.config.twilioAccountSid;
+    const apiKeySid = this.config.twilioApiKeySid;
+    const apiKeySecret = this.config.twilioApiKeySecret;
+    const authToken = this.config.twilioAuthToken;
     this.fromNumber = this.config.twilioFromNumber;
-    if (!sid || !token || !this.fromNumber) return; // not configured — sendOtpCode returns false
+
+    // A from-number is non-negotiable for SMS regardless of auth mode.
+    if (!accountSid || !this.fromNumber) return; // not configured — sendOtpCode returns false
+
     // Bounds every request this client makes (Twilio's own SDK default is
     // 30s otherwise) — see SMS_TIMEOUT_MS in env.schema.ts.
-    this.client = Twilio(sid, token, { timeout: this.config.smsTimeoutMs });
+    const opts = { timeout: this.config.smsTimeoutMs };
+
+    if (apiKeySid && apiKeySecret) {
+      // API-Key auth: username = key SID, password = key secret, and the
+      // account SID passed explicitly since the key alone doesn't carry it.
+      // Preferred — a key is independently revocable.
+      this.client = Twilio(apiKeySid, apiKeySecret, { ...opts, accountSid });
+    } else if (authToken) {
+      // Legacy/fallback: the account's root Auth Token.
+      this.client = Twilio(accountSid, authToken, opts);
+    }
+    // else: account SID + from-number present but no usable credential —
+    // stays "not configured", same soft-fail path as above.
   }
 
   /**
@@ -55,6 +72,37 @@ export class SmsService {
         // Redacted recipient only — the code itself and the full number
         // never reach the log.
         context: { provider: 'twilio', recipient: redactPhone(phoneNumber) },
+      });
+      return false;
+    }
+  }
+
+  /**
+   * RIO MFA — "Sign in with OTP" for staff accounts (any role), as opposed
+   * to sendOtpCode above (the public citizen survey flow). Separate method
+   * only for a distinct, correctly-worded message body; same soft-fail
+   * contract — a staff member who never receives their code falls back to
+   * their password, so this must never throw.
+   */
+  async sendLoginOtpCode(phoneNumber: string, code: string): Promise<boolean> {
+    if (!this.client || !this.fromNumber) return false;
+    try {
+      await this.client.messages.create({
+        to: phoneNumber,
+        from: this.fromNumber,
+        body: `Your RIO sign-in verification code is ${code}. It expires in 10 minutes. If you didn't request this, ignore this message.`,
+      });
+      return true;
+    } catch (err) {
+      this.logger.error(`Failed to text login OTP code to ${redactPhone(phoneNumber)}`, err as Error);
+      this.systemLogs?.record({
+        level: 'error',
+        category: 'integration',
+        source: SmsService.name,
+        eventCode: 'SMS_SEND_FAILED',
+        message: `Failed to text login OTP code to ${redactPhone(phoneNumber)}`,
+        error: err,
+        context: { provider: 'twilio', recipient: redactPhone(phoneNumber), kind: 'staff_login_otp' },
       });
       return false;
     }
