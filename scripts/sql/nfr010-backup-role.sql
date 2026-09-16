@@ -55,7 +55,15 @@ BEGIN
   END IF;
 END $$;
 
-GRANT CONNECT ON DATABASE cnap TO cnap_backup;
+-- The database name is not ours to assume. A managed host (Render, Neon,
+-- Supabase) names the database itself and appends a unique suffix, so a
+-- literal `cnap` here aborts this migration with
+--   ERROR: database "cnap" does not exist
+-- and every migration after it never runs. current_database() is the same
+-- grant against whatever this database is actually called.
+DO $$ BEGIN
+  EXECUTE format('GRANT CONNECT ON DATABASE %I TO cnap_backup', current_database());
+END $$;
 GRANT USAGE ON SCHEMA public TO cnap_backup;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO cnap_backup;
 GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO cnap_backup;
