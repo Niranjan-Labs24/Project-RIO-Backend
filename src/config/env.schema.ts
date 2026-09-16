@@ -83,9 +83,15 @@ export const EnvSchema = Type.Object({
   // TWILIO_EMAIL_API_KEY_SID/SECRET below are set. Resend's sandbox mode can
   // only deliver to its own verified address, which is why invite/temp-
   // password emails to real recipients were silently failing under it.
-  MAIL_PROVIDER: Type.Union([Type.Literal('resend'), Type.Literal('twilio')], {
-    default: 'resend',
-  }),
+  // 'sendgrid' routes through SendGrid's own Mail Send API instead — the
+  // client's Indian Twilio trial account (2026-09-16) only exposes email
+  // sending via SendGrid, not the native comms.twilio.com Emails API used
+  // by the impetus.sa account above, and the two are unrelated products
+  // with different keys/auth despite both being under the Twilio umbrella.
+  MAIL_PROVIDER: Type.Union(
+    [Type.Literal('resend'), Type.Literal('twilio'), Type.Literal('sendgrid')],
+    { default: 'resend' },
+  ),
   // Twilio Emails API credentials — a SEPARATE API key from the
   // TWILIO_API_KEY_SID/SECRET pair above (those are for SMS/Programmable
   // Messaging). This is the "rio" API key issued under the impetus.sa
@@ -100,6 +106,15 @@ export const EnvSchema = Type.Object({
   // unverified recipients.
   TWILIO_EMAIL_FROM_ADDRESS: Type.String({ default: 'NoReply@impetus.sa' }),
   TWILIO_EMAIL_FROM_NAME: Type.String({ default: 'RIO' }),
+  // SendGrid Mail Send API (POST api.sendgrid.com/v3/mail/send) — Bearer
+  // token auth, a plain API key (starts "SG."), not the SID/Secret Basic-
+  // auth pair the two Twilio-branded options above use. FROM/REPLY-TO must
+  // be a verified sender on that SendGrid account or Twilio/SendGrid
+  // rejects the send the same way the other two providers do for their own
+  // unverified-sender case.
+  SENDGRID_API_KEY: Type.Optional(Type.String()),
+  SENDGRID_FROM_ADDRESS: Type.Optional(Type.String()),
+  SENDGRID_FROM_NAME: Type.String({ default: 'RIO' }),
   // Twilio (SMS OTP delivery for the citizen public survey flow — see
   // SmsService). When TWILIO_ACCOUNT_SID is unset the SMS channel is "not
   // configured", same not-configured/soft-fail convention as Resend above —

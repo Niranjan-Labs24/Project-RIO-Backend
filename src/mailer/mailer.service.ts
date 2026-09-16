@@ -5,6 +5,43 @@ import { redactEmail } from '../common/security/redact';
 import { SystemLogsService } from '../modules/system-logs/system-logs.service';
 
 /**
+ * Forces every transactional email in this file to render in light mode
+ * regardless of the recipient's device/client dark-mode setting — without
+ * this, Gmail/Apple Mail's auto-dark-mode re-colors the templates' explicit
+ * light palette (backgrounds, badge tint, brand header) into a dark,
+ * washed-out version the templates were never designed to look like
+ * (reported 2026-09-16: the RIO header and QR-code tint both got inverted).
+ * `color-scheme`/`supported-color-schemes` meta tags cover Apple Mail and
+ * modern Outlook; the `[data-ogsc]` selector is Gmail's own dark-mode hook
+ * (added to elements it re-colors) and is the only reliable way to pin
+ * Gmail specifically back to the original colors.
+ */
+function lightModeEmailHead(colors: {
+  page: string;
+  card: string;
+  header: string;
+  accent?: string;
+}): string {
+  return `
+<head>
+  <meta name="color-scheme" content="light only">
+  <meta name="supported-color-schemes" content="light only">
+  <style>
+    :root { color-scheme: light only; supported-color-schemes: light only; }
+    /* Gmail's dark-mode pass tags every element it re-colors with
+       data-ogsc — these rules target that exact hook to force the
+       template's real colors back, since a plain (non-attribute-scoped)
+       override loses to Gmail's own injected stylesheet. */
+    [data-ogsc] .email-page { background-color: ${colors.page} !important; }
+    [data-ogsc] .email-card { background-color: ${colors.card} !important; }
+    [data-ogsc] .email-header { background-color: ${colors.header} !important; }
+    [data-ogsc] .email-header-text { color: #ffffff !important; }
+    ${colors.accent ? `[data-ogsc] .email-accent { background-color: ${colors.accent} !important; }` : ''}
+  </style>
+</head>`;
+}
+
+/**
  * Client-agnostic shape both providers below satisfy, so every one of the
  * seven send methods in this file can keep calling
  * `this.client.emails.send(mail)` unchanged regardless of which provider is
@@ -26,6 +63,32 @@ interface EmailMail {
 }
 interface EmailClientLike {
   emails: { send(mail: EmailMail): Promise<EmailSendResult> };
+}
+
+/**
+ * Neither provider's attachment payload below carried a MIME type before —
+ * both defaulted to `application/octet-stream` (generic binary), and email
+ * clients broadly refuse to render that inline as an image even with a
+ * matching `content_id`/disposition:"inline". This is what left
+ * sendSurveyLink's QR code showing as blank space (reported 2026-09-16,
+ * SendGrid). Limited to the file types this codebase's attachments actually
+ * are — the QR PNG here, plus common cases if attachments grow.
+ */
+function mimeTypeFor(filename: string): string {
+  const ext = filename.toLowerCase().split('.').pop();
+  switch (ext) {
+    case 'png':
+      return 'image/png';
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'gif':
+      return 'image/gif';
+    case 'pdf':
+      return 'application/pdf';
+    default:
+      return 'application/octet-stream';
+  }
 }
 
 /**
@@ -71,6 +134,7 @@ class TwilioEmailClient implements EmailClientLike {
             filename: a.filename,
             content: a.content.toString('base64'),
             contentId: a.contentId,
+            contentType: mimeTypeFor(a.filename),
           }));
         }
         const auth = Buffer.from(`${this.apiKeySid}:${this.apiKeySecret}`).toString('base64');
@@ -86,6 +150,80 @@ class TwilioEmailClient implements EmailClientLike {
         return {
           error: {
             name: 'TWILIO_EMAIL_REQUEST_FAILED',
+            message: err instanceof Error ? err.message : String(err),
+          },
+        };
+      }
+    },
+  };
+}
+
+/**
+ * SendGrid's Mail Send API (POST https://api.sendgrid.com/v3/mail/send) —
+ * Bearer-token auth with a plain API key, a completely different product
+ * and credential shape from TwilioEmailClient above despite both living
+ * under the Twilio umbrella: the client's Indian Twilio trial account only
+ * exposes email sending through SendGrid, not the native comms.twilio.com
+ * Emails API the impetus.sa account uses. Verified 2026-09-16 with a real
+ * test send (202 Accepted, empty body — SendGrid's normal success response).
+ *
+ * `from`/`replyTo` must be a verified sender on that SendGrid account, same
+ * unverified-sender rejection pattern as the other two providers.
+ */
+class SendGridEmailClient implements EmailClientLike {
+  constructor(
+    private readonly apiKey: string,
+    private readonly fromAddress: string,
+    private readonly fromName: string,
+  ) {}
+
+  emails = {
+    send: async (mail: EmailMail): Promise<EmailSendResult> => {
+      try {
+        const toAddresses = Array.isArray(mail.to) ? mail.to : [mail.to];
+        const personalization: Record<string, unknown> = {
+          to: toAddresses.map((email) => ({ email })),
+        };
+        if (mail.bcc) {
+          const bccAddresses = Array.isArray(mail.bcc) ? mail.bcc : [mail.bcc];
+          personalization.bcc = bccAddresses.map((email) => ({ email }));
+        }
+        const payload: Record<string, unknown> = {
+          personalizations: [personalization],
+          from: { email: this.fromAddress, name: this.fromName },
+          subject: mail.subject,
+          content: [
+            { type: 'text/plain', value: mail.text },
+            { type: 'text/html', value: mail.html },
+          ],
+        };
+        if (mail.replyTo) {
+          payload.reply_to = { email: mail.replyTo };
+        }
+        if (mail.attachments?.length) {
+          payload.attachments = mail.attachments.map((a) => ({
+            filename: a.filename,
+            content: a.content.toString('base64'),
+            type: mimeTypeFor(a.filename),
+            content_id: a.contentId,
+            disposition: a.contentId ? 'inline' : 'attachment',
+          }));
+        }
+        const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.apiKey}`,
+          },
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) return {};
+        const body = await res.text().catch(() => '');
+        return { error: { name: `HTTP_${res.status}`, message: body || res.statusText } };
+      } catch (err) {
+        return {
+          error: {
+            name: 'SENDGRID_REQUEST_FAILED',
             message: err instanceof Error ? err.message : String(err),
           },
         };
@@ -134,6 +272,13 @@ export class MailerService {
         this.config.twilioEmailFromAddress,
         this.config.twilioEmailFromName,
       );
+      return;
+    }
+    if (this.config.mailProvider === 'sendgrid') {
+      const apiKey = this.config.sendgridApiKey;
+      const fromAddress = this.config.sendgridFromAddress;
+      if (!apiKey || !fromAddress) return; // not configured — every send method returns false
+      this.client = new SendGridEmailClient(apiKey, fromAddress, this.config.sendgridFromName);
       return;
     }
     const apiKey = this.config.resendApiKey;
@@ -464,15 +609,15 @@ function surveyLinkHtml({ needTitle, linkLabel, publicUrl }: SurveyLinkEmailInpu
 
   return `
 <!doctype html>
-<html>
-  <body style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f5f7;padding:32px 16px;">
+<html>${lightModeEmailHead({ page: '#f4f5f7', card: '#ffffff', header: PRIMARY, accent: SECONDARY_TINT })}
+  <body class="email-page" style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f4f5f7" class="email-page" style="background-color:#f4f5f7;padding:32px 16px;">
       <tr>
         <td align="center">
-          <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
+          <table role="presentation" width="480" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
             <tr>
-              <td style="background-color:${PRIMARY};padding:24px 32px;">
-                <span style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
+              <td bgcolor="${PRIMARY}" class="email-header" style="background-color:${PRIMARY};padding:24px 32px;">
+                <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
               </td>
             </tr>
             <tr>
@@ -491,7 +636,7 @@ function surveyLinkHtml({ needTitle, linkLabel, publicUrl }: SurveyLinkEmailInpu
                     </td>
                   </tr>
                 </table>
-                <table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:16px;background-color:${SECONDARY_TINT};border-radius:8px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" bgcolor="${SECONDARY_TINT}" class="email-accent" style="margin-top:16px;background-color:${SECONDARY_TINT};border-radius:8px;">
                   <tr>
                     <td style="padding:12px;">
                       <img src="cid:survey-qr-code" alt="QR code for the survey link" width="180" height="180" style="display:block;border-radius:4px;" />
@@ -542,15 +687,15 @@ function contactRequestHtml({ orgName, name, email, region, purpose }: ContactEn
 
   return `
 <!doctype html>
-<html>
-  <body style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f5f7;padding:32px 16px;">
+<html>${lightModeEmailHead({ page: '#f4f5f7', card: '#ffffff', header: '#111827' })}
+  <body class="email-page" style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f4f5f7" class="email-page" style="background-color:#f4f5f7;padding:32px 16px;">
       <tr>
         <td align="center">
-          <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
+          <table role="presentation" width="480" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
             <tr>
-              <td style="background-color:#111827;padding:24px 32px;">
-                <span style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
+              <td bgcolor="#111827" class="email-header" style="background-color:#111827;padding:24px 32px;">
+                <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
               </td>
             </tr>
             <tr>
@@ -607,15 +752,15 @@ function passwordResetHtml({ resetUrl }: PasswordResetEmailInput): string {
 
   return `
 <!doctype html>
-<html>
-  <body style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f5f7;padding:32px 16px;">
+<html>${lightModeEmailHead({ page: '#f4f5f7', card: '#ffffff', header: '#111827' })}
+  <body class="email-page" style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f4f5f7" class="email-page" style="background-color:#f4f5f7;padding:32px 16px;">
       <tr>
         <td align="center">
-          <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
+          <table role="presentation" width="480" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
             <tr>
-              <td style="background-color:#111827;padding:24px 32px;">
-                <span style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
+              <td bgcolor="#111827" class="email-header" style="background-color:#111827;padding:24px 32px;">
+                <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
               </td>
             </tr>
             <tr>
@@ -682,15 +827,15 @@ function temporaryPasswordHtml({ orgName, email, tempPassword, signInUrl }: Temp
 
   return `
 <!doctype html>
-<html>
-  <body style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f5f7;padding:32px 16px;">
+<html>${lightModeEmailHead({ page: '#f4f5f7', card: '#ffffff', header: '#111827' })}
+  <body class="email-page" style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f4f5f7" class="email-page" style="background-color:#f4f5f7;padding:32px 16px;">
       <tr>
         <td align="center">
-          <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
+          <table role="presentation" width="480" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
             <tr>
-              <td style="background-color:#111827;padding:24px 32px;">
-                <span style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
+              <td bgcolor="#111827" class="email-header" style="background-color:#111827;padding:24px 32px;">
+                <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
               </td>
             </tr>
             <tr>
@@ -769,15 +914,15 @@ function surveyReminderHtml({ needTitle, publicUrl }: SurveyReminderEmailInput):
   const PRIMARY = "#145463";
   return `
 <!doctype html>
-<html>
-  <body style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f5f7;padding:32px 16px;">
+<html>${lightModeEmailHead({ page: '#f4f5f7', card: '#ffffff', header: PRIMARY })}
+  <body class="email-page" style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f4f5f7" class="email-page" style="background-color:#f4f5f7;padding:32px 16px;">
       <tr>
         <td align="center">
-          <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
+          <table role="presentation" width="480" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
             <tr>
-              <td style="background-color:${PRIMARY};padding:24px 32px;">
-                <span style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
+              <td bgcolor="${PRIMARY}" class="email-header" style="background-color:${PRIMARY};padding:24px 32px;">
+                <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
               </td>
             </tr>
             <tr>
@@ -825,9 +970,9 @@ function backupFailureHtml(input: {
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
   return `<!doctype html>
-<html>
-  <body style="margin:0;padding:24px;background-color:#f9fafb;font-family:-apple-system,Segoe UI,Roboto,sans-serif;">
-    <table role="presentation" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:12px;border:1px solid #fecaca;">
+<html>${lightModeEmailHead({ page: '#f9fafb', card: '#ffffff', header: '#ffffff' })}
+  <body class="email-page" style="margin:0;padding:24px;background-color:#f9fafb;font-family:-apple-system,Segoe UI,Roboto,sans-serif;">
+    <table role="presentation" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:12px;border:1px solid #fecaca;">
       <tr>
         <td style="padding:24px;">
           <p style="margin:0 0 8px;font-size:18px;font-weight:700;color:#b91c1c;">

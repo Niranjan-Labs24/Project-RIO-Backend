@@ -99,7 +99,7 @@ export class ConfigService {
   get mailFrom(): string {
     return this.config.MAIL_FROM;
   }
-  get mailProvider(): 'resend' | 'twilio' {
+  get mailProvider(): 'resend' | 'twilio' | 'sendgrid' {
     return this.config.MAIL_PROVIDER;
   }
   get twilioEmailApiKeySid(): string | undefined {
@@ -113,6 +113,15 @@ export class ConfigService {
   }
   get twilioEmailFromName(): string {
     return this.config.TWILIO_EMAIL_FROM_NAME;
+  }
+  get sendgridApiKey(): string | undefined {
+    return this.config.SENDGRID_API_KEY;
+  }
+  get sendgridFromAddress(): string | undefined {
+    return this.config.SENDGRID_FROM_ADDRESS;
+  }
+  get sendgridFromName(): string {
+    return this.config.SENDGRID_FROM_NAME;
   }
   get csrfEnforce(): boolean {
     return this.config.CSRF_ENFORCE;
