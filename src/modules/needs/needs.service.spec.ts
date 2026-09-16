@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { orgContext } from '../../tenancy/org-context';
 import { NeedsService } from './needs.service';
 import type { NeedRow } from './needs.types';
@@ -16,6 +16,7 @@ function makeRow(overrides: Partial<NeedRow> = {}): NeedRow {
     source: 'manual_entry',
     referenceId: null,
     internalRefSeq: 1,
+    affectedPopulation: null,
     status: 'draft',
     domain: 'Water',
     subDomain: 'Access',
@@ -27,6 +28,11 @@ function makeRow(overrides: Partial<NeedRow> = {}): NeedRow {
     classificationError: null,
     proposedDomains: null,
     proposedReason: null,
+    gapType: null,
+    urgency: null,
+    themes: [],
+    affectedPeople: null,
+    affectedHouseholds: null,
     createdBy: 'me',
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),
@@ -56,6 +62,10 @@ function fakeTenant(opts: {
   onNeedCreate?: (data: Record<string, unknown>) => void;
   onNeedUpdate?: (data: Record<string, unknown>) => void;
   onNeedDelete?: (where: unknown) => void;
+  // RIO-AI-001: the latest need_classification AiDecision per Need, backing
+  // resolveAiConfidence. Defaults to none, i.e. "no classification has run",
+  // which is what most of these fixtures represent.
+  aiDecisions?: { needId: string; confidence: number | null }[];
 }) {
   const tx = {
     study: {
@@ -74,6 +84,7 @@ function fakeTenant(opts: {
       update: async ({ data }: { data: Record<string, unknown> }) => {
         opts.onNeedUpdate?.(data);
         if (opts.need) Object.assign(opts.need, data);
+        return opts.need ? withGeo(opts.need) : undefined;
       },
       delete: async ({ where }: { where: unknown }) => {
         opts.onNeedDelete?.(where);
@@ -89,6 +100,9 @@ function fakeTenant(opts: {
     },
     user: {
       findMany: async () => opts.users ?? [],
+    },
+    aiDecision: {
+      findMany: async () => opts.aiDecisions ?? [],
     },
   };
   return { runInOrgContext: async (fn: (tx: unknown) => unknown) => fn(tx) };
@@ -106,11 +120,41 @@ function makeService(
   tenant: ReturnType<typeof fakeTenant>,
   audit: unknown = { record: async () => {} },
   aiDecisions: unknown = fakeAiDecisions(),
+  studyConfig: unknown = { listActiveGapTypeNames: async () => [] },
 ) {
-  // geography is only consulted when a payload carries governorateIds/
-  // centerIds (see assertGeographyInStudyScope's early return) — none of
-  // these tests do, so an empty stub is enough.
-  return new NeedsService(tenant as never, audit as never, {} as never, aiDecisions as never);
+  // these tests do, so an empty stub is enough. Same for studyConfig: an
+  // empty active list means assertValidGapType() never rejects, matching
+  // most tests' use of arbitrary gapType values — the setGapType describe
+  // block below overrides it with a real active list.
+  //
+  // methodologyConfig backs resolveAiConfidence's banding. The defaults are
+  // named explicitly rather than imported so a future change to the shipped
+  // defaults can't silently move what these tests assert against.
+  const methodologyConfig = {
+    getRaw: async () => ({
+      aiClassificationSettings: { lowConfidenceThreshold: 0.7, veryLowConfidenceThreshold: 0.4 },
+    }),
+  };
+  // RIO-AI-003's auto-suggest is fire-and-forget on create/update. These tests
+  // assert on the Need write itself, so the stub only has to not reject —
+  // NeedSummaryService's own behaviour is covered in need-summary.service.spec.
+  const needSummaries = {
+    maybeGenerateForNeed: async () => null,
+    markStaleForNeed: async () => undefined,
+  };
+  // RIO-FR-003's theme extraction is fire-and-forget on the same paths, and
+  // has its own spec — the stub only has to resolve.
+  const needThemes = { maybeExtractForNeed: async () => null };
+  return new NeedsService(
+    tenant as never,
+    audit as never,
+    {} as never,
+    aiDecisions as never,
+    studyConfig as never,
+    methodologyConfig as never,
+    needThemes as never,
+    needSummaries as never,
+  );
 }
 
 const ctx = { requestId: 'r', orgId: 'o1', actorId: 'me' };
@@ -171,6 +215,33 @@ describe('NeedsService', () => {
       expect(classified).toEqual([need.id]);
     });
 
+    // RIO-RPT-001 Option A: the need-entry form's "roughly how many people does
+    // this need affect?" answer. This is the ONLY place the figure can enter the
+    // system, so a create path that silently dropped it would leave the
+    // Top-Priority column empty with no way to tell why.
+    it('stores the affected-population estimate when the form supplies one', async () => {
+      let createdData: Record<string, unknown> | undefined;
+      const svc = makeService(fakeTenant({ study: { id: 'study-1' }, onNeedCreate: (d) => { createdData = d; } }));
+      const need = await orgContext.run(ctx, () =>
+        svc.create('study-1', { title: 'T', statement: 'S', village: ['V'], affectedPopulation: 450 }),
+      );
+      expect(createdData?.affectedPopulation).toBe(450);
+      expect(need.affectedPopulation).toBe(450);
+    });
+
+    // Unanswered must reach the database as NULL, not 0 — the report says
+    // different things about the two, and 0 would assert that a recorded need
+    // affects nobody.
+    it('leaves the affected population null when the question was not answered', async () => {
+      let createdData: Record<string, unknown> | undefined;
+      const svc = makeService(fakeTenant({ study: { id: 'study-1' }, onNeedCreate: (d) => { createdData = d; } }));
+      const need = await orgContext.run(ctx, () =>
+        svc.create('study-1', { title: 'T', statement: 'S', village: ['V'] }),
+      );
+      expect(createdData?.affectedPopulation).toBeNull();
+      expect(need.affectedPopulation).toBeNull();
+    });
+
     it('stores referenceId when provided', async () => {
       let createdData: Record<string, unknown> | undefined;
       const svc = makeService(fakeTenant({ study: { id: 'study-1' }, onNeedCreate: (d) => { createdData = d; } }));
@@ -201,6 +272,61 @@ describe('NeedsService', () => {
       const svc = makeService(fakeTenant({ need: row, users: [{ id: 'me', name: 'Me' }] }));
       const need = await orgContext.run(ctx, () => svc.getById('need-1'));
       expect(need).toMatchObject({ domain: 'Water', subDomain: 'Access', aiSuggestedDomain: 'Health', aiSuggestedSubDomain: 'Nutrition' });
+    });
+  });
+
+  // RIO-AI-001 — the Needs list is where a reviewer decides which Need to
+  // open, so the confidence has to be visible (and filterable) there rather
+  // than only inside each Need.
+  describe('AI confidence banding', () => {
+    it('reports no band at all when no classification has run', async () => {
+      // Distinct from 'not_reported': nothing has been suggested yet, so
+      // there is nothing to flag.
+      const svc = makeService(fakeTenant({ need: makeRow(), users: [{ id: 'me', name: 'Me' }] }));
+      const need = await orgContext.run(ctx, () => svc.getById('need-1'));
+      expect(need.aiConfidence).toBeNull();
+      expect(need.aiConfidenceBand).toBeNull();
+    });
+
+    it('bands a confident classification as standard', async () => {
+      const svc = makeService(
+        fakeTenant({ need: makeRow(), users: [{ id: 'me', name: 'Me' }], aiDecisions: [{ needId: 'need-1', confidence: 0.91 }] }),
+      );
+      const need = await orgContext.run(ctx, () => svc.getById('need-1'));
+      expect(need).toMatchObject({ aiConfidence: 0.91, aiConfidenceBand: 'standard' });
+    });
+
+    it('bands a below-threshold classification as low', async () => {
+      const svc = makeService(
+        fakeTenant({ need: makeRow(), users: [{ id: 'me', name: 'Me' }], aiDecisions: [{ needId: 'need-1', confidence: 0.55 }] }),
+      );
+      const need = await orgContext.run(ctx, () => svc.getById('need-1'));
+      expect(need).toMatchObject({ aiConfidence: 0.55, aiConfidenceBand: 'low' });
+    });
+
+    it('bands an unreported confidence as not_reported rather than 0', async () => {
+      const svc = makeService(
+        fakeTenant({ need: makeRow(), users: [{ id: 'me', name: 'Me' }], aiDecisions: [{ needId: 'need-1', confidence: null }] }),
+      );
+      const need = await orgContext.run(ctx, () => svc.getById('need-1'));
+      expect(need).toMatchObject({ aiConfidence: null, aiConfidenceBand: 'not_reported' });
+    });
+
+    it('uses the newest decision when a Need has been re-classified', async () => {
+      // Rows arrive oldest-first; the last write per Need must win, otherwise
+      // a Retry would keep showing the confidence of the attempt it replaced.
+      const svc = makeService(
+        fakeTenant({
+          need: makeRow(),
+          users: [{ id: 'me', name: 'Me' }],
+          aiDecisions: [
+            { needId: 'need-1', confidence: 0.2 },
+            { needId: 'need-1', confidence: 0.88 },
+          ],
+        }),
+      );
+      const need = await orgContext.run(ctx, () => svc.getById('need-1'));
+      expect(need).toMatchObject({ aiConfidence: 0.88, aiConfidenceBand: 'standard' });
     });
   });
 
@@ -249,6 +375,39 @@ describe('NeedsService', () => {
       const svc = makeService(fakeTenant({ need: current, onNeedUpdate: (d) => { updateData = d; } }));
       await orgContext.run(ctx, () => svc.update('need-1', { referenceId: null }));
       expect(updateData).toEqual({ referenceId: null });
+    });
+
+    // Revising a first guess must be possible — and must show up in the audit
+    // trail under a label a reader recognises, since this figure ends up on a
+    // funding-facing report.
+    it('patches the affected-population estimate and audits it by name', async () => {
+      let updateData: Record<string, unknown> | undefined;
+      const recorded: { changes?: { field: string; before: unknown; after: unknown }[] }[] = [];
+      const audit = { record: async (i: unknown) => { recorded.push(i as never); } };
+      const current = makeRow({ affectedPopulation: 200 });
+      const svc = makeService(
+        fakeTenant({ need: current, onNeedUpdate: (d) => { updateData = d; }, users: [{ id: 'me', name: 'Me' }] }),
+        audit,
+      );
+
+      const updated = await orgContext.run(ctx, () => svc.update('need-1', { affectedPopulation: 450 }));
+
+      expect(updateData).toEqual({ affectedPopulation: 450 });
+      expect(updated.affectedPopulation).toBe(450);
+      expect(recorded[0]?.changes).toEqual([
+        { field: 'Affected Population', before: 200, after: 450 },
+      ]);
+    });
+
+    // An estimate that turns out to be unfounded has to be removable — back to
+    // "not known", which the report prints as a dash, NOT to 0.
+    it('allows clearing the affected-population estimate back to null', async () => {
+      let updateData: Record<string, unknown> | undefined;
+      const current = makeRow({ affectedPopulation: 200 });
+      const svc = makeService(fakeTenant({ need: current, onNeedUpdate: (d) => { updateData = d; } }));
+      const updated = await orgContext.run(ctx, () => svc.update('need-1', { affectedPopulation: null }));
+      expect(updateData).toEqual({ affectedPopulation: null });
+      expect(updated.affectedPopulation).toBeNull();
     });
 
     it('does not record an audit event when the patch changes nothing', async () => {
@@ -301,5 +460,37 @@ describe('NeedsService', () => {
         expect(deleted).toBe(false);
       },
     );
+  });
+
+  // Gap Types (client correction 2026-08-27, superseding RIO-FR-005 Q12's
+  // "five fixed values, final") — validated against GapTypeOption's active
+  // names, same pattern as StudiesService.assertValidStudyType.
+  describe('setGapType', () => {
+    const activeGapTypes = { listActiveGapTypeNames: async () => ['acute', 'chronic', 'structural', 'seasonal', 'equity'] };
+
+    it('accepts a configured gap type', async () => {
+      const svc = makeService(fakeTenant({ need: makeRow() }), undefined, undefined, activeGapTypes);
+      const result = await orgContext.run(ctx, () => svc.setGapType('need-1', 'acute'));
+      expect(result.gapType).toBe('acute');
+    });
+
+    it('rejects a gap type that is not in the configured active list', async () => {
+      const svc = makeService(fakeTenant({ need: makeRow() }), undefined, undefined, activeGapTypes);
+      await expect(
+        orgContext.run(ctx, () => svc.setGapType('need-1', 'totally-made-up')),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('always accepts null (clearing the gap type)', async () => {
+      const svc = makeService(fakeTenant({ need: makeRow({ gapType: 'acute' }) }), undefined, undefined, activeGapTypes);
+      const result = await orgContext.run(ctx, () => svc.setGapType('need-1', null));
+      expect(result.gapType).toBeNull();
+    });
+
+    it('accepts anything when the active list is empty (nothing configured yet)', async () => {
+      const svc = makeService(fakeTenant({ need: makeRow() }));
+      const result = await orgContext.run(ctx, () => svc.setGapType('need-1', 'anything'));
+      expect(result.gapType).toBe('anything');
+    });
   });
 });

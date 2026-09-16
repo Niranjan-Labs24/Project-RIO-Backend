@@ -505,9 +505,16 @@ export class UsersService {
     return ROLE_MATRIX.find((r) => r.id === roleId)?.name ?? roleId;
   }
 
+  // Platform-seeded-only roles — client-confirmed both System Admin and
+  // System Reviewer stay provisioned exclusively via prisma/seed.ts, never
+  // through this (or any) normal team-management flow. Without this block
+  // any crossEntity caller (a System Admin) could mint additional System
+  // Reviewer/System Admin accounts here, defeating "platform-seeded".
+  private static readonly PLATFORM_SEEDED_ONLY_ROLE_KEYS = new Set(['system_admin', 'system_reviewer']);
+
   private validateRole(roleId: string): RoleDef {
     const role = ROLE_MATRIX.find((r) => r.id === roleId);
-    if (!role || role.key === 'citizen_guest') {
+    if (!role || role.key === 'citizen_guest' || UsersService.PLATFORM_SEEDED_ONLY_ROLE_KEYS.has(role.key)) {
       throw new BadRequestException({ error: { code: 'INVALID_ROLE', message: 'roleId is not a valid assignable role' } });
     }
     // Privilege-escalation guard: only a crossEntity caller (e.g. system_admin)

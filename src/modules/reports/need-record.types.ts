@@ -200,6 +200,31 @@ export interface NeedRecord {
   supportingText: null;
   mergedWith: null;
 
+  /**
+   * People this need affects — the client's Top-Priority column.
+   *
+   * Sourced from `Need.affectedPopulation`: the estimate the field researcher
+   * gives when recording the need, in answer to the need-entry question
+   * "Roughly how many people does this need affect?" (client-confirmed Option
+   * A, 24 Aug 2026). Reached via `Survey.needId` — see
+   * `Rpt01ReferenceData.sourceNeedAffectedPopulation`.
+   *
+   * NEVER `Study.population`. That is one number for the whole study area (it
+   * sizes the sample); writing it here would state that every need affects the
+   * entire population, which is a different and false claim.
+   *
+   * Null in two cases, both of which print "—" with the reason stated beneath
+   * the table: the question wasn't answered, and every Need recorded before it
+   * was asked. The estimate cannot be reconstructed after the fact, so old
+   * needs stay blank unless someone revisits them.
+   *
+   * Granularity, stated because the column cannot state it itself: a survey's
+   * records are indicator-level breakdowns of ONE source need, so every record
+   * from a given survey carries that need's single figure. It is the need's
+   * reach, not each indicator's.
+   */
+  affectedPopulation: number | null;
+
   // ── Provenance (Audit Trail: source_ref always present) ──
   unitGeo: UnitGeo;
   sourceRef: SourceRef;

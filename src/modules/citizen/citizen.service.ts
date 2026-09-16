@@ -8,6 +8,10 @@ import { SmsService } from '../../sms/sms.service';
 import { AuditService } from '../audit/audit.service';
 import { SurveysService } from '../surveys/surveys.service';
 import { computeBlindIndex, encryptPii } from './citizen-pii.crypto';
+import { SurveySessionsService } from '../survey-sessions/survey-sessions.service';
+import { ConsentService } from '../consent/consent.service';
+import { resolveConsentLocale } from '../consent/consent.types';
+import type { RecordEventPayload, RecordEventResult, StartSessionResult } from '../survey-sessions/survey-sessions.types';
 import type {
   CheckDuplicatePayload, CheckDuplicateResult, CitizenOtpChallengeRow, PublicSurveyLinkRow, RequestOtpPayload,
   RequestOtpResult, ResolvedSurvey, SubmitResponsePayload, SubmitResponseResult, VerifyOtpPayload, VerifyOtpResult,
@@ -26,6 +30,12 @@ export class CitizenService {
     private readonly sms: SmsService,
     private readonly surveys: SurveysService,
     private readonly audit: AuditService,
+    // Abandonment tracking (RPT10 Q-2). Best-effort throughout — every call
+    // into it is allowed to fail without affecting the citizen flow.
+    private readonly sessions: SurveySessionsService,
+    // RIO-NFR-002 — resolves the live citizen-consent notice so a submission
+    // can be pinned to the exact version its respondent read.
+    private readonly consent: ConsentService,
   ) {}
 
   // The published Survey Builder survey is the only source of questions for
@@ -99,6 +109,26 @@ export class CitizenService {
     }
   }
 
+  // ── Abandonment tracking (client answer, 24 Aug — RPT10 Q-2) ──
+  //
+  // "Partially completed surveys are not saved as data records … the system
+  // should track abandonment … at the session/event level." Both methods
+  // below write session metadata only; neither can persist an answer, and a
+  // response still becomes a data record exclusively through submitResponse.
+  async startSession(token: string): Promise<StartSessionResult | null> {
+    const link = await this.findActiveLinkOrThrow(token);
+    return this.sessions.start(link);
+  }
+
+  async recordSessionEvent(
+    token: string,
+    sessionId: string,
+    payload: RecordEventPayload,
+  ): Promise<RecordEventResult> {
+    const link = await this.findActiveLinkOrThrow(token);
+    return this.sessions.recordEvent(link, sessionId, payload);
+  }
+
   // Pre-flight check, called right after the participant enters their
   // contact details and before any OTP challenge is created — lets the
   // frontend reject an already-submitted contact without ever writing an
@@ -154,6 +184,16 @@ export class CitizenService {
     // challenge + throwing OTP_DELIVERY_FAILED), which stranded a citizen
     // respondent with no way to ever get a code whenever SMS wasn't
     // configured/working.
+    // Give the session the contact details it needs to be remindable —
+    // the same two values the challenge above already holds, and the only
+    // reason SurveySession carries them at all.
+    if (payload.sessionId) {
+      await this.sessions.linkChallenge(link.orgId, payload.sessionId, {
+        id: challenge.id,
+        contact,
+        mobile,
+      });
+    }
     const codeTexted = await this.sms.sendOtpCode(payload.mobile, code);
     // Dev only: surface the code in the response itself (below) so
     // local/test runs aren't blocked on a real phone when delivery fails —
@@ -200,6 +240,9 @@ export class CitizenService {
     if (!matches) {
       throw new BadRequestException({ error: { code: 'OTP_INCORRECT', message: 'Incorrect verification code.' } });
     }
+    if (payload.sessionId) {
+      await this.sessions.recordEvent(link, payload.sessionId, { step: 'OTP_VERIFIED' });
+    }
     return { verified: true };
   }
 
@@ -225,6 +268,38 @@ export class CitizenService {
         error: { code: 'OTP_EXPIRED', message: 'This verification code has expired.' },
       });
     }
+
+    // RIO-NFR-002 — resolved before anything is written, and before the OTP
+    // challenge is consumed: a submission whose consent can't be pinned to
+    // the live notice must fail without burning the respondent's verification
+    // (they retry after reloading, rather than needing a fresh code).
+    //
+    // Throws NO_ACTIVE_CONSENT_POLICY (404) when no citizen notice is
+    // published at all. That is deliberately loud: collecting personal data
+    // with no consent policy configured is exactly what RIO-NFR-002 forbids,
+    // so it fails at the point of misconfiguration instead of quietly
+    // recording an unconsented response.
+    const activeConsent = await this.consent.getActiveCitizenPolicy();
+    if (activeConsent.version !== payload.consent.version) {
+      // The citizen's page loaded the notice once and they answered over some
+      // minutes; if a System Admin published a new version in that window,
+      // this submission agreed to superseded wording. Same reasoning — and
+      // the same error code — as signup's stale-consent check.
+      throw new BadRequestException({
+        error: {
+          code: 'CONSENT_VERSION_STALE',
+          message:
+            'The consent notice was updated while you were answering. Please reload the page, review it, and submit again.',
+          details: {
+            submittedVersion: payload.consent.version,
+            currentVersion: activeConsent.version,
+          },
+        },
+      });
+    }
+    // Resolved, not echoed: asking for Arabic against an untranslated notice
+    // yields the English text, and the record has to say so.
+    const consentLocale = resolveConsentLocale(activeConsent, payload.consent.locale);
 
     const row = await this.tenant.runAsOrg(link.orgId, async (tx) => {
       // Atomic claim, before any other work — closes a race the plain
@@ -336,7 +411,9 @@ export class CitizenService {
           centerIds: need?.needCenters.map((c) => c.centerId) ?? [],
           village: need?.village ?? [],
           answers: payload.answers as unknown as Prisma.InputJsonValue,
-          consentVersion: payload.consentVersion ?? null,
+          consentPolicyVersion: activeConsent.version,
+          consentPolicyLocale: consentLocale,
+          consentedAt: new Date(),
         },
       });
       // GAP-11: write the audit event on this SAME transaction, right after
@@ -371,7 +448,11 @@ export class CitizenService {
           { field: 'Survey response', before: null, after: 'submitted' },
           { field: 'Answers submitted', before: null, after: Array.isArray(payload.answers) ? payload.answers.length : null },
           { field: 'Need', before: null, after: need?.title ?? link.needId },
+          // The consent version is safe to log where the answers are not: it
+          // names a published policy, not anything about the respondent.
+          { field: 'Consent version', before: null, after: activeConsent.version },
         ],
+        metadata: { consentPolicyVersion: activeConsent.version, consentPolicyLocale: consentLocale },
       });
       // GAP-04: enqueue scoring durably, on the SAME transaction as the
       // response — via graphile-worker's add_job on the app role (cnap_app;
@@ -402,6 +483,20 @@ export class CitizenService {
       return created;
     });
 
+    // Close the abandonment session against the response it produced —
+    // after the transaction, so a session is only ever SUBMITTED when a
+    // SurveyResponse row exists to point at. A submission made without a
+    // session (tracking failed, or an older client) simply has none; RPT10
+    // reports the tracking-coverage gap rather than assuming one.
+    if (payload.sessionId) {
+      await this.sessions.markSubmitted(link.orgId, payload.sessionId, row.id);
+    }
+
+    // Scoring/roll-up runs via the durable GAP-04 job (enqueued above, on the
+    // same transaction as the response) rather than a detached in-process
+    // continuation — see ScoreResponseTask, which is exactly this logic
+    // (scoringEngine.scoreResponse + rollupService.calculateRollups) made
+    // retryable and crash-safe.
     return { id: row.id, submittedAt: row.submittedAt.toISOString() };
   }
 

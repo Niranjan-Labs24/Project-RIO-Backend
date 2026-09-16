@@ -54,6 +54,11 @@ export interface CheckDuplicateResult {
 export interface RequestOtpPayload {
   contact: string;
   mobile: string;
+  /** Abandonment tracking (RPT10 Q-2) — the session the citizen page opened
+   *  on load, echoed back so this step can be attributed to that sitting.
+   *  Optional throughout: tracking is best-effort and must never be able to
+   *  block a submission (see SurveySessionsService). */
+  sessionId?: string;
 }
 
 export interface RequestOtpResult {
@@ -70,6 +75,11 @@ export interface RequestOtpResult {
 export interface VerifyOtpPayload {
   challengeId: string;
   code: string;
+  /** Abandonment tracking (RPT10 Q-2) — the session the citizen page opened
+   *  on load, echoed back so this step can be attributed to that sitting.
+   *  Optional throughout: tracking is best-effort and must never be able to
+   *  block a submission (see SurveySessionsService). */
+  sessionId?: string;
 }
 
 export interface VerifyOtpResult {
@@ -86,9 +96,15 @@ export interface SubmitResponsePayload {
   gender?: Gender;
   ageBracket: AgeBracket;
   answers: Record<string, unknown>;
-  /** RIO-NFR-002: version string of the consent copy the citizen accepted,
-   * stamped on the SurveyResponse for audit trail. */
-  consentVersion?: string;
+  /** Abandonment tracking (RPT10 Q-2) — the session the citizen page opened
+   *  on load, echoed back so this step can be attributed to that sitting.
+   *  Optional throughout: tracking is best-effort and must never be able to
+   *  block a submission (see SurveySessionsService). */
+  sessionId?: string;
+  /** RIO-NFR-002 — the citizen-consent version accepted, and the language it
+   *  was read in. Verified against the live policy before anything is written
+   *  (see CitizenService.submitResponse). */
+  consent: { version: string; locale: 'en' | 'ar' };
 }
 
 export interface SubmitResponseResult {

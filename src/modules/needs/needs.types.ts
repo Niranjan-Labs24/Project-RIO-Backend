@@ -1,3 +1,5 @@
+import type { ConfidenceBand } from '../ai-decisions/confidence-band';
+
 export type NeedStatus =
   | 'draft'
   | 'pending_ai_classification'
@@ -28,6 +30,7 @@ export interface NeedRow {
   // reference — see NeedsService.formatInternalReferenceId for the
   // human-legible "NEED-000123" form exposed on `Need` below.
   internalRefSeq: number;
+  affectedPopulation: number | null;
   status: NeedStatus;
   domain: string | null;
   subDomain: string | null;
@@ -48,6 +51,14 @@ export interface NeedRow {
   // Need.proposedDomains. Cleared once approved/rejected.
   proposedDomains: unknown;
   proposedReason: string | null;
+  gapType: string | null;
+  // RIO-FR-003 AC 1 — the human-assigned urgency level, and AC 6's extracted
+  // themes. Urgency is null until someone sets it; themes are [] until
+  // extraction has run.
+  urgency: string | null;
+  themes: string[];
+  affectedPeople: number | null;
+  affectedHouseholds: number | null;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
@@ -56,6 +67,11 @@ export interface NeedRow {
 export interface Need {
   id: string;
   studyId: string;
+  // RIO-RBAC-002 (client-confirmed, 2026-08-27 round) — same reasoning as
+  // Study.orgId: System Admin acting on a Need it's viewing (e.g. creating
+  // a Public Survey Link) needs to know which org to send as
+  // X-Act-As-Org. Always present.
+  orgId: string;
   title: string;
   statement: string;
   village: string[];
@@ -73,6 +89,12 @@ export interface Need {
   // RIO-DATA-003: system-generated, never user-supplied or user-editable —
   // "NEED-000123" form, see NeedsService.formatInternalReferenceId.
   internalReferenceId: string;
+  // Roughly how many people this Need affects — the recorder's own estimate,
+  // asked for on the need-entry form (client-confirmed Option A). Null when
+  // it wasn't answered, and on every Need recorded before the question
+  // existed; the Top-Priority Report prints a dash and says why rather than
+  // substituting the study-area population. See schema.prisma's comment.
+  affectedPopulation: number | null;
   status: NeedStatus;
   // No longer set at creation — AI Classification runs automatically right
   // after a Need is saved (see NeedsService.create /
@@ -97,6 +119,18 @@ export interface Need {
   // predicted. See AiDecisionsService.classifyAutomatically/review.
   aiSuggestedDomain: string | null;
   aiSuggestedSubDomain: string | null;
+  // RIO-AI-001 — the latest classification's self-reported confidence and its
+  // resolved band, surfaced on the Need itself so the Needs list can show and
+  // filter on it. Without this a reviewer had to open every Need one at a time
+  // to discover which ones the AI was unsure about, which is the opposite of
+  // "flagged for closer reviewer attention".
+  //
+  // `null` band means no classification has run yet (a draft /
+  // pending_ai_classification / ai_classification_failed Need) — distinct from
+  // the 'not_reported' band, which means one DID run and returned no
+  // confidence.
+  aiConfidence: number | null;
+  aiConfidenceBand: ConfidenceBand | null;
   classifiedAt: string | null;
   classificationError: string | null;
   // A staged (not-yet-decided) Override, visible to anyone reviewing this
@@ -105,6 +139,23 @@ export interface Need {
   // Need.proposedDomains. Cleared (both null) once approved/rejected.
   proposedDomains: Array<{ domain: string; subDomain: string }> | null;
   proposedReason: string | null;
+  // RIO-FR-005 (Q12) — one of GAP_TYPES (see needs.contract.ts), or null.
+  // Analyst-entered, never auto-calculated (see schema.prisma's comment on
+  // Need.gapType for why the Reports module's separate heuristic isn't
+  // reused here).
+  gapType: string | null;
+  // RIO-FR-003 AC 1 — the human-assigned urgency level, and AC 6's extracted
+  // themes. Urgency is null until someone sets it; themes are [] until
+  // extraction has run.
+  urgency: string | null;
+  themes: string[];
+  // RIO-FR-005 (Round 4, client-confirmed 2026-08-24) — "Roughly how many
+  // people/households does this need affect?", entered on the need-entry
+  // form. This is the PRIMARY Affected Population value — see
+  // schema.prisma's comment on Need.affectedPeople for the GASTAT
+  // cross-check that's still blocked pending the client's actual dataset.
+  affectedPeople: number | null;
+  affectedHouseholds: number | null;
   createdBy: string;
   // Resolved display name for Entered By — null if the creating user has
   // since been removed (e.g. no self-org lookup for a deleted account).
@@ -121,6 +172,9 @@ export interface CreateNeedPayload {
   governorateIds?: string[];
   centerIds?: string[];
   referenceId?: string;
+  affectedPopulation?: number;
+  affectedPeople?: number;
+  affectedHouseholds?: number;
 }
 
 export interface UpdateNeedPayload {
@@ -130,6 +184,10 @@ export interface UpdateNeedPayload {
   governorateIds?: string[];
   centerIds?: string[];
   referenceId?: string | null;
+  // Explicit null clears the estimate; omitted leaves it untouched.
+  affectedPopulation?: number | null;
+  affectedPeople?: number | null;
+  affectedHouseholds?: number | null;
 }
 
 // A Need is editable up through classification being attempted, but NOT

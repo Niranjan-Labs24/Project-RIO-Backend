@@ -6,6 +6,9 @@ import { validateEnv } from './env.schema';
 // exactly 32 bytes). Distinct fill bytes so the two can never collide.
 const REAL_ENCRYPTION_KEY = Buffer.alloc(32, 11).toString('base64');
 const REAL_BLIND_INDEX_KEY = Buffer.alloc(32, 12).toString('base64');
+// GAP-02: audit checkpoint chain-signing key — same base64/32-byte,
+// fail-closed-in-production convention as the two PII keys above.
+const REAL_AUDIT_SIGNING_KEY = Buffer.alloc(32, 13).toString('base64');
 
 const valid = {
   NODE_ENV: 'development',
@@ -17,6 +20,10 @@ const valid = {
   REDIS_URL: 'redis://localhost:6379',
   ENCRYPTION_KEY: REAL_ENCRYPTION_KEY,
   PII_BLIND_INDEX_KEY: REAL_BLIND_INDEX_KEY,
+  AUDIT_SIGNING_KEY: REAL_AUDIT_SIGNING_KEY,
+  // RIO-NFR-001: production fails closed without verified DB TLS.
+  DB_SSL: 'true',
+  DB_SSL_REJECT_UNAUTHORIZED: 'true',
   LOG_LEVEL: 'info',
 };
 

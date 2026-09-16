@@ -2,11 +2,13 @@ import type {
   CollectiveDashboardData,
   CollectiveReportContent,
   CombinedReportContent,
+  DataQualityReportContent,
   ExecutiveReportContent,
   IndividualSurveyReportContent,
   RegionReportContent,
   SectorReportContent,
   SharingStatusContent,
+  TopPriorityReportContent,
   VillageReportContent,
 } from "../report-content.types";
 
@@ -56,6 +58,12 @@ export abstract class ReportDataProvider {
   abstract getSectorReport(query: ScopedReportQuery): Promise<SectorReportContent>;
   abstract getRegionReport(query: ScopedReportQuery): Promise<RegionReportContent>;
   abstract getExecutiveReport(query: ScopedReportQuery): Promise<ExecutiveReportContent>;
+
+  // RPT03/RPT09 Top-Priority and RPT10 Data-Quality. Both are projections of
+  // the same unified pipeline RPT01 runs, which is what makes their figures
+  // reconcile with it and with each other rather than merely resemble it.
+  abstract getTopPriorityReport(query: ScopedReportQuery): Promise<TopPriorityReportContent>;
+  abstract getDataQualityReport(query: ScopedReportQuery): Promise<DataQualityReportContent>;
 
   // RPT02 full content (KPIs + executive-summary narrative).
   abstract getCollectiveReport(query: ScopedReportQuery): Promise<CollectiveReportContent>;

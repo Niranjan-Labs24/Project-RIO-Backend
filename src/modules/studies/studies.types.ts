@@ -17,6 +17,8 @@ export interface StudyRow {
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;
+  studyType: string | null;
+  targetSector: string | null;
 }
 
 // A Study is a pure container — no status/domain/subDomain of its own.
@@ -51,7 +53,16 @@ export interface Study {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  studyType: string | null;
+  targetSector: string | null;
   orgName?: string;
+  // RIO-RBAC-002 (client-confirmed, 2026-08-27 round) — System Admin is
+  // platform-wide, so acting on a Study it's viewing (e.g. adding a Need)
+  // needs to know which org to send as X-Act-As-Org; Study never exposed
+  // this before since a non-crossEntity caller only ever sees their own
+  // org's Studies anyway, making it redundant for them. Always present —
+  // harmless for those callers, load-bearing for crossEntity ones.
+  orgId: string;
   surveysCount?: number;
 }
 
@@ -65,6 +76,10 @@ export interface CreateStudyPayload {
   methodologyVersionId: string;
   population: number;
   marginOfError?: number;
+  // RIO-FR-012 (Q3/Q4) — validated against StudyTypeOption/TargetSectorOption's
+  // active names at the API layer, not an FK (see study-config.service.ts).
+  studyType?: string;
+  targetSector?: string;
 }
 
 export interface UpdateStudyPayload {
@@ -76,6 +91,8 @@ export interface UpdateStudyPayload {
   // but never nullable — once set at creation, a Study can no longer be
   // left without a methodology version.
   methodologyVersionId?: string;
+  studyType?: string;
+  targetSector?: string;
 }
 
 export interface ListStudiesQuery {

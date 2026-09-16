@@ -37,6 +37,16 @@ describe('GAP-04 score_response durable task (drain + idempotent)', () => {
   function fakeAudit(): AuditService {
     return { record: async () => undefined, recordWithTx: async () => undefined } as unknown as AuditService;
   }
+  // ScoreRollupService reads confidenceFlagSettings once per calculateRollups
+  // call, outside the tx — same defaults as a fresh MethodologyConfig row
+  // (see methodology-config.service.ts).
+  function fakeMethodologyConfig() {
+    return {
+      getRaw: async () => ({
+        confidenceFlagSettings: { dontKnowRatioThreshold: 0.2, minRespondentsForStandardConfidence: 10 },
+      }),
+    } as never;
+  }
 
   beforeAll(async () => {
     owner = ownerClient();
@@ -50,7 +60,7 @@ describe('GAP-04 score_response durable task (drain + idempotent)', () => {
     const tenant = new TenantPrismaService(app as never, supervisor as never);
     const scoring = new DeterministicScoringService(tenant);
     const priorityV2 = new PriorityV2Service(tenant);
-    const rollup = new ScoreRollupService(tenant, fakeAudit(), scoring, priorityV2);
+    const rollup = new ScoreRollupService(tenant, fakeAudit(), scoring, priorityV2, fakeMethodologyConfig());
     const task = new ScoreResponseTask(tenant, scoring, rollup);
 
     runner = new JobsWorkerService(fakeConfig(), task);

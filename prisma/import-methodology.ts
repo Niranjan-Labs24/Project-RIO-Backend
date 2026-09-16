@@ -395,9 +395,10 @@ async function main(): Promise<void> {
 
     const existing = await prisma.question.findUnique({
       where: {
-        methodologyVersionId_questionId: {
+        methodologyVersionId_questionId_version: {
           methodologyVersionId: mv.id,
           questionId: q.questionId,
+          version: 1,
         },
       },
     });

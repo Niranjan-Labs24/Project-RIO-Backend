@@ -160,6 +160,39 @@ export class MailerService {
   }
 
   /**
+   * Completion reminder for a survey a citizen started and did not submit
+   * (SurveyReminderService). Same soft-fail contract as every other send
+   * here — a missed reminder is a missed nudge, never a failed sweep.
+   *
+   * The wording deliberately does NOT say "continue where you left off": no
+   * partial answers are stored (client answer, 24 Aug — a survey becomes a
+   * data record only on formal submission), so the respondent starts the
+   * question set again and the message has to be honest about that.
+   */
+  async sendSurveyReminder(email: string, input: SurveyReminderEmailInput): Promise<boolean> {
+    if (!this.client) return false;
+    try {
+      const { error } = await this.client.emails.send({
+        from: this.config.mailFrom,
+        to: email,
+        subject: `Reminder: your survey response for ${input.needTitle} is unfinished`,
+        text: surveyReminderText(input),
+        html: surveyReminderHtml(input),
+      });
+      if (error) {
+        this.logger.error(`Failed to email survey reminder to ${redactEmail(email)}: ${error.name} ${error.message}`);
+        this.recordSendFailure('survey_reminder', redactEmail(email), { providerError: `${error.name}: ${error.message}` });
+        return false;
+      }
+      return true;
+    } catch (err) {
+      this.logger.error(`Failed to email survey reminder to ${redactEmail(email)}`, err as Error);
+      this.recordSendFailure('survey_reminder', redactEmail(email), {}, err);
+      return false;
+    }
+  }
+
+  /**
    * RIO-NFR-016 — one persisted row per *give-up*, not per attempt: the
    * retry inside sendTemporaryPassword is normal transient behaviour, and
    * logging both tries would double every failure on the System Logs
@@ -493,4 +526,76 @@ function temporaryPasswordHtml({ orgName, email, tempPassword, signInUrl }: Temp
   </body>
 </html>`;
 
+}
+
+interface SurveyReminderEmailInput {
+  needTitle: string;
+  publicUrl: string;
+}
+
+function surveyReminderText({ needTitle, publicUrl }: SurveyReminderEmailInput): string {
+  return (
+    `You started the survey for "${needTitle}" but did not finish it.
+
+` +
+    `Open the survey again: ${publicUrl}
+
+` +
+    `Your earlier answers were not saved, so the questions will start from the ` +
+    `beginning. A response only counts once it is submitted.
+
+` +
+    `If you would rather not take part, no action is needed — you will not be reminded again after this.`
+  );
+}
+
+function surveyReminderHtml({ needTitle, publicUrl }: SurveyReminderEmailInput): string {
+  const esc = (value: string): string =>
+    value
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  // Same brand colors as surveyLinkHtml — see its comment for why these are
+  // literal hex rather than the design tokens they come from.
+  const PRIMARY = "#145463";
+  return `
+<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f5f7;padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
+            <tr>
+              <td style="background-color:${PRIMARY};padding:24px 32px;">
+                <span style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px;">
+                <h1 style="margin:0 0 12px;font-size:20px;color:#111827;">${esc(needTitle)}</h1>
+                <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#4b5563;">
+                  You started this survey but did not finish it. Your earlier answers
+                  were not saved, so the questions will start from the beginning &mdash;
+                  a response only counts once it is submitted.
+                </p>
+                <table role="presentation" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+                  <tr>
+                    <td style="border-radius:8px;background-color:${PRIMARY};">
+                      <a href="${esc(publicUrl)}" style="display:inline-block;padding:12px 24px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">
+                        Finish the survey
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:0;font-size:12px;line-height:1.6;color:#6b7280;">
+                  If you would rather not take part, no action is needed.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
 }

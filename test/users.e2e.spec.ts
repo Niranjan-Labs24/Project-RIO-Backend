@@ -99,11 +99,27 @@ describe('Users (e2e)', () => {
     expect(res.body.code).toBe('USER_NOT_FOUND');
   });
 
-  it('ngo_admin cannot delete a crossEntity system account sharing its org (403)', async () => {
-    const sys = await findUser(adminToken, 'sysadmin@platform.local');
-    expect(sys).toBeDefined(); // seeded into the Demo NGO org, visible to ngo_admin via RLS
+  it('ngo_admin cannot delete a crossEntity account sharing its org (403)', async () => {
+    // RIO-RBAC-002 (client-confirmed, 2026-08-27 round): System Admin and
+    // System Reviewer are seeded into their own dedicated platform org now,
+    // not Demo NGO, so they can no longer stand in for "a crossEntity
+    // account that happens to share this org" — Center Supervisor is the
+    // real-world case that still does (an entity-account-bound crossEntity
+    // role, created inside a specific org). Uses the new X-Act-As-Org
+    // header so System Admin (platform-wide) can create it inside Demo NGO
+    // specifically, rather than its own platform org.
+    const orgs = await request(app.getHttpServer())
+      .get('/api/organizations').set('Authorization', `Bearer ${sysToken}`).expect(200);
+    const demoOrg = orgs.body.find((o: { name: string }) => o.name === 'Demo NGO');
+    expect(demoOrg).toBeDefined();
+
+    const invite = await request(app.getHttpServer())
+      .post('/api/users').set('Authorization', `Bearer ${sysToken}`).set('X-Act-As-Org', demoOrg.id)
+      .send({ name: 'Test Supervisor', email: `supervisor-${uniq}@demo-ngo.org`, roleId: 'role_center_supervisor' })
+      .expect(201);
+
     const res = await request(app.getHttpServer())
-      .delete(`/api/users/${sys!.id}`).set('Authorization', `Bearer ${adminToken}`);
+      .delete(`/api/users/${invite.body.id}`).set('Authorization', `Bearer ${adminToken}`);
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('FORBIDDEN_USER_REMOVAL');
   });

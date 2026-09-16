@@ -29,6 +29,8 @@ import { NeedsModule } from './modules/needs/needs.module';
 import { EvidenceModule } from './modules/evidence/evidence.module';
 import { AiDecisionsModule } from './modules/ai-decisions/ai-decisions.module';
 import { DomainsModule } from './modules/domains/domains.module';
+import { StudyConfigModule } from './modules/study-config/study-config.module';
+import { NeedDecisionsModule } from './modules/need-decisions/need-decisions.module';
 import { GeographyModule } from './modules/geography/geography.module';
 import { MethodologyConfigModule } from './modules/methodology-config/methodology-config.module';
 import { SupervisorOverviewModule } from './modules/supervisor-overview/supervisor-overview.module';
@@ -36,6 +38,7 @@ import { NcnpReportModule } from './modules/ncnp-report/ncnp-report.module';
 import { NcnpReportReviewModule } from './modules/ncnp-report-review/ncnp-report-review.module';
 import { PublicSurveysModule } from './modules/public-surveys/public-surveys.module';
 import { CitizenModule } from './modules/citizen/citizen.module';
+import { SurveySessionsModule } from './modules/survey-sessions/survey-sessions.module';
 import { ResponseQualityModule } from './modules/response-quality/response-quality.module';
 import { PriorityModule } from './modules/priority/priority.module';
 import { SharingModule } from './modules/sharing/sharing.module';
@@ -47,6 +50,8 @@ import { ReviewerSlaModule } from './modules/reviewer-sla/reviewer-sla.module';
 import { CollectiveDashboardModule } from './modules/collective-dashboard/collective-dashboard.module';
 import { AiModule } from './modules/ai/ai.module';
 import { QuestionsModule } from './modules/questions/questions.module';
+import { QuestionBankAlertsModule } from './modules/question-bank-alerts/question-bank-alerts.module';
+import { PermissionGrantsModule } from './modules/permission-grants/permission-grants.module';
 import { SurveysModule } from './modules/surveys/surveys.module';
 import { BackupModule } from './modules/backup/backup.module';
 import { JobsModule } from './modules/jobs/jobs.module';
@@ -94,6 +99,8 @@ import { AppController } from './app.controller';
     EvidenceModule,
     AiDecisionsModule,
     DomainsModule,
+    StudyConfigModule,
+    NeedDecisionsModule,
     GeographyModule,
     MethodologyConfigModule,
     SupervisorOverviewModule,
@@ -101,6 +108,7 @@ import { AppController } from './app.controller';
     NcnpReportReviewModule,
     PublicSurveysModule,
     CitizenModule,
+    SurveySessionsModule,
     ResponseQualityModule,
     PriorityModule,
     SharingModule,
@@ -112,11 +120,13 @@ import { AppController } from './app.controller';
     CollectiveDashboardModule,
     AiModule,
     QuestionsModule,
+    QuestionBankAlertsModule,
     SurveysModule,
     BackupModule,
     // GAP-04 — in-process durable job runner (graphile-worker). After
     // BackupModule, same "background provider, no controller" shape.
     JobsModule,
+    PermissionGrantsModule,
   ],
   controllers: [AppController],
   providers: [

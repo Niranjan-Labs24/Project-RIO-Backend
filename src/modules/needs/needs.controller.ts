@@ -3,10 +3,13 @@ import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, Pa
 import { FileInterceptor } from '@nestjs/platform-express';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
-import { BulkImportNeedsBody, CreateNeedBody, UpdateNeedBody } from './needs.contract';
+import { BulkImportNeedsBody, CreateNeedBody, SetNeedGapTypeBody, UpdateNeedBody } from './needs.contract';
+import type { SetNeedGapTypeDto } from './needs.contract';
 import { NeedsImportService } from './needs-import.service';
 import type { BulkImportNeedsPayload, ImportNeedsResult, PdfPreviewResult } from './needs-import.types';
 import { NeedsService } from './needs.service';
+import { NeedThemesService } from './need-themes.service';
+import { SetNeedUrgencyBody, type SetNeedUrgencyDto } from '../priority/priority.contract';
 import type { CreateNeedPayload, Need, UpdateNeedPayload } from './needs.types';
 
 const MAX_IMPORT_FILE_SIZE_BYTES = 10 * 1024 * 1024;
@@ -21,6 +24,7 @@ export class NeedsController {
   constructor(
     private readonly needs: NeedsService,
     private readonly needsImport: NeedsImportService,
+    private readonly themes: NeedThemesService,
   ) {}
 
   @Post('studies/:studyId/needs')
@@ -103,6 +107,47 @@ export class NeedsController {
     @Body(new TypeBoxValidationPipe(UpdateNeedBody)) body: UpdateNeedPayload,
   ): Promise<Need> {
     return this.needs.update(needId, body ?? {});
+  }
+
+  // RIO-FR-005 (Q12) — analyst-entered, gated on priorityScoring:write
+  // (Data Analyst) rather than dataCollection:write (Research
+  // Officer/Field Researcher) — a different module because gap
+  // classification is a priority-scoring judgment call, not raw Need data.
+  @Patch('needs/:needId/gap-type')
+  @RequirePermission('priorityScoring', 'write')
+  setGapType(
+    @Param('needId', new UuidParamPipe()) needId: string,
+    @Body(new TypeBoxValidationPipe(SetNeedGapTypeBody)) body: SetNeedGapTypeDto,
+  ): Promise<Need> {
+    return this.needs.setGapType(needId, body.gapType);
+  }
+
+  /**
+   * RIO-FR-003 AC 1. Same priorityScoring:write gate as gap type above, and
+   * for the same reason: urgency is a prioritisation judgement about the need,
+   * not a correction to the need's own data.
+   */
+  @Patch('needs/:needId/urgency')
+  @RequirePermission('priorityScoring', 'write')
+  setUrgency(
+    @Param('needId', new UuidParamPipe()) needId: string,
+    @Body(new TypeBoxValidationPipe(SetNeedUrgencyBody)) body: SetNeedUrgencyDto,
+  ): Promise<Need> {
+    return this.needs.setUrgency(needId, body.urgency);
+  }
+
+  /** RIO-FR-003 AC 6 — re-run theme extraction after the statement changed. */
+  @Post('needs/:needId/themes/extract')
+  @RequirePermission('priorityScoring', 'write')
+  extractThemes(@Param('needId', new UuidParamPipe()) needId: string): Promise<string[]> {
+    return this.themes.extract(needId);
+  }
+
+  /** RIO-FR-003 AC 6's grouping — every theme in use, with its need count. */
+  @Get('need-themes/counts')
+  @RequirePermission('priorityScoring', 'read')
+  listThemeCounts(): Promise<Array<{ theme: string; needCount: number }>> {
+    return this.themes.listThemeCounts();
   }
 
   @Delete('needs/:needId')

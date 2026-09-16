@@ -1,10 +1,17 @@
 /**
- * RIO-DATA-001 — the two separately-versioned consents. `use_policy` is the
+ * RIO-DATA-001 — the separately-versioned consents. `use_policy` is the
  * acceptance of the platform's terms of use; `data_sharing` is the distinct
  * consent to share the organisation's data. They version independently, so
  * an org can be current on one and stale on the other.
+ *
+ * `citizen_consent` is the notice a citizen respondent accepts before a
+ * public survey collects anything (RIO-NFR-002). It shares this vocabulary
+ * because it shares the whole lifecycle — drafted by a System Admin, approved
+ * by a System Reviewer, published, versioned — but not the audience: it is
+ * never shown at signup, and its acceptance is recorded on the SurveyResponse
+ * rather than as a ConsentAcceptance, since a citizen has no account.
  */
-export const CONSENT_KINDS = ['use_policy', 'data_sharing'] as const;
+export const CONSENT_KINDS = ['use_policy', 'data_sharing', 'citizen_consent'] as const;
 export type ConsentKind = (typeof CONSENT_KINDS)[number];
 
 /**
@@ -83,3 +90,75 @@ export interface OrganizationConsentStatus {
   acceptedByName: string | null;
   acceptedByEmail: string | null;
 }
+
+/**
+ * Where a version sits in the draft → review → publish workflow the client
+ * confirmed on 2026-08-27. Mirrors `MethodologyStatus` deliberately: same
+ * governance gate, same vocabulary, so the two admin screens read alike.
+ */
+export const CONSENT_POLICY_STATUSES = [
+  'draft',
+  'pending_approval',
+  'approved',
+  'published',
+] as const;
+export type ConsentPolicyStatus = (typeof CONSENT_POLICY_STATUSES)[number];
+
+/**
+ * One consent policy version as the Methodology Configuration admin tab sees
+ * it — the full row including workflow state and provenance, unlike
+ * `ActiveConsentPolicy` which is the anonymous signup screen's minimal view
+ * (text + version only, and only ever of the live version).
+ */
+export interface ConsentPolicyVersion {
+  id: string;
+  kind: ConsentKind;
+  version: string;
+  text: string;
+  textAr: string | null;
+  status: ConsentPolicyStatus;
+  /** True for the one version per kind currently shown at signup. */
+  active: boolean;
+  createdByName: string | null;
+  createdAt: string;
+  updatedByName: string | null;
+  updatedAt: string;
+  reviewedByName: string | null;
+  reviewedAt: string | null;
+  reviewNotes: string | null;
+  publishedByName: string | null;
+  publishedAt: string | null;
+}
+
+/** Every version of every kind, newest first — the admin tab's whole payload. */
+export interface ConsentPolicyVersionList {
+  usePolicy: ConsentPolicyVersion[];
+  dataSharing: ConsentPolicyVersion[];
+  citizenConsent: ConsentPolicyVersion[];
+}
+
+export interface CreateConsentPolicyPayload {
+  kind: ConsentKind;
+  version: string;
+  text: string;
+  textAr?: string | null;
+}
+
+export interface UpdateConsentPolicyPayload {
+  version?: string;
+  text?: string;
+  textAr?: string | null;
+}
+
+/**
+ * Human-readable name per kind — used in audit entity labels and in the
+ * "no active policy" error. Centralised so a new kind cannot be added
+ * without naming it (the Record type makes omission a compile error), which
+ * is exactly how `citizen_consent` would otherwise have shipped labelled
+ * "Data Sharing Policy" by a two-branch ternary.
+ */
+export const CONSENT_KIND_LABEL: Record<ConsentKind, string> = {
+  use_policy: 'Terms of Use',
+  data_sharing: 'Data Sharing Policy',
+  citizen_consent: 'Citizen Consent',
+};

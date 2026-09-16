@@ -21,6 +21,14 @@ const DIFF_FIELDS = [
   'regionId', 'isActive',
 ] as const;
 
+// The technical home organisation for System Admin/System Reviewer (see
+// prisma/seed-helpers.ts and RIO-RBAC-002's platform-wide scoping) — not a
+// real NGO tenant, so it's excluded from the Organizations list a real
+// entity-management screen shows. Matched by its fixed registration number
+// (client-confirmed sentinel, same one the seed script uses), not by name,
+// since a display name is editable and shouldn't be load-bearing.
+const PLATFORM_ADMIN_REGISTRATION_NUMBER = '8000000000';
+
 // Shape Prisma actually returns once the join tables are included — the raw
 // input to toOrgRow() below. Kept separate from OrgRow (this module's own
 // flattened shape) since the join rows need to be reduced to plain id
@@ -170,6 +178,7 @@ export class OrganizationsService {
     const skip = Math.max(opts.offset ?? 0, 0);
     const rows = await this.tenant.runAsSupervisor((tx) =>
       tx.organisation.findMany({
+        where: { registrationNumber: { not: PLATFORM_ADMIN_REGISTRATION_NUMBER } },
         include: {
           ...GEO_INCLUDE,
           users: { where: { roleId: 'role_ngo_admin' }, take: 1, select: { name: true, email: true } },
@@ -180,15 +189,33 @@ export class OrganizationsService {
         skip,
       }),
     );
-    return (rows as (RawOrgWithGeo & {
+    const typedRows = rows as (RawOrgWithGeo & {
       users: { name: string; email: string }[];
       _count: { users: number; studies: number; surveys: number; reports: number };
-    })[]).map((r) => ({
+    })[];
+
+    // Separate groupBy, not a second `_count.select` entry: Prisma's filtered
+    // relation count reuses the relation's own field name as the result key
+    // (there's no way to alias `reports` twice — once filtered, once not —
+    // in a single `_count.select`), so "published" (released or archived —
+    // ReportStatus has no `published` value of its own) has to be counted
+    // separately and merged in.
+    const publishedCounts = await this.tenant.runAsSupervisor((tx) =>
+      tx.report.groupBy({
+        by: ['orgId'],
+        where: { orgId: { in: typedRows.map((r) => r.id) }, status: { in: ['released', 'archived'] } },
+        _count: { _all: true },
+      }),
+    );
+    const publishedByOrgId = new Map(publishedCounts.map((p) => [p.orgId, p._count._all]));
+
+    return typedRows.map((r) => ({
       ...this.toOrganization(this.toOrgRow(r)),
       memberCount: r._count.users,
       studyCount: r._count.studies,
       surveyCount: r._count.surveys,
       reportCount: r._count.reports,
+      publishedReportCount: publishedByOrgId.get(r.id) ?? 0,
       ngoAdminName: r.users[0]?.name ?? null,
       ngoAdminEmail: r.users[0]?.email ?? null,
     }));

@@ -16,6 +16,11 @@ export interface ParsedNeedRow {
   statement: string;
   village: string;
   referenceId: string;
+  /** Raw cell text, not a number — parsed and validated in
+   *  NeedsImportService.validateRow so a bad value becomes a row error the
+   *  uploader can see, rather than a silent NaN. Empty when the column is
+   *  absent, which is the normal case: the column is optional. */
+  affectedPopulation: string;
 }
 
 const HEADER_ALIASES: Record<keyof Omit<ParsedNeedRow, 'row'>, string[]> = {
@@ -23,6 +28,15 @@ const HEADER_ALIASES: Record<keyof Omit<ParsedNeedRow, 'row'>, string[]> = {
   statement: ['statement', 'need statement'],
   village: ['governorate', 'governorates', 'village', 'villages'],
   referenceId: ['reference id', 'referenceid', 'reference', 'ref id'],
+  // The need-entry form's question, in the shapes a spreadsheet is likely to
+  // spell it. Optional column — a file without it imports exactly as before.
+  affectedPopulation: [
+    'affected population',
+    'affectedpopulation',
+    'people affected',
+    'number of people affected',
+    'population affected',
+  ],
 };
 
 function normalizeHeader(value: string): string {
@@ -53,6 +67,7 @@ function cellsToRow(cells: string[], index: Partial<Record<keyof ParsedNeedRow, 
     statement: get('statement'),
     village: get('village'),
     referenceId: get('referenceId'),
+    affectedPopulation: get('affectedPopulation'),
   };
 }
 
@@ -194,6 +209,10 @@ function splitCombinedNeedItems(
             statement: p,
             village,
             referenceId,
+            // Not extracted from free text: a document that mentions a
+            // population figure rarely ties it to one specific need, and a
+            // guess here would be indistinguishable from a field estimate.
+            affectedPopulation: '',
           });
         });
         continue;
@@ -206,6 +225,7 @@ function splitCombinedNeedItems(
       statement: rawStatement || rawTitle,
       village,
       referenceId,
+      affectedPopulation: '',
     });
   }
 

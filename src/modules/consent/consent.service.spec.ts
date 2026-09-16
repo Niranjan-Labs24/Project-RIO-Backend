@@ -16,6 +16,10 @@ interface PolicyRow {
   version: string;
   text: string;
   textAr: string | null;
+  // Since the versioning workflow landed, "live at signup" means published
+  // AND active — the fixtures carry both so the filter is genuinely
+  // exercised rather than assumed away.
+  status: 'draft' | 'pending_approval' | 'approved' | 'published';
   active: boolean;
   createdAt: Date;
 }
@@ -25,6 +29,7 @@ const USE_V1: PolicyRow = {
   version: 'v1',
   text: 'Use policy text',
   textAr: 'نص سياسة الاستخدام',
+  status: 'published',
   active: true,
   createdAt: new Date('2026-01-01T00:00:00Z'),
 };
@@ -35,6 +40,7 @@ const SHARING_V1: PolicyRow = {
   version: 'v1',
   text: 'Data-sharing consent text',
   textAr: null,
+  status: 'published',
   active: true,
   createdAt: new Date('2026-01-01T00:00:00Z'),
 };
@@ -50,10 +56,15 @@ function fakePrisma(rows: PolicyRow[]) {
       where,
       orderBy,
     }: {
-      where: { kind: string; active: boolean };
+      where: { kind: string; active: boolean; status?: string };
       orderBy?: { createdAt: 'asc' | 'desc' };
     }) => {
-      const matches = rows.filter((r) => r.kind === where.kind && r.active === where.active);
+      const matches = rows.filter(
+        (r) =>
+          r.kind === where.kind &&
+          r.active === where.active &&
+          (where.status === undefined || r.status === where.status),
+      );
       matches.sort((a, b) =>
         orderBy?.createdAt === 'desc'
           ? b.createdAt.getTime() - a.createdAt.getTime()
@@ -63,6 +74,14 @@ function fakePrisma(rows: PolicyRow[]) {
     },
   );
   return { prisma: { consentPolicy: { findFirst } }, findFirst };
+}
+
+// The read paths under test never record an audit event; the stub exists so
+// the constructor's third dependency is satisfiable, not to be asserted on.
+// The write paths that DO audit (draft/submit/approve/publish) are covered by
+// the workflow suite below.
+function fakeAudit() {
+  return { record: vi.fn(async () => undefined) };
 }
 
 function fakeTenant(admin: Record<string, unknown> | null) {
@@ -75,7 +94,7 @@ function fakeTenant(admin: Record<string, unknown> | null) {
 describe('ConsentService.getActivePolicy (RIO-DATA-001)', () => {
   it('returns the active policy for the requested kind only', async () => {
     const { prisma, findFirst } = fakePrisma([USE_V1, SHARING_V1]);
-    const svc = new ConsentService(prisma as never, fakeTenant(null) as never);
+    const svc = new ConsentService(prisma as never, fakeTenant(null) as never, fakeAudit() as never);
 
     // Both languages come back together: the signup screen keeps them side by
     // side so switching language re-renders the open policy without another
@@ -87,7 +106,9 @@ describe('ConsentService.getActivePolicy (RIO-DATA-001)', () => {
       textAr: 'نص سياسة الاستخدام',
     });
     expect(findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { kind: 'use_policy', active: true } }),
+      expect.objectContaining({
+        where: { kind: 'use_policy', active: true, status: 'published' },
+      }),
     );
   });
 
@@ -95,17 +116,21 @@ describe('ConsentService.getActivePolicy (RIO-DATA-001)', () => {
     // Only the use policy is configured — asking for the sharing consent must
     // fail rather than silently returning the use policy's text.
     const { prisma } = fakePrisma([USE_V1]);
-    const svc = new ConsentService(prisma as never, fakeTenant(null) as never);
+    const svc = new ConsentService(prisma as never, fakeTenant(null) as never, fakeAudit() as never);
 
     await expect(svc.getActivePolicy('data_sharing')).rejects.toBeInstanceOf(NotFoundException);
   });
 
+  // Every kind, including citizen_consent — the message is built from the
+  // shared CONSENT_KIND_LABEL map now, so a new kind added without naming it
+  // fails to compile rather than reaching a user as the wrong policy's name.
   it.each([
-    ['use_policy' as const, 'use'],
-    ['data_sharing' as const, 'data-sharing'],
+    ['use_policy' as const, 'Terms of Use'],
+    ['data_sharing' as const, 'Data Sharing Policy'],
+    ['citizen_consent' as const, 'Citizen Consent'],
   ])('throws NO_ACTIVE_CONSENT_POLICY naming the %s kind', async (kind, label) => {
     const { prisma } = fakePrisma([]);
-    const svc = new ConsentService(prisma as never, fakeTenant(null) as never);
+    const svc = new ConsentService(prisma as never, fakeTenant(null) as never, fakeAudit() as never);
 
     await expect(svc.getActivePolicy(kind)).rejects.toMatchObject({
       response: {
@@ -119,7 +144,7 @@ describe('ConsentService.getActivePolicy (RIO-DATA-001)', () => {
 
   it('ignores a deactivated policy even when it is the only row of that kind', async () => {
     const { prisma } = fakePrisma([{ ...USE_V1, active: false }]);
-    const svc = new ConsentService(prisma as never, fakeTenant(null) as never);
+    const svc = new ConsentService(prisma as never, fakeTenant(null) as never, fakeAudit() as never);
 
     await expect(svc.getActivePolicy('use_policy')).rejects.toMatchObject({
       response: { error: { code: 'NO_ACTIVE_CONSENT_POLICY' } },
@@ -135,11 +160,12 @@ describe('ConsentService.getActivePolicy (RIO-DATA-001)', () => {
       version: 'v2',
       text: 'Revised use policy text',
       textAr: 'نص سياسة الاستخدام المُنقّح',
+      status: 'published',
       active: true,
       createdAt: new Date('2026-06-01T00:00:00Z'),
     };
     const { prisma } = fakePrisma([USE_V1, newer]);
-    const svc = new ConsentService(prisma as never, fakeTenant(null) as never);
+    const svc = new ConsentService(prisma as never, fakeTenant(null) as never, fakeAudit() as never);
 
     await expect(svc.getActivePolicy('use_policy')).resolves.toMatchObject({
       version: 'v2',
@@ -151,7 +177,7 @@ describe('ConsentService.getActivePolicy (RIO-DATA-001)', () => {
 describe('ConsentService.getActivePolicies (RIO-DATA-001)', () => {
   it('returns both consents in one payload, keyed for the registration form', async () => {
     const { prisma } = fakePrisma([USE_V1, SHARING_V1]);
-    const svc = new ConsentService(prisma as never, fakeTenant(null) as never);
+    const svc = new ConsentService(prisma as never, fakeTenant(null) as never, fakeAudit() as never);
 
     await expect(svc.getActivePolicies()).resolves.toEqual({
       usePolicy: {
@@ -169,7 +195,7 @@ describe('ConsentService.getActivePolicies (RIO-DATA-001)', () => {
     // The signup screen renders both checkboxes together — a half-populated
     // response would let it show one consent and register without the other.
     const { prisma } = fakePrisma([SHARING_V1]);
-    const svc = new ConsentService(prisma as never, fakeTenant(null) as never);
+    const svc = new ConsentService(prisma as never, fakeTenant(null) as never, fakeAudit() as never);
 
     await expect(svc.getActivePolicies()).rejects.toMatchObject({
       response: { error: { code: 'NO_ACTIVE_CONSENT_POLICY' } },
@@ -189,7 +215,7 @@ describe('ConsentService.getOrganizationStatus (RIO-DATA-001 AC2)', () => {
 
   it('reports the acceptance date and policy version of each consent', async () => {
     const { prisma } = fakePrisma([USE_V1, SHARING_V1]);
-    const svc = new ConsentService(prisma as never, fakeTenant(admin) as never);
+    const svc = new ConsentService(prisma as never, fakeTenant(admin) as never, fakeAudit() as never);
 
     await expect(svc.getOrganizationStatus()).resolves.toEqual({
       usePolicy: { version: 'v1', acceptedAt: '2026-08-06T09:30:00.000Z' },
@@ -207,7 +233,7 @@ describe('ConsentService.getOrganizationStatus (RIO-DATA-001 AC2)', () => {
     // consent record.
     const { prisma } = fakePrisma([USE_V1, SHARING_V1]);
     const legacyAdmin = { ...admin, sharingConsentedAt: null, sharingConsentedPolicyVersion: null };
-    const svc = new ConsentService(prisma as never, fakeTenant(legacyAdmin) as never);
+    const svc = new ConsentService(prisma as never, fakeTenant(legacyAdmin) as never, fakeAudit() as never);
 
     const status = await svc.getOrganizationStatus();
     expect(status.usePolicy).toEqual({ version: 'v1', acceptedAt: '2026-08-06T09:30:00.000Z' });
@@ -219,7 +245,7 @@ describe('ConsentService.getOrganizationStatus (RIO-DATA-001 AC2)', () => {
     // acceptance — the date is what proves it happened.
     const { prisma } = fakePrisma([USE_V1, SHARING_V1]);
     const orphaned = { ...admin, consentedAt: null, consentedPolicyVersion: 'v1' };
-    const svc = new ConsentService(prisma as never, fakeTenant(orphaned) as never);
+    const svc = new ConsentService(prisma as never, fakeTenant(orphaned) as never, fakeAudit() as never);
 
     await expect(svc.getOrganizationStatus()).resolves.toMatchObject({
       usePolicy: { version: null, acceptedAt: null },
@@ -233,7 +259,7 @@ describe('ConsentService.getOrganizationStatus (RIO-DATA-001 AC2)', () => {
       ),
     };
     const { prisma } = fakePrisma([USE_V1, SHARING_V1]);
-    const svc = new ConsentService(prisma as never, tenant as never);
+    const svc = new ConsentService(prisma as never, tenant as never, fakeAudit() as never);
 
     await expect(svc.getOrganizationStatus()).resolves.toMatchObject({
       acceptedByName: 'Org Admin',
@@ -244,7 +270,7 @@ describe('ConsentService.getOrganizationStatus (RIO-DATA-001 AC2)', () => {
 
   it('returns all-null fields rather than throwing when the org has no admin row', async () => {
     const { prisma } = fakePrisma([USE_V1, SHARING_V1]);
-    const svc = new ConsentService(prisma as never, fakeTenant(null) as never);
+    const svc = new ConsentService(prisma as never, fakeTenant(null) as never, fakeAudit() as never);
 
     await expect(svc.getOrganizationStatus()).resolves.toEqual({
       usePolicy: { version: null, acceptedAt: null },

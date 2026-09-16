@@ -4,6 +4,7 @@ import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { requireActor, requireOrgId } from '../../tenancy/org-context';
 import { AuditService } from '../audit/audit.service';
 import { AiDecisionsService } from '../ai-decisions/ai-decisions.service';
+import { NeedSummaryService } from './need-summary.service';
 import { AiService } from '../ai/ai.service';
 import { parseCsvNeeds, parseExcelNeeds, parsePdfNeeds, parseSurveyDocumentNeeds, type ParsedNeedRow } from './needs-import.parser';
 import type { BulkImportNeedsPayload, ImportNeedsResult, PdfPreviewResult } from './needs-import.types';
@@ -25,6 +26,35 @@ function splitVillages(value: string): string[] {
 //     for files that don't carry one.
 // Scoped to the Study being imported into, not the whole org — the same
 // Reference ID under a different Study is a different Need.
+// The optional "Affected Population" column, turned into what the column
+// actually accepts. Returns the number, or the reason it isn't one — the
+// caller reports that reason against the row instead of importing a Need with
+// a silently dropped (or NaN) estimate.
+//
+// Blank is not an error: the column is optional on every entry path, and a
+// missing estimate is a legitimate answer (the report prints a dash and says
+// why). Only a value that was typed and isn't a whole non-negative count is.
+export function parseAffectedPopulationCell(
+  raw: string,
+): { ok: true; value: number | null } | { ok: false; message: string } {
+  // Spreadsheets hand back "12,000", "12 000" and "1200.0" for what the person
+  // typed as twelve thousand — all the same number, none of them Number()-safe
+  // as typed. A real decimal (12.5 people) is still rejected below.
+  const trimmed = raw.trim().replace(/[, \s]/g, '');
+  if (!trimmed) return { ok: true, value: null };
+  // Digits, optionally with a zero-only decimal part. Deliberately stricter
+  // than Number(): that accepts "1e5" and "0x40" as valid population figures,
+  // which is a typo being read as a number rather than reported as one.
+  if (!/^\d+(\.0+)?$/.test(trimmed)) {
+    return { ok: false, message: 'Affected Population must be a whole number of people, or left blank.' };
+  }
+  const n = Number(trimmed);
+  if (n > 50_000_000) {
+    return { ok: false, message: 'Affected Population is implausibly large — please check the value.' };
+  }
+  return { ok: true, value: n };
+}
+
 function dedupeKey(title: string, village: string, referenceId: string): string {
   const normalizedRef = referenceId.trim().toLowerCase();
   if (normalizedRef) return `ref:${normalizedRef}`;
@@ -40,6 +70,7 @@ export class NeedsImportService {
     private readonly tenant: TenantPrismaService,
     private readonly audit: AuditService,
     private readonly aiDecisions: AiDecisionsService,
+    private readonly needSummaries: NeedSummaryService,
     @Optional() @Inject(AiService) private readonly aiService?: AiService,
   ) {}
 
@@ -154,6 +185,9 @@ export class NeedsImportService {
       const statement = (item.statement || '').trim();
       const village = (item.village || '').trim();
       const referenceId = (item.referenceId || '').trim();
+      // Already an integer (the contract validates it), so no string parsing
+      // here — only the same "absent means null" normalisation.
+      const affectedPopulation = item.affectedPopulation ?? null;
 
       if (!title) {
         errors.push({ row: rowNum, message: 'Title is required.', type: 'validation' });
@@ -187,6 +221,7 @@ export class NeedsImportService {
               village: splitVillages(village),
               source: 'file_upload',
               referenceId: referenceId || null,
+              affectedPopulation,
               createdBy,
               status: 'pending_ai_classification',
               needGovernorates: {
@@ -206,6 +241,13 @@ export class NeedsImportService {
         imported += 1;
         this.aiDecisions.classifyAutomatically(created.id).catch((err: Error) => {
           this.logger.warn(`Automatic classification failed for imported need ${created.id}: ${err.message}`);
+        });
+        // RIO-AI-003 auto-suggest. Fire-and-forget per row: one import of 50
+        // needs must not become 50 serial model calls the HTTP request waits
+        // on, and a row whose summary fails is still a successfully imported
+        // Need. maybeGenerateForNeed swallows its own failures.
+        this.needSummaries.maybeGenerateForNeed(created.id, 'pdf_import').catch((err: Error) => {
+          this.logger.warn(`Need summary generation failed for imported need ${created.id}: ${err.message}`);
         });
       } catch {
         errors.push({
@@ -286,6 +328,10 @@ export class NeedsImportService {
         errors.push({ row: row.row, message: validationError, type: 'validation' });
         continue;
       }
+      // validateRow already rejected anything unparseable, so this cannot be
+      // the error branch by the time we get here.
+      const population = parseAffectedPopulationCell(row.affectedPopulation);
+      const affectedPopulation = population.ok ? population.value : null;
 
       const key = dedupeKey(row.title, row.village, row.referenceId);
       if (seenKeys.has(key)) {
@@ -310,6 +356,7 @@ export class NeedsImportService {
               village: splitVillages(row.village),
               source: 'file_upload',
               referenceId: row.referenceId || null,
+              affectedPopulation,
               createdBy,
               status: 'pending_ai_classification',
               needGovernorates: {
@@ -329,6 +376,10 @@ export class NeedsImportService {
         imported += 1;
         this.aiDecisions.classifyAutomatically(created.id).catch((err: Error) => {
           this.logger.warn(`Automatic classification failed for imported need ${created.id}: ${err.message}`);
+        });
+        // RIO-AI-003 auto-suggest — see the sibling call in importBulk above.
+        this.needSummaries.maybeGenerateForNeed(created.id, 'bulk_import').catch((err: Error) => {
+          this.logger.warn(`Need summary generation failed for imported need ${created.id}: ${err.message}`);
         });
       } catch {
         errors.push({
@@ -363,6 +414,8 @@ export class NeedsImportService {
     if (row.title.length > 300) return 'Title must be 300 characters or fewer.';
     if (!row.statement) return 'Statement is required.';
     if (!row.village || splitVillages(row.village).length === 0) return 'Governorate is required.';
+    const population = parseAffectedPopulationCell(row.affectedPopulation);
+    if (!population.ok) return population.message;
     return null;
   }
 }

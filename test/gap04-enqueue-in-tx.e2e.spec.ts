@@ -43,6 +43,29 @@ describe('GAP-04 transactional enqueue in submitResponse (lossless + shape + dra
   function fakeAudit(): AuditService {
     return { record: async () => undefined, recordWithTx: async () => undefined } as unknown as AuditService;
   }
+  function fakeSessions() {
+    return { markSubmitted: async () => undefined } as never;
+  }
+  function fakeConsent() {
+    return {
+      getActiveCitizenPolicy: async () => ({
+        kind: 'citizen_consent' as const,
+        version: 'v1',
+        text: 'notice',
+        textAr: null,
+      }),
+    } as never;
+  }
+  // ScoreRollupService reads confidenceFlagSettings once per calculateRollups
+  // call, outside the tx — same defaults as a fresh MethodologyConfig row
+  // (see methodology-config.service.ts).
+  function fakeMethodologyConfig() {
+    return {
+      getRaw: async () => ({
+        confidenceFlagSettings: { dontKnowRatioThreshold: 0.2, minRespondentsForStandardConfidence: 10 },
+      }),
+    } as never;
+  }
 
   beforeAll(async () => {
     owner = ownerClient();
@@ -52,7 +75,7 @@ describe('GAP-04 transactional enqueue in submitResponse (lossless + shape + dra
 
     tenant = new TenantPrismaService(app as never, supervisor as never);
     const scoring = new DeterministicScoringService(tenant);
-    const rollup = new ScoreRollupService(tenant, fakeAudit(), scoring, new PriorityV2Service(tenant));
+    const rollup = new ScoreRollupService(tenant, fakeAudit(), scoring, new PriorityV2Service(tenant), fakeMethodologyConfig());
     const task = new ScoreResponseTask(tenant, scoring, rollup);
     runner = new JobsWorkerService(fakeConfig(), task);
 
@@ -86,6 +109,8 @@ describe('GAP-04 transactional enqueue in submitResponse (lossless + shape + dra
       {} as never, // sms — not called in submitResponse
       {} as never, // surveys — not called in submitResponse
       fakeAudit(),
+      fakeSessions(),
+      fakeConsent(),
     );
 
     await runner.onModuleInit();
@@ -155,6 +180,7 @@ describe('GAP-04 transactional enqueue in submitResponse (lossless + shape + dra
       challengeId,
       ageBracket: 'age_25_34',
       answers: {}, // keyed by SurveyQuestion.id in real use; empty is fine here
+      consent: { version: 'v1', locale: 'en' },
     } as never);
 
     // HTTP shape unchanged: exactly { id, submittedAt } with an ISO timestamp.

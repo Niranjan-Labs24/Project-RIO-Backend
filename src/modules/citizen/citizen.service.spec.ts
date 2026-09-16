@@ -4,6 +4,7 @@ import { CitizenService } from './citizen.service';
 
 const ENCRYPTION_KEY = Buffer.alloc(32, 7).toString('base64');
 const BLIND_INDEX_KEY = Buffer.alloc(32, 9).toString('base64');
+const ACTIVE_CONSENT = { kind: 'citizen_consent' as const, version: 'v1', text: 'notice', textAr: null };
 
 // Reads the `where` clause of a mock's most recent call — a small typed
 // helper so each call site doesn't repeat the `mock.calls[0][0]` cast
@@ -48,6 +49,8 @@ function makeService(challenge: Record<string, unknown>, fakeTx = makeFakeTx()) 
       noop, // sms
       noop, // surveys
       { record: vi.fn(), recordWithTx: vi.fn() } as never, // audit
+      { markSubmitted: vi.fn() } as never, // sessions
+      { getActiveCitizenPolicy: vi.fn(async () => ACTIVE_CONSENT) } as never, // consent
     ),
     fakeTx,
   };
@@ -107,7 +110,7 @@ describe('CitizenService.submitResponse dedup (GAP-03 fix: blind index, not plai
     // No published survey ⇒ throws after the dedup query runs, which is fine —
     // we only need to inspect the findFirst call the dedup check made.
     await expect(
-      svc.submitResponse('tok', { challengeId: 'ch1', answers: {}, ageBracket: 'adult' } as never),
+      svc.submitResponse('tok', { challengeId: 'ch1', answers: {}, ageBracket: 'adult', consent: { version: 'v1', locale: 'en' } } as never),
     ).rejects.toBeTruthy();
 
     expect(fakeTx.surveyResponse.findFirst).toHaveBeenCalledTimes(1);
@@ -127,7 +130,7 @@ describe('CitizenService.submitResponse dedup (GAP-03 fix: blind index, not plai
     const { svc } = makeService(verifiedChallenge, fakeTx);
 
     await expect(
-      svc.submitResponse('tok', { challengeId: 'ch1', answers: {}, ageBracket: 'adult' } as never),
+      svc.submitResponse('tok', { challengeId: 'ch1', answers: {}, ageBracket: 'adult', consent: { version: 'v1', locale: 'en' } } as never),
     ).rejects.toMatchObject({
       response: { error: { code: 'DUPLICATE_SUBMISSION' } },
     });
