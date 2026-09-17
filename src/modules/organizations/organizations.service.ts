@@ -209,6 +209,17 @@ export class OrganizationsService {
     );
     const publishedByOrgId = new Map(publishedCounts.map((p) => [p.orgId, p._count._all]));
 
+    // SurveyResponse carries orgId directly (see its schema comment), so no
+    // join is needed — same groupBy-and-merge shape as publishedCounts above.
+    const responseCounts = await this.tenant.runAsSupervisor((tx) =>
+      tx.surveyResponse.groupBy({
+        by: ['orgId'],
+        where: { orgId: { in: typedRows.map((r) => r.id) } },
+        _count: { _all: true },
+      }),
+    );
+    const responseCountByOrgId = new Map(responseCounts.map((p) => [p.orgId, p._count._all]));
+
     return typedRows.map((r) => ({
       ...this.toOrganization(this.toOrgRow(r)),
       memberCount: r._count.users,
@@ -216,6 +227,7 @@ export class OrganizationsService {
       surveyCount: r._count.surveys,
       reportCount: r._count.reports,
       publishedReportCount: publishedByOrgId.get(r.id) ?? 0,
+      responseCount: responseCountByOrgId.get(r.id) ?? 0,
       ngoAdminName: r.users[0]?.name ?? null,
       ngoAdminEmail: r.users[0]?.email ?? null,
     }));
