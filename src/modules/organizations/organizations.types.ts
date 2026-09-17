@@ -38,6 +38,10 @@ export interface OrganizationSummary extends Organization {
   // Reports" stat, which previously summed unfiltered `reportCount` across
   // every org and so counted drafts/rejected/submitted reports too.
   publishedReportCount?: number;
+  // Total SurveyResponse rows submitted under this org — powers the System
+  // Admin dashboard's "Responses Collected" stat, which previously had no
+  // real data source and always rendered a hardcoded placeholder.
+  responseCount?: number;
   ngoAdminName?: string | null;
   ngoAdminEmail?: string | null;
   deactivationReason?: string | null;
