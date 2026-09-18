@@ -79,7 +79,7 @@ const ConsentLocaleValue = T.Union([T.Literal('en'), T.Literal('ar')]);
  * AuthService.signup's active-version check). Both are required: registration
  * cannot complete without accepting both.
  */
-const ConsentAcceptanceBody = T.Object(
+export const ConsentAcceptanceBody = T.Object(
   {
     usePolicyVersion: T.String({ minLength: 1, maxLength: 64 }),
     dataSharingVersion: T.String({ minLength: 1, maxLength: 64 }),

@@ -1,17 +1,19 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { randomBytes } from 'node:crypto';
 import { v7 as uuidv7 } from 'uuid';
-import { UserStatus } from '../../generated/prisma';
+import { ConsentPolicyKind, UserStatus } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { roleByKey } from '../../rbac/role-matrix';
 import { PasswordService } from '../../auth/password.service';
-import { conflictFor, DEFAULT_TEMP_PASSWORD, uniqueField } from '../auth/auth.repository';
+import { conflictFor, DEFAULT_TEMP_PASSWORD, uniqueField, type ConsentAcceptanceInput } from '../auth/auth.repository';
 import { MailerService } from '../../mailer/mailer.service';
 import { AuditService } from '../audit/audit.service';
 import type { AuditChange } from '../audit/audit.types';
+import { ConsentService } from '../consent/consent.service';
+import { consentPolicyTextFor, DEFAULT_CONSENT_LOCALE, resolveConsentLocale } from '../consent/consent.types';
 import { DomainsService } from '../domains/domains.service';
 import { GeographyService } from '../geography/geography.service';
+import { NicRegistryService } from '../nic-registry/nic-registry.service';
 import type {
   CreateOrganizationPayload, Organization, OrganizationSummary, OrgRow, UpdateOrganizationPayload,
 } from './organizations.types';
@@ -20,6 +22,14 @@ const DIFF_FIELDS = [
   'name', 'region', 'email', 'sector', 'purpose', 'logoUrl', 'villages',
   'regionId', 'isActive',
 ] as const;
+
+// RIO MFA — same punctuation-stripping normalization as
+// UsersService/CitizenService's own normalizeMobile(), kept in step so a
+// number captured here at org-creation time matches however AuthService
+// later normalizes what a user types into "Sign in with OTP".
+function normalizeMobile(mobile: string): string {
+  return mobile.trim().replace(/[\s\-()]/g, '');
+}
 
 // The technical home organisation for System Admin/System Reviewer (see
 // prisma/seed-helpers.ts and RIO-RBAC-002's platform-wide scoping) — not a
@@ -53,6 +63,8 @@ export class OrganizationsService {
     private readonly domains: DomainsService,
     private readonly geography: GeographyService,
     private readonly mailer: MailerService,
+    private readonly nicRegistry: NicRegistryService,
+    private readonly consentPolicies: ConsentService,
   ) {}
 
   async getCurrent(): Promise<Organization> {
@@ -118,9 +130,35 @@ export class OrganizationsService {
   async createWithAdmin(payload: CreateOrganizationPayload): Promise<Organization> {
     this.assertCrossEntity();
     await this.assertValidSector(payload.sector);
+    // Same NIC-registry gate as public self-signup (AuthService.signup) —
+    // a System-Admin-created org can't carry a number nobody checked.
+    // Returns the normalized 10-digit form, which is what gets stored.
+    const registrationNumber = await this.nicRegistry.assertRegistered(payload.registrationNumber);
+    // Existence + hierarchy only, same call self-signup makes — every
+    // Governorate must belong to the chosen Region, every Center to a
+    // chosen Governorate.
+    await this.geography.validateHierarchy({
+      regionId: payload.regionId,
+      governorateIds: payload.governorateIds,
+      centerIds: payload.centerIds,
+    });
+    // RIO-DATA-001 — an NGO Admin created this way still needs both consents
+    // on record, same as one created through self-signup; only relevant when
+    // an admin is actually being created in this call. Resolved before the
+    // transaction, same as the NIC-registry/geography checks above: nothing
+    // gets written until every precondition holds.
+    const creatingAdmin = Boolean(payload.adminName && payload.adminEmail);
+    const consents = creatingAdmin
+      ? await this.resolveOrgAdminConsents(payload.consent)
+      : [];
     const orgId = uuidv7();
-    const tempPassword = randomBytes(9).toString('base64url');
-    const passwordHash = await this.passwords.hash(tempPassword);
+    // A known constant, not a random throwaway value — the whole point is
+    // this admin can actually log in with it. AuthRepository.
+    // createOrganisationAndAdmin's placeholder and OrganizationsService#
+    // approve's temporary password use the very same constant, for the very
+    // same reason: a password nobody (not even this System Admin) can ever
+    // learn is not a credential, it's a locked account.
+    const passwordHash = await this.passwords.hash(DEFAULT_TEMP_PASSWORD);
 
     // A duplicate registrationNumber (org) or adminEmail (user) hits a DB
     // unique constraint — map that P2002 to the same clean 409 the public
@@ -130,9 +168,21 @@ export class OrganizationsService {
       const created = await this.tenant.runAsOrg(orgId, async (tx) => {
         const row = await tx.organisation.create({
           data: {
-            id: orgId, name: payload.name, purpose: payload.purpose ?? null, registrationNumber: payload.registrationNumber,
+            id: orgId, name: payload.name, purpose: payload.purpose ?? null, registrationNumber,
             region: payload.region ?? [], email: payload.email ?? null,
-            sector: payload.sector ?? null, villages: payload.villages ?? [], isActive: true,
+            sector: payload.sector, villages: payload.villages ?? [], isActive: true,
+            regionId: payload.regionId,
+            // Nested under the parent create (orgId implied by the relation),
+            // same pattern AuthRepository#createOrganisationAndAdmin uses for
+            // self-signup — a System-Admin-created org gets its geography
+            // scope from day one instead of it staying empty until someone
+            // edits the org later.
+            orgGovernorates: {
+              createMany: { data: payload.governorateIds.map((governorateId) => ({ governorateId })) },
+            },
+            orgCenters: {
+              createMany: { data: payload.centerIds.map((centerId) => ({ centerId })) },
+            },
             // RIO-FR-010 (client-confirmed): the approval gate is only for
             // self-registration — a System Admin creating an org directly is
             // inherently pre-approved, so this skips the gate entirely.
@@ -140,20 +190,59 @@ export class OrganizationsService {
           },
         });
         if (payload.adminName && payload.adminEmail) {
-          await tx.user.create({
-            data: { orgId, roleId: 'role_ngo_admin', name: payload.adminName, email: payload.adminEmail, status: UserStatus.invited, passwordHash },
+          const usePolicy = consents.find((c) => c.kind === ConsentPolicyKind.use_policy);
+          const dataSharing = consents.find((c) => c.kind === ConsentPolicyKind.data_sharing);
+          const consentedAt = new Date();
+          const user = await tx.user.create({
+            data: {
+              orgId, roleId: 'role_ngo_admin', name: payload.adminName, email: payload.adminEmail,
+              mobileNumber: payload.adminMobileNumber ? normalizeMobile(payload.adminMobileNumber) : null,
+              status: UserStatus.invited, passwordHash,
+              // Without this, the admin's very first sign-in only ever gets
+              // INVALID_CREDENTIALS-shaped confusion resolved by reading
+              // source — mustChangePassword is what forces the temp
+              // password to be replaced on first login instead of staying
+              // valid indefinitely.
+              mustChangePassword: true,
+              // RIO-DATA-001 — stamped here, at creation, same as
+              // AuthRepository#createOrganisationAndAdmin's self-signup
+              // path: this admin never lands on a post-login consent gate
+              // (there isn't one — see the (app)/layout.tsx comment on why),
+              // so consent has to already be on record the moment the
+              // account exists.
+              consentedAt: usePolicy ? consentedAt : null, consentedPolicyVersion: usePolicy?.version ?? null,
+              sharingConsentedAt: dataSharing ? consentedAt : null, sharingConsentedPolicyVersion: dataSharing?.version ?? null,
+            },
+          });
+          // Snapshot the exact text each policy was accepted as — the
+          // acceptance record has to stand on its own even after the policy
+          // text is later edited or superseded.
+          await tx.consentAcceptance.createMany({
+            data: consents.map((c) => ({
+              orgId, userId: user.id, kind: c.kind, policyVersion: c.version,
+              policyText: c.text, policyLocale: c.locale, acceptedAt: consentedAt,
+            })),
           });
         }
         return row;
       });
-      // A freshly-created org has no Governorate/Center selections yet — no
-      // join rows exist to fetch, so these are always empty on creation.
-      // `regionId` is a plain column, already present on `created` as-is.
-      org = { ...(created as unknown as Omit<OrgRow, 'governorateIds' | 'centerIds'>), governorateIds: [], centerIds: [] };
+      org = {
+        ...(created as unknown as Omit<OrgRow, 'governorateIds' | 'centerIds'>),
+        governorateIds: payload.governorateIds,
+        centerIds: payload.centerIds,
+      };
     } catch (err) {
       const field = uniqueField(err);
       if (field) throw conflictFor(field);
       throw err;
+    }
+
+    // Best-effort, same as OrganizationsService#approve: a failed/unconfigured
+    // send doesn't undo the org or admin that already exist, and
+    // DEFAULT_TEMP_PASSWORD is a known constant either way, not a secret
+    // that only this email carries.
+    if (payload.adminName && payload.adminEmail) {
+      await this.mailer.sendTemporaryPassword(payload.adminEmail, payload.name, DEFAULT_TEMP_PASSWORD);
     }
 
     // File under the newly-created org (not the acting system_admin's org) so
@@ -339,6 +428,49 @@ export class OrganizationsService {
     });
 
     return this.getById(id);
+  }
+
+  // Mirrors AuthService.resolveSignupConsents — both consents are required
+  // together and checked against the *currently* active policy version, so
+  // a System Admin whose dialog was left open across a policy update gets
+  // the same CONSENT_VERSION_STALE rejection self-signup would.
+  private async resolveOrgAdminConsents(
+    consent: CreateOrganizationPayload['consent'],
+  ): Promise<ConsentAcceptanceInput[]> {
+    if (!consent) {
+      throw new BadRequestException({
+        error: {
+          code: 'CONSENT_REQUIRED',
+          message: 'Use Policy and Data Sharing consent are required to create an NGO Admin.',
+        },
+      });
+    }
+    const requestedLocale = consent.locale ?? DEFAULT_CONSENT_LOCALE;
+    const submitted: Array<{ kind: ConsentPolicyKind; version: string }> = [
+      { kind: ConsentPolicyKind.use_policy, version: consent.usePolicyVersion },
+      { kind: ConsentPolicyKind.data_sharing, version: consent.dataSharingVersion },
+    ];
+    return Promise.all(
+      submitted.map(async ({ kind, version }) => {
+        const active = await this.consentPolicies.getActivePolicy(kind);
+        if (active.version !== version) {
+          throw new BadRequestException({
+            error: {
+              code: 'CONSENT_VERSION_STALE',
+              message:
+                'The consent policy was updated while this form was open. Please review the current version and try again.',
+              details: { kind, submittedVersion: version, currentVersion: active.version },
+            },
+          });
+        }
+        return {
+          kind,
+          version: active.version,
+          text: consentPolicyTextFor(active, requestedLocale),
+          locale: resolveConsentLocale(active, requestedLocale),
+        };
+      }),
+    );
   }
 
   // Mirrors AuthService's identical check (see auth.service.ts) — `sector`

@@ -71,13 +71,33 @@ export interface UpdateOrganizationPayload {
 export interface CreateOrganizationPayload {
   name: string;
   purpose?: string | null;
+  // Checked against the NIC entity registry (NicRegistryService) and
+  // normalized before storage — same gate as public self-signup, so a
+  // System-Admin-created org can never carry an unverified/malformed number.
   registrationNumber: string;
   region?: string[];
   email?: string | null;
-  sector?: string | null;
+  sector: string;
   villages?: string[];
+  // Required, same as self-signup: this is the org's actual operating
+  // geography, not decoration — a System Admin can't create an org that
+  // never gets scoped to a Region/Governorate/Center.
+  regionId: string;
+  governorateIds: string[];
+  centerIds: string[];
   adminName?: string;
   adminEmail?: string;
+  // RIO MFA — lets the new NGO Admin use "Sign in with OTP" over SMS from
+  // day one, same optional field self-signup captures.
+  adminMobileNumber?: string;
+  // RIO-DATA-001 — required whenever adminName/adminEmail are both given:
+  // an NGO Admin created directly by System Admin still needs both consents
+  // on record, same as self-signup. See OrganizationsService#createWithAdmin.
+  consent?: {
+    usePolicyVersion: string;
+    dataSharingVersion: string;
+    locale?: 'en' | 'ar';
+  };
 }
 
 // Shape of an organisations row as this module reads it.
