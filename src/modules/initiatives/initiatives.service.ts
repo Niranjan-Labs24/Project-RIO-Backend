@@ -220,6 +220,50 @@ export class InitiativesService {
     return this.enrich(rows as unknown as InitiativeRow[]);
   }
 
+  // RIO-FR-009 — the two statuses with no automatic trigger (`observed` is
+  // just the default; `linked_to_initiative`/`open_gap` stay exclusively
+  // automatic, driven by linkNeed/unlinkNeed above, so a manual set here
+  // can never contradict what the needInitiative join table actually says).
+  // `under_analysis` and `documented_in_study` are the two the original
+  // design (client Q17) called for a human to set, restricted to whoever
+  // holds initiatives:write — the same gate the link/unlink actions above
+  // already use.
+  private static readonly MANUALLY_SETTABLE = new Set(['observed', 'under_analysis', 'documented_in_study']);
+
+  async setAnalyticalStatus(needId: string, toStatus: string, note?: string): Promise<void> {
+    if (!InitiativesService.MANUALLY_SETTABLE.has(toStatus)) {
+      throw new BadRequestException({
+        error: {
+          code: 'STATUS_NOT_MANUALLY_SETTABLE',
+          message:
+            '"Linked to initiative" and "Open gap" are set automatically by linking/unlinking an initiative, not manually.',
+        },
+      });
+    }
+    const orgId = requireOrgId();
+    const changedBy = requireActor();
+
+    const need = await this.tenant.runInOrgContext(async (tx) => {
+      const need = await tx.need.findUnique({ where: { id: needId } });
+      if (!need) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+      if (need.analyticalStatus === toStatus) return need;
+
+      await tx.need.update({ where: { id: needId }, data: { analyticalStatus: toStatus as never } });
+      await tx.needAnalyticalStatusEvent.create({
+        data: { needId, orgId, fromStatus: need.analyticalStatus, toStatus: toStatus as never, changedBy, note: note?.trim() || null },
+      });
+      return need;
+    });
+
+    await this.audit.record({
+      action: 'edit',
+      entityType: 'need',
+      entityId: needId,
+      entityLabel: need.title.slice(0, 80),
+      changes: [{ field: 'Analytical Status', before: need.analyticalStatus, after: toStatus }],
+    });
+  }
+
   async listAnalyticalStatusHistory(needId: string): Promise<NeedAnalyticalStatusEvent[]> {
     const rows = await this.tenant.runInOrgContext((tx) =>
       tx.needAnalyticalStatusEvent.findMany({ where: { needId }, orderBy: { changedAt: 'asc' } }),

@@ -6,9 +6,11 @@ import { DomainsModule } from '../domains/domains.module';
 import { GeographyModule } from '../geography/geography.module';
 import { UsersModule } from '../users/users.module';
 import { MailerModule } from '../../mailer/mailer.module';
+import { NicRegistryModule } from '../nic-registry/nic-registry.module';
+import { ConsentModule } from '../consent/consent.module';
 
 @Module({
-  imports: [DomainsModule, GeographyModule, UsersModule, MailerModule],
+  imports: [DomainsModule, GeographyModule, UsersModule, MailerModule, NicRegistryModule, ConsentModule],
   controllers: [OrganizationsController],
   providers: [OrganizationsService, PasswordService],
 })

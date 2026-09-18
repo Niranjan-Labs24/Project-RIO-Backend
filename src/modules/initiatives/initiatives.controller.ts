@@ -2,8 +2,8 @@ import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
-import { CreateInitiativeBody, UpdateInitiativeBody } from './initiatives.contract';
-import type { CreateInitiativeDto, UpdateInitiativeDto } from './initiatives.contract';
+import { CreateInitiativeBody, SetAnalyticalStatusBody, UpdateInitiativeBody } from './initiatives.contract';
+import type { CreateInitiativeDto, SetAnalyticalStatusDto, UpdateInitiativeDto } from './initiatives.contract';
 import { InitiativesService } from './initiatives.service';
 import type { Initiative, NeedAnalyticalStatusEvent } from './initiatives.types';
 
@@ -79,5 +79,19 @@ export class NeedInitiativesController {
     @Param('needId', new UuidParamPipe()) needId: string,
   ): Promise<NeedAnalyticalStatusEvent[]> {
     return this.initiatives.listAnalyticalStatusHistory(needId);
+  }
+
+  // RIO-FR-009 — the two statuses (plus a reset back to Observed) that have
+  // no automatic trigger; "Linked to initiative"/"Open gap" are refused here
+  // (see InitiativesService.setAnalyticalStatus) since link/unlink above are
+  // their only valid path.
+  @Patch('analytical-status')
+  @RequirePermission('initiatives', 'write')
+  async setAnalyticalStatus(
+    @Param('needId', new UuidParamPipe()) needId: string,
+    @Body(new TypeBoxValidationPipe(SetAnalyticalStatusBody)) body: SetAnalyticalStatusDto,
+  ): Promise<{ status: string }> {
+    await this.initiatives.setAnalyticalStatus(needId, body.status, body.note);
+    return { status: body.status };
   }
 }

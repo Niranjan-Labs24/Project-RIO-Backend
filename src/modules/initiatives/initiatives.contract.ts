@@ -1,6 +1,27 @@
 import { registerSchema, T, type Static } from '../../contract/typebox';
 import { SUPPORTED_CURRENCIES } from './initiatives.types';
 
+// RIO-FR-009 — the two manually-settable analytical statuses. Deliberately
+// narrower than the full AnalyticalStatus union: `linked_to_initiative`/
+// `open_gap` stay exclusively automatic (see InitiativesService.
+// setAnalyticalStatus), and `observed` is a default a person never sets
+// forward into, only ever the starting point.
+export const SetAnalyticalStatusBody = registerSchema(
+  'SetAnalyticalStatusBody',
+  T.Object(
+    {
+      status: T.Union([
+        T.Literal('observed'),
+        T.Literal('under_analysis'),
+        T.Literal('documented_in_study'),
+      ]),
+      note: T.Optional(T.String({ maxLength: 500 })),
+    },
+    { additionalProperties: false },
+  ),
+);
+export type SetAnalyticalStatusDto = Static<typeof SetAnalyticalStatusBody>;
+
 const InitiativeFields = {
   name: T.String({ minLength: 1, maxLength: 300 }),
   domain: T.Optional(T.String({ maxLength: 120 })),

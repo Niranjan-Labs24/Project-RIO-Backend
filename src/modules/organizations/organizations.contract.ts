@@ -1,4 +1,5 @@
 import { registerSchema, T, type Static } from '../../contract/typebox';
+import { ConsentAcceptanceBody } from '../auth/auth.contract';
 
 // Not a fixed enum: `sector` is validated against the live, active Domain
 // list from Methodology Configuration (see OrganizationsService/AuthService
@@ -57,13 +58,33 @@ export const CreateOrganizationBody = registerSchema(
   T.Object({
     name: T.String({ minLength: 1, maxLength: 200 }),
     purpose: T.Optional(T.Union([T.String({ maxLength: 500 }), T.Null()])),
+    // Shape/length only here — checked against the NIC entity registry
+    // (NicRegistryService.assertRegistered) inside the service, same gate
+    // self-signup uses, before this ever reaches the database.
     registrationNumber: T.String({ minLength: 1, maxLength: 100 }),
     region: T.Optional(Villages),
     email: T.Optional(T.Union([T.String({ format: 'email', maxLength: 320 }), T.Null()])),
-    sector: T.Optional(T.Union([SectorValue, T.Null()])),
+    sector: SectorValue,
     villages: T.Optional(Villages),
+    // Required, same as self-signup and same hierarchy checks
+    // (GeographyService#validateHierarchy) — a System-Admin-created org must
+    // be scoped to a real Region/Governorate/Center, not left empty.
+    regionId: T.String({ format: 'uuid' }),
+    governorateIds: T.Array(T.String({ format: 'uuid' }), { minItems: 1, maxItems: 150 }),
+    centerIds: T.Array(T.String({ format: 'uuid' }), { minItems: 1, maxItems: 1404 }),
     adminName: T.Optional(T.String({ minLength: 1, maxLength: 200 })),
     adminEmail: T.Optional(T.String({ format: 'email', maxLength: 320 })),
+    // No format check beyond length here, same as signup's mobileNumber —
+    // the service normalizes it, and delivery/format is only ever proven by
+    // OTP actually reaching the number.
+    adminMobileNumber: T.Optional(T.String({ maxLength: 32 })),
+    // RIO-DATA-001 — required whenever adminName/adminEmail are both
+    // present (checked in the service, not expressible in TypeBox as a
+    // conditional-required): an NGO Admin created this way still needs both
+    // consents on record, same as one created through self-signup. Absent
+    // when no admin is being created in this call — there's no user yet to
+    // consent on behalf of.
+    consent: T.Optional(ConsentAcceptanceBody),
   }),
 );
 export type CreateOrganizationDto = Static<typeof CreateOrganizationBody>;
