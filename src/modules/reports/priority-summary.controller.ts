@@ -35,6 +35,7 @@ export class PrioritySummaryController {
   }
 
   @Post('studies/:studyId/surveys/:surveyId/priority-summary/generate')
+  @RateLimit(30, 60)
   @RequirePermission('priorityScoring', 'create')
   async generateSummary(
     @Param('studyId', new UuidParamPipe()) studyId: string,
