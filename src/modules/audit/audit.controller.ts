@@ -1,5 +1,6 @@
 import { Controller, Get, Param, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
+import { RateLimit } from '../../common/guards/rate-limit.guard';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { parseIntParam } from '../../common/http/query.util';
 import { AuditService } from './audit.service';
@@ -43,6 +44,7 @@ export class AuditController {
   // query string; kept in the signature for the CSV/PDF/Excel contract
   // parity note above exportCsv().
   @Get('export')
+  @RateLimit(10, 60, { failOpenOnOutage: true })
   @RequirePermission('archiveSharingAudit', 'export')
   async export(
     @Res({ passthrough: true }) res: Response,

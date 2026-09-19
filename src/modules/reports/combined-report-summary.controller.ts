@@ -7,6 +7,7 @@ import {
   Put,
 } from "@nestjs/common";
 import { UuidParamPipe } from "../../common/pipes/uuid-param.pipe";
+import { RateLimit } from "../../common/guards/rate-limit.guard";
 import { RequirePermission } from "../../common/guards/permission.guard";
 import {
   CombinedReportSummaryService,
@@ -30,6 +31,7 @@ export class CombinedReportSummaryController {
   // both, Research Officer holds neither. Pragmatic split ahead of formal
   // client sign-off on the exact module.
   @Post("generate")
+  @RateLimit(30, 60)
   @RequirePermission("priorityScoring", "create")
   async generateSummary(
     @Param("studyId", new UuidParamPipe()) studyId: string,

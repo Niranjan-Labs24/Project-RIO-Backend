@@ -142,11 +142,18 @@ import { AppController } from './app.controller';
     // AllExceptionsFilter instead: guards run before interceptors, so a 401
     // or 403 never reaches this one.
     { provide: APP_INTERCEPTOR, useClass: OperationalLogInterceptor },
-    { provide: APP_GUARD, useClass: RateLimitGuard },
-    // Order matters: JwtAuthGuard populates the OrgStore from the bearer token,
-    // then CsrfGuard checks the double-submit token (no-op unless CSRF_ENFORCE=true),
-    // then PermissionGuard enforces (module, action) against that role.
+    // Order matters: JwtAuthGuard populates the OrgStore (actorId/role/orgId)
+    // from the bearer token first, so RateLimitGuard can key its default
+    // per-endpoint tiers on the authenticated account rather than only the
+    // network address — the client's explicit requirement for RIO-NFR (rate
+    // limiting tied to "the signed-in account rather than just the network
+    // address"). Public routes (login/OTP/signup) still work: JwtAuthGuard
+    // no-ops on them, and their own @RateLimit() decorators key on the
+    // request body (email/contact) instead, same as before. Then CsrfGuard
+    // checks the double-submit token (no-op unless CSRF_ENFORCE=true), then
+    // PermissionGuard enforces (module, action) against that role.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: RateLimitGuard },
     { provide: APP_GUARD, useClass: CsrfGuard },
     { provide: APP_GUARD, useClass: PermissionGuard },
   ],

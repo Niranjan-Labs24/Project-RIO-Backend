@@ -1,5 +1,6 @@
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { Controller, Get, Post, Patch, Delete, Param, Body, Query } from '@nestjs/common';
+import { RateLimit } from '../../common/guards/rate-limit.guard';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import {
@@ -34,6 +35,7 @@ export class PrioritySummaryController {
   }
 
   @Post('studies/:studyId/surveys/:surveyId/priority-summary/generate')
+  @RateLimit(30, 60)
   @RequirePermission('priorityScoring', 'create')
   async generateSummary(
     @Param('studyId', new UuidParamPipe()) studyId: string,

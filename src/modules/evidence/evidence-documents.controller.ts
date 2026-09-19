@@ -17,6 +17,7 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 import { UuidParamPipe } from "../../common/pipes/uuid-param.pipe";
+import { RateLimit } from "../../common/guards/rate-limit.guard";
 import { RequirePermission } from "../../common/guards/permission.guard";
 import { EvidenceDocumentsService } from "./evidence-documents.service";
 import { DocumentSummaryService, DocumentSummaryOutputJson } from "./document-summary.service";
@@ -143,6 +144,7 @@ export class EvidenceDocumentsController {
   // client sign-off on the exact module — flagged for that if it ever needs
   // revisiting.
   @Post(":id/summary/generate")
+  @RateLimit(30, 60)
   @RequirePermission("priorityScoring", "create")
   async generateSummary(@Param("id", new UuidParamPipe()) id: string) {
     return this.summaryService.generateDocumentSummary(id);
