@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
+import { RateLimit } from '../../common/guards/rate-limit.guard';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import {
@@ -65,6 +66,7 @@ export class NeedSummaryController {
   }
 
   @Post('needs/:needId/summary/regenerate')
+  @RateLimit(30, 60)
   @RequirePermission('aiReview', 'approve')
   regenerate(@Param('needId', new UuidParamPipe()) needId: string): Promise<NeedSummary> {
     return this.summaries.regenerate(needId);

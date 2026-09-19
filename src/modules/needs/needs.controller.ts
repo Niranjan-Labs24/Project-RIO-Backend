@@ -1,6 +1,7 @@
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { RateLimit } from '../../common/guards/rate-limit.guard';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import { BulkImportNeedsBody, CreateNeedBody, SetNeedGapTypeBody, UpdateNeedBody } from './needs.contract';
@@ -138,6 +139,7 @@ export class NeedsController {
 
   /** RIO-FR-003 AC 6 — re-run theme extraction after the statement changed. */
   @Post('needs/:needId/themes/extract')
+  @RateLimit(30, 60)
   @RequirePermission('priorityScoring', 'write')
   extractThemes(@Param('needId', new UuidParamPipe()) needId: string): Promise<string[]> {
     return this.themes.extract(needId);

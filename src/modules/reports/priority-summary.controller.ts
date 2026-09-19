@@ -1,5 +1,6 @@
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { Controller, Get, Post, Patch, Delete, Param, Body, Query } from '@nestjs/common';
+import { RateLimit } from '../../common/guards/rate-limit.guard';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import {

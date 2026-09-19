@@ -1,5 +1,6 @@
 import { BadRequestException, Controller, Get, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
+import { RateLimit } from '../../common/guards/rate-limit.guard';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { NcnpReportService } from './ncnp-report.service';
 import type { NcnpReport } from './ncnp-report.types';
@@ -27,6 +28,7 @@ export class NcnpReportController {
   // future `:something` param route on this controller, or Nest would try
   // to match "export" as that param instead.
   @Get('export')
+  @RateLimit(10, 60, { failOpenOnOutage: true })
   @RequirePermission('archiveSharingAudit', 'read')
   async export(
     @Query('format') format: string | undefined,

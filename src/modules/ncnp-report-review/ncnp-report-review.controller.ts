@@ -1,6 +1,7 @@
 import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
+import { RateLimit } from '../../common/guards/rate-limit.guard';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import {
@@ -53,6 +54,7 @@ export class NcnpReportReviewController {
   // which System Reviewer never holds) so both roles that can view a
   // released report can also export it.
   @Get(':id/export')
+  @RateLimit(10, 60, { failOpenOnOutage: true })
   @RequirePermission('ncnpReport', 'read')
   async export(
     @Param('id', new UuidParamPipe()) id: string,

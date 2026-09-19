@@ -1,5 +1,6 @@
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { RateLimit } from '../../common/guards/rate-limit.guard';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { parseIntParam } from '../../common/http/query.util';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
@@ -78,6 +79,7 @@ export class SurveysController {
   }
 
   @Post('needs/:needId/recommend-questions')
+  @RateLimit(30, 60)
   @RequirePermission('surveyBuilder', 'write')
   recommendQuestions(@Param('needId', new UuidParamPipe()) needId: string) {
     return this.service.recommendQuestions(needId);
