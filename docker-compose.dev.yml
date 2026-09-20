@@ -15,3 +15,10 @@ services:
       # Windows service), set DB_HOST_PORT in your local .env to an unused
       # port instead — docker compose auto-reads .env for this substitution.
       - '${DB_HOST_PORT:-5432}:5432'
+  redis:
+    ports:
+      # Same reason as the database above. The README's quick start runs the
+      # app on the host, so the host has to be able to reach Redis — without
+      # this, REDIS_URL cannot resolve and /health/redis reports unavailable
+      # even though the container is running and healthy.
+      - '${REDIS_HOST_PORT:-6379}:6379'
