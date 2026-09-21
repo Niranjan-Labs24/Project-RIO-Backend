@@ -1,6 +1,7 @@
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { Body, Controller, Get, Param, Patch, Post, Query, Res } from "@nestjs/common";
 import type { Response } from "express";
+import { RateLimit } from "../../common/guards/rate-limit.guard";
 import { RequirePermission } from "../../common/guards/permission.guard";
 import { parseIntParam } from "../../common/http/query.util";
 import { TypeBoxValidationPipe } from "../../contract/validation.pipe";
@@ -86,6 +87,7 @@ export class ReportsController {
   // (including absent, for every existing caller) means English — a bad value
   // must not fail a download, and there is no third language to guess at.
   @Get(":id/export")
+  @RateLimit(10, 60, { failOpenOnOutage: true })
   @RequirePermission("reportsDashboards", "export")
   async export(
     @Param("id", new UuidParamPipe()) id: string,

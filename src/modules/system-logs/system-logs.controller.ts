@@ -1,5 +1,6 @@
 import { Controller, Get, Param, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
+import { RateLimit } from '../../common/guards/rate-limit.guard';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { parseIntParam } from '../../common/http/query.util';
 import { SystemLogsService } from './system-logs.service';
@@ -75,6 +76,7 @@ export class SystemLogsController {
   }
 
   @Get('export')
+  @RateLimit(10, 60, { failOpenOnOutage: true })
   @RequirePermission('systemLogs', 'export')
   async export(
     @Res({ passthrough: true }) res: Response,

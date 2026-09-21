@@ -99,6 +99,18 @@ export interface CenterDomainBreakdown {
   needCount: number;
   averageScore: number;
   level: 'critical' | 'high' | 'medium' | 'low';
+  /** How many of this domain's `needCount` Needs are individually Critical
+   *  / High — see `maskedCritical` below for why this is surfaced
+   *  separately from the domain's own averaged `level`. */
+  criticalNeedCount: number;
+  highNeedCount: number;
+  /** BRD Annex A's "no-masking rule" (Station 6a), carried down to Need
+   *  granularity: true when this domain's averaged `level` reads calmer
+   *  than Critical but at least one of its own Needs individually scores
+   *  Critical — an outlier the average alone would hide. Always false when
+   *  `level` is already 'critical' (nothing is hidden if the headline
+   *  already shows the worst case). */
+  maskedCritical: boolean;
 }
 
 /** Grouped by Centre rather than by `Need.village`: village is free text a

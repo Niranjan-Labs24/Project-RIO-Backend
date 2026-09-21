@@ -1,6 +1,7 @@
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
+import { RateLimit } from '../../common/guards/rate-limit.guard';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import { parseIntParam } from '../../common/http/query.util';
@@ -94,6 +95,7 @@ export class PublicSurveysController {
   // Buffer into `{"type":"Buffer","data":[...]}` instead of sending it
   // as-is), same pattern as ReportsController#export.
   @Get('survey-responses/export')
+  @RateLimit(10, 60, { failOpenOnOutage: true })
   @RequirePermission('studySurvey', 'export')
   async exportResponses(
     @Res() res: Response,

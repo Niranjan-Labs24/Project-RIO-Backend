@@ -1,4 +1,5 @@
 import { Body, Controller, Post } from '@nestjs/common';
+import { RateLimit } from '../../common/guards/rate-limit.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import { TranslateContentBody } from './translation.contract';
 import { TranslationService } from './translation.service';
@@ -16,6 +17,10 @@ export class TranslationController {
   constructor(private readonly translation: TranslationService) {}
 
   @Post()
+  // Fires passively via AutoTranslate on nearly every screen render, not a
+  // deliberate AI-generation click — tiered with screen loads/lookups
+  // (300/min), not the 30/min AI-generation tier.
+  @RateLimit(300, 60)
   translate(
     @Body(new TypeBoxValidationPipe(TranslateContentBody)) body: TranslateContentDto,
   ): Promise<TranslateContentResult> {

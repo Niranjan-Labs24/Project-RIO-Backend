@@ -144,7 +144,20 @@ export class CenterAggregationService {
     // Running totals per centre, and per domain within it. Kept alongside the
     // entry rather than on it so the public shape carries only averages.
     const totals = new Map<string, { sum: number; count: number }>();
-    const domainTotals = new Map<string, Map<string, { sum: number; count: number }>>();
+    // Per-domain running totals also carry critical/high counts among the
+    // Needs actually contributing to that domain's mean — the platform-level
+    // equivalent of Annex A's Station 6 "no-masking rule" (BRD, "any
+    // indicator crossing the critical threshold surfaces and escalates
+    // automatically, regardless of its domain average"). The workbook
+    // enforces this at KPI/indicator granularity; this platform scores at
+    // Need granularity instead (see this file's own header comment on why),
+    // so the equivalent guarantee here is: a domain's own average tier must
+    // never be the only visible signal when one of its Needs is
+    // individually Critical or High.
+    const domainTotals = new Map<
+      string,
+      Map<string, { sum: number; count: number; criticalCount: number; highCount: number }>
+    >();
 
     const byCenter = new Map<string, CenterComparisonEntry>();
 
@@ -204,14 +217,19 @@ export class CenterAggregationService {
           entry.scoredNeedCount += 1;
 
           const perDomain = domainTotals.get(centerId)!;
-          const d = perDomain.get(domainKey) ?? { sum: 0, count: 0 };
+          const d = perDomain.get(domainKey) ?? { sum: 0, count: 0, criticalCount: 0, highCount: 0 };
           d.sum += effective;
           d.count += 1;
-          perDomain.set(domainKey, d);
 
           const level = mapPriorityLevel(effective, false, thresholds);
-          if (level === 'critical') entry.criticalNeedCount += 1;
-          else if (level === 'high') entry.highNeedCount += 1;
+          if (level === 'critical') {
+            entry.criticalNeedCount += 1;
+            d.criticalCount += 1;
+          } else if (level === 'high') {
+            entry.highNeedCount += 1;
+            d.highCount += 1;
+          }
+          perDomain.set(domainKey, d);
         }
 
         // RIO-FR-005 (Round 4, client-confirmed 2026-08-24) — sum only the
@@ -238,11 +256,22 @@ export class CenterAggregationService {
       entry.domainBreakdown = [...perDomain.entries()]
         .map(([domain, d]) => {
           const mean = d.sum / d.count;
+          const level = mapPriorityLevel(mean, false, thresholds);
           return {
             domain,
             needCount: d.count,
             averageScore: Math.round(mean * 10) / 10,
-            level: mapPriorityLevel(mean, false, thresholds),
+            level,
+            criticalNeedCount: d.criticalCount,
+            highNeedCount: d.highCount,
+            // No-masking flag (BRD Annex A, Station 6a): true when this
+            // domain's own averaged tier reads calmer than Critical, yet at
+            // least one Need feeding that average is individually Critical —
+            // the exact "average hides an outlier" failure Annex A calls out
+            // by name. Never true for a domain whose average already IS
+            // Critical: nothing is being hidden if the headline already
+            // shows the worst case.
+            maskedCritical: level !== 'critical' && d.criticalCount > 0,
           };
         })
         // Worst first — that is the order a reviewer scanning a place reads in.

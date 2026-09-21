@@ -1,5 +1,6 @@
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { Body, Controller, Get, HttpCode, Param, Patch, Post } from '@nestjs/common';
+import { RateLimit } from '../../common/guards/rate-limit.guard';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import {
@@ -22,6 +23,7 @@ export class AiDecisionsController {
   // (see NeedsService.create) — this endpoint survives only as the Retry
   // action for a Need whose automatic classification failed.
   @Post('classify')
+  @RateLimit(30, 60)
   @RequirePermission('aiReview', 'write')
   retryClassification(@Param('needId', new UuidParamPipe()) needId: string): Promise<AiDecision> {
     return this.aiDecisions.retryClassification(needId);
@@ -79,6 +81,7 @@ export class AiReviewController {
   }
 
   @Post('retry-classification')
+  @RateLimit(30, 60)
   @RequirePermission('aiReview', 'write')
   retry(@Param('needId', new UuidParamPipe()) needId: string): Promise<AiDecision> {
     return this.aiDecisions.retryClassification(needId);
