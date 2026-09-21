@@ -384,7 +384,12 @@ export class AuthService {
     // must key off the normalized form this returns (a number entered with
     // dashes or Arabic-Indic digits would otherwise slip past the duplicate
     // check and land as a second row for the same entity).
-    const registrationNumber = await this.nicRegistry.assertRegistered(dto.registrationNumber);
+    // The organization name must also match the registry's English or Arabic
+    // name for that number (case-insensitive).
+    const registrationNumber = await this.nicRegistry.assertRegistered(
+      dto.registrationNumber,
+      dto.organizationName,
+    );
     // Friendly pre-checks (the DB unique constraint is still the source of
     // truth, handled inside the repository for the concurrent-signup race —
     // hence the duplicated error envelopes via the shared conflictFor()).

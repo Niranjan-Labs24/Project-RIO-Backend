@@ -78,7 +78,7 @@ export class AuthController {
   async verifyRegistrationNumber(
     @Body(new TypeBoxValidationPipe(VerifyRegistrationNumberBody)) body: VerifyRegistrationNumberDto,
   ): Promise<VerifyRegistrationNumberView> {
-    const { verified, reason } = await this.nicRegistry.check(body.registrationNumber);
+    const { verified, reason } = await this.nicRegistry.check(body.registrationNumber, body.organizationName);
     return reason ? { verified, reason } : { verified };
   }
 

@@ -31,3 +31,15 @@ export function normalizeNicNumber(raw: string | null | undefined): string {
     .replace(ARABIC_INDIC_DIGITS, (d) => String(d.charCodeAt(0) & 0x0f))
     .replace(SEPARATORS, '');
 }
+
+/**
+ * Folds an entity name for comparison against `nic_registry.name_en` /
+ * `name_ar`: case-insensitive, and blind to leading/trailing and repeated
+ * whitespace (including NBSP). Arabic has no case, so lowercasing is a no-op
+ * there and the Arabic name is compared as typed. Used for comparison only —
+ * the name the registrant typed is what gets stored.
+ */
+export function normalizeEntityName(raw: string | null | undefined): string {
+  if (raw === null || raw === undefined) return '';
+  return String(raw).replace(/\s+/g, ' ').trim().toLowerCase();
+}
