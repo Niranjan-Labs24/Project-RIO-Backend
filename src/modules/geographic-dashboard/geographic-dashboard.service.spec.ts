@@ -25,6 +25,9 @@ interface SeedNeed {
   initiatives?: string[];
   /** Which study this need belongs to — drives the per-place study count. */
   studyId?: string;
+  /** Public survey links on this need's study. Summed per study, so setting
+   *  it on two needs of the same study adds both. */
+  publicSurveys?: number;
   /** Owning organisation's name — the NCNP view lists these. */
   orgName?: string;
   domain?: string | null;
@@ -104,6 +107,21 @@ function fakeTenant(seed: {
               initiative: { id: `init-${name}`, name, status: 'active', domain: null },
             })),
           })),
+    },
+    // No public links by default, so every existing expectation keeps the
+    // count it had. The tests that care about the number set it themselves.
+    publicSurveyLink: {
+      groupBy: async () =>
+        [...new Set(needs.filter((n) => n.publicSurveys).map((n) => n.studyId ?? 'study-1'))].map(
+          (studyId) => ({
+            studyId,
+            _count: {
+              _all: needs
+                .filter((n) => (n.studyId ?? 'study-1') === studyId)
+                .reduce((total, n) => total + (n.publicSurveys ?? 0), 0),
+            },
+          }),
+        ),
     },
   };
 

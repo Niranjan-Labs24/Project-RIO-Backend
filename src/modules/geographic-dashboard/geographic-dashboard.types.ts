@@ -94,6 +94,17 @@ export interface GeoMapPoint {
   workingOrgs: GeoMapOrgSummary[];
   /** Free-text village names recorded on this place's needs. */
   villages: string[];
+  /**
+   * Names of the centres this place's needs are linked to. Unlike `villages`,
+   * these are real geography rows with codes and coordinates, not free text
+   * someone typed into a need.
+   */
+  centers: string[];
+  /**
+   * Public survey links across every study here. Not `publishedCount`: that
+   * counts needs past review, which is a different question.
+   */
+  publicSurveyCount: number;
 }
 
 export interface GeoMapResponse {
