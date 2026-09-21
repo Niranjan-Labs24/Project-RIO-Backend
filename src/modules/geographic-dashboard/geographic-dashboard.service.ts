@@ -72,11 +72,18 @@ export class GeographicDashboardService {
    * governorate to center a data change rather than a code change.
    */
   async getMap(level: GeoLevel, filters: GeoMapFilters = {}): Promise<GeoMapResponse> {
-    const [places, needs, placesWithoutCoordinates] = await Promise.all([
-      this.loadPlaces(level),
-      this.loadNeeds(),
-      this.countPlacesWithoutCoordinates(level),
-    ]);
+    const [places, needs, placesWithoutCoordinates, centerNames, surveysByStudy] =
+      await Promise.all([
+        this.loadPlaces(level),
+        this.loadNeeds(),
+        this.countPlacesWithoutCoordinates(level),
+        // Loaded at every level, not just level='center'. The panel names the
+        // centres a need actually covers even when the map is drawn by region,
+        // which is the question "where exactly is this?" that a region outline
+        // cannot answer.
+        this.loadCenterNames(),
+        this.countPublicSurveysByStudy(),
+      ]);
 
     // Filter option lists come from the unfiltered set, so choosing one
     // filter never empties the other dropdowns.
@@ -107,6 +114,7 @@ export class GeographicDashboardService {
         orgStudies: Map<string, Set<string>>;
         domains: Map<string, number>;
         villages: Set<string>;
+        centers: Set<string>;
         published: number;
       }
     >();
@@ -131,6 +139,7 @@ export class GeographicDashboardService {
             orgStudies: new Map(),
             domains: new Map(),
             villages: new Set(),
+            centers: new Set(),
             published: 0,
           };
           buckets.set(id, b);
@@ -149,6 +158,12 @@ export class GeographicDashboardService {
           b.orgStudies.set(need.orgName, forOrg);
           if (need.domain) b.domains.set(need.domain, (b.domains.get(need.domain) ?? 0) + 1);
           for (const v of need.villages) b.villages.add(v);
+          // An id with no name means the centre was deleted after the need
+          // was linked; skipped rather than shown as a blank row.
+          for (const c of need.centerIds) {
+            const name = centerNames.get(c);
+            if (name) b.centers.add(name);
+          }
           if (need.isPublished) b.published++;
           if (need.sector) b.sectors.set(need.sector, (b.sectors.get(need.sector) ?? 0) + 1);
         }
@@ -191,6 +206,15 @@ export class GeographicDashboardService {
           .sort((x, y) => y.studyCount - x.studyCount)
           .slice(0, MAX_INITIATIVES_PER_POINT),
         villages: [...b.villages].sort(),
+        centers: [...b.centers].sort(),
+        // Distinct public survey links across every study at this place.
+        // Deliberately not the same as publishedCount, which counts needs
+        // that cleared human review — a study can be published with no
+        // public link, and carry several links once it has one.
+        publicSurveyCount: [...b.studyIds].reduce(
+          (total, studyId) => total + (surveysByStudy.get(studyId) ?? 0),
+          0,
+        ),
       });
     }
 
@@ -418,6 +442,39 @@ export class GeographicDashboardService {
         ? tx.center.count({ where: { latitude: null } })
         : tx.governorate.count({ where: { latitude: null } }),
     );
+  }
+
+  /**
+   * Centre id -> name, for naming the centres a need covers regardless of
+   * which level the map is drawn at.
+   *
+   * Reference geography, not tenant data: centres are the same list for
+   * every organisation, so this reads through the supervisor role like
+   * loadPlaces does rather than the org-scoped connection.
+   */
+  private async loadCenterNames(): Promise<Map<string, string>> {
+    const rows = await this.tenant.runAsSupervisor((tx) =>
+      tx.center.findMany({ select: { id: true, name: true } }),
+    );
+    return new Map(rows.map((c) => [c.id, c.name]));
+  }
+
+  /**
+   * Study id -> how many public survey links it has.
+   *
+   * Grouped once for the whole map instead of queried per point: a region
+   * map has 13 points and a centre map over a thousand, and this is the same
+   * single query either way.
+   */
+  private async countPublicSurveysByStudy(): Promise<Map<string, number>> {
+    const run = this.isCrossEntity()
+      ? this.tenant.runAsSupervisor.bind(this.tenant)
+      : this.tenant.runInOrgContext.bind(this.tenant);
+
+    const rows = await run((tx) =>
+      tx.publicSurveyLink.groupBy({ by: ['studyId'], _count: { _all: true } }),
+    );
+    return new Map(rows.map((r) => [r.studyId, r._count._all]));
   }
 
   /**
