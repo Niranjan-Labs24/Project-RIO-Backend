@@ -170,7 +170,14 @@ export type ConsentDto = Static<typeof ConsentBody>;
 export const VerifyRegistrationNumberBody = registerSchema(
   'VerifyRegistrationNumberBody',
   T.Object(
-    { registrationNumber: T.String({ minLength: 1, maxLength: 100 }) },
+    {
+      registrationNumber: T.String({ minLength: 1, maxLength: 100 }),
+      // When sent (the public signup form always does), it is checked against
+      // the registry's name_en / name_ar for that number — the pair must
+      // match, mirroring the signup gate. Omitted by the system-admin
+      // "create organization" dialog, which gates on the number alone.
+      organizationName: T.Optional(T.String({ minLength: 1, maxLength: 200 })),
+    },
     { additionalProperties: false },
   ),
 );
@@ -179,7 +186,7 @@ export type VerifyRegistrationNumberDto = Static<typeof VerifyRegistrationNumber
 export interface VerifyRegistrationNumberView {
   verified: boolean;
   /** Why it failed, for the frontend to localize. Absent when verified. */
-  reason?: 'INVALID_FORMAT' | 'NOT_FOUND';
+  reason?: 'INVALID_FORMAT' | 'NOT_FOUND' | 'NAME_MISMATCH';
 }
 
 /**

@@ -267,6 +267,15 @@ describe('AuthService.signup', () => {
     expect(repo.findByRegistrationNumber).not.toHaveBeenCalled();
   });
 
+  it('signup: checks the organization name together with the registration number', async () => {
+    stubSuccessfulCreate();
+    nicRegistryStub.assertRegistered.mockResolvedValueOnce(NIC_FIXTURE);
+
+    await service.signup({ ...signupBody, registrationNumber: NIC_FIXTURE, consent: VALID_CONSENT });
+
+    expect(nicRegistryStub.assertRegistered).toHaveBeenLastCalledWith(NIC_FIXTURE, signupBody.organizationName);
+  });
+
   it('signup: persists the normalized registration number, not the raw input', async () => {
     stubSuccessfulCreate();
     nicRegistryStub.assertRegistered.mockResolvedValueOnce(NIC_FIXTURE);

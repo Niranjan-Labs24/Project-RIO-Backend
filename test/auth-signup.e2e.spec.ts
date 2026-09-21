@@ -37,9 +37,13 @@ describe('signup -> pending approval -> System Admin approves -> entity logs in'
   // first free one rather than a fixed fixture that would 409 on the second
   // run. Read through the supervisor client: `organisations` is RLS-protected
   // and there is no session at this point in the flow.
-  async function takeUnusedNicNumber(): Promise<string> {
+  //
+  // Also returns the entity's registered name: signup requires the
+  // organization name to match the registry's name_en or name_ar for the
+  // number, so a made-up name would be rejected with ORGANIZATION_NAME_MISMATCH.
+  async function takeUnusedNic(): Promise<{ nicNumber: string; name: string }> {
     const tenant = app.get(TenantPrismaService);
-    const nicNumber = await tenant.runAsSupervisor(async (tx) => {
+    const row = await tenant.runAsSupervisor(async (tx) => {
       const used = await tx.organisation.findMany({
         where: { registrationNumber: { not: null } },
         select: { registrationNumber: true },
@@ -47,22 +51,26 @@ describe('signup -> pending approval -> System Admin approves -> entity logs in'
       const taken = used
         .map((o) => o.registrationNumber)
         .filter((n): n is string => n !== null);
-      const row = await tx.nicRegistry.findFirst({
-        where: taken.length > 0 ? { nicNumber: { notIn: taken } } : undefined,
+      return tx.nicRegistry.findFirst({
+        where: {
+          ...(taken.length > 0 ? { nicNumber: { notIn: taken } } : {}),
+          nameEn: { not: null },
+        },
         orderBy: { nicNumber: 'asc' },
-        select: { nicNumber: true },
+        select: { nicNumber: true, nameEn: true },
       });
-      return row?.nicNumber ?? null;
     });
-    if (!nicNumber) {
+    if (!row?.nameEn) {
       throw new Error('No unused NIC number available — run `pnpm import:nic-registry` first.');
     }
-    return nicNumber;
+    return { nicNumber: row.nicNumber, name: row.nameEn };
   }
 
   it('blocks login until approved, then lets the entity log in with the temp password System Admin\'s approval issues', async () => {
     const server = app.getHttpServer();
-    const rn = await takeUnusedNicNumber();
+    const { nicNumber: rn, name } = await takeUnusedNic();
+    // Different case from the registry on purpose — the name match ignores case.
+    const organizationName = name.toUpperCase();
     const email = `admin+${Date.now()}@e2e.test`;
 
     // Geography reference endpoints are public (no @RequirePermission — see
@@ -90,7 +98,7 @@ describe('signup -> pending approval -> System Admin approves -> entity logs in'
     const signup = await request(server)
       .post('/api/auth/signup')
       .send({
-        organizationName: 'E2E NGO',
+        organizationName,
         purpose: 'testing',
         registrationNumber: rn,
         email,
@@ -105,7 +113,7 @@ describe('signup -> pending approval -> System Admin approves -> entity logs in'
       .expect(201);
 
     // No session is established at signup — pending approval, nothing else.
-    expect(signup.body).toEqual({ status: 'pending_approval', organizationName: 'E2E NGO', email });
+    expect(signup.body).toEqual({ status: 'pending_approval', organizationName, email });
     expect(signup.headers['set-cookie']).toBeUndefined();
 
     // Login is blocked until approved — org.isActive is false from creation.
@@ -186,29 +194,39 @@ describe('signup -> pending approval -> System Admin approves -> entity logs in'
   // with a verdict only — no entity data — so it can't be used to read the
   // register.
   describe('POST /auth/verify-registration-number', () => {
-    it('verifies a number that is in the registry', async () => {
-      const nicNumber = await takeUnusedNicNumber();
+    it('verifies a number paired with its registered name, ignoring case', async () => {
+      const { nicNumber, name } = await takeUnusedNic();
       const res = await request(app.getHttpServer())
         .post('/api/auth/verify-registration-number')
-        .send({ registrationNumber: nicNumber })
+        .send({ registrationNumber: nicNumber, organizationName: name.toLowerCase() })
         .expect(200);
       expect(res.body).toEqual({ verified: true });
     });
 
     it('accepts the same number typed with separators', async () => {
-      const nicNumber = await takeUnusedNicNumber();
+      const { nicNumber, name } = await takeUnusedNic();
       const spaced = `${nicNumber.slice(0, 4)}-${nicNumber.slice(4, 7)}-${nicNumber.slice(7)}`;
       const res = await request(app.getHttpServer())
         .post('/api/auth/verify-registration-number')
-        .send({ registrationNumber: spaced })
+        .send({ registrationNumber: spaced, organizationName: name })
         .expect(200);
       expect(res.body).toEqual({ verified: true });
+    });
+
+    it('rejects a registered number paired with a different name, without revealing the real one', async () => {
+      const { nicNumber, name } = await takeUnusedNic();
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/verify-registration-number')
+        .send({ registrationNumber: nicNumber, organizationName: 'Definitely Not This Entity' })
+        .expect(200);
+      expect(res.body).toEqual({ verified: false, reason: 'NAME_MISMATCH' });
+      expect(JSON.stringify(res.body)).not.toContain(name);
     });
 
     it('answers 200 with a reason — not an error — for a number it does not hold', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/auth/verify-registration-number')
-        .send({ registrationNumber: '0000000000' })
+        .send({ registrationNumber: '0000000000', organizationName: 'Any NGO' })
         .expect(200);
       expect(res.body).toEqual({ verified: false, reason: 'NOT_FOUND' });
     });
@@ -216,7 +234,7 @@ describe('signup -> pending approval -> System Admin approves -> entity logs in'
     it('distinguishes a malformed number from an unknown one', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/auth/verify-registration-number')
-        .send({ registrationNumber: 'NGO123456' })
+        .send({ registrationNumber: 'NGO123456', organizationName: 'Any NGO' })
         .expect(200);
       expect(res.body).toEqual({ verified: false, reason: 'INVALID_FORMAT' });
     });
@@ -264,19 +282,19 @@ describe('signup -> pending approval -> System Admin approves -> entity logs in'
       return { regionId, governorateIds: [governorateId], centerIds: [centers.body[0].id] };
     }
 
-    // `registrationNumber` is passed in rather than stamped: it has to be a
+    // The NIC number + name is passed in rather than stamped: it has to be a
     // real, unclaimed NIC number now, and the stale-consent test below reuses
     // the same one across its two requests on purpose.
     function body(
       geo: Awaited<ReturnType<typeof geography>>,
-      registrationNumber: string,
+      nic: { nicNumber: string; name: string },
       consent?: unknown,
     ) {
       const stamp = `${Date.now()}${Math.round(performance.now())}`;
       return {
-        organizationName: 'No-Consent NGO',
+        organizationName: nic.name,
         purpose: 'testing',
-        registrationNumber,
+        registrationNumber: nic.nicNumber,
         email: `noconsent+${stamp}@e2e.test`,
         ...geo,
         ...(consent === undefined ? {} : { consent }),
@@ -287,7 +305,7 @@ describe('signup -> pending approval -> System Admin approves -> entity logs in'
       const geo = await geography();
       const res = await request(app.getHttpServer())
         .post('/api/auth/signup')
-        .send(body(geo, await takeUnusedNicNumber()))
+        .send(body(geo, await takeUnusedNic()))
         .expect(400);
       // Schema-level rejection — never reaches the service, so nothing is created.
       expect(res.body.error).toBeDefined();
@@ -298,14 +316,14 @@ describe('signup -> pending approval -> System Admin approves -> entity logs in'
       const policies = await request(app.getHttpServer()).get('/api/consent-policy/active').expect(200);
       await request(app.getHttpServer())
         .post('/api/auth/signup')
-        .send(body(geo, await takeUnusedNicNumber(), { usePolicyVersion: policies.body.usePolicy.version }))
+        .send(body(geo, await takeUnusedNic(), { usePolicyVersion: policies.body.usePolicy.version }))
         .expect(400);
     });
 
     it('rejects a stale consent version with CONSENT_VERSION_STALE and creates nothing', async () => {
       const geo = await geography();
       const policies = await request(app.getHttpServer()).get('/api/consent-policy/active').expect(200);
-      const payload = body(geo, await takeUnusedNicNumber(), {
+      const payload = body(geo, await takeUnusedNic(), {
         usePolicyVersion: policies.body.usePolicy.version,
         // A version that is syntactically fine but not the active one — the
         // "form left open across a policy update" case.
