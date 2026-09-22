@@ -252,7 +252,21 @@ export const ROLE_MATRIX: RoleDef[] = [
     // all (verified — Evidence has no export feature to grant). Ends the
     // RIO-DATA-003 temporary widening (Data Analyst could previously
     // create Needs directly) per this confirmation.
-    perm('dataCollection', RO),
+    //
+    // `create` is granted back so the Data Analyst can UPLOAD an evidence
+    // document. The same Aug 12 confirmation gives them "Generating the AI
+    // Evidence Summary" and "Generating the Combined Summary Report", and
+    // neither is reachable without a document to summarise — the upload
+    // button on the Document-Based Summary tab is gated on exactly this
+    // grant, so the owner of the step could not start it.
+    //
+    // ⚠ This is wider than the upload alone. `dataCollection:create` also
+    // gates POST /studies/:studyId/needs and the four needs-import
+    // endpoints, so it re-opens the direct Need creation the Aug 12
+    // confirmation closed. Splitting evidence documents onto their own
+    // permission is the clean fix, and is why this carries a warning rather
+    // than being applied silently.
+    perm('dataCollection', { read: true, create: true }),
     perm('dataImport', { read: true, write: true, create: true }), perm('citizenChannel'),
     perm('dataQuality', { read: true, write: true, approve: true, export: true }),
     // Confirmed (product team, Aug 12): Data Analyst owns "Generating the AI
