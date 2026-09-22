@@ -116,8 +116,8 @@ export interface CenterDomainBreakdown {
   maskedCritical: boolean;
 }
 
-// RIO-FR-005 — Heat Map side panel, per-KPI detail (Jagan's clarification
-// mail, 2026-09-21). One row per KPI scored under the clicked domain/village
+// RIO-FR-005 — Heat Map side panel, per-KPI detail, per the product team's
+// request (2026-09-21). One row per KPI scored under the clicked domain/village
 // cell — see CenterAggregationService.kpiBreakdownForDomain for how each
 // field is sourced (severity/confidence from ScoreRollup, analytical
 // category from the Question Bank, gap type/equity flag inherited from the

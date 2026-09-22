@@ -124,7 +124,7 @@ async function seedForOrg(orgId: string, createdBy: string): Promise<void> {
   await prisma.$transaction(async (tx) => {
     await setOrg(tx, orgId);
 
-    // RIO-FR-005 (Jagan's clarification mail, 2026-09-21) — re-seeding
+    // RIO-FR-005 (per the product team's request, 2026-09-21) — re-seeding
     // rather than skipping when this org's demo study already exists: the
     // heat map side panel now drills into per-KPI detail (Survey +
     // ScoreRollup), which the original version of this script never wrote.
@@ -197,8 +197,8 @@ async function seedForOrg(orgId: string, createdBy: string): Promise<void> {
         });
 
         // Leave this cell unscored on purpose — the heat map's "not yet
-        // scored" / grey-cell case (client's clarification never said
-        // whether an unscored cell should be hidden; showing it as a
+        // scored" / grey-cell case (the client never said one way or the
+        // other whether an unscored cell should be hidden; showing it as a
         // distinct grey state is the safer default — see conversation).
         if (score === null || level === null || gapType === null) continue;
 
@@ -275,7 +275,7 @@ async function seedForOrg(orgId: string, createdBy: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  // RIO-FR-005 (Jagan's clarification mail, 2026-09-21) — every NGO admin
+  // RIO-FR-005 (per the product team's request, 2026-09-21) — every NGO admin
   // account, not just admin@demo-ngo.org, so whichever org logs into UAT
   // can open Village Comparison and see this demo data, not just one.
   const admins = await supervisor.user.findMany({

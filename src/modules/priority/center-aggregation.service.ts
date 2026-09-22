@@ -283,7 +283,7 @@ export class CenterAggregationService {
   }
 
   /**
-   * RIO-FR-005 — heat map side panel, per Jagan's clarification mail
+   * RIO-FR-005 — heat map side panel, per the product team's request
    * (2026-09-21): clicking a domain × village cell lists every KPI scored
    * under that domain for that centre, not just the domain's own average.
    *

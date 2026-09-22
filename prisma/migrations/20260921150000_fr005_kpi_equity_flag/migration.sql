@@ -1,5 +1,5 @@
--- RIO-FR-005 — Heat Map KPI-level side panel (Jagan's clarification mail,
--- 2026-09-21): each KPI row needs an Equity Flag. `PriorityService.score()`
+-- RIO-FR-005 — Heat Map KPI-level side panel, per the product team's
+-- request (2026-09-21): each KPI row needs an Equity Flag. `PriorityService.score()`
 -- already computes this (`equityFlagged = equitySpread >= equitySpreadThreshold`)
 -- to pick the tier via mapPriorityLevel(), but only ever used it transiently —
 -- never persisted it. Persisting it here so the KPI panel (and anything else
