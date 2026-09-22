@@ -136,7 +136,7 @@ export interface GeoMapResponse {
  * review, not a separate entity: see GeoMapPoint.publishedCount, which counts
  * needs whose status is reviewer_approved.
  */
-export const GEO_ITEM_KINDS = ['needs', 'studies', 'published'] as const;
+export const GEO_ITEM_KINDS = ['needs', 'studies', 'published', 'publicSurveys'] as const;
 export type GeoItemKind = (typeof GEO_ITEM_KINDS)[number];
 
 /** A need listed under a map point, with what the panel needs to identify it
@@ -164,6 +164,19 @@ export interface GeoStudyItem {
   orgName: string;
 }
 
+/** A public survey link for one of the studies at this point. The token is
+ *  deliberately absent: it is the credential that opens the survey to anyone
+ *  who holds it, and a map panel is not a place to hand it out. */
+export interface GeoSurveyItem {
+  id: string;
+  label: string | null;
+  studyId: string;
+  studyTitle: string;
+  isActive: boolean;
+  expiresAt: string | null;
+  responseCount: number;
+}
+
 export interface GeoPointItemsResponse {
   pointId: string;
   pointName: string;
@@ -174,6 +187,7 @@ export interface GeoPointItemsResponse {
   total: number;
   needs?: GeoNeedItem[];
   studies?: GeoStudyItem[];
+  surveys?: GeoSurveyItem[];
 }
 
 /** A panel list is for orientation, not for browsing an entire dataset — a

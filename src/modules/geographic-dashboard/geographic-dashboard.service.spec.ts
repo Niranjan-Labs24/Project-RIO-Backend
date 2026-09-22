@@ -41,10 +41,14 @@ function fakeTenant(seed: {
   governorates?: Array<{ id: string; code: string; name: string; lat: number | null; lng: number | null; accuracyM?: number | null; source?: string | null }>;
   centers?: Array<{ id: string; code: string; name: string; lat: number | null; lng: number | null; accuracyM?: number | null; source?: string | null }>;
   needs?: SeedNeed[];
+  /** Configured domain names the sector filter should offer, independent of
+   *  what the seeded needs happen to be classified under. */
+  configuredDomains?: string[];
 }) {
   const governorates = seed.governorates ?? [];
   const centers = seed.centers ?? [];
   const needs = seed.needs ?? [];
+  const configuredDomains = seed.configuredDomains;
 
   const tx = {
     governorate: {
@@ -107,6 +111,12 @@ function fakeTenant(seed: {
               initiative: { id: `init-${name}`, name, status: 'active', domain: null },
             })),
           })),
+    },
+    // Empty by default: the sector filter then offers exactly the domains the
+    // seeded needs carry, which is what every existing expectation asserts.
+    // A test for "all configured domains are offered" supplies its own list.
+    domain: {
+      findMany: async () => (configuredDomains ?? []).map((name) => ({ name })),
     },
     // No public links by default, so every existing expectation keeps the
     // count it had. The tests that care about the number set it themselves.
@@ -285,6 +295,31 @@ describe('GeographicDashboardService.getMap', () => {
       // user cannot get back.
       const res = await run(() => new GeographicDashboardService(seeded()).getMap('governorate', { sector: 'Health' }));
       expect(res.available.sectors).toEqual(['Health', 'Water']);
+    });
+
+    it('offers every configured domain, not only the ones that have needs', async () => {
+      // Derived from the needs alone, the dropdown grew and shrank with the
+      // data: a reader could not tell "no needs in Culture" from "Culture is
+      // not a domain here", and could never filter to prove the former.
+      const tenant = fakeTenant({
+        governorates: [{ id: 'gov-1', code: '0104', name: 'Ad-Dawadmi', lat: 24.5, lng: 44.4 }],
+        needs: [{ id: 'n1', sector: 'Health', governorateIds: ['gov-1'] }],
+        configuredDomains: ['Culture', 'Education', 'Health'],
+      });
+      const res = await run(() => new GeographicDashboardService(tenant as never).getMap('governorate'));
+      expect(res.available.sectors).toEqual(['Culture', 'Education', 'Health']);
+    });
+
+    it('keeps a domain that needs still reference after it was deactivated', async () => {
+      // The need exists and is classified; dropping its domain from the filter
+      // would make that need unreachable through the dropdown.
+      const tenant = fakeTenant({
+        governorates: [{ id: 'gov-1', code: '0104', name: 'Ad-Dawadmi', lat: 24.5, lng: 44.4 }],
+        needs: [{ id: 'n1', sector: 'Retired Domain', governorateIds: ['gov-1'] }],
+        configuredDomains: ['Health'],
+      });
+      const res = await run(() => new GeographicDashboardService(tenant as never).getMap('governorate'));
+      expect(res.available.sectors).toEqual(['Health', 'Retired Domain']);
     });
   });
 

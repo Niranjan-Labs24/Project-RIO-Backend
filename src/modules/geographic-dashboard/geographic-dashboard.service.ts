@@ -16,6 +16,7 @@ import {
   type GeoItemKind,
   type GeoNeedItem,
   type GeoStudyItem,
+  type GeoSurveyItem,
   type GeoPointItemsResponse,
 } from './geographic-dashboard.types';
 
@@ -72,7 +73,7 @@ export class GeographicDashboardService {
    * governorate to center a data change rather than a code change.
    */
   async getMap(level: GeoLevel, filters: GeoMapFilters = {}): Promise<GeoMapResponse> {
-    const [places, needs, placesWithoutCoordinates, centerNames, surveysByStudy] =
+    const [places, needs, placesWithoutCoordinates, centerNames, surveysByStudy, activeDomains] =
       await Promise.all([
         this.loadPlaces(level),
         this.loadNeeds(),
@@ -83,12 +84,25 @@ export class GeographicDashboardService {
         // cannot answer.
         this.loadCenterNames(),
         this.countPublicSurveysByStudy(),
+        this.loadActiveDomains(),
       ]);
 
     // Filter option lists come from the unfiltered set, so choosing one
     // filter never empties the other dropdowns.
+    //
+    // Sectors are the configured domain list, not just the domains that happen
+    // to have needs today. Deriving them from the data meant the dropdown grew
+    // and shrank as needs were added, and a reader could not tell "no needs in
+    // Energy & Environment" from "Energy & Environment is not a thing here".
+    // Any domain still present on a need is unioned in, so a need classified
+    // under a since-deactivated domain remains filterable.
     const available = {
-      sectors: [...new Set(needs.map((n) => n.sector).filter((s): s is string => !!s))].sort(),
+      sectors: [
+        ...new Set([
+          ...activeDomains,
+          ...needs.map((n) => n.sector).filter((s): s is string => !!s),
+        ]),
+      ].sort(),
       urgencies: [...new Set(needs.map((n) => n.urgency).filter((u): u is string => !!u))].sort(),
       statuses: [...new Set(needs.map((n) => n.status))].sort(),
     };
@@ -278,6 +292,49 @@ export class GeographicDashboardService {
 
     const base = { pointId, pointName: place.name, level, kind };
 
+    if (kind === 'publicSurveys') {
+      // The links belong to the studies here, not to the needs, so this is a
+      // second read rather than a reshaping of `here`.
+      const studyIds = [...new Set(here.map((n) => n.studyId))];
+      if (studyIds.length === 0) return { ...base, total: 0, surveys: [] };
+
+      const titleByStudy = new Map(here.map((n) => [n.studyId, n.studyTitle]));
+      const run = this.isCrossEntity()
+        ? this.tenant.runAsSupervisor.bind(this.tenant)
+        : this.tenant.runInOrgContext.bind(this.tenant);
+
+      const links = await run((tx) =>
+        tx.publicSurveyLink.findMany({
+          where: { studyId: { in: studyIds } },
+          select: {
+            id: true,
+            label: true,
+            studyId: true,
+            isActive: true,
+            expiresAt: true,
+            _count: { select: { responses: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+        }),
+      );
+
+      const surveys: GeoSurveyItem[] = links.map((l) => ({
+        id: l.id,
+        label: l.label,
+        studyId: l.studyId,
+        studyTitle: titleByStudy.get(l.studyId) ?? '',
+        isActive: l.isActive,
+        expiresAt: l.expiresAt ? l.expiresAt.toISOString() : null,
+        responseCount: l._count.responses,
+      }));
+
+      return {
+        ...base,
+        total: surveys.length,
+        surveys: surveys.slice(0, MAX_ITEMS_PER_POINT),
+      };
+    }
+
     if (kind === 'studies') {
       const byStudy = new Map<string, GeoStudyItem>();
       for (const n of here) {
@@ -442,6 +499,21 @@ export class GeographicDashboardService {
         ? tx.center.count({ where: { latitude: null } })
         : tx.governorate.count({ where: { latitude: null } }),
     );
+  }
+
+  /**
+   * The configured domain list, which the sector filter offers in full.
+   *
+   * Reference data shared by every organisation, so it reads through the
+   * supervisor role. Deactivated domains are left out: they are no longer
+   * offered for classification, so offering them as a filter would invite a
+   * search that can only ever return what is already there.
+   */
+  private async loadActiveDomains(): Promise<string[]> {
+    const rows = await this.tenant.runAsSupervisor((tx) =>
+      tx.domain.findMany({ where: { isActive: true }, select: { name: true } }),
+    );
+    return rows.map((d) => d.name);
   }
 
   /**
