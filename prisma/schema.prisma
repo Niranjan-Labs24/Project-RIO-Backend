@@ -1920,6 +1920,12 @@ model PriorityScore {
   overallScore Int           @map("overall_score")
   level        PriorityLevel
   gapType      String        @map("gap_type") @db.VarChar(50)
+  // RIO-FR-005 (Jagan's KPI side-panel clarification, 2026-09-21) — the
+  // equity-elevated-tier flag PriorityService.score() computes
+  // (equitySpread >= equitySpreadThreshold) to pick the level via
+  // mapPriorityLevel(), persisted so it can be read back later instead of
+  // recomputed against whatever the threshold config is at read time.
+  equityFlagged Boolean      @default(false) @map("equity_flagged")
   // Explainable breakdown: one entry per Question Bank indicator that fed
   // this score — { indicator, weight, responseValue, weightedContribution }
   // — plus the equity-flag/normalization inputs. See priority/scoring.ts.

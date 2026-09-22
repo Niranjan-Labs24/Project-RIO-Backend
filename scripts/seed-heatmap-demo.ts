@@ -91,18 +91,7 @@ function gapTypeFor(level: string): string {
   return level === "critical" ? "acute" : "chronic";
 }
 
-async function main(): Promise<void> {
-  const admin = await supervisor.user.findFirst({ where: { email: "admin@demo-ngo.org" } });
-  if (!admin) throw new Error("admin@demo-ngo.org not found — run the main seed first.");
-  const orgId = admin.orgId;
-  const createdBy = admin.id;
-
-  const existing = await supervisor.study.findFirst({ where: { orgId, title: STUDY_TITLE } });
-  if (existing) {
-    console.log(`Already seeded: "${STUDY_TITLE}" (${existing.id}). Nothing to do.`);
-    return;
-  }
-
+async function seedForOrg(orgId: string, createdBy: string): Promise<void> {
   // Reuse Centers already linked to this org (falls back to any Centers if
   // the org has fewer than VILLAGE_COUNT of its own) so NeedCenter's FK is
   // always satisfied and the heat map's columns show real Centre/
@@ -117,14 +106,32 @@ async function main(): Promise<void> {
       ? orgCenters.map((oc) => oc.center)
       : await supervisor.center.findMany({ take: VILLAGE_COUNT });
   if (centers.length < VILLAGE_COUNT) {
-    throw new Error(`Fewer than ${VILLAGE_COUNT} Centers exist in the KSA Geographic Reference.`);
+    console.warn(`Org ${orgId}: fewer than ${VILLAGE_COUNT} Centers exist — skipping.`);
+    return;
   }
 
-  const mv = await prisma.methodologyVersion.findFirst({ orderBy: { createdAt: "asc" } });
-  if (!mv) throw new Error("No MethodologyVersion found — run the main seed / imports first.");
+  // PUBLISHED, not just "oldest" — same convention as PriorityService/
+  // CenterAggregationService. The retired v1.0 baseline has zero Questions
+  // tagged with a `kpi` name; only the live v5.0 methodology does, so
+  // picking the wrong one here silently starved every KPI rollup below
+  // down to the synthetic fallback.
+  const mv = await prisma.methodologyVersion.findFirst({
+    where: { status: "PUBLISHED" },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!mv) throw new Error("No PUBLISHED MethodologyVersion found — run the main seed / imports first.");
 
   await prisma.$transaction(async (tx) => {
     await setOrg(tx, orgId);
+
+    // RIO-FR-005 (Jagan's clarification mail, 2026-09-21) — re-seeding
+    // rather than skipping when this org's demo study already exists: the
+    // heat map side panel now drills into per-KPI detail (Survey +
+    // ScoreRollup), which the original version of this script never wrote.
+    // An org seeded before that change would show "no KPI data" on every
+    // cell, so the old demo study is replaced rather than left stale.
+    const existing = await tx.study.findFirst({ where: { orgId, title: STUDY_TITLE } });
+    if (existing) await tx.study.delete({ where: { id: existing.id } });
 
     const maxRow = await tx.study.findFirst({
       where: { orgId },
@@ -146,10 +153,24 @@ async function main(): Promise<void> {
 
     for (const domain of DOMAINS) {
       const scores = SCORE_GRID[domain] ?? centers.map(() => null);
+      // Up to 2 real Question Bank KPIs per domain, so the heat map side
+      // panel's per-KPI breakdown (Domain, KPI, Severity Score, Analytical
+      // Category, ...) has something real to join against instead of
+      // coming back empty. Falls back to a synthetic single KPI if this
+      // methodology version has none tagged with a `kpi` name for the
+      // domain — better than no KPI rows at all for the demo.
+      const kpiQuestions = await tx.question.findMany({
+        where: { methodologyVersionId: mv.id, domain, kpi: { not: null } },
+        take: 2,
+      });
+
       for (let i = 0; i < centers.length; i++) {
         const score = scores[i];
         const center = centers[i];
         const village = VILLAGE_POOL[i] ?? center.name;
+        const level = score !== null ? levelFor(score) : null;
+        const gapType = level ? gapTypeFor(level) : null;
+
         const need = await tx.need.create({
           data: {
             studyId: study.id,
@@ -159,6 +180,10 @@ async function main(): Promise<void> {
             village: [village],
             source: "manual_entry",
             domain,
+            // RIO-FR-005 (Q12) — analyst-entered on the View Metrics screen
+            // in real usage; set directly here since this is seed data, not
+            // exercising that workflow.
+            gapType,
             status: "reviewer_approved",
             createdBy,
             // Only the first domain's Need per centre carries the
@@ -175,9 +200,13 @@ async function main(): Promise<void> {
         // scored" / grey-cell case (client's clarification never said
         // whether an unscored cell should be hidden; showing it as a
         // distinct grey state is the safer default — see conversation).
-        if (score === null) continue;
+        if (score === null || level === null || gapType === null) continue;
 
-        const level = levelFor(score);
+        // Equity Flag — alternate rather than a fixed value, so the demo
+        // shows both Yes and No in the KPI panel (client's worked example
+        // has one of each across two KPIs).
+        const equityFlagged = i % 2 === 0;
+
         await tx.priorityScore.create({
           data: {
             orgId,
@@ -185,19 +214,80 @@ async function main(): Promise<void> {
             studyId: study.id,
             overallScore: score,
             level,
-            gapType: gapTypeFor(level),
+            gapType,
+            equityFlagged,
             factors: { seededForHeatMapDemo: true },
+            cycleNote: level === "critical" || level === "high" ? "Acute — Cycle 1, awaiting trend" : null,
             approvedBy: createdBy,
             approvedAt: new Date(),
           },
         });
+
+        const survey = await tx.survey.create({
+          data: {
+            orgId,
+            needId: need.id,
+            studyId: study.id,
+            title: `${domain} — ${village} survey (heat map demo)`,
+            status: "PUBLISHED",
+            methodologyVersion: mv.version,
+            createdBy,
+          },
+        });
+
+        // Per-KPI severity rollups — the heat map side panel's actual data
+        // source (CenterAggregationService.kpiBreakdownForDomain). Slight
+        // spread around the Need's own score so KPIs under one domain/cell
+        // aren't all identical, same idea as the client's worked example
+        // (80.17 and 64.40 under one domain/village).
+        const kpiSource =
+          kpiQuestions.length > 0
+            ? kpiQuestions
+            : [{ questionId: `${domain}-synthetic-kpi`, kpi: `${domain} composite indicator`, analyticalCategory: null }];
+        for (const [kpiIndex, question] of kpiSource.entries()) {
+          const kpiScore = Math.max(0, Math.min(100, score - kpiIndex * 12 + (i % 3) * 4));
+          await tx.scoreRollup.create({
+            data: {
+              orgId,
+              studyId: study.id,
+              surveyId: survey.id,
+              villageId: "",
+              methodologyVersionId: mv.id,
+              rollupLevel: "KPI",
+              entityId: question.questionId,
+              entityNameSnapshot: question.kpi ?? question.questionId,
+              severityScore: kpiScore,
+              validResponseCount: 40,
+              excludedResponseCount: 0,
+              dontKnowCount: kpiIndex === 0 ? 2 : 9,
+              dontKnowRate: kpiIndex === 0 ? 0.05 : 0.23,
+              notApplicableCount: 0,
+              confidenceLevel: kpiIndex === 0 ? "STANDARD" : "LOW",
+              calculationVersion: "seed-heatmap-demo",
+            },
+          });
+        }
       }
     }
 
-    console.log(`Seeded "${STUDY_TITLE}" (${study.id}) — ${DOMAINS.length} domains x ${centers.length} villages.`);
-    console.log("Centres used:", centers.map((c) => c.name).join(", "));
-    console.log("Villages used:", centers.map((_, i) => VILLAGE_POOL[i] ?? centers[i].name).join(", "));
+    console.log(`Seeded "${STUDY_TITLE}" (${study.id}) for org ${orgId} — ${DOMAINS.length} domains x ${centers.length} villages.`);
   });
+}
+
+async function main(): Promise<void> {
+  // RIO-FR-005 (Jagan's clarification mail, 2026-09-21) — every NGO admin
+  // account, not just admin@demo-ngo.org, so whichever org logs into UAT
+  // can open Village Comparison and see this demo data, not just one.
+  const admins = await supervisor.user.findMany({
+    where: { roleId: "role_ngo_admin" },
+    distinct: ["orgId"],
+    orderBy: { createdAt: "asc" },
+  });
+  if (admins.length === 0) throw new Error("No role_ngo_admin users found — run the main seed first.");
+
+  for (const admin of admins) {
+    await seedForOrg(admin.orgId, admin.id);
+  }
 }
 
 main()

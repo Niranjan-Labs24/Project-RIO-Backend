@@ -11,7 +11,7 @@ import { PriorityService } from "./priority.service";
 import { ScoreRollupService } from "./rollup.service";
 import { PriorityV2Service } from "./priority-v2.service";
 import { CenterAggregationService } from "./center-aggregation.service";
-import type { CenterComparisonEntry, PriorityDashboardEntry, PriorityScore } from "./priority.types";
+import type { CenterComparisonEntry, KpiSeverityEntry, PriorityDashboardEntry, PriorityScore } from "./priority.types";
 
 @Controller()
 export class PriorityController {
@@ -166,6 +166,22 @@ export class PriorityDashboardController {
   compareCenters(@Query("studyIds") studyIds?: string): Promise<CenterComparisonEntry[]> {
     const ids = (studyIds ?? "").split(",").map((s) => s.trim()).filter(Boolean);
     return this.centerAggregation.compareCenters(ids);
+  }
+
+  // RIO-FR-005 — heat map side panel drill-down: every KPI scored under one
+  // domain × centre cell (see CenterAggregationService.kpiBreakdownForDomain
+  // for why gapType/equityFlag are inherited from the owning Need). Lazy,
+  // on cell-click — not embedded in compareCenters, which would multiply its
+  // payload by every KPI under every domain of every centre.
+  @Get("center-comparison/:centerId/domains/:domain/kpis")
+  @RequirePermission("priorityScoring", "read")
+  kpiBreakdown(
+    @Param("centerId", new UuidParamPipe()) centerId: string,
+    @Param("domain") domain: string,
+    @Query("studyIds") studyIds?: string,
+  ): Promise<KpiSeverityEntry[]> {
+    const ids = (studyIds ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    return this.centerAggregation.kpiBreakdownForDomain(centerId, decodeURIComponent(domain), ids);
   }
 
   @Patch(":id/approve")
