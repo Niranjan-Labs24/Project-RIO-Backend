@@ -9,6 +9,9 @@ export interface PriorityScoreRow {
   overallScore: number;
   level: "critical" | "high" | "medium" | "low";
   gapType: string;
+  // See PriorityScore.equityFlagged's schema comment — persisted at scoring
+  // time from PriorityService.score()'s equitySpread computation.
+  equityFlagged: boolean;
   factors: unknown;
   // RIO-FR-003 AC 5 — the reviewer's own number, kept beside the computed one
   // rather than replacing it. Null until someone disagrees.
@@ -111,6 +114,39 @@ export interface CenterDomainBreakdown {
    *  `level` is already 'critical' (nothing is hidden if the headline
    *  already shows the worst case). */
   maskedCritical: boolean;
+}
+
+// RIO-FR-005 — Heat Map side panel, per-KPI detail, per the product team's
+// request (2026-09-21). One row per KPI scored under the clicked domain/village
+// cell — see CenterAggregationService.kpiBreakdownForDomain for how each
+// field is sourced (severity/confidence from ScoreRollup, analytical
+// category from the Question Bank, gap type/equity flag inherited from the
+// owning Need since neither is scored at KPI granularity anywhere).
+export interface KpiSeverityEntry {
+  domain: string;
+  kpi: string;
+  /** Arabic KPI name, from the Question Bank's own `kpiAr` column — null
+   *  when that Question hasn't had an Arabic name entered yet. */
+  kpiAr: string | null;
+  severityScore: number | null;
+  analyticalCategory: string | null;
+  priorityTier: 'critical' | 'high' | 'medium' | 'low' | null;
+  /** Analyst-entered on the Need's View Metrics screen: acute | chronic |
+   *  structural | seasonal | equity. Null when the owning Need hasn't been
+   *  classified yet. */
+  gapType: string | null;
+  /** GapTypeOption.nameAr for this value, resolved server-side (not left
+   *  to the frontend to fetch — GET /study-config/gap-types is gated on
+   *  methodologyQuestionBank:read, which most roles viewing this screen,
+   *  e.g. ngo_admin, don't hold). Null when unset or no Arabic name has
+   *  been entered for that option yet. */
+  gapTypeAr: string | null;
+  equityFlag: boolean;
+  confidence: 'standard' | 'low';
+  /** The engine's own Cycle-1 caveat (PriorityService's cycleNote), e.g.
+   *  "Acute — Cycle 1, awaiting trend" — separate from the analyst's
+   *  `gapType` above, not a replacement for it. */
+  additionalGapTypeLabel: string | null;
 }
 
 /** Grouped by Centre rather than by `Need.village`: village is free text a

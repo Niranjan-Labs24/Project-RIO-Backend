@@ -154,6 +154,7 @@ export class PriorityService {
           overallScore: Math.round(computed.score),
           level,
           gapType: need.gapType ?? "acute",
+          equityFlagged,
           factors: {
             model: "nine-factor-weighted-mean",
             methodologyVersion: survey.methodologyVersion ?? null,

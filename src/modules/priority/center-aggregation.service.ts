@@ -3,7 +3,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore } from '../../tenancy/org-context';
 import { DEFAULT_THRESHOLDS, mapPriorityLevel, type ScoringThresholds } from './scoring';
-import type { CenterComparisonEntry, PriorityScoreRow } from './priority.types';
+import type { CenterComparisonEntry, KpiSeverityEntry, PriorityScoreRow } from './priority.types';
 
 // RIO-FR-005 (Q9) — cross-entity comparison scope, same convention as
 // StudiesService's isCrossOrgReader branch: system_admin, system_reviewer
@@ -280,6 +280,139 @@ export class CenterAggregationService {
     }
 
     return byCenter;
+  }
+
+  /**
+   * RIO-FR-005 — heat map side panel, per the product team's request
+   * (2026-09-21): clicking a domain × village cell lists every KPI scored
+   * under that domain for that centre, not just the domain's own average.
+   *
+   * Severity/Confidence/KPI-name come from `ScoreRollup` (rollupLevel='KPI'),
+   * one row per Need's own published survey — this platform has no single
+   * village-wide KPI rollup, only per-survey ones, so each contributing
+   * Need's survey is read individually and the rows concatenated. Analytical
+   * Category is joined from the Question Bank via the rollup's `entityId`,
+   * which for a KPI-level rollup is that KPI's own anchor question code (see
+   * Question.feedsKpiAnchor). Gap Type and Equity Flag are NOT scored per
+   * KPI anywhere in this platform — both are analyst/engine outputs at Need
+   * granularity (Need.gapType is analyst-entered on the View Metrics screen;
+   * equityFlagged is PriorityService.score()'s persisted equity-spread
+   * result) — so every KPI under a given Need inherits that Need's own
+   * values, which is the only source either field has.
+   */
+  async kpiBreakdownForDomain(
+    centerId: string,
+    domain: string,
+    studyIds: string[],
+  ): Promise<KpiSeverityEntry[]> {
+    if (studyIds.length === 0) {
+      throw new BadRequestException({
+        error: { code: 'NO_STUDIES_SELECTED', message: 'Select at least one study to compare.' },
+      });
+    }
+
+    const store = getOrgStore();
+    const crossEntity = store?.role ? CROSS_ENTITY_COMPARISON_ROLES.has(store.role) : false;
+    const runner = crossEntity
+      ? this.tenant.runAsSupervisor.bind(this.tenant)
+      : this.tenant.runInOrgContext.bind(this.tenant);
+
+    return runner(async (tx) => {
+      const needs = await tx.need.findMany({
+        where: {
+          studyId: { in: studyIds },
+          domain,
+          ...EXCLUDE_MERGED,
+          needCenters: { some: { centerId } },
+        },
+      });
+      if (needs.length === 0) return [];
+
+      const needIds = needs.map((n) => n.id);
+      const scores = await tx.priorityScore.findMany({
+        where: { needId: { in: needIds }, surveyLinkId: null, approvedAt: { not: null } },
+        orderBy: { scoredAt: 'desc' },
+      });
+      const latestScoreByNeed = new Map<string, (typeof scores)[number]>();
+      for (const row of scores) if (!latestScoreByNeed.has(row.needId)) latestScoreByNeed.set(row.needId, row);
+
+      const surveys = await tx.survey.findMany({
+        where: { needId: { in: needIds }, status: 'PUBLISHED' },
+      });
+      const surveyByNeed = new Map(surveys.map((s) => [s.needId, s]));
+
+      const config = await tx.methodologyConfig.findFirst();
+      const raw = (config?.priorityThresholds ?? {}) as Partial<ScoringThresholds>;
+      const thresholds: ScoringThresholds = {
+        criticalSeverity: raw.criticalSeverity ?? DEFAULT_THRESHOLDS.criticalSeverity,
+        highSeverity: raw.highSeverity ?? DEFAULT_THRESHOLDS.highSeverity,
+        equityHighSeverity: raw.equityHighSeverity ?? DEFAULT_THRESHOLDS.equityHighSeverity,
+        mediumSeverity: raw.mediumSeverity ?? DEFAULT_THRESHOLDS.mediumSeverity,
+      };
+
+      // Resolved here, server-side, rather than making the frontend call
+      // GET /study-config/gap-types itself: that endpoint is gated on
+      // methodologyQuestionBank:read, which most roles viewing this screen
+      // don't hold (ngo_admin, client-confirmed 2026-08-20 — same reason
+      // useDomainArabicMap reads the public Domain tree instead of the
+      // gated one). A Prisma query here isn't subject to that guard, so
+      // this is the only way every role actually sees the Arabic label.
+      const gapTypeOptions = await tx.gapTypeOption.findMany();
+      const gapTypeArByName = new Map(gapTypeOptions.map((o) => [o.name, o.nameAr]));
+
+      const entries: KpiSeverityEntry[] = [];
+      for (const need of needs) {
+        const survey = surveyByNeed.get(need.id);
+        if (!survey) continue;
+        const scoreRow = latestScoreByNeed.get(need.id);
+
+        const mv = survey.methodologyVersion
+          ? await tx.methodologyVersion.findFirst({ where: { version: survey.methodologyVersion } })
+          : await tx.methodologyVersion.findFirst({ where: { status: 'PUBLISHED' }, orderBy: { createdAt: 'desc' } });
+        if (!mv) continue;
+
+        const kpiRollups = await tx.scoreRollup.findMany({
+          where: {
+            studyId: need.studyId,
+            surveyId: survey.id,
+            villageId: '',
+            methodologyVersionId: mv.id,
+            rollupLevel: 'KPI',
+          },
+        });
+        if (kpiRollups.length === 0) continue;
+
+        const questions = await tx.question.findMany({
+          where: { methodologyVersionId: mv.id, questionId: { in: kpiRollups.map((r) => r.entityId) } },
+          select: { questionId: true, analyticalCategory: true, kpi: true, kpiAr: true },
+        });
+        const questionById = new Map(questions.map((q) => [q.questionId, q]));
+
+        for (const rollup of kpiRollups) {
+          const severity = rollup.severityScore !== null ? Number(rollup.severityScore) : null;
+          const question = questionById.get(rollup.entityId);
+          entries.push({
+            domain,
+            // Prefer the Question Bank's own current `kpi` text over the
+            // rollup's `entityNameSnapshot` — same string in practice, but
+            // only the live Question row carries `kpiAr` alongside it.
+            kpi: question?.kpi ?? rollup.entityNameSnapshot,
+            kpiAr: question?.kpiAr ?? null,
+            severityScore: severity,
+            analyticalCategory: question?.analyticalCategory ?? null,
+            priorityTier: severity !== null ? mapPriorityLevel(severity, scoreRow?.equityFlagged ?? false, thresholds) : null,
+            gapType: scoreRow?.gapType ?? need.gapType ?? null,
+            gapTypeAr: gapTypeArByName.get(scoreRow?.gapType ?? need.gapType ?? '') ?? null,
+            equityFlag: scoreRow?.equityFlagged ?? false,
+            confidence: rollup.confidenceLevel === 'LOW' ? 'low' : 'standard',
+            additionalGapTypeLabel: scoreRow?.cycleNote ?? null,
+          });
+        }
+      }
+
+      // Worst first, same convention as domainBreakdown.
+      return entries.sort((a, b) => (b.severityScore ?? -1) - (a.severityScore ?? -1));
+    });
   }
 }
 

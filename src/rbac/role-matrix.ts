@@ -164,7 +164,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('initiatives', RO),
   ] },
   { id: 'role_field_researcher', key: 'field_researcher', name: 'Field Researcher', description: 'Enters needs and documents the source and field notes.', crossEntity: false, permissions: [
-    // Confirmed matrix (Jagannathan, Aug 12): Organization/Users = View.
+    // Confirmed matrix (product team, Aug 12): Organization/Users = View.
     perm('entityTeam', RO), perm('rolesPermissions'), perm('onboardingConsent'),
     // Question Bank = View (unchanged); Studies = View/Create/Edit — widened
     // from View-only, mirrors this role's existing Needs/Evidence grant.
@@ -242,11 +242,11 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('initiatives', RO),
   ] },
   { id: 'role_data_analyst', key: 'data_analyst', name: 'Data Analyst', description: 'Processes data, reviews quality, and prepares reports and dashboards.', crossEntity: false, permissions: [
-    // Confirmed matrix (Jagannathan, Aug 12): Organization/Users = View.
+    // Confirmed matrix (product team, Aug 12): Organization/Users = View.
     perm('entityTeam', RO), perm('rolesPermissions'), perm('onboardingConsent'),
     // Question Bank = View; Studies = View — both unchanged, already matched.
     perm('methodologyQuestionBank', RO), perm('studySurvey', RO),
-    // Confirmed (Jagannathan, Aug 12): Needs = View, Evidence/Documents =
+    // Confirmed (product team, Aug 12): Needs = View, Evidence/Documents =
     // View/Export — resolves to plain View here, since no endpoint in
     // EvidenceDocumentsController/EvidenceController checks `export` at
     // all (verified — Evidence has no export feature to grant). Ends the
@@ -255,7 +255,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('dataCollection', RO),
     perm('dataImport', { read: true, write: true, create: true }), perm('citizenChannel'),
     perm('dataQuality', { read: true, write: true, approve: true, export: true }),
-    // Confirmed (Jagannathan, Aug 12): Data Analyst owns "Generating the AI
+    // Confirmed (product team, Aug 12): Data Analyst owns "Generating the AI
     // Evidence Summary" and "Generating the Combined Summary Report" — both
     // gated on aiReview:write in this codebase (see
     // EvidenceDocumentsController / CombinedReportSummaryController). Note:
@@ -351,12 +351,12 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('initiatives', { read: true, write: true, create: true, approve: true }),
   ] },
   { id: 'role_read_only_viewer', key: 'read_only_viewer', name: 'Read-only Viewer', description: 'Views authorized outputs without editing.', crossEntity: false, permissions: [
-    // Confirmed matrix (Jagannathan, Aug 12): Organization/Users = View.
+    // Confirmed matrix (product team, Aug 12): Organization/Users = View.
     perm('entityTeam', RO), perm('rolesPermissions'), perm('onboardingConsent'),
     perm('methodologyQuestionBank', RO), perm('studySurvey', RO), perm('dataCollection', RO),
     perm('dataImport', RO), perm('citizenChannel'), perm('aiReview', RO), perm('priorityScoring', RO),
     perm('dataQuality', RO),
-    // Confirmed (Jagannathan, Aug 12): Reports = View only for this role —
+    // Confirmed (product team, Aug 12): Reports = View only for this role —
     // no Export. Export was in an earlier build; removed per this
     // confirmation.
     perm('reportsDashboards', RO),

@@ -15,7 +15,7 @@ import {
   type HistoricalStudyRow,
 } from './historical-studies.types';
 
-// RIO-FR-013 (client Q25, confirmed by Ganesh 2026-09-04) — a reference
+// RIO-FR-013 (client Q25, confirmed by  2026-09-04) — a reference
 // upload for studies conducted before the platform existed. Metadata plus
 // one file, no lifecycle of its own (contrast with Study/Need/Survey),
 // permanent once uploaded (client Q27 — archive entries are never deleted,
