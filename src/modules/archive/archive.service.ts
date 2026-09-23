@@ -32,19 +32,42 @@ export class ArchiveService {
   async list(params: ListArchiveParams): Promise<ArchiveEntry[]> {
     const isCrossEntity = this.isCrossEntity();
 
-    const [{ organisations, studies, reports, needs }, historicalStudyEntries] = await Promise.all([
+    const [
+      { organisations, studies, reports, needs, studyGovernorates, governorates, domainOptions },
+      historicalStudyEntries,
+    ] = await Promise.all([
       isCrossEntity
         ? this.tenant.runAsSupervisor(async (tx) => ({
             organisations: await tx.organisation.findMany(),
             studies: await tx.study.findMany(),
             reports: await tx.report.findMany({ where: { status: { in: EXPORTABLE_STATUSES } } }),
             needs: await tx.need.findMany(),
+            studyGovernorates: await tx.studyGovernorate.findMany({
+              select: { studyId: true, governorateId: true },
+            }),
+            governorates: await tx.governorate.findMany({
+              select: { id: true, name: true, nameAr: true, region: { select: { name: true } } },
+            }),
+            domainOptions: await tx.domain.findMany({
+              where: { isActive: true },
+              select: { name: true, nameAr: true },
+            }),
           }))
         : this.tenant.runInOrgContext(async (tx) => ({
             organisations: await tx.organisation.findMany(),
             studies: await tx.study.findMany(),
             reports: await tx.report.findMany({ where: { status: { in: EXPORTABLE_STATUSES } } }),
             needs: await tx.need.findMany(),
+            studyGovernorates: await tx.studyGovernorate.findMany({
+              select: { studyId: true, governorateId: true },
+            }),
+            governorates: await tx.governorate.findMany({
+              select: { id: true, name: true, nameAr: true, region: { select: { name: true } } },
+            }),
+            domainOptions: await tx.domain.findMany({
+              where: { isActive: true },
+              select: { name: true, nameAr: true },
+            }),
           })),
       // Reuses HistoricalStudiesService.list()'s own cross-entity-aware
       // Governorate/Center/uploader-name enrichment (client feedback
@@ -78,6 +101,49 @@ export class ArchiveService {
     const villagesByStudyId = new Map(
       [...needsByStudyId.entries()].map(([studyId, list]) => [studyId, [...new Set(list.flatMap((n) => n.village))]]),
     );
+
+    // Structured geography per Study. A Study's own StudyGovernorate rows
+    // are the real answer to "where"; the owning Organisation's region is
+    // only where the org is based, which is why the Region filter used to
+    // offer one value however many regions the work actually covered.
+    const govById = new Map(governorates.map((g) => [g.id, g]));
+    const govNamesByStudyId = new Map<string, string[]>();
+    const regionNamesByStudyId = new Map<string, string[]>();
+    for (const link of studyGovernorates) {
+      const gov = govById.get(link.governorateId);
+      if (!gov) continue;
+      const names = govNamesByStudyId.get(link.studyId) ?? [];
+      if (!names.includes(gov.name)) names.push(gov.name);
+      govNamesByStudyId.set(link.studyId, names);
+      const regionName = gov.region?.name;
+      if (!regionName) continue;
+      const regions = regionNamesByStudyId.get(link.studyId) ?? [];
+      if (!regions.includes(regionName)) regions.push(regionName);
+      regionNamesByStudyId.set(link.studyId, regions);
+    }
+
+    // `Need.domain` is the domain name copied onto the Need at
+    // classification time, so a domain renamed in master data leaves older
+    // Needs pointing at a name that no longer resolves. Those are still
+    // reported, just without Arabic — the classification did happen.
+    const domainByName = new Map(domainOptions.map((d) => [d.name, d]));
+    const domainsOfStudy = (studyId: string | null): { name: string; nameAr: string | null }[] => {
+      if (!studyId) return [];
+      const names = new Set<string>();
+      for (const need of needsByStudyId.get(studyId) ?? []) {
+        if (need.mergedIntoNeedId || !need.domain) continue;
+        names.add(need.domain);
+      }
+      return [...names].sort().map((name) => {
+        const known = domainByName.get(name);
+        return known ? { name: known.name, nameAr: known.nameAr } : { name, nameAr: null };
+      });
+    };
+
+    /** The org's home region plus every region the Study actually covers. */
+    const regionsFor = (orgRegion: string[], studyId: string | null): string[] => [
+      ...new Set([...orgRegion, ...(studyId ? (regionNamesByStudyId.get(studyId) ?? []) : [])]),
+    ];
     // A Study is "completed" (archived) once every one of its Needs has
     // reached its terminal state — a Study with no Needs yet, or with any
     // Need still short of survey_published, isn't archive-eligible.
@@ -99,13 +165,15 @@ export class ArchiveService {
           studyId: study.id,
           organizationId: study.orgId,
           organizationName: org?.name ?? "",
-          region: org?.region ?? [],
+          region: regionsFor(org?.region ?? [], study.id),
           // RIO-FR-013 (client Q26): "sector" here means the study's own
           // subject/domain, not the owning entity's sector — someone
           // filtering for "Health" wants health studies, not studies from
           // health-sector organisations.
           sector: study.targetSector ?? null,
           villages: villagesByStudyId.get(study.id) ?? [],
+          governorateNames: govNamesByStudyId.get(study.id) ?? [],
+          domains: domainsOfStudy(study.id),
         });
       }
     }
@@ -122,10 +190,13 @@ export class ArchiveService {
           studyId: report.studyId,
           organizationId: report.orgId,
           organizationName: org?.name ?? "",
-          region: org?.region ?? [],
+          region: regionsFor(org?.region ?? [], report.studyId),
           // Same subject-based sector as the study branch above (RIO-FR-013, Q26).
           sector: reportStudy?.targetSector ?? null,
           villages: report.studyId ? (villagesByStudyId.get(report.studyId) ?? []) : [],
+          // A Report has no geography of its own — it inherits its Study's.
+          governorateNames: report.studyId ? (govNamesByStudyId.get(report.studyId) ?? []) : [],
+          domains: domainsOfStudy(report.studyId),
         });
       }
     }
@@ -156,6 +227,9 @@ export class ArchiveService {
           // equivalent to a Study's per-Need village list.
           villages: hist.governorateNames,
           governorateNames: hist.governorateNames,
+          // An upload holds no Needs of its own; where an import created a
+          // Study from it, that Study's classification is the answer.
+          domains: domainsOfStudy(importedStudyIdByHistoricalId.get(hist.id) ?? null),
           centerNames: hist.centerNames,
           author: hist.author,
           methodologyVersionLabel: hist.methodologyVersionLabel,
@@ -173,6 +247,12 @@ export class ArchiveService {
       .filter((entry) => (params.region ? entry.region.includes(params.region) : true))
       .filter((entry) => (params.sector ? entry.sector === params.sector : true))
       .filter((entry) => (params.village ? entry.villages.includes(params.village) : true))
+      .filter((entry) =>
+        params.governorate ? (entry.governorateNames ?? []).includes(params.governorate) : true,
+      )
+      .filter((entry) =>
+        params.domain ? entry.domains.some((d) => d.name === params.domain) : true,
+      )
       .filter((entry) => (params.dateFrom ? entry.date >= params.dateFrom : true))
       .filter((entry) => (params.dateTo ? entry.date <= params.dateTo : true))
       .sort((a, b) => b.date.localeCompare(a.date));

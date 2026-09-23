@@ -401,6 +401,15 @@ export const REPORT_LABELS_EN = {
   "surveysNotCovered": "Surveys NOT covered by these figures",
   "thisSurvey": "This survey",
   "tierSummary": "Needs by Priority Tier",
+  "tierValue.CRITICAL": "Critical",
+  "tierValue.HIGH": "High",
+  "tierValue.LOW": "Low",
+  "tierValue.MEDIUM": "Medium",
+  "tierValue.MINIMAL": "Minimal",
+  "tierValue.MODERATE": "Moderate",
+  "tierValue.NEGLIGIBLE": "Negligible",
+  "tierValue.NONE": "None",
+  "tierValue.SEVERE": "Severe",
   "title.combinedSummary": "Combined Summary",
   "title.documentBasedEvidence": "Document-Based Evidence",
   "title.domainInsights": "Domain Insights",
@@ -747,7 +756,7 @@ export const REPORT_LABELS_AR: Record<ReportLabelKey, string> = {
   "orgDashboard": "لوحة تحكم الكيان",
   "orgScoringDistribution": "توزيع تسجيل الكيان",
   "orgTopPriorities": "أعلى أولويات الكيان",
-  "organisation": "كيان",
+  "organisation": "الكيان",
   "override": "تجاوز المجال الحرج",
   "pa.intersections": "التقاطعات (الإنصاف)",
   "partialScope": "نطاق جزئي",
@@ -852,6 +861,15 @@ export const REPORT_LABELS_AR: Record<ReportLabelKey, string> = {
   "surveysNotCovered": "استبيانات غير مشمولة بهذه الأرقام",
   "thisSurvey": "هذا الاستبيان",
   "tierSummary": "الاحتياجات حسب مستوى الأولوية",
+  "tierValue.CRITICAL": "حرجة",
+  "tierValue.HIGH": "عالية",
+  "tierValue.LOW": "منخفضة",
+  "tierValue.MEDIUM": "متوسطة",
+  "tierValue.MINIMAL": "طفيفة",
+  "tierValue.MODERATE": "معتدلة",
+  "tierValue.NEGLIGIBLE": "ضئيلة",
+  "tierValue.NONE": "لا يوجد",
+  "tierValue.SEVERE": "شديدة",
   "title.combinedSummary": "الملخص المجمّع",
   "title.documentBasedEvidence": "الأدلة المستندة إلى المستندات",
   "title.domainInsights": "رؤى المجال",
@@ -913,4 +931,4 @@ export const REPORT_LABELS_AR: Record<ReportLabelKey, string> = {
 };
 
 /** Fingerprint of the source namespace, for the drift check. */
-export const REPORT_LABELS_CHECKSUM = "a10fb25fd0add395";
+export const REPORT_LABELS_CHECKSUM = "f99ca80f138f017d";

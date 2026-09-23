@@ -44,15 +44,44 @@ interface FakeHistoricalStudyEntry {
   uploadedByName: string | null;
   uploadedAt: string;
 }
+interface FakeStudyGovernorate {
+  studyId: string;
+  governorateId: string;
+}
+interface FakeGovernorate {
+  id: string;
+  name: string;
+  nameAr: string | null;
+  region: { name: string } | null;
+}
+interface FakeDomainOption {
+  name: string;
+  nameAr: string | null;
+}
 interface FakeTx {
   organisation: { findMany: () => Promise<FakeOrg[]> };
   study: { findMany: () => Promise<FakeStudy[]>; findUnique: (args: { where: { id: string } }) => Promise<FakeStudy | null> };
   report: { findMany: () => Promise<FakeReport[]> };
   need: { findMany: () => Promise<FakeNeed[]> };
   auditLog: { findMany: () => Promise<FakeAuditLog[]> };
+  // Structured geography and the domain master list, read by list() so the
+  // Region/Governorate/Domain filters can offer every configured value
+  // rather than only the ones the loaded rows happen to mention.
+  studyGovernorate: { findMany: () => Promise<FakeStudyGovernorate[]> };
+  governorate: { findMany: () => Promise<FakeGovernorate[]> };
+  domain: { findMany: () => Promise<FakeDomainOption[]> };
 }
 
-function fakeTenant(opts: { studies?: FakeStudy[]; reports?: FakeReport[]; needs?: FakeNeed[]; orgs?: FakeOrg[]; auditLogs?: FakeAuditLog[] }) {
+function fakeTenant(opts: {
+  studies?: FakeStudy[];
+  reports?: FakeReport[];
+  needs?: FakeNeed[];
+  orgs?: FakeOrg[];
+  auditLogs?: FakeAuditLog[];
+  studyGovernorates?: FakeStudyGovernorate[];
+  governorates?: FakeGovernorate[];
+  domainOptions?: FakeDomainOption[];
+}) {
   const tx: FakeTx = {
     organisation: {
       findMany: async () => opts.orgs ?? [{ id: 'o1', name: 'Org 1', region: ['Region A'], sector: 'Health' }],
@@ -69,6 +98,15 @@ function fakeTenant(opts: { studies?: FakeStudy[]; reports?: FakeReport[]; needs
     },
     auditLog: {
       findMany: async () => opts.auditLogs ?? [],
+    },
+    studyGovernorate: {
+      findMany: async () => opts.studyGovernorates ?? [],
+    },
+    governorate: {
+      findMany: async () => opts.governorates ?? [],
+    },
+    domain: {
+      findMany: async () => opts.domainOptions ?? [],
     },
   };
   return {

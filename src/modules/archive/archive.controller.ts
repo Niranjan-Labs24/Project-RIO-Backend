@@ -18,8 +18,21 @@ export class ArchiveController {
     @Query("region") region?: string,
     @Query("sector") sector?: string,
     @Query("village") village?: string,
+    @Query("governorate") governorate?: string,
+    @Query("domain") domain?: string,
   ): Promise<ArchiveEntry[]> {
-    return this.archive.list({ kind, search, dateFrom, dateTo, organizationId, region, sector, village });
+    return this.archive.list({
+      kind,
+      search,
+      dateFrom,
+      dateTo,
+      organizationId,
+      region,
+      sector,
+      village,
+      governorate,
+      domain,
+    });
   }
 
   @Get(":studyId")
