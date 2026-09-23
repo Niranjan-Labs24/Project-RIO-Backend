@@ -185,6 +185,7 @@ export class DataCleaningController {
       return Promise.resolve({ items: [], total: 0 });
     }
     return this.duplicates.listCrossEntity({
+      status: query.status,
       page: query.page ? Number(query.page) : undefined,
       pageSize: query.pageSize ? Number(query.pageSize) : undefined,
     });
