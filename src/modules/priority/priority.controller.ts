@@ -176,10 +176,17 @@ export class PriorityDashboardController {
   @Get("center-comparison/:centerId/domains/:domain/kpis")
   @RequirePermission("priorityScoring", "read")
   kpiBreakdown(
-    @Param("centerId", new UuidParamPipe()) centerId: string,
+    @Param("centerId") centerId: string,
     @Param("domain") domain: string,
     @Query("studyIds") studyIds?: string,
   ): Promise<KpiSeverityEntry[]> {
+    // A place key is a Centre UUID, or a `village:<name>` / `governorate:<uuid>`
+    // key (see CenterAggregationService) — a plain UUID pipe rejected the
+    // village-keyed entries the comparison now returns, so a heat-map cell click
+    // on a village column 400'd.
+    if (!/^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|governorate:[0-9a-f-]{36}|village:.{1,300})$/i.test(centerId)) {
+      throw new BadRequestException({ error: { code: "VALIDATION_ERROR", message: "centerId is not a valid place key" } });
+    }
     const ids = (studyIds ?? "").split(",").map((s) => s.trim()).filter(Boolean);
     return this.centerAggregation.kpiBreakdownForDomain(centerId, decodeURIComponent(domain), ids);
   }

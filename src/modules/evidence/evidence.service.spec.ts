@@ -63,7 +63,7 @@ function fakeTenant(opts: {
       findMany: async () => opts.users ?? [],
     },
   };
-  return { runInOrgContext: async (fn: (tx: unknown) => unknown) => fn(tx) };
+  return { runInOrgContext: async (fn: (tx: unknown) => unknown) => fn(tx), runRead: async (fn: (tx: unknown) => unknown) => fn(tx) };
 }
 
 function makeService(

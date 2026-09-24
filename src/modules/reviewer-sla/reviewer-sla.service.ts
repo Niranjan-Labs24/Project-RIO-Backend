@@ -44,7 +44,7 @@ export class ReviewerSlaService {
 
   async listAlerts(): Promise<SlaAlert[]> {
     const role = getOrgStore()?.role;
-    const [surveyAlerts, reportAlerts, evidenceAlerts, summaryAlerts] = await Promise.all([
+    const [surveyAlerts, reportAlerts, evidenceAlerts, summaryAlerts, classificationAlerts] = await Promise.all([
       can(role, "surveyBuilder", "approve")
         ? this.listSurveyApprovalAlerts()
         : this.listOwnSurveyStatusAlerts(),
@@ -69,12 +69,20 @@ export class ReviewerSlaService {
       can(role, "aiReview", "approve")
         ? this.listPendingNeedSummaryAlerts()
         : Promise.resolve([]),
+      // Same aiReview:approve/:write split as above, but for the
+      // classification decision itself (see reviewer-sla.types.ts's
+      // ai_classification / ai_classification_approved / _rejected).
+      can(role, "aiReview", "approve")
+        ? this.listPendingAiClassificationAlerts()
+        : can(role, "aiReview", "write")
+          ? this.listAiClassificationDecidedAlerts()
+          : Promise.resolve([]),
     ]);
     // Each list is already sorted per its own convention (oldest-first for
     // a still-open queue, newest-first for already-resolved items) —
     // interleave both same-convention lists together rather than imposing
     // one global sort that would mix the two meanings.
-    return [...surveyAlerts, ...reportAlerts, ...evidenceAlerts, ...summaryAlerts].sort((a, b) => {
+    return [...surveyAlerts, ...reportAlerts, ...evidenceAlerts, ...summaryAlerts, ...classificationAlerts].sort((a, b) => {
       const aTime = new Date(a.createdAt).getTime();
       const bTime = new Date(b.createdAt).getTime();
       // Not folding priorityScoring:create into this flag: data_analyst
@@ -86,7 +94,10 @@ export class ReviewerSlaService {
       // no single correct global direction either way (same limitation the
       // comment above already accepts), so this stays keyed only to the two
       // still-open-queue permissions it always meant.
-      const pendingQueue = can(role, "surveyBuilder", "approve") || can(role, "reportsDashboards", "approve");
+      const pendingQueue =
+        can(role, "surveyBuilder", "approve") ||
+        can(role, "reportsDashboards", "approve") ||
+        can(role, "aiReview", "approve");
       return pendingQueue ? aTime - bTime : bTime - aTime;
     });
   }
@@ -384,5 +395,90 @@ export class ReviewerSlaService {
       dueAt: row.generatedAt.toISOString(),
       status: "pending" as const,
     }));
+  }
+
+  // Reviewer-facing: Needs that just finished automatic AI classification
+  // and are awaiting Approve/Modify/Reject — org-wide, same shape/gate as
+  // listPendingNeedSummaryAlerts above. `ai_classification` was a declared
+  // SlaAlertType with no query ever producing it (client-reported: a Need
+  // reaching ai_classified never actually notified the Human Reviewer) —
+  // this is that missing query.
+  private async listPendingAiClassificationAlerts(): Promise<SlaAlert[]> {
+    const { pending, studies } = await this.tenant.runInOrgContext(async (tx) => {
+      const pending = await tx.need.findMany({
+        where: { status: "ai_classified" },
+        orderBy: { classifiedAt: "asc" },
+      });
+      const studyIds = Array.from(new Set(pending.map((n) => n.studyId)));
+      const studyRows = await tx.study.findMany({ where: { id: { in: studyIds } } });
+      return { pending, studies: studyRows };
+    });
+
+    const studyById = new Map(studies.map((s) => [s.id, s]));
+
+    return pending.map((need) => ({
+      id: need.id,
+      type: "ai_classification" as const,
+      needId: need.id,
+      studyId: need.studyId,
+      surveyId: null,
+      reportId: null,
+      studyTitle: studyById.get(need.studyId)?.title ?? need.studyId,
+      needStatement: need.statement,
+      touchpoint: "ai_classification",
+      // classifiedAt is always set once a Need reaches ai_classified (see
+      // AiDecisionsService.runAndPersistClassification) — the `?? now`
+      // fallback is defensive only.
+      createdAt: (need.classifiedAt ?? new Date()).toISOString(),
+      dueAt: (need.classifiedAt ?? new Date()).toISOString(),
+      status: "pending" as const,
+    }));
+  }
+
+  // Research Officer-facing (and Data Analyst, as a minor accepted overlap
+  // — see this type's own comment in reviewer-sla.types.ts): Needs whose
+  // classification was just decided, org-wide. Sourced from AiDecision
+  // (decidedAt/humanDecision persist the outcome) rather than Need.status,
+  // because a rejection resets Need.status to pending_ai_classification —
+  // the same value a Need that has never been classified at all also has —
+  // so status alone can't tell "just rejected" apart from "brand new".
+  private async listAiClassificationDecidedAlerts(): Promise<SlaAlert[]> {
+    const { decided, studies, needs } = await this.tenant.runInOrgContext(async (tx) => {
+      const decided = await tx.aiDecision.findMany({
+        where: { decidedAt: { not: null } },
+        orderBy: { decidedAt: "desc" },
+        take: 50,
+      });
+      const studyIds = Array.from(new Set(decided.map((d) => d.studyId)));
+      const needIds = Array.from(new Set(decided.map((d) => d.needId)));
+      const [studyRows, needRows] = await Promise.all([
+        tx.study.findMany({ where: { id: { in: studyIds } } }),
+        tx.need.findMany({ where: { id: { in: needIds } } }),
+      ]);
+      return { decided, studies: studyRows, needs: needRows };
+    });
+
+    const studyById = new Map(studies.map((s) => [s.id, s]));
+    const needById = new Map(needs.map((n) => [n.id, n]));
+
+    return decided.map((row) => {
+      const humanDecision = row.humanDecision as { decision?: string; notes?: string } | null;
+      const isRejected = humanDecision?.decision === "rejected";
+      return {
+        id: row.id,
+        type: isRejected ? ("ai_classification_rejected" as const) : ("ai_classification_approved" as const),
+        needId: row.needId,
+        studyId: row.studyId,
+        surveyId: null,
+        reportId: null,
+        studyTitle: studyById.get(row.studyId)?.title ?? row.studyId,
+        needStatement: needById.get(row.needId)?.statement ?? null,
+        touchpoint: isRejected ? "ai_classification_rejected" : "ai_classification_approved",
+        createdAt: row.decidedAt!.toISOString(),
+        dueAt: row.decidedAt!.toISOString(),
+        status: "pending" as const,
+        comments: isRejected ? (humanDecision?.notes ?? null) : null,
+      };
+    });
   }
 }

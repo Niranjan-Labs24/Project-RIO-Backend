@@ -11,6 +11,7 @@ import { CitizenService } from './citizen.service';
 
 @Module({
   imports: [SmsModule, SurveysModule, PriorityModule, SurveySessionsModule, ConsentModule, DataCleaningModule],
+  exports: [CitizenService],
   controllers: [CitizenController],
   providers: [CitizenService, PasswordService],
 })

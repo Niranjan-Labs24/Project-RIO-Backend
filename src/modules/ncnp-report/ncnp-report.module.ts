@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
 import { NcnpReportController } from './ncnp-report.controller';
 import { NcnpReportService } from './ncnp-report.service';
+import { TranslationModule } from '../translation/translation.module';
 
 @Module({
+  imports: [TranslationModule],
   controllers: [NcnpReportController],
   providers: [NcnpReportService],
   // NcnpReportReviewService reuses getReport() as-is to snapshot a review

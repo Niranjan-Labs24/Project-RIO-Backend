@@ -157,7 +157,17 @@ export interface KpiSeverityEntry {
  *  PriorityScores rather than a second separately-computed figure. */
 export interface CenterComparisonEntry {
   centerId: string;
+  /** Display value for a single-line caption — every Centre name joined,
+   *  sorted, for a village-keyed entry (see CenterAggregationService's own
+   *  header comment); the one Centre's own name otherwise. Client-reported
+   *  (2026-09-24): the frontend must not just truncate this string with an
+   *  ellipsis once it's a joined list — `centerNames` below is the same
+   *  list un-joined, for a "first name +N more" treatment matching how
+   *  `villages`/`studyIds` already render. */
   centerName: string;
+  /** The individual Centre names `centerName` is joined from — always at
+   *  least one entry except the (unplaced) sentinel. */
+  centerNames: string[];
   centerNameAr: string | null;
   governorateName: string | null;
   governorateNameAr: string | null;

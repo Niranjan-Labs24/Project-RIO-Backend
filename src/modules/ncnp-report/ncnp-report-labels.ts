@@ -1,3 +1,5 @@
+import type { SupportedLocale } from '../translation/translation.types';
+
 // Enum → display-label maps shared by the NCNP report's two renderers.
 //
 // These lived in ncnp-report-doc.ts AND ncnp-report-pdf.ts as byte-identical
@@ -16,6 +18,12 @@
 // Every map here is keyed by a Prisma enum's own identifiers, so an unexpected
 // value is a schema change, not a data error — callers fall back to the raw
 // identifier rather than dropping the row.
+//
+// The _AR maps are not new translations — every value is copied verbatim from
+// the same client-approved catalogue the in-app viewer already reads
+// (Project-RIO-Frontend/messages/ar.json, under systemAdmin.ncnpReport.*), so
+// the PDF/Excel export says exactly what the screen already says, never a
+// second, independently-worded Arabic string for the same enum value.
 
 /** Prisma `AgeBracket`. Keys are the enum identifiers; display order is the
  *  enum's own declaration order (see AGE_BRACKET_ORDER). */
@@ -27,6 +35,16 @@ export const AGE_BRACKET_LABELS: Record<string, string> = {
   age_55_64: '55–64',
   age_65_plus: '65+',
   prefer_not_to_say: 'Prefer not to say',
+};
+
+export const AGE_BRACKET_LABELS_AR: Record<string, string> = {
+  age_15_24: '15–24',
+  age_25_34: '25–34',
+  age_35_44: '35–44',
+  age_45_54: '45–54',
+  age_55_64: '55–64',
+  age_65_plus: '+65',
+  prefer_not_to_say: 'تفضّل عدم الإفصاح',
 };
 
 /** Display order for AGE_BRACKET_LABELS — matches the Prisma AgeBracket enum's
@@ -50,6 +68,13 @@ export const GENDER_LABELS: Record<string, string> = {
   prefer_not_to_say: 'Prefer not to say',
 };
 
+export const GENDER_LABELS_AR: Record<string, string> = {
+  male: 'ذكر',
+  female: 'أنثى',
+  other: 'أخرى',
+  prefer_not_to_say: 'تفضّل عدم الإفصاح',
+};
+
 /**
  * Prisma `NeedSource`, in the client's own Report Type terminology (Survey /
  * Uploaded Document / ...) rather than the raw enum identifiers.
@@ -68,6 +93,13 @@ export const NEED_SOURCE_LABELS: Record<string, string> = {
   field_survey: 'Field Survey',
 };
 
+export const NEED_SOURCE_LABELS_AR: Record<string, string> = {
+  manual_entry: 'استبيان',
+  file_upload: 'مستند مرفوع',
+  citizen_input: 'مدخلات المواطن',
+  field_survey: 'استبيان ميداني',
+};
+
 /** Prisma `RejectionReasonCode`. UNSPECIFIED covers surveys rejected before the
  *  field existed (see NcnpReportService.buildSurveyAnalytics). */
 export const REJECTION_REASON_LABELS: Record<string, string> = {
@@ -81,3 +113,31 @@ export const REJECTION_REASON_LABELS: Record<string, string> = {
   REJ_99: 'Other',
   UNSPECIFIED: 'Unspecified (legacy)',
 };
+
+export const REJECTION_REASON_LABELS_AR: Record<string, string> = {
+  REJ_01: 'تصميم استبيان غير مكتمل',
+  REJ_02: 'عدم التوافق مع المنهجية',
+  REJ_03: 'نسخة مكررة من استبيان موجود',
+  REJ_04: 'ربط غير صحيح بالاحتياج أو الدراسة',
+  REJ_05: 'نطاق جغرافي أو فئة مستهدفة خارج النطاق',
+  REJ_06: 'مخاوف تتعلق بجودة البيانات',
+  REJ_07: 'مرفقات أو موافقات مطلوبة مفقودة',
+  REJ_99: 'أخرى',
+  UNSPECIFIED: 'غير محدد (سابق)',
+};
+
+/**
+ * Picks the English or Arabic label for an enum identifier out of a pair of
+ * maps built above, falling back to the raw identifier if it's missing from
+ * both (an unexpected value is a schema change, not a data error — same
+ * fallback contract each map already had on its own).
+ */
+export function localizedLabel(
+  labelsEn: Record<string, string>,
+  labelsAr: Record<string, string>,
+  key: string,
+  locale: SupportedLocale,
+): string {
+  const map = locale === 'ar' ? labelsAr : labelsEn;
+  return map[key] ?? labelsEn[key] ?? key;
+}

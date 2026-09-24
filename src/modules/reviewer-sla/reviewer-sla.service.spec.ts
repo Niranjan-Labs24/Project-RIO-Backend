@@ -27,7 +27,20 @@ interface FakeReport {
   reviewedAt?: Date | null;
 }
 interface FakeStudy { id: string; title: string }
-interface FakeNeed { id: string; statement: string | null }
+interface FakeNeed {
+  id: string;
+  statement: string | null;
+  studyId?: string;
+  status?: string;
+  classifiedAt?: Date | null;
+}
+interface FakeAiDecision {
+  id: string;
+  needId: string;
+  studyId: string;
+  decidedAt?: Date | null;
+  humanDecision?: { decision: string; notes?: string | null } | null;
+}
 interface FakeEvidenceDocument {
   id: string;
   studyId: string;
@@ -50,13 +63,38 @@ function fakeTenant(opts: {
   needs?: FakeNeed[];
   evidenceDocuments?: FakeEvidenceDocument[];
   needSummaries?: FakeNeedSummary[];
+  aiDecisions?: FakeAiDecision[];
 }) {
   const tx = {
     survey: { findMany: async () => opts.surveys ?? [] },
     report: { findMany: async () => opts.reports ?? [] },
     study: { findMany: async () => opts.studies ?? [] },
-    need: { findMany: async () => opts.needs ?? [] },
+    // Real Prisma filters by `where` server-side — this mock has to as well
+    // for the two shapes ReviewerSlaService actually queries with:
+    // `{ status }` (listPendingAiClassificationAlerts) and `{ id: { in } }`
+    // (every other caller here, fetching Needs already picked out some
+    // other way) — otherwise a fixture built for one test's need-lookup
+    // call leaks into another test's status-filtered query as a false
+    // "ai_classified" row.
+    need: {
+      findMany: async ({ where }: { where?: { status?: string; id?: { in?: string[] } } } = {}) => {
+        const all = opts.needs ?? [];
+        if (where?.status !== undefined) return all.filter((n) => n.status === where.status);
+        if (where?.id?.in) return all.filter((n) => where.id!.in!.includes(n.id));
+        return all;
+      },
+    },
     evidenceDocument: { findMany: async () => opts.evidenceDocuments ?? [] },
+    aiDecision: {
+      findMany: async ({ orderBy, take }: { orderBy?: { decidedAt?: string }; take?: number } = {}) => {
+        const decided = (opts.aiDecisions ?? []).filter((d) => d.decidedAt != null);
+        const sorted = [...decided].sort((a, b) => {
+          const diff = a.decidedAt!.getTime() - b.decidedAt!.getTime();
+          return orderBy?.decidedAt === "asc" ? diff : -diff;
+        });
+        return take ? sorted.slice(0, take) : sorted;
+      },
+    },
     // The service filters on status DRAFT — apply it here too, so a fixture
     // carrying a CONFIRMED row proves the filter rather than the fixture.
     needStatementSummary: {
@@ -280,5 +318,91 @@ describe('ReviewerSlaService', () => {
   it('getConfig returns the configured SLA hours and poll interval', () => {
     const svc = makeService(fakeTenant({}));
     expect(svc.getConfig()).toEqual({ slaHours: 48, pollIntervalMs: 30_000 });
+  });
+
+  // Client-reported: a Need reaching ai_classified never notified the Human
+  // Reviewer at all — `ai_classification` was a declared SlaAlertType with
+  // no query ever producing it.
+  it('Human Reviewer sees a pending ai_classification alert for a Need awaiting their decision', async () => {
+    const svc = makeService(
+      fakeTenant({
+        studies: [{ id: 'st1', title: 'Water study' }],
+        needs: [
+          { id: 'n1', statement: 'Needs clean water.', studyId: 'st1', status: 'ai_classified', classifiedAt: new Date('2026-01-01T00:00:00Z') },
+          // A different Need mid-classification, not yet decided — must not
+          // show up as if it were awaiting review.
+          { id: 'n2', statement: 'Still classifying.', studyId: 'st1', status: 'pending_ai_classification' },
+        ],
+      }),
+    );
+    const alerts = await orgContext.run(
+      { requestId: 'r', actorId: 'me', role: 'human_reviewer' },
+      () => svc.listAlerts(),
+    );
+    const classificationAlerts = alerts.filter((a) => a.type === 'ai_classification');
+    expect(classificationAlerts.map((a) => a.needId)).toEqual(['n1']);
+    expect(classificationAlerts[0]?.status).toBe('pending');
+  });
+
+  it('a role without aiReview:approve gets no ai_classification to-do alerts', async () => {
+    const svc = makeService(
+      fakeTenant({
+        studies: [{ id: 'st1', title: 'Water study' }],
+        needs: [{ id: 'n1', statement: 'X.', studyId: 'st1', status: 'ai_classified', classifiedAt: new Date() }],
+      }),
+    );
+    const alerts = await orgContext.run(
+      { requestId: 'r', actorId: 'me', role: 'ngo_research_officer' },
+      () => svc.listAlerts(),
+    );
+    expect(alerts.some((a) => a.type === 'ai_classification')).toBe(false);
+  });
+
+  // Client-reported: the Research Officer got no notification at all when a
+  // reviewer approved or rejected their Need's classification.
+  it('Research Officer sees resolved classification alerts, distinguishing approved from rejected', async () => {
+    const svc = makeService(
+      fakeTenant({
+        studies: [{ id: 'st1', title: 'Water study' }],
+        needs: [
+          { id: 'n1', statement: 'Approved one.' },
+          { id: 'n2', statement: 'Rejected one.' },
+        ],
+        aiDecisions: [
+          { id: 'd1', needId: 'n1', studyId: 'st1', decidedAt: new Date('2026-01-01T00:00:00Z'), humanDecision: { decision: 'approved' } },
+          { id: 'd2', needId: 'n2', studyId: 'st1', decidedAt: new Date('2026-01-02T00:00:00Z'), humanDecision: { decision: 'rejected', notes: 'Wrong domain.' } },
+          // Not yet decided — must not appear at all.
+          { id: 'd3', needId: 'n3', studyId: 'st1', decidedAt: null },
+        ],
+      }),
+    );
+    const alerts = await orgContext.run(
+      { requestId: 'r', actorId: 'me', role: 'ngo_research_officer' },
+      () => svc.listAlerts(),
+    );
+    const approved = alerts.find((a) => a.type === 'ai_classification_approved');
+    const rejected = alerts.find((a) => a.type === 'ai_classification_rejected');
+    expect(approved?.needId).toBe('n1');
+    expect(rejected?.needId).toBe('n2');
+    expect(rejected?.comments).toBe('Wrong domain.');
+    // Newest-first, same convention as every other "already resolved" queue.
+    expect(alerts.filter((a) => a.type.startsWith('ai_classification_')).map((a) => a.id)).toEqual(['d2', 'd1']);
+  });
+
+  it('Human Reviewer (aiReview:approve) does not get the resolved classification feed', async () => {
+    const svc = makeService(
+      fakeTenant({
+        studies: [{ id: 'st1', title: 'Water study' }],
+        needs: [{ id: 'n1', statement: 'X.' }],
+        aiDecisions: [
+          { id: 'd1', needId: 'n1', studyId: 'st1', decidedAt: new Date(), humanDecision: { decision: 'approved' } },
+        ],
+      }),
+    );
+    const alerts = await orgContext.run(
+      { requestId: 'r', actorId: 'me', role: 'human_reviewer' },
+      () => svc.listAlerts(),
+    );
+    expect(alerts.some((a) => a.type.startsWith('ai_classification_'))).toBe(false);
   });
 });

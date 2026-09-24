@@ -5,7 +5,12 @@ import { getOrgStore, requireActor } from '../../tenancy/org-context';
 import { roleByKey } from '../../rbac/role-matrix';
 import { AuditService } from '../audit/audit.service';
 import { renderReportExcel } from '../reports/excel-builder';
+import type { SupportedLocale } from '../translation/translation.types';
 import { buildNcnpReportDoc } from './ncnp-report-doc';
+import { localizeNcnpReportNames, mapNcnpFreeText, type NcnpArabicNames } from './ncnp-report-localize';
+import { TranslationService } from '../translation/translation.service';
+import { loadMasterDataAliases, localizeDataValues, NO_ALIASES } from '../reports/i18n/master-data-names';
+import { sweepRemainingEnglish } from '../reports/i18n/sweep-english';
 import { renderNcnpReportPdf } from './ncnp-report-pdf';
 import type {
   NcnpAgeBracketBreakdown,
@@ -79,6 +84,7 @@ export class NcnpReportService {
   constructor(
     private readonly tenant: TenantPrismaService,
     private readonly audit: AuditService,
+    private readonly translation?: TranslationService,
   ) {}
 
   async getReport(
@@ -466,12 +472,56 @@ export class NcnpReportService {
   // generated-on-request view, same as SupervisorOverview), so there's no
   // id/approval-status gate to check here — assertCrossEntity (via
   // getReport) is the only authorization.
+  /** Arabic master-data names for an Arabic export — see localizeNcnpReportNames. */
+  async arabicNames(): Promise<NcnpArabicNames> {
+    return this.tenant.runAsSupervisor(async (tx) => {
+      const [domains, subDomains, regions, governorates, centers, gaps] = await Promise.all([
+        tx.domain.findMany({ select: { name: true, nameAr: true } }),
+        tx.subDomain.findMany({ select: { name: true, nameAr: true } }),
+        tx.region.findMany({ select: { name: true, nameAr: true } }),
+        tx.governorate.findMany({ select: { name: true, nameAr: true } }),
+        tx.center.findMany({ select: { name: true, nameAr: true } }),
+        tx.gapTypeOption.findMany({ select: { name: true, nameAr: true } }),
+      ]);
+      const map = (rows: Array<{ name: string; nameAr: string | null }>) =>
+        new Map(rows.filter((r) => r.nameAr).map((r) => [r.name, r.nameAr as string]));
+      return {
+        domains: map(domains),
+        subDomains: map(subDomains),
+        geography: new Map([...map(regions), ...map(governorates), ...map(centers)]),
+        gapTypes: map(gaps),
+      };
+    });
+  }
+
+  /**
+   * Localizes a report for export: master-data names (Arabic only) plus the
+   * user-typed text — need titles and indicators are translated into the export
+   * language, and organization names are shown in BOTH languages so the entity
+   * is recognizable whichever one it was registered in.
+   */
+  async localizeForExport(live: NcnpReport, locale: SupportedLocale): Promise<NcnpReport> {
+    const base = locale === 'ar' ? localizeNcnpReportNames(live, await this.arabicNames()) : live;
+    const tr = this.translation;
+    if (!tr) return base;
+    const to = async (text: string, target: SupportedLocale): Promise<string> =>
+      (await tr.translate(text, target)).translatedText;
+    return mapNcnpFreeText(base, async (text, key) => {
+      if (key !== 'organizationName') return to(text, locale);
+      const [ar, en] = await Promise.all([to(text, 'ar'), to(text, 'en')]);
+      if (!ar || !en || ar === en) return text;
+      return locale === 'ar' ? `${ar} (${en})` : `${en} (${ar})`;
+    });
+  }
+
   async exportReport(
     format: 'pdf' | 'excel',
     periodDays?: number,
     dormantDays?: number,
+    locale: SupportedLocale = 'en',
   ): Promise<{ filename: string; contentType: string; body: Buffer }> {
-    const report = await this.getReport(periodDays, dormantDays);
+    const live = await this.getReport(periodDays, dormantDays);
+    const report = await this.localizeForExport(live, locale);
     const dateStamp = report.generatedAt.slice(0, 10);
     // Every export is audited with the actor's role (not just their user
     // id) — this report has no per-record entityId of its own (it's a
@@ -492,14 +542,33 @@ export class NcnpReportService {
       return {
         filename: `ncnp-compiled-report-${dateStamp}.pdf`,
         contentType: 'application/pdf',
-        body: renderNcnpReportPdf(report, generatedByName),
+        body: renderNcnpReportPdf(report, generatedByName, undefined, locale),
       };
     }
     return {
       filename: `ncnp-compiled-report-${dateStamp}.xlsx`,
       contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      body: await renderReportExcel(buildNcnpReportDoc(report, generatedByName)),
+      body: await this.renderExcel(report, generatedByName, locale),
     };
+  }
+
+  /**
+   * Excel goes through the same export layer as every other report: catalogue
+   * labels, master-data aliases for values, then a final sweep that translates
+   * whatever English is still left in the finished document.
+   */
+  async renderExcel(
+    report: NcnpReport,
+    generatedByName: string,
+    locale: SupportedLocale,
+    auditRows?: Parameters<typeof buildNcnpReportDoc>[2],
+  ): Promise<Buffer> {
+    const aliases = await this.tenant.runAsSupervisor((tx) => loadMasterDataAliases(tx as never, locale)).catch(() => NO_ALIASES);
+    let doc = localizeDataValues(buildNcnpReportDoc(report, generatedByName, auditRows, locale), aliases);
+    if (this.translation && locale === 'ar') {
+      doc = (await sweepRemainingEnglish(doc, locale, { aliases, translator: this.translation })).doc;
+    }
+    return renderReportExcel(doc, locale);
   }
 
   private mergeLastActivity(

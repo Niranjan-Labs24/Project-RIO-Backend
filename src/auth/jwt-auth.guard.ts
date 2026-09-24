@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, ForbiddenException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import { ROLE_MATRIX } from '../rbac/role-matrix';
@@ -19,6 +19,15 @@ const ACT_AS_ORG_HEADER = 'x-act-as-org';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
+  // Client-reported (recurring UAT issue): "authentication failed"/
+  // "authentication required" appearing repeatedly and inconsistently
+  // across multiple open browsers/sessions, root cause unconfirmed at the
+  // time (cache-clearing was only a workaround). This logger exists so a
+  // recurrence on the deployed link can actually be diagnosed — every 401
+  // this guard throws now logs WHICH of its checks failed and for which
+  // user, never the token/credentials themselves.
+  private readonly logger = new Logger(JwtAuthGuard.name);
+
   constructor(
     private readonly tokens: TokenService,
     private readonly reflector: Reflector,
@@ -27,6 +36,7 @@ export class JwtAuthGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<Request & { cookies?: Record<string, string> }>();
+    const requestLabel = `${req.method ?? '?'} ${req.originalUrl ?? req.url ?? '?'}`;
     const isPublic = this.reflector.getAllAndOverride<boolean>(PUBLIC_ROUTE_KEY, [
       context.getHandler(),
       context.getClass(),
@@ -39,14 +49,18 @@ export class JwtAuthGuard implements CanActivate {
       // Preserve the explicitly non-production header seam used by local and
       // integration tests. Production requests otherwise fail closed.
       if (isPublic || getOrgStore()?.role) return true;
+      this.logger.warn(`Rejected ${requestLabel}: no token presented (no Authorization header or session cookie)`);
       throw this.unauthenticated();
     }
 
     let claims;
     try {
       claims = this.tokens.verify(token);
-    } catch {
+    } catch (err) {
       if (isPublic && !fromHeader) return true;
+      this.logger.warn(
+        `Rejected ${requestLabel}: token failed verification (${(err as Error).name ?? 'unknown error'} — expired, malformed, or signed with a different secret)`,
+      );
       throw new UnauthorizedException({
         error: { code: 'INVALID_TOKEN', message: 'Invalid or expired token' },
       });
@@ -63,6 +77,27 @@ export class JwtAuthGuard implements CanActivate {
     const currentRole = current ? ROLE_MATRIX.find((role) => role.id === current.roleId) : undefined;
     if (!current || !current.org.isActive || current.orgId !== claims.orgId ||
         current.sessionVersion !== claims.sessionVersion || !currentRole) {
+      // Distinguishing these five is the whole point: a `sessionVersion`
+      // mismatch means logout()/changePassword() on ANY of this user's
+      // sessions minted a fresh token and invalidated every other
+      // outstanding one for that same user (see logout()'s own comment) —
+      // that reads to a user with two open browsers as an unprompted,
+      // seemingly random "authentication failed" in whichever one they
+      // didn't just act in, and is the leading suspect for the
+      // "reproduces with multiple sessions/browsers" report. The other four
+      // reasons are unrelated failure modes (deleted user, deactivated org,
+      // an org transfer, or a role that no longer exists) and should not be
+      // confused with it when reading these logs.
+      const reason = !current
+        ? 'user_not_found (deleted or claims.sub invalid)'
+        : !current.org.isActive
+          ? 'org_inactive'
+          : current.orgId !== claims.orgId
+            ? 'org_mismatch (user moved to a different org since this token was issued)'
+            : current.sessionVersion !== claims.sessionVersion
+              ? 'session_version_mismatch (this token was invalidated by a logout/password-change/consent-accept on ANY of this user\'s sessions — see logout()/changePassword())'
+              : 'role_not_found (roleId no longer exists in ROLE_MATRIX)';
+      this.logger.warn(`Rejected ${requestLabel}: ${reason} — user ${claims.sub}`);
       throw this.unauthenticated();
     }
 

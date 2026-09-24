@@ -64,7 +64,7 @@ export class DocumentSummaryService {
     const orgId = requireOrgId();
     const generatedBy = requireActor();
 
-    const doc = await this.tenant.runInOrgContext((tx) =>
+    const doc = await this.tenant.runRead((tx) =>
       tx.evidenceDocument.findFirst({
         where: { id: documentId, orgId },
         include: {
@@ -210,7 +210,7 @@ Output strictly valid JSON matching this schema:
 
   async updateDraftSummary(summaryId: string, editedOutputJson: DocumentSummaryOutputJson) {
     const orgId = requireOrgId();
-    const summary = await this.tenant.runInOrgContext((tx) =>
+    const summary = await this.tenant.runRead((tx) =>
       tx.evidenceDocumentSummary.findFirst({
         where: { id: summaryId, document: { orgId } },
       }),
@@ -232,7 +232,7 @@ Output strictly valid JSON matching this schema:
     const orgId = requireOrgId();
     const confirmedBy = requireActor();
 
-    const summary = await this.tenant.runInOrgContext((tx) =>
+    const summary = await this.tenant.runRead((tx) =>
       tx.evidenceDocumentSummary.findFirst({
         where: { id: summaryId, document: { orgId } },
       }),

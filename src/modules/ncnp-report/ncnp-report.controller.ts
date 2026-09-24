@@ -34,6 +34,7 @@ export class NcnpReportController {
     @Query('format') format: string | undefined,
     @Query('periodDays') periodDays: string | undefined,
     @Query('dormantDays') dormantDays: string | undefined,
+    @Query('locale') locale: string | undefined,
     @Res() res: Response,
   ): Promise<void> {
     if (format !== 'pdf' && format !== 'excel') {
@@ -41,10 +42,14 @@ export class NcnpReportController {
         error: { code: 'EXPORT_FORMAT_NOT_SUPPORTED', message: 'format must be "pdf" or "excel".' },
       });
     }
+    // Same "unexpected value falls back rather than errors" contract as the
+    // enum label maps — an unsupported locale value exports in English
+    // rather than 400ing a download over it.
     const file = await this.ncnpReport.exportReport(
       format,
       periodDays ? Number(periodDays) : undefined,
       dormantDays ? Number(dormantDays) : undefined,
+      locale === 'ar' ? 'ar' : 'en',
     );
     res.set({
       'Content-Type': file.contentType,

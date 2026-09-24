@@ -9,6 +9,7 @@ import { MethodologyConfigService } from "../methodology-config/methodology-conf
 import { redactPii } from "../ai-decisions/classification.placeholder";
 import { decodeWarnings, encodeWarnings, verifySummary } from "./need-summary.verify";
 import type { NeedSummary, NeedSummaryTriggerSource } from "./need-summary.types";
+import { auditFieldLabel } from "../audit/audit-field-labels";
 
 /**
  * RIO-AI-003 — suggests a shortened version of a long Need description, which a
@@ -91,7 +92,7 @@ export class NeedSummaryService {
     const orgId = requireOrgId();
     const generatedBy = requireActor();
 
-    const need = await this.tenant.runInOrgContext((tx) =>
+    const need = await this.tenant.runRead((tx) =>
       tx.need.findFirst({ where: { id: needId, orgId } }),
     );
     if (!need) {
@@ -118,7 +119,7 @@ export class NeedSummaryService {
     // same row (create, then a follow-up geography patch), and re-running the
     // model would replace a summary the reviewer may already be looking at.
     if (!opts.manual) {
-      const live = await this.tenant.runInOrgContext((tx) =>
+      const live = await this.tenant.runRead((tx) =>
         tx.needStatementSummary.findFirst({
           where: { needId, inputTextHash, status: { in: ["DRAFT", "CONFIRMED"] } },
         }),
@@ -214,7 +215,7 @@ ${redacted}`;
    *  draft awaiting review. Superseded and stale rows are never "live". */
   async getForNeed(needId: string): Promise<NeedSummary | null> {
     const orgId = requireOrgId();
-    const row = await this.tenant.runInOrgContext((tx) =>
+    const row = await this.tenant.runRead((tx) =>
       tx.needStatementSummary.findFirst({
         where: { needId, orgId, status: { in: ["CONFIRMED", "DRAFT", "STALE"] } },
         // CONFIRMED sorts before DRAFT before STALE alphabetically, which is
@@ -229,7 +230,7 @@ ${redacted}`;
    *  so the longest-waiting need surfaces at the top. */
   async listPending(limit = 100, offset = 0): Promise<{ items: NeedSummary[]; total: number }> {
     const orgId = requireOrgId();
-    const [rows, total] = await this.tenant.runInOrgContext(async (tx) => [
+    const [rows, total] = await this.tenant.runRead(async (tx) => [
       await tx.needStatementSummary.findMany({
         where: { orgId, status: "DRAFT" },
         orderBy: { generatedAt: "asc" },
@@ -310,7 +311,7 @@ ${redacted}`;
       entityType: "need_statement_summary",
       entityId: summaryId,
       entityLabel: existing.needId,
-      changes: [{ field: "status", before: "DRAFT", after: "CONFIRMED" }],
+      changes: [{ field: auditFieldLabel("status"), before: "Draft", after: "Confirmed" }],
     });
 
     return this.toDto(updated);
@@ -361,7 +362,7 @@ ${redacted}`;
    */
   async getConfirmedTextForNeed(needId: string): Promise<string | null> {
     const orgId = requireOrgId();
-    const row = await this.tenant.runInOrgContext((tx) =>
+    const row = await this.tenant.runRead((tx) =>
       tx.needStatementSummary.findFirst({
         where: { needId, orgId, status: "CONFIRMED" },
         orderBy: { confirmedAt: "desc" },
@@ -386,7 +387,7 @@ ${redacted}`;
   }
 
   private async findDraftOrThrow(summaryId: string, orgId: string) {
-    const row = await this.tenant.runInOrgContext((tx) =>
+    const row = await this.tenant.runRead((tx) =>
       tx.needStatementSummary.findFirst({ where: { id: summaryId, orgId } }),
     );
     if (!row) {

@@ -214,7 +214,7 @@ export class SurveysService {
   }
 
   async getSurveyByNeedId(needId: string) {
-    const row = await this.tenant.runInOrgContext(async (tx) => {
+    const row = await this.tenant.runRead(async (tx) => {
       // RIO-FR-011: multiple versions can exist for one Need once at least
       // one has been superseded (see createNewVersion) — always resolve to
       // the latest version for Survey Builder/management screens.
@@ -244,7 +244,7 @@ export class SurveysService {
   // responses; that mismatch is what made a still-published v1 look
   // unpublished/empty in those screens (RIO-FR-011 regression).
   async getPublishedSurveyForOrgByNeedId(needId: string) {
-    const row = await this.tenant.runInOrgContext(async (tx) => {
+    const row = await this.tenant.runRead(async (tx) => {
       const survey = await tx.survey.findFirst({
         where: { needId, status: 'PUBLISHED' },
         orderBy: { version: 'desc' },
@@ -270,7 +270,7 @@ export class SurveysService {
   // same fact from the other side) — so membership is derived by checking
   // which version's question-id set a response's answer keys land in.
   async listSurveyVersionsByNeedId(needId: string) {
-    return this.tenant.runInOrgContext(async (tx) => {
+    return this.tenant.runRead(async (tx) => {
       const [surveys, responses] = await Promise.all([
         tx.survey.findMany({
           where: { needId },
@@ -352,7 +352,7 @@ export class SurveysService {
   private async resolveUserNames(userIds: string[]): Promise<Map<string, string>> {
     const distinctIds = [...new Set(userIds)];
     if (distinctIds.length === 0) return new Map();
-    const users = await this.tenant.runInOrgContext((tx) =>
+    const users = await this.tenant.runRead((tx) =>
       tx.user.findMany({ where: { id: { in: distinctIds } }, select: { id: true, name: true } }),
     );
     return new Map(users.map((u) => [u.id, u.name]));
@@ -425,7 +425,7 @@ export class SurveysService {
   // created copy wins the dedupe so answerType/options reflect its latest
   // form.
   async listReusableCustomQuestions(domain?: string, subDomain?: string) {
-    const rows = await this.tenant.runInOrgContext((tx) =>
+    const rows = await this.tenant.runRead((tx) =>
       tx.surveyQuestion.findMany({
         where: domain && subDomain ? { customText: { not: null }, domain, subDomain } : { customText: { not: null } },
         orderBy: { id: 'desc' },
@@ -463,7 +463,7 @@ export class SurveysService {
   // multi-domain Need), else "every active domain" if allDomainsSelected,
   // else the single Approved Domain/AI-suggested pair, in that order.
   async recommendQuestions(needId: string) {
-    const { need, needDomains } = await this.tenant.runInOrgContext(async (tx) => {
+    const { need, needDomains } = await this.tenant.runRead(async (tx) => {
       const need = await tx.need.findUnique({ where: { id: needId } });
       if (!need) {
         throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
@@ -517,7 +517,7 @@ export class SurveysService {
     const actorId = requireActor();
     const domainLabel = pairs.length > 0 ? pairs.map((p) => `${p.domain} / ${p.subDomain}`).join(', ') : 'All Domains';
 
-    const data = await this.tenant.runInOrgContext(async (tx) => {
+    const data = await this.tenant.runRead(async (tx) => {
       const need = await tx.need.findUnique({ where: { id: needId }, include: { study: { select: { studyType: true, targetSector: true } } } });
       if (!need) {
         throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
@@ -1128,7 +1128,7 @@ Eligible Questions: ${JSON.stringify(
   // comments) — never creates a new Survey row, this is the same one
   // throughout its whole review history.
   async submitForApproval(surveyId: string) {
-    const survey = await this.tenant.runInOrgContext((tx) => tx.survey.findUnique({ where: { id: surveyId } }));
+    const survey = await this.tenant.runRead((tx) => tx.survey.findUnique({ where: { id: surveyId } }));
     if (!survey) {
       throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
     }
@@ -1139,7 +1139,7 @@ Eligible Questions: ${JSON.stringify(
     }
     // Same "nothing for a citizen to answer" guard publishing already had —
     // still applies, just moved one step earlier in the flow.
-    const questionCount = await this.tenant.runInOrgContext((tx) => tx.surveyQuestion.count({ where: { surveyId } }));
+    const questionCount = await this.tenant.runRead((tx) => tx.surveyQuestion.count({ where: { surveyId } }));
     if (questionCount === 0) {
       throw new BadRequestException({
         error: { code: 'SURVEY_HAS_NO_QUESTIONS', message: 'Add at least one question before submitting this survey for approval.' },
@@ -1190,7 +1190,7 @@ Eligible Questions: ${JSON.stringify(
   // editing window reopens in between (assertEditable blocks APPROVED).
   async approveSurvey(surveyId: string, comments: string) {
     requireNonBlank(comments, 'REVIEWER_NOTES_REQUIRED', 'Reviewer notes are required.');
-    const survey = await this.tenant.runInOrgContext((tx) => tx.survey.findUnique({ where: { id: surveyId } }));
+    const survey = await this.tenant.runRead((tx) => tx.survey.findUnique({ where: { id: surveyId } }));
     if (!survey) {
       throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
     }
@@ -1244,7 +1244,7 @@ Eligible Questions: ${JSON.stringify(
   // Approver has already approved. No reviewer notes here — that decision
   // was already recorded by approveSurvey; this is just "make it live."
   async publishSurvey(surveyId: string) {
-    const survey = await this.tenant.runInOrgContext((tx) => tx.survey.findUnique({ where: { id: surveyId } }));
+    const survey = await this.tenant.runRead((tx) => tx.survey.findUnique({ where: { id: surveyId } }));
     if (!survey) {
       throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
     }
@@ -1298,7 +1298,7 @@ Eligible Questions: ${JSON.stringify(
   // come from the Researcher through updateQuestions after this.
   async rejectSurvey(surveyId: string, reasonCode: RejectionReasonCode, comments: string) {
     requireNonBlank(comments, 'REVIEWER_NOTES_REQUIRED', 'Reviewer notes are required.');
-    const survey = await this.tenant.runInOrgContext((tx) => tx.survey.findUnique({ where: { id: surveyId } }));
+    const survey = await this.tenant.runRead((tx) => tx.survey.findUnique({ where: { id: surveyId } }));
     if (!survey) {
       throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
     }
@@ -1563,7 +1563,7 @@ Eligible Questions: ${JSON.stringify(
         });
       }
     } else {
-      const result = await this.tenant.runInOrgContext((tx) =>
+      const result = await this.tenant.runRead((tx) =>
         Promise.all([
           tx.survey.findMany({ where, orderBy: { createdAt: 'desc' }, take, skip, include }),
           tx.survey.count({ where }),
@@ -1640,7 +1640,7 @@ Eligible Questions: ${JSON.stringify(
         });
       }
     } else {
-      survey = await this.tenant.runInOrgContext((tx) =>
+      survey = await this.tenant.runRead((tx) =>
         tx.survey.findUnique({ where: { id }, include }),
       );
     }

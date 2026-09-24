@@ -7,6 +7,7 @@ import { AiService } from '../ai/ai.service';
 import { NEED_THEME_EXTRACTION_TASK } from '../ai/prompts/need-theme-extraction.task';
 import { StudyConfigService } from '../study-config/study-config.service';
 import { redactPii } from '../ai-decisions/classification.placeholder';
+import { auditFieldLabel } from '../audit/audit-field-labels';
 
 /**
  * RIO-FR-003 AC 6 — extracts the recurring themes a need is about, and counts
@@ -53,7 +54,7 @@ export class NeedThemesService {
   async extract(needId: string): Promise<string[]> {
     const orgId = requireOrgId();
 
-    const need = await this.tenant.runInOrgContext((tx) =>
+    const need = await this.tenant.runRead((tx) =>
       tx.need.findFirst({ where: { id: needId, orgId } }),
     );
     if (!need) {
@@ -96,7 +97,7 @@ ${redactPii(statement)}`;
         entityType: 'need',
         entityId: needId,
         entityLabel: need.title ?? needId,
-        changes: [{ field: 'themes', before, after: themes }],
+        changes: [{ field: auditFieldLabel('themes'), before, after: themes }],
       });
     }
 
@@ -114,7 +115,7 @@ ${redactPii(statement)}`;
   async countSharingThemes(needId: string, themes: string[]): Promise<number> {
     if (themes.length === 0) return 0;
     const orgId = requireOrgId();
-    return this.tenant.runInOrgContext((tx) =>
+    return this.tenant.runRead((tx) =>
       tx.need.count({
         where: { orgId, id: { not: needId }, themes: { hasSome: themes } },
       }),
@@ -124,7 +125,7 @@ ${redactPii(statement)}`;
   /** AC 6's grouping — every theme in use, with how many needs carry it. */
   async listThemeCounts(): Promise<Array<{ theme: string; needCount: number }>> {
     const orgId = requireOrgId();
-    const rows = await this.tenant.runInOrgContext((tx) =>
+    const rows = await this.tenant.runRead((tx) =>
       tx.need.findMany({ where: { orgId, ...EXCLUDE_MERGED }, select: { themes: true } }),
     );
     const counts = new Map<string, number>();

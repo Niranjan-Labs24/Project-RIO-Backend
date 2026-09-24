@@ -23,11 +23,85 @@ import type {
 } from './ncnp-report.types';
 import {
   AGE_BRACKET_LABELS,
+  AGE_BRACKET_LABELS_AR,
   AGE_BRACKET_ORDER,
   GENDER_LABELS,
+  GENDER_LABELS_AR,
   NEED_SOURCE_LABELS,
+  NEED_SOURCE_LABELS_AR,
   REJECTION_REASON_LABELS,
+  REJECTION_REASON_LABELS_AR,
+  localizedLabel,
 } from './ncnp-report-labels';
+import type { SupportedLocale } from '../translation/translation.types';
+import { NCNP_PDF_AR } from './ncnp-report-pdf-labels';
+
+// Set for the duration of one (synchronous) render by renderNcnpReportPdf.
+let PDF_LOCALE: SupportedLocale = 'en';
+const PRIORITY_STATUS_AR: Record<string, string> = { CRITICAL: 'حرجة', HIGH: 'عالية', MEDIUM: 'متوسطة', LOW: 'منخفضة' };
+/** A stored priority status (HIGH/MEDIUM/...) in the render's language. */
+function PS(status: string): string {
+  return PDF_LOCALE === 'ar' ? (PRIORITY_STATUS_AR[status.toUpperCase()] ?? status) : status;
+}
+/** Fixed report text in the render's language; unknown strings pass through. */
+function T(text: string): string {
+  return PDF_LOCALE === 'ar' ? (NCNP_PDF_AR[text] ?? text) : text;
+}
+
+// ---- Interactive contents (same drill-down primitives as the other reports) ----
+const CONTENTS_ANCHOR = 'ncnp-contents';
+const SECTION_ANCHORS: Array<{ id: string; title: string; sub: string }> = [
+  { id: 'ncnp-p1', title: 'Executive Summary', sub: 'Key metrics and new this period' },
+  { id: 'ncnp-p2', title: 'Organization Overview', sub: 'Geographic distribution and organization health' },
+  { id: 'ncnp-p3', title: 'Study Overview', sub: 'Study status and geography' },
+  { id: 'ncnp-p4', title: 'Public Survey Overview', sub: 'Survey status and regional coverage' },
+  { id: 'ncnp-p5', title: 'Response Analytics', sub: 'Responses over time and demographics' },
+  { id: 'ncnp-p6', title: 'Priority & Scoring Overview', sub: 'Priority needs and data quality notes' },
+];
+
+interface PdfKnown {
+  ids?: ReadonlySet<string>;
+  pages: Record<string, number>;
+}
+
+/** Link rect in the same (mirrored in RTL) space the drawn box occupies. */
+function linkBox(pdf: Pdf, x: number, w: number, h: number, to: string): void {
+  const lx = PDF_LOCALE === 'ar' ? pdf.rx + pdf.rw - (x - pdf.rx) - w : x;
+  pdf.link(lx, w, h, to);
+}
+
+function renderContentsGrid(pdf: Pdf, known: PdfKnown): void {
+  const COLS = 3;
+  const GAP = 10;
+  const TILE_H = 50;
+  const tileW = (pdf.rw - GAP * (COLS - 1)) / COLS;
+  const rows = Math.ceil(SECTION_ANCHORS.length / COLS);
+  sectionHeadingPlain(pdf, T('Contents'));
+  pdf.ensure(rows * (TILE_H + GAP));
+  const top0 = pdf.y;
+  SECTION_ANCHORS.forEach((sec, i) => {
+    const x = pdf.rx + (i % COLS) * (tileW + GAP);
+    const top = top0 + Math.floor(i / COLS) * (TILE_H + GAP);
+    pdf.y = top;
+    pdf.rect(x, tileW, TILE_H, LIGHT);
+    pdf.strokeRect(x, tileW, TILE_H, GRAY, 0.5);
+    pdf.y = top + 9;
+    pdf.text(x + 10, 8, true, String(i + 1).padStart(2, '0'), ACCENT);
+    pdf.text(x + 30, 9.5, true, truncate(T(sec.title), 9.5, tileW - 40));
+    pdf.y = top + 25;
+    pdf.text(x + 30, 7.5, false, truncate(T(sec.sub), 7.5, tileW - 40), GRAY);
+    pdf.y = top + 38;
+    const pg = known.pages[sec.id];
+    pdf.text(x + 30, 7.5, true, `${T('View')}${pg ? ` · ${T('Page')} ${pg}` : ''}`, ACCENT);
+    pdf.y = top;
+    linkBox(pdf, x, tileW, TILE_H, sec.id);
+  });
+  pdf.y = top0 + rows * (TILE_H + GAP) + 2;
+}
+
+function sectionHeadingPlain(pdf: Pdf, title: string): void {
+  heading(pdf, title);
+}
 
 // A dedicated, page-aware PDF layout for the NCNP Consolidated Report — unlike
 // every other report type (which flows through the generic, page-agnostic
@@ -106,9 +180,11 @@ const GREEN_BG = '0.87 0.95 0.90';
 const RED_BG = '0.98 0.90 0.90';
 const AMBER_BG = '0.99 0.94 0.83';
 
-export function fmtDate(iso: string): string {
+export function fmtDate(iso: string, locale: SupportedLocale = 'en'): string {
   const d = new Date(iso);
-  return d.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return locale === 'ar'
+    ? d.toLocaleString('ar-SA-u-nu-latn', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : d.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 function reportId(generatedAt: string): string {
@@ -124,7 +200,7 @@ function reportId(generatedAt: string): string {
 // PDF — real data volume can push this report past 6 physical pages (see
 // this file's header comment), so there's only one true page count to show.
 function pageLabel(page: number, total: number): string {
-  return `Page ${page} of ${total}`;
+  return PDF_LOCALE === 'ar' ? `الصفحة ${page} من ${total}` : `Page ${page} of ${total}`;
 }
 
 // Running header repeated at the top of every logical page (2 onward) —
@@ -133,10 +209,14 @@ function pageLabel(page: number, total: number): string {
 // the fuller masthead instead).
 function drawRunhead(pdf: Pdf, condensedScope: string, totalPages: number): void {
   pdf.y = TOP - 10;
-  const label = `${REPORT_NAME.toUpperCase()} — ${condensedScope.toUpperCase()}`;
+  const label = `${T(REPORT_NAME).toUpperCase()} — ${condensedScope.toUpperCase()}`;
   pdf.text(LEFT, 8, false, truncate(label, 8, CONTENT_W - 90), GRAY);
   const b = pageLabel(pdf.pageCount, totalPages);
   pdf.text(LEFT + CONTENT_W - textWidth(b, 8), 8, true, b, ACCENT);
+  const back = T('Contents');
+  const backX = LEFT + CONTENT_W - textWidth(b, 8) - 16 - textWidth(back, 8, true);
+  pdf.text(backX, 8, true, back, ACCENT);
+  linkBox(pdf, backX - 2, textWidth(back, 8, true) + 4, 11, CONTENTS_ANCHOR);
   pdf.y += 13;
   pdf.rule(GRAY, 0.5);
   pdf.y += 8;
@@ -160,7 +240,7 @@ function drawFooter(pdf: Pdf, totalPages: number): void {
   pdf.rule(GRAY, 0.4);
   pdf.y += 7;
   const label = pageLabel(pdf.pageCount, totalPages);
-  pdf.text(LEFT, 7.5, false, truncate(DISCLAIMER, 7.5, CONTENT_W - 70), GRAY);
+  pdf.text(LEFT, 7.5, false, truncate(T(DISCLAIMER), 7.5, CONTENT_W - 70), GRAY);
   pdf.text(LEFT + CONTENT_W - textWidth(label, 7.5), 7.5, false, label, GRAY);
 }
 
@@ -194,7 +274,7 @@ function pageTitle(pdf: Pdf, text: string): void {
 // sections are presented in this fixed reading order), so it isn't just
 // decoration.
 function sectionHeading(pdf: Pdf, num: number, title: string): void {
-  heading(pdf, `${String(num).padStart(2, '0')}   ${title}`);
+  heading(pdf, PDF_LOCALE === 'ar' ? `${title}  |  ${String(num).padStart(2, '0')}` : `${String(num).padStart(2, '0')}   ${title}`);
 }
 
 // A chart/table's own title (e.g. "Studies Created — Last 12 Months",
@@ -220,6 +300,34 @@ function barShade(i: number, n: number): string {
   return BAR_DARK.map((d, k) => (d + (BAR_LIGHT[k]! - d) * t).toFixed(2)).join(' ');
 }
 
+
+// Organization names are exported bilingually as "Primary (Secondary)". Mixing
+// two scripts in one line makes the bidi algorithm reorder the parentheses and
+// wrap mid-name, so each name goes on its own line instead: the primary name
+// at normal size, the other-language name below it, smaller and gray.
+function splitBilingual(label: string): { primary: string; secondary: string | null } {
+  const m = /^(.*\S)\s+\(([^()]*(?:\([^()]*\))?[^()]*)\)$/.exec(label);
+  if (!m || !/[A-Za-z]/.test(m[2]!) === !/[A-Za-z]/.test(m[1]!)) return { primary: label, secondary: null };
+  return { primary: m[1]!, secondary: m[2]! };
+}
+
+interface LabelLine {
+  text: string;
+  size: number;
+  color: string;
+  bold: boolean;
+  step: number;
+}
+
+function labelLines(label: string, width: number): LabelLine[] {
+  const { primary, secondary } = splitBilingual(label);
+  const lines: LabelLine[] = wrap(primary, 9, width).map((text) => ({ text, size: 9, color: BLACK, bold: false, step: 11.5 }));
+  if (secondary) wrap(secondary, 7.5, width).forEach((text) => lines.push({ text, size: 7.5, color: GRAY, bold: false, step: 10 }));
+  return lines;
+}
+
+const labelHeight = (lines: LabelLine[]): number => lines.reduce((h, l) => h + l.step, 0);
+
 // A horizontal bar list — same layout as pdf-builder's generic renderBars,
 // but using the app's actual --chart-1 (NamedBarList's bg-chart-1) instead
 // of pdf-builder's fixed bright BAR color. Kept local rather than changed
@@ -234,7 +342,7 @@ function renderBarsChart(
 ): void {
   if (title) chartTitle(pdf, title);
   if (bars.length === 0) {
-    pdf.text(pdf.rx + 2, 8.5, false, 'No data available yet.', GRAY);
+    pdf.text(pdf.rx + 2, 8.5, false, T('No data available yet.'), GRAY);
     pdf.y += 14;
     return;
   }
@@ -251,14 +359,21 @@ function renderBarsChart(
   // spills onto an otherwise near-empty extra physical page. Still legible
   // at 9.5pt text with an 11pt bar.
   bars.forEach(({ label, value }, i) => {
-    pdf.ensure(17);
+    const { primary, secondary } = splitBilingual(label);
+    pdf.ensure(secondary ? 26 : 17);
     const frac = max > 0 ? Math.max(0, Math.min(1, value / max)) : 0;
     const color = graduated ? barShade(i, bars.length) : flatColor;
-    pdf.text(pdf.rx + 2, 9.5, false, truncate(label, 9.5, labelW - 8));
+    pdf.text(pdf.rx + 2, 9.5, false, truncate(primary, 9.5, labelW - 8));
+    if (secondary) {
+      const rowY = pdf.y;
+      pdf.y = rowY + 11;
+      pdf.text(pdf.rx + 2, 7, false, truncate(secondary, 7, labelW - 8), GRAY);
+      pdf.y = rowY;
+    }
     pdf.rect(trackX, trackW, 11, LIGHT);
     if (frac > 0) pdf.rect(trackX, Math.max(1, trackW * frac), 11, color);
     pdf.text(trackX + trackW + 6, 9.5, true, String(value));
-    pdf.y += 14;
+    pdf.y += secondary ? 24 : 14;
   });
 }
 
@@ -277,25 +392,25 @@ function renderLabeledBarsChart(
 ): void {
   if (title) chartTitle(pdf, title);
   if (bars.length === 0) {
-    pdf.text(pdf.rx + 2, 8.5, false, 'No data available yet.', GRAY);
+    pdf.text(pdf.rx + 2, 8.5, false, T('No data available yet.'), GRAY);
     pdf.y += 14;
     return;
   }
   const valueColW = 36;
   const trackW = pdf.rw - valueColW;
   bars.forEach(({ label, value }, i) => {
-    const lines = wrap(label, 9, pdf.rw);
-    pdf.ensure(lines.length * 11 + 14);
+    const lines = labelLines(label, pdf.rw);
+    pdf.ensure(labelHeight(lines) + 22);
     lines.forEach((line) => {
-      pdf.text(pdf.rx, 9, false, line, BLACK);
-      pdf.y += 11;
+      pdf.text(pdf.rx, line.size, line.bold, line.text, line.color);
+      pdf.y += line.step;
     });
-    pdf.y += 1;
+    pdf.y += 2;
     const frac = max > 0 ? Math.max(0, Math.min(1, value / max)) : 0;
     pdf.rect(pdf.rx, trackW, 12, LIGHT);
     if (frac > 0) pdf.rect(pdf.rx, Math.max(1, trackW * frac), 12, barShade(i, bars.length));
     pdf.text(pdf.rx + trackW + 6, 9, true, String(value));
-    pdf.y += 15;
+    pdf.y += 20;
   });
 }
 
@@ -320,7 +435,7 @@ function renderColumnChart(pdf: Pdf, title: string, max: number, bars: Array<{ l
   }
   if (title) chartTitle(pdf, title);
   if (bars.length === 0) {
-    pdf.text(pdf.rx + 2, 8.5, false, 'No data available yet.', GRAY);
+    pdf.text(pdf.rx + 2, 8.5, false, T('No data available yet.'), GRAY);
     pdf.y += 14;
     return;
   }
@@ -416,7 +531,7 @@ function renderTrendLine(pdf: Pdf, title: string, points: NcnpMonthlyPoint[]): v
   const plotX = pdf.rx;
   const w = pdf.rw;
   if (points.length === 0) {
-    pdf.text(pdf.rx + 2, 8.5, false, 'No data available yet.', GRAY);
+    pdf.text(pdf.rx + 2, 8.5, false, T('No data available yet.'), GRAY);
     pdf.y = top + 16;
     return;
   }
@@ -642,7 +757,7 @@ function renderCaption(pdf: Pdf, text: string): void {
 // UI uses under every capped list/table (e.g. Organization Summary).
 function renderShowingOf(pdf: Pdf, shown: number, total: number): void {
   pdf.ensure(13);
-  pdf.text(pdf.rx, 7.5, false, `Top ${shown} of ${total}`, GRAY);
+  pdf.text(pdf.rx, 7.5, false, (PDF_LOCALE === 'ar' ? `أعلى ${shown} من ${total}` : `Top ${shown} of ${total}`), GRAY);
   pdf.y += 13;
 }
 
@@ -696,7 +811,7 @@ function renderKpiTiles(pdf: Pdf, tiles: Array<{ label: string; value: string | 
 }
 
 function pct1(stat: { current: number; changePct: number | null }): string {
-  return stat.changePct === null ? `${stat.current} (new)` : `${stat.current} (${stat.changePct > 0 ? '+' : ''}${stat.changePct.toFixed(1)}%)`;
+  return stat.changePct === null ? (PDF_LOCALE === 'ar' ? `${stat.current} · جديد` : `${stat.current} (new)`) : `${stat.current} (${stat.changePct > 0 ? '+' : ''}${stat.changePct.toFixed(1)}%)`;
 }
 
 function priorityBadgeColors(status: string): [string, string] {
@@ -713,7 +828,7 @@ function priorityBadgeColors(status: string): [string, string] {
 // leaderboard, the same handful of names repeated across Pages 2/3/5). This
 // is the one place on the report that surfaces orgs a monitoring body would
 // actually want to follow up on.
-function renderNeedsAttention(pdf: Pdf, rows: NcnpOrgNeedingAttention[], activeOrgCount: number): void {
+function renderNeedsAttention(pdf: Pdf, rows: NcnpOrgNeedingAttention[], activeOrgCount: number, locale: SupportedLocale): void {
   // A real progress read (Healthy vs Flagged, out of active orgs) rather
   // than a flat, undifferentiated color bar — the flat green fill carried
   // no data at all when the count was 0 (looked identical to any other
@@ -721,9 +836,9 @@ function renderNeedsAttention(pdf: Pdf, rows: NcnpOrgNeedingAttention[], activeO
   // all-healthy case.
   const flagged = rows.length;
   const healthy = Math.max(0, activeOrgCount - flagged);
-  renderTwoStateBar(pdf, 'Organizations Needing Attention', 'Healthy', healthy, 'Flagged', flagged);
+  renderTwoStateBar(pdf, T('Organizations Needing Attention'), T('Healthy'), healthy, T('Flagged'), flagged);
   if (rows.length === 0) {
-    pdf.text(pdf.rx + 2, 8.5, false, 'Every active organization has recent activity.', GRAY);
+    pdf.text(pdf.rx + 2, 8.5, false, T('Every active organization has recent activity.'), GRAY);
     pdf.y += 14;
     return;
   }
@@ -731,7 +846,7 @@ function renderNeedsAttention(pdf: Pdf, rows: NcnpOrgNeedingAttention[], activeO
   for (const r of rows.slice(0, 5)) {
     pdf.ensure(14.5);
     pdf.text(pdf.rx + 2, 8.5, false, truncate(r.organizationName, 8.5, pdf.rw * 0.62));
-    const dateStr = r.lastActivity ? fmtDate(r.lastActivity) : 'No recorded activity';
+    const dateStr = r.lastActivity ? fmtDate(r.lastActivity, locale) : T('No recorded activity');
     pdf.text(pdf.rx + pdf.rw - textWidth(dateStr, 7.5), 7.5, false, dateStr, GRAY);
     pdf.y += 14.5;
   }
@@ -751,10 +866,10 @@ function renderVillageTable(pdf: Pdf, rows: NcnpVillageScorecard[]): void {
   pdf.rect(pdf.rx, pdf.rw, headerH, LIGHT);
   const headerTop = pdf.y;
   pdf.y = headerTop + 5;
-  pdf.text(xs[0]! + 3, 8, true, 'Village');
-  const scoreHdr = 'Priority Score';
+  pdf.text(xs[0]! + 3, 8, true, T('Village'));
+  const scoreHdr = T('Priority Score');
   pdf.text(xs[1]! + widths[1]! - 4 - textWidth(scoreHdr, 8), 8, true, scoreHdr);
-  pdf.text(xs[2]! + 3, 8, true, 'Status');
+  pdf.text(xs[2]! + 3, 8, true, T('Status'));
   pdf.y = headerTop + headerH;
   pdf.rule(GRAY, 0.5);
   pdf.y += 2;
@@ -767,7 +882,7 @@ function renderVillageTable(pdf: Pdf, rows: NcnpVillageScorecard[]): void {
     pdf.text(xs[1]! + widths[1]! - 4 - textWidth(scoreStr, 8.5), 8.5, false, scoreStr);
     pdf.y = top;
     const [bg, fg] = priorityBadgeColors(v.priorityStatus);
-    badge(pdf, xs[2]! + 3, v.priorityStatus, bg, fg);
+    badge(pdf, xs[2]! + 3, PS(v.priorityStatus), bg, fg);
     pdf.y = top + rowH;
   }
 }
@@ -850,6 +965,19 @@ const KSA_REGION_COORDS: Record<string, { lat: number; lng: number }> = {
 // governorates in the platform's reference data, so plotting at that level
 // would mean fabricating coordinates.
 function renderKingdomMap(pdf: Pdf, regionCounts: Array<{ code: string; count: number }>): void {
+  // A map must never be mirrored: the coast/borders are geography, not
+  // reading direction. Drawn LTR even in an Arabic report (it's centred in
+  // the column, so nothing else moves).
+  const dir = pdf.dir;
+  pdf.dir = 'ltr';
+  try {
+    renderKingdomMapLtr(pdf, regionCounts);
+  } finally {
+    pdf.dir = dir;
+  }
+}
+
+function renderKingdomMapLtr(pdf: Pdf, regionCounts: Array<{ code: string; count: number }>): void {
   const w = pdf.rw;
   const h = 150;
   pdf.ensure(h + 10);
@@ -946,6 +1074,7 @@ export function renderNcnpReportPdf(
   report: NcnpReport,
   generatedByName: string,
   auditRows?: Array<{ label: string; value: string }>,
+  locale: SupportedLocale = 'en',
 ): Buffer {
   // Pass 1: render once purely to learn the true final physical page count
   // — real data volume can push content across more physical pages than
@@ -955,8 +1084,16 @@ export function renderNcnpReportPdf(
   // repeated across every physical page a section happens to overflow
   // onto. Safe to run twice: this is a pure function of its inputs, and
   // the footer text's own length never feeds back into body layout.
-  const totalPages = renderPages(report, generatedByName, auditRows, 1).pageCount;
-  return renderPages(report, generatedByName, auditRows, totalPages).build();
+  const previousLocale = PDF_LOCALE;
+  PDF_LOCALE = locale;
+  try {
+    const first = renderPages(report, generatedByName, auditRows, 1, locale, { pages: {} });
+    const known: PdfKnown = { ids: first.pdf.anchorIds(), pages: first.starts };
+    const second = renderPages(report, generatedByName, auditRows, first.pdf.pageCount, locale, known);
+    return second.pdf.build();
+  } finally {
+    PDF_LOCALE = previousLocale;
+  }
 }
 
 function renderPages(
@@ -964,7 +1101,14 @@ function renderPages(
   generatedByName: string,
   auditRows: Array<{ label: string; value: string }> | undefined,
   totalPages: number,
-): Pdf {
+  locale: SupportedLocale = 'en',
+  known: PdfKnown = { pages: {} },
+): { pdf: Pdf; starts: Record<string, number> } {
+  const starts: Record<string, number> = {};
+  const mark = (pdf: Pdf, id: string): void => {
+    pdf.anchor(id);
+    starts[id] = pdf.pageCount;
+  };
   const {
     summary,
     orgHealth,
@@ -986,24 +1130,29 @@ function renderPages(
     domainRegionIntersections,
   } = report;
 
-  const condensedScope = `Last ${summary.newThisPeriod.periodDays} days · All Regions`;
+  const condensedScope = (PDF_LOCALE === 'ar' ? `آخر ${summary.newThisPeriod.periodDays} يومًا · جميع المناطق` : `Last ${summary.newThisPeriod.periodDays} days · All Regions`);
   // Semantic status colors (Draft=neutral, Submitted=amber/in-review,
   // Published=green/good, Rejected=red/critical), matching the UI's
   // StatusDonut exactly — the generic chart-1..5 rotation these used before
   // made every status read as "visually equal," with nothing to tell a
   // healthy Published share from a concerning Rejected one at a glance.
   const surveyStatusSlices = [
-    { label: 'Draft', value: surveyAnalytics.statusPlatformWide.draft, color: GRAY },
-    { label: 'Submitted', value: surveyAnalytics.statusPlatformWide.submitted, color: WARNING },
-    { label: 'Published', value: surveyAnalytics.statusPlatformWide.published, color: CHART_4 },
-    { label: 'Rejected', value: surveyAnalytics.statusPlatformWide.rejected, color: DESTRUCTIVE },
+    { label: T('Draft'), value: surveyAnalytics.statusPlatformWide.draft, color: GRAY },
+    { label: T('Submitted'), value: surveyAnalytics.statusPlatformWide.submitted, color: WARNING },
+    { label: T('Published'), value: surveyAnalytics.statusPlatformWide.published, color: CHART_4 },
+    { label: T('Rejected'), value: surveyAnalytics.statusPlatformWide.rejected, color: DESTRUCTIVE },
   ];
-  const pdf = new Pdf();
+  const pdf = new Pdf(known.ids);
+  // Arabic mirrors the whole page through the shared Pdf primitives (text,
+  // boxes, bars and rules all go through Pdf's one mirroring formula), and
+  // every fixed string goes through T() — see ncnp-report-pdf-labels.ts.
+  pdf.dir = locale === 'ar' ? 'rtl' : 'ltr';
 
   // ---- Page 1 — Executive Summary (masthead instead of the running header) ----
   drawPageFrame(pdf);
   pdf.y = TOP;
-  pdf.text(LEFT, 9, true, 'RIO PLATFORM — NATIONAL COUNCIL FOR NGO PARTNERSHIPS', ACCENT);
+  pdf.anchor(CONTENTS_ANCHOR);
+  pdf.text(LEFT, 9, true, T('RIO PLATFORM — NATIONAL COUNCIL FOR NGO PARTNERSHIPS'), ACCENT);
 
   // Page badge + report ID pinned top-right, drawn against the eyebrow
   // line's y rather than the left column's flow below — text() positions
@@ -1012,17 +1161,17 @@ function renderPages(
   const badge1 = pageLabel(pdf.pageCount, totalPages);
   pdf.text(LEFT + CONTENT_W - textWidth(badge1, 8), 8, true, badge1, ACCENT);
   pdf.y = topRightY + 13;
-  const ridLabel = `Report ID: ${reportId(report.generatedAt)}`;
+  const ridLabel = `${PDF_LOCALE === 'ar' ? 'معرّف التقرير' : 'Report ID'}: ${reportId(report.generatedAt)}`;
   pdf.text(LEFT + CONTENT_W - textWidth(ridLabel, 7.5), 7.5, false, ridLabel, GRAY);
   pdf.y = topRightY;
 
   pdf.y += 24;
-  pdf.text(LEFT, 24, true, REPORT_NAME, BLACK, 'serif');
+  pdf.text(LEFT, 24, true, T(REPORT_NAME), BLACK, 'serif');
   pdf.y += 34;
-  pdf.text(LEFT, 9.5, false, 'Platform-level consolidation — kingdom-wide needs assessment overview', GRAY);
+  pdf.text(LEFT, 9.5, false, T('Platform-level consolidation — kingdom-wide needs assessment overview'), GRAY);
   pdf.y += 20;
   const descLines = wrap(
-    'This report compiles a national, kingdom-wide overview of needs, organizations, studies, public surveys, and responses across the NCNP platform for the selected reporting period. It contains aggregated metrics only — for individual records, review the relevant section inside the application.',
+    T('This report compiles a national, kingdom-wide overview of needs, organizations, studies, public surveys, and responses across the NCNP platform for the selected reporting period. It contains aggregated metrics only — for individual records, review the relevant section inside the application.'),
     8.5,
     CONTENT_W,
   );
@@ -1036,67 +1185,100 @@ function renderPages(
   pdf.y += 14;
 
   renderScopeRow(pdf, [
-    { label: 'Reporting Period', value: `Last ${summary.newThisPeriod.periodDays} days` },
-    { label: 'Region', value: 'All Regions' },
-    { label: 'Generated On', value: fmtDate(report.generatedAt) },
-    { label: 'Generated By', value: generatedByName },
+    { label: T('Reporting Period'), value: PDF_LOCALE === 'ar' ? `آخر ${summary.newThisPeriod.periodDays} يومًا` : `Last ${summary.newThisPeriod.periodDays} days` },
+    { label: T('Region'), value: T('All Regions') },
+    { label: T('Generated On'), value: fmtDate(report.generatedAt, locale) },
+    { label: T('Generated By'), value: generatedByName },
   ]);
   pdf.y += 10;
+  renderContentsGrid(pdf, known);
+  drawFooter(pdf, totalPages);
+
+  // ---- Page 2 — Executive Summary content (page 1 is the cover + contents) ----
+  pdf.newPage();
+  drawPageFrame(pdf);
+  mark(pdf, 'ncnp-p1');
+  drawRunhead(pdf, condensedScope, totalPages);
+  pageTitle(pdf, T('Executive Summary'));
 
   const avgResponsesPerSurvey = summary.totals.surveys > 0 ? summary.totals.responses / summary.totals.surveys : 0;
-  sectionHeading(pdf, 1, 'Key Metrics');
+  sectionHeading(pdf, 1, T('Key Metrics'));
   renderKpiTiles(
     pdf,
     [
-      { label: 'Organizations', value: summary.totals.organizations },
-      { label: 'Studies', value: summary.totals.studies },
-      { label: 'Public Surveys', value: summary.totals.surveys },
-      { label: 'Total Responses', value: summary.totals.responses },
-      { label: 'Total Needs', value: summary.totals.needs },
-      { label: 'Open Surveys', value: publicLinkStatus.open },
-      { label: 'Closed Surveys', value: publicLinkStatus.closed },
-      { label: 'Avg. Responses / Survey', value: avgResponsesPerSurvey.toFixed(1) },
+      { label: T('Organizations'), value: summary.totals.organizations },
+      { label: T('Studies'), value: summary.totals.studies },
+      { label: T('Public Surveys'), value: summary.totals.surveys },
+      { label: T('Total Responses'), value: summary.totals.responses },
+      { label: T('Total Needs'), value: summary.totals.needs },
+      { label: T('Open Surveys'), value: publicLinkStatus.open },
+      { label: T('Closed Surveys'), value: publicLinkStatus.closed },
+      { label: T('Avg. Responses / Survey'), value: avgResponsesPerSurvey.toFixed(1) },
     ],
     4,
   );
   pdf.y += 12;
 
-  sectionHeading(pdf, 2, 'Survey Status & Platform Growth');
-  renderDonut(pdf, null, '', 'SURVEYS', surveyStatusSlices);
+  sectionHeading(pdf, 2, T('Survey Status & Platform Growth'));
+  renderDonut(pdf, null, '', T('SURVEYS'), surveyStatusSlices);
   pdf.y += 14;
 
-  sectionHeading(pdf, 3, 'New This Period');
-  renderCaption(pdf, 'Counted by each record’s own creation/submission date — see Page 5 for the response trend over time');
+  sectionHeading(pdf, 3, T('New This Period'));
+  renderCaption(pdf, T('Counted by each record’s own creation/submission date — see Page 5 for the response trend over time'));
   renderKpiTiles(
     pdf,
     [
-      { label: 'Organizations', value: pct1(summary.newThisPeriod.organizations) },
-      { label: 'Studies', value: pct1(summary.newThisPeriod.studies) },
-      { label: 'Surveys', value: pct1(summary.newThisPeriod.surveys) },
-      { label: 'Responses', value: pct1(summary.newThisPeriod.responses) },
+      { label: T('Organizations'), value: pct1(summary.newThisPeriod.organizations) },
+      { label: T('Studies'), value: pct1(summary.newThisPeriod.studies) },
+      { label: T('Surveys'), value: pct1(summary.newThisPeriod.surveys) },
+      { label: T('Responses'), value: pct1(summary.newThisPeriod.responses) },
     ],
     4,
   );
   pdf.y += 12;
 
-  sectionHeading(pdf, 4, 'Top Critical Needs');
+  sectionHeading(pdf, 4, T('Top Critical Needs'));
   if (criticalNeeds.topCriticalNeeds.length === 0) {
-    renderCaption(pdf, 'No Needs have a village-priority assessment yet — nothing to rank.');
+    renderCaption(pdf, T('No Needs have a village-priority assessment yet — nothing to rank.'));
   } else {
-    renderCaption(pdf, `Ranked by priority score — ${criticalNeeds.totalRankableNeeds} of ${criticalNeeds.totalNeeds} Needs have an assessment to rank by.`);
+    renderCaption(pdf, (PDF_LOCALE === 'ar' ? `مرتبة حسب درجة الأولوية — ${criticalNeeds.totalRankableNeeds} من ${criticalNeeds.totalNeeds} احتياجًا لديها تقييم للترتيب.` : `Ranked by priority score — ${criticalNeeds.totalRankableNeeds} of ${criticalNeeds.totalNeeds} Needs have an assessment to rank by.`));
+    const statusW = 72;
+    const pad = 10;
+    const titleW = pdf.rw - statusW - pad * 3;
     criticalNeeds.topCriticalNeeds.forEach((n, i) => {
-      pdf.ensure(28);
-      const rowTop = pdf.y;
-      pdf.text(pdf.rx, 9.5, true, `${i + 1}. ${n.needTitle}`, BLACK);
-      pdf.y = rowTop + 13;
-      const meta = [n.organizationName, n.domain, n.primaryGap ? `Primary gap: ${n.primaryGap}` : null]
+      const titleLines = wrap(`${i + 1}. ${n.needTitle}`, 9.5, titleW);
+      const org = splitBilingual(n.organizationName);
+      const detail = [n.domain, n.primaryGap ? `${T('Primary Gap')}: ${n.primaryGap}` : null]
         .filter((v): v is string => Boolean(v))
-        .join(' · ');
-      pdf.text(pdf.rx, 8, false, meta, GRAY);
-      const statusLabel = `${n.priorityStatus} · ${n.priorityScore.toFixed(1)}`;
-      pdf.y = rowTop;
-      pdf.text(pdf.rx + pdf.rw - textWidth(statusLabel, 9), 9, true, statusLabel, n.priorityStatus === 'HIGH' ? DESTRUCTIVE : n.priorityStatus === 'MEDIUM' ? WARNING : CHART_4);
-      pdf.y = rowTop + 24;
+        .join('  ·  ');
+      const metaRows: Array<{ text: string; size: number; color: string }> = [
+        { text: org.primary, size: 8, color: GRAY },
+        ...(org.secondary ? [{ text: org.secondary, size: 7, color: GRAY }] : []),
+        ...(detail ? wrap(detail, 8, titleW).map((text) => ({ text, size: 8, color: GRAY })) : []),
+      ];
+      const cardH = pad * 2 + titleLines.length * 13 + 3 + metaRows.reduce((h, r) => h + (r.size >= 8 ? 11.5 : 10), 0);
+      pdf.ensure(cardH + 10);
+      const top = pdf.y;
+      pdf.strokeRect(pdf.rx, pdf.rw, cardH, '0.85 0.85 0.87', 0.6);
+      pdf.y = top + pad;
+      titleLines.forEach((line) => {
+        pdf.text(pdf.rx + pad, 9.5, true, line, BLACK);
+        pdf.y += 13;
+      });
+      pdf.y += 3;
+      metaRows.forEach((r) => {
+        pdf.text(pdf.rx + pad, r.size, false, r.text, r.color);
+        pdf.y += r.size >= 8 ? 11.5 : 10;
+      });
+      const statusColor = n.priorityStatus === 'HIGH' ? DESTRUCTIVE : n.priorityStatus === 'MEDIUM' ? WARNING : CHART_4;
+      const scoreStr = n.priorityScore.toFixed(1);
+      const levelStr = PS(n.priorityStatus);
+      const sx = pdf.rx + pdf.rw - pad - statusW;
+      pdf.y = top + pad;
+      pdf.text(sx + statusW - textWidth(scoreStr, 15, true), 15, true, scoreStr, statusColor);
+      pdf.y = top + pad + 20;
+      pdf.text(sx + statusW - textWidth(levelStr, 8, true), 8, true, levelStr, statusColor);
+      pdf.y = top + cardH + 10;
     });
   }
   drawFooter(pdf, totalPages);
@@ -1104,11 +1286,12 @@ function renderPages(
   // ---- Page 2 — Organization Overview ----
   pdf.newPage();
   drawPageFrame(pdf);
+  mark(pdf, 'ncnp-p2');
   drawRunhead(pdf, condensedScope, totalPages);
-  pageTitle(pdf, 'Organization Overview');
+  pageTitle(pdf, T('Organization Overview'));
 
-  sectionHeading(pdf, 1, 'Geographic Distribution');
-  renderCaption(pdf, 'Organizations are grouped by Region → Governorate → Center, in decreasing geographic granularity.');
+  sectionHeading(pdf, 1, T('Geographic Distribution'));
+  renderCaption(pdf, T('Organizations are grouped by Region → Governorate → Center, in decreasing geographic granularity.'));
   const byRegion = capBreakdown(geography.organizationsByRegion, REGION_CHART_LIMIT);
   const byGovernorate = capBreakdown(geography.organizationsByGovernorate);
   const byCenter = capBreakdown(geography.organizationsByCenter);
@@ -1116,15 +1299,15 @@ function renderPages(
   // Full width and tall enough to actually read as a map, not a half-width
   // thumbnail squeezed beside a bar chart — the region breakdown moves below
   // it instead, still full width, rather than sharing the row.
-  pdf.text(pdf.rx, 9, true, 'Organizations Across the Kingdom');
+  pdf.text(pdf.rx, 9, true, T('Organizations Across the Kingdom'));
   pdf.y += 12;
-  renderCaption(pdf, 'Region-level only — no GPS coordinates for individual governorates.');
+  renderCaption(pdf, T('Region-level only — no GPS coordinates for individual governorates.'));
   renderKingdomMap(pdf, geography.organizationsByRegion);
   pdf.y += 8;
 
   renderBarsChart(
     pdf,
-    'Organizations by Region',
+    T('Organizations by Region'),
     Math.max(1, ...byRegion.shown.map((g) => g.count)),
     byRegion.shown.map((g) => ({ label: g.name, value: g.count })),
     { graduated: true },
@@ -1134,7 +1317,7 @@ function renderPages(
 
   renderBarsChart(
     pdf,
-    'Organizations by Governorate',
+    T('Organizations by Governorate'),
     Math.max(1, ...byGovernorate.shown.map((g) => g.count)),
     byGovernorate.shown.map((g) => ({ label: g.name, value: g.count })),
     { graduated: true },
@@ -1144,7 +1327,7 @@ function renderPages(
 
   renderBarsChart(
     pdf,
-    'Organizations by Center',
+    T('Organizations by Center'),
     Math.max(1, ...byCenter.shown.map((g) => g.count)),
     byCenter.shown.map((g) => ({ label: g.name, value: g.count })),
     { graduated: true },
@@ -1152,18 +1335,18 @@ function renderPages(
   if (byCenter.truncated) renderShowingOf(pdf, byCenter.shown.length, byCenter.total);
   pdf.y += 8;
 
-  sectionHeading(pdf, 2, 'Organization Health');
+  sectionHeading(pdf, 2, T('Organization Health'));
   renderKpiTiles(pdf, [
-    { label: 'Active', value: orgHealth.active },
-    { label: 'Inactive', value: orgHealth.inactive },
-    { label: `Dormant (${orgHealth.dormantDays}+ days)`, value: orgHealth.dormant },
+    { label: T('Active'), value: orgHealth.active },
+    { label: T('Inactive'), value: orgHealth.inactive },
+    { label: (PDF_LOCALE === 'ar' ? `خاملة (${orgHealth.dormantDays}+ يومًا)` : `Dormant (${orgHealth.dormantDays}+ days)`), value: orgHealth.dormant },
   ]);
   pdf.y += 8;
-  renderNeedsAttention(pdf, orgHealth.needsAttention, orgHealth.active);
+  renderNeedsAttention(pdf, orgHealth.needsAttention, orgHealth.active, locale);
   pdf.y += 6;
 
-  sectionHeading(pdf, 3, 'Organization Summary');
-  renderCaption(pdf, 'Three separate top-5 rankings — a single list sorted by one metric would hide organizations that lead on the others.');
+  sectionHeading(pdf, 3, T('Organization Summary'));
+  renderCaption(pdf, T('Three separate top-5 rankings — a single list sorted by one metric would hide organizations that lead on the others.'));
 
   // Three columns side by side, not stacked full-width — these three lists
   // used to run one after another down the page, each a full-width block,
@@ -1189,7 +1372,7 @@ function renderPages(
   // on the next one. Reserving the true height upfront keeps all three
   // columns on one page, so no internal break — and no stale-y bug — fires.
   const orgSummaryListHeight = (rows: { organizationName: string }[]): number =>
-    rows.reduce((h, r) => h + wrap(r.organizationName, 9, orgSummaryColW).length * 11 + 16, 0);
+    rows.reduce((h, r) => h + labelHeight(labelLines(r.organizationName, orgSummaryColW)) + 22, 0);
   const orgSummaryHeight =
     15 +
     Math.max(
@@ -1204,7 +1387,7 @@ function renderPages(
   const os1 = pdf.column(pdf.rx, orgSummaryColW, orgSummaryStart, () => {
     renderLabeledBarsChart(
       pdf,
-      'Top Organizations — by Studies',
+      T('Top Organizations — by Studies'),
       Math.max(1, ...orgSummary.byStudies.map((r) => r.studyCount)),
       orgSummary.byStudies.map((r) => ({ label: r.organizationName, value: r.studyCount })),
     );
@@ -1213,7 +1396,7 @@ function renderPages(
   const os2 = pdf.column(pdf.rx + orgSummaryColW + orgSummaryColGap, orgSummaryColW, orgSummaryStart, () => {
     renderLabeledBarsChart(
       pdf,
-      'Top Organizations — by Surveys',
+      T('Top Organizations — by Surveys'),
       Math.max(1, ...orgSummary.bySurveys.map((r) => r.surveyCount)),
       orgSummary.bySurveys.map((r) => ({ label: r.organizationName, value: r.surveyCount })),
     );
@@ -1222,7 +1405,7 @@ function renderPages(
   const os3 = pdf.column(pdf.rx + (orgSummaryColW + orgSummaryColGap) * 2, orgSummaryColW, orgSummaryStart, () => {
     renderLabeledBarsChart(
       pdf,
-      'Top Organizations — by Responses',
+      T('Top Organizations — by Responses'),
       Math.max(1, ...orgSummary.byResponses.map((r) => r.responseCount)),
       orgSummary.byResponses.map((r) => ({ label: r.organizationName, value: r.responseCount })),
     );
@@ -1234,18 +1417,19 @@ function renderPages(
   // ---- Page 3 — Study Overview ----
   pdf.newPage();
   drawPageFrame(pdf);
+  mark(pdf, 'ncnp-p3');
   drawRunhead(pdf, condensedScope, totalPages);
-  pageTitle(pdf, 'Study Overview');
+  pageTitle(pdf, T('Study Overview'));
 
-  sectionHeading(pdf, 1, 'Need Categories & Study Status');
+  sectionHeading(pdf, 1, T('Need Categories & Study Status'));
   renderBarsChart(
     pdf,
-    'Need Categories — by Domain',
+    T('Need Categories — by Domain'),
     Math.max(1, ...needDomains.map((d) => d.needCount)),
     needDomains.map((d) => ({ label: d.domainName, value: d.needCount })),
   );
   pdf.y += 14;
-  renderTwoStateBar(pdf, 'Study Status', 'Active', studyStatus.active, 'Archived', studyStatus.archived);
+  renderTwoStateBar(pdf, T('Study Status'), T('Active'), studyStatus.active, T('Archived'), studyStatus.archived);
   pdf.y += 16;
 
   // Studies by Region + Organizations with the Highest Number of Studies
@@ -1257,7 +1441,7 @@ function renderPages(
   // height for that content instead of leaving it as blank space here.
   const p3aStart = pdf.y;
   const p3aEnd1 = pdf.column(pdf.rx, pdf.rw / 2 - 8, p3aStart, () => {
-    sectionHeading(pdf, 2, 'Studies by Region');
+    sectionHeading(pdf, 2, T('Studies by Region'));
     renderBarsChart(
       pdf,
       '',
@@ -1270,11 +1454,11 @@ function renderPages(
     // that full title truncates unreadably at this column's half-width
     // (heading() truncates to the current column width, not just the full
     // page width). Same section, same data; only the label changes here.
-    sectionHeading(pdf, 3, 'Top Orgs by Study Count');
+    sectionHeading(pdf, 3, T('Top Orgs by Study Count'));
     renderSection(pdf, {
       kind: 'table',
       heading: '',
-      columns: ['Organization', 'Studies'],
+      columns: [T('Organization'), T('Studies')],
       rows: studyOverview.topOrgsByStudyCount.map((o) => [o.organizationName, String(o.studyCount)]),
     });
     if (studyOverview.topOrgsByStudyCount.length > 0) {
@@ -1283,20 +1467,20 @@ function renderPages(
   });
   pdf.y = Math.max(p3aEnd1, p3aEnd2) + 10;
 
-  sectionHeading(pdf, 4, 'Studies Created — Last 12 Months');
+  sectionHeading(pdf, 4, T('Studies Created — Last 12 Months'));
   renderTrendLine(pdf, '', studyOverview.studiesCreatedTrend);
   pdf.y += 10;
 
   // Kingdom-wide rollup of Needs themselves — distinct from "Organizations
   // by Region" (page 2) and "Survey Distribution by Region" (page 4),
   // which count organizations/surveys, not individual Needs.
-  sectionHeading(pdf, 5, 'Needs — Kingdom-Wide Geographic Rollup');
+  sectionHeading(pdf, 5, T('Needs — Kingdom-Wide Geographic Rollup'));
   const needsByRegion = capBreakdown(needsGeography.byRegion, REGION_CHART_LIMIT);
   const needsByGovernorate = capBreakdown(needsGeography.byGovernorate);
   const needsByCenter = capBreakdown(needsGeography.byCenter);
   renderColumnChart(
     pdf,
-    'Needs by Region',
+    T('Needs by Region'),
     Math.max(1, ...needsByRegion.shown.map((g) => g.count)),
     needsByRegion.shown.map((g) => ({ label: g.name, value: g.count })),
   );
@@ -1315,7 +1499,7 @@ function renderPages(
   const p3bEnd1 = pdf.column(pdf.rx, pdf.rw / 2 - 8, p3bStart, () => {
     renderBarsChart(
       pdf,
-      'Needs by Governorate',
+      T('Needs by Governorate'),
       Math.max(1, ...needsByGovernorate.shown.map((g) => g.count)),
       needsByGovernorate.shown.map((g) => ({ label: g.name, value: g.count })),
       { graduated: true },
@@ -1325,7 +1509,7 @@ function renderPages(
   const p3bEnd2 = pdf.column(pdf.rx + pdf.rw / 2 + 8, pdf.rw / 2 - 8, p3bStart, () => {
     renderBarsChart(
       pdf,
-      'Needs by Center',
+      T('Needs by Center'),
       Math.max(1, ...needsByCenter.shown.map((g) => g.count)),
       needsByCenter.shown.map((g) => ({ label: g.name, value: g.count })),
       { graduated: true },
@@ -1334,7 +1518,7 @@ function renderPages(
   });
   pdf.y = Math.max(p3bEnd1, p3bEnd2) + 4;
 
-  sectionHeading(pdf, 6, 'Needs by Sub-Domain');
+  sectionHeading(pdf, 6, T('Needs by Sub-Domain'));
   const subDomainBars = capBreakdown(needSubDomains, GEO_CHART_LIMIT).shown.map((d) => ({
     label: `${d.domainName} — ${d.subDomainName}`,
     value: d.needCount,
@@ -1348,16 +1532,16 @@ function renderPages(
   // itself jumping to the next page on its own (renderTable's own atomic
   // reservation has no knowledge of what was already drawn above it).
   pdf.ensure(23 + 16 + 16 + domainRegionIntersections.length * 13 + 12);
-  sectionHeading(pdf, 7, 'Pattern & Intersection Analysis');
-  renderCaption(pdf, 'Strongest Region x Domain combinations — where Needs concentrate by both dimensions at once.');
+  sectionHeading(pdf, 7, T('Pattern & Intersection Analysis'));
+  renderCaption(pdf, T('Strongest Region x Domain combinations — where Needs concentrate by both dimensions at once.'));
   if (domainRegionIntersections.length === 0) {
-    pdf.text(pdf.rx + 2, 8.5, false, 'No classified Needs with an assigned region yet.', GRAY);
+    pdf.text(pdf.rx + 2, 8.5, false, T('No classified Needs with an assigned region yet.'), GRAY);
     pdf.y += 14;
   } else {
     renderSection(pdf, {
       kind: 'table',
       heading: '',
-      columns: ['Region', 'Domain', 'Needs'],
+      columns: [T('Region'), T('Domain'), T('Needs')],
       rows: domainRegionIntersections.map((c) => [c.regionName, c.domainName, String(c.needCount)]),
     });
   }
@@ -1366,19 +1550,20 @@ function renderPages(
   // ---- Page 4 — Public Survey Overview ----
   pdf.newPage();
   drawPageFrame(pdf);
+  mark(pdf, 'ncnp-p4');
   drawRunhead(pdf, condensedScope, totalPages);
-  pageTitle(pdf, 'Public Survey Overview');
+  pageTitle(pdf, T('Public Survey Overview'));
 
-  sectionHeading(pdf, 1, 'Survey Approval Status & Average Yield');
+  sectionHeading(pdf, 1, T('Survey Approval Status & Average Yield'));
   const p4Start = pdf.y;
   const p4End1 = pdf.column(pdf.rx, pdf.rw / 2 - 8, p4Start, () => {
-    renderDonut(pdf, null, '', 'SURVEYS', surveyStatusSlices);
+    renderDonut(pdf, null, '', T('SURVEYS'), surveyStatusSlices);
   });
   const p4End2 = pdf.column(pdf.rx + pdf.rw / 2 + 8, pdf.rw / 2 - 8, p4Start, () => {
     pdf.y += 8;
     pdf.text(pdf.rx, 28, true, surveyAnalytics.avgResponsesPerPublishedSurvey.toFixed(1), ACCENT);
     pdf.y += 34;
-    pdf.text(pdf.rx, 8.5, false, 'Avg. Responses / Published Survey', GRAY);
+    pdf.text(pdf.rx, 8.5, false, T('Avg. Responses / Published Survey'), GRAY);
     pdf.y += 20;
     // The label used to sit beside the sparkline, level with its endpoint —
     // a trend that rises toward its own peak (the common case) puts the
@@ -1392,22 +1577,22 @@ function renderPages(
     const sparkLabelSize = 7.5;
     renderSparkline(pdf, pdf.rx, sparkTopY, sparkW, sparkH, responseAnalytics.monthlyTrend.map((p) => p.count));
     pdf.y = sparkTopY + sparkH + 9;
-    pdf.text(pdf.rx, sparkLabelSize, false, 'Last 12 months', GRAY);
+    pdf.text(pdf.rx, sparkLabelSize, false, T('Last 12 months'), GRAY);
     pdf.y += sparkLabelSize + 2;
   });
   pdf.y = Math.max(p4End1, p4End2) + 4;
 
-  sectionHeading(pdf, 2, 'Rejection Reason Breakdown');
+  sectionHeading(pdf, 2, T('Rejection Reason Breakdown'));
   // Counts historical rejection events (see NcnpReportService), not
   // surveys currently sitting at REJECTED — check the breakdown itself,
   // not statusPlatformWide.rejected, so a rejected-then-corrected-then-
   // published survey still shows its rejection history here.
   if (surveyAnalytics.rejectionReasonBreakdown.length === 0) {
-    pdf.text(pdf.rx + 2, 8.5, false, 'No rejected surveys recorded for this period yet.', GRAY);
+    pdf.text(pdf.rx + 2, 8.5, false, T('No rejected surveys recorded for this period yet.'), GRAY);
     pdf.y += 14;
   } else {
     const rejectionReasonBars = surveyAnalytics.rejectionReasonBreakdown.map((r) => ({
-      label: `${r.reasonCode} — ${REJECTION_REASON_LABELS[r.reasonCode] ?? r.reasonCode}`,
+      label: `${r.reasonCode} — ${localizedLabel(REJECTION_REASON_LABELS, REJECTION_REASON_LABELS_AR, r.reasonCode, locale)}`,
       value: r.count,
     }));
     renderLabeledBarsChart(
@@ -1419,13 +1604,13 @@ function renderPages(
   }
   pdf.y += 4;
 
-  sectionHeading(pdf, 3, 'Geographic Distribution');
+  sectionHeading(pdf, 3, T('Geographic Distribution'));
   const survByRegion = capBreakdown(surveyGeography.byRegion, REGION_CHART_LIMIT);
   const survByGovernorate = capBreakdown(surveyGeography.byGovernorate);
   const survByCenter = capBreakdown(surveyGeography.byCenter);
   renderColumnChart(
     pdf,
-    'Survey Distribution by Region',
+    T('Survey Distribution by Region'),
     Math.max(1, ...survByRegion.shown.map((g) => g.count)),
     survByRegion.shown.map((g) => ({ label: g.name, value: g.count })),
   );
@@ -1439,7 +1624,7 @@ function renderPages(
   const p4bEnd1 = pdf.column(pdf.rx, pdf.rw / 2 - 8, p4bStart, () => {
     renderBarsChart(
       pdf,
-      'Survey Distribution by Governorate',
+      T('Survey Distribution by Governorate'),
       Math.max(1, ...survByGovernorate.shown.map((g) => g.count)),
       survByGovernorate.shown.map((g) => ({ label: g.name, value: g.count })),
       { graduated: true },
@@ -1449,7 +1634,7 @@ function renderPages(
   const p4bEnd2 = pdf.column(pdf.rx + pdf.rw / 2 + 8, pdf.rw / 2 - 8, p4bStart, () => {
     renderBarsChart(
       pdf,
-      'Survey Distribution by Center',
+      T('Survey Distribution by Center'),
       Math.max(1, ...survByCenter.shown.map((g) => g.count)),
       survByCenter.shown.map((g) => ({ label: g.name, value: g.count })),
       { graduated: true },
@@ -1468,12 +1653,12 @@ function renderPages(
   // table just starting fresh. Overestimating costs nothing but a slightly
   // earlier page break.
   pdf.ensure(23 + 16 + 16 + regionSummary.length * 13 + 12);
-  sectionHeading(pdf, 4, 'By Region — Summary');
-  renderCaption(pdf, 'Surfaces whether rejection/draft backlog is concentrated in specific regions.');
+  sectionHeading(pdf, 4, T('By Region — Summary'));
+  renderCaption(pdf, T('Surfaces whether rejection/draft backlog is concentrated in specific regions.'));
   renderSection(pdf, {
     kind: 'table',
     heading: '',
-    columns: ['Region', 'Surveys', 'Responses', 'Avg / Survey', 'Draft', 'Submitted', 'Published', 'Rejected'],
+    columns: [T('Region'), T('Surveys'), T('Responses'), T('Avg / Survey'), T('Draft'), T('Submitted'), T('Published'), T('Rejected')],
     rows: regionSummary.map((r) => {
       const status = statusByRegionMap.get(r.regionId);
       return [
@@ -1493,28 +1678,29 @@ function renderPages(
   // ---- Page 5 — Response Analytics ----
   pdf.newPage();
   drawPageFrame(pdf);
+  mark(pdf, 'ncnp-p5');
   drawRunhead(pdf, condensedScope, totalPages);
-  pageTitle(pdf, 'Response Analytics');
+  pageTitle(pdf, T('Response Analytics'));
 
-  sectionHeading(pdf, 1, 'Response Trend');
-  renderTrendLine(pdf, 'Monthly Responses — last 12 months', responseAnalytics.monthlyTrend);
+  sectionHeading(pdf, 1, T('Response Trend'));
+  renderTrendLine(pdf, T('Monthly Responses — last 12 months'), responseAnalytics.monthlyTrend);
   pdf.y += 6;
 
-  sectionHeading(pdf, 2, 'Geographic Performance');
+  sectionHeading(pdf, 2, T('Geographic Performance'));
   renderBarsChart(
     pdf,
-    'Responses by Region',
+    T('Responses by Region'),
     Math.max(1, ...responseAnalytics.responsesByRegion.map((r) => r.count)),
     responseAnalytics.responsesByRegion.map((r) => ({ label: r.regionName, value: r.count })),
   );
   pdf.y += 6;
 
-  sectionHeading(pdf, 3, 'Organization Response Performance');
+  sectionHeading(pdf, 3, T('Organization Response Performance'));
   const p5Start = pdf.y;
   const p5End1 = pdf.column(pdf.rx, pdf.rw / 2 - 8, p5Start, () => {
     renderBarsChart(
       pdf,
-      'Top Organizations — by Total Responses',
+      T('Top Organizations — by Total Responses'),
       Math.max(1, ...responseAnalytics.topOrgsByTotalResponses.map((o) => o.value)),
       responseAnalytics.topOrgsByTotalResponses.map((o) => ({ label: o.organizationName, value: o.value })),
     );
@@ -1525,7 +1711,7 @@ function renderPages(
   const p5End2 = pdf.column(pdf.rx + pdf.rw / 2 + 8, pdf.rw / 2 - 8, p5Start, () => {
     renderBarsChart(
       pdf,
-      'Top Organizations — by Avg. Responses / Survey',
+      T('Top Organizations — by Avg. Responses / Survey'),
       Math.max(1, ...responseAnalytics.topOrgsByAvgResponsesPerSurvey.map((o) => o.value)),
       responseAnalytics.topOrgsByAvgResponsesPerSurvey.map((o) => ({
         label: o.organizationName,
@@ -1538,61 +1724,62 @@ function renderPages(
   });
   pdf.y = Math.max(p5End1, p5End2) + 6;
 
-  sectionHeading(pdf, 4, 'Demographics');
-  chartTitle(pdf, 'Gender Distribution');
+  sectionHeading(pdf, 4, T('Demographics'));
+  chartTitle(pdf, T('Gender Distribution'));
   renderDonut(
     pdf,
     null,
     '',
-    'RESPONSES',
+    T('RESPONSES'),
     // AGE_BRACKET_COLORS, not CHART_CYCLE — CHART_1/CHART_2 (steel blue-gray
     // and sage green) sit too close in hue/lightness to tell apart at a
     // glance, which is exactly what happened with Female/Male. This palette
     // is the validated CVD-safe categorical set already used for Age
     // Distribution's up-to-7 slices, so 2-4 gender segments read distinctly.
-    responseAnalytics.genderDistribution.map((g, i) => ({ label: GENDER_LABELS[g.gender] ?? g.gender, value: g.count, color: AGE_BRACKET_COLORS[i % AGE_BRACKET_COLORS.length]! })),
+    responseAnalytics.genderDistribution.map((g, i) => ({ label: localizedLabel(GENDER_LABELS, GENDER_LABELS_AR, g.gender, locale), value: g.count, color: AGE_BRACKET_COLORS[i % AGE_BRACKET_COLORS.length]! })),
   );
   pdf.y += 4;
 
   if (responseAnalytics.hasResponsesWithoutAgeBracket) {
-    renderCaption(pdf, 'Age demographics are available only for responses collected after the feature go-live date.');
+    renderCaption(pdf, T('Age demographics are available only for responses collected after the feature go-live date.'));
   }
   const ageTotal = responseAnalytics.ageBracketDistribution.reduce((sum, a) => sum + a.count, 0);
   if (ageTotal === 0) {
-    chartTitle(pdf, 'Age Distribution');
-    pdf.text(pdf.rx + 2, 8.5, false, 'No age-bracket data available for this period yet.', GRAY);
+    chartTitle(pdf, T('Age Distribution'));
+    pdf.text(pdf.rx + 2, 8.5, false, T('No age-bracket data available for this period yet.'), GRAY);
     pdf.y += 14;
   } else {
     const ageCountByBracket = new Map(responseAnalytics.ageBracketDistribution.map((a) => [a.ageBracket, a.count]));
     const ageBracketSlices = AGE_BRACKET_ORDER.filter((key) => (ageCountByBracket.get(key) ?? 0) > 0).map((key, i) => ({
-      label: AGE_BRACKET_LABELS[key] ?? key,
+      label: localizedLabel(AGE_BRACKET_LABELS, AGE_BRACKET_LABELS_AR, key, locale),
       value: ageCountByBracket.get(key) ?? 0,
       color: AGE_BRACKET_COLORS[i % AGE_BRACKET_COLORS.length]!,
     }));
-    renderPieChart(pdf, 'Age Distribution', ageBracketSlices);
+    renderPieChart(pdf, T('Age Distribution'), ageBracketSlices);
   }
   drawFooter(pdf, totalPages);
 
   // ---- Page 6 — Priority & Scoring Overview ----
   pdf.newPage();
   drawPageFrame(pdf);
+  mark(pdf, 'ncnp-p6');
   drawRunhead(pdf, condensedScope, totalPages);
-  pageTitle(pdf, 'Priority & Scoring Overview');
+  pageTitle(pdf, T('Priority & Scoring Overview'));
 
   renderDonut(
     pdf,
     1,
-    'Village Priority Classification',
-    'VILLAGES',
+    T('Village Priority Classification'),
+    T('VILLAGES'),
     priorityOverview.byStatus.map((s) => ({
-      label: s.status,
+      label: PS(s.status),
       value: s.count,
       color: s.status === 'HIGH' ? DESTRUCTIVE : s.status === 'MEDIUM' ? WARNING : CHART_4,
     })),
   );
   pdf.y += 10;
 
-  sectionHeading(pdf, 2, 'Domain Comparison — Avg. Performance Score');
+  sectionHeading(pdf, 2, T('Domain Comparison — Avg. Performance Score'));
   renderBarsChart(
     pdf,
     '',
@@ -1601,11 +1788,11 @@ function renderPages(
   );
   pdf.y += 16;
 
-  sectionHeading(pdf, 3, 'Highest-Priority Villages');
+  sectionHeading(pdf, 3, T('Highest-Priority Villages'));
   if (priorityOverview.topPriorityVillages.length > 0) {
     renderVillageTable(pdf, priorityOverview.topPriorityVillages);
   } else {
-    renderSection(pdf, { kind: 'note', heading: '', text: 'No village-level priority assessments recorded yet.' });
+    renderSection(pdf, { kind: 'note', heading: '', text: T('No village-level priority assessments recorded yet.') });
   }
   pdf.y += 10;
 
@@ -1617,10 +1804,10 @@ function renderPages(
   // Region — Summary — without it, this heading can print separately from
   // its own table jumping to the next page.
   pdf.ensure(23 + 16 + 16 + criticalNeeds.priorityNeeds.length * 13 + 12);
-  sectionHeading(pdf, 4, 'Priority Needs');
-  renderCaption(pdf, 'Score, evidence, primary gap, equity flag, and source per Need — ranked most critical first.');
+  sectionHeading(pdf, 4, T('Priority Needs'));
+  renderCaption(pdf, T('Score, evidence, primary gap, equity flag, and source per Need — ranked most critical first.'));
   if (criticalNeeds.priorityNeeds.length === 0) {
-    renderSection(pdf, { kind: 'note', heading: '', text: 'No Needs have a village-priority assessment yet.' });
+    renderSection(pdf, { kind: 'note', heading: '', text: T('No Needs have a village-priority assessment yet.') });
   } else {
     renderSection(pdf, {
       kind: 'table',
@@ -1629,18 +1816,18 @@ function renderPages(
       // auto-shrinks font size and column widths (and wraps cells up to 2
       // lines) once past 6 columns, same mechanism already used for the
       // 8-column By Region — Summary table on Page 4.
-      columns: ['Need', 'Domain', 'Score', 'Status', 'Equity', 'Primary Gap', 'Indicator', 'Region', 'Evidence', 'Source', 'Source Ref'],
+      columns: [T('Need'), T('Domain'), T('Score'), T('Status'), T('Equity'), T('Primary Gap'), T('Indicator'), T('Region'), T('Evidence'), T('Source'), T('Source Ref')],
       rows: criticalNeeds.priorityNeeds.map((n) => [
         n.needTitle,
         n.domain ?? '—',
         n.priorityScore.toFixed(1),
-        n.priorityStatus,
-        n.equityFlag ? 'Yes' : 'No',
+        PS(n.priorityStatus),
+        n.equityFlag ? T('Yes') : T('No'),
         n.primaryGap ?? '—',
         n.indicatorId ?? '—',
         n.unitGeoRegion ?? '—',
         String(n.evidenceCount),
-        NEED_SOURCE_LABELS[n.source] ?? n.source,
+        localizedLabel(NEED_SOURCE_LABELS, NEED_SOURCE_LABELS_AR, n.source, locale),
         n.sourceRef ?? '—',
       ]),
     });
@@ -1653,23 +1840,23 @@ function renderPages(
   // Mandatory — present even when every count is zero (e.g. no quality
   // assessments have been run yet), never omitted just because nothing has
   // happened. Every number here is real; a zero means exactly that.
-  sectionHeading(pdf, 5, 'Data Quality Notes');
+  sectionHeading(pdf, 5, T('Data Quality Notes'));
   const assessedPct = dataQualityNotes.totalResponses === 0 ? 0 : (dataQualityNotes.assessedResponses / dataQualityNotes.totalResponses) * 100;
   renderKpiTiles(
     pdf,
     [
-      { label: 'Responses Quality-Assessed', value: `${dataQualityNotes.assessedResponses} / ${dataQualityNotes.totalResponses} (${assessedPct.toFixed(0)}%)` },
-      { label: 'Low-Confidence Responses', value: dataQualityNotes.lowConfidenceCount },
-      { label: 'Duplicate-Flagged Responses', value: dataQualityNotes.duplicateFlaggedCount },
-      { label: 'Needs With Evidence', value: `${dataQualityNotes.needsWithEvidence} of ${dataQualityNotes.totalNeeds}` },
-      { label: 'Needs Without Evidence', value: dataQualityNotes.needsWithoutEvidence },
-      { label: 'Needs Not Yet Classified', value: dataQualityNotes.needsUnclassified },
+      { label: T('Responses Quality-Assessed'), value: `${dataQualityNotes.assessedResponses} / ${dataQualityNotes.totalResponses} (${assessedPct.toFixed(0)}%)` },
+      { label: T('Low-Confidence Responses'), value: dataQualityNotes.lowConfidenceCount },
+      { label: T('Duplicate-Flagged Responses'), value: dataQualityNotes.duplicateFlaggedCount },
+      { label: T('Needs With Evidence'), value: (PDF_LOCALE === 'ar' ? `${dataQualityNotes.needsWithEvidence} من ${dataQualityNotes.totalNeeds}` : `${dataQualityNotes.needsWithEvidence} of ${dataQualityNotes.totalNeeds}`) },
+      { label: T('Needs Without Evidence'), value: dataQualityNotes.needsWithoutEvidence },
+      { label: T('Needs Not Yet Classified'), value: dataQualityNotes.needsUnclassified },
     ],
     3,
   );
   if (dataQualityNotes.assessedResponses === 0) {
     pdf.y += 4;
-    renderCaption(pdf, 'No response-quality assessments have been run yet for this period.');
+    renderCaption(pdf, T('No response-quality assessments have been run yet for this period.'));
   }
   pdf.y += 10;
 
@@ -1679,10 +1866,10 @@ function renderPages(
   pdf.rule(GRAY, 0.6);
   pdf.y += 6;
   const colophonStats: Array<[string, number, number]> = [
-    ['Organizations', summary.totals.organizations, summary.newThisPeriod.organizations.current],
-    ['Studies', summary.totals.studies, summary.newThisPeriod.studies.current],
-    ['Surveys', summary.totals.surveys, summary.newThisPeriod.surveys.current],
-    ['Responses', summary.totals.responses, summary.newThisPeriod.responses.current],
+    [T('Organizations'), summary.totals.organizations, summary.newThisPeriod.organizations.current],
+    [T('Studies'), summary.totals.studies, summary.newThisPeriod.studies.current],
+    [T('Surveys'), summary.totals.surveys, summary.newThisPeriod.surveys.current],
+    [T('Responses'), summary.totals.responses, summary.newThisPeriod.responses.current],
   ];
   const colW = pdf.rw / colophonStats.length;
   const colophonTop = pdf.y;
@@ -1695,7 +1882,7 @@ function renderPages(
     pdf.y = colophonTop + 14;
     pdf.text(x, 8, true, `(+${delta.toLocaleString()})`, CHART_4);
     pdf.y = colophonTop + 25;
-    pdf.text(x, 6.5, false, 'vs previous period', GRAY);
+    pdf.text(x, 6.5, false, T('vs previous period'), GRAY);
   });
   pdf.y = colophonTop + 34;
 
@@ -1714,10 +1901,10 @@ function renderPages(
     // Reviewer Notes is the one row that can wrap onto 2-3 lines; the rest
     // are always one line, so this stays a generous but bounded estimate.
     pdf.ensure(23 + auditRows.length * 13 + 24);
-    renderSection(pdf, { kind: 'keyvalue', heading: 'Audit Trail', rows: auditRows });
+    renderSection(pdf, { kind: 'keyvalue', heading: T('Audit Trail'), rows: auditRows });
   }
 
   drawFooter(pdf, totalPages);
 
-  return pdf;
+  return { pdf, starts };
 }

@@ -74,6 +74,42 @@ export class TranslationService {
     return targetLocale === 'ar' ? /[A-Za-z]/.test(text) : ARABIC_SCRIPT_RE.test(text);
   }
 
+  /** The registry's name in `targetLocale` when `text` is exactly the same
+   *  entity's name in the other language; null when it isn't a registry name
+   *  (or the lookup fails — never blocks a translation). */
+  private async registryCounterpart(text: string, targetLocale: SupportedLocale): Promise<string | null> {
+    // Signup names the first user "<organization name> Admin" (see
+    // auth.repository), so that account's display name is a registry name
+    // plus a fixed suffix. Translating the whole sentence with AI produced a
+    // different organization name than the registry's own — resolve the name
+    // part from the registry and translate only the suffix.
+    const adminMatch = /^(.*\S)\s+Admin$/i.exec(text.trim());
+    if (adminMatch) {
+      const official = await this.registryName(adminMatch[1]!, targetLocale);
+      if (official) return `${official} ${targetLocale === 'ar' ? 'مسؤول' : 'Admin'}`;
+    }
+    return this.registryName(text, targetLocale);
+  }
+
+  private async registryName(text: string, targetLocale: SupportedLocale): Promise<string | null> {
+    const name = text.trim().replace(/\s+/g, ' ');
+    if (!name || name.length > 500) return null;
+    try {
+      // Either language may be what was typed — match the row on both columns
+      // and return the target-language side (which is the text itself when it
+      // is already the target-language name).
+      const row = await this.prisma.nicRegistry.findFirst({
+        where: { OR: [{ nameAr: name }, { nameEn: { equals: name, mode: 'insensitive' } }] },
+        select: { nameEn: true, nameAr: true },
+      });
+      const found = targetLocale === 'en' ? row?.nameEn : row?.nameAr;
+      return found?.trim() || null;
+    } catch (err) {
+      this.logger.warn(`Registry name lookup skipped: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }
+  }
+
   async translate(
     text: string,
     targetLocale: SupportedLocale,
@@ -86,6 +122,15 @@ export class TranslationService {
       : !this.needsTranslation(text, targetLocale);
     if (skip) {
       return { translatedText: text, sourceLocale, targetLocale, unchanged: true };
+    }
+
+    // An entity's official name is master data, not free text: the national
+    // registry already holds its English AND Arabic name, so show that rather
+    // than an AI rendering of whichever one was typed at signup (which came
+    // back as a different name entirely once switched to the other language).
+    const official = await this.registryCounterpart(text, targetLocale);
+    if (official) {
+      return { translatedText: official, sourceLocale, targetLocale, unchanged: false };
     }
 
     const cacheKey = this.cacheKeyFor(sourceLocale, targetLocale, text);

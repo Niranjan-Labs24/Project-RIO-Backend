@@ -19,7 +19,7 @@ function makeFakeTx(need: unknown, responses: unknown[], survey: unknown) {
 }
 
 function makeService(tx: ReturnType<typeof makeFakeTx>) {
-  const tenant = { runInOrgContext: vi.fn((cb: (tx: unknown) => unknown) => cb(tx)) };
+  const tenant = { runInOrgContext: vi.fn((cb: (tx: unknown) => unknown) => cb(tx)), runRead: vi.fn((cb: (tx: unknown) => unknown) => cb(tx)) };
   const config = { publicAppUrl: 'http://localhost:3001' };
   const audit = { record: vi.fn() };
   const mailer = { send: vi.fn() };

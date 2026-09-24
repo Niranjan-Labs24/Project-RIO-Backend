@@ -59,7 +59,7 @@ export class ResponseQualityService {
   async listForNeed(needId: string, surveyLinkId?: string): Promise<ResponseQualityResult[]> {
     await this.findNeedOrThrow(needId);
     if (surveyLinkId) await this.findLinkOrThrow(needId, surveyLinkId);
-    const rows = await this.tenant.runInOrgContext((tx) =>
+    const rows = await this.tenant.runRead((tx) =>
       tx.responseQualityResult.findMany({
         where: { needId, surveyLinkId: surveyLinkId ?? null },
         orderBy: { assessedAt: "desc" },
@@ -97,20 +97,20 @@ export class ResponseQualityService {
   async getLatestSummary(needId: string, surveyLinkId?: string): Promise<AiSummary | null> {
     await this.findNeedOrThrow(needId);
     if (surveyLinkId) await this.findLinkOrThrow(needId, surveyLinkId);
-    const row = await this.tenant.runInOrgContext((tx) =>
+    const row = await this.tenant.runRead((tx) =>
       tx.aiSummary.findFirst({ where: { needId, surveyLinkId: surveyLinkId ?? null }, orderBy: { generatedAt: "desc" } }),
     );
     return row ? this.toSummary(row as unknown as AiSummaryRow) : null;
   }
 
   private async findNeedOrThrow(needId: string) {
-    const need = await this.tenant.runInOrgContext((tx) => tx.need.findUnique({ where: { id: needId } }));
+    const need = await this.tenant.runRead((tx) => tx.need.findUnique({ where: { id: needId } }));
     if (!need) throw new NotFoundException({ error: { code: "NEED_NOT_FOUND", message: "Need not found" } });
     return need;
   }
 
   private async findLinkOrThrow(needId: string, surveyLinkId: string): Promise<void> {
-    const link = await this.tenant.runInOrgContext((tx) => tx.publicSurveyLink.findUnique({ where: { id: surveyLinkId } }));
+    const link = await this.tenant.runRead((tx) => tx.publicSurveyLink.findUnique({ where: { id: surveyLinkId } }));
     if (!link || link.needId !== needId) {
       throw new NotFoundException({ error: { code: "SURVEY_LINK_NOT_FOUND", message: "Survey link not found" } });
     }

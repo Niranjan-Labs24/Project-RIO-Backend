@@ -20,6 +20,7 @@ function makeService(opts: {
   aiThrows?: Error;
   seeded?: CacheRow[];
   upsertThrows?: Error;
+  registry?: Array<{ nameEn: string | null; nameAr: string | null }>;
 } = {}) {
   const rows = new Map<string, CacheRow>((opts.seeded ?? []).map((r) => [r.cacheKey, r]));
   const runSpy = vi.fn(async () => {
@@ -28,6 +29,12 @@ function makeService(opts: {
   });
 
   const prisma = {
+    nicRegistry: {
+      findFirst: async ({ where }: { where: { OR: Array<{ nameAr?: string; nameEn?: { equals: string } }> } }) =>
+        (opts.registry ?? []).find((r) =>
+          where.OR.some((c) => (c.nameAr !== undefined ? r.nameAr === c.nameAr : r.nameEn?.toLowerCase() === c.nameEn?.equals.toLowerCase())),
+        ) ?? null,
+    },
     translationCache: {
       findUnique: async ({ where: { cacheKey } }: { where: { cacheKey: string } }) =>
         rows.get(cacheKey) ?? null,
@@ -151,5 +158,43 @@ describe('TranslationService.translate', () => {
     const result = await service.translate('Health', 'ar');
     expect(result).toEqual({ translatedText: 'الصحة', sourceLocale: 'en', targetLocale: 'ar', unchanged: false });
     expect(rows.size).toBe(0);
+  });
+});
+
+describe('TranslationService.translate — official entity names', () => {
+  const registry = [{ nameEn: 'Sports Creativity Association', nameAr: 'جمعية الإبداع الرياضي' }];
+
+  it('shows the registry English name for an Arabic entity name, without calling AI', async () => {
+    const { service, runSpy } = makeService({ registry });
+    const result = await service.translate('جمعية الإبداع الرياضي', 'en');
+    expect(result.translatedText).toBe('Sports Creativity Association');
+    expect(runSpy).not.toHaveBeenCalled();
+  });
+
+  it('shows the registry Arabic name for an English entity name (case-insensitive)', async () => {
+    const { service, runSpy } = makeService({ registry });
+    const result = await service.translate('sports creativity association', 'ar');
+    expect(result.translatedText).toBe('جمعية الإبداع الرياضي');
+    expect(runSpy).not.toHaveBeenCalled();
+  });
+
+  it('falls back to AI translation for text that is not a registry name', async () => {
+    const { service, runSpy } = makeService({ registry, aiResponse: { translatedText: 'Clean water need' } });
+    const result = await service.translate('حاجة مياه نظيفة', 'en');
+    expect(result.translatedText).toBe('Clean water need');
+    expect(runSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolves the "<organization> Admin" account name from the registry, not by AI', async () => {
+    const { service, runSpy } = makeService({ registry });
+    expect((await service.translate('جمعية الإبداع الرياضي Admin', 'en')).translatedText).toBe('Sports Creativity Association Admin');
+    expect((await service.translate('Sports Creativity Association Admin', 'ar')).translatedText).toBe('جمعية الإبداع الرياضي مسؤول');
+    expect(runSpy).not.toHaveBeenCalled();
+  });
+
+  it('keeps an already-Arabic "<name> Admin" account name in the registry\'s Arabic and translates the suffix', async () => {
+    const { service, runSpy } = makeService({ registry });
+    expect((await service.translate('جمعية الإبداع الرياضي Admin', 'ar')).translatedText).toBe('جمعية الإبداع الرياضي مسؤول');
+    expect(runSpy).not.toHaveBeenCalled();
   });
 });

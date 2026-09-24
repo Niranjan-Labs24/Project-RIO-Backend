@@ -10,6 +10,7 @@ import { requireOrgId, requireActor } from '../../tenancy/org-context';
 import { AuditService } from '../audit/audit.service';
 import { MailerService } from '../../mailer/mailer.service';
 import { sanitizeForSpreadsheet } from '../../common/security/spreadsheet-sanitize';
+import { auditFieldLabel } from '../audit/audit-field-labels';
 import type {
   CreateSurveyLinkPayload,
   PublicSurveyLink,
@@ -53,7 +54,7 @@ export class PublicSurveysService {
 
   async listLinks(needId: string): Promise<PublicSurveyLink[]> {
     await this.findNeedOrThrow(needId);
-    const rows = await this.tenant.runInOrgContext((tx) =>
+    const rows = await this.tenant.runRead((tx) =>
       tx.publicSurveyLink.findMany({
         where: { needId },
         orderBy: { createdAt: 'desc' },
@@ -116,7 +117,7 @@ export class PublicSurveysService {
         include: { _count: { select: { responses: true } } },
       });
     });
-    await this.audit.record({ action: 'edit', entityType: 'survey', entityId: row.id, entityLabel: row.label, changes: [{ field: 'isActive', before: true, after: false }] });
+    await this.audit.record({ action: 'edit', entityType: 'survey', entityId: row.id, entityLabel: row.label, changes: [{ field: auditFieldLabel('isActive'), before: 'Yes', after: 'No' }] });
     return this.toPublicLink(row as unknown as LinkWithResponseCount);
   }
 
@@ -191,7 +192,7 @@ export class PublicSurveysService {
           }
         : {}),
     };
-    const [rows, total] = await this.tenant.runInOrgContext((tx) =>
+    const [rows, total] = await this.tenant.runRead((tx) =>
       Promise.all([
         tx.surveyResponse.findMany({ where, orderBy: { submittedAt: 'desc' }, take, skip }),
         tx.surveyResponse.count({ where }),
@@ -211,7 +212,7 @@ export class PublicSurveysService {
   // fetching every response's detail one at a time.
   async listResponsesWithAnswers(needId: string, surveyLinkId?: string): Promise<SurveyResponseDetail[]> {
     await this.findNeedOrThrow(needId);
-    const { rows, questionMap } = await this.tenant.runInOrgContext(async (tx) => {
+    const { rows, questionMap } = await this.tenant.runRead(async (tx) => {
       const rows = await tx.surveyResponse.findMany({
         where: { needId, ...(surveyLinkId ? { surveyLinkId } : {}) },
         orderBy: { submittedAt: 'desc' },
@@ -247,7 +248,7 @@ export class PublicSurveysService {
           }
         : {}),
     };
-    const { rows, total, questionMap } = await this.tenant.runInOrgContext(async (tx) => {
+    const { rows, total, questionMap } = await this.tenant.runRead(async (tx) => {
       const [rows, total, questionMap] = await Promise.all([
         tx.surveyResponse.findMany({ where, orderBy: { submittedAt: 'desc' }, take, skip }),
         tx.surveyResponse.count({ where }),
@@ -284,7 +285,7 @@ export class PublicSurveysService {
 
   async getResponse(needId: string, responseId: string): Promise<SurveyResponseDetail> {
     await this.findNeedOrThrow(needId);
-    const { row, questionMap } = await this.tenant.runInOrgContext(async (tx) => {
+    const { row, questionMap } = await this.tenant.runRead(async (tx) => {
       const row = await tx.surveyResponse.findUnique({ where: { id: responseId } });
       if (!row || row.needId !== needId) {
         throw new NotFoundException({ error: { code: 'SURVEY_RESPONSE_NOT_FOUND', message: 'Survey response not found' } });
@@ -298,7 +299,7 @@ export class PublicSurveysService {
   async exportResponsesCsv(needId: string, surveyLinkId?: string): Promise<string> {
     await this.findNeedOrThrow(needId);
     const escape = (value: string): string => `"${value.replace(/"/g, '""')}"`;
-    return this.tenant.runInOrgContext(async (tx) => {
+    return this.tenant.runRead(async (tx) => {
       const [questionMap, versionMap] = await Promise.all([
         this.buildQuestionMap(tx, needId),
         this.buildVersionMap(tx, needId),
@@ -338,7 +339,7 @@ export class PublicSurveysService {
 
   async exportResponsesExcel(needId: string, surveyLinkId?: string): Promise<Buffer> {
     await this.findNeedOrThrow(needId);
-    return this.tenant.runInOrgContext(async (tx) => {
+    return this.tenant.runRead(async (tx) => {
       const [questionMap, versionMap] = await Promise.all([
         this.buildQuestionMap(tx, needId),
         this.buildVersionMap(tx, needId),
@@ -615,7 +616,7 @@ export class PublicSurveysService {
   }
 
   private async findNeedOrThrow(needId: string) {
-    const need = await this.tenant.runInOrgContext((tx) => tx.need.findUnique({ where: { id: needId } }));
+    const need = await this.tenant.runRead((tx) => tx.need.findUnique({ where: { id: needId } }));
     if (!need) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
     return need;
   }

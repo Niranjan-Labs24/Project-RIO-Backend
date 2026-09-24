@@ -13,6 +13,7 @@ import { MethodologyConfigService } from '../methodology-config/methodology-conf
 import { DataCleaningService } from '../data-cleaning/data-cleaning.service';
 import { NeedThemesService } from './need-themes.service';
 import { NeedSummaryService } from './need-summary.service';
+import { auditFieldLabel } from '../audit/audit-field-labels';
 import { NEED_EDITABLE_STATUSES, type CreateNeedPayload, type Need, type NeedRow, type UpdateNeedPayload } from './needs.types';
 
 
@@ -93,6 +94,7 @@ export class NeedsService {
       const governorateIds = (payload.governorateIds && payload.governorateIds.length > 0) ? payload.governorateIds : studyGovernorateIds;
       const centerIds = (payload.centerIds && payload.centerIds.length > 0) ? payload.centerIds : studyCenterIds;
       await this.assertGeographyInStudyScope(tx, studyId, governorateIds, centerIds);
+      await this.assertGovernorateAndCenterRequired(tx, governorateIds, centerIds);
       const row = (await tx.need.create({
         data: {
           studyId,
@@ -200,6 +202,33 @@ export class NeedsService {
   //   2. Every Governorate is one of the Study's own selected Governorates.
   //   3. Every Center belongs to one of the given Governorates.
   //   4. Every Center is also one of the Study's own selected Centers.
+  // Client-confirmed (2026-09-24): a Need must name at least one Governorate
+  // and at least one Center — Center only excused when every one of its
+  // selected Governorates genuinely has zero Centers configured in the KSA
+  // Geographic Reference master data (there is nothing to pick). Runs after
+  // the Study-level fallback in create()/update() has already resolved an
+  // omitted selection to the Study's own — so this only ever rejects a Need
+  // whose EFFECTIVE geography, not just its own payload, is incomplete.
+  private async assertGovernorateAndCenterRequired(
+    tx: Prisma.TransactionClient,
+    governorateIds: string[],
+    centerIds: string[],
+  ): Promise<void> {
+    if (governorateIds.length === 0) {
+      throw new BadRequestException({
+        error: { code: 'NEED_GOVERNORATE_REQUIRED', message: 'Select at least one Governorate.' },
+      });
+    }
+    if (centerIds.length === 0) {
+      const availableCenters = await tx.center.count({ where: { governorateId: { in: governorateIds } } });
+      if (availableCenters > 0) {
+        throw new BadRequestException({
+          error: { code: 'NEED_CENTER_REQUIRED', message: 'Select at least one Center.' },
+        });
+      }
+    }
+  }
+
   private async assertGeographyInStudyScope(
     tx: Prisma.TransactionClient,
     studyId: string,
@@ -308,6 +337,7 @@ export class NeedsService {
       const nextCenterIds = patch.centerIds ?? current.centerIds;
       if (patch.governorateIds !== undefined || patch.centerIds !== undefined) {
         await this.assertGeographyInStudyScope(tx, current.studyId, nextGovernorateIds, nextCenterIds);
+        await this.assertGovernorateAndCenterRequired(tx, nextGovernorateIds, nextCenterIds);
       }
       const changes = this.diff(current, patch, nextGovernorateIds, nextCenterIds);
       await tx.need.update({
@@ -435,7 +465,7 @@ export class NeedsService {
           entityType: 'need',
           entityId: needId,
           entityLabel: currentRaw.title.slice(0, 80),
-          changes: [{ field: 'gapType', before, after: gapType }],
+          changes: [{ field: auditFieldLabel('gapType'), before, after: gapType }],
           sourceRef: currentRaw.referenceId,
         });
       }
@@ -469,7 +499,7 @@ export class NeedsService {
           entityType: 'need',
           entityId: needId,
           entityLabel: currentRaw.title.slice(0, 80),
-          changes: [{ field: 'urgency', before, after: urgency }],
+          changes: [{ field: auditFieldLabel('urgency'), before, after: urgency }],
           sourceRef: currentRaw.referenceId,
         });
       }

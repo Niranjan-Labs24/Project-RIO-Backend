@@ -12,6 +12,7 @@ describe("EvidenceDocumentsService", () => {
   beforeEach(() => {
     mockTenant = {
       runInOrgContext: vi.fn((fn) => fn(mockTenant)),
+      runRead: vi.fn((fn) => fn(mockTenant)),
       evidenceDocument: {
         create: vi.fn(),
         findMany: vi.fn(),

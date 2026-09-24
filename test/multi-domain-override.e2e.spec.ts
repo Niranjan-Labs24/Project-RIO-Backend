@@ -28,6 +28,8 @@ describe("Need -> multi-pair Override Domain -> Approve (e2e)", () => {
   let reviewerCookies: string[];
   let reviewerCsrf: string;
   let studyId: string;
+  let studyGovernorateId: string;
+  let studyCenterId: string;
   const supervisor = new PrismaClient({
     adapter: new PrismaPg({ connectionString: process.env.SUPERVISOR_DATABASE_URL, ssl: pgSslFromEnv() }),
   });
@@ -79,9 +81,17 @@ describe("Need -> multi-pair Override Domain -> Approve (e2e)", () => {
     reviewerCsrf = csrfFrom(reviewerCookies);
 
     const admin = await supervisor.user.findFirst({ where: { email: "admin@demo-ngo.org" } });
-    const study = await supervisor.study.findFirst({ where: { orgId: admin?.orgId } });
+    // A Need now requires at least one Governorate/Center (client-confirmed
+    // 2026-09-24) — pick a seeded Study that actually has both configured,
+    // rather than whichever one findFirst() would otherwise return.
+    const study = await supervisor.study.findFirst({
+      where: { orgId: admin?.orgId, studyGovernorates: { some: {} }, studyCenters: { some: {} } },
+      include: { studyGovernorates: true, studyCenters: true },
+    });
     if (!study) throw new Error("Run `pnpm prisma:seed` first (no seeded study found).");
     studyId = study.id;
+    studyGovernorateId = study.studyGovernorates[0]!.governorateId;
+    studyCenterId = study.studyCenters[0]!.centerId;
   });
 
   afterAll(async () => {
@@ -98,7 +108,7 @@ describe("Need -> multi-pair Override Domain -> Approve (e2e)", () => {
       .post(`/api/studies/${studyId}/needs`)
       .set("Cookie", officerCookies)
       .set("x-csrf-token", officerCsrf)
-      .send({ statement: "Multi-domain override e2e test — clear-cut healthcare need." })
+      .send({ statement: "Multi-domain override e2e test — clear-cut healthcare need.", governorateIds: [studyGovernorateId], centerIds: [studyCenterId] })
       .expect(201);
     const needId = created.body.id as string;
 

@@ -14,6 +14,7 @@ import { consentPolicyTextFor, DEFAULT_CONSENT_LOCALE, resolveConsentLocale } fr
 import { DomainsService } from '../domains/domains.service';
 import { GeographyService } from '../geography/geography.service';
 import { NicRegistryService } from '../nic-registry/nic-registry.service';
+import { auditFieldLabel } from '../audit/audit-field-labels';
 import type {
   CreateOrganizationPayload, Organization, OrganizationSummary, OrgRow, UpdateOrganizationPayload,
 } from './organizations.types';
@@ -523,20 +524,20 @@ export class OrganizationsService {
         // that in the audit trail, just record that it changed, same
         // reasoning as never logging a real password value.
         if (f === 'logoUrl') {
-          changes.push({ field: f, before: before[f] ? '(logo)' : null, after: after[f] ? '(logo)' : null });
+          changes.push({ field: auditFieldLabel(f), before: before[f] ? '(logo)' : null, after: after[f] ? '(logo)' : null });
           continue;
         }
-        changes.push({ field: f, before: before[f], after: after[f] });
+        changes.push({ field: auditFieldLabel(f), before: before[f], after: after[f] });
       }
     }
     // governorateIds/centerIds aren't real columns on `organisations` (they
     // live in the join tables) so DIFF_FIELDS can't cover them generically —
     // diff the *sets* directly against whatever the final set will be.
     if (patch.governorateIds !== undefined && !this.sameIdSet(current.governorateIds, nextGovernorateIds)) {
-      changes.push({ field: 'governorateIds', before: current.governorateIds, after: nextGovernorateIds });
+      changes.push({ field: auditFieldLabel('governorateIds'), before: current.governorateIds, after: nextGovernorateIds });
     }
     if (patch.centerIds !== undefined && !this.sameIdSet(current.centerIds, nextCenterIds)) {
-      changes.push({ field: 'centerIds', before: current.centerIds, after: nextCenterIds });
+      changes.push({ field: auditFieldLabel('centerIds'), before: current.centerIds, after: nextCenterIds });
     }
     return changes;
   }

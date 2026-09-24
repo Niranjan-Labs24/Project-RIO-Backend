@@ -303,7 +303,7 @@ export class EvidenceDocumentsService {
 
   async listDocuments(query: ListEvidenceDocumentsQuery) {
     const orgId = requireOrgId();
-    return this.tenant.runInOrgContext((tx) =>
+    return this.tenant.runRead((tx) =>
       tx.evidenceDocument.findMany({
         where: {
           orgId,
@@ -334,7 +334,7 @@ export class EvidenceDocumentsService {
 
   async getDocumentDetails(id: string) {
     const orgId = requireOrgId();
-    const doc = await this.tenant.runInOrgContext((tx) =>
+    const doc = await this.tenant.runRead((tx) =>
       tx.evidenceDocument.findFirst({
         where: { id, orgId },
         include: {
@@ -354,7 +354,7 @@ export class EvidenceDocumentsService {
     id: string,
   ): Promise<{ buffer: Buffer; fileName: string; fileType: string }> {
     const orgId = requireOrgId();
-    const doc = await this.tenant.runInOrgContext((tx) =>
+    const doc = await this.tenant.runRead((tx) =>
       tx.evidenceDocument.findFirst({
         where: { id, orgId },
         select: { storageKey: true, fileName: true, fileType: true, title: true },
@@ -378,7 +378,7 @@ export class EvidenceDocumentsService {
 
   async toggleInclusion(id: string, isIncluded: boolean) {
     const orgId = requireOrgId();
-    const doc = await this.tenant.runInOrgContext((tx) =>
+    const doc = await this.tenant.runRead((tx) =>
       tx.evidenceDocument.findFirst({ where: { id, orgId } }),
     );
     if (!doc) throw new NotFoundException(`Evidence document with id ${id} not found.`);
@@ -403,7 +403,7 @@ export class EvidenceDocumentsService {
 
   async deleteDocument(id: string) {
     const orgId = requireOrgId();
-    const doc = await this.tenant.runInOrgContext((tx) =>
+    const doc = await this.tenant.runRead((tx) =>
       tx.evidenceDocument.findFirst({
         where: { id, orgId },
         include: {
