@@ -31,7 +31,11 @@ export class OrgContextMiddleware implements NestMiddleware {
     const ip = req.ip || undefined;
     const ua = req.headers['user-agent'];
     const userAgent = typeof ua === 'string' ? ua : undefined;
-    const store: OrgStore = { requestId, orgId, role, ip, userAgent };
+    // Not a security seam: it only picks the language of generated and
+    // displayed prose, so it is honoured in every environment.
+    const localeHeader = req.headers['x-rio-locale'];
+    const locale = localeHeader === 'ar' || localeHeader === 'en' ? localeHeader : undefined;
+    const store: OrgStore = { requestId, orgId, role, ip, userAgent, locale };
     res.setHeader('x-request-id', requestId);
     orgContext.run(store, () => next());
   }

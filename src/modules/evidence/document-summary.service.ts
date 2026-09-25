@@ -10,6 +10,8 @@ import { AuditService } from "../audit/audit.service";
 import { AiService } from "../ai/ai.service";
 import { EVIDENCE_DOCUMENT_SUMMARY_TASK } from "../ai/prompts/evidence-document-summary.task";
 import { Prisma } from "../../generated/prisma";
+import { withOutputLanguage } from "../ai/prompts/output-language";
+import { requestLocale } from "../../common/locale/request-locale";
 
 export interface DocumentSummaryOutputJson {
   documentTitle: string;
@@ -177,8 +179,16 @@ Output strictly valid JSON matching this schema:
     // with a real model name and prompt version — indistinguishable from a
     // genuine summary while containing invented findings. A failure now
     // propagates so the officer sees it and can retry.
+    //
+    // Written in the requester's language; see
+    // ReportSummaryService.generatePrioritySummary. The document itself may be
+    // in either language — the model summarises it into this one.
+    const outputLocale = requestLocale();
     const { response: aiOutputJson } = await this.ai.run(
-      EVIDENCE_DOCUMENT_SUMMARY_TASK,
+      {
+        ...EVIDENCE_DOCUMENT_SUMMARY_TASK,
+        systemPrompt: withOutputLanguage(EVIDENCE_DOCUMENT_SUMMARY_TASK.systemPrompt, outputLocale),
+      },
       prompt,
     );
 
@@ -193,6 +203,7 @@ Output strictly valid JSON matching this schema:
           modelVersion,
           inputTextHash,
           aiOutputJson: aiOutputJson as unknown as Prisma.InputJsonValue,
+          outputLocale,
           generatedBy,
         },
       }),

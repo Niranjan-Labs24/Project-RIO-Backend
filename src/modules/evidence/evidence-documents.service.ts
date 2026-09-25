@@ -9,6 +9,14 @@ import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { requireActor, requireOrgId } from "../../tenancy/org-context";
 import { AuditService } from "../audit/audit.service";
 import { EvidenceStorageService } from "./evidence.storage.service";
+import { AiService } from "../ai/ai.service";
+import { Prisma } from "../../generated/prisma";
+import { requestLocale } from "../../common/locale/request-locale";
+import type { SupportedLocale } from "../translation/translation.types";
+import {
+  cachedSummaryOutput,
+  localizeSummaryOutput,
+} from "../translation/summary-localization";
 
 export const SUPPORTED_EXTENSIONS = [".txt", ".docx", ".pdf", ".csv", ".xlsx"];
 
@@ -48,6 +56,7 @@ export class EvidenceDocumentsService {
     private readonly tenant: TenantPrismaService,
     private readonly storage: EvidenceStorageService,
     private readonly audit: AuditService,
+    private readonly ai: AiService,
   ) {}
 
   /** Extract plain text from supported document buffers. */
@@ -303,7 +312,7 @@ export class EvidenceDocumentsService {
 
   async listDocuments(query: ListEvidenceDocumentsQuery) {
     const orgId = requireOrgId();
-    return this.tenant.runInOrgContext((tx) =>
+    const docs = await this.tenant.runInOrgContext((tx) =>
       tx.evidenceDocument.findMany({
         where: {
           orgId,
@@ -330,6 +339,23 @@ export class EvidenceDocumentsService {
         orderBy: { createdAt: "desc" },
       }),
     );
+    // Cache-only on a list: translating every summary of every document on
+    // read would put one AI call per row in front of the page. A summary not
+    // yet translated gets `localized: null`; opening the document (details
+    // endpoint below) translates and persists it.
+    const locale = requestLocale();
+    return docs.map((doc) => ({
+      ...doc,
+      summaries: doc.summaries.map((s) => ({
+        ...s,
+        localized: cachedSummaryOutput({
+          source: (s.officerEditedOutputJson ?? s.aiOutputJson) as Record<string, unknown> | null,
+          sourceLocale: s.outputLocale === "ar" ? "ar" : "en",
+          targetLocale: locale,
+          stored: s.localizedOutputs,
+        }),
+      })),
+    }));
   }
 
   async getDocumentDetails(id: string) {
@@ -344,7 +370,38 @@ export class EvidenceDocumentsService {
       }),
     );
     if (!doc) throw new NotFoundException(`Evidence document with id ${id} not found.`);
-    return doc;
+
+    // The current summary in the viewer's language, translated and persisted
+    // on first view. Older summaries are history and only get what is cached.
+    const locale = requestLocale();
+    const summaries = await Promise.all(
+      doc.summaries.map(async (s, i) => {
+        const args = {
+          source: (s.officerEditedOutputJson ?? s.aiOutputJson) as Record<string, unknown> | null,
+          sourceLocale: (s.outputLocale === "ar" ? "ar" : "en") as SupportedLocale,
+          targetLocale: locale,
+          stored: s.localizedOutputs,
+        };
+        if (i > 0) return { ...s, localized: cachedSummaryOutput(args) };
+        const result = await localizeSummaryOutput(this.ai, args);
+        if (result.toPersist) {
+          const toPersist = result.toPersist;
+          await this.tenant
+            .runInOrgContext((tx) =>
+              tx.evidenceDocumentSummary.updateMany({
+                where: { id: s.id, document: { orgId } },
+                data: { localizedOutputs: toPersist as Prisma.InputJsonValue },
+              }),
+            )
+            .catch(() => undefined);
+        }
+        return {
+          ...s,
+          localized: { locale: result.locale, status: result.status, output: result.output },
+        };
+      }),
+    );
+    return { ...doc, summaries };
   }
 
   // Returns the original uploaded bytes plus the metadata the controller needs

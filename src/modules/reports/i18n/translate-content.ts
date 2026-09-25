@@ -143,9 +143,13 @@ const PROSE_PATHS: readonly string[] = [
 //       33.72 breaks reconciliation with the Priority Dashboard.
 
 /** Never sent, whatever path they sit on. */
-function isTranslatable(text: string): boolean {
+function isTranslatable(text: string, locale: SupportedLocale): boolean {
   const s = text.trim();
   if (s.length < 2) return false;
+  // Into English: only strings carrying Arabic script. A report whose AI
+  // narrative was generated in Arabic (the requester's locale at the time)
+  // must still read in English when exported or viewed in English.
+  if (locale === 'en') return /[؀-ۿ]/.test(s);
   // No Latin letters to translate.
   if (!/[A-Za-z]{2,}/.test(s)) return false;
   // Deliberately NO "contains Arabic -> skip" rule.
@@ -190,6 +194,9 @@ export interface TranslateContentResult {
   /** How many came back unchanged because the provider was unavailable. A
    *  degraded export is legitimate but must not be silent. */
   failed: number;
+  /** How many were never sent because `budgetMs` ran out first. They keep
+   *  their source text; the next request finds the rest cached. */
+  skipped?: number;
 }
 
 /** A string found at a declared path, plus how to write it back. */
@@ -253,16 +260,23 @@ export async function translateReportContent(
   content: Record<string, unknown>,
   locale: SupportedLocale,
   translator: Translator,
-  options: { concurrency?: number } = {},
+  options: {
+    concurrency?: number;
+    /** Stop STARTING new translations after this long. For the in-app report
+     *  view, which must return promptly; a download has no budget here. */
+    budgetMs?: number;
+  } = {},
 ): Promise<TranslateContentResult> {
-  if (locale === 'en') return { content, requested: 0, failed: 0 };
-
+  // No early return for English any more: a report whose narrative was
+  // generated in Arabic must translate back when read in English. English
+  // content with no Arabic in it still makes no calls — isTranslatable
+  // declines every string — and comes back as the same object.
   const copy = structuredClone(content) as Record<string, unknown>;
 
   // Pass 1 — gather distinct strings and where each one goes.
   const writers = new Map<string, Array<(v: string) => void>>();
   const visit: Visit = (text, write) => {
-    if (!isTranslatable(text)) return;
+    if (!isTranslatable(text, locale)) return;
     const list = writers.get(text);
     if (list) list.push(write);
     else writers.set(text, [write]);
@@ -270,7 +284,7 @@ export async function translateReportContent(
   for (const path of PROSE_PATHS) walkPath(copy, parsePath(path), visit);
 
   const distinct = [...writers.keys()];
-  if (distinct.length === 0) return { content: copy, requested: 0, failed: 0 };
+  if (distinct.length === 0) return { content, requested: 0, failed: 0 };
 
   // Pass 2 — translate, bounded. An unbounded Promise.all over a
   // first-generation report can be hundreds of concurrent calls to the AI
@@ -279,11 +293,17 @@ export async function translateReportContent(
   let failed = 0;
   const limit = Math.max(1, options.concurrency ?? 8);
   let cursor = 0;
+  let skipped = 0;
+  const deadline = options.budgetMs === undefined ? Infinity : Date.now() + options.budgetMs;
 
   const worker = async (): Promise<void> => {
     for (;;) {
       const index = cursor++;
       if (index >= distinct.length) return;
+      if (Date.now() >= deadline) {
+        skipped++;
+        continue;
+      }
       const source = distinct[index]!;
       const out = await translator.translate(source, locale);
       // `unchanged` covers both "already in the target language" and "the
@@ -305,5 +325,5 @@ export async function translateReportContent(
     for (const w of write) w(translated);
   }
 
-  return { content: copy, requested: distinct.length, failed };
+  return { content: copy, requested: distinct.length - skipped, failed, skipped };
 }

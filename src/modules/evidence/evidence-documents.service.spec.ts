@@ -39,6 +39,7 @@ describe("EvidenceDocumentsService", () => {
       mockTenant as any,
       mockStorage as any,
       mockAudit as any,
+      { run: vi.fn() } as any,
     );
   });
 

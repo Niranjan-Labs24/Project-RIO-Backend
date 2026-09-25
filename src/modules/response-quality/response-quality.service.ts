@@ -3,6 +3,7 @@ import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { requireOrgId } from "../../tenancy/org-context";
 import { MethodologyConfigService } from "../methodology-config/methodology-config.service";
 import { assessResponseQuality, generateAiSummary } from "./response-quality.placeholder";
+import { requestLocale } from "../../common/locale/request-locale";
 import type {
   AiSummary,
   AiSummaryRow,
@@ -79,6 +80,7 @@ export class ResponseQualityService {
       });
       const summary = generateAiSummary(
         responses.map((r) => ({ id: r.id, answers: r.answers as Record<string, unknown>, contact: r.contact })),
+        requestLocale(),
       );
       return tx.aiSummary.create({
         data: {
