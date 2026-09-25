@@ -1,3 +1,4 @@
+import { loadXlsx } from "../../common/excel/load-xlsx";
 import ExcelJS from 'exceljs';
 import { extname } from 'node:path';
 import type { AiService } from '../ai/ai.service';
@@ -149,7 +150,7 @@ export function parseCsvNeeds(buffer: Buffer): ParsedNeedRow[] {
 
 export async function parseExcelNeeds(buffer: Buffer): Promise<ParsedNeedRow[]> {
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer as unknown as ExcelJS.Buffer);
+  await loadXlsx(workbook, buffer);
   const sheet = workbook.worksheets[0];
   if (!sheet) return [];
 
@@ -192,8 +193,8 @@ function splitCombinedNeedItems(
     if (matches.length > 1) {
       const parts: string[] = [];
       for (let i = 0; i < matches.length; i++) {
-        const start = matches[i]!.index! + matches[i]![0].length;
-        const end = i < matches.length - 1 ? matches[i + 1]!.index! : rawStatement.length;
+        const start = matches[i]!.index + matches[i]![0].length;
+        const end = i < matches.length - 1 ? matches[i + 1]!.index : rawStatement.length;
         const partText = rawStatement.slice(start, end).trim();
         if (partText) {
           parts.push(partText);
@@ -325,7 +326,7 @@ export async function parseSurveyDocumentNeeds(
     }
   } else if (ext === '.xlsx' || ext === '.xls') {
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer as unknown as ExcelJS.Buffer);
+    await loadXlsx(workbook, buffer);
     const lines: string[] = [];
     workbook.eachSheet((sheet) => {
       sheet.eachRow((row) => {

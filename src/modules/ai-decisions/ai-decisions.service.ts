@@ -12,12 +12,10 @@ import type { AiClassificationSettings } from '../methodology-config/methodology
 import { resolveConfidenceBand } from './confidence-band';
 import { AiClassificationDeclinedError, classifyNeedWithAi } from './classification.ai';
 import { redactPii, type ClassificationCandidate, type ClassificationResult } from './classification.placeholder';
-import { scoreStub } from './scoring.placeholder';
 import type {
   AiDecision,
   AiDecisionRow,
   ReviewDecisionPayload,
-  ScoringStubResponse,
 } from './ai-decisions.types';
 import type { AiReviewApproveDto, AiReviewOverrideDomainDto } from './ai-decisions.contract';
 import type { NeedStatus } from '../needs/needs.types';
@@ -246,7 +244,7 @@ export class AiDecisionsService {
           subjectId: need.id,
           modelName: result.modelName,
           modelVersion: result.modelVersion,
-          suggestion: { ...result.suggestion } as unknown as Prisma.InputJsonValue,
+          suggestion: { ...result.suggestion },
           confidence: result.confidence,
         },
       })) as unknown as AiDecisionRow;
@@ -631,7 +629,7 @@ export class AiDecisionsService {
       tx.need.update({
         where: { id: needId },
         data: {
-          proposedDomains: body.pairs as unknown as Prisma.InputJsonValue,
+          proposedDomains: body.pairs,
           proposedReason: body.reason,
         },
       }),
@@ -648,12 +646,6 @@ export class AiDecisionsService {
       throw new NotFoundException({ error: { code: 'AI_DECISION_NOT_FOUND', message: 'No AI classification is pending review for this need.' } });
     }
     return undecided;
-  }
-
-  // RIO-FR-003: no Survey Response exists yet to score against (out of
-  // scope), so this is a pure stub — no DB write at all.
-  score(): ScoringStubResponse {
-    return scoreStub();
   }
 
   private async aiClassificationSettings(): Promise<AiClassificationSettings> {

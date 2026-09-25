@@ -1,3 +1,4 @@
+import { ROLE_KEYS } from '../../rbac/role-keys';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { Prisma, RejectionReasonCode } from '../../generated/prisma';
@@ -1386,7 +1387,7 @@ Eligible Questions: ${JSON.stringify(
       return tx.surveyBuilderResponse.create({
         data: {
           surveyId,
-          answers: answers as Prisma.InputJsonValue
+          answers: answers
         }
       });
     });
@@ -1511,9 +1512,9 @@ Eligible Questions: ${JSON.stringify(
     // Supervisor read access isn't dedicated-audit-logged per RBAC-002
     // Round 5.
     const isCrossOrgReader =
-      store?.role === 'system_admin' ||
-      store?.role === 'system_reviewer' ||
-      store?.role === 'center_supervisor';
+      store?.role === ROLE_KEYS.systemAdmin ||
+      store?.role === ROLE_KEYS.systemReviewer ||
+      store?.role === ROLE_KEYS.centerSupervisor;
 
     const take = Math.min(Math.max(opts.limit ?? 100, 1), 200);
     const skip = Math.max(opts.offset ?? 0, 0);
@@ -1552,7 +1553,7 @@ Eligible Questions: ${JSON.stringify(
       items = result[0];
       total = result[1];
 
-      if (store?.role === 'system_admin') {
+      if (store?.role === ROLE_KEYS.systemAdmin) {
         await this.audit.record({
           action: 'SYSTEM_ADMIN_VIEWED_SURVEY',
           entityType: 'survey',
@@ -1609,7 +1610,7 @@ Eligible Questions: ${JSON.stringify(
 
   async getSurveyDetailById(id: string) {
     const store = getOrgStore();
-    const isSysAdmin = store?.role === 'system_admin';
+    const isSysAdmin = store?.role === ROLE_KEYS.systemAdmin;
 
     const include = {
       need: {

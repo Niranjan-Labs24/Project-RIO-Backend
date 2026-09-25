@@ -1,8 +1,16 @@
+import 'dotenv/config';
 import { Pool } from 'pg';
+
+// Connection strings come from the environment (.env), never from the source.
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} must be set (see .env.example)`);
+  return value;
+}
 
 async function run() {
   const poolOwner = new Pool({
-    connectionString: 'postgresql://cnap_owner:cnap_owner_dev_pw@localhost:5433/cnap',
+    connectionString: requireEnv('DATABASE_URL'),
     ssl: false,
   });
 
@@ -12,7 +20,7 @@ async function run() {
   await poolOwner.end();
 
   const poolSupervisor = new Pool({
-    connectionString: 'postgresql://cnap_supervisor:cnap_supervisor_dev_pw@localhost:5433/cnap',
+    connectionString: requireEnv('SUPERVISOR_DATABASE_URL'),
     ssl: false,
   });
 

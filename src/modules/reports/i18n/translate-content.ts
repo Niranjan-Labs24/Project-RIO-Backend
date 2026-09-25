@@ -271,7 +271,7 @@ export async function translateReportContent(
   // generated in Arabic must translate back when read in English. English
   // content with no Arabic in it still makes no calls — isTranslatable
   // declines every string — and comes back as the same object.
-  const copy = structuredClone(content) as Record<string, unknown>;
+  const copy = structuredClone(content);
 
   // Pass 1 — gather distinct strings and where each one goes.
   const writers = new Map<string, Array<(v: string) => void>>();

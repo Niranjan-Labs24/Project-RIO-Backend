@@ -1,3 +1,4 @@
+import { ROLE_KEYS } from '../../rbac/role-keys';
 import { EXCLUDE_MERGED } from '../needs/need-visibility';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
@@ -10,7 +11,7 @@ import type { CenterComparisonEntry, KpiSeverityEntry, PriorityScoreRow } from '
 // (also platform-wide, no tenant org of its own), and center_supervisor (the
 // confirmed "NCNP" role) read across every org via the supervisor client;
 // every other role stays inside their own org's RLS-scoped data.
-const CROSS_ENTITY_COMPARISON_ROLES = new Set(['system_admin', 'system_reviewer', 'center_supervisor']);
+const CROSS_ENTITY_COMPARISON_ROLES = new Set<string>([ROLE_KEYS.systemAdmin, ROLE_KEYS.systemReviewer, ROLE_KEYS.centerSupervisor]);
 
 /**
  * RIO-FR-005 — comparing places against each other. NOT used by RIO-FR-008's

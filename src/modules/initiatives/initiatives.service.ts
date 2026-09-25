@@ -1,3 +1,4 @@
+import { parseDateParam } from "../../common/validation/bounded";
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { requireActor, requireOrgId } from '../../tenancy/org-context';
@@ -26,7 +27,7 @@ export class InitiativesService {
     const rows = await this.tenant.runInOrgContext((tx) =>
       tx.initiative.findMany({ orderBy: { createdAt: 'desc' } }),
     );
-    return this.enrich(rows as unknown as InitiativeRow[]);
+    return this.enrich(rows);
   }
 
   async get(id: string): Promise<Initiative> {
@@ -34,7 +35,7 @@ export class InitiativesService {
     if (!row) {
       throw new NotFoundException({ error: { code: 'INITIATIVE_NOT_FOUND', message: 'Initiative not found' } });
     }
-    const enriched = await this.enrich([row as unknown as InitiativeRow]);
+    const enriched = await this.enrich([row]);
     return enriched[0]!;
   }
 
@@ -55,8 +56,8 @@ export class InitiativesService {
           name: payload.name,
           domain: payload.domain ?? null,
           geography: payload.geography ?? null,
-          startDate: payload.startDate ? new Date(payload.startDate) : null,
-          expectedEndDate: payload.expectedEndDate ? new Date(payload.expectedEndDate) : null,
+          startDate: payload.startDate ? parseDateParam(payload.startDate, "startDate") : null,
+          expectedEndDate: payload.expectedEndDate ? parseDateParam(payload.expectedEndDate, "expectedEndDate") : null,
           status: payload.status ?? 'active',
           fundingSource: payload.fundingSource ?? null,
           description: payload.description ?? null,
@@ -99,8 +100,8 @@ export class InitiativesService {
           ...(payload.name !== undefined ? { name: payload.name } : {}),
           ...(payload.domain !== undefined ? { domain: payload.domain } : {}),
           ...(payload.geography !== undefined ? { geography: payload.geography } : {}),
-          ...(payload.startDate !== undefined ? { startDate: new Date(payload.startDate) } : {}),
-          ...(payload.expectedEndDate !== undefined ? { expectedEndDate: new Date(payload.expectedEndDate) } : {}),
+          ...(payload.startDate !== undefined ? { startDate: parseDateParam(payload.startDate, "startDate") } : {}),
+          ...(payload.expectedEndDate !== undefined ? { expectedEndDate: parseDateParam(payload.expectedEndDate, "expectedEndDate") } : {}),
           ...(payload.status !== undefined ? { status: payload.status } : {}),
           ...(payload.fundingSource !== undefined ? { fundingSource: payload.fundingSource } : {}),
           ...(payload.description !== undefined ? { description: payload.description } : {}),
@@ -217,7 +218,7 @@ export class InitiativesService {
     const rows = await this.tenant.runInOrgContext((tx) =>
       tx.initiative.findMany({ where: { id: { in: links.map((l) => l.initiativeId) } } }),
     );
-    return this.enrich(rows as unknown as InitiativeRow[]);
+    return this.enrich(rows);
   }
 
   // RIO-FR-009 — the two statuses with no automatic trigger (`observed` is
@@ -270,8 +271,8 @@ export class InitiativesService {
     );
     return rows.map((r) => ({
       id: r.id,
-      fromStatus: r.fromStatus as NeedAnalyticalStatusEvent['fromStatus'],
-      toStatus: r.toStatus as NeedAnalyticalStatusEvent['toStatus'],
+      fromStatus: r.fromStatus,
+      toStatus: r.toStatus,
       changedBy: r.changedBy,
       changedAt: r.changedAt.toISOString(),
       note: r.note,

@@ -893,10 +893,10 @@ function evidenceSections(evidence: Record<string, unknown>): DocSection[] {
   // theme several documents raise outranks a one-off.
   const themeCounts = new Map<string, number>();
   for (const d of docs) {
-    const ai = isPlainObject(d.aiSummary) ? (d.aiSummary as Record<string, unknown>) : null;
+    const ai = isPlainObject(d.aiSummary) ? (d.aiSummary) : null;
     if (!ai || !Array.isArray(ai.themes)) continue;
     for (const th of ai.themes) {
-      const name = isPlainObject(th) ? scalar((th as Record<string, unknown>).theme) : String(th);
+      const name = isPlainObject(th) ? scalar((th).theme) : String(th);
       if (!name || name === "—") continue;
       themeCounts.set(name, (themeCounts.get(name) ?? 0) + 1);
     }
@@ -928,7 +928,7 @@ function evidenceSections(evidence: Record<string, unknown>): DocSection[] {
   }
 
   for (const doc of docs) {
-    const ai = isPlainObject(doc.aiSummary) ? (doc.aiSummary as Record<string, unknown>) : null;
+    const ai = isPlainObject(doc.aiSummary) ? (doc.aiSummary) : null;
     if (!ai) continue;
     const heading = `Evidence Summary — ${scalar(doc.title)}`;
 
@@ -946,7 +946,7 @@ function evidenceSections(evidence: Record<string, unknown>): DocSection[] {
         kind: "list",
         heading: `${heading} — Key Findings`,
         items: findings.map((f) =>
-          isPlainObject(f) ? scalar((f as Record<string, unknown>).finding) : String(f),
+          isPlainObject(f) ? scalar((f).finding) : String(f),
         ),
       });
     }
@@ -959,7 +959,7 @@ function evidenceSections(evidence: Record<string, unknown>): DocSection[] {
         tableSection(
           `${heading} — Themes`,
           ai.themes.map((th) => {
-            const t = isPlainObject(th) ? (th as Record<string, unknown>) : null;
+            const t = isPlainObject(th) ? (th) : null;
             return {
               Theme: t ? scalar(t.theme) : String(th),
               Description: t ? scalar(t.description) : "",
@@ -975,7 +975,7 @@ function evidenceSections(evidence: Record<string, unknown>): DocSection[] {
         kind: "list",
         heading: `${heading} — Supporting Statements`,
         items: ai.supportingStatements.map((st) => {
-          const s = isPlainObject(st) ? (st as Record<string, unknown>) : null;
+          const s = isPlainObject(st) ? (st) : null;
           if (!s) return String(st);
           const ref = scalar(s.sourceReferenceId);
           const loc = scalar(s.pageOrSection ?? s.sectionOrPageRef);
@@ -990,7 +990,7 @@ function evidenceSections(evidence: Record<string, unknown>): DocSection[] {
         kind: "list",
         heading: `${heading} — Risks / Concerns`,
         items: ai.risksOrConcerns.map((r) =>
-          isPlainObject(r) ? scalar((r as Record<string, unknown>).concern) : String(r),
+          isPlainObject(r) ? scalar((r).concern) : String(r),
         ),
       });
     }
@@ -1083,7 +1083,7 @@ function combinedSummarySections(combined: Record<string, unknown>): DocSection[
   }
 
   if (isPlainObject(combined.scoreBasedFindings)) {
-    const s = combined.scoreBasedFindings as Record<string, unknown>;
+    const s = combined.scoreBasedFindings;
     out.push({
       kind: "keyvalue",
       heading: "Score-Based Findings",
@@ -1762,7 +1762,7 @@ function buildReportSections(
     // Survey identity first (RPT01/RPT15) — which survey, under which need.
     // Without it a survey-scoped report is indistinguishable from its sibling.
     if (isPlainObject(content.survey)) {
-      const sv = content.survey as Record<string, unknown>;
+      const sv = content.survey;
       sections.push({
         kind: "keyvalue",
         heading: "Survey",
@@ -1805,7 +1805,7 @@ function buildReportSections(
       isPlainObject(content.reportMeta) && content.reportMeta.sourceBasis === "SURVEY_ONLY";
     if (isPlainObject(content.coverage)) sections.push(coverageStats(content.coverage, surveyOnly));
     if (isPlainObject(content.unitGeo)) {
-      const g = content.unitGeo as Record<string, unknown>;
+      const g = content.unitGeo;
       sections.push({
         kind: "keyvalue",
         heading: "Geographic Scope",
@@ -1827,7 +1827,7 @@ function buildReportSections(
     // Structured scope (Executive report) — Region / Governorate coverage,
     // shown up front rather than only mentioned in the narrative.
     if (isPlainObject(content.scope)) {
-      const scope = content.scope as Record<string, unknown>;
+      const scope = content.scope;
       sections.push({
         kind: "keyvalue",
         heading: "Region / Governorate",
@@ -1877,11 +1877,11 @@ function buildReportSections(
     // ── RPT10 data-collection completeness: what never arrived, beside what
     // arrived and was excluded. Client Q14 answer (a), settled 24 Aug. ──
     if (isPlainObject(content.dataCollection)) {
-      const dc = content.dataCollection as Record<string, unknown>;
-      const scope = isPlainObject(dc.scope) ? (dc.scope as Record<string, unknown>) : null;
-      const ab = isPlainObject(dc.abandonment) ? (dc.abandonment as Record<string, unknown>) : null;
-      const un = isPlainObject(dc.unansweredRequired) ? (dc.unansweredRequired as Record<string, unknown>) : null;
-      const inv = isPlainObject(dc.invalidResponses) ? (dc.invalidResponses as Record<string, unknown>) : null;
+      const dc = content.dataCollection;
+      const scope = isPlainObject(dc.scope) ? (dc.scope) : null;
+      const ab = isPlainObject(dc.abandonment) ? (dc.abandonment) : null;
+      const un = isPlainObject(dc.unansweredRequired) ? (dc.unansweredRequired) : null;
+      const inv = isPlainObject(dc.invalidResponses) ? (dc.invalidResponses) : null;
 
       // Scope first. Every figure below it is only as wide as this section
       // says — a study-level label over single-survey figures is the exact
@@ -1997,7 +1997,7 @@ function buildReportSections(
     // required Region → Governorate section was silently absent from every
     // exported PDF and spreadsheet.
     if (isPlainObject(content.geography)) {
-      const geo = content.geography as Record<string, unknown>;
+      const geo = content.geography;
       // The viewer plots `geo.regions` on the Kingdom map; a PDF has no map, so
       // the same figures are carried as a row rather than being lost with it.
       const plotted = isObjectArray(geo.regions) ? geo.regions : [];
@@ -2146,7 +2146,7 @@ function buildReportSections(
 
     // ── RPT15's dashboard half ──
     if (isPlainObject(content.dashboard)) {
-      const d = content.dashboard as Record<string, unknown>;
+      const d = content.dashboard;
       const kpis = isPlainObject(d.kpis) ? d.kpis : null;
 
       // Provenance line: the two halves were captured at different moments and
@@ -2209,7 +2209,7 @@ function buildReportSections(
     // beneath them. The scope band comes first so a reader knows what the rows
     // cover before reading them — including what could NOT be attributed. ──
     if (isPlainObject(content.regionScope)) {
-      const rs = content.regionScope as Record<string, unknown>;
+      const rs = content.regionScope;
       const unscored = Array.isArray(rs.unscoredVillages) ? (rs.unscoredVillages as unknown[]) : [];
       sections.push({
         kind: "keyvalue",
@@ -2352,7 +2352,7 @@ function buildReportSections(
         kind: "list",
         heading: "Recommendations",
         items: content.recommendations.map((r) =>
-          isPlainObject(r) ? scalar((r as Record<string, unknown>).intervention) : String(r),
+          isPlainObject(r) ? scalar((r).intervention) : String(r),
         ),
       });
     }

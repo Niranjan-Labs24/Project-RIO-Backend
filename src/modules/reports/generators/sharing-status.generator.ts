@@ -12,6 +12,6 @@ export async function sharingStatusGenerator(ctx: GeneratorCtx): Promise<Generat
   });
   return {
     title: "Report Sharing Status",
-    content: content as unknown as Record<string, unknown>,
+    content: { ...content },
   };
 }

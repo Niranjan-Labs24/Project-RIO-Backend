@@ -61,7 +61,7 @@ export class PublicSurveysService {
         include: { _count: { select: { responses: true } } },
       }),
     );
-    return rows.map((r) => this.toPublicLink(r as unknown as LinkWithResponseCount));
+    return rows.map((r) => this.toPublicLink(r));
   }
 
   async createLink(needId: string, payload: CreateSurveyLinkPayload): Promise<PublicSurveyLink> {
@@ -79,12 +79,12 @@ export class PublicSurveysService {
 
     let row: LinkWithResponseCount;
     try {
-      row = (await this.tenant.runInOrgContext((tx) =>
+      row = await this.tenant.runInOrgContext((tx) =>
         tx.publicSurveyLink.create({
           data: { orgId, needId, studyId: need.studyId, label, token, createdBy: actorId, expiresAt },
           include: { _count: { select: { responses: true } } },
         }),
-      )) as unknown as LinkWithResponseCount;
+      );
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         throw new ConflictException({
@@ -118,7 +118,7 @@ export class PublicSurveysService {
       });
     });
     await this.audit.record({ action: 'edit', entityType: 'survey', entityId: row.id, entityLabel: row.label, changes: [{ field: auditFieldLabel('isActive'), before: 'Yes', after: 'No' }] });
-    return this.toPublicLink(row as unknown as LinkWithResponseCount);
+    return this.toPublicLink(row);
   }
 
   // Sends the link (plus the same QR code shown in-app, generated fresh

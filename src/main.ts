@@ -9,13 +9,15 @@ import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { ConfigService } from './config/config.service';
 import { SystemLogsService } from './modules/system-logs/system-logs.service';
+import { validateEnv } from './config/env.schema';
 import { buildHttpsOptions } from './config/https-options';
 import { setupOpenApi } from './contract/openapi';
 
 async function bootstrap(): Promise<void> {
   // Encryption in transit (RIO-NFR-001): serve HTTPS directly when a cert/key
   // are configured; otherwise HTTP (TLS terminated by an ingress/proxy).
-  const httpsOptions = buildHttpsOptions(process.env.TLS_CERT_PATH, process.env.TLS_KEY_PATH);
+  const startupEnv = validateEnv(process.env);
+  const httpsOptions = buildHttpsOptions(startupEnv.TLS_CERT_PATH, startupEnv.TLS_KEY_PATH);
   // Register body parsers ourselves (bodyParser: false) so we can raise the
   // limit above the 100kb default: an org logo is uploaded as a base64 data
   // URI (organizations.contract.ts caps logoUrl at ~2M chars ≈ ~2MB) until
@@ -49,7 +51,8 @@ async function bootstrap(): Promise<void> {
   const systemLogs = app.get(SystemLogsService);
   app.useGlobalFilters(new AllExceptionsFilter(undefined, systemLogs));
   app.enableShutdownHooks();
-  setupOpenApi(app);
+  // SEC-004 — the route map is only published outside production.
+  if (config.nodeEnv !== 'production') setupOpenApi(app);
 
   await app.listen(config.port);
 

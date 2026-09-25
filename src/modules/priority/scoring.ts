@@ -21,7 +21,7 @@
 // removed to prevent accidental use.
 //
 // If you need priority-level thresholds, use DEFAULT_THRESHOLDS below.
-// If you need gap-type determination, use mapPriorityLevel() + determineGapType().
+// Gap type is entered by the analyst on the need, not derived here.
 // Do NOT import mapResponseValue() or scoreNeed() — they do not exist here
 // any more.
 // ============================================================================
@@ -95,21 +95,4 @@ export function mapPriorityLevel(
   if (severity >= thresholds.equityHighSeverity && hasEquityFlag) return 'high';
   if (severity >= thresholds.mediumSeverity) return 'medium';
   return 'low';
-}
-
-/**
- * Determines the gap type for a scored need.
- * Cycle 1 always returns 'acute' — multi-cycle trend comparison is not yet
- * implemented (see TODO(RIO-Priority) in the full methodology backlog).
- */
-export function determineGapType(level: PriorityLevel, cycleNumber: number = 1): GapType {
-  void level; // unused until cycle 2 — suppresses lint warning
-  if (cycleNumber === 1) {
-    // TODO(RIO-Priority): cycle 1 has no history to compare against, so
-    // every high/critical gap is provisionally "acute". Chronic/structural/
-    // seasonal/equity all require a later cycle's trend.
-    return 'acute';
-  }
-  // TODO(RIO-Priority): multi-cycle comparison not implemented yet.
-  return 'acute';
 }

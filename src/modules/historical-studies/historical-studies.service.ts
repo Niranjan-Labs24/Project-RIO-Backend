@@ -1,5 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { extname } from 'node:path';
+import type { Prisma } from '../../generated/prisma';
+import type { Page } from '../../common/http/query.util';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
 import { roleByKey } from '../../rbac/role-matrix';
@@ -75,7 +77,7 @@ export class HistoricalStudiesService {
 
     let row: HistoricalStudyRow;
     try {
-      row = (await this.tenant.runInOrgContext((tx) =>
+      row = await this.tenant.runInOrgContext((tx) =>
         tx.historicalStudy.create({
           data: {
             orgId,
@@ -95,7 +97,7 @@ export class HistoricalStudiesService {
             uploadedBy,
           },
         }),
-      )) as unknown as HistoricalStudyRow;
+      );
     } catch (err) {
       // The insert can genuinely fail (e.g. a stale org context) after the
       // file is already on disk — don't leave an orphaned file behind.
@@ -106,19 +108,33 @@ export class HistoricalStudiesService {
     return this.enrich([row]).then((rows) => rows[0]!);
   }
 
+  async listPage(paging: { limit: number; offset: number }): Promise<Page<HistoricalStudy>> {
+    const query = (tx: Prisma.TransactionClient) =>
+      Promise.all([
+        tx.historicalStudy.findMany({
+          orderBy: [{ studyDate: 'desc' }, { id: 'asc' }],
+          take: paging.limit,
+          skip: paging.offset,
+        }),
+        tx.historicalStudy.count(),
+      ]);
+    const [rows, total] = await (this.isCrossEntity()
+      ? this.tenant.runAsSupervisor(query)
+      : this.tenant.runInOrgContext(query));
+    return { items: await this.enrich(rows), total, ...paging };
+  }
+
   async list(): Promise<HistoricalStudy[]> {
     const rows = await (this.isCrossEntity()
       ? this.tenant.runAsSupervisor((tx) => tx.historicalStudy.findMany({ orderBy: { studyDate: 'desc' } }))
       : this.tenant.runInOrgContext((tx) => tx.historicalStudy.findMany({ orderBy: { studyDate: 'desc' } })));
-    return this.enrich(rows as unknown as HistoricalStudyRow[]);
+    return this.enrich(rows);
   }
 
   async getFile(id: string): Promise<{ row: HistoricalStudyRow; buffer: Buffer }> {
-    const row = (await (this.isCrossEntity()
+    const row = await (this.isCrossEntity()
       ? this.tenant.runAsSupervisor((tx) => tx.historicalStudy.findUnique({ where: { id } }))
-      : this.tenant.runInOrgContext((tx) => tx.historicalStudy.findUnique({ where: { id } })))) as unknown as
-      | HistoricalStudyRow
-      | null;
+      : this.tenant.runInOrgContext((tx) => tx.historicalStudy.findUnique({ where: { id } })));
     if (!row) {
       throw new BadRequestException({ error: { code: 'HISTORICAL_STUDY_NOT_FOUND', message: 'Not found.' } });
     }

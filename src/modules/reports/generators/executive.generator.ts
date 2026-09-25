@@ -20,6 +20,6 @@ export async function executiveGenerator(ctx: GeneratorCtx): Promise<GeneratedRe
   });
   return {
     title: `Executive Summary — ${content.header.studyName}`,
-    content: content as unknown as Record<string, unknown>,
+    content: { ...content },
   };
 }

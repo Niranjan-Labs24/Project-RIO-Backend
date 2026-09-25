@@ -2,6 +2,8 @@ import { Controller, Get, Param, Query } from "@nestjs/common";
 import { RequirePermission } from "../../common/guards/permission.guard";
 import { ArchiveService } from "./archive.service";
 import type { ArchiveEntry, ArchiveEntryKind } from "./archive.types";
+import { pageOf, parsePaging, type Page } from "../../common/http/query.util";
+import { UuidParamPipe } from "../../common/pipes/uuid-param.pipe";
 
 @Controller("archive")
 export class ArchiveController {
@@ -20,7 +22,9 @@ export class ArchiveController {
     @Query("village") village?: string,
     @Query("governorate") governorate?: string,
     @Query("domain") domain?: string,
-  ): Promise<ArchiveEntry[]> {
+    @Query("limit") limit?: string,
+    @Query("offset") offset?: string,
+  ): Promise<Page<ArchiveEntry>> {
     return this.archive.list({
       kind,
       search,
@@ -32,12 +36,12 @@ export class ArchiveController {
       village,
       governorate,
       domain,
-    });
+    }).then((all) => pageOf(all, parsePaging(limit, offset)));
   }
 
   @Get(":studyId")
   @RequirePermission("archiveSharingAudit", "read")
-  getDetail(@Param("studyId") studyId: string) {
+  getDetail(@Param("studyId", new UuidParamPipe()) studyId: string) {
     return this.archive.getArchiveDetail(studyId);
   }
 }

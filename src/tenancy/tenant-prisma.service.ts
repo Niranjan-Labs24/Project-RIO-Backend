@@ -1,3 +1,4 @@
+import { ROLE_KEYS } from '../rbac/role-keys';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '../generated/prisma';
 import { PrismaService } from '../prisma/prisma.service';
@@ -28,7 +29,7 @@ export class TenantPrismaService {
    */
   async runRead<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
     const role = getOrgStore()?.role;
-    const crossOrg = role === 'system_admin' || role === 'system_reviewer' || role === 'center_supervisor';
+    const crossOrg = role === ROLE_KEYS.systemAdmin || role === ROLE_KEYS.systemReviewer || role === ROLE_KEYS.centerSupervisor;
     return crossOrg ? this.runAsSupervisor(fn) : this.runInOrgContext(fn);
   }
 

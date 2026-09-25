@@ -37,6 +37,8 @@ export const EnvSchema = Type.Object({
   // be terminated at an ingress/reverse proxy in front of it.
   TLS_CERT_PATH: Type.Optional(Type.String()),
   TLS_KEY_PATH: Type.Optional(Type.String()),
+  // Identifies this instance in system logs; defaults to the hostname.
+  INSTANCE_ID: Type.Optional(Type.String()),
   // When true, the app connects to Postgres over TLS (self-signed accepted).
   DB_SSL: Type.Boolean({ default: false }),
   // Verify the Postgres server certificate. Defaults to false (dev self-signed);

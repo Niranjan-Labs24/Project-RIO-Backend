@@ -5,12 +5,15 @@ import {
   Get,
   Param,
   Post,
+  Query,
   Res,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
+import { boundedStrings } from '../../common/validation/bounded';
+import { parsePaging, type Page } from '../../common/http/query.util';
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { MAX_EVIDENCE_FILE_SIZE_BYTES } from '../evidence/evidence.storage.service';
@@ -47,8 +50,8 @@ export class HistoricalStudiesController {
 
   @Get()
   @RequirePermission('archiveSharingAudit', 'read')
-  list(): Promise<HistoricalStudy[]> {
-    return this.historicalStudies.list();
+  list(@Query('limit') limit?: string, @Query('offset') offset?: string): Promise<Page<HistoricalStudy>> {
+    return this.historicalStudies.listPage(parsePaging(limit, offset));
   }
 
   @Post()
@@ -61,6 +64,10 @@ export class HistoricalStudiesController {
     if (!file) {
       throw new BadRequestException({ error: { code: 'FILE_REQUIRED', message: 'A file is required.' } });
     }
+    boundedStrings(body, {
+      title: 500, region: 20_000, governorateIds: 20_000, centerIds: 20_000,
+      targetSector: 300, studyDate: 40, author: 300, methodologyVersionLabel: 300,
+    });
     if (!body.title || !body.studyDate || !body.author || !body.methodologyVersionLabel) {
       throw new BadRequestException({
         error: { code: 'MISSING_FIELDS', message: 'Title, study date, author, and methodology version are required.' },

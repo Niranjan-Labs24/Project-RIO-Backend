@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable, SetMetadata } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
@@ -14,6 +15,13 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 // out of scope here — see session-cookie.ts / README.
 export const CSRF_EXEMPT_KEY = 'csrfExempt';
 export const CsrfExempt = (): MethodDecorator & ClassDecorator => SetMetadata(CSRF_EXEMPT_KEY, true);
+
+/** Compares the cookie and header tokens without leaking where they first differ. */
+export function constantTimeEqual(a: string, b: string): boolean {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
 
 // Double-submit CSRF for cookie-authenticated mutations. Bearer and anonymous
 // requests are not subject to ambient-cookie CSRF and pass without a token.
@@ -35,7 +43,7 @@ export class CsrfGuard implements CanActivate {
     const cookie = req.cookies?.[CSRF_COOKIE_NAME];
     const header = req.headers['x-csrf-token'];
     const headerValue = Array.isArray(header) ? header[0] : header;
-    if (!cookie || !headerValue || cookie !== headerValue) {
+    if (!cookie || !headerValue || !constantTimeEqual(cookie, headerValue)) {
       throw new ForbiddenException({ error: { code: 'CSRF_TOKEN_INVALID', message: 'Missing or invalid CSRF token' } });
     }
     return true;

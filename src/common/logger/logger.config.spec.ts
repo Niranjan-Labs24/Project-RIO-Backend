@@ -1,3 +1,5 @@
+import { Writable } from 'node:stream';
+import pino from 'pino';
 import { describe, expect, it } from 'vitest';
 import { orgContext } from '../../tenancy/org-context';
 import { buildLoggerConfig } from './logger.config';
@@ -65,6 +67,7 @@ describe('buildLoggerConfig (RIO-NFR-016)', () => {
       'req.headers.authorization',
       'req.headers.cookie',
       'req.headers["x-org-id"]',
+      'res.headers["set-cookie"]',
     ]);
     // `remove` (not a mask) — the values must not reach the log at all.
     expect(redact.remove).toBe(true);
@@ -87,5 +90,33 @@ describe('buildLoggerConfig (RIO-NFR-016)', () => {
     expect(serialized).toEqual({ id: 'r1', method: 'POST', url: '/api/auth/login' });
     expect(serialized.body).toBeUndefined();
     expect(serialized.headers).toBeUndefined();
+  });
+});
+
+describe('buildLoggerConfig redaction', () => {
+  function logLine(payload: Record<string, unknown>): string {
+    const config = buildLoggerConfig('info').pinoHttp as { redact: { paths: string[]; remove: boolean } };
+    let out = '';
+    const sink = new Writable({
+      write(chunk, _enc, cb) {
+        out += chunk.toString();
+        cb();
+      },
+    });
+    pino({ redact: config.redact }, sink).info(payload, 'request completed');
+    return out;
+  }
+
+  it('never writes the session cookie set on a login response', () => {
+    const line = logLine({ res: { statusCode: 200, headers: { 'set-cookie': ['rio_session=SECRET-JWT; HttpOnly'], 'content-type': 'application/json' } } });
+    expect(line).not.toContain('SECRET-JWT');
+    expect(line).not.toContain('set-cookie');
+    expect(line).toContain('content-type');
+  });
+
+  it('still removes the request credentials', () => {
+    const line = logLine({ req: { headers: { authorization: 'Bearer SECRET-TOKEN', cookie: 'rio_session=SECRET-COOKIE' } } });
+    expect(line).not.toContain('SECRET-TOKEN');
+    expect(line).not.toContain('SECRET-COOKIE');
   });
 });

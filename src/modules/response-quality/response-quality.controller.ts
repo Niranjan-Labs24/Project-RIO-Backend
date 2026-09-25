@@ -2,7 +2,7 @@ import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { Controller, Get, Param, Post, Query } from "@nestjs/common";
 import { RequirePermission } from "../../common/guards/permission.guard";
 import { ResponseQualityService } from "./response-quality.service";
-import type { AiSummary, ResponseQualityResult } from "./response-quality.types";
+import type { ResponseQualityResult } from "./response-quality.types";
 
 // Mounted under needs/:needId/... — each Need runs its own independent
 // survey/response set now (see the Need-lifecycle migration).
@@ -38,24 +38,5 @@ export class ResponseQualityController {
     @Query("surveyLinkId") surveyLinkId?: string,
   ): Promise<ResponseQualityResult[]> {
     return this.responseQuality.listForNeed(needId, surveyLinkId);
-  }
-
-  // Same Data-Analyst-only split as assess() above.
-  @Post("ai-summary/generate")
-  @RequirePermission("priorityScoring", "create")
-  generateSummary(
-    @Param("needId", new UuidParamPipe()) needId: string,
-    @Query("surveyLinkId") surveyLinkId?: string,
-  ): Promise<AiSummary> {
-    return this.responseQuality.generateSummary(needId, surveyLinkId);
-  }
-
-  @Get("ai-summary")
-  @RequirePermission("aiReview", "read")
-  async getSummary(
-    @Param("needId", new UuidParamPipe()) needId: string,
-    @Query("surveyLinkId") surveyLinkId?: string,
-  ): Promise<AiSummary | null> {
-    return this.responseQuality.getLatestSummary(needId, surveyLinkId);
   }
 }

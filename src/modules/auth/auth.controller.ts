@@ -31,7 +31,7 @@ export class AuthController {
   // this request to double-submit — it establishes the session, not consumes it.
   @Post('login')
   @Public()
-  @RateLimit(5, 60)
+  @RateLimit(5, 60, { perIp: { limit: 60, windowSeconds: 600 } })
   @HttpCode(200)
   @CsrfExempt()
   async login(
@@ -41,7 +41,7 @@ export class AuthController {
     const email = body.email.trim().toLowerCase();
     const password = body.password;
     const session = await this.auth.login(email, password);
-    res.cookie(SESSION_COOKIE_NAME, session.token, sessionCookieOptions(this.config.nodeEnv === 'production'));
+    res.cookie(SESSION_COOKIE_NAME, session.token, sessionCookieOptions(this.config.nodeEnv === 'production', this.config.jwtExpiresIn));
     res.cookie(CSRF_COOKIE_NAME, randomBytes(18).toString('base64url'), csrfCookieOptions(this.config.nodeEnv === 'production'));
     return session;
   }
@@ -53,7 +53,7 @@ export class AuthController {
   // normally via POST /auth/login once approved.
   @Post('signup')
   @Public()
-  @RateLimit(3, 3600)
+  @RateLimit(3, 3600, { perIp: { limit: 20, windowSeconds: 3600 } })
   @CsrfExempt()
   async signup(
     @Body(new TypeBoxValidationPipe(SignupBody)) body: SignupDto,
@@ -72,7 +72,7 @@ export class AuthController {
   // form renders it as field state, not as a failed request.
   @Post('verify-registration-number')
   @Public()
-  @RateLimit(20, 3600)
+  @RateLimit(20, 3600, { perIp: { limit: 100, windowSeconds: 3600 } })
   @HttpCode(200)
   @CsrfExempt()
   async verifyRegistrationNumber(
@@ -88,7 +88,7 @@ export class AuthController {
   // to double-submit against.
   @Post('forgot-password')
   @Public()
-  @RateLimit(3, 600)
+  @RateLimit(3, 600, { perIp: { limit: 30, windowSeconds: 600 } })
   @HttpCode(200)
   @CsrfExempt()
   forgotPassword(
@@ -99,7 +99,7 @@ export class AuthController {
 
   @Post('reset-password')
   @Public()
-  @RateLimit(10, 600)
+  @RateLimit(10, 600, { perIp: { limit: 60, windowSeconds: 600 } })
   @HttpCode(200)
   @CsrfExempt()
   resetPassword(
@@ -114,7 +114,7 @@ export class AuthController {
   // also bounds spend, not just abuse.
   @Post('otp/request')
   @Public()
-  @RateLimit(5, 3600)
+  @RateLimit(5, 3600, { perIp: { limit: 30, windowSeconds: 3600 } })
   @HttpCode(200)
   @CsrfExempt()
   requestLoginOtp(
@@ -125,7 +125,7 @@ export class AuthController {
 
   @Post('otp/verify')
   @Public()
-  @RateLimit(10, 60)
+  @RateLimit(10, 60, { perIp: { limit: 100, windowSeconds: 600 } })
   @HttpCode(200)
   @CsrfExempt()
   async verifyLoginOtp(
@@ -133,7 +133,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<SessionContext> {
     const session = await this.auth.verifyLoginOtp(body);
-    res.cookie(SESSION_COOKIE_NAME, session.token, sessionCookieOptions(this.config.nodeEnv === 'production'));
+    res.cookie(SESSION_COOKIE_NAME, session.token, sessionCookieOptions(this.config.nodeEnv === 'production', this.config.jwtExpiresIn));
     res.cookie(CSRF_COOKIE_NAME, randomBytes(18).toString('base64url'), csrfCookieOptions(this.config.nodeEnv === 'production'));
     return session;
   }
@@ -195,7 +195,7 @@ export class AuthController {
     // the browser keeps presenting the now-stale pre-change cookie, and the
     // very next cookie-authenticated request (e.g. consent) is correctly
     // rejected by JwtAuthGuard's sessionVersion check.
-    res.cookie(SESSION_COOKIE_NAME, session.token, sessionCookieOptions(this.config.nodeEnv === 'production'));
+    res.cookie(SESSION_COOKIE_NAME, session.token, sessionCookieOptions(this.config.nodeEnv === 'production', this.config.jwtExpiresIn));
     return session;
   }
 }

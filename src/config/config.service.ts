@@ -6,7 +6,7 @@ export class ConfigService {
   private readonly config: AppConfig;
 
   constructor() {
-    this.config = validateEnv(process.env as Record<string, unknown>);
+    this.config = validateEnv(process.env);
   }
 
   get<K extends keyof AppConfig>(key: K): AppConfig[K] {

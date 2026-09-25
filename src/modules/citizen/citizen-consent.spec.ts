@@ -106,6 +106,7 @@ function makeService(overrides: { activeNotice?: unknown; noticeError?: Error } 
     // RIO-FR-002 cleaning — fire-and-forget after the transaction, with its
     // own spec. Stubbed so it resolves; these tests are about consent.
     { cleanSurveyResponse: vi.fn(async () => undefined) } as never,
+    { nodeEnv: 'test' } as never, // config
   );
 
   // The link/challenge lookups hit the DB through private helpers; stubbing

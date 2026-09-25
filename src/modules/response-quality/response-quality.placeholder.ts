@@ -1,4 +1,3 @@
-import type { SupportedLocale } from "../translation/translation.types";
 export interface ResponseSubject {
   id: string;
   answers: Record<string, unknown>;
@@ -14,25 +13,18 @@ export interface QualityAssessment {
   duplicateOfId: string | null;
 }
 
-export interface SummaryResult {
-  summaryText: string;
-  responseCount: number;
-}
-
 export interface ConfidenceFlagSettings {
   dontKnowRatioThreshold: number;
   minRespondentsForStandardConfidence: number;
 }
 
-// TODO(RIO-Response-Quality): completeness/confidence are simple placeholder
-// heuristics (missing-answer ratio, "Don't know" count) pending the
-// buyer-provided methodology package's real Data Quality Indicators
-// definition (scope.md §Confidence Flag: standard/low when respondents <10
-// or "Don't know" >20%). `settings` comes from the Methodology Configuration
-// screen (MethodologyConfigService), never hardcoded here. Duplicate
-// detection here is exact-match on (contact, serialized answers) within the
-// same batch — a real fuzzy/near-duplicate detector replaces just this
-// function later.
+// Data-quality indicators per response: completeness (share of non-empty
+// answers), missing fields, and a confidence flag — "low" when the batch has
+// fewer respondents than `minRespondentsForStandardConfidence` or the share of
+// "Don't know" answers exceeds `dontKnowRatioThreshold` (scope.md §Confidence
+// Flag). `settings` comes from the Methodology Configuration screen
+// (MethodologyConfigService), never hardcoded here. Duplicates are exact
+// matches on (contact, serialized answers) within the same batch.
 export function assessResponseQuality(
   responses: ResponseSubject[],
   settings: ConfidenceFlagSettings,
@@ -69,35 +61,4 @@ export function assessResponseQuality(
       duplicateOfId,
     };
   });
-}
-
-// TODO(RIO-AI-Summary): canned template summary pending real LLM
-// integration — see classification.placeholder.ts for the same pattern
-// applied to AI Classification.
-//
-// Written in the requester's app language: this text is stored, so a
-// template that only ever produced English left Arabic users an English
-// "AI summary" that nothing downstream translated.
-export function generateAiSummary(
-  responses: ResponseSubject[],
-  locale: SupportedLocale = "en",
-): SummaryResult {
-  const n = responses.length;
-  if (n === 0) {
-    return {
-      summaryText:
-        locale === "ar"
-          ? "لم تُقدَّم أي ردود على المسح لهذه الدراسة حتى الآن."
-          : "No survey responses have been submitted for this study yet.",
-      responseCount: 0,
-    };
-  }
-  return {
-    summaryText:
-      locale === "ar"
-        ? `ملخص مبدئي: تم استلام ${n} رد. ستظهر هنا الموضوعات المشتركة ومؤشرات الأولوية بعد تفعيل التلخيص بالذكاء الاصطناعي.`
-        : `Placeholder AI summary: ${n} response(s) received. ` +
-          `Common themes and priority signals will be surfaced here once real AI summarization is integrated.`,
-    responseCount: n,
-  };
 }

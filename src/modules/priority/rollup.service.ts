@@ -300,7 +300,7 @@ export class ScoreRollupService {
       // Flattened across every village a response's Need names, not just
       // the first (see resolvedVillageIds above) — a second village here
       // previously never got its own rollup computed at all.
-      const distinctVillages = Array.from(new Set(responses.flatMap(r => r.need.village))) as string[];
+      const distinctVillages = Array.from(new Set(responses.flatMap(r => r.need.village)));
       for (const v of distinctVillages) {
         await this.calculateRollups(studyId, surveyId, v, { tx, orgId: survey.orgId });
       }

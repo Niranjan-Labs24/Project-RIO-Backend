@@ -1,3 +1,5 @@
+import { fromJson, toJson } from '../../common/prisma/json';
+import { ROLE_KEYS } from '../../rbac/role-keys';
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
@@ -365,9 +367,9 @@ export class ReportSummaryService {
     // safe to use for the entire transaction.
     const store = getOrgStore();
     const isCrossOrgReader =
-      store?.role === 'system_admin' ||
-      store?.role === 'system_reviewer' ||
-      store?.role === 'center_supervisor';
+      store?.role === ROLE_KEYS.systemAdmin ||
+      store?.role === ROLE_KEYS.systemReviewer ||
+      store?.role === ROLE_KEYS.centerSupervisor;
     const runner = isCrossOrgReader
       ? this.tenant.runAsSupervisor.bind(this.tenant)
       : this.tenant.runInOrgContext.bind(this.tenant);
@@ -654,7 +656,7 @@ export class ReportSummaryService {
       const severityBand = overallNeedsIndex === null ? 'UNSCORED' : overallNeedsIndex >= 70 ? 'CRITICAL' : overallNeedsIndex >= 50 ? 'HIGH' : overallNeedsIndex >= 30 ? 'MEDIUM' : 'LOW';
 
       const domainComponents =
-        (priorityAssessment?.domainComponents as unknown as DomainPriorityComponent[] | null) || [];
+        fromJson<DomainPriorityComponent[] | null>(priorityAssessment?.domainComponents) || [];
 
       const snapshot: ReportDataSnapshot = {
         // Deterministic id assigned below, once the content hashes exist — a
@@ -1284,7 +1286,7 @@ ${extra}${glossaryBlock}`;
           // two indistinguishable, untraceable report rows.
           surveyId: summary.surveyId,
           filters: scopeFilters as Prisma.InputJsonValue,
-          content: content as unknown as Prisma.InputJsonValue,
+          content: toJson(content),
           generatedBy,
         },
       }),

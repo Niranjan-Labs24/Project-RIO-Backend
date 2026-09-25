@@ -14,6 +14,6 @@ export async function sectorGenerator(ctx: GeneratorCtx): Promise<GeneratedRepor
   });
   return {
     title: `Domain-wise Needs Report — ${content.header.studyName}`,
-    content: content as unknown as Record<string, unknown>,
+    content: { ...content },
   };
 }

@@ -1,6 +1,9 @@
+import { toJson } from '../../common/prisma/json';
+import { ROLE_KEYS } from '../../rbac/role-keys';
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import crypto from "crypto";
@@ -72,6 +75,8 @@ export interface CombinedReportOutputJson {
 
 @Injectable()
 export class CombinedReportSummaryService {
+  private readonly logger = new Logger(CombinedReportSummaryService.name);
+
   constructor(
     private readonly tenant: TenantPrismaService,
     private readonly ai: AiService,
@@ -88,9 +93,9 @@ export class CombinedReportSummaryService {
     // Read-only, so the SELECT-only supervisor client is safe.
     const store = getOrgStore();
     const isCrossOrgReader =
-      store?.role === "system_admin" ||
-      store?.role === "system_reviewer" ||
-      store?.role === "center_supervisor";
+      store?.role === ROLE_KEYS.systemAdmin ||
+      store?.role === ROLE_KEYS.systemReviewer ||
+      store?.role === ROLE_KEYS.centerSupervisor;
 
     const include = {
       org: true,
@@ -226,7 +231,9 @@ export class CombinedReportSummaryService {
             data: { localizedOutputs: toPersist as Prisma.InputJsonValue },
           }),
         )
-        .catch(() => undefined);
+        .catch((error: unknown) =>
+          this.logger.warn(`Could not cache localized summary output: ${String(error)}`),
+        );
     }
     return { locale: result.locale, status: result.status, output: result.output };
   }
@@ -401,7 +408,7 @@ Generate JSON conforming to:
           modelName,
           modelVersion,
           inputHash,
-          aiOutputJson: aiOutputJson as unknown as Prisma.InputJsonValue,
+          aiOutputJson: toJson(aiOutputJson),
           outputLocale,
           generatedBy,
         },
@@ -440,7 +447,7 @@ Generate JSON conforming to:
       tx.combinedReportSummary.update({
         where: { id: summaryId },
         data: {
-          officerEditedOutputJson: editedOutputJson as unknown as Prisma.InputJsonValue,
+          officerEditedOutputJson: toJson(editedOutputJson),
           status: "DRAFT",
         },
       }),

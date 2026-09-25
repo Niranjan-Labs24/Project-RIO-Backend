@@ -33,6 +33,6 @@ export async function villageGenerator(ctx: GeneratorCtx): Promise<GeneratedRepo
 
   return {
     title: `Village Report — ${content.village.name}`,
-    content: content as unknown as Record<string, unknown>,
+    content: { ...content },
   };
 }

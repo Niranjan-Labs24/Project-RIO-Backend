@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { orgContext } from '../../tenancy/org-context';
 import { AuditService } from './audit.service';
@@ -273,15 +274,16 @@ describe('AuditService before/after values (RIO-FR-007)', () => {
       },
     };
     const svc = new AuditService(exploding as never);
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const logged = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
 
     await expect(
       orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'u1' }, () =>
         svc.record({ action: 'create', entityType: 'need', entityId: 'n1', entityLabel: 'X' }),
       ),
     ).resolves.toBeUndefined();
-    expect(warn).toHaveBeenCalled();
-    warn.mockRestore();
+    // Never fails the caller, but the dropped audit row is an error-level structured log.
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining('Audit record failed'));
+    logged.mockRestore();
   });
 });
 

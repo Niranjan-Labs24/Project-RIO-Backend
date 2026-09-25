@@ -1,5 +1,6 @@
+import { toJson } from '../../common/prisma/json';
+import { ROLE_KEYS } from '../../rbac/role-keys';
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { Prisma } from "../../generated/prisma";
 import { ReportSummaryService, type ReportDataSnapshot } from "./report-summary.service";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { getOrgStore, requireActor, requireOrgId } from "../../tenancy/org-context";
@@ -199,8 +200,8 @@ export class ReportsService {
           // Only persisted for survey-scoped types — a stray surveyId on a
           // study-scoped type would make the list column lie.
           surveyId: meta.requiresSurveyId || meta.supportsSurveyId ? (payload.surveyId ?? null) : null,
-          filters: filters as unknown as Prisma.InputJsonValue,
-          content: content as unknown as Prisma.InputJsonValue,
+          filters: filters,
+          content: toJson(content),
           generatedBy,
         },
       }),
@@ -213,7 +214,7 @@ export class ReportsService {
         { field: "Status", before: null, after: row.status },
       ],
     });
-    return this.hydrateOne(row as unknown as ReportRow);
+    return this.hydrateOne(row);
   }
 
   async list(params: ListReportsParams): Promise<Report[]> {
@@ -222,7 +223,7 @@ export class ReportsService {
     // reportsDashboards:read+export with crossEntity:true, but this branch
     // used to check `=== 'system_admin'` literally — see
     // StudiesService.list's identical comment for the full story.
-    const isCrossOrgReader = store?.role === "system_admin" || store?.role === "center_supervisor";
+    const isCrossOrgReader = store?.role === ROLE_KEYS.systemAdmin || store?.role === ROLE_KEYS.centerSupervisor;
 
     const take = Math.min(Math.max(params.limit ?? 100, 1), 200);
     const skip = Math.max(params.offset ?? 0, 0);
@@ -247,7 +248,7 @@ export class ReportsService {
       // view access isn't logged; the NGO's own onboarding consent already
       // covers Center/NCNP's right to see/preview their data. Only System
       // Admin's cross-org view is still logged.
-      if (store?.role === "system_admin") {
+      if (store?.role === ROLE_KEYS.systemAdmin) {
         await this.audit.record({
           action: "SYSTEM_ADMIN_VIEWED_REPORT",
           entityType: "report",
@@ -261,7 +262,7 @@ export class ReportsService {
           metadata: { scope: params.organizationId ? "organization" : "all" },
         });
       }
-      return this.hydrate(rows as unknown as ReportRow[], true);
+      return this.hydrate(rows, true);
     }
 
     const rows = await this.tenant.runInOrgContext((tx) =>
@@ -277,13 +278,13 @@ export class ReportsService {
         skip,
       }),
     );
-    return this.hydrate(rows as unknown as ReportRow[]);
+    return this.hydrate(rows);
   }
 
   async getById(id: string): Promise<Report> {
     const store = getOrgStore();
     // RIO-RBAC-002 (AC1, fixed 2026-08-23) — see list()'s comment above.
-    const isCrossOrgReader = store?.role === "system_admin" || store?.role === "center_supervisor";
+    const isCrossOrgReader = store?.role === ROLE_KEYS.systemAdmin || store?.role === ROLE_KEYS.centerSupervisor;
 
     if (isCrossOrgReader) {
       const row = (await this.tenant.runAsSupervisor((tx) =>
@@ -292,7 +293,7 @@ export class ReportsService {
       if (!row) throw new NotFoundException({ error: { code: "REPORT_NOT_FOUND", message: "Report not found" } });
       // RIO-RBAC-002 (Round 5, client-confirmed 2026-08-24) — Supervisor
       // view access isn't logged; see list()'s comment above.
-      if (store?.role === "system_admin") {
+      if (store?.role === ROLE_KEYS.systemAdmin) {
         await this.audit.record({
           action: "SYSTEM_ADMIN_VIEWED_REPORT",
           entityType: "report",
@@ -327,7 +328,7 @@ export class ReportsService {
     const content = report.content;
     if (!content || typeof content !== "object" || Array.isArray(content)) return report;
     const { content: translated, requested, failed, skipped } = await translateReportContent(
-      content as Record<string, unknown>,
+      content,
       locale,
       this.translation,
       { budgetMs: VIEW_TRANSLATION_BUDGET_MS },
@@ -347,7 +348,7 @@ export class ReportsService {
   private canSeeAllStatuses(): boolean {
     const role = getOrgStore()?.role;
     return (
-      role === "system_admin" ||
+      role === ROLE_KEYS.systemAdmin ||
       can(role, "reportsDashboards", "write") ||
       can(role, "reportsDashboards", "approve") ||
       can(role, "reportsDashboards", "create")
@@ -390,7 +391,7 @@ export class ReportsService {
         { field: "Officer confirmed", before: existing.officerConfirmedAt?.toISOString() ?? null, after: row.officerConfirmedAt?.toISOString() ?? null },
       ],
     });
-    return this.hydrateOne(row as unknown as ReportRow);
+    return this.hydrateOne(row);
   }
 
   // Reviewer approves → released. Requires a prior officer confirm (two-step)
@@ -428,7 +429,7 @@ export class ReportsService {
         { field: "Reviewer Notes", before: null, after: notes },
       ],
     });
-    return this.hydrateOne(row as unknown as ReportRow);
+    return this.hydrateOne(row);
   }
 
   async reject(id: string, notes: string): Promise<Report> {
@@ -454,7 +455,7 @@ export class ReportsService {
         { field: "Reviewer Notes", before: null, after: notes },
       ],
     });
-    return this.hydrateOne(row as unknown as ReportRow);
+    return this.hydrateOne(row);
   }
 
   // Post-study archival — released → archived. Archived reports stay searchable
@@ -475,7 +476,7 @@ export class ReportsService {
       metadata: { status: "archived" },
       changes: [{ field: "Status", before: existing.status, after: row.status }],
     });
-    return this.hydrateOne(row as unknown as ReportRow);
+    return this.hydrateOne(row);
   }
 
   async export(
@@ -488,13 +489,13 @@ export class ReportsService {
     // already-released content, not a data mutation, so this extends
     // unconditionally like the read paths above (center_supervisor holds
     // reportsDashboards:export statically).
-    const isCrossOrgReader = store?.role === "system_admin" || store?.role === "center_supervisor";
+    const isCrossOrgReader = store?.role === ROLE_KEYS.systemAdmin || store?.role === ROLE_KEYS.centerSupervisor;
 
     let row: ReportRow | null = null;
     if (isCrossOrgReader) {
       row = (await this.tenant.runAsSupervisor((tx) =>
         tx.report.findUnique({ where: { id } }),
-      )) as ReportRow | null;
+      ));
       if (!row) throw new NotFoundException({ error: { code: "REPORT_NOT_FOUND", message: "Report not found" } });
     } else {
       row = await this.findOrThrow(id);
@@ -516,7 +517,7 @@ export class ReportsService {
       // RIO-RBAC-002 (Round 5, client-confirmed 2026-08-24) — Supervisor
       // access (including export/download) isn't logged; see list()'s
       // comment above.
-      if (store?.role === "system_admin") {
+      if (store?.role === ROLE_KEYS.systemAdmin) {
         await this.audit.record({
           action: "SYSTEM_ADMIN_DOWNLOADED_REPORT",
           entityType: "report",
@@ -526,7 +527,7 @@ export class ReportsService {
           metadata: { format, locale },
         });
       }
-      const auditMeta = await this.tenant.runAsSupervisor((tx) => this.resolveExportAuditMeta(row!, tx));
+      const auditMeta = await this.tenant.runAsSupervisor((tx) => this.resolveExportAuditMeta(row, tx));
       const aliases = await this.masterDataAliases(locale, true);
       return buildExportStub(
         format,
@@ -552,7 +553,7 @@ export class ReportsService {
         { field: "Scope", before: null, after: "own organization" },
       ],
     });
-    const auditMeta = await this.tenant.runInOrgContext((tx) => this.resolveExportAuditMeta(row!, tx));
+    const auditMeta = await this.tenant.runInOrgContext((tx) => this.resolveExportAuditMeta(row, tx));
     const aliases = await this.masterDataAliases(locale, false);
     return buildExportStub(
       format,
@@ -650,7 +651,7 @@ export class ReportsService {
   private async findOrThrow(id: string): Promise<ReportRow> {
     const row = await this.tenant.runInOrgContext((tx) => tx.report.findUnique({ where: { id } }));
     if (!row) throw new NotFoundException({ error: { code: "REPORT_NOT_FOUND", message: "Report not found" } });
-    return row as unknown as ReportRow;
+    return row;
   }
 
   // `reports` has RLS scoped to the caller's own org (see findOrThrow above)

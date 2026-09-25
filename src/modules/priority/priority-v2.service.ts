@@ -1,5 +1,9 @@
+import { toJson } from '../../common/prisma/json';
+import { ROLE_KEYS } from '../../rbac/role-keys';
 import { EXCLUDE_MERGED } from '../needs/need-visibility';
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { pageOf } from '../../common/http/query.util';
+import type { PriorityDashboardPage } from './priority.types';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { Prisma } from '../../generated/prisma';
 import { getOrgStore, requireOrgId } from '../../tenancy/org-context';
@@ -148,6 +152,8 @@ export function computeVillagePriority(
   };
 }
 
+const DASHBOARD_LEVELS = ['critical', 'high', 'medium', 'low'];
+
 @Injectable()
 export class PriorityV2Service {
   private readonly logger = new Logger(PriorityV2Service.name);
@@ -255,7 +261,7 @@ export class PriorityV2Service {
         priorityStatus: result.priorityStatus,
         overrideApplied: result.overrideApplied,
         overrideReason: result.overrideReason,
-        domainComponents: result.domainComponents as unknown as Prisma.InputJsonValue,
+        domainComponents: toJson(result.domainComponents),
         calculatedAt: new Date(),
         calculationVersion: 'v2',
       };
@@ -323,6 +329,35 @@ export class PriorityV2Service {
    * LOW natively; a triggered critical-domain override is the one case that
    * warrants standing out as its own bucket on this landing page).
    */
+  // One page of the dashboard. The rows are derived (a need's score comes from
+  // one of two pipelines), so they are assembled in full and then filtered and
+  // sliced here — the response carries one page instead of every need, and the
+  // level counts are computed over the whole set so the summary cards do not
+  // change with the filters.
+  async listPage(
+    filters: { gapType?: string; level?: string },
+    paging: { limit: number; offset: number },
+  ): Promise<PriorityDashboardPage> {
+    const level = filters.level?.trim();
+    if (level && !DASHBOARD_LEVELS.includes(level)) {
+      throw new BadRequestException({
+        error: { code: 'VALIDATION_ERROR', message: 'level must be critical, high, medium or low' },
+      });
+    }
+    const all = await this.listForOrg();
+    const summary = { critical: 0, high: 0, medium: 0, low: 0, unscored: 0 };
+    for (const entry of all) {
+      if (entry.score) summary[entry.score.level] += 1;
+      else summary.unscored += 1;
+    }
+    const matching = all.filter(
+      (entry) =>
+        (!filters.gapType || entry.gapType === filters.gapType) &&
+        (!level || entry.score?.level === level),
+    );
+    return { ...pageOf(matching, paging), summary };
+  }
+
   async listForOrg(gapType?: string): Promise<
     Array<{
       studyId: string;
@@ -366,9 +401,9 @@ export class PriorityV2Service {
     // Reviewer/Supervisor read-access exemption (RBAC-002 Round 5).
     const store = getOrgStore();
     const isCrossOrgReader =
-      store?.role === 'system_admin' ||
-      store?.role === 'system_reviewer' ||
-      store?.role === 'center_supervisor';
+      store?.role === ROLE_KEYS.systemAdmin ||
+      store?.role === ROLE_KEYS.systemReviewer ||
+      store?.role === ROLE_KEYS.centerSupervisor;
     const runner = isCrossOrgReader
       ? this.tenant.runAsSupervisor.bind(this.tenant)
       : this.tenant.runInOrgContext.bind(this.tenant);

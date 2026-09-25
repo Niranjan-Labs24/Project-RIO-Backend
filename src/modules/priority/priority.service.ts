@@ -1,6 +1,6 @@
+import { fromJson, toJson } from '../../common/prisma/json';
 import { EXCLUDE_MERGED } from '../needs/need-visibility';
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma } from "../../generated/prisma";
+import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { requireActor, requireOrgId } from "../../tenancy/org-context";
 import { MethodologyConfigService } from "../methodology-config/methodology-config.service";
@@ -19,6 +19,8 @@ import { auditFieldLabel } from "../audit/audit-field-labels";
 
 @Injectable()
 export class PriorityService {
+  private readonly logger = new Logger(PriorityService.name);
+
   constructor(
     private readonly tenant: TenantPrismaService,
     private readonly methodologyConfig: MethodologyConfigService,
@@ -156,13 +158,13 @@ export class PriorityService {
           level,
           gapType: need.gapType ?? "acute",
           equityFlagged,
-          factors: {
+          factors: toJson({
             model: "nine-factor-weighted-mean",
             methodologyVersion: survey.methodologyVersion ?? null,
             coverage: computed.coverage,
             score: computed.score,
             components: computed.components,
-          } as unknown as Prisma.InputJsonValue,
+          }),
           cycleNote:
             level === "critical" || level === "high"
               ? "Acute — Cycle 1, awaiting trend"
@@ -171,7 +173,7 @@ export class PriorityService {
       });
     });
 
-    return this.toScore(row as unknown as PriorityScoreRow);
+    return this.toScore(row);
   }
 
   /**
@@ -219,7 +221,7 @@ export class PriorityService {
     const row = await this.tenant.runInOrgContext((tx) =>
       tx.priorityScore.update({ where: { id }, data: { approvedBy, approvedAt: new Date() } }),
     );
-    return this.toScore(row as unknown as PriorityScoreRow);
+    return this.toScore(row);
   }
 
   /**
@@ -280,7 +282,7 @@ export class PriorityService {
       ],
     });
 
-    return this.toScore(row as unknown as PriorityScoreRow);
+    return this.toScore(row);
   }
 
   private async findScoreOrThrow(id: string): Promise<PriorityScoreRow> {
@@ -292,7 +294,7 @@ export class PriorityService {
         error: { code: 'PRIORITY_SCORE_NOT_FOUND', message: 'Priority score not found.' },
       });
     }
-    return row as unknown as PriorityScoreRow;
+    return row;
   }
 
   // Internal/review use: shows the latest score regardless of approval
@@ -304,7 +306,7 @@ export class PriorityService {
     const row = await this.tenant.runRead((tx) =>
       tx.priorityScore.findFirst({ where: { needId, surveyLinkId: surveyLinkId ?? null }, orderBy: { scoredAt: "desc" } }),
     );
-    return row ? this.toScore(row as unknown as PriorityScoreRow) : null;
+    return row ? this.toScore(row) : null;
   }
 
   async listForOrg(): Promise<PriorityDashboardEntry[]> {
@@ -359,7 +361,8 @@ export class PriorityService {
         equityHighSeverity: t.equityHighSeverity ?? DEFAULT_THRESHOLDS.equityHighSeverity,
         mediumSeverity: t.mediumSeverity ?? DEFAULT_THRESHOLDS.mediumSeverity,
       };
-    } catch {
+    } catch (error) {
+      this.logger.warn(`Could not load scoring thresholds, using defaults: ${String(error)}`);
       return DEFAULT_THRESHOLDS;
     }
   }
@@ -722,7 +725,7 @@ export class PriorityService {
         if (a.answerOptionId) {
           countsMap.set(a.answerOptionId, (countsMap.get(a.answerOptionId) || 0) + 1);
         } else if (a.answerOptionIds && Array.isArray(a.answerOptionIds)) {
-          const opts = a.answerOptionIds as unknown as string[];
+          const opts = fromJson<string[]>(a.answerOptionIds);
           for (const opt of opts) {
             countsMap.set(opt, (countsMap.get(opt) || 0) + 1);
           }

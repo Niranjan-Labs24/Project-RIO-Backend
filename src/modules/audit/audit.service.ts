@@ -1,8 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { toJson } from '../../common/prisma/json';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore } from '../../tenancy/org-context';
 import { roleByKey } from '../../rbac/role-matrix';
+import { parseDateParam } from '../../common/validation/bounded';
 import type {
   AuditChange,
   AuditEvent,
@@ -33,6 +35,8 @@ interface ActorRow {
 
 @Injectable()
 export class AuditService {
+  private readonly logger = new Logger(AuditService.name);
+
   constructor(private readonly tenant: TenantPrismaService) {}
 
   // Append-only. Writes within the active org context (RLS keyed on
@@ -86,7 +90,7 @@ export class AuditService {
             entityLabel: input.entityLabel,
             metadata:
               Object.keys(metadata).length > 0
-                ? (metadata as unknown as Prisma.InputJsonValue)
+                ? (toJson(metadata))
                 : undefined,
             sourceRef: input.sourceRef ?? null,
             ipAddress: store?.ip ?? null,
@@ -106,7 +110,9 @@ export class AuditService {
       }
     } catch (err) {
       // Audit recording should log a warning but never crash the primary read/write request
-      console.warn('Audit recording warning:', err);
+      // Structured error log (request id and org id are stamped by the logger) instead of a
+      // bare console line, so a dropped audit row is visible to log queries and alerting.
+      this.logger.error(`Audit record failed: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`);
     }
   }
 
@@ -156,8 +162,8 @@ export class AuditService {
     if (opts.sourceRef) filters.sourceRef = opts.sourceRef;
     if (opts.dateFrom || opts.dateTo) {
       filters.createdAt = {
-        ...(opts.dateFrom ? { gte: new Date(opts.dateFrom) } : {}),
-        ...(opts.dateTo ? { lte: new Date(opts.dateTo) } : {}),
+        ...(opts.dateFrom ? { gte: parseDateParam(opts.dateFrom, 'dateFrom') } : {}),
+        ...(opts.dateTo ? { lte: parseDateParam(opts.dateTo, 'dateTo') } : {}),
       };
     }
 
@@ -268,8 +274,8 @@ export class AuditService {
       throw new NotFoundException({ error: { code: 'AUDIT_LOG_NOT_FOUND', message: 'Audit record not found' } });
     }
 
-    const actors = await this.loadActors([row as AuditRow]);
-    const mapped = this.mapRows([row as AuditRow], actors)[0];
+    const actors = await this.loadActors([row]);
+    const mapped = this.mapRows([row], actors)[0];
     if (!mapped) {
       throw new NotFoundException({ error: { code: 'AUDIT_LOG_NOT_FOUND', message: 'Audit record not found' } });
     }
@@ -304,10 +310,10 @@ export class AuditService {
           reportActions,
           archiveActions,
         },
-        recentDeactivatedOrgs: this.mapRows(recentDeactivated as AuditRow[], actors),
-        recentAdminChanges: this.mapRows(recentAdminChanges as AuditRow[], actors),
-        recentUserDisables: this.mapRows(recentUserDisables as AuditRow[], actors),
-        recentArchiveActions: this.mapRows(recentArchives as AuditRow[], actors),
+        recentDeactivatedOrgs: this.mapRows(recentDeactivated, actors),
+        recentAdminChanges: this.mapRows(recentAdminChanges, actors),
+        recentUserDisables: this.mapRows(recentUserDisables, actors),
+        recentArchiveActions: this.mapRows(recentArchives, actors),
       };
     };
 

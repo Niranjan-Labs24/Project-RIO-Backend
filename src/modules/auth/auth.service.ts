@@ -1,4 +1,5 @@
-import { BadRequestException, ForbiddenException, GoneException, HttpException, HttpStatus, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { ROLE_KEYS } from '../../rbac/role-keys';
+import { BadRequestException, ForbiddenException, GoneException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { randomBytes, createHash, randomInt } from 'node:crypto';
 import { ConsentPolicyKind, UserStatus } from '../../generated/prisma';
 import { ConsentService } from '../consent/consent.service';
@@ -19,13 +20,12 @@ import { PermissionGrantsService } from '../permission-grants/permission-grants.
 import { AuditService } from '../audit/audit.service';
 import { ConfigService } from '../../config/config.service';
 import { MailerService } from '../../mailer/mailer.service';
+import { clearExpiredLock, registerFailedLogin } from './login-lockout';
 import { AuthRepository, conflictFor, DEFAULT_TEMP_PASSWORD, type ConsentAcceptanceInput } from './auth.repository';
 import type { SessionContext, SessionOrg, SessionUser, SignupPendingApprovalView } from './session.types';
 import type { ChangePasswordDto, ConsentDto, ForgotPasswordDto, RequestLoginOtpDto, ResetPasswordDto, SignupDto, VerifyLoginOtpDto } from './auth.contract';
 import { SmsService } from '../../sms/sms.service';
 
-const MAX_FAILED = 5;
-const LOCK_MINUTES = 15;
 const PASSWORD_RESET_TTL_MINUTES = 30;
 // RIO MFA — same TTL/attempt budget as CitizenService's OTP challenge,
 // applied here to StaffOtpChallenge for the exact same reasons.
@@ -102,19 +102,21 @@ export class AuthService {
       throw new UnauthorizedException({ error: { code: 'INVALID_CREDENTIALS', message: 'Invalid email or password' } });
     }
     if (found.lockedUntil && found.lockedUntil.getTime() > Date.now()) {
-      throw new HttpException(
-        { error: { code: 'ACCOUNT_LOCKED', message: 'Account is temporarily locked. Try again later.' } },
-        HttpStatus.LOCKED,
-      );
+      // A locked account answers exactly like a wrong password (same body, same cost), so the
+      // lock state cannot be used to discover which emails have accounts. The attempt is
+      // refused even if the password happens to be right.
+      await this.passwords.verifyDummy(password);
+      throw new UnauthorizedException({ error: { code: 'INVALID_CREDENTIALS', message: 'Invalid email or password' } });
+    }
+    if (found.lockedUntil) {
+      // The lock has expired: start counting from zero again, otherwise the stale count would
+      // re-lock the account on the very first mistyped password.
+      await this.tenant.runAsOrg(found.org.id, (tx) => clearExpiredLock(tx, found.id));
     }
 
     const ok = await this.passwords.verify(found.passwordHash, password);
     if (!ok) {
-      const attempts = found.failedLoginAttempts + 1;
-      const lockedUntil = attempts >= MAX_FAILED ? new Date(Date.now() + LOCK_MINUTES * 60_000) : null;
-      await this.tenant.runAsOrg(found.org.id, (tx) =>
-        tx.user.update({ where: { id: found.id }, data: { failedLoginAttempts: attempts, lockedUntil } }),
-      );
+      await this.tenant.runAsOrg(found.org.id, (tx) => registerFailedLogin(tx, found.id));
       throw new UnauthorizedException({ error: { code: 'INVALID_CREDENTIALS', message: 'Invalid email or password' } });
     }
 
@@ -763,7 +765,7 @@ export class AuthService {
   // other role. Clones rather than mutates: `role.permissions` is the same
   // array object shared by every session built from this RoleDef.
   private async withActiveGrants(u: UserWithOrg, role: RoleDef): Promise<ModulePermission[]> {
-    if (role.key !== 'center_supervisor') return role.permissions;
+    if (role.key !== ROLE_KEYS.centerSupervisor) return role.permissions;
     const grants = await this.permissionGrants.listActiveGrantsForUser(u.id);
     if (grants.length === 0) return role.permissions;
 

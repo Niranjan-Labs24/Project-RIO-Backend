@@ -19,6 +19,6 @@ export async function topPriorityGenerator(ctx: GeneratorCtx): Promise<Generated
   });
   return {
     title: `Top-Priority Report — ${content.header.studyName}`,
-    content: content as unknown as Record<string, unknown>,
+    content: { ...content },
   };
 }

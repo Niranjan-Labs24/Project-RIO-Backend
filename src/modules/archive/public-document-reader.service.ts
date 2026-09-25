@@ -1,3 +1,4 @@
+import { loadXlsx } from "../../common/excel/load-xlsx";
 import { Injectable, Logger } from "@nestjs/common";
 import { EvidenceStorageService } from "../evidence/evidence.storage.service";
 import type { PublicDocumentView } from "./public-archive.types";
@@ -97,7 +98,7 @@ export class PublicDocumentReaderService {
   private async readWorkbook(buffer: Buffer): Promise<PublicDocumentView> {
     const ExcelJS = await import("exceljs");
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+    await loadXlsx(workbook, buffer);
 
     const sheets = workbook.worksheets.map((sheet) => {
       const columns = Math.min(sheet.columnCount, MAX_COLUMNS);

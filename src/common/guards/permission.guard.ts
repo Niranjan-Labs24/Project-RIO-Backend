@@ -1,3 +1,4 @@
+import { ROLE_KEYS } from '../../rbac/role-keys';
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable, SetMetadata } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { getOrgStore } from '../../tenancy/org-context';
@@ -30,7 +31,7 @@ export class PermissionGuard implements CanActivate {
     // request's own store with the authorizing grant id, mutating the same
     // object AsyncLocalStorage is already holding for this request, so
     // AuditService.record() downstream sees it without any extra plumbing.
-    if (store?.role === 'center_supervisor' && store.actorId) {
+    if (store?.role === ROLE_KEYS.centerSupervisor && store.actorId) {
       const grant = await this.grants.findActiveGrant(store.actorId, required.module, required.action);
       if (grant) {
         store.grantCitation = grant;

@@ -40,7 +40,14 @@ export function buildLoggerConfig(level: string): Params {
       customProps: correlationFields,
       // Never log request bodies (PII risk) — see the redact list below.
       redact: {
-        paths: ['req.headers.authorization', 'req.headers.cookie', 'req.headers["x-org-id"]'],
+        // `res.headers["set-cookie"]` carries the rio_session JWT on login; the default
+        // response serializer logs response headers, so it must be removed too.
+        paths: [
+          'req.headers.authorization',
+          'req.headers.cookie',
+          'req.headers["x-org-id"]',
+          'res.headers["set-cookie"]',
+        ],
         remove: true,
       },
       autoLogging: true,

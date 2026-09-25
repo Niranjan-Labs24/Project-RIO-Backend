@@ -8,13 +8,13 @@ async function main() {
   const questions = await prisma.question.findMany({ take: 2 });
   console.log('Question Model Access: SUCCESS. Seeded questions count:', questions.length);
 
-  const suggestions = await prisma.aiSuggestion.findMany({ take: 1 });
+  await prisma.aiSuggestion.findMany({ take: 1 });
   console.log('AiSuggestion Model Access: SUCCESS.');
 
-  const decisions = await prisma.humanDecision.findMany({ take: 1 });
+  await prisma.humanDecision.findMany({ take: 1 });
   console.log('HumanDecision Model Access: SUCCESS.');
 
-  const surveys = await prisma.survey.findMany({ take: 1 });
+  await prisma.survey.findMany({ take: 1 });
   console.log('Survey Model Access: SUCCESS.');
 
   console.log('All DB model schema validations and query access tests PASSED successfully!');

@@ -1,4 +1,7 @@
+import { parseDateParam } from "../../common/validation/bounded";
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import type { Prisma } from "../../generated/prisma";
+import type { Page } from "../../common/http/query.util";
 import { PrismaService } from "../../prisma/prisma.service";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { getOrgStore, requireActor, requireOrgId } from "../../tenancy/org-context";
@@ -6,10 +9,13 @@ import { roleByKey } from "../../rbac/role-matrix";
 import { AuditService } from "../audit/audit.service";
 import { ReportsService } from "../reports/reports.service";
 import { EXPORTABLE_STATUSES } from "../reports/reports.types";
+import type { SharingStatus } from "../sharing/sharing.types";
 import type {
   CreateReportSharingRequestPayload, DecideReportSharingRequestPayload, OrgLookupResult,
   ReportLookupResult, ReportSharingRequest, ReportSharingRequestRow, SharedReportSnapshot,
 } from "./report-sharing.types";
+
+const SHARING_STATUSES: SharingStatus[] = ["pending", "approved", "rejected", "expired", "withdrawn"];
 
 // report_sharing_requests has no RLS (mirrors sharing_requests — see that
 // model's comment in schema.prisma) — a request is inherently visible to
@@ -107,7 +113,60 @@ export class ReportSharingService {
       organizationId: payload.ownerOrgId,
       changes: auditChanges,
     });
-    return this.enrichOne(row as unknown as ReportSharingRequestRow);
+    return this.enrichOne(row);
+  }
+
+  // One tab of the sharing screen, a page at a time. `view` mirrors the
+  // screen's tabs; every view is confined to the requests the caller may see
+  // (all of them for a cross-entity role, otherwise their own org's).
+  async listPage(
+    view: string | undefined,
+    status: string | undefined,
+    paging: { limit: number; offset: number },
+  ): Promise<Page<ReportSharingRequest>> {
+    const orgId = requireOrgId();
+    const visible: Prisma.ReportSharingRequestWhereInput = this.isCrossEntity()
+      ? {}
+      : { OR: [{ ownerOrgId: orgId }, { requestingOrgId: orgId }] };
+    let filter: Prisma.ReportSharingRequestWhereInput = {};
+    switch (view) {
+      case "incoming":
+        filter = { ownerOrgId: orgId, status: "pending" };
+        break;
+      case "outgoing":
+        filter = { requestingOrgId: orgId, status: "pending" };
+        break;
+      case "approved":
+        filter = { status: "approved" };
+        break;
+      case "rejected":
+        filter = { status: "rejected" };
+        break;
+      case "sharedReports":
+        filter = { status: "approved", requestingOrgId: orgId };
+        break;
+      case undefined:
+      case "allOrganizations":
+        if (status && SHARING_STATUSES.includes(status as SharingStatus)) {
+          filter = { status: status as SharingStatus };
+        }
+        break;
+      default:
+        throw new BadRequestException({
+          error: { code: "VALIDATION_ERROR", message: "view is not a recognised sharing view" },
+        });
+    }
+    const where: Prisma.ReportSharingRequestWhereInput = { AND: [visible, filter] };
+    const [rows, total] = await Promise.all([
+      this.prisma.reportSharingRequest.findMany({
+        where,
+        orderBy: [{ requestedAt: "desc" }, { id: "asc" }],
+        take: paging.limit,
+        skip: paging.offset,
+      }),
+      this.prisma.reportSharingRequest.count({ where }),
+    ]);
+    return { items: await this.enrichMany(rows), total, ...paging };
   }
 
   async list(): Promise<ReportSharingRequest[]> {
@@ -118,7 +177,7 @@ export class ReportSharingService {
           where: { OR: [{ ownerOrgId: orgId }, { requestingOrgId: orgId }] },
           orderBy: { requestedAt: "desc" },
         });
-    return this.enrichMany(rows as unknown as ReportSharingRequestRow[]);
+    return this.enrichMany(rows);
   }
 
   async getById(id: string): Promise<ReportSharingRequest> {
@@ -188,7 +247,7 @@ export class ReportSharingService {
       organizationId: row.requestingOrgId,
       changes: auditChanges,
     });
-    return this.enrichOne(row as unknown as ReportSharingRequestRow);
+    return this.enrichOne(row);
   }
 
   async getSharedSnapshot(id: string): Promise<SharedReportSnapshot> {
@@ -314,7 +373,7 @@ export class ReportSharingService {
         decidedBy,
         decidedAt: new Date(),
         decisionNote: decisionNote ?? null,
-        ...(status === "approved" ? { expiresAt: expiresAt ? new Date(expiresAt) : null } : {}),
+        ...(status === "approved" ? { expiresAt: expiresAt ? parseDateParam(expiresAt, "expiresAt") : null } : {}),
       },
     });
     const report = await this.tenant.runAsSupervisor((tx) =>
@@ -353,7 +412,7 @@ export class ReportSharingService {
       organizationId: row.requestingOrgId,
       changes: auditChanges,
     });
-    return this.enrichOne(row as unknown as ReportSharingRequestRow);
+    return this.enrichOne(row);
   }
 
   private async findVisibleOrThrow(id: string): Promise<ReportSharingRequestRow> {
@@ -366,7 +425,7 @@ export class ReportSharingService {
     if (!visible) {
       throw new NotFoundException({ error: { code: "REPORT_SHARING_REQUEST_NOT_FOUND", message: "Report sharing request not found" } });
     }
-    return row as unknown as ReportSharingRequestRow;
+    return row;
   }
 
   private async enrichOne(row: ReportSharingRequestRow): Promise<ReportSharingRequest> {

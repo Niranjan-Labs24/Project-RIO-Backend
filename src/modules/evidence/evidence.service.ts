@@ -92,7 +92,7 @@ export class EvidenceService {
               fileSize: file.sizeBytes, storageKey: file.storageKey, fileHash: file.fileHash, uploadedBy,
             },
           });
-          rows.push(row as EvidenceRow);
+          rows.push(row);
           isDuplicateByRowId.set(row.id, file.isDuplicate);
         }
         return rows;

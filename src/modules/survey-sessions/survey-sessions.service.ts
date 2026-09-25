@@ -96,7 +96,7 @@ export class SurveySessionsService {
         // learning which of the three it was.
         if (!existing || existing.submittedAt) return false;
 
-        const advances = stepRank(payload.step) > stepRank(existing.furthestStep as SurveySessionStepName);
+        const advances = stepRank(payload.step) > stepRank(existing.furthestStep);
         const verifiedSteps: SurveySessionStepName[] = ['OTP_VERIFIED', 'ANSWERING', 'REVIEW'];
         await tx.surveySession.update({
           where: { id: existing.id },
@@ -238,7 +238,7 @@ export class SurveySessionsService {
         },
       }),
     );
-    return rows.map((r) => ({ ...r, furthestStep: r.furthestStep as SurveySessionStepName }));
+    return rows.map((r) => ({ ...r, furthestStep: r.furthestStep }));
   }
 
   /** Shared with SurveyReminderService — the live classification, so the two

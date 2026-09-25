@@ -51,8 +51,3 @@ export interface ReviewDecisionPayload {
   notes?: string;
   overrideValue?: unknown;
 }
-
-export interface ScoringStubResponse {
-  status: 'pending';
-  message: string;
-}

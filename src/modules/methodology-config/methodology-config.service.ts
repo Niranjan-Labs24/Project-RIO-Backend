@@ -1,3 +1,4 @@
+import { fromJson, toJson } from '../../common/prisma/json';
 import { BadRequestException, ConflictException, Injectable } from "@nestjs/common";
 import { Prisma } from "../../generated/prisma";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -171,17 +172,17 @@ export class MethodologyConfigService {
         reviewedBy: null,
         reviewedAt: null,
         reviewNotes: null,
-        priorityThresholds: priorityThresholds as unknown as Prisma.InputJsonValue,
-        priorityFactorWeights: priorityFactorWeights as unknown as Prisma.InputJsonValue,
-        confidenceFlagSettings: confidenceFlagSettings as unknown as Prisma.InputJsonValue,
-        aiClassificationSettings: aiClassificationSettings as unknown as Prisma.InputJsonValue,
-        aiSummarySettings: aiSummarySettings as unknown as Prisma.InputJsonValue,
-        priorityFactorScales: priorityFactorScales as unknown as Prisma.InputJsonValue,
+        priorityThresholds: toJson(priorityThresholds),
+        priorityFactorWeights: toJson(priorityFactorWeights),
+        confidenceFlagSettings: toJson(confidenceFlagSettings),
+        aiClassificationSettings: toJson(aiClassificationSettings),
+        aiSummarySettings: toJson(aiSummarySettings),
+        priorityFactorScales: toJson(priorityFactorScales),
         updatedBy,
       },
     });
-    await this.recordHistory(row as unknown as MethodologyConfigRow, "edit", updatedBy);
-    return this.toConfig(row as unknown as MethodologyConfigRow);
+    await this.recordHistory(row, "edit", updatedBy);
+    return this.toConfig(row);
   }
 
   // System Reviewer only (methodologyQuestionBank:approve) — required
@@ -201,8 +202,8 @@ export class MethodologyConfigService {
       where: { id: existing.id },
       data: { status: "approved", reviewedBy, reviewedAt: new Date(), reviewNotes: notes },
     });
-    await this.recordHistory(row as unknown as MethodologyConfigRow, "approve", reviewedBy);
-    return this.toConfig(row as unknown as MethodologyConfigRow);
+    await this.recordHistory(row, "approve", reviewedBy);
+    return this.toConfig(row);
   }
 
   // Kicks the config back to draft — System Admin must revise and
@@ -220,8 +221,8 @@ export class MethodologyConfigService {
       where: { id: existing.id },
       data: { status: "draft", reviewedBy, reviewedAt: new Date(), reviewNotes: notes },
     });
-    await this.recordHistory(row as unknown as MethodologyConfigRow, "reject", reviewedBy);
-    return this.toConfig(row as unknown as MethodologyConfigRow);
+    await this.recordHistory(row, "reject", reviewedBy);
+    return this.toConfig(row);
   }
 
   async publish(): Promise<MethodologyConfig> {
@@ -239,8 +240,8 @@ export class MethodologyConfigService {
       where: { id: existing.id },
       data: { status: "published", publishedBy, publishedAt: new Date(), updatedBy: publishedBy },
     });
-    await this.recordHistory(row as unknown as MethodologyConfigRow, "publish", publishedBy);
-    return this.toConfig(row as unknown as MethodologyConfigRow);
+    await this.recordHistory(row, "publish", publishedBy);
+    return this.toConfig(row);
   }
 
   // RIO-NFR-017 (client-confirmed) — "retain full version history of every
@@ -258,9 +259,9 @@ export class MethodologyConfigService {
       version: r.version,
       status: r.status,
       changeType: r.changeType as "edit" | "approve" | "reject" | "publish",
-      priorityThresholds: r.priorityThresholds as unknown as PriorityThresholds,
-      priorityFactorWeights: r.priorityFactorWeights as unknown as PriorityFactorWeight[],
-      confidenceFlagSettings: r.confidenceFlagSettings as unknown as ConfidenceFlagSettings,
+      priorityThresholds: fromJson<PriorityThresholds>(r.priorityThresholds),
+      priorityFactorWeights: fromJson<PriorityFactorWeight[]>(r.priorityFactorWeights),
+      confidenceFlagSettings: fromJson<ConfidenceFlagSettings>(r.confidenceFlagSettings),
       // Same fallback as the live config read: history rows written before
       // this column existed carry the documented defaults, not undefined.
       aiClassificationSettings: this.readAiClassificationSettings(
@@ -284,24 +285,24 @@ export class MethodologyConfigService {
         version: row.version,
         status: row.status,
         changeType,
-        priorityFactorScales: row.priorityFactorScales as unknown as Prisma.InputJsonValue,
-        priorityThresholds: row.priorityThresholds as unknown as Prisma.InputJsonValue,
-        priorityFactorWeights: row.priorityFactorWeights as unknown as Prisma.InputJsonValue,
-        confidenceFlagSettings: row.confidenceFlagSettings as unknown as Prisma.InputJsonValue,
+        priorityFactorScales: row.priorityFactorScales as Prisma.InputJsonValue,
+        priorityThresholds: row.priorityThresholds as Prisma.InputJsonValue,
+        priorityFactorWeights: row.priorityFactorWeights as Prisma.InputJsonValue,
+        confidenceFlagSettings: row.confidenceFlagSettings as Prisma.InputJsonValue,
         // Read through the same fallback the live config uses, so a row
         // written before this column existed snapshots the documented
         // defaults rather than a null the history reader would choke on.
         aiClassificationSettings:
-          this.readAiClassificationSettings(row) as unknown as Prisma.InputJsonValue,
+          toJson(this.readAiClassificationSettings(row)),
         aiSummarySettings:
-          this.readAiSummarySettings(row) as unknown as Prisma.InputJsonValue,
+          toJson(this.readAiSummarySettings(row)),
         // RIO-FR-002. Snapshotted for the same reason as the families above:
         // RIO-NFR-017 asks for a history of EVERY configuration change, and a
         // history row that omits the only thing that changed is worse than no
         // row at all. Without this, editing a cleaning threshold produced a
         // history entry that looked identical to the one before it.
         dataCleaningSettings:
-          (row.dataCleaningSettings ?? {}) as unknown as Prisma.InputJsonValue,
+          row.dataCleaningSettings ?? {},
         changedBy,
       },
     });
@@ -550,21 +551,21 @@ export class MethodologyConfigService {
   // permanently dark just because the one row it depends on got deleted.
   private async findRowOrThrow(): Promise<MethodologyConfigRow> {
     const row = await this.prisma.methodologyConfig.findFirst();
-    if (row) return row as unknown as MethodologyConfigRow;
+    if (row) return row;
 
     const created = await this.prisma.methodologyConfig.create({
       data: {
         version: "v5.0 - Approved methodology baseline",
-        priorityThresholds: DEFAULT_PRIORITY_THRESHOLDS as unknown as Prisma.InputJsonValue,
-        priorityFactorWeights: DEFAULT_PRIORITY_FACTOR_WEIGHTS as unknown as Prisma.InputJsonValue,
-        confidenceFlagSettings: DEFAULT_CONFIDENCE_FLAG_SETTINGS as unknown as Prisma.InputJsonValue,
+        priorityThresholds: toJson(DEFAULT_PRIORITY_THRESHOLDS),
+        priorityFactorWeights: toJson(DEFAULT_PRIORITY_FACTOR_WEIGHTS),
+        confidenceFlagSettings: toJson(DEFAULT_CONFIDENCE_FLAG_SETTINGS),
         aiClassificationSettings:
-          DEFAULT_AI_CLASSIFICATION_SETTINGS as unknown as Prisma.InputJsonValue,
-        aiSummarySettings: DEFAULT_AI_SUMMARY_SETTINGS as unknown as Prisma.InputJsonValue,
-        priorityFactorScales: DEFAULT_PRIORITY_FACTOR_SCALES as unknown as Prisma.InputJsonValue,
+          toJson(DEFAULT_AI_CLASSIFICATION_SETTINGS),
+        aiSummarySettings: toJson(DEFAULT_AI_SUMMARY_SETTINGS),
+        priorityFactorScales: toJson(DEFAULT_PRIORITY_FACTOR_SCALES),
       },
     });
-    return created as unknown as MethodologyConfigRow;
+    return created;
   }
 
   // `users` is RLS-scoped per org; this global reference table has no

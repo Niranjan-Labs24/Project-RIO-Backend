@@ -1,3 +1,4 @@
+import { ROLE_KEYS } from '../../rbac/role-keys';
 import { getOrgStore } from "../../tenancy/org-context";
 
 /**
@@ -23,9 +24,9 @@ import { getOrgStore } from "../../tenancy/org-context";
 export function isCrossOrgReader(): boolean {
   const role = getOrgStore()?.role;
   return (
-    role === "system_admin" ||
-    role === "system_reviewer" ||
-    role === "center_supervisor" ||
+    role === ROLE_KEYS.systemAdmin ||
+    role === ROLE_KEYS.systemReviewer ||
+    role === ROLE_KEYS.centerSupervisor ||
     role === "ncnp_user"
   );
 }

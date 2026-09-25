@@ -7,3 +7,8 @@ dist
 coverage
 src/generated
 .superpowers
+storage
+test
+scratch
+docs
+load-test

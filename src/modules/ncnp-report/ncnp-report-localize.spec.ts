@@ -111,4 +111,13 @@ describe('splitBilingual', () => {
     });
     expect(splitBilingual('Hope (Riyadh)')).toEqual({ primary: 'Hope (Riyadh)', secondary: null });
   });
+
+  it('handles a nested bracket in the second name and long unbroken input without slowing down', () => {
+    expect(splitBilingual('مؤسسة الأمل (Hope Foundation (Makkah))')).toEqual({ primary: 'مؤسسة الأمل', secondary: 'Hope Foundation (Makkah)' });
+    const long = `${'a '.repeat(50_000)}(b`;
+    const started = Date.now();
+    expect(splitBilingual(long)).toEqual({ primary: long, secondary: null });
+    expect(splitBilingual(`${'ع '.repeat(50_000)}عربي (y)`).secondary).toBe('y');
+    expect(Date.now() - started).toBeLessThan(500);
+  });
 });

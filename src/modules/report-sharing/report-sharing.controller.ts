@@ -1,5 +1,6 @@
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
+import { parsePaging, type Page } from "../../common/http/query.util";
 import { RequirePermission } from "../../common/guards/permission.guard";
 import { TypeBoxValidationPipe } from "../../contract/validation.pipe";
 import { CreateReportSharingRequestBody, DecideReportSharingRequestBody } from "./report-sharing.contract";
@@ -25,8 +26,13 @@ export class ReportSharingController {
 
   @Get()
   @RequirePermission("archiveSharingAudit", "read")
-  list(): Promise<ReportSharingRequest[]> {
-    return this.reportSharing.list();
+  list(
+    @Query("view") view?: string,
+    @Query("status") status?: string,
+    @Query("limit") limit?: string,
+    @Query("offset") offset?: string,
+  ): Promise<Page<ReportSharingRequest>> {
+    return this.reportSharing.listPage(view, status, parsePaging(limit, offset));
   }
 
   // Declared ahead of the `:id` routes below so Nest matches these literal

@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { Logger, NotFoundException } from '@nestjs/common';
 import type { ConfigService } from '../../config/config.service';
 import type { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { orgContext } from '../../tenancy/org-context';
@@ -37,6 +37,7 @@ function makeConfig(over: Partial<{ enabled: boolean; minLevel: SystemLogLevel }
     systemLogSlowRequestMs: 3000,
     systemLogRetentionDays: 90,
     systemLogRetentionCron: '0 3 * * *',
+    get: () => undefined,
   } as unknown as ConfigService;
 }
 
@@ -111,13 +112,13 @@ describe('SystemLogsService.record', () => {
       }),
       runAsSupervisor: vi.fn(),
     } as unknown as TenantPrismaService;
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const logged = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     const service = new SystemLogsService(tenant, makeConfig());
 
     service.record({ level: 'error', category: 'database', source: 's', message: 'm' });
     await expect(service.flush()).resolves.toBeUndefined();
-    expect(warn).toHaveBeenCalled();
-    warn.mockRestore();
+    expect(logged).toHaveBeenCalledWith(expect.stringContaining('System log flush failed'));
+    logged.mockRestore();
   });
 
   it('truncates an oversized stack rather than storing it whole', async () => {

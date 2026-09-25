@@ -1,3 +1,4 @@
+import { ROLE_KEYS } from '../../rbac/role-keys';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma, UserStatus } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
@@ -415,7 +416,7 @@ export class UsersService {
     const updated = (await this.tenant.runAsOrg(organizationId, (tx) =>
       tx.user.update({
         where: { id: userId },
-        data: { status: payload.status as UserStatus, sessionVersion: { increment: 1 } },
+        data: { status: payload.status, sessionVersion: { increment: 1 } },
       }),
     )) as UserRow;
 
@@ -534,7 +535,7 @@ export class UsersService {
   // through this (or any) normal team-management flow. Without this block
   // any crossEntity caller (a System Admin) could mint additional System
   // Reviewer/System Admin accounts here, defeating "platform-seeded".
-  private static readonly PLATFORM_SEEDED_ONLY_ROLE_KEYS = new Set(['system_admin', 'system_reviewer']);
+  private static readonly PLATFORM_SEEDED_ONLY_ROLE_KEYS = new Set<string>([ROLE_KEYS.systemAdmin, ROLE_KEYS.systemReviewer]);
 
   private validateRole(roleId: string): RoleDef {
     const role = ROLE_MATRIX.find((r) => r.id === roleId);
@@ -574,15 +575,15 @@ export class UsersService {
     const data: Record<string, unknown> = {};
     if (patch.name !== undefined) data.name = patch.name;
     if (patch.roleId !== undefined) data.roleId = patch.roleId;
-    if (patch.status !== undefined) data.status = patch.status as UserStatus;
+    if (patch.status !== undefined) data.status = patch.status;
     if (patch.mobileNumber !== undefined) data.mobileNumber = patch.mobileNumber ? normalizeMobile(patch.mobileNumber) : null;
     if (patch.roleId !== undefined || patch.status !== undefined) data.sessionVersion = { increment: 1 };
     return data;
   }
 
   private diff(current: UserRow, patch: UpdateUserPayload): AuditChange[] {
-    const before = current as unknown as Record<string, unknown>;
-    const after = patch as unknown as Record<string, unknown>;
+    const before: Record<string, unknown> = { ...current };
+    const after: Record<string, unknown> = { ...patch };
     const changes: AuditChange[] = [];
     for (const f of DIFF_FIELDS) {
       if (after[f] !== undefined && before[f] !== after[f]) {

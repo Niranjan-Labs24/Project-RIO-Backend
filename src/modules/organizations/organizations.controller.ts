@@ -48,7 +48,7 @@ export class OrganizationsController {
   @Patch(':id/status')
   @RequirePermission('entityTeam', 'write')
   updateStatus(
-    @Param('id') id: string,
+    @Param('id', new UuidParamPipe()) id: string,
     @Body(new TypeBoxValidationPipe(UpdateOrganizationStatusBody)) body: UpdateOrganizationStatusPayload,
   ): Promise<OrganizationSummary> {
     return this.orgs.updateStatus(id, body);
@@ -74,7 +74,7 @@ export class OrganizationsController {
   @Get(':id/users')
   @RequirePermission('entityTeam', 'read')
   listUsersForOrg(
-    @Param('id') id: string,
+    @Param('id', new UuidParamPipe()) id: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ): Promise<OrgUser[]> {
@@ -83,14 +83,14 @@ export class OrganizationsController {
 
   @Get(':id/ngoadmins')
   @RequirePermission('entityTeam', 'read')
-  getNgoAdminsForOrg(@Param('id') id: string): Promise<OrgUser[]> {
+  getNgoAdminsForOrg(@Param('id', new UuidParamPipe()) id: string): Promise<OrgUser[]> {
     return this.users.getNgoAdminsForOrg(id);
   }
 
   @Post(':id/users')
   @RequirePermission('entityTeam', 'write')
   createUserForOrg(
-    @Param('id') id: string,
+    @Param('id', new UuidParamPipe()) id: string,
     @Body(new TypeBoxValidationPipe(InviteUserBody)) body: InviteUserPayload,
   ): Promise<InviteUserResponse> {
     return this.users.createForOrg({ ...body, organizationId: id });
@@ -99,7 +99,7 @@ export class OrganizationsController {
   @Post(':id/ngoadmins/assign')
   @RequirePermission('entityTeam', 'write')
   assignNgoAdmin(
-    @Param('id') id: string,
+    @Param('id', new UuidParamPipe()) id: string,
     @Body(new TypeBoxValidationPipe(AssignNgoAdminBody)) body: AssignNgoAdminPayload,
   ): Promise<InviteUserResponse> {
     return this.users.assignNgoAdmin(id, body);
@@ -108,8 +108,8 @@ export class OrganizationsController {
   @Patch(':id/users/:userId/role')
   @RequirePermission('entityTeam', 'write')
   updateUserRole(
-    @Param('id') id: string,
-    @Param('userId') userId: string,
+    @Param('id', new UuidParamPipe()) id: string,
+    @Param('userId', new UuidParamPipe()) userId: string,
     @Body(new TypeBoxValidationPipe(UpdateUserRoleBody)) body: UpdateUserRolePayload,
   ): Promise<OrgUser> {
     return this.users.updateUserRoleForOrg(id, userId, body);
@@ -118,8 +118,8 @@ export class OrganizationsController {
   @Patch(':id/users/:userId/status')
   @RequirePermission('entityTeam', 'write')
   updateUserStatus(
-    @Param('id') id: string,
-    @Param('userId') userId: string,
+    @Param('id', new UuidParamPipe()) id: string,
+    @Param('userId', new UuidParamPipe()) userId: string,
     @Body(new TypeBoxValidationPipe(UpdateUserStatusBody)) body: UpdateUserStatusPayload,
   ): Promise<OrgUser> {
     return this.users.updateUserStatusForOrg(id, userId, body);
@@ -128,8 +128,8 @@ export class OrganizationsController {
   @Post(':id/users/:userId/resend-invite')
   @RequirePermission('entityTeam', 'write')
   resendInvite(
-    @Param('id') id: string,
-    @Param('userId') userId: string,
+    @Param('id', new UuidParamPipe()) id: string,
+    @Param('userId', new UuidParamPipe()) userId: string,
   ): Promise<InviteUserResponse> {
     return this.users.resendInviteForOrg(id, userId);
   }

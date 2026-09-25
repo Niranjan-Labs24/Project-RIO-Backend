@@ -7,11 +7,15 @@ import {
   CreateMethodologyVersionBody, type CreateMethodologyVersionDto,
   OverridePriorityScoreBody, type OverridePriorityScoreDto,
 } from "./priority.contract";
+import { parsePaging } from "../../common/http/query.util";
 import { PriorityService } from "./priority.service";
 import { ScoreRollupService } from "./rollup.service";
 import { PriorityV2Service } from "./priority-v2.service";
 import { CenterAggregationService } from "./center-aggregation.service";
-import type { CenterComparisonEntry, KpiSeverityEntry, PriorityDashboardEntry, PriorityScore } from "./priority.types";
+import type { CenterComparisonEntry, KpiSeverityEntry, PriorityDashboardPage, PriorityScore } from "./priority.types";
+
+// The real scoring-lookup CSV is ~50 KB; 10 MB leaves ample headroom while bounding memory.
+const MAX_LOOKUP_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
 @Controller()
 export class PriorityController {
@@ -126,7 +130,7 @@ export class PriorityController {
 
   @Post("methodology-versions/:id/upload-lookups")
   @RequirePermission("methodologyQuestionBank", "create")
-  @UseInterceptors(FileInterceptor("file"))
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: MAX_LOOKUP_FILE_SIZE_BYTES } }))
   async uploadLookups(
     @Param("id", new UuidParamPipe()) versionId: string,
     @UploadedFile() file: Express.Multer.File
@@ -151,8 +155,13 @@ export class PriorityDashboardController {
   // Gap Type classification matches exactly one of the five fixed values.
   @Get()
   @RequirePermission("priorityScoring", "read")
-  list(@Query("gapType") gapType?: string): Promise<PriorityDashboardEntry[]> {
-    return this.priorityV2.listForOrg(gapType);
+  list(
+    @Query("gapType") gapType?: string,
+    @Query("level") level?: string,
+    @Query("limit") limit?: string,
+    @Query("offset") offset?: string,
+  ): Promise<PriorityDashboardPage> {
+    return this.priorityV2.listPage({ gapType, level }, parsePaging(limit, offset));
   }
 
   // RIO-FR-005 (Q9) — place comparison. studyIds is a comma-separated
