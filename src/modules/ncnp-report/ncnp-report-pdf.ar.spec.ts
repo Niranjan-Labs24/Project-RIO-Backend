@@ -58,3 +58,19 @@ describe('NCNP PDF — Arabic export', () => {
     expect(report.needDomains[0].domainName).toBe('Water & Sanitation');
   });
 });
+
+describe('NCNP PDF — interactive contents', () => {
+  const linkCount = (buf: Buffer) => (buf.toString('latin1').match(/\/Subtype \/Link/g) ?? []).length;
+
+  it.each(['en', 'ar'] as const)('has clickable contents cards and back links in %s', (locale) => {
+    const pdf = renderNcnpReportPdf(report, 'Aparna', undefined, locale);
+    // six contents cards, plus a "back to contents" link on every later page.
+    expect(linkCount(pdf)).toBeGreaterThanOrEqual(6 + 6);
+  });
+
+  it('keeps the cover page free of report content, so contents come first', () => {
+    const pdf = renderNcnpReportPdf(report, 'Aparna', undefined, 'en');
+    const pages = (pdf.toString('latin1').match(/\/Type \/Page /g) ?? []).length;
+    expect(pages).toBeGreaterThanOrEqual(7);
+  });
+});

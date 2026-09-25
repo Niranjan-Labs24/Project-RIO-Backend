@@ -305,7 +305,7 @@ function barShade(i: number, n: number): string {
 // two scripts in one line makes the bidi algorithm reorder the parentheses and
 // wrap mid-name, so each name goes on its own line instead: the primary name
 // at normal size, the other-language name below it, smaller and gray.
-function splitBilingual(label: string): { primary: string; secondary: string | null } {
+export function splitBilingual(label: string): { primary: string; secondary: string | null } {
   const m = /^(.*\S)\s+\(([^()]*(?:\([^()]*\))?[^()]*)\)$/.exec(label);
   if (!m || !/[A-Za-z]/.test(m[2]!) === !/[A-Za-z]/.test(m[1]!)) return { primary: label, secondary: null };
   return { primary: m[1]!, secondary: m[2]! };
