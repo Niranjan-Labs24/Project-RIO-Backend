@@ -99,11 +99,11 @@ describe('TranslationService.translate', () => {
       sourceLocale: 'en',
       targetLocale: 'ar',
       sourceText: 'Health',
-      translatedText: 'الصحة (cached)',
+      translatedText: 'الصحة (مخزّن)',
     };
     // Force the same cache key the service itself would compute, by seeding
     // via a first real call, then asserting the second call reuses it.
-    const first = makeService({ aiResponse: { translatedText: 'الصحة (cached)' } });
+    const first = makeService({ aiResponse: { translatedText: 'الصحة (مخزّن)' } });
     await first.service.translate('Health', 'ar');
     const seededRows = [...first.rows.values()];
     expect(seededRows).toEqual([seeded].map((r) => ({ ...r, cacheKey: seededRows[0]!.cacheKey })));
@@ -111,7 +111,7 @@ describe('TranslationService.translate', () => {
     const { service, runSpy } = makeService({ seeded: seededRows });
     const result = await service.translate('Health', 'ar');
     expect(result).toEqual({
-      translatedText: 'الصحة (cached)',
+      translatedText: 'الصحة (مخزّن)',
       sourceLocale: 'en',
       targetLocale: 'ar',
       unchanged: false,
@@ -196,5 +196,40 @@ describe('TranslationService.translate — official entity names', () => {
     const { service, runSpy } = makeService({ registry });
     expect((await service.translate('جمعية الإبداع الرياضي Admin', 'ar')).translatedText).toBe('جمعية الإبداع الرياضي مسؤول');
     expect(runSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('TranslationService.translate — quality gate before caching', () => {
+  it('shows a half-English answer but does not cache it, so the next request retries', async () => {
+    const { service, rows } = makeService({
+      aiResponse: { translatedText: 'تحتاج القرية إلى water access عاجلاً' },
+    });
+    const result = await service.translate('The village urgently needs water access', 'ar');
+    expect(result.translatedText).toBe('تحتاج القرية إلى water access عاجلاً');
+    expect(result.unchanged).toBe(false);
+    expect(rows.size).toBe(0);
+  });
+
+  it('falls back to the source when the model changed a figure, and caches nothing', async () => {
+    const { service, rows } = makeService({
+      aiResponse: { translatedText: 'درجة الشدة 34' },
+    });
+    const result = await service.translate('Severity score 33.72', 'ar');
+    expect(result).toEqual({
+      translatedText: 'Severity score 33.72',
+      sourceLocale: 'en',
+      targetLocale: 'ar',
+      unchanged: true,
+    });
+    expect(rows.size).toBe(0);
+  });
+
+  it('accepts Arabic-Indic digits as the same figures and caches the answer', async () => {
+    const { service, rows } = makeService({
+      aiResponse: { translatedText: 'درجة الشدة ٣٣٫٧٢' },
+    });
+    const result = await service.translate('Severity score 33.72', 'ar');
+    expect(result.unchanged).toBe(false);
+    expect(rows.size).toBe(1);
   });
 });

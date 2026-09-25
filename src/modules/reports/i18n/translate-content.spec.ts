@@ -219,3 +219,41 @@ describe('translateReportContent', () => {
     expect(a.seen).toEqual(b.seen);
   });
 });
+
+describe('translateReportContent — into English', () => {
+  it('translates prose generated in Arabic, and only that', async () => {
+    const { translator, seen } = fake();
+    const content = {
+      aiSummary: {
+        executiveSummary: 'الوصول إلى المياه هو الحاجة الأولى في هذه القرية.',
+        keyFindings: 'Two of four wells were non-functional.',
+        recommendations: [],
+      },
+    };
+    const out = await translateReportContent(content, 'en', translator);
+
+    expect(seen).toEqual(['الوصول إلى المياه هو الحاجة الأولى في هذه القرية.']);
+    const ai = out.content.aiSummary as Record<string, unknown>;
+    expect(ai.executiveSummary).toBe('[ar] الوصول إلى المياه هو الحاجة الأولى في هذه القرية.');
+    expect(ai.keyFindings).toBe('Two of four wells were non-functional.');
+    // The stored content is the record and is never mutated.
+    expect(content.aiSummary.executiveSummary).toBe('الوصول إلى المياه هو الحاجة الأولى في هذه القرية.');
+  });
+});
+
+describe('translateReportContent — time budget', () => {
+  it('stops starting new translations once the budget is spent and reports what it deferred', async () => {
+    const { translator, seen } = fake({ delayMs: 30 });
+    const out = await translateReportContent(CONTENT(), 'ar', translator, {
+      concurrency: 1,
+      budgetMs: 10,
+    });
+
+    expect(seen.length).toBe(1);
+    expect(out.skipped).toBeGreaterThan(0);
+    expect(out.requested + (out.skipped ?? 0)).toBeGreaterThan(1);
+    // Deferred strings keep their source text.
+    const ai = out.content.aiSummary as Record<string, unknown>;
+    expect(ai.keyFindings).toBe('Two of four wells were non-functional at the time of the visit.');
+  });
+});

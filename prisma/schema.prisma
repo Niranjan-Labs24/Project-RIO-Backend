@@ -3070,6 +3070,13 @@ model AiPrioritySummary {
   inputEvidenceSnapshotHash String                  @map("input_evidence_snapshot_hash") @db.VarChar(64)
   aiOutputJson              Json                    @map("ai_output_json")
   officerEditedOutputJson   Json?                   @map("officer_edited_output_json")
+  // The language aiOutputJson/officerEditedOutputJson are written in — the
+  // app locale of whoever generated the summary. A viewer in the other
+  // language is served `localizedOutputs[locale]`, a whole-summary
+  // translation persisted on first view and keyed to a hash of the source it
+  // was made from (see translation/summary-localization.ts).
+  outputLocale              String                  @default("en") @map("output_locale") @db.VarChar(5)
+  localizedOutputs          Json?                   @map("localized_outputs")
   generatedBy               String                  @map("generated_by") @db.Uuid
   generatedAt               DateTime                @default(now()) @map("generated_at") @db.Timestamptz(6)
   officerConfirmedBy        String?                 @map("officer_confirmed_by") @db.Uuid
@@ -3154,6 +3161,9 @@ model EvidenceDocumentSummary {
   inputTextHash           String    @map("input_text_hash") @db.VarChar(64)
   aiOutputJson            Json      @map("ai_output_json")
   officerEditedOutputJson Json?     @map("officer_edited_output_json")
+  // See AiPrioritySummary.outputLocale.
+  outputLocale            String    @default("en") @map("output_locale") @db.VarChar(5)
+  localizedOutputs        Json?     @map("localized_outputs")
   generatedBy             String    @map("generated_by") @db.Uuid
   generatedAt             DateTime  @default(now()) @map("generated_at") @db.Timestamptz(6)
   confirmedBy             String?   @map("confirmed_by") @db.Uuid
@@ -3183,6 +3193,9 @@ model CombinedReportSummary {
   inputHash               String    @map("input_hash") @db.VarChar(64)
   aiOutputJson            Json      @map("ai_output_json")
   officerEditedOutputJson Json?     @map("officer_edited_output_json")
+  // See AiPrioritySummary.outputLocale.
+  outputLocale            String    @default("en") @map("output_locale") @db.VarChar(5)
+  localizedOutputs        Json?     @map("localized_outputs")
   generatedBy             String    @map("generated_by") @db.Uuid
   generatedAt             DateTime  @default(now()) @map("generated_at") @db.Timestamptz(6)
   confirmedBy             String?   @map("confirmed_by") @db.Uuid

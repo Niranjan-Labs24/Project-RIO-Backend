@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AiService } from '../ai/ai.service';
 import { buildContentTranslationTask } from '../ai/prompts/content-translation.task';
 import type { SupportedLocale, TranslateContentResult } from './translation.types';
+import { rejectTranslation } from './translation-quality';
 
 // Arabic block (U+0600–06FF), Arabic Supplement (U+0750–077F), Arabic
 // Extended-A (U+08A0–08FF), and the Arabic presentation-forms blocks
@@ -169,6 +170,27 @@ export class TranslationService {
         }`,
       );
       return { translatedText: text, sourceLocale, targetLocale, unchanged: true };
+    }
+
+    // Checked BEFORE caching, because a cached answer is never re-examined:
+    // a half-English "translation" stored here used to be served for that
+    // string forever after.
+    //  - Figures changed → the answer is unsafe to show at all (it would
+    //    stop reconciling with the Priority Dashboard); fall back to source.
+    //  - Source-language words left → still better to show than the source,
+    //    but not cached, so the next request gets another attempt.
+    const rejection = rejectTranslation(text, translatedText, targetLocale);
+    if (rejection === 'NUMBERS_CHANGED' || rejection === 'EMPTY') {
+      this.logger.warn(
+        `Translation ${sourceLocale}->${targetLocale} rejected (${rejection}), returning source text.`,
+      );
+      return { translatedText: text, sourceLocale, targetLocale, unchanged: true };
+    }
+    if (rejection) {
+      this.logger.warn(
+        `Translation ${sourceLocale}->${targetLocale} incomplete (${rejection}); showing it without caching.`,
+      );
+      return { translatedText, sourceLocale, targetLocale, unchanged: false };
     }
 
     // `upsert`, not `create`: two concurrent requests for the same

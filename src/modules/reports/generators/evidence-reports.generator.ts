@@ -4,6 +4,8 @@ import type { ReportDataSnapshot } from "../report-summary.service";
 import { NOT_AVAILABLE_DATE, NOT_AVAILABLE_FOR_STUDY } from "../report-gap-markers";
 import { REPORT_TYPE_META } from "../reports.types";
 import type { GeneratedReport } from "./index";
+import type { SupportedLocale } from "../../translation/translation.types";
+import { cachedSummaryOutput } from "../../translation/summary-localization";
 
 // RPT16 Combined Evidence & Score · RPT17 Evidence Document-Based.
 //
@@ -41,6 +43,11 @@ export interface EvidenceReportCtx {
    *  loaded here because resolving it needs ReportSummaryService, a service
    *  dependency; the generators layer stays free of DI. */
   loadFacts: () => Promise<ReportDataSnapshot | null>;
+  /** The requester's app language. Stored summaries are taken in it when a
+   *  persisted translation exists; this runs inside a transaction, so it never
+   *  calls the AI provider — the report-level translation on view/export
+   *  covers whatever is not cached yet. */
+  targetLocale?: SupportedLocale;
 }
 
 async function buildEvidenceReport(ctx: EvidenceReportCtx): Promise<GeneratedReport> {
@@ -101,15 +108,39 @@ async function buildEvidenceReport(ctx: EvidenceReportCtx): Promise<GeneratedRep
       })
     : null;
 
+  const parseOutput = (raw: unknown): unknown => {
+    if (typeof raw === "string") {
+      try { return JSON.parse(raw); } catch { return null; }
+    }
+    return raw ?? null;
+  };
+
+  // A stored summary's output (officer edit wins), in the requester's
+  // language when a persisted translation of it exists.
+  const pickOutput = (
+    row:
+      | { officerEditedOutputJson: unknown; aiOutputJson: unknown; outputLocale: string; localizedOutputs: unknown }
+      | null
+      | undefined,
+  ): unknown => {
+    if (!row) return null;
+    const source = parseOutput(row.officerEditedOutputJson || row.aiOutputJson);
+    if (!ctx.targetLocale || !source || typeof source !== "object" || Array.isArray(source)) return source;
+    const cached = cachedSummaryOutput({
+      source: source as Record<string, unknown>,
+      sourceLocale: row.outputLocale === "ar" ? "ar" : "en",
+      targetLocale: ctx.targetLocale,
+      stored: row.localizedOutputs,
+    });
+    return cached?.output ?? source;
+  };
+
   const formattedDocs = docs.map((d) => {
     const latestSummary = d.summaries[0];
-    const rawOutput = latestSummary?.officerEditedOutputJson || latestSummary?.aiOutputJson;
-    let parsedOutput = null;
-    if (typeof rawOutput === "string") {
-      try { parsedOutput = JSON.parse(rawOutput); } catch { parsedOutput = null; }
-    } else {
-      parsedOutput = rawOutput;
-    }
+    // `undefined` (not null) for a document with no summary, exactly as
+    // before: the field is then dropped from the stored JSONB. See the
+    // "marks a document with no summary" spec for why that stays pinned.
+    const parsedOutput = latestSummary ? pickOutput(latestSummary) : undefined;
     return {
       id: d.id,
       title: d.title,
@@ -122,19 +153,8 @@ async function buildEvidenceReport(ctx: EvidenceReportCtx): Promise<GeneratedRep
     };
   });
 
-  const parseOutput = (raw: unknown): unknown => {
-    if (typeof raw === "string") {
-      try { return JSON.parse(raw); } catch { return null; }
-    }
-    return raw ?? null;
-  };
-
-  const combinedParsed = latestCombined
-    ? parseOutput(latestCombined.officerEditedOutputJson || latestCombined.aiOutputJson)
-    : null;
-  const scoreParsed = latestScore
-    ? parseOutput(latestScore.officerEditedOutputJson || latestScore.aiOutputJson)
-    : null;
+  const combinedParsed = pickOutput(latestCombined);
+  const scoreParsed = pickOutput(latestScore);
 
   const reportTitle = reportType === "RPT17"
     ? `${study.title} — Evidence Document Report`

@@ -177,7 +177,11 @@ export class DuplicateReviewService {
    * A distinct route lets the controller gate it on the role explicitly, so
    * both the policy and the permission have to fail before anything leaks.
    */
-  async listCrossEntity(query: { page?: number; pageSize?: number }): Promise<{
+  async listCrossEntity(query: {
+    status?: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<{
     items: DuplicateCandidateItem[];
     total: number;
   }> {
@@ -185,7 +189,9 @@ export class DuplicateReviewService {
     const pageSize = query.pageSize ?? DEFAULT_PAGE_SIZE;
     const where: Prisma.DuplicateCandidateWhereInput = {
       scope: "cross_org",
-      status: "pending",
+      // Pending by default — the review queue. Decided pairs stay listable so
+      // the Center/NCNP reviewer can look back at what was ruled on.
+      status: query.status ?? "pending",
       // As above: a retired need has no decision left to make.
       needA: { mergedIntoNeedId: null },
       needB: { mergedIntoNeedId: null },
@@ -351,8 +357,8 @@ export class DuplicateReviewService {
       ],
     });
 
-    // A decided cross-entity pair is no longer in listCrossEntity (which shows
-    // pending only), and the org-scoped list cannot see it at all, so there is
+    // A decided cross-entity pair is no longer in listCrossEntity's default
+    // (pending) view, and the org-scoped list cannot see it at all, so there is
     // nothing to re-read — the row we just wrote is the answer.
     const refreshed =
       targetOrgId === null
