@@ -37,11 +37,11 @@ export default defineConfig({
     fileParallelism: false,
     coverage: {
       provider: 'v8',
-      reporter: ['text-summary', 'html'],
+      reporter: ['text', 'text-summary', 'html'],
       include: ['src/**/*.ts'],
       exclude: ['src/generated/**', 'src/**/*.spec.ts'],
-      // Floors set just under the measured level (67/56/66/69) so coverage can only go up.
-      thresholds: { statements: 65, branches: 53, functions: 63, lines: 66 },
+      // Floors: at least 80% on all four, and never below what is measured today (90/80/92/91), so coverage can only go up.
+      thresholds: { statements: 90, branches: 80, functions: 91, lines: 91 },
     },
   },
   plugins: [

@@ -772,7 +772,7 @@ export class PriorityService {
         subDomain: question.subDomain,
         kpi: question.kpi,
         indicator: question.indicator,
-        averageSeverity: rollup?.severityScore !== null ? Number(rollup?.severityScore) : null,
+        averageSeverity: rollup?.severityScore != null ? Number(rollup.severityScore) : null,
         validCount: rollup?.validResponseCount || 0,
         excludedCount: rollup?.excludedResponseCount || 0,
         dontKnowCount: rollup?.dontKnowCount || 0,

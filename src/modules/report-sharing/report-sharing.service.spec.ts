@@ -732,3 +732,57 @@ describe("ReportSharingService.listPage", () => {
     ).rejects.toMatchObject({ response: { error: { code: "VALIDATION_ERROR" } } });
   });
 });
+
+describe('ReportSharingService.listPage', () => {
+  function recordingPrisma() {
+    const calls: Array<{ where: unknown; take: number; skip: number }> = [];
+    return {
+      calls,
+      reportSharingRequest: {
+        findMany: async (args: { where: unknown; take: number; skip: number }) => {
+          calls.push(args);
+          return [];
+        },
+        count: async () => 42,
+      },
+    };
+  }
+  const build = (prisma: ReturnType<typeof recordingPrisma>) =>
+    new ReportSharingService(
+      prisma as never,
+      fakeTenant([APPROVED_REPORT], ORGS) as never,
+      fakeAudit() as never,
+      fakeReportsService([APPROVED_REPORT]) as never,
+    );
+
+  it('pages in the database and reports the full total', async () => {
+    const prisma = recordingPrisma();
+    const page = await runAsOrg('org-owner', 'user-1', () =>
+      build(prisma).listPage('incoming', undefined, { limit: 10, offset: 20 }),
+    );
+    expect(page).toMatchObject({ items: [], total: 42, limit: 10, offset: 20 });
+    expect(prisma.calls[0]).toMatchObject({ take: 10, skip: 20 });
+    expect(prisma.calls[0]!.where).toEqual({
+      AND: [
+        { OR: [{ ownerOrgId: 'org-owner' }, { requestingOrgId: 'org-owner' }] },
+        { ownerOrgId: 'org-owner', status: 'pending' },
+      ],
+    });
+  });
+
+  it('does not confine a cross-entity role to its own organisation', async () => {
+    const prisma = recordingPrisma();
+    await runAsCrossEntity('org-supervisor', 'user-sup', () =>
+      build(prisma).listPage('allOrganizations', 'approved', { limit: 10, offset: 0 }),
+    );
+    expect(prisma.calls[0]!.where).toEqual({ AND: [{}, { status: 'approved' }] });
+  });
+
+  it('rejects an unknown view', async () => {
+    await expect(
+      runAsOrg('org-owner', 'user-1', () =>
+        build(recordingPrisma()).listPage('bogus', undefined, { limit: 10, offset: 0 }),
+      ),
+    ).rejects.toMatchObject({ response: { error: { code: 'VALIDATION_ERROR' } } });
+  });
+});
