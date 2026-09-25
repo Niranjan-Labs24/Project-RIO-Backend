@@ -116,6 +116,35 @@ async function main(): Promise<void> {
       demoStudyId = study.id;
       demoNeedId = need.id;
     }
+
+    // A Need must carry a Governorate and a Center, so the demo Study (which the
+    // e2e specs create Needs against) needs both — and the demo org's own area
+    // has to include them, or the scope check would reject them. Skipped when the
+    // geography import has not run.
+    if (demoStudyId) {
+      const center = await tx.center.findFirst({
+        orderBy: { name: 'asc' },
+        select: { id: true, governorateId: true },
+      });
+      if (center) {
+        await tx.organisationGovernorate.createMany({
+          data: [{ orgId: demoOrgId, governorateId: center.governorateId }],
+          skipDuplicates: true,
+        });
+        await tx.organisationCenter.createMany({
+          data: [{ orgId: demoOrgId, centerId: center.id }],
+          skipDuplicates: true,
+        });
+        await tx.studyGovernorate.createMany({
+          data: [{ studyId: demoStudyId, orgId: demoOrgId, governorateId: center.governorateId }],
+          skipDuplicates: true,
+        });
+        await tx.studyCenter.createMany({
+          data: [{ studyId: demoStudyId, orgId: demoOrgId, centerId: center.id }],
+          skipDuplicates: true,
+        });
+      }
+    }
   });
 
   // Demo Survey Links — labelled per the Public Survey module's plan
