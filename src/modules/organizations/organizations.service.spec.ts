@@ -79,7 +79,10 @@ describe('OrganizationsService', () => {
     expect(recorded).toHaveLength(1);
     const firstRecorded = recorded[0];
     expect(firstRecorded).toBeDefined();
-    expect(firstRecorded?.changes?.[0]).toMatchObject({ field: 'name', before: 'Old', after: 'New' });
+    // Client-reported: raw db field names (e.g. 'gapType') were showing
+    // verbatim in the audit before/after dialog instead of a human label —
+    // 'Name' is the fix (see auditFieldLabel), not a regression.
+    expect(firstRecorded?.changes?.[0]).toMatchObject({ field: 'Name', before: 'Old', after: 'New' });
   });
 
   it('updateCurrent records nothing when no field actually changes', async () => {

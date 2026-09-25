@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '../generated/prisma';
 import { PrismaService } from '../prisma/prisma.service';
 import { SupervisorPrismaService } from '../prisma/supervisor-prisma.service';
-import { requireOrgId } from './org-context';
+import { getOrgStore, requireOrgId } from './org-context';
 
 @Injectable()
 export class TenantPrismaService {
@@ -18,6 +18,18 @@ export class TenantPrismaService {
    */
   async runInOrgContext<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
     return this.runAsOrg(requireOrgId(), fn);
+  }
+
+  /**
+   * READ helper: platform-wide roles (system_admin, system_reviewer) and the
+   * cross-entity center_supervisor have no tenant org of their own, so a plain
+   * runInOrgContext read 404s/returns empty for records in any other org.
+   * Use only for read-only callbacks (the supervisor client is SELECT-only).
+   */
+  async runRead<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    const role = getOrgStore()?.role;
+    const crossOrg = role === 'system_admin' || role === 'system_reviewer' || role === 'center_supervisor';
+    return crossOrg ? this.runAsSupervisor(fn) : this.runInOrgContext(fn);
   }
 
   /** Explicit-org transaction (org-creation bootstrap). */

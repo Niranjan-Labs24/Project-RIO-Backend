@@ -26,6 +26,7 @@ import type { SupportedLocale } from "../translation/translation.types";
 import { loadMasterDataAliases, type MasterDataAliases } from "./i18n/master-data-names";
 import { translateReportContent } from "./i18n/translate-content";
 import { TranslationService } from "../translation/translation.service";
+import { requestLocale } from "../../common/locale/request-locale";
 import { combinedEvidenceGenerator, evidenceDocumentGenerator } from "./generators/evidence-reports.generator";
 import { ReportDataProvider } from "./providers/report-data.provider";
 import {
@@ -44,6 +45,10 @@ import {
 // annotate the audit trail with the reviewer's role (e.g. "Reviewer/Approver"
 // vs "Center Supervisor").
 const roleNameById = new Map(ROLE_MATRIX.map((r) => [r.id, r.name]));
+
+// How long the in-app report view may spend translating prose before it
+// returns with the rest still in the source language (see withViewLocale).
+const VIEW_TRANSLATION_BUDGET_MS = 8_000;
 
 // The real assessment window = the study's survey-response collection span
 // (first → last submittedAt). Formatted like "01 July 2026 - 15 July 2026";
@@ -296,7 +301,7 @@ export class ReportsService {
           organizationId: row.orgId,
         });
       }
-      return this.hydrateOne(row, true);
+      return this.withViewLocale(await this.hydrateOne(row, true));
     }
 
     const row = await this.findOrThrow(id);
@@ -304,7 +309,36 @@ export class ReportsService {
     if (!this.canSeeAllStatuses() && !EXPORTABLE_STATUSES.includes(row.status)) {
       throw new NotFoundException({ error: { code: "REPORT_NOT_FOUND", message: "Report not found" } });
     }
-    return this.hydrateOne(row);
+    return this.withViewLocale(await this.hydrateOne(row));
+  }
+
+  /**
+   * The report as the in-app viewer should show it: its free prose in the
+   * caller's app language, through the SAME declared-paths pass the export
+   * uses (i18n/translate-content.ts), so screen and PDF read identically and
+   * share one translation cache.
+   *
+   * Budgeted, unlike a download: a page load must return. Whatever is not
+   * translated in time keeps its source text for now (the viewer's own
+   * per-field fallback still covers it) and is cached by the time of the
+   * next view. The stored content itself is never modified.
+   */
+  private async withViewLocale(report: Report, locale: SupportedLocale = requestLocale()): Promise<Report> {
+    const content = report.content;
+    if (!content || typeof content !== "object" || Array.isArray(content)) return report;
+    const { content: translated, requested, failed, skipped } = await translateReportContent(
+      content as Record<string, unknown>,
+      locale,
+      this.translation,
+      { budgetMs: VIEW_TRANSLATION_BUDGET_MS },
+    );
+    if (failed > 0 || (skipped ?? 0) > 0) {
+      this.logger.warn(
+        `Report ${report.id} viewed in ${locale}: ${failed}/${requested} string(s) returned untranslated, ` +
+          `${skipped ?? 0} deferred past the ${VIEW_TRANSLATION_BUDGET_MS}ms budget.`,
+      );
+    }
+    return translated === content ? report : { ...report, content: translated };
   }
 
   // Officers/reviewers/analysts (anyone who can create/write/approve reports)
@@ -744,7 +778,7 @@ export class ReportsService {
     // the snapshot inside it.
     if (reportType === "RPT17" || reportType === "RPT16") {
       if (!studyId) throw new BadRequestException({ error: { code: "STUDY_ID_REQUIRED", message: `${reportType} requires studyId` } });
-      const evidenceCtx = { studyId, orgId: requireOrgId(), generatedBy: requireActor(), filters };
+      const evidenceCtx = { studyId, orgId: requireOrgId(), generatedBy: requireActor(), filters, targetLocale: requestLocale() };
       return this.tenant.runInOrgContext((tx) =>
         reportType === "RPT16"
           ? combinedEvidenceGenerator({ ...evidenceCtx, tx, loadFacts: () => this.loadStudyQuantitativeFacts(tx, studyId) })

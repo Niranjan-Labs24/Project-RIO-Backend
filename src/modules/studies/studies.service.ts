@@ -6,6 +6,7 @@ import { AuditService } from '../audit/audit.service';
 import type { AuditChange } from '../audit/audit.types';
 import { GeographyService } from '../geography/geography.service';
 import { StudyConfigService } from '../study-config/study-config.service';
+import { auditFieldLabel } from '../audit/audit-field-labels';
 import { calculateSampleSize, DEFAULT_MARGIN_OF_ERROR } from './sample-size';
 import type {
   CreateStudyPayload,
@@ -552,17 +553,17 @@ export class StudiesService {
     const changes: AuditChange[] = [];
     for (const f of DIFF_FIELDS) {
       if (after[f] !== undefined && JSON.stringify(before[f]) !== JSON.stringify(after[f])) {
-        changes.push({ field: f, before: before[f], after: after[f] });
+        changes.push({ field: auditFieldLabel(f), before: before[f], after: after[f] });
       }
     }
     // governorateIds/centerIds aren't real columns on `studies` (they live
     // in the join tables) so DIFF_FIELDS can't cover them generically — diff
     // the sets directly against whatever the final set will be.
     if (patch.governorateIds !== undefined && !this.sameIdSet(current.governorateIds, nextGovernorateIds)) {
-      changes.push({ field: 'governorateIds', before: current.governorateIds, after: nextGovernorateIds });
+      changes.push({ field: auditFieldLabel('governorateIds'), before: current.governorateIds, after: nextGovernorateIds });
     }
     if (patch.centerIds !== undefined && !this.sameIdSet(current.centerIds, nextCenterIds)) {
-      changes.push({ field: 'centerIds', before: current.centerIds, after: nextCenterIds });
+      changes.push({ field: auditFieldLabel('centerIds'), before: current.centerIds, after: nextCenterIds });
     }
     return changes;
   }

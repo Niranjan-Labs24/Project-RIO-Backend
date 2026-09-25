@@ -13,22 +13,37 @@ import type { CenterComparisonEntry, KpiSeverityEntry, PriorityScoreRow } from '
 const CROSS_ENTITY_COMPARISON_ROLES = new Set(['system_admin', 'system_reviewer', 'center_supervisor']);
 
 /**
- * RIO-FR-005 — comparing places against each other, and the aggregate
- * RIO-FR-008's map plots.
+ * RIO-FR-005 — comparing places against each other. NOT used by RIO-FR-008's
+ * map, which has its own, separate aggregation — client-confirmed
+ * (2026-09-24) that a village-first grouping change here must not touch
+ * that screen.
  *
- * ─── Why Center, not village ────────────────────────────────────────────────
- * `Need.village` is free text a researcher types. Nothing validates it, the
- * same place is spelled several ways, and the client confirmed (Sprint 3
- * clarifications Q2) that no authoritative village dataset exists on their
- * side or in any open source. Grouping on that string groups on a typo as
- * readily as on a place.
+ * ─── Village-first, Center, then Governorate — client-confirmed 2026-09-24 ──
+ * `Need.village` is free text a researcher types — nothing validates it, and
+ * the same place can be spelled several ways (Sprint 3 clarifications Q2).
+ * This screen used to group on Center exclusively for exactly that reason,
+ * reporting village names as labels underneath — but that produced its own,
+ * more visible bug: one real village linked across several Centers (a single
+ * Need entered against multiple Centers, or several Needs at the same
+ * village but different Centers) rendered as that many separate, seemingly
+ * duplicate cards/columns all bearing the identical village name, which a
+ * reviewer reads as an actual duplication bug, not as "N real places that
+ * happen to share a name" (see disambiguateVillageLabels' now-superseded
+ * comment on the frontend, which tried to reframe the duplicate reading by
+ * appending the Center name rather than removing the duplication itself).
  *
- * Center is the smallest unit the platform actually has authoritative data
- * for: 1,404 of them in the client's own KSA Geographic Reference, each with
- * a stable code, a parent governorate and region, and geocoded coordinates.
- * A Need is linked to its Center through NeedCenter — a real foreign key, not
- * a string. So the comparison groups on Center and reports the village names
- * underneath as labels, which is what they honestly are.
+ * The client's explicit instruction: when a Need names at least one
+ * village, group ON that village name (case/whitespace-insensitively) —
+ * every Need across every Center that names it collapses into one card.
+ * Only fall back to Center when a Need has no village at all, and to
+ * Governorate when it has neither (this last case should mostly stop
+ * occurring going forward, since Need creation now requires both — see
+ * NeedsService — but old data or a governorate with zero Centers can still
+ * reach it).
+ *
+ * This does reintroduce the original typo risk this file's Center-grouping
+ * existed to avoid — two spellings of the same place still produce two
+ * cards — but that's the accepted, explicit trade-off per this instruction.
  *
  * ─── Why the average of Priority Scores ─────────────────────────────────────
  * This used to read VillagePriorityAssessment — a second, separate score with
@@ -75,7 +90,7 @@ export class CenterAggregationService {
       ? this.tenant.runAsSupervisor.bind(this.tenant)
       : this.tenant.runInOrgContext.bind(this.tenant);
 
-    const { needs, scores, centers, thresholds } = await runner(async (tx) => {
+    const { needs, scores, centers, governorates, thresholds } = await runner(async (tx) => {
       const studies = await tx.study.findMany({
         where: { id: { in: studyIds } },
         select: { id: true },
@@ -93,7 +108,10 @@ export class CenterAggregationService {
 
       const needs = await tx.need.findMany({
         where: { studyId: { in: studyIds }, ...EXCLUDE_MERGED },
-        include: { needCenters: { select: { centerId: true } } },
+        include: {
+          needCenters: { select: { centerId: true } },
+          needGovernorates: { select: { governorateId: true } },
+        },
       });
 
       // Approved scores only: an unapproved number has not cleared the
@@ -123,6 +141,25 @@ export class CenterAggregationService {
           })
         : [];
 
+      // Governorate fallback (see this file's header comment) — only reached
+      // by a Need with no Center at all, which Need creation now blocks
+      // going forward (see NeedsService), so this covers pre-existing data
+      // and a governorate with zero Centers configured.
+      const governorateIds = [
+        ...new Set(needs.flatMap((n) => n.needGovernorates.map((g) => g.governorateId))),
+      ];
+      const governorates = governorateIds.length
+        ? await tx.governorate.findMany({
+            where: { id: { in: governorateIds } },
+            select: {
+              id: true,
+              name: true,
+              nameAr: true,
+              region: { select: { name: true, nameAr: true } },
+            },
+          })
+        : [];
+
       const config = await tx.methodologyConfig.findFirst();
       const raw = (config?.priorityThresholds ?? {}) as Partial<ScoringThresholds>;
       const thresholds: ScoringThresholds = {
@@ -132,7 +169,7 @@ export class CenterAggregationService {
         mediumSeverity: raw.mediumSeverity ?? DEFAULT_THRESHOLDS.mediumSeverity,
       };
 
-      return { needs, scores, centers, thresholds };
+      return { needs, scores, centers, governorates, thresholds };
     });
 
     const latestScoreByNeed = new Map<string, PriorityScoreRow>();
@@ -140,6 +177,14 @@ export class CenterAggregationService {
       if (!latestScoreByNeed.has(row.needId)) latestScoreByNeed.set(row.needId, row);
     }
     const centerById = new Map(centers.map((c) => [c.id, c]));
+    const governorateById = new Map(governorates.map((g) => [g.id, g]));
+
+    // Contributing Centre names per village-keyed entry — a village-keyed
+    // entry has no single Centre of its own (that's the whole point: it
+    // merges however many Centres named that same village), so its
+    // `centerName` display value is built up here across every Need that
+    // contributes to it, then joined once after the main loop.
+    const contributingCenterNames = new Map<string, Set<string>>();
 
     // Running totals per centre, and per domain within it. Kept alongside the
     // entry rather than on it so the public shape carries only averages.
@@ -168,24 +213,63 @@ export class CenterAggregationService {
       const effective = scoreRow ? (scoreRow.overrideScore ?? scoreRow.overallScore) : null;
       const domainKey = need.domain ?? '(unclassified)';
 
-      // A Need with no Center cannot be placed. Reported under a single
-      // bucket rather than dropped, so the totals still add up to the study's
-      // real need count — the same rule FR-008's map uses for unmapped needs.
-      const linked = need.needCenters.length > 0 ? need.needCenters.map((c) => c.centerId) : [UNPLACED];
+      // Village-first, then Centre, then Governorate — see this file's
+      // header comment. A Need contributes to exactly ONE kind of place per
+      // this precedence (a village-carrying Need does not ALSO get grouped
+      // by its Centres — the client's explicit instruction is that the
+      // village fully replaces the Centre split when one is given, not that
+      // both should show).
+      type PlaceKey = { key: string; kind: 'village' | 'center' | 'governorate' | 'unplaced'; label?: string };
+      const villageNames = need.village.filter((v): v is string => Boolean(v && v.trim()));
+      const linked: PlaceKey[] =
+        villageNames.length > 0
+          ? // Case/whitespace-insensitive key so "Al Kharj" and "al  kharj "
+            // collapse into one card; the FIRST original-cased spelling
+            // encountered becomes the display label.
+            [...new Map(villageNames.map((v) => [normalizeVillageKey(v), v])).entries()].map(
+              ([normalized, label]) => ({ key: `village:${normalized}`, kind: 'village', label }),
+            )
+          : need.needCenters.length > 0
+            ? need.needCenters.map((c) => ({ key: c.centerId, kind: 'center' as const }))
+            : need.needGovernorates.length > 0
+              ? need.needGovernorates.map((g) => ({ key: `governorate:${g.governorateId}`, kind: 'governorate' as const }))
+              : [{ key: UNPLACED, kind: 'unplaced' as const }];
 
-      for (const centerId of linked) {
-        let entry = byCenter.get(centerId);
+      for (const place of linked) {
+        const { key: placeKey, kind } = place;
+        let entry = byCenter.get(placeKey);
         if (!entry) {
-          const center = centerById.get(centerId);
+          const center = kind === 'center' ? centerById.get(placeKey) : undefined;
+          const governorate =
+            kind === 'governorate' ? governorateById.get(placeKey.slice('governorate:'.length)) : undefined;
           entry = {
-            centerId,
-            centerName: center?.name ?? UNPLACED_LABEL,
-            centerNameAr: center?.nameAr ?? null,
-            governorateName: center?.governorate.name ?? null,
-            governorateNameAr: center?.governorate.nameAr ?? null,
-            regionName: center?.governorate.region?.name ?? null,
-            regionNameAr: center?.governorate.region?.nameAr ?? null,
-            villages: [],
+            centerId: placeKey,
+            // Village-keyed: filled in after the main loop from
+            // contributingCenterNames, once every Need that contributes to
+            // it has been seen. Governorate-keyed: the governorate's own
+            // name stands in as the heading (villages stays empty, so the
+            // frontend's "no village" heading branch renders this).
+            centerName: kind === 'governorate' ? (governorate?.name ?? UNPLACED_LABEL) : (center?.name ?? UNPLACED_LABEL),
+            // Village-keyed: filled in the same place as `centerName` above,
+            // from contributingCenterNames. Governorate-keyed has no real
+            // Centre at all (that's why it fell back this far) — empty,
+            // same as an unplaced Need, so the frontend's Centre caption
+            // just doesn't render rather than showing the Governorate's own
+            // name twice.
+            centerNames: kind === 'center' ? [center?.name ?? UNPLACED_LABEL] : kind === 'unplaced' ? [UNPLACED_LABEL] : [],
+            centerNameAr: kind === 'governorate' ? (governorate?.nameAr ?? null) : (center?.nameAr ?? null),
+            governorateName: kind === 'governorate' ? (governorate?.name ?? null) : (center?.governorate.name ?? null),
+            governorateNameAr: kind === 'governorate' ? (governorate?.nameAr ?? null) : (center?.governorate.nameAr ?? null),
+            regionName: kind === 'governorate' ? (governorate?.region?.name ?? null) : (center?.governorate.region?.name ?? null),
+            regionNameAr: kind === 'governorate' ? (governorate?.region?.nameAr ?? null) : (center?.governorate.region?.nameAr ?? null),
+            // Set once, here, from whichever Need's contribution created
+            // this entry first — never appended to again below. A village
+            // entry's key is already normalized (case/whitespace-
+            // insensitive), so every other Need that maps to the same key
+            // necessarily spells it close enough that re-adding its own
+            // raw spelling would just be a near-duplicate label, not a
+            // second real village (see normalizeVillageKey).
+            villages: kind === 'village' && place.label ? [place.label] : [],
             studyIds: [],
             priorityScore: null,
             priorityStatus: null,
@@ -198,25 +282,50 @@ export class CenterAggregationService {
             affectedPeople: null,
             affectedHouseholds: null,
           };
-          byCenter.set(centerId, entry);
-          totals.set(centerId, { sum: 0, count: 0 });
-          domainTotals.set(centerId, new Map());
+          byCenter.set(placeKey, entry);
+          totals.set(placeKey, { sum: 0, count: 0 });
+          domainTotals.set(placeKey, new Map());
+          if (kind === 'village') contributingCenterNames.set(placeKey, new Set());
         }
 
         if (!entry.studyIds.includes(need.studyId)) entry.studyIds.push(need.studyId);
-        // Village names are labels here, not keys — see the class comment.
-        for (const v of need.village) if (v && !entry.villages.includes(v)) entry.villages.push(v);
+
+        if (kind === 'village') {
+          // This Need may ALSO carry Centre links (typically does — the
+          // village text describes a place inside one or more of them);
+          // those feed this village-entry's displayed Centre list rather
+          // than becoming their own separate entries (see precedence above).
+          const names = contributingCenterNames.get(placeKey)!;
+          for (const nc of need.needCenters) {
+            const c = centerById.get(nc.centerId);
+            if (c) {
+              names.add(c.name);
+              // Best-effort governorate/region for a village entry: the
+              // first contributing Centre's. A merged village could in
+              // theory span more than one Governorate (different Centres
+              // in different Governorates both describing "the same"
+              // village name) — rare, and not worth a multi-valued field
+              // for.
+              if (!entry.governorateName) {
+                entry.governorateName = c.governorate.name;
+                entry.governorateNameAr = c.governorate.nameAr;
+                entry.regionName = c.governorate.region?.name ?? null;
+                entry.regionNameAr = c.governorate.region?.nameAr ?? null;
+              }
+            }
+          }
+        }
 
         entry.totalNeedCount += 1;
         entry.needTypeCounts[domainKey] = (entry.needTypeCounts[domainKey] ?? 0) + 1;
 
         if (effective !== null) {
-          const t = totals.get(centerId)!;
+          const t = totals.get(placeKey)!;
           t.sum += effective;
           t.count += 1;
           entry.scoredNeedCount += 1;
 
-          const perDomain = domainTotals.get(centerId)!;
+          const perDomain = domainTotals.get(placeKey)!;
           const d = perDomain.get(domainKey) ?? { sum: 0, count: 0, criticalCount: 0, highCount: 0 };
           d.sum += effective;
           d.count += 1;
@@ -243,6 +352,17 @@ export class CenterAggregationService {
           entry.affectedHouseholds = (entry.affectedHouseholds ?? 0) + need.affectedHouseholds;
         }
       }
+    }
+
+    // Village-keyed entries only got their heading (`villages`) filled in
+    // above — their `centerName` display value (the "Centre:" caption the
+    // frontend shows underneath) is the join of every distinct Centre name
+    // that contributed to them, computed now that every Need has been seen.
+    for (const [placeKey, names] of contributingCenterNames) {
+      const entry = byCenter.get(placeKey)!;
+      const sorted = [...names].sort((a, b) => a.localeCompare(b));
+      entry.centerName = sorted.length > 0 ? sorted.join(', ') : UNPLACED_LABEL;
+      entry.centerNames = sorted;
     }
 
     for (const [centerId, entry] of byCenter) {
@@ -318,14 +438,36 @@ export class CenterAggregationService {
       : this.tenant.runInOrgContext.bind(this.tenant);
 
     return runner(async (tx) => {
-      const needs = await tx.need.findMany({
-        where: {
-          studyId: { in: studyIds },
-          domain,
-          ...EXCLUDE_MERGED,
-          needCenters: { some: { centerId } },
-        },
-      });
+      // Same village/Centre/Governorate precedence as aggregateByCenter (see
+      // this file's header comment) — a Need with a village is never also
+      // matched here under its Centre or Governorate, since it isn't
+      // credited to that entry's totals either.
+      const needs = centerId.startsWith('village:')
+        ? (
+            await tx.need.findMany({
+              where: { studyId: { in: studyIds }, domain, ...EXCLUDE_MERGED, village: { isEmpty: false } },
+            })
+          ).filter((n) => n.village.some((v) => v && `village:${normalizeVillageKey(v)}` === centerId))
+        : centerId.startsWith('governorate:')
+          ? await tx.need.findMany({
+              where: {
+                studyId: { in: studyIds },
+                domain,
+                ...EXCLUDE_MERGED,
+                village: { isEmpty: true },
+                needCenters: { none: {} },
+                needGovernorates: { some: { governorateId: centerId.slice('governorate:'.length) } },
+              },
+            })
+          : await tx.need.findMany({
+              where: {
+                studyId: { in: studyIds },
+                domain,
+                ...EXCLUDE_MERGED,
+                village: { isEmpty: true },
+                needCenters: { some: { centerId } },
+              },
+            });
       if (needs.length === 0) return [];
 
       const needIds = needs.map((n) => n.id);
@@ -416,6 +558,18 @@ export class CenterAggregationService {
   }
 }
 
-/** Sentinel key for Needs with no Center link — see the loop above. */
+/** Sentinel key for Needs with no Center/Governorate link at all — see the
+ *  loop above. */
 const UNPLACED = '(unplaced)';
 const UNPLACED_LABEL = '(no centre recorded)';
+
+/** Case/whitespace-insensitive key for grouping by village name — collapses
+ *  "Al Kharj" / "al  kharj " / "AL KHARJ" into one card. Not fuzzy beyond
+ *  that (no typo-correction): the client's explicit instruction accepts that
+ *  trade-off (see this file's header comment) rather than the previous
+ *  Centre-only grouping. Exported so kpiBreakdownForDomain can recompute the
+ *  same key against a village-keyed centerId parameter without needing the
+ *  original aggregation's in-memory state. */
+export function normalizeVillageKey(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, ' ');
+}

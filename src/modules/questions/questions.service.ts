@@ -2,6 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { requireActor } from '../../tenancy/org-context';
+import { auditFieldLabel } from '../audit/audit-field-labels';
 import { Prisma } from '../../generated/prisma';
 
 export interface UpdateQuestionInput {
@@ -10,6 +11,15 @@ export interface UpdateQuestionInput {
   subDomain?: string;
   indicator?: string | null;
   kpi?: string | null;
+  // Client-reported (2026-09-24): editing a question always showed/saved
+  // the English text even when Arabic text already existed on the row —
+  // there was no way to edit it in-app at all (the Arabic columns were
+  // populated once from the client's Question_Bank.xlsx import — see
+  // QuestionManagementItem.questionTextAr's own comment — with no update
+  // path since). These three close that gap.
+  questionTextAr?: string | null;
+  indicatorAr?: string | null;
+  kpiAr?: string | null;
 }
 
 export interface CreateQuestionInput {
@@ -347,7 +357,8 @@ export class QuestionsService {
     overrides: Partial<
       Pick<
         Prisma.QuestionUncheckedCreateInput,
-        'questionText' | 'domain' | 'subDomain' | 'indicator' | 'kpi' | 'isActive' | 'deactivatedAt' | 'deactivatedBy'
+        | 'questionText' | 'domain' | 'subDomain' | 'indicator' | 'kpi' | 'isActive' | 'deactivatedAt' | 'deactivatedBy'
+        | 'questionTextAr' | 'indicatorAr' | 'kpiAr'
       >
     >,
   ) {
@@ -413,7 +424,7 @@ export class QuestionsService {
       entityId: pending.id,
       entityLabel: current.questionText,
       changes: (Object.keys(overrides) as Array<keyof typeof overrides>).map((k) => ({
-        field: k,
+        field: auditFieldLabel(k),
         before: current[k as keyof typeof current],
         after: overrides[k],
       })),
@@ -579,17 +590,20 @@ export class QuestionsService {
     // version this approval supersedes.
     const diffFields: Array<keyof typeof updated> = [
       'questionText',
+      'questionTextAr',
       'domain',
       'subDomain',
       'indicator',
+      'indicatorAr',
       'kpi',
+      'kpiAr',
       'isActive',
     ];
     const changes = previous
       ? diffFields
           .filter((f) => previous[f] !== updated[f])
-          .map((f) => ({ field: String(f), before: previous[f], after: updated[f] }))
-      : [{ field: 'approvalStatus', before: 'pending_approval', after: 'approved' }];
+          .map((f) => ({ field: auditFieldLabel(String(f)), before: previous[f], after: updated[f] }))
+      : [{ field: auditFieldLabel('approvalStatus'), before: 'Pending Approval', after: 'Approved' }];
 
     await this.audit.record({
       action: 'approve',

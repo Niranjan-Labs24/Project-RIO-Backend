@@ -30,7 +30,7 @@ export class NeedDecisionsService {
   ) {}
 
   async listForNeed(needId: string): Promise<NeedDecision[]> {
-    const rows = await this.tenant.runInOrgContext((tx) =>
+    const rows = await this.tenant.runRead((tx) =>
       tx.needDecision.findMany({
         where: { needId },
         orderBy: { createdAt: 'desc' },
@@ -152,7 +152,7 @@ export class NeedDecisionsService {
   }
 
   private async get(id: string): Promise<NeedDecision> {
-    const row = await this.tenant.runInOrgContext((tx) =>
+    const row = await this.tenant.runRead((tx) =>
       tx.needDecision.findUniqueOrThrow({
         where: { id },
         include: { statusEvents: { orderBy: { changedAt: 'asc' } } },

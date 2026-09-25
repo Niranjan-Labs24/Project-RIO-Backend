@@ -10,6 +10,7 @@ import { NeedSummaryService } from './need-summary.service';
 import { AiService } from '../ai/ai.service';
 import { parseCsvNeeds, parseExcelNeeds, parsePdfNeeds, parseSurveyDocumentNeeds, type ParsedNeedRow } from './needs-import.parser';
 import type { BulkImportNeedsPayload, ImportNeedsResult, PdfPreviewResult } from './needs-import.types';
+import { auditFieldLabel } from '../audit/audit-field-labels';
 
 const MAX_IMPORT_ROWS = 2000;
 
@@ -324,7 +325,7 @@ export class NeedsImportService {
         entityType: 'need',
         entityId: studyId,
         entityLabel: `Bulk-imported ${imported} need(s) into "${studyTitle}"`,
-        changes: [{ field: 'imported', before: null, after: imported }],
+        changes: [{ field: auditFieldLabel('imported'), before: null, after: imported }],
       });
     }
 

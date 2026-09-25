@@ -764,10 +764,12 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
       s?.promptVersion === this.summary.promptVersionFor(scope) &&
       s?.reportDataSnapshotId === existing.snapshot.snapshotId;
     if (existing && reusable && this.hasData(existing.snapshot)) {
-      const out = existing.summary as { officerEditedOutputJson?: unknown; aiOutputJson?: unknown };
+      // The officer's edit (or the AI text) in the requester's language — the
+      // stored summary may have been generated in the other one, and this
+      // content is about to be frozen into a report.
       return {
         snapshot: existing.snapshot,
-        aiOutput: (out.officerEditedOutputJson ?? out.aiOutputJson ?? null) as Record<string, unknown> | null,
+        aiOutput: existing.localized.output,
       };
     }
 

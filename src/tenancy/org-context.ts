@@ -8,6 +8,10 @@ export interface OrgStore {
   role?: string; // role key of the authenticated caller (populated by auth/dev seam)
   ip?: string; // client IP, captured by the middleware for audit rows
   userAgent?: string; // client UA, captured by the middleware for audit rows
+  // The language the caller is viewing the app in (x-rio-locale header). AI
+  // summaries are generated in it and stored ones are returned localized to
+  // it — read through requestLocale() in common/locale/request-locale.ts.
+  locale?: 'en' | 'ar';
   // RIO-RBAC-002 — set by PermissionGuard, mutating this same store object,
   // when a request only succeeded because of a PermissionGrant rather than
   // the static role matrix (never set for a request the static matrix

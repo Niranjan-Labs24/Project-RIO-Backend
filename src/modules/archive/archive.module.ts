@@ -13,6 +13,7 @@ import { PublicDocumentReaderService } from "./public-document-reader.service";
   imports: [HistoricalStudiesModule, EvidenceModule],
   // The public controller is registered alongside the authenticated one but
   // shares nothing with it — its own service, its own response type, one GET.
+  exports: [PublicArchiveService],
   controllers: [ArchiveController, PublicArchiveController],
   providers: [ArchiveService, PublicArchiveService, PublicDocumentReaderService],
 })

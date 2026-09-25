@@ -48,6 +48,7 @@ function fakeTenant(survey: FakeSurvey | null, questionCount = 1) {
   };
   return {
     runInOrgContext: async (fn: (tx: unknown) => unknown) => fn(tx),
+    runRead: async (fn: (tx: unknown) => unknown) => fn(tx),
     runAsSupervisor: async (fn: (tx: unknown) => unknown) => fn(tx),
   };
 }
@@ -183,7 +184,7 @@ describe('SurveysService.updateQuestions — removal reasons', () => {
         createMany: async () => undefined,
       },
     };
-    const tenant = { runInOrgContext: async (fn: (tx: unknown) => unknown) => fn(tx) };
+    const tenant = { runInOrgContext: async (fn: (tx: unknown) => unknown) => fn(tx), runRead: async (fn: (tx: unknown) => unknown) => fn(tx) };
     const audit = { record: async () => undefined };
     return new SurveysService(tenant as never, audit as never, undefined as never, undefined as never);
   }
@@ -335,15 +336,14 @@ describe('SurveysService.listReusableCustomQuestions', () => {
   }
 
   function makeQuestionService(rows: FakeSurveyQuestionRow[]) {
-    const tenant = {
-      runInOrgContext: async (fn: (tx: unknown) => unknown) =>
-        fn({
-          surveyQuestion: {
-            findMany: async ({ where }: { where: Record<string, unknown> }) =>
-              rows.filter((r) => (where.domain ? r.domain === where.domain && r.subDomain === where.subDomain : true)),
-          },
-        }),
-    };
+    const run = async (fn: (tx: unknown) => unknown) =>
+      fn({
+        surveyQuestion: {
+          findMany: async ({ where }: { where: Record<string, unknown> }) =>
+            rows.filter((r) => (where.domain ? r.domain === where.domain && r.subDomain === where.subDomain : true)),
+        },
+      });
+    const tenant = { runInOrgContext: run, runRead: run };
     const audit = { record: async () => undefined };
     return new SurveysService(tenant as never, audit as never, undefined as never, undefined as never);
   }

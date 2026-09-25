@@ -64,6 +64,7 @@ function makeService(opts: {
 
   const tenant = {
     runInOrgContext: async (fn: (t: typeof tx) => unknown) => fn(tx),
+    runRead: async (fn: (t: typeof tx) => unknown) => fn(tx),
   };
   const ai = {
     run: async () => {

@@ -34,6 +34,8 @@ describe("FR-003 priority scoring (e2e)", () => {
   let adminCookies: string[];
   let adminCsrf: string;
   let studyId: string;
+  let studyGovernorateId: string;
+  let studyCenterId: string;
 
   // Reads go through the supervisor connection (SELECT-only, cross-org).
   const supervisor = new PrismaClient({
@@ -116,9 +118,17 @@ describe("FR-003 priority scoring (e2e)", () => {
     [adminCookies, adminCsrf] = await login("sysadmin@platform.local");
 
     const admin = await supervisor.user.findFirst({ where: { email: "admin@demo-ngo.org" } });
-    const study = await supervisor.study.findFirst({ where: { orgId: admin?.orgId } });
+    // A Need now requires at least one Governorate/Center (client-confirmed
+    // 2026-09-24) — pick a seeded Study that actually has both configured,
+    // rather than whichever one findFirst() would otherwise return.
+    const study = await supervisor.study.findFirst({
+      where: { orgId: admin?.orgId, studyGovernorates: { some: {} }, studyCenters: { some: {} } },
+      include: { studyGovernorates: true, studyCenters: true },
+    });
     if (!study) throw new Error("Run `pnpm prisma:seed` first (no seeded study found).");
     studyId = study.id;
+    studyGovernorateId = study.studyGovernorates[0]!.governorateId;
+    studyCenterId = study.studyCenters[0]!.centerId;
   });
 
   afterAll(async () => {
@@ -132,7 +142,7 @@ describe("FR-003 priority scoring (e2e)", () => {
       .post(`/api/studies/${studyId}/needs`)
       .set("Cookie", officerCookies)
       .set("x-csrf-token", officerCsrf)
-      .send({ title: "FR-003 health access", statement: STATEMENT, ...extra })
+      .send({ title: "FR-003 health access", statement: STATEMENT, governorateIds: [studyGovernorateId], centerIds: [studyCenterId], ...extra })
       .expect(201);
     return created.body.id as string;
   }

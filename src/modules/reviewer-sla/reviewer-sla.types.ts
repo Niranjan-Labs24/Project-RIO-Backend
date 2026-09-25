@@ -45,8 +45,30 @@ export type SlaAlertStatus = "pending" | "at_risk" | "breached";
 // alerts (not a real Study title in that case). `comments` is only ever set
 // for survey_rejected (the Approver's rejection reason) — report rejection
 // has no reason field today.
+//  - ai_classification: a Need that just finished automatic AI
+//    classification (status = ai_classified) and is awaiting the Human
+//    Reviewer's Approve/Modify/Reject — org-wide, shown to whoever holds
+//    aiReview:approve (human_reviewer), same gate AiDecisionsController's
+//    approve/reject/override-domain endpoints check. No configured SLA
+//    clock (unlike Surveys), so `status` is always "pending" — a plain
+//    "needs your attention" notification. This was a declared type with no
+//    producing query at all until RIO's notification-gap fix — see
+//    listPendingAiClassificationAlerts.
+//  - ai_classification_approved / ai_classification_rejected: a Need whose
+//    classification decision was just made (AiDecision.decidedAt set) —
+//    org-wide, shown to whoever holds aiReview:write without :approve
+//    (ngo_research_officer; also data_analyst as a minor accepted overlap,
+//    same one already documented on that role's own aiReview grant in
+//    role-matrix.ts — Needs have no per-user creator field to scope this to
+//    the one Research Officer who actually wrote it, unlike Survey.createdBy
+//    for survey_ready_to_publish/survey_rejected above). Derived from
+//    AiDecision rows (which persist the decision) rather than Need.status
+//    (which resets to pending_ai_classification on reject — the same value
+//    a never-yet-classified Need also has — so it cannot by itself
+//    distinguish "just rejected" from "brand new").
 export type SlaAlertType =
   | "ai_classification"
+  | "ai_classification_approved" | "ai_classification_rejected"
   | "survey_approval" | "survey_ready_to_publish" | "survey_rejected"
   | "report_approval" | "report_released" | "report_rejected"
   | "evidence_document_uploaded"

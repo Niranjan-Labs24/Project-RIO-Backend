@@ -8,6 +8,7 @@ import { MailerService } from '../../mailer/mailer.service';
 import { DEFAULT_TEMP_PASSWORD } from '../auth/auth.repository';
 import { AuditService } from '../audit/audit.service';
 import type { AuditChange } from '../audit/audit.types';
+import { auditFieldLabel } from '../audit/audit-field-labels';
 import type {
   AssignNgoAdminPayload, CreateForOrgPayload, InviteUserPayload, InviteUserResponse, OrgUser, UpdateUserPayload, UpdateUserRolePayload, UpdateUserStatusPayload, UserRow,
 } from './users.types';
@@ -425,7 +426,7 @@ export class UsersService {
       entityId: userId,
       entityLabel: existing.email,
       organizationId,
-      changes: [{ field: 'status', before: existing.status, after: payload.status }],
+      changes: [{ field: auditFieldLabel('status'), before: existing.status, after: payload.status }],
       metadata: payload.reason ? { reason: payload.reason } : undefined,
     });
 

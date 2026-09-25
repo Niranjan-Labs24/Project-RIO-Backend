@@ -28,7 +28,7 @@ export class EvidenceService {
       this.storage.assertFileSignature(file.originalName, file.buffer);
     }
 
-    const need = await this.tenant.runInOrgContext((tx) => tx.need.findUnique({ where: { id: needId } }));
+    const need = await this.tenant.runRead((tx) => tx.need.findUnique({ where: { id: needId } }));
     if (!need) {
       throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
     }
@@ -44,7 +44,7 @@ export class EvidenceService {
     }
     const studyId = need.studyId;
 
-    const existingCount = await this.tenant.runInOrgContext((tx) => tx.evidence.count({ where: { needId } }));
+    const existingCount = await this.tenant.runRead((tx) => tx.evidence.count({ where: { needId } }));
     if (existingCount + files.length > MAX_EVIDENCE_FILES_PER_STUDY) {
       throw new ConflictException({
         error: {
@@ -61,7 +61,7 @@ export class EvidenceService {
     // same file in one request also flag the second one.
     const existingHashes = new Set(
       (
-        await this.tenant.runInOrgContext((tx) => tx.evidence.findMany({ where: { needId }, select: { fileHash: true } }))
+        await this.tenant.runRead((tx) => tx.evidence.findMany({ where: { needId }, select: { fileHash: true } }))
       )
         .map((r) => r.fileHash)
         // Rows predating the fileHash column have no hash and can't get one
@@ -150,7 +150,7 @@ export class EvidenceService {
   }
 
   async listByNeedId(needId: string): Promise<Evidence[]> {
-    const rows = (await this.tenant.runInOrgContext((tx) =>
+    const rows = (await this.tenant.runRead((tx) =>
       tx.evidence.findMany({ where: { needId }, orderBy: { uploadedAt: 'desc' } }),
     )) as EvidenceRow[];
     const names = await this.resolveUserNames(rows.map((r) => r.uploadedBy));
@@ -165,7 +165,7 @@ export class EvidenceService {
   private async resolveUserNames(userIds: string[]): Promise<Map<string, string>> {
     const distinctIds = [...new Set(userIds)];
     if (distinctIds.length === 0) return new Map();
-    const users = await this.tenant.runInOrgContext((tx) =>
+    const users = await this.tenant.runRead((tx) =>
       tx.user.findMany({ where: { id: { in: distinctIds } }, select: { id: true, name: true } }),
     );
     return new Map(users.map((u) => [u.id, u.name]));

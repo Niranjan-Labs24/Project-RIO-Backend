@@ -1,3 +1,4 @@
+import type { SupportedLocale } from "../translation/translation.types";
 export interface ResponseSubject {
   id: string;
   answers: Record<string, unknown>;
@@ -73,14 +74,30 @@ export function assessResponseQuality(
 // TODO(RIO-AI-Summary): canned template summary pending real LLM
 // integration — see classification.placeholder.ts for the same pattern
 // applied to AI Classification.
-export function generateAiSummary(responses: ResponseSubject[]): SummaryResult {
-  if (responses.length === 0) {
-    return { summaryText: "No survey responses have been submitted for this study yet.", responseCount: 0 };
+//
+// Written in the requester's app language: this text is stored, so a
+// template that only ever produced English left Arabic users an English
+// "AI summary" that nothing downstream translated.
+export function generateAiSummary(
+  responses: ResponseSubject[],
+  locale: SupportedLocale = "en",
+): SummaryResult {
+  const n = responses.length;
+  if (n === 0) {
+    return {
+      summaryText:
+        locale === "ar"
+          ? "لم تُقدَّم أي ردود على المسح لهذه الدراسة حتى الآن."
+          : "No survey responses have been submitted for this study yet.",
+      responseCount: 0,
+    };
   }
   return {
     summaryText:
-      `Placeholder AI summary: ${responses.length} response(s) received. ` +
-      `Common themes and priority signals will be surfaced here once real AI summarization is integrated.`,
-    responseCount: responses.length,
+      locale === "ar"
+        ? `ملخص مبدئي: تم استلام ${n} رد. ستظهر هنا الموضوعات المشتركة ومؤشرات الأولوية بعد تفعيل التلخيص بالذكاء الاصطناعي.`
+        : `Placeholder AI summary: ${n} response(s) received. ` +
+          `Common themes and priority signals will be surfaced here once real AI summarization is integrated.`,
+    responseCount: n,
   };
 }

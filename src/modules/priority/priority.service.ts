@@ -15,6 +15,7 @@ import {
 import type {
   PriorityDashboardEntry, PriorityScore, PriorityScoreRow,
 } from "./priority.types";
+import { auditFieldLabel } from "../audit/audit-field-labels";
 
 @Injectable()
 export class PriorityService {
@@ -274,8 +275,8 @@ export class PriorityService {
       entityId: id,
       entityLabel: existing.needId,
       changes: [
-        { field: 'score', before: existing.overallScore, after: Math.round(overrideScore) },
-        { field: 'overrideReason', before: existing.overrideReason, after: trimmed },
+        { field: auditFieldLabel('score'), before: existing.overallScore, after: Math.round(overrideScore) },
+        { field: auditFieldLabel('overrideReason'), before: existing.overrideReason, after: trimmed },
       ],
     });
 
@@ -283,7 +284,7 @@ export class PriorityService {
   }
 
   private async findScoreOrThrow(id: string): Promise<PriorityScoreRow> {
-    const row = await this.tenant.runInOrgContext((tx) =>
+    const row = await this.tenant.runRead((tx) =>
       tx.priorityScore.findUnique({ where: { id } }),
     );
     if (!row) {
@@ -300,7 +301,7 @@ export class PriorityService {
   async getLatest(needId: string, surveyLinkId?: string): Promise<PriorityScore | null> {
     await this.findNeedOrThrow(needId);
     if (surveyLinkId) await this.findLinkOrThrow(needId, surveyLinkId);
-    const row = await this.tenant.runInOrgContext((tx) =>
+    const row = await this.tenant.runRead((tx) =>
       tx.priorityScore.findFirst({ where: { needId, surveyLinkId: surveyLinkId ?? null }, orderBy: { scoredAt: "desc" } }),
     );
     return row ? this.toScore(row as unknown as PriorityScoreRow) : null;
@@ -311,7 +312,7 @@ export class PriorityService {
     // (null if unscored or still pending reviewer approval) — an unscored
     // or not-yet-approved Need must still show up here, just without a
     // score, rather than either vanishing or leaking an unapproved number.
-    const { studies, needs, scores } = await this.tenant.runInOrgContext(async (tx) => ({
+    const { studies, needs, scores } = await this.tenant.runRead(async (tx) => ({
       studies: await tx.study.findMany(),
       needs: await tx.need.findMany({ where: EXCLUDE_MERGED, orderBy: { updatedAt: "desc" } }),
       // Consolidated only — a dashboard row must reflect all of the Need's
@@ -365,13 +366,13 @@ export class PriorityService {
 
 
   private async findNeedOrThrow(needId: string) {
-    const need = await this.tenant.runInOrgContext((tx) => tx.need.findUnique({ where: { id: needId } }));
+    const need = await this.tenant.runRead((tx) => tx.need.findUnique({ where: { id: needId } }));
     if (!need) throw new NotFoundException({ error: { code: "NEED_NOT_FOUND", message: "Need not found" } });
     return need;
   }
 
   private async findLinkOrThrow(needId: string, surveyLinkId: string): Promise<void> {
-    const link = await this.tenant.runInOrgContext((tx) => tx.publicSurveyLink.findUnique({ where: { id: surveyLinkId } }));
+    const link = await this.tenant.runRead((tx) => tx.publicSurveyLink.findUnique({ where: { id: surveyLinkId } }));
     if (!link || link.needId !== needId) {
       throw new NotFoundException({ error: { code: "SURVEY_LINK_NOT_FOUND", message: "Survey link not found" } });
     }
@@ -537,7 +538,7 @@ export class PriorityService {
 
   async getDashboard(studyId: string, surveyId: string, villageId: string | null) {
     const vId = villageId || '';
-    return this.tenant.runInOrgContext(async (tx) => {
+    return this.tenant.runRead(async (tx) => {
       // Find overall index
       const overall = await tx.scoreRollup.findFirst({
         where: { studyId, surveyId, villageId: vId, rollupLevel: 'OVERALL' }
@@ -603,7 +604,7 @@ export class PriorityService {
 
   async getKpiRanking(studyId: string, surveyId: string, villageId: string | null) {
     const vId = villageId || '';
-    return this.tenant.runInOrgContext(async (tx) => {
+    return this.tenant.runRead(async (tx) => {
       const rollups = await tx.scoreRollup.findMany({
         where: { studyId, surveyId, villageId: vId, rollupLevel: 'KPI' },
         orderBy: { severityScore: { sort: 'desc', nulls: 'last' } }
@@ -647,7 +648,7 @@ export class PriorityService {
 
   async getQuestionDetail(studyId: string, surveyId: string, questionId: string, villageId: string | null) {
     const vId = villageId || '';
-    return this.tenant.runInOrgContext(async (tx) => {
+    return this.tenant.runRead(async (tx) => {
       // Resolve the methodology version FIRST: a question's identity is
       // (methodologyVersionId, questionId) as of RIO-AI-005, so it cannot be
       // looked up without one. Same fallback as the scoring engine — the

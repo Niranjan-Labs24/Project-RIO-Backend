@@ -57,3 +57,42 @@ describe('TenantPrismaService.runAsOrg / runAsSupervisor', () => {
     expect(sup.calls).not.toContain('set_config');
   });
 });
+
+describe('TenantPrismaService.runRead', () => {
+  function twoClients() {
+    const used: string[] = [];
+    const client = (name: string) => ({
+      $transaction: (fn: (t: unknown) => Promise<unknown>) => {
+        used.push(name);
+        const tx = { $executeRaw: () => Promise.resolve(1) };
+        return fn(tx);
+      },
+    });
+    return { used, svc: new TenantPrismaService(client('app') as never, client('supervisor') as never) };
+  }
+
+  it.each(['system_admin', 'system_reviewer', 'center_supervisor'])(
+    'reads across organizations through the supervisor client for %s',
+    async (role) => {
+      const { svc, used } = twoClients();
+      await orgContext.run({ requestId: 'r', orgId: 'own-org', role }, () => svc.runRead(async () => 'ok'));
+      expect(used).toEqual(['supervisor']);
+    },
+  );
+
+  it.each(['ngo_admin', 'research_officer', 'data_analyst', undefined])(
+    'stays scoped to the caller org for %s',
+    async (role) => {
+      const { svc, used } = twoClients();
+      await orgContext.run({ requestId: 'r', orgId: 'own-org', role }, () => svc.runRead(async () => 'ok'));
+      expect(used).toEqual(['app']);
+    },
+  );
+
+  it('still requires an org context for a tenant-scoped role', async () => {
+    const { svc } = twoClients();
+    await expect(
+      orgContext.run({ requestId: 'r', role: 'ngo_admin' }, () => svc.runRead(async () => 'x')),
+    ).rejects.toBeInstanceOf(MissingOrgContextError);
+  });
+});

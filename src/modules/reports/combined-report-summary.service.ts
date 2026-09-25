@@ -9,6 +9,9 @@ import { getOrgStore, requireActor, requireOrgId } from "../../tenancy/org-conte
 import { AuditService } from "../audit/audit.service";
 import { AiService } from "../ai/ai.service";
 import { COMBINED_REPORT_SUMMARY_TASK } from "../ai/prompts/combined-report-summary.task";
+import { withOutputLanguage } from "../ai/prompts/output-language";
+import { requestLocale } from "../../common/locale/request-locale";
+import { localizeSummaryOutput } from "../translation/summary-localization";
 import { Prisma } from "../../generated/prisma";
 
 export interface CombinedReportOutputJson {
@@ -75,7 +78,7 @@ export class CombinedReportSummaryService {
     private readonly audit: AuditService,
   ) {}
 
-  async getCombinedReportContext(studyId: string) {
+  async getCombinedReportContext(studyId: string, options: { localize?: boolean } = {}) {
     // RIO-RBAC-002 — System Admin/Reviewer/Center Supervisor reach this same
     // Combined Summary tab from a cross-org Study (Studies list, Priority
     // Dashboard, ...), same as StudiesService.list() already handles. A
@@ -167,6 +170,12 @@ export class CombinedReportSummaryService {
       }));
 
     const latestCombinedSummary = study.combinedReportSummaries[0] || null;
+    // Read-only display copy in the viewer's language (the row itself stays
+    // as generated — its officerEditedOutputJson is what the review form edits).
+    const latestCombinedLocalized =
+      latestCombinedSummary && options.localize !== false
+        ? await this.localizedCombinedOutput(latestCombinedSummary, !isCrossOrgReader)
+        : null;
 
     return {
       study: {
@@ -183,7 +192,43 @@ export class CombinedReportSummaryService {
       confirmedScoreSummary,
       confirmedDocumentSummaries,
       latestCombinedSummary,
+      latestCombinedLocalized,
     };
+  }
+
+  /**
+   * A combined summary's output in the viewer's language, persisting the
+   * translation on first use. `persist` is false for a cross-org reader, who
+   * may read another organisation's summary but must never write to it.
+   */
+  private async localizedCombinedOutput(
+    summary: {
+      id: string;
+      aiOutputJson: unknown;
+      officerEditedOutputJson: unknown;
+      outputLocale: string;
+      localizedOutputs: unknown;
+    },
+    persist: boolean,
+  ) {
+    const result = await localizeSummaryOutput(this.ai, {
+      source: (summary.officerEditedOutputJson ?? summary.aiOutputJson) as Record<string, unknown> | null,
+      sourceLocale: summary.outputLocale === "ar" ? "ar" : "en",
+      targetLocale: requestLocale(),
+      stored: summary.localizedOutputs,
+    });
+    if (persist && result.toPersist) {
+      const toPersist = result.toPersist;
+      await this.tenant
+        .runInOrgContext((tx) =>
+          tx.combinedReportSummary.updateMany({
+            where: { id: summary.id, orgId: requireOrgId() },
+            data: { localizedOutputs: toPersist as Prisma.InputJsonValue },
+          }),
+        )
+        .catch(() => undefined);
+    }
+    return { locale: result.locale, status: result.status, output: result.output };
   }
 
   async generateCombinedSummary(
@@ -194,7 +239,8 @@ export class CombinedReportSummaryService {
     const orgId = requireOrgId();
     const generatedBy = requireActor();
 
-    const context = await this.getCombinedReportContext(studyId);
+    // No display localization here: generation only reads the raw inputs.
+    const context = await this.getCombinedReportContext(studyId, { localize: false });
 
     // The officer picks which score summary to combine. When no id is supplied
     // fall back to the most recent one, so existing callers keep working.
@@ -335,7 +381,13 @@ Generate JSON conforming to:
     // results, invented recommendations — then store it as a DRAFT carrying a
     // real model name. A rate-limit produced a plausible-looking report built
     // from numbers nobody measured. Failures now propagate to the officer.
-    const { response: aiOutputJson } = await this.ai.run(COMBINED_REPORT_SUMMARY_TASK, prompt);
+    // Written in the requester's language; see ReportSummaryService.generatePrioritySummary.
+    const outputLocale = requestLocale();
+    const task = {
+      ...COMBINED_REPORT_SUMMARY_TASK,
+      systemPrompt: withOutputLanguage(COMBINED_REPORT_SUMMARY_TASK.systemPrompt, outputLocale),
+    };
+    const { response: aiOutputJson } = await this.ai.run(task, prompt);
 
     const created = await this.tenant.runInOrgContext(async (tx) => {
       const summary = await tx.combinedReportSummary.create({
@@ -350,6 +402,7 @@ Generate JSON conforming to:
           modelVersion,
           inputHash,
           aiOutputJson: aiOutputJson as unknown as Prisma.InputJsonValue,
+          outputLocale,
           generatedBy,
         },
       });

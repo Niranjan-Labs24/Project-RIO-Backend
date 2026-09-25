@@ -51,6 +51,21 @@ import {
   snapshotToVillageContent,
 } from './providers/snapshot-to-content';
 import { loadSectorScopeBasis } from './providers/load-sector-scope-basis';
+import { withOutputLanguage } from '../ai/prompts/output-language';
+import { requestLocale } from '../../common/locale/request-locale';
+import type { SupportedLocale } from '../translation/translation.types';
+import {
+  localizeSummaryOutput,
+  type LocalizeSummaryResult,
+} from '../translation/summary-localization';
+import { loadMasterDataAliases } from './i18n/master-data-names';
+
+/** Every string value anywhere in `node`. */
+function collectStrings(node: unknown, out: Set<string>): void {
+  if (typeof node === 'string') out.add(node);
+  else if (Array.isArray(node)) node.forEach((n) => collectStrings(n, out));
+  else if (node && typeof node === 'object') Object.values(node).forEach((n) => collectStrings(n, out));
+}
 
 // VILLAGE/SECTOR/REGION/EXECUTIVE are the Insights-page scopes. INDIVIDUAL and
 // COMBINED are the survey-scoped report scopes (RPT01 / RPT15) — same snapshot
@@ -851,7 +866,15 @@ export class ReportSummaryService {
       );
     }
 
-    const { promptVersion, systemPrompt, responseSchema } = this.getPromptForScope(scope);
+    // Written in the language the requester is viewing the app in. The prompt
+    // VERSION stays the same for both languages — the report provider reuses a
+    // stored summary only while its promptVersion is current, and the language
+    // is recorded separately in outputLocale. The prompt TEXT differs, so
+    // promptHash still tells an Arabic run from an English one.
+    const outputLocale = requestLocale();
+    const base = this.getPromptForScope(scope);
+    const { promptVersion, responseSchema } = base;
+    const systemPrompt = withOutputLanguage(base.systemPrompt, outputLocale);
     const promptHash = createHash('sha256').update(systemPrompt).digest('hex');
 
     // Survey-scoped scopes get the extra context their prompts are written
@@ -859,9 +882,14 @@ export class ReportSummaryService {
     // comparison). Passed through by the caller rather than re-queried here, so
     // the narrative can only ever describe the same numbers the report renders.
     const extra = aiContext ? `\n\nAdditional context JSON:\n${JSON.stringify(aiContext, null, 2)}\n` : '';
+    const glossary = outputLocale === 'ar' ? await this.arabicGlossaryFor(snapshot, aiContext) : {};
+    const glossaryBlock =
+      Object.keys(glossary).length > 0
+        ? `\n\nArabic names JSON (use these exact Arabic names for the English names in the data):\n${JSON.stringify(glossary, null, 2)}\n`
+        : '';
     const promptText = `Generate the ${scope} SUMMARY narrative strictly using this ReportData JSON:
 ${JSON.stringify(snapshot, null, 2)}
-${extra}`;
+${extra}${glossaryBlock}`;
 
     // main's per-scope prompt data, wrapped as an AiTask so it goes through the
     // task-based AiService.run this branch uses (retries, timeout, schema
@@ -912,6 +940,7 @@ ${extra}`;
           inputReportDataHash: reportDataHash,
           inputEvidenceSnapshotHash: evidenceHash,
           aiOutputJson: aiOutputJson as Prisma.InputJsonValue,
+          outputLocale,
           generatedBy: actorId,
         },
       });
@@ -945,7 +974,7 @@ ${extra}`;
       typeof villageIdOrFilters === 'string' ? { villageId: villageIdOrFilters } : villageIdOrFilters;
     const villageId = filters.villageId ?? '';
 
-    return this.tenant.runInOrgContext(async (tx) => {
+    const found = await this.tenant.runInOrgContext(async (tx) => {
       const candidates = await tx.aiPrioritySummary.findMany({
         where: {
           orgId,
@@ -973,6 +1002,95 @@ ${extra}`;
         snapshot: snapshotData.snapshot,
       };
     });
+    if (!found) return null;
+
+    // Outside the transaction on purpose: a translation can take seconds,
+    // and holding a tenant transaction open across an AI call is exactly what
+    // the rest of this service avoids (see generatePrioritySummary).
+    //
+    // `summary` itself stays untouched — the review panel edits
+    // officerEditedOutputJson in the language it was written in, and a
+    // translated-but-unreviewed sentence must never be saved as the officer's
+    // edit. `localized` is for read-only display and for building reports.
+    const localized = await this.localizedOutput(found.summary);
+    return { ...found, localized };
+  }
+
+  /**
+   * A stored priority summary's output (officer edit wins) in `locale`,
+   * translating and persisting the translation the first time the other
+   * language asks for it. Never throws — see localizeSummaryOutput.
+   */
+  async localizedOutput(
+    summary: {
+      id: string;
+      aiOutputJson: unknown;
+      officerEditedOutputJson: unknown;
+      outputLocale: string;
+      localizedOutputs: unknown;
+    },
+    locale: SupportedLocale = requestLocale(),
+  ): Promise<LocalizeSummaryResult> {
+    const result = await localizeSummaryOutput(this.aiService, {
+      source: (summary.officerEditedOutputJson ?? summary.aiOutputJson) as Record<string, unknown> | null,
+      sourceLocale: summary.outputLocale === 'ar' ? 'ar' : 'en',
+      targetLocale: locale,
+      stored: summary.localizedOutputs,
+    });
+    if (result.toPersist) {
+      const toPersist = result.toPersist;
+      // Best-effort: failing to cache must not fail the read that asked for
+      // it — the next request simply translates again.
+      await this.tenant
+        .runInOrgContext((tx) =>
+          tx.aiPrioritySummary.updateMany({
+            where: { id: summary.id, orgId: requireOrgId() },
+            data: { localizedOutputs: toPersist as Prisma.InputJsonValue },
+          }),
+        )
+        .catch((err: unknown) =>
+          this.logger.warn(
+            `Could not persist the ${locale} translation of summary ${summary.id}: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          ),
+        );
+    }
+    return result;
+  }
+
+  /**
+   * English → Arabic master-data names that actually occur in the data the
+   * model is about to narrate, so an Arabic narrative uses the official
+   * Arabic names (the ones the screen shows) instead of the model's own
+   * transliteration. Kept OUT of the snapshot: the snapshot's content hash
+   * is its identity, and adding fields to it would mark every stored summary
+   * stale.
+   */
+  private async arabicGlossaryFor(
+    snapshot: ReportDataSnapshot,
+    aiContext?: Record<string, unknown>,
+  ): Promise<Record<string, string>> {
+    try {
+      const aliases = await this.tenant.runInOrgContext((tx) =>
+        loadMasterDataAliases(tx as never, 'ar'),
+      );
+      const strings = new Set<string>();
+      collectStrings(snapshot, strings);
+      if (aiContext) collectStrings(aiContext, strings);
+      const glossary: Record<string, string> = {};
+      for (const s of strings) {
+        const ar = aliases.get(s.trim().toLowerCase());
+        if (ar) glossary[s] = ar;
+      }
+      return glossary;
+    } catch (err) {
+      // A missing glossary only costs name consistency, never the summary.
+      this.logger.warn(
+        `Arabic name glossary unavailable: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return {};
+    }
   }
 
   /**
@@ -1107,7 +1225,9 @@ ${extra}`;
 
     // Rebuild the real snapshot; reuse the confirmed AI output (officer edits win).
     const { snapshot } = await this.buildReportDataSnapshot(summary.studyId, summary.surveyId, scope, scopeFilters);
-    const aiOutput = (summary.officerEditedOutputJson ?? summary.aiOutputJson) as Record<string, unknown> | null;
+    // In the saver's language: the report's content is frozen at this point,
+    // and the confirmed summary may have been written in the other one.
+    const aiOutput = (await this.localizedOutput(summary)).output;
     // Gender/rural breakdown is real respondent data, independent of which
     // scope this report is — computing it only for VILLAGE and hard-coding
     // null everywhere else meant Sector/Region/Executive reports always

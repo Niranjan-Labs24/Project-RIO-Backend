@@ -56,13 +56,16 @@ function withGeo(row: NeedRow) {
 }
 
 function fakeTenant(opts: {
-  study?: { id: string } | null;
+  study?:
+    | { id: string; studyGovernorates?: { governorateId: string }[]; studyCenters?: { centerId: string }[] }
+    | null;
   need?: NeedRow | null;
   needs?: NeedRow[];
   users?: { id: string; name: string }[];
   onNeedCreate?: (data: Record<string, unknown>) => void;
   onNeedUpdate?: (data: Record<string, unknown>) => void;
   onNeedDelete?: (where: unknown) => void;
+  centerCount?: number;
   // RIO-AI-001: the latest need_classification AiDecision per Need, backing
   // resolveAiConfidence. Defaults to none, i.e. "no classification has run",
   // which is what most of these fixtures represent.
@@ -99,6 +102,13 @@ function fakeTenant(opts: {
       deleteMany: async () => {},
       createMany: async () => {},
     },
+    // Defaults to 0 ("this Governorate has no Centers configured") so
+    // existing fixtures that don't care about geography validation at all
+    // keep passing under the mandatory-Governorate/Center rule without also
+    // having to supply a Center — see assertGovernorateAndCenterRequired.
+    center: {
+      count: async () => opts.centerCount ?? 0,
+    },
     user: {
       findMany: async () => opts.users ?? [],
     },
@@ -106,7 +116,7 @@ function fakeTenant(opts: {
       findMany: async () => opts.aiDecisions ?? [],
     },
   };
-  return { runInOrgContext: async (fn: (tx: unknown) => unknown) => fn(tx) };
+  return { runInOrgContext: async (fn: (tx: unknown) => unknown) => fn(tx), runRead: async (fn: (tx: unknown) => unknown) => fn(tx) };
 }
 
 function fakeAiDecisions(onClassify?: (needId: string) => void) {
@@ -150,10 +160,14 @@ function makeService(
   // spec. The stub only has to resolve — these tests assert on the Need write,
   // and cleaning must never be able to change it.
   const dataCleaning = { cleanNeed: async () => undefined };
+  // Stubbed to always pass — GeographyService.validateHierarchy's own
+  // existence/hierarchy checks are covered by that service's own spec; these
+  // tests only care that NeedsService calls it and otherwise proceeds.
+  const geography = { validateHierarchy: async () => {} };
   return new NeedsService(
     tenant as never,
     audit as never,
-    {} as never,
+    geography as never,
     aiDecisions as never,
     studyConfig as never,
     methodologyConfig as never,
@@ -170,14 +184,14 @@ describe('NeedsService', () => {
     it('404s when the study does not exist', async () => {
       const svc = makeService(fakeTenant({ study: null }));
       await expect(
-        orgContext.run(ctx, () => svc.create('study-1', { title: 'T', statement: 'S', village: ['V'] })),
+        orgContext.run(ctx, () => svc.create('study-1', { title: 'T', statement: 'S', village: ['V'], governorateIds: ['g1'] })),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('allows a second Need under the same Study (no more one-per-study conflict)', async () => {
-      const svc = makeService(fakeTenant({ study: { id: 'study-1' } }));
+      const svc = makeService(fakeTenant({ study: { id: 'study-1', studyGovernorates: [{ governorateId: 'g1' }], studyCenters: [] } }));
       const need = await orgContext.run(ctx, () =>
-        svc.create('study-1', { title: 'Second need', statement: 'S', village: ['V'] }),
+        svc.create('study-1', { title: 'Second need', statement: 'S', village: ['V'], governorateIds: ['g1'] }),
       );
       expect(need.title).toBe('Second need');
     });
@@ -187,7 +201,7 @@ describe('NeedsService', () => {
       const recorded: unknown[] = [];
       const audit = { record: async (i: unknown) => { recorded.push(i); } };
       const svc = makeService(
-        fakeTenant({ study: { id: 'study-1' }, onNeedCreate: (d) => { createdData = d; }, users: [{ id: 'me', name: 'Me' }] }),
+        fakeTenant({ study: { id: 'study-1', studyGovernorates: [{ governorateId: 'g1' }], studyCenters: [] }, onNeedCreate: (d) => { createdData = d; }, users: [{ id: 'me', name: 'Me' }] }),
         audit,
       );
 
@@ -196,6 +210,7 @@ describe('NeedsService', () => {
           title: 'Irregular water supply',
           statement: 'Households...',
           village: ['Kadapa', 'Thimmapuram'],
+          governorateIds: ['g1'],
         }),
       );
 
@@ -211,12 +226,12 @@ describe('NeedsService', () => {
     it('kicks off automatic AI classification for the new Need (fire-and-forget)', async () => {
       const classified: string[] = [];
       const svc = makeService(
-        fakeTenant({ study: { id: 'study-1' } }),
+        fakeTenant({ study: { id: 'study-1', studyGovernorates: [{ governorateId: 'g1' }], studyCenters: [] } }),
         { record: async () => {} },
         fakeAiDecisions((id) => classified.push(id)),
       );
       const need = await orgContext.run(ctx, () =>
-        svc.create('study-1', { title: 'T', statement: 'S', village: ['V'] }),
+        svc.create('study-1', { title: 'T', statement: 'S', village: ['V'], governorateIds: ['g1'] }),
       );
       expect(classified).toEqual([need.id]);
     });
@@ -227,9 +242,9 @@ describe('NeedsService', () => {
     // Top-Priority column empty with no way to tell why.
     it('stores the affected-population estimate when the form supplies one', async () => {
       let createdData: Record<string, unknown> | undefined;
-      const svc = makeService(fakeTenant({ study: { id: 'study-1' }, onNeedCreate: (d) => { createdData = d; } }));
+      const svc = makeService(fakeTenant({ study: { id: 'study-1', studyGovernorates: [{ governorateId: 'g1' }], studyCenters: [] }, onNeedCreate: (d) => { createdData = d; } }));
       const need = await orgContext.run(ctx, () =>
-        svc.create('study-1', { title: 'T', statement: 'S', village: ['V'], affectedPopulation: 450 }),
+        svc.create('study-1', { title: 'T', statement: 'S', village: ['V'], affectedPopulation: 450, governorateIds: ['g1'] }),
       );
       expect(createdData?.affectedPopulation).toBe(450);
       expect(need.affectedPopulation).toBe(450);
@@ -240,9 +255,9 @@ describe('NeedsService', () => {
     // affects nobody.
     it('leaves the affected population null when the question was not answered', async () => {
       let createdData: Record<string, unknown> | undefined;
-      const svc = makeService(fakeTenant({ study: { id: 'study-1' }, onNeedCreate: (d) => { createdData = d; } }));
+      const svc = makeService(fakeTenant({ study: { id: 'study-1', studyGovernorates: [{ governorateId: 'g1' }], studyCenters: [] }, onNeedCreate: (d) => { createdData = d; } }));
       const need = await orgContext.run(ctx, () =>
-        svc.create('study-1', { title: 'T', statement: 'S', village: ['V'] }),
+        svc.create('study-1', { title: 'T', statement: 'S', village: ['V'], governorateIds: ['g1'] }),
       );
       expect(createdData?.affectedPopulation).toBeNull();
       expect(need.affectedPopulation).toBeNull();
@@ -250,11 +265,55 @@ describe('NeedsService', () => {
 
     it('stores referenceId when provided', async () => {
       let createdData: Record<string, unknown> | undefined;
-      const svc = makeService(fakeTenant({ study: { id: 'study-1' }, onNeedCreate: (d) => { createdData = d; } }));
+      const svc = makeService(fakeTenant({ study: { id: 'study-1', studyGovernorates: [{ governorateId: 'g1' }], studyCenters: [] }, onNeedCreate: (d) => { createdData = d; } }));
       await orgContext.run(ctx, () =>
-        svc.create('study-1', { title: 'T', statement: 'S', village: ['V'], referenceId: 'FIELD-42' }),
+        svc.create('study-1', { title: 'T', statement: 'S', village: ['V'], referenceId: 'FIELD-42', governorateIds: ['g1'] }),
       );
       expect(createdData?.referenceId).toBe('FIELD-42');
+    });
+  });
+
+  // Client-confirmed (2026-09-24): a Need must name a Governorate and a
+  // Center — Center excused only when its Governorate genuinely has zero
+  // Centers configured.
+  describe('create — Governorate/Center now mandatory', () => {
+    it('rejects a Need with no Governorate at all', async () => {
+      const svc = makeService(fakeTenant({ study: { id: 'study-1', studyGovernorates: [], studyCenters: [] } }));
+      await expect(
+        orgContext.run(ctx, () => svc.create('study-1', { title: 'T', statement: 'S' })),
+      ).rejects.toMatchObject({ response: { error: { code: 'NEED_GOVERNORATE_REQUIRED' } } });
+    });
+
+    it('rejects a Need with a Governorate but no Center when that Governorate has Centers available', async () => {
+      const svc = makeService(
+        fakeTenant({
+          study: { id: 'study-1', studyGovernorates: [{ governorateId: 'g1' }], studyCenters: [] },
+          centerCount: 3,
+        }),
+      );
+      await expect(
+        orgContext.run(ctx, () => svc.create('study-1', { title: 'T', statement: 'S', governorateIds: ['g1'] })),
+      ).rejects.toMatchObject({ response: { error: { code: 'NEED_CENTER_REQUIRED' } } });
+    });
+
+    it('allows a Need with a Governorate and no Center when that Governorate has zero Centers configured', async () => {
+      const svc = makeService(
+        fakeTenant({
+          study: { id: 'study-1', studyGovernorates: [{ governorateId: 'g1' }], studyCenters: [] },
+          centerCount: 0,
+        }),
+      );
+      const need = await orgContext.run(ctx, () =>
+        svc.create('study-1', { title: 'T', statement: 'S', governorateIds: ['g1'] }),
+      );
+      expect(need.title).toBe('T');
+    });
+
+    it('a Study-level fallback (no explicit governorateIds on the Need) still has to resolve to at least one Governorate', async () => {
+      const svc = makeService(fakeTenant({ study: { id: 'study-1', studyGovernorates: [], studyCenters: [] } }));
+      await expect(
+        orgContext.run(ctx, () => svc.create('study-1', { title: 'T', statement: 'S' })),
+      ).rejects.toMatchObject({ response: { error: { code: 'NEED_GOVERNORATE_REQUIRED' } } });
     });
   });
 

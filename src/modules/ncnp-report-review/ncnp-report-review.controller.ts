@@ -59,6 +59,7 @@ export class NcnpReportReviewController {
   async export(
     @Param('id', new UuidParamPipe()) id: string,
     @Query('format') format: string | undefined,
+    @Query('locale') locale: string | undefined,
     @Res() res: Response,
   ): Promise<void> {
     if (format !== 'pdf' && format !== 'excel') {
@@ -66,7 +67,7 @@ export class NcnpReportReviewController {
         error: { code: 'EXPORT_FORMAT_NOT_SUPPORTED', message: 'format must be "pdf" or "excel".' },
       });
     }
-    const file = await this.service.exportReport(id, format);
+    const file = await this.service.exportReport(id, format, locale === 'ar' ? 'ar' : 'en');
     res.set({
       'Content-Type': file.contentType,
       'Content-Disposition': `attachment; filename="${file.filename}"`,

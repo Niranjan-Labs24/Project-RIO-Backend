@@ -30,6 +30,8 @@ describe("Need -> AI classification unclear -> allDomainsSelected (e2e)", () => 
   let officerCookies: string[];
   let officerCsrf: string;
   let studyId: string;
+  let studyGovernorateId: string;
+  let studyCenterId: string;
   const supervisor = new PrismaClient({
     adapter: new PrismaPg({ connectionString: process.env.SUPERVISOR_DATABASE_URL, ssl: pgSslFromEnv() }),
   });
@@ -74,9 +76,17 @@ describe("Need -> AI classification unclear -> allDomainsSelected (e2e)", () => 
     officerCsrf = csrfFrom(officerCookies);
 
     const admin = await supervisor.user.findFirst({ where: { email: "admin@demo-ngo.org" } });
-    const study = await supervisor.study.findFirst({ where: { orgId: admin?.orgId } });
+    // A Need now requires at least one Governorate/Center (client-confirmed
+    // 2026-09-24) — pick a seeded Study that actually has both configured,
+    // rather than whichever one findFirst() would otherwise return.
+    const study = await supervisor.study.findFirst({
+      where: { orgId: admin?.orgId, studyGovernorates: { some: {} }, studyCenters: { some: {} } },
+      include: { studyGovernorates: true, studyCenters: true },
+    });
     if (!study) throw new Error("Run `pnpm prisma:seed` first (no seeded study found).");
     studyId = study.id;
+    studyGovernorateId = study.studyGovernorates[0]!.governorateId;
+    studyCenterId = study.studyCenters[0]!.centerId;
   });
 
   afterAll(async () => {
@@ -93,7 +103,7 @@ describe("Need -> AI classification unclear -> allDomainsSelected (e2e)", () => 
       .post(`/api/studies/${studyId}/needs`)
       .set("Cookie", officerCookies)
       .set("x-csrf-token", officerCsrf)
-      .send({ statement: "Multi-domain workflow e2e test — AI declines to classify." })
+      .send({ statement: "Multi-domain workflow e2e test — AI declines to classify.", governorateIds: [studyGovernorateId], centerIds: [studyCenterId] })
       .expect(201);
     const needId = created.body.id as string;
 
@@ -184,6 +194,8 @@ describe("Need -> AI service failure -> ai_classification_failed + Retry (e2e)",
   let officerCookies: string[];
   let officerCsrf: string;
   let studyId: string;
+  let studyGovernorateId: string;
+  let studyCenterId: string;
   const supervisor = new PrismaClient({
     adapter: new PrismaPg({ connectionString: process.env.SUPERVISOR_DATABASE_URL, ssl: pgSslFromEnv() }),
   });
@@ -225,9 +237,17 @@ describe("Need -> AI service failure -> ai_classification_failed + Retry (e2e)",
     officerCsrf = csrfFrom(officerCookies);
 
     const admin = await supervisor.user.findFirst({ where: { email: "admin@demo-ngo.org" } });
-    const study = await supervisor.study.findFirst({ where: { orgId: admin?.orgId } });
+    // A Need now requires at least one Governorate/Center (client-confirmed
+    // 2026-09-24) — pick a seeded Study that actually has both configured,
+    // rather than whichever one findFirst() would otherwise return.
+    const study = await supervisor.study.findFirst({
+      where: { orgId: admin?.orgId, studyGovernorates: { some: {} }, studyCenters: { some: {} } },
+      include: { studyGovernorates: true, studyCenters: true },
+    });
     if (!study) throw new Error("Run `pnpm prisma:seed` first (no seeded study found).");
     studyId = study.id;
+    studyGovernorateId = study.studyGovernorates[0]!.governorateId;
+    studyCenterId = study.studyCenters[0]!.centerId;
   });
 
   afterAll(async () => {
@@ -242,7 +262,7 @@ describe("Need -> AI service failure -> ai_classification_failed + Retry (e2e)",
       .post(`/api/studies/${studyId}/needs`)
       .set("Cookie", officerCookies)
       .set("x-csrf-token", officerCsrf)
-      .send({ statement: "Multi-domain workflow e2e test — AI service outage." })
+      .send({ statement: "Multi-domain workflow e2e test — AI service outage.", governorateIds: [studyGovernorateId], centerIds: [studyCenterId] })
       .expect(201);
     const needId = created.body.id as string;
 

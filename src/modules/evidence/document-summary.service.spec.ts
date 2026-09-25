@@ -30,6 +30,7 @@ describe("DocumentSummaryService", () => {
   beforeEach(() => {
     mockTenant = {
       runInOrgContext: vi.fn((fn) => fn(mockTenant)),
+      runRead: vi.fn((fn) => fn(mockTenant)),
       evidenceDocument: { findFirst: vi.fn().mockResolvedValue(parsedDoc) },
       evidenceDocumentSummary: {
         create: vi.fn().mockResolvedValue({ id: "sum-1" }),
