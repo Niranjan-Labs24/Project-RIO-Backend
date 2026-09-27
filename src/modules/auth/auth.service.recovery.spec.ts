@@ -150,6 +150,7 @@ describe('AuthService.resetPassword', () => {
   it('sets the new password, bumps the session version, consumes the token and audits', async () => {
     const { svc, tx, audit } = setup();
     tx.passwordResetToken.findUnique.mockResolvedValue(tokenRow());
+    tx.passwordResetToken.updateMany.mockResolvedValue({ count: 1 });
     await expect(svc.resetPassword({ token, password: 'New-Passw0rd!' })).resolves.toEqual({
       message: 'Password reset.',
     });
@@ -159,7 +160,7 @@ describe('AuthService.resetPassword', () => {
     const data = tx.user.update.mock.calls[0]![0].data;
     expect(data).toMatchObject({ mustChangePassword: false, sessionVersion: { increment: 1 } });
     expect(await passwords.verify(data.passwordHash, 'New-Passw0rd!')).toBe(true);
-    expect(tx.passwordResetToken.update).toHaveBeenCalled();
+    expect(tx.passwordResetToken.updateMany.mock.calls[0]![0].where).toMatchObject({ id: 't1', consumedAt: null });
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ entityType: 'user', organizationId: 'o1' }),
     );
@@ -177,6 +178,20 @@ describe('AuthService.resetPassword', () => {
         response: { error: { code: 'INVALID_RESET_TOKEN' } },
       });
     }
+    expect(tx.user.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('AuthService.resetPassword concurrent use', () => {
+  it('rejects the request that loses the race for the link and changes nothing', async () => {
+    const { svc, tx } = setup();
+    tx.passwordResetToken.findUnique.mockResolvedValue({
+      id: 't1', orgId: 'o1', userId: 'u1', consumedAt: null, expiresAt: new Date(Date.now() + 60_000),
+    });
+    tx.passwordResetToken.updateMany.mockResolvedValue({ count: 0 });
+    await expect(svc.resetPassword({ token: 'raw-token', password: 'New-Passw0rd!' })).rejects.toMatchObject({
+      response: { error: { code: 'INVALID_RESET_TOKEN' } },
+    });
     expect(tx.user.update).not.toHaveBeenCalled();
   });
 });

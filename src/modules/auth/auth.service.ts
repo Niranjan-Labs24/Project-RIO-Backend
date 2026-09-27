@@ -590,13 +590,25 @@ export class AuthService {
 
     const passwordHash = await this.passwords.hash(dto.password);
     const updated = await this.tenant.runAsOrg(row.orgId, async (tx) => {
+      // Claim the link first, in the same transaction as the password change,
+      // and only if it is still unused and unexpired. Two requests holding the
+      // same link can both pass the read above; the database lets exactly one of
+      // them claim it, and the other is rejected (rolling its transaction back).
+      const claimed = await tx.passwordResetToken.updateMany({
+        where: { id: row.id, consumedAt: null, expiresAt: { gt: new Date() } },
+        data: { consumedAt: new Date() },
+      });
+      if (claimed.count !== 1) {
+        throw new BadRequestException({
+          error: { code: 'INVALID_RESET_TOKEN', message: 'This reset link is invalid or has expired.' },
+        });
+      }
       const user = await tx.user.update({
         where: { id: row.userId },
         // sessionVersion increments so any session signed in under the old
         // password is invalidated, same as changePassword().
         data: { passwordHash, mustChangePassword: false, sessionVersion: { increment: 1 } },
       });
-      await tx.passwordResetToken.update({ where: { id: row.id }, data: { consumedAt: new Date() } });
       return user;
     });
     await this.audit.record({

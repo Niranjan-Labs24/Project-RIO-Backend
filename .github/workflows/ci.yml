@@ -95,5 +95,6 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm build
-      - run: pnpm test
+      # Runs the whole suite and fails if coverage drops below the minimums in vitest.config.ts.
+      - run: pnpm test:coverage
       - run: pnpm audit --prod --audit-level high

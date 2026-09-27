@@ -2,7 +2,7 @@ import { Writable } from 'node:stream';
 import pino from 'pino';
 import { describe, expect, it } from 'vitest';
 import { orgContext } from '../../tenancy/org-context';
-import { buildLoggerConfig } from './logger.config';
+import { buildLoggerConfig, redactUrl } from './logger.config';
 
 /**
  * RIO-NFR-016 — operational logs have to be queryable, which in practice
@@ -118,5 +118,28 @@ describe('buildLoggerConfig redaction', () => {
     const line = logLine({ req: { headers: { authorization: 'Bearer SECRET-TOKEN', cookie: 'rio_session=SECRET-COOKIE' } } });
     expect(line).not.toContain('SECRET-TOKEN');
     expect(line).not.toContain('SECRET-COOKIE');
+  });
+});
+
+describe('redactUrl', () => {
+  it('hides the public survey token but keeps the route', () => {
+    expect(redactUrl('/api/public/surveys/abc123/otp/request')).toBe('/api/public/surveys/[redacted]/otp/request');
+    expect(redactUrl('/api/public/surveys/abc123')).toBe('/api/public/surveys/[redacted]');
+    expect(redactUrl('/api/public/surveys/abc123?x=1')).toBe('/api/public/surveys/[redacted]?x=1');
+  });
+
+  it('masks a token query value and leaves other URLs and non-strings alone', () => {
+    expect(redactUrl('/api/x?a=1&token=secret&b=2')).toBe('/api/x?a=1&token=[redacted]&b=2');
+    expect(redactUrl('/api/needs/1')).toBe('/api/needs/1');
+    expect(redactUrl(undefined)).toBeUndefined();
+  });
+
+  it('is applied by the request serializer', () => {
+    const cfg = buildLoggerConfig('info').pinoHttp as unknown as {
+      serializers: { req: (r: { id: unknown; method: unknown; url: unknown }) => { url: string } };
+    };
+    expect(cfg.serializers.req({ id: 1, method: 'GET', url: '/api/public/surveys/tok' }).url).toBe(
+      '/api/public/surveys/[redacted]',
+    );
   });
 });

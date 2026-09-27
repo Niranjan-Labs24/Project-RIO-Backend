@@ -15,6 +15,18 @@ import { pgSslFromEnv } from '../src/prisma/pg-ssl';
 
 const ORG_COLUMNS = ['org_id', 'organisation_id'] as const;
 
+// Tables that carry an org column but are deliberately NOT in the loop below. This list is a
+// reviewed decision, kept here on purpose instead of being derived from the database: if a new
+// table gets an org column but no row-level security (or a policy that reaches across
+// organizations), it is not in the loop AND not in this list, so the suite fails until a
+// person looks at it.
+const REVIEWED_EXCLUSIONS: Record<string, string> = {
+  // Policy is `org_id = current org OR open_to_other_entities = true`: visible across entities by design.
+  initiatives: 'shared across entities when open_to_other_entities is set',
+  // Platform-wide operational log, System Admin only; no tenant RLS by design.
+  system_logs: 'platform log, no row-level security by design',
+};
+
 interface TenantTable {
   table: string;
   column: (typeof ORG_COLUMNS)[number];
@@ -27,6 +39,7 @@ describe('Cross-tenant isolation (RLS) - every tenant table', () => {
   let orgA = '';
   let orgB = '';
   let rejectedInserts = 0;
+  let orgKeyedTables: string[] = [];
 
   beforeAll(async () => {
     app = new Pool({ connectionString: process.env.APP_DATABASE_URL, ssl: pgSslFromEnv() });
@@ -50,6 +63,17 @@ describe('Cross-tenant isolation (RLS) - every tenant table', () => {
         ORDER BY c.relname`,
       [ORG_COLUMNS as unknown as string[]],
     );
+    // Every table with an org column, whatever its RLS state: the independent inventory.
+    const everyOrgKeyed = await owner.query<{ table_name: string }>(
+      `SELECT DISTINCT c.relname AS table_name
+         FROM pg_class c
+         JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public'
+         JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = ANY ($1) AND NOT a.attisdropped
+        WHERE c.relkind = 'r'
+        ORDER BY c.relname`,
+      [ORG_COLUMNS as unknown as string[]],
+    );
+    orgKeyedTables = everyOrgKeyed.rows.map((r) => r.table_name);
     tables = found.rows
       .filter((r) => r.qual && !/\bOR\b/i.test(r.qual) && r.qual.includes(r.column_name))
       .map((r) => ({ table: r.table_name, column: r.column_name as TenantTable['column'] }));
@@ -75,6 +99,17 @@ describe('Cross-tenant isolation (RLS) - every tenant table', () => {
   it('discovers a meaningful set of tenant tables (guards against the query silently matching nothing)', () => {
     expect(tables.length).toBeGreaterThanOrEqual(40);
     expect(tables.map((t) => t.table)).toEqual(expect.arrayContaining(['users', 'studies', 'needs', 'surveys']));
+  });
+
+  it('leaves out only the reviewed exceptions: every other org-keyed table is under test', () => {
+    const tested = new Set(tables.map((t) => t.table));
+    const unaccounted = orgKeyedTables.filter((t) => !tested.has(t) && !(t in REVIEWED_EXCLUSIONS));
+    // A table listed here has an org column but no forced row-level security (or a policy that
+    // spans organizations). Fix its policy, or add it to REVIEWED_EXCLUSIONS with a reason.
+    expect(unaccounted).toEqual([]);
+    // And the exceptions must still exist and still be exceptions, so the list cannot go stale.
+    const stale = Object.keys(REVIEWED_EXCLUSIONS).filter((t) => !orgKeyedTables.includes(t) || tested.has(t));
+    expect(stale).toEqual([]);
   });
 
   it.each([
@@ -134,7 +169,8 @@ describe('Cross-tenant isolation (RLS) - every tenant table', () => {
   });
 
   it('actually exercised the insert check on many tables (the suite is not passing vacuously)', () => {
-    expect(rejectedInserts).toBeGreaterThanOrEqual(5);
+    // 28 tables were rejected when this was written; a floor of 25 catches a large silent drop.
+    expect(rejectedInserts).toBeGreaterThanOrEqual(25);
   });
 
   it('on a connection that never had an organization set, no tenant table returns a row', async () => {
