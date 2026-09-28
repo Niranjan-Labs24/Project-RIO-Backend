@@ -287,8 +287,13 @@ export class ReportSharingService {
       ownerOrgName: ownerOrg?.name ?? row.ownerOrgId,
       generatedByName: generatedByUser?.name ?? null,
       officerConfirmedBy: report.officerConfirmedBy,
+      // Names already resolved cross-org by findAcrossOrgsOrThrow — without
+      // them the viewer's Approval Trail falls back to raw user ids.
+      officerConfirmedByName: report.officerConfirmedByName,
       officerConfirmedAt: report.officerConfirmedAt,
       reviewedBy: report.reviewedBy,
+      reviewedByName: report.reviewedByName,
+      reviewedByRole: report.reviewedByRole,
       reviewedAt: report.reviewedAt,
     };
   }
