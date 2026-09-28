@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '../../config/config.service';
 
 // RIO-FR-Add-01: only these evidence file types are accepted; everything
@@ -30,6 +30,8 @@ export const MAX_EVIDENCE_FILES_PER_STUDY = 10;
 
 @Injectable()
 export class EvidenceStorageService {
+  private readonly logger = new Logger(EvidenceStorageService.name);
+
   constructor(private readonly config: ConfigService) {}
 
   assertAllowedExtension(originalName: string): string {
@@ -120,6 +122,8 @@ export class EvidenceStorageService {
 
   async remove(storageKey: string): Promise<void> {
     const dir = resolve(this.config.evidenceStoragePath);
-    await unlink(join(dir, storageKey)).catch(() => undefined);
+    await unlink(join(dir, storageKey)).catch((error: unknown) =>
+      this.logger.warn(`Could not remove stored evidence file ${storageKey}: ${String(error)}`),
+    );
   }
 }

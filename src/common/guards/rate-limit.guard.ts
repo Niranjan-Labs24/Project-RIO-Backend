@@ -16,12 +16,16 @@ interface RateLimitPolicy {
    *  let ordinary read/list screens through unprotected rather than take
    *  the whole app down with the counter store (`true`). */
   failOpenOnOutage?: boolean;
+  /** Extra ceiling per client IP across ALL identifiers, for unauthenticated routes only.
+   *  The main counter is keyed on IP + identifier (email/contact), so on its own it lets
+   *  one address try unlimited different identifiers. */
+  perIp?: { limit: number; windowSeconds: number };
 }
 
 export const RateLimit = (
   limit: number,
   windowSeconds: number,
-  options?: { failOpenOnOutage?: boolean },
+  options?: { failOpenOnOutage?: boolean; perIp?: { limit: number; windowSeconds: number } },
 ): MethodDecorator & ClassDecorator =>
   SetMetadata(RATE_LIMIT_KEY, { limit, windowSeconds, ...options } satisfies RateLimitPolicy);
 
@@ -61,6 +65,20 @@ export class RateLimitGuard implements CanActivate {
     const res = http.getResponse<Response>();
     const policy = explicit ?? (this.isReadMethod(req.method) ? DEFAULT_READ_POLICY : DEFAULT_WRITE_POLICY);
 
+    if (policy.perIp && !getOrgStore()?.actorId) {
+      const ipResult = await this.increment(`rio:rate:ip:${req.method}:${req.route?.path ?? req.path}:${req.ip}`, {
+        ...policy.perIp,
+        failOpenOnOutage: policy.failOpenOnOutage,
+      });
+      if (ipResult !== 'outage-allowed' && ipResult.count > policy.perIp.limit) {
+        res.setHeader('Retry-After', ipResult.ttl);
+        throw new HttpException(
+          { error: { code: 'RATE_LIMITED', message: 'Too many requests. Try again later.' } },
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+    }
+
     const result = await this.increment(this.keyFor(req), policy);
     if (result === 'outage-allowed') return true;
     const { count, ttl } = result;
@@ -75,6 +93,16 @@ export class RateLimitGuard implements CanActivate {
       );
     }
     return true;
+  }
+
+  /** Drops expired local counters (at most once a minute) so the fallback map cannot grow without bound. */
+  private lastPruneAt = 0;
+  private pruneExpired(now: number): void {
+    if (now - this.lastPruneAt < 60_000) return;
+    this.lastPruneAt = now;
+    for (const [key, entry] of this.local) {
+      if (entry.resetAt <= now) this.local.delete(key);
+    }
   }
 
   private isReadMethod(method: string): boolean {
@@ -114,7 +142,8 @@ export class RateLimitGuard implements CanActivate {
           count: Number(result?.[0]?.[1] ?? 1),
           ttl: Math.max(1, Number(result?.[2]?.[1] ?? windowSeconds)),
         };
-      } catch {
+      } catch (error) {
+        this.logger.error(`Rate limit store error: ${String(error)}`);
         if (this.distributedRequired) {
           if (policy.failOpenOnOutage) {
             // Client decision (2026-09): a counter-store outage should not
@@ -135,6 +164,7 @@ export class RateLimitGuard implements CanActivate {
       }
     }
     const now = Date.now();
+    this.pruneExpired(now);
     const current = this.local.get(key);
     if (!current || current.resetAt <= now) {
       this.local.set(key, { count: 1, resetAt: now + windowSeconds * 1000 });

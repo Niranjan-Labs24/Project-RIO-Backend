@@ -12,6 +12,18 @@ describe('Users (e2e)', () => {
   const uniq = Date.now();
   let invitedId: string;
 
+  // The list is newest-first and paged, and the e2e database keeps every
+  // organisation earlier runs created, so the seeded ones are not on page one.
+  async function findOrgByName(token: string, name: string): Promise<{ id: string; name: string } | undefined> {
+    for (let offset = 0; ; offset += 200) {
+      const res = await request(app.getHttpServer())
+        .get(`/api/organizations?limit=200&offset=${offset}`).set('Authorization', `Bearer ${token}`).expect(200);
+      const items = res.body as Array<{ id: string; name: string }>;
+      const hit = items.find((o) => o.name === name);
+      if (hit || items.length < 200) return hit;
+    }
+  }
+
   async function login(email: string): Promise<string> {
     const res = await request(app.getHttpServer()).post('/api/auth/login').send({ email, password: 'Passw0rd!' }).expect(200);
     return res.body.token;
@@ -68,12 +80,10 @@ describe('Users (e2e)', () => {
   });
 
   it('system_admin lists another org\'s users via ?organizationId', async () => {
-    const orgs = await request(app.getHttpServer())
-      .get('/api/organizations').set('Authorization', `Bearer ${sysToken}`).expect(200);
-    const demo = orgs.body.find((o: { name: string }) => o.name === 'Demo NGO');
+    const demo = await findOrgByName(sysToken, 'Demo NGO');
     expect(demo).toBeDefined();
     const res = await request(app.getHttpServer())
-      .get(`/api/users?organizationId=${demo.id}`).set('Authorization', `Bearer ${sysToken}`).expect(200);
+      .get(`/api/users?organizationId=${demo!.id}`).set('Authorization', `Bearer ${sysToken}`).expect(200);
     expect(res.body.length).toBeGreaterThanOrEqual(2);
   });
 
@@ -108,13 +118,11 @@ describe('Users (e2e)', () => {
     // role, created inside a specific org). Uses the new X-Act-As-Org
     // header so System Admin (platform-wide) can create it inside Demo NGO
     // specifically, rather than its own platform org.
-    const orgs = await request(app.getHttpServer())
-      .get('/api/organizations').set('Authorization', `Bearer ${sysToken}`).expect(200);
-    const demoOrg = orgs.body.find((o: { name: string }) => o.name === 'Demo NGO');
+    const demoOrg = await findOrgByName(sysToken, 'Demo NGO');
     expect(demoOrg).toBeDefined();
 
     const invite = await request(app.getHttpServer())
-      .post('/api/users').set('Authorization', `Bearer ${sysToken}`).set('X-Act-As-Org', demoOrg.id)
+      .post('/api/users').set('Authorization', `Bearer ${sysToken}`).set('X-Act-As-Org', demoOrg!.id)
       .send({ name: 'Test Supervisor', email: `supervisor-${uniq}@demo-ngo.org`, roleId: 'role_center_supervisor' })
       .expect(201);
 
@@ -125,11 +133,9 @@ describe('Users (e2e)', () => {
   });
 
   it('ngo_admin cannot delete a user in another org — RLS hides it as 404', async () => {
-    const orgs = await request(app.getHttpServer())
-      .get('/api/organizations').set('Authorization', `Bearer ${sysToken}`).expect(200);
-    const riverside = orgs.body.find((o: { name: string }) => o.name === 'Riverside Community Trust');
+    const riverside = await findOrgByName(sysToken, 'Riverside Community Trust');
     expect(riverside).toBeDefined();
-    const otherAdmin = await findUser(sysToken, 'admin@riverside-ngo.org', riverside.id);
+    const otherAdmin = await findUser(sysToken, 'admin@riverside-ngo.org', riverside!.id);
     expect(otherAdmin).toBeDefined();
     const res = await request(app.getHttpServer())
       .delete(`/api/users/${otherAdmin!.id}`).set('Authorization', `Bearer ${adminToken}`);

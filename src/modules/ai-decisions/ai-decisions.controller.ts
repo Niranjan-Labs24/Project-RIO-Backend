@@ -13,7 +13,7 @@ import {
   type AiReviewRejectDto,
 } from './ai-decisions.contract';
 import { AiDecisionsService } from './ai-decisions.service';
-import type { AiDecision, ReviewDecisionPayload, ScoringStubResponse } from './ai-decisions.types';
+import type { AiDecision, ReviewDecisionPayload } from './ai-decisions.types';
 
 @Controller('needs/:needId/ai-decisions')
 export class AiDecisionsController {
@@ -33,12 +33,6 @@ export class AiDecisionsController {
   @RequirePermission('aiReview', 'read')
   list(@Param('needId', new UuidParamPipe()) needId: string): Promise<AiDecision[]> {
     return this.aiDecisions.listByNeedId(needId);
-  }
-
-  @Post('score')
-  @RequirePermission('priorityScoring', 'create')
-  score(): ScoringStubResponse {
-    return this.aiDecisions.score();
   }
 }
 

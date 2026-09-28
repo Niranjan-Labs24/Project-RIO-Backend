@@ -73,7 +73,7 @@ export class OrganizationsService {
       tx.organisation.findFirst({ include: GEO_INCLUDE }),
     );
     if (!row) throw new NotFoundException({ error: { code: 'ORG_NOT_FOUND', message: 'Organization not found' } });
-    return this.toOrganization(this.toOrgRow(row as RawOrgWithGeo));
+    return this.toOrganization(this.toOrgRow(row));
   }
 
   async updateCurrent(patch: UpdateOrganizationPayload): Promise<Organization> {
@@ -83,7 +83,7 @@ export class OrganizationsService {
     const { updated, changes } = await this.tenant.runInOrgContext(async (tx) => {
       const currentRaw = await tx.organisation.findFirst({ include: GEO_INCLUDE });
       if (!currentRaw) throw new NotFoundException({ error: { code: 'ORG_NOT_FOUND', message: 'Organization not found' } });
-      const current = this.toOrgRow(currentRaw as RawOrgWithGeo);
+      const current = this.toOrgRow(currentRaw);
 
       // A patch that omits regionId/governorateIds/centerIds leaves that
       // value unchanged — validate against whatever the *final* state will
@@ -515,8 +515,8 @@ export class OrganizationsService {
     nextGovernorateIds: string[],
     nextCenterIds: string[],
   ): AuditChange[] {
-    const before = current as unknown as Record<string, unknown>;
-    const after = patch as unknown as Record<string, unknown>;
+    const before: Record<string, unknown> = { ...current };
+    const after: Record<string, unknown> = { ...patch };
     const changes: AuditChange[] = [];
     for (const f of DIFF_FIELDS) {
       if (after[f] !== undefined && JSON.stringify(before[f]) !== JSON.stringify(after[f])) {

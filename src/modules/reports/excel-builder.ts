@@ -59,7 +59,7 @@ function drillSheetName(anchorId: string, heading?: string): string {
 function sheetLink(sheetName: string, label: string): ExcelJS.CellValue {
   return {
     formula: `HYPERLINK("#'${sheetName.replace(/'/g, "''")}'!A1","${label.replace(/"/g, '""')}")`,
-  } as ExcelJS.CellValue;
+  };
 }
 
 function uniqueSheetName(wb: ExcelJS.Workbook, base: string): string {

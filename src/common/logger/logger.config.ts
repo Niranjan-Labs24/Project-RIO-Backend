@@ -16,6 +16,19 @@ function correlationFields(): { requestId?: string; orgId?: string } {
   return { requestId: store?.requestId, orgId: store?.orgId };
 }
 
+/**
+ * A public survey link carries its access token in the URL path
+ * (`/api/public/surveys/<token>/...`). Request logs must keep the route and
+ * request id but not the token, or anyone who can read the logs can open the
+ * link. Any `token=` query value is masked as well.
+ */
+export function redactUrl(url: unknown): unknown {
+  if (typeof url !== 'string') return url;
+  return url
+    .replace(/(\/public\/surveys\/)[^/?#]+/, '$1[redacted]')
+    .replace(/([?&]token=)[^&#]*/gi, '$1[redacted]');
+}
+
 export function buildLoggerConfig(level: string): Params {
   return {
     pinoHttp: {
@@ -40,7 +53,14 @@ export function buildLoggerConfig(level: string): Params {
       customProps: correlationFields,
       // Never log request bodies (PII risk) — see the redact list below.
       redact: {
-        paths: ['req.headers.authorization', 'req.headers.cookie', 'req.headers["x-org-id"]'],
+        // `res.headers["set-cookie"]` carries the rio_session JWT on login; the default
+        // response serializer logs response headers, so it must be removed too.
+        paths: [
+          'req.headers.authorization',
+          'req.headers.cookie',
+          'req.headers["x-org-id"]',
+          'res.headers["set-cookie"]',
+        ],
         remove: true,
       },
       autoLogging: true,
@@ -48,7 +68,7 @@ export function buildLoggerConfig(level: string): Params {
         req: (req: { id: unknown; method: unknown; url: unknown }) => ({
           id: req.id,
           method: req.method,
-          url: req.url,
+          url: redactUrl(req.url),
         }),
       },
     },

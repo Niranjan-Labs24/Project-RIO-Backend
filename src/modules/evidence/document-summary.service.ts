@@ -1,3 +1,4 @@
+import { toJson } from '../../common/prisma/json';
 import {
   BadRequestException,
   Injectable,
@@ -9,7 +10,6 @@ import { requireActor, requireOrgId } from "../../tenancy/org-context";
 import { AuditService } from "../audit/audit.service";
 import { AiService } from "../ai/ai.service";
 import { EVIDENCE_DOCUMENT_SUMMARY_TASK } from "../ai/prompts/evidence-document-summary.task";
-import { Prisma } from "../../generated/prisma";
 import { withOutputLanguage } from "../ai/prompts/output-language";
 import { requestLocale } from "../../common/locale/request-locale";
 
@@ -202,7 +202,7 @@ Output strictly valid JSON matching this schema:
           modelName,
           modelVersion,
           inputTextHash,
-          aiOutputJson: aiOutputJson as unknown as Prisma.InputJsonValue,
+          aiOutputJson: toJson(aiOutputJson),
           outputLocale,
           generatedBy,
         },
@@ -232,7 +232,7 @@ Output strictly valid JSON matching this schema:
       tx.evidenceDocumentSummary.update({
         where: { id: summaryId },
         data: {
-          officerEditedOutputJson: editedOutputJson as unknown as Prisma.InputJsonValue,
+          officerEditedOutputJson: toJson(editedOutputJson),
           status: "DRAFT",
         },
       }),

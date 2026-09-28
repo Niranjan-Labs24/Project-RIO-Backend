@@ -1,3 +1,4 @@
+import { ROLE_KEYS } from '../../rbac/role-keys';
 import { EXCLUDE_MERGED } from './need-visibility';
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '../../generated/prisma';
@@ -280,9 +281,9 @@ export class NeedsService {
     // through this same per-study needs lookup.
     const store = getOrgStore();
     const isCrossOrgReader =
-      store?.role === 'system_admin' ||
-      store?.role === 'system_reviewer' ||
-      store?.role === 'center_supervisor';
+      store?.role === ROLE_KEYS.systemAdmin ||
+      store?.role === ROLE_KEYS.systemReviewer ||
+      store?.role === ROLE_KEYS.centerSupervisor;
     const rows = (isCrossOrgReader
       ? await this.tenant.runAsSupervisor((tx) =>
           tx.need.findMany({ where: { studyId, ...EXCLUDE_MERGED }, orderBy: { createdAt: 'asc' }, include: GEO_INCLUDE }),
@@ -309,9 +310,9 @@ export class NeedsService {
     // a 404 before ever reaching that action's own X-Act-As-Org check.
     const store = getOrgStore();
     const isCrossOrgReader =
-      store?.role === 'system_admin' ||
-      store?.role === 'system_reviewer' ||
-      store?.role === 'center_supervisor';
+      store?.role === ROLE_KEYS.systemAdmin ||
+      store?.role === ROLE_KEYS.systemReviewer ||
+      store?.role === ROLE_KEYS.centerSupervisor;
     const row = (isCrossOrgReader
       ? await this.tenant.runAsSupervisor((tx) => tx.need.findUnique({ where: { id: needId }, include: GEO_INCLUDE }))
       : await this.tenant.runInOrgContext((tx) => tx.need.findUnique({ where: { id: needId }, include: GEO_INCLUDE }))
@@ -549,8 +550,8 @@ export class NeedsService {
     nextGovernorateIds: string[],
     nextCenterIds: string[],
   ): AuditChange[] {
-    const before = current as unknown as Record<string, unknown>;
-    const after = patch as unknown as Record<string, unknown>;
+    const before: Record<string, unknown> = { ...current };
+    const after: Record<string, unknown> = { ...patch };
     const changes: AuditChange[] = [];
     for (const f of DIFF_FIELDS) {
       // JSON.stringify comparison (not `!==`) so `village`, an array, is

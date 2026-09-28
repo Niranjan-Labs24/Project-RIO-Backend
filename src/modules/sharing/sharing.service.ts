@@ -1,3 +1,4 @@
+import { parseDateParam } from "../../common/validation/bounded";
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { getOrgStore, requireActor, requireOrgId } from "../../tenancy/org-context";
@@ -85,7 +86,7 @@ export class SharingService {
       organizationId: payload.ownerOrgId,
       changes: auditChanges,
     });
-    return this.enrichOne(row as unknown as SharingRequestRow);
+    return this.enrichOne(row);
   }
 
   async list(opts: { limit?: number; offset?: number } = {}): Promise<SharingRequest[]> {
@@ -98,7 +99,7 @@ export class SharingService {
           where: { OR: [{ ownerOrgId: orgId }, { requestingOrgId: orgId }] },
           orderBy: { requestedAt: "desc" }, take, skip,
         }));
-    return this.enrichMany(rows as unknown as SharingRequestRow[]);
+    return this.enrichMany(rows);
   }
 
   async getById(id: string): Promise<SharingRequest> {
@@ -166,7 +167,7 @@ export class SharingService {
       organizationId: row.requestingOrgId,
       changes: auditChanges,
     });
-    return this.enrichOne(row as unknown as SharingRequestRow);
+    return this.enrichOne(row);
   }
 
   async getSharedSnapshot(id: string): Promise<SharedStudySnapshot> {
@@ -284,7 +285,7 @@ export class SharingService {
         decidedBy,
         decidedAt: new Date(),
         decisionNote: decisionNote ?? null,
-        ...(status === "approved" ? { expiresAt: expiresAt ? new Date(expiresAt) : null } : {}),
+        ...(status === "approved" ? { expiresAt: expiresAt ? parseDateParam(expiresAt, "expiresAt") : null } : {}),
       },
     }));
     const study = await this.tenant.runAsSupervisor((tx) =>
@@ -323,7 +324,7 @@ export class SharingService {
       organizationId: row.requestingOrgId,
       changes: auditChanges,
     });
-    return this.enrichOne(row as unknown as SharingRequestRow);
+    return this.enrichOne(row);
   }
 
   private async findVisibleOrThrow(id: string): Promise<SharingRequestRow> {
@@ -338,7 +339,7 @@ export class SharingService {
     if (!visible) {
       throw new NotFoundException({ error: { code: "SHARING_REQUEST_NOT_FOUND", message: "Sharing request not found" } });
     }
-    return row as unknown as SharingRequestRow;
+    return row;
   }
 
   private async enrichOne(row: SharingRequestRow): Promise<SharingRequest> {

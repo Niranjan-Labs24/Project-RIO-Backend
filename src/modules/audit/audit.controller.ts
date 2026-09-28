@@ -5,6 +5,7 @@ import { RequirePermission } from '../../common/guards/permission.guard';
 import { parseIntParam } from '../../common/http/query.util';
 import { AuditService } from './audit.service';
 import type { AuditListResult } from './audit.types';
+import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 
 @Controller('audit')
 export class AuditController {
@@ -84,7 +85,7 @@ export class AuditController {
 
   @Get(':id')
   @RequirePermission('archiveSharingAudit', 'read')
-  getById(@Param('id') id: string) {
+  getById(@Param('id', new UuidParamPipe()) id: string) {
     return this.audit.getById(id);
   }
 }

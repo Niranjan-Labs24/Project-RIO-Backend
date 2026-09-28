@@ -290,11 +290,17 @@ describe("Need statement summarisation (e2e)", () => {
     const sa = await waitForSummary(a, officerCookies);
     const sb = await waitForSummary(b, officerCookies);
 
-    const queue = await request(app.getHttpServer())
-      .get("/api/need-summaries/pending")
-      .set("Cookie", reviewerCookies)
-      .expect(200);
-    const queuedIds = (queue.body.items as { id: string }[]).map((i) => i.id);
+    // The queue is oldest-first and paged, and the e2e database keeps drafts
+    // from earlier runs — so read to the end rather than assume page one.
+    const queuedIds: string[] = [];
+    for (let offset = 0; ; offset += 100) {
+      const queue = await request(app.getHttpServer())
+        .get(`/api/need-summaries/pending?limit=100&offset=${offset}`)
+        .set("Cookie", reviewerCookies)
+        .expect(200);
+      queuedIds.push(...(queue.body.items as { id: string }[]).map((i) => i.id));
+      if (offset + 100 >= (queue.body.total as number)) break;
+    }
     expect(queuedIds).toEqual(expect.arrayContaining([sa.id, sb.id]));
 
     const batch = await request(app.getHttpServer())

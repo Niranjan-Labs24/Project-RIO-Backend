@@ -43,7 +43,7 @@ const TAGS: Array<{ name: Tag; description: string }> = [
   { name: 'Studies', description: 'RIO-FR-001 — the container for a captured community need.' },
   { name: 'Needs', description: 'RIO-FR-001 — the one need captured per study.' },
   { name: 'Evidence', description: 'RIO-FR-Add-01 — supporting documents uploaded against a study.' },
-  { name: 'AI Decisions', description: 'RIO-FR-003 — classification/scoring placeholders and human review.' },
+  { name: 'AI Decisions', description: 'RIO-FR-003 — classification and human review.' },
   { name: 'Surveys', description: 'Survey Builder — question set, methodology version, approval, and citizen submission.' },
   { name: 'Priority', description: 'Deterministic severity scoring, dashboards, and methodology-version/lookup management.' },
   { name: 'Priority Summary', description: 'Priority summary drafting/approval workflow feeding the Reports module.' },

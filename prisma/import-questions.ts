@@ -154,7 +154,7 @@ async function main() {
         .filter(opt => opt.length > 0);
     }
 
-    let conditionalRule: any = undefined;
+    let conditionalRule: { dependsOn: string; value: string } | undefined = undefined;
     if (rawDependency && rawDependency.toLowerCase() !== "unconditional") {
       if (questionId === "H10") {
         conditionalRule = { dependsOn: "H09", value: "YES" };
@@ -170,7 +170,7 @@ async function main() {
         conditionalRule = { dependsOn: "GV03", value: "YES" };
       } else {
         const match = rawDependency.match(/([A-Z\d]+)/i);
-        if (match) {
+        if (match?.[1]) {
           conditionalRule = { dependsOn: match[1], value: "YES" };
         }
       }

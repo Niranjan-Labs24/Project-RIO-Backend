@@ -1,7 +1,7 @@
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist/**', 'node_modules/**', 'src/generated/**'] },
+  { ignores: ['dist/**', 'node_modules/**', 'src/generated/**', 'scratch/**', 'coverage/**'] },
   ...tseslint.configs.recommended,
   {
     languageOptions: { parserOptions: { project: false } },
@@ -11,6 +11,22 @@ export default tseslint.config(
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
+    },
+  },
+  {
+    // Type-aware rules for production code: a promise that is neither awaited nor handled
+    // rejects silently, and an async function passed where a plain callback is expected
+    // swallows its errors. Specs and scripts are excluded to keep lint fast.
+    files: ['src/**/*.ts'],
+    ignores: ['**/*.spec.ts', 'src/generated/**'],
+    languageOptions: {
+      parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
+    },
+    rules: {
+      '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/no-misused-promises': 'error',
+      '@typescript-eslint/await-thenable': 'error',
+      '@typescript-eslint/no-unnecessary-type-assertion': 'error',
     },
   },
   {

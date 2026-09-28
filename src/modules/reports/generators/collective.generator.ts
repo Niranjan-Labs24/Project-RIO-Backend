@@ -13,6 +13,6 @@ export async function collectiveGenerator(ctx: GeneratorCtx): Promise<GeneratedR
   });
   return {
     title: `Collective Report — ${content.header.studyName}`,
-    content: content as unknown as Record<string, unknown>,
+    content: { ...content },
   };
 }

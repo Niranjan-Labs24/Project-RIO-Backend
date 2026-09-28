@@ -1,3 +1,4 @@
+import { optionalText } from '../../common/validation/bounded';
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { RequirePermission } from '../../common/guards/permission.guard';
@@ -12,6 +13,9 @@ import type {
   StudyListResult,
   UpdateStudyPayload,
 } from './studies.types';
+
+// Upper bound for free-text reasons: far above anything typed by hand, far below the 3 MB body limit.
+const MAX_REASON_LENGTH = 20_000;
 
 @Controller('studies')
 export class StudiesController {
@@ -65,13 +69,13 @@ export class StudiesController {
 
   @Post(':id/archive')
   @RequirePermission('archiveSharingAudit', 'write')
-  archive(@Param('id') id: string, @Body('reason') reason?: string): Promise<Study> {
-    return this.studies.archive(id, reason);
+  archive(@Param('id', new UuidParamPipe()) id: string, @Body('reason') reason?: string): Promise<Study> {
+    return this.studies.archive(id, optionalText(reason, 'reason', MAX_REASON_LENGTH));
   }
 
   @Post(':id/restore')
   @RequirePermission('archiveSharingAudit', 'write')
-  restore(@Param('id') id: string): Promise<Study> {
+  restore(@Param('id', new UuidParamPipe()) id: string): Promise<Study> {
     return this.studies.restore(id);
   }
 }

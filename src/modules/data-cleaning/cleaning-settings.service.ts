@@ -1,5 +1,5 @@
+import { toJson } from '../../common/prisma/json';
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import type { Prisma } from "../../generated/prisma";
 import { PrismaService } from "../../prisma/prisma.service";
 import { requireActor, requireOrgId } from "../../tenancy/org-context";
 import { AuditService } from "../audit/audit.service";
@@ -142,7 +142,7 @@ export class CleaningSettingsService {
     const updated = await this.prisma.methodologyConfig.update({
       where: { id: config.id },
       data: {
-        dataCleaningSettings: after as unknown as Prisma.InputJsonValue,
+        dataCleaningSettings: after,
         updatedBy: actor,
       },
       select: { id: true, version: true, status: true, dataCleaningSettings: true },
@@ -155,13 +155,13 @@ export class CleaningSettingsService {
         version: updated.version,
         status: updated.status,
         changeType: "edit",
-        priorityThresholds: config.priorityThresholds as unknown as Prisma.InputJsonValue,
-        priorityFactorWeights: config.priorityFactorWeights as unknown as Prisma.InputJsonValue,
-        priorityFactorScales: config.priorityFactorScales as unknown as Prisma.InputJsonValue,
-        confidenceFlagSettings: config.confidenceFlagSettings as unknown as Prisma.InputJsonValue,
-        aiClassificationSettings: config.aiClassificationSettings as unknown as Prisma.InputJsonValue,
-        aiSummarySettings: config.aiSummarySettings as unknown as Prisma.InputJsonValue,
-        dataCleaningSettings: after as unknown as Prisma.InputJsonValue,
+        priorityThresholds: toJson(config.priorityThresholds),
+        priorityFactorWeights: toJson(config.priorityFactorWeights),
+        priorityFactorScales: toJson(config.priorityFactorScales),
+        confidenceFlagSettings: toJson(config.confidenceFlagSettings),
+        aiClassificationSettings: toJson(config.aiClassificationSettings),
+        aiSummarySettings: toJson(config.aiSummarySettings),
+        dataCleaningSettings: after,
         changedBy: actor,
       },
     });

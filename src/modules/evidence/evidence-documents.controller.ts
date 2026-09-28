@@ -17,10 +17,15 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 import { UuidParamPipe } from "../../common/pipes/uuid-param.pipe";
+import { boundedJsonObject, boundedStrings } from "../../common/validation/bounded";
+
+// Free-form summary edits are stored as JSON; cap what one edit may carry.
+const MAX_SUMMARY_JSON_BYTES = 200_000;
 import { RateLimit } from "../../common/guards/rate-limit.guard";
 import { RequirePermission } from "../../common/guards/permission.guard";
 import { EvidenceDocumentsService } from "./evidence-documents.service";
 import { DocumentSummaryService, DocumentSummaryOutputJson } from "./document-summary.service";
+import { requiredBoolean } from "../../common/validation/bounded";
 
 interface UploadEvidenceDocumentBody {
   title?: string;
@@ -57,6 +62,10 @@ export class EvidenceDocumentsController {
         error: { code: "NO_FILE", message: "Document file is required." },
       });
     }
+    boundedStrings(body, {
+      title: 500, documentType: 100, sourceReferenceId: 200, collectedDate: 40,
+      description: 10_000, linkedNeedId: 64, linkedDomainId: 64, linkedKpiId: 64,
+    });
     if (!body.title || !body.documentType || !body.sourceReferenceId || !body.collectedDate) {
       throw new BadRequestException({
         error: { code: "MISSING_FIELDS", message: "Title, documentType, sourceReferenceId, and collectedDate are required." },
@@ -125,7 +134,7 @@ export class EvidenceDocumentsController {
     @Param("id", new UuidParamPipe()) id: string,
     @Body("isIncluded") isIncluded: boolean,
   ) {
-    return this.documentsService.toggleInclusion(id, Boolean(isIncluded));
+    return this.documentsService.toggleInclusion(id, requiredBoolean(isIncluded, "isIncluded"));
   }
 
   @Delete(":id")
@@ -156,7 +165,10 @@ export class EvidenceDocumentsController {
     @Param("summaryId", new UuidParamPipe()) summaryId: string,
     @Body() body: DocumentSummaryOutputJson,
   ) {
-    return this.summaryService.updateDraftSummary(summaryId, body);
+    return this.summaryService.updateDraftSummary(
+      summaryId,
+      boundedJsonObject<DocumentSummaryOutputJson>(body, "body", MAX_SUMMARY_JSON_BYTES),
+    );
   }
 
   @Post(":id/summary/:summaryId/confirm")

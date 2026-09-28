@@ -1,3 +1,7 @@
+import { boundedJsonObject, optionalUuid, uuidList } from "../../common/validation/bounded";
+
+// Free-form summary edits are stored as JSON; cap what one edit may carry.
+const MAX_SUMMARY_JSON_BYTES = 200_000;
 import {
   Body,
   Controller,
@@ -38,7 +42,11 @@ export class CombinedReportSummaryController {
     @Body("documentSummaryIds") documentSummaryIds: string[],
     @Body("scoreSummaryId") scoreSummaryId?: string,
   ) {
-    return this.service.generateCombinedSummary(studyId, documentSummaryIds, scoreSummaryId);
+    return this.service.generateCombinedSummary(
+      studyId,
+      uuidList(documentSummaryIds, "documentSummaryIds", 500),
+      optionalUuid(scoreSummaryId, "scoreSummaryId"),
+    );
   }
 
   @Put("summary/:summaryId")
@@ -47,7 +55,10 @@ export class CombinedReportSummaryController {
     @Param("summaryId", new UuidParamPipe()) summaryId: string,
     @Body() body: CombinedReportOutputJson,
   ) {
-    return this.service.updateDraftCombinedSummary(summaryId, body);
+    return this.service.updateDraftCombinedSummary(
+      summaryId,
+      boundedJsonObject<CombinedReportOutputJson>(body, "body", MAX_SUMMARY_JSON_BYTES),
+    );
   }
 
   @Post("summary/:summaryId/confirm")

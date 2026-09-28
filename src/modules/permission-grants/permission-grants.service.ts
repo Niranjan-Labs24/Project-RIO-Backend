@@ -1,3 +1,5 @@
+import { ROLE_KEYS } from '../../rbac/role-keys';
+import { parseDateParam } from "../../common/validation/bounded";
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
@@ -109,7 +111,7 @@ export class PermissionGrantsService {
     // Supervisor authority, not as a general-purpose permission-override
     // tool for arbitrary roles.
     const role = roleById(grantee.roleId);
-    if (role?.key !== 'center_supervisor') {
+    if (role?.key !== ROLE_KEYS.centerSupervisor) {
       throw new BadRequestException({
         error: {
           code: 'GRANTEE_NOT_SUPERVISOR',
@@ -135,7 +137,7 @@ export class PermissionGrantsService {
         action: payload.action,
         reason: payload.reason,
         grantedBy,
-        expiresAt: payload.expiresAt ? new Date(payload.expiresAt) : null,
+        expiresAt: payload.expiresAt ? parseDateParam(payload.expiresAt, "expiresAt") : null,
       },
     });
 

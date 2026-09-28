@@ -9,11 +9,9 @@ export interface SlaCompliance {
   atRisk: number;
 }
 
-// Approximate compliance from the open reviewer-SLA queue: the share not
-// breached. Null (rather than 100) on an empty queue — "nothing to measure"
-// is not the same as "perfect".
-// TODO(reviewer-sla): replace with a completed-within-SLA metric over a
-// reporting period once ReviewerSlaService exposes one.
+// Compliance is defined over the open reviewer-SLA queue: the share of open
+// items not breached. Null (rather than 100) on an empty queue — "nothing to
+// measure" is not the same as "perfect".
 export function slaComplianceFromAlerts(alerts: SlaAlert[]): SlaCompliance {
   const breached = alerts.filter((a) => a.status === "breached").length;
   const atRisk = alerts.filter((a) => a.status === "at_risk").length;

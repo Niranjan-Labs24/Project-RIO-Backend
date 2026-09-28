@@ -8,7 +8,7 @@ import { PasswordService } from '../../auth/password.service';
 import { TokenService } from '../../auth/token.service';
 import type { ConfigService } from '../../config/config.service';
 
-const passwords = new PasswordService();
+const passwords = new PasswordService({ argon2MaxConcurrency: 8 } as ConfigService);
 const tokens = new TokenService(new JwtService({ secret: 'x'.repeat(32), signOptions: { expiresIn: '12h' } }));
 const auditStub = { record: async () => {} };
 
@@ -103,6 +103,30 @@ describe('AuthService.login', () => {
   it('throws 401 on a wrong password', async () => {
     const svc = new AuthService(fakeTenant(user) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never, permissionGrantsStub as never, smsStub as never);
     await expect(svc.login('admin@demo-ngo.org', 'wrong')).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('answers a locked account exactly like a wrong password, even when the password is right', async () => {
+    const locked = { ...user, failedLoginAttempts: 5, lockedUntil: new Date(Date.now() + 10 * 60_000) };
+    const svc = new AuthService(fakeTenant(locked) as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never, permissionGrantsStub as never, smsStub as never);
+    const attempt = await svc.login('admin@demo-ngo.org', 'Passw0rd!').catch((e: unknown) => e);
+    expect(attempt).toBeInstanceOf(UnauthorizedException);
+    expect((attempt as UnauthorizedException).getResponse()).toEqual({
+      error: { code: 'INVALID_CREDENTIALS', message: 'Invalid email or password' },
+    });
+  });
+
+  it('resets the failure count when a lock has expired and the password is correct', async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    const expired = { ...user, failedLoginAttempts: 5, lockedUntil: new Date(Date.now() - 1000) };
+    const tenant = {
+      ...fakeTenant(expired),
+      runAsOrg: async (_o: string, fn: (tx: unknown) => unknown) =>
+        fn({ user: { update: async ({ data }: { data: Record<string, unknown> }) => { updates.push(data); return { failedLoginAttempts: 0 }; } } }),
+    };
+    const svc = new AuthService(tenant as never, passwords, tokens, auditStub as never, repoStub as never, mailerStub as never, configStub, domainsStub as never, geographyStub as never, nicRegistryStub as never, consentStub as never, permissionGrantsStub as never, smsStub as never);
+    const session = await svc.login('admin@demo-ngo.org', 'Passw0rd!');
+    expect(session.token).toBeTruthy();
+    expect(updates[0]).toEqual({ failedLoginAttempts: 0, lockedUntil: null });
   });
 
   it('throws 401 when the user does not exist', async () => {

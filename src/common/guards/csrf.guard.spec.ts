@@ -47,3 +47,17 @@ describe('CsrfGuard', () => {
     expect(guard.canActivate(ctx('POST', {}, {}))).toBe(true);
   });
 });
+
+import { constantTimeEqual } from './csrf.guard';
+
+describe('constantTimeEqual', () => {
+  it('is true only for identical tokens', () => {
+    expect(constantTimeEqual('abc123', 'abc123')).toBe(true);
+    expect(constantTimeEqual('abc123', 'abc124')).toBe(false);
+  });
+
+  it('is false (and never throws) for tokens of different length', () => {
+    expect(constantTimeEqual('abc', 'abcd')).toBe(false);
+    expect(constantTimeEqual('', 'a')).toBe(false);
+  });
+});

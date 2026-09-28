@@ -45,7 +45,7 @@ function load(path: string): LoadedArabicFont {
   if ("fonts" in font) {
     throw new Error(`Arabic font at ${path} is a font collection, expected a single font`);
   }
-  return { font: font as fontkit.Font, ttfLatin1: bytes.toString("latin1"), ttfByteLength: bytes.length };
+  return { font: font, ttfLatin1: bytes.toString("latin1"), ttfByteLength: bytes.length };
 }
 
 /** Lazily loads and caches the embedded Arabic fonts (regular + bold). */

@@ -143,7 +143,12 @@ export type AuditEntityType =
   // RIO-RBAC-002 — a Center/NCNP Supervisor permission grant/revoke. The
   // module's own comment specifies this exact audit requirement (grant id,
   // approver, reason, expiry); see PermissionGrantsService.create/revoke.
-  | 'permission_grant';
+  | 'permission_grant'
+  // RIO-NFR-014 (28 Sep 2026) — sector/gap-type/study-type/decision-type/
+  // need-theme option changes had no audit trail at all. One shared entity
+  // type since all five configurable-list tables in study-config.service.ts
+  // go through the same createOption/updateOption/setActive helpers.
+  | 'study_config_option';
 
   
   // RIO-AI-003 — one row per suggested summary of a Need's description.

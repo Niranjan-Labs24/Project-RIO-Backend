@@ -826,7 +826,7 @@ model Need {
   // needs" factor computable without RIO-AI-004: two needs that share a theme
   // are the same underlying problem for counting purposes, which is a far
   // weaker (and far cheaper) claim than AI-004's need-to-need merge.
-  themes String[] @map("themes")
+  themes String[] @default([]) @map("themes")
   // RIO-FR-005 (Round 4, client-confirmed 2026-08-24) — "Roughly how many
   // people/households does this need affect?" on the need-entry form. This
   // manually entered figure is the PRIMARY Affected Population value (not
@@ -1877,7 +1877,7 @@ model NeedStatementSummary {
   // the summary but not the source). Empty is the normal case. Stored rather
   // than recomputed so the reviewer queue can sort risky summaries to the top
   // without re-running the checks on every read.
-  verificationWarnings String[] @map("verification_warnings")
+  verificationWarnings String[] @default([]) @map("verification_warnings")
   generatedBy        String?   @map("generated_by") @db.Uuid
   generatedAt        DateTime  @default(now()) @map("generated_at") @db.Timestamptz(6)
   confirmedBy        String?   @map("confirmed_by") @db.Uuid
@@ -2316,6 +2316,16 @@ model MethodologyConfig {
   status                 MethodologyStatus @default(draft)
   publishedBy            String?           @map("published_by") @db.Uuid
   publishedAt            DateTime?         @map("published_at") @db.Timestamptz(6)
+  // RIO-NFR-014 (client acceptance criterion: "methodology versions have
+  // history and an effective date") — a distinct, explicitly-named field from
+  // publishedAt, even though publish() always sets them to the same instant
+  // today (a published version takes effect immediately; there is no
+  // schedule-for-later feature). Kept separate rather than reusing
+  // publishedAt under a new label so the two concepts (when an admin clicked
+  // Publish vs. when this methodology actually governs scoring) stay
+  // independently named if a future "schedule for later" feature ever needs
+  // to make them diverge — that is not this change.
+  effectiveDate          DateTime?         @map("effective_date") @db.Timestamptz(6)
   // System Reviewer's decision on the current pending_approval submission —
   // cleared back to null on every edit, since a new edit invalidates any
   // prior approval and needs its own review.

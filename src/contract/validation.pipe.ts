@@ -23,6 +23,6 @@ export class TypeBoxValidationPipe<S extends TSchema> implements PipeTransform {
         },
       });
     }
-    return value as Static<S>;
+    return value;
   }
 }

@@ -42,6 +42,7 @@
 # behavior at that volume.
 config:
   target: "http://127.0.0.1:4100"
+  processor: "./processor.js"
   http:
     timeout: 30
   payload:
@@ -70,9 +71,12 @@ config:
 scenarios:
   - name: auth-then-reads
     weight: 80
+    beforeScenario: "setSpoofedIp"
     flow:
       - post:
           url: "/api/auth/login"
+          headers:
+            X-Forwarded-For: "{{ spoofedIp }}"
           json:
             email: "{{ email }}"
             password: "{{ password }}"
@@ -86,24 +90,28 @@ scenarios:
               url: "/api/auth/me"
               headers:
                 Authorization: "Bearer {{ token }}"
+                X-Forwarded-For: "{{ spoofedIp }}"
               expect:
                 - statusCode: 200
           - get:
               url: "/api/organizations/current"
               headers:
                 Authorization: "Bearer {{ token }}"
+                X-Forwarded-For: "{{ spoofedIp }}"
               expect:
                 - statusCode: 200
           - get:
               url: "/api/users?limit=20"
               headers:
                 Authorization: "Bearer {{ token }}"
+                X-Forwarded-For: "{{ spoofedIp }}"
               expect:
                 - statusCode: 200
           - get:
               url: "/api/audit?limit=20"
               headers:
                 Authorization: "Bearer {{ token }}"
+                X-Forwarded-For: "{{ spoofedIp }}"
               expect:
                 - statusCode: 200
           - think: 0.3
@@ -111,9 +119,12 @@ scenarios:
 
   - name: auth-then-write
     weight: 20
+    beforeScenario: "setSpoofedIp"
     flow:
       - post:
           url: "/api/auth/login"
+          headers:
+            X-Forwarded-For: "{{ spoofedIp }}"
           json:
             email: "{{ email }}"
             password: "{{ password }}"
@@ -131,12 +142,14 @@ scenarios:
               url: "/api/auth/me"
               headers:
                 Authorization: "Bearer {{ token }}"
+                X-Forwarded-For: "{{ spoofedIp }}"
               expect:
                 - statusCode: 200
           - get:
               url: "/api/users?limit=20"
               headers:
                 Authorization: "Bearer {{ token }}"
+                X-Forwarded-For: "{{ spoofedIp }}"
               expect:
                 - statusCode: 200
           # Idempotent write: PATCHes the caller's own name back to its
@@ -147,6 +160,7 @@ scenarios:
               url: "/api/users/{{ userId }}"
               headers:
                 Authorization: "Bearer {{ token }}"
+                X-Forwarded-For: "{{ spoofedIp }}"
               json:
                 name: "{{ userName }}"
               expect:

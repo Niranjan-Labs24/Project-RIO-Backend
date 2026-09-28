@@ -601,7 +601,7 @@ export class GeographicDashboardService {
       // themselves carry seven. This is also what `leadingDomain` reports,
       // so the filter and the panel now agree on what "sector" means.
       sector: n.domain ?? null,
-      band: (n.priorityScores[0]?.level as PriorityBand | undefined) ?? null,
+      band: (n.priorityScores[0]?.level) ?? null,
       governorateIds: n.needGovernorates.map((g) => g.governorateId),
       centerIds: n.needCenters.map((c) => c.centerId),
       regionIds: [...new Set(n.needGovernorates.map((g) => g.governorate.regionId))],

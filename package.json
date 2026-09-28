@@ -16,6 +16,7 @@
     "format": "prettier --write \"{src,test}/**/*.ts\"",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "check:fold-parity": "tsx scripts/check-fold-parity.ts",
     "fr002:smoke": "tsx scripts/fr002-smoke.ts",
     "fr002:verify-write": "tsx scripts/fr002-verify-write.ts",
@@ -57,7 +58,7 @@
     "import:arabic:geography": "tsx prisma/import-arabic-geography.ts",
     "import:arabic": "pnpm run import:arabic:questions && pnpm run import:arabic:domains && pnpm run import:arabic:legacy-subdomains && pnpm run import:arabic:config-lists && pnpm run import:arabic:geography",
     "grant:access": "tsx prisma/grant-access.ts",
-    "setup:local": "pnpm run prisma:generate && pnpm run prisma:deploy && pnpm run prisma:seed && pnpm run seed:demo && pnpm run import:methodology -- --publish && pnpm run import:geography && pnpm run import:nic-registry && pnpm run grant:access && pnpm run import:arabic",
+    "setup:local": "pnpm run prisma:generate && pnpm run prisma:deploy && pnpm run prisma:seed && pnpm run import:geography && pnpm run seed:demo && pnpm run import:methodology -- --publish && pnpm run import:nic-registry && pnpm run grant:access && pnpm run import:arabic",
     "seed:demo": "tsx prisma/seed-demo.ts",
     "seed:scored": "tsx prisma/seed-scored-study.ts",
     "seed:report-perf": "tsx prisma/seed-report-perf.ts",
@@ -71,17 +72,6 @@
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
-  },
-  "pnpm": {
-    "overrides": {
-      "deepmerge-ts": ">=8.0.0",
-      "fast-uri": ">=3.1.6",
-      "find-my-way": ">=9.7.0",
-      "minimatch@10.2.5>brace-expansion": ">=5.0.9",
-      "mysql2": ">=3.24.0",
-      "@xmldom/xmldom": ">=0.8.15",
-      "multer": ">=2.3.0"
-    }
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
@@ -133,6 +123,7 @@
     "@types/qrcode": "^1.5.6",
     "@types/supertest": "^6.0.2",
     "@types/swagger-ui-express": "^4.1.7",
+    "@vitest/coverage-v8": "4.1.10",
     "artillery": "^2.0.33",
     "eslint": "^9.14.0",
     "prettier": "^3.3.3",

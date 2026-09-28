@@ -117,6 +117,20 @@ The Priority Dashboard's Need list shows the **Study's** title in the "Need" col
 
 ---
 
+## Informal real-user usage (reported, not formally recorded)
+
+Per the client, roughly 5-6 real people across multiple roles have already used the live application directly (not a proxy walkthrough). **This is not a substitute for AC 1**, the same way the 2026-09-01 proxy pass above isn't: no structured record exists of which roles were covered, which of the four tasks above they performed, whether they completed them without help, or what confusion points came up. Recorded here as an honest data point — real usage has happened and nothing catastrophic was reported back — not as closure of this requirement. To actually close AC 1, capture at minimum: participant role, which task(s) they did, completion without help (yes/no), and any confusion points, using the Observer notes template below — retroactively from memory if the sessions already happened, or on the next real session.
+
+---
+
+## Developer end-to-end functional testing (28 Sep 2026) — separate from usability, not a substitute for it
+
+Two developers on this project ran full end-to-end functional testing across every role in the system, confirming the features themselves work correctly end to end. **This is real, valuable testing — but it answers a different question than AC 1, and does not count toward closing it.** AC 1 exists specifically to catch what a person unfamiliar with this build's structure gets stuck on — a developer who built or has deeply tested the system already knows where everything is, so a developer's smooth run through every role cannot surface the kind of first-time confusion a real Research Officer or Reviewer would hit. This is the identical reason the 2026-09-01 proxy walkthrough above (run by an AI, not a person) is explicitly disclaimed as not satisfying AC 1: familiarity with the build disqualifies a tester from this specific requirement, regardless of whether that familiarity comes from being an AI, a developer, or anyone else who already knows the UI. Recorded here as confirmation the underlying features work — genuinely useful — not as usability evidence.
+
+**Client-confirmed, 28 Sep 2026:** in addition to the two developers above, the product team has also used the system extensively across all roles as part of ongoing testing, with nothing observed broken. Recorded here for the same reason as the developer testing above — it is real, valuable evidence the system works, and it is being deliberately kept in this "does not close AC 1" section rather than marked as satisfying it, for the identical reason: the product team, like the developers, already knows this build's structure, so their smooth usage cannot stand in for a first-time user's experience. **This status is Substantial, not Done** — a real, heavily-used, working system, with the specific first-time-user requirement (AC 1) still open.
+
+---
+
 ## Observer notes template (fill in during each session)
 
 ```
@@ -136,9 +150,9 @@ Facilitator intervened? [no / yes — describe what and when]
 
 | # | Issue found | Task | Severity | Fixed / Deferred | Reason (if deferred) |
 |---|---|---|---|---|---|
-| 1 | A failed classification's reason and recovery actions are ~1,365px down the Need page, past 7 other sections, with no cue that they exist | Task 1 | Medium | Deferred | Found via proxy pass 2026-09-01, not yet actioned — needs a fix (surface the AI Classification status/actions near the top for a failed state) before the real session runs |
-| 2 | "Retry AI Classification" is enabled for a role (Human Reviewer) that gets "Insufficient permission" on click, with no pointer to the action that *does* work | Task 1 | High | Deferred | Found via proxy pass 2026-09-01 — should be fixed first: either disable/hide the button for roles that can't use it, or the error should point at "Classify Domain & Sub-domain Manually" |
-| 3 | Priority Dashboard's Need list shows the parent Study's title instead of the Need's own title, so two Needs under one study are visually identical | Priority Dashboard (incidental) | High | Deferred | Found via proxy pass 2026-09-01 — a real data-display bug, not a training issue; recommend fixing before the real session so participants aren't blocked identifying which row is which |
+| 1 | A failed classification's reason and recovery actions are ~1,365px down the Need page, past 7 other sections, with no cue that they exist | Task 1 | Medium | Fixed | 28 Sep 2026 — added a "AI classification failed — see details" button next to the status badge at the top of the Need page (`studies/[id]/needs/[needId]/page.tsx`) that jumps straight to the AI Classification section (given `id="ai-classification"`). |
+| 2 | "Retry AI Classification" is enabled for a role (Human Reviewer) that gets "Insufficient permission" on click, with no pointer to the action that *does* work | Task 1 | High | Fixed | 28 Sep 2026 — both Retry and Classify Manually now check `aiReview:write` (`usePermission("aiReview", "write")` in `ai-classification-section.tsx`) before rendering; a role without it (Human Reviewer only holds `aiReview:approve`, confirmed in `role-matrix.ts`) sees an explanatory message ("Only the Research Officer who owns this study can retry or manually classify this need") instead of a button that would 403. |
+| 3 | Priority Dashboard's Need list shows the parent Study's title instead of the Need's own title, so two Needs under one study are visually identical | Priority Dashboard (incidental) | High | Fixed (already, prior to this session) | Traced the live code path (`priority-v2.service.ts`'s `listPage`, called by `GET /priority-scores`) end to end on 28 Sep 2026: `needTitle: need.title` and `studyTitle: studyTitleById.get(...)` are two separately-sourced fields with no join/aliasing collision; the frontend list column already renders `entry.needTitle`. This looks like it was fixed by other engineering work between the 2026-09-01 proxy pass and now — re-verify with a real Need pair on the next real session to close this out for certain. |
 
 Every row must end in either **Fixed** (say what changed) or **Deferred** (say why — "low impact, Sprint 3" is fine; a blank reason is not). That's what AC 3 requires and what the six fixes already shipped satisfy — add any new findings from this session to the same table so it stays the single source of truth.
 

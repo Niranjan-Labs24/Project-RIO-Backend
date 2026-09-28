@@ -6,7 +6,7 @@ export class ConfigService {
   private readonly config: AppConfig;
 
   constructor() {
-    this.config = validateEnv(process.env as Record<string, unknown>);
+    this.config = validateEnv(process.env);
   }
 
   get<K extends keyof AppConfig>(key: K): AppConfig[K] {
@@ -56,6 +56,9 @@ export class ConfigService {
   }
   get dbPoolMaxSupervisor(): number {
     return this.config.DB_POOL_MAX_SUPERVISOR;
+  }
+  get argon2MaxConcurrency(): number {
+    return this.config.ARGON2_MAX_CONCURRENCY;
   }
   get port(): number {
     return this.config.PORT;

@@ -1,6 +1,7 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
+import { buildJwtOptions } from './auth/jwt-options';
 import { ScheduleModule } from '@nestjs/schedule';
 import { LoggerModule } from 'nestjs-pino';
 import { PermissionGuard } from './common/guards/permission.guard';
@@ -75,12 +76,7 @@ import { AppController } from './app.controller';
       global: true,
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        secret: config.jwtSecret,
-        // `expiresIn` wants ms's StringValue template-literal type; our env
-        // value is validated as a string (e.g. '12h') and safe to pass through.
-        signOptions: { expiresIn: config.jwtExpiresIn as unknown as number },
-      }),
+      useFactory: (config: ConfigService) => buildJwtOptions(config.jwtSecret, config.jwtExpiresIn),
     }),
     // Global: makes SchedulerRegistry injectable anywhere (BackupModule)
     // without importing ScheduleModule again there.

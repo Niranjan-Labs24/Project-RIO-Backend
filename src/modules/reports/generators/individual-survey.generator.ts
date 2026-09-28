@@ -32,6 +32,6 @@ export async function individualSurveyGenerator(ctx: GeneratorCtx): Promise<Gene
   // two distinguishable rows in the reports list.
   return {
     title: `Individual Survey Report — ${content.survey.surveyTitle}`,
-    content: content as unknown as Record<string, unknown>,
+    content: { ...content },
   };
 }

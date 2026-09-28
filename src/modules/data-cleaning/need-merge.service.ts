@@ -406,7 +406,9 @@ export class NeedMergeService {
           data: { status: "superseded", reviewedBy: actor, reviewedAt: new Date() },
         }),
       )
-      .catch(() => undefined);
+      .catch((error: unknown) =>
+        this.logger.warn(`Could not update duplicate candidate status: ${String(error)}`),
+      );
 
     // Q24 — "current scores are recalculated". The survivor now carries the
     // retired need's responses and evidence, so its score is out of date the
@@ -601,7 +603,9 @@ export class NeedMergeService {
           data: { status: "pending", reviewedBy: null, reviewedAt: null },
         }),
       )
-      .catch(() => undefined);
+      .catch((error: unknown) =>
+        this.logger.warn(`Could not update duplicate candidate status: ${String(error)}`),
+      );
 
     await this.audit.record({
       action: "undo_need_merge",

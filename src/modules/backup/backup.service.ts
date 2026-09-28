@@ -245,7 +245,9 @@ export class BackupService implements OnModuleInit {
             error: stored,
           },
         })
-        .catch(() => undefined);
+        .catch((updateError: unknown) =>
+          this.logger.error(`Could not record backup failure: ${String(updateError)}`),
+        );
 
       this.logger.error(
         `${kind} backup failed after ${durationMs}ms: ${message}`,
@@ -529,7 +531,9 @@ export class BackupService implements OnModuleInit {
         detail: {},
       });
     } finally {
-      if (temporary) await unlink(temporary).catch(() => undefined);
+      if (temporary) await unlink(temporary).catch((error: unknown) =>
+          this.logger.warn(`Could not remove temporary backup file: ${String(error)}`),
+        );
     }
   }
 

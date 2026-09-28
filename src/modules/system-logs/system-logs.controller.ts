@@ -1,3 +1,4 @@
+import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { Controller, Get, Param, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { RateLimit } from '../../common/guards/rate-limit.guard';
@@ -126,7 +127,7 @@ export class SystemLogsController {
 
   @Get(':id')
   @RequirePermission('systemLogs', 'read')
-  getById(@Param('id') id: string): Promise<SystemLogEntry> {
+  getById(@Param('id', new UuidParamPipe()) id: string): Promise<SystemLogEntry> {
     return this.logs.getById(id);
   }
 }

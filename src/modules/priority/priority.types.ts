@@ -64,6 +64,16 @@ export interface PriorityScore {
 //   1. the Need's own APPROVED PriorityScore — per-need, reviewer-signed-off;
 //   2. failing that, the village-priority rollup (VillagePriorityAssessment).
 // They run in opposite directions, so `score.source` records which one it was.
+export interface PriorityDashboardPage {
+  items: PriorityDashboardEntry[];
+  /** Rows matching the filters, across all pages. */
+  total: number;
+  limit: number;
+  offset: number;
+  /** Level counts over every need the caller can see, ignoring the filters. */
+  summary: { critical: number; high: number; medium: number; low: number; unscored: number };
+}
+
 export interface PriorityDashboardEntry {
   studyId: string;
   studyTitle: string;

@@ -1,3 +1,4 @@
+import { ROLE_KEYS } from '../../rbac/role-keys';
 import { Injectable } from "@nestjs/common";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { getOrgStore } from "../../tenancy/org-context";
@@ -9,7 +10,7 @@ import type { QuestionBankAlert, QuestionBankAlertChangeKind } from "./question-
 // role-matrix.ts) — those roles are browsing the bank, not reviewing
 // changes to it, so the controller's guard alone isn't a tight enough
 // filter. This is the actual gate on who gets the feed.
-const ALERT_VISIBLE_ROLES = new Set(["human_reviewer", "system_reviewer"]);
+const ALERT_VISIBLE_ROLES = new Set<string>([ROLE_KEYS.humanReviewer, ROLE_KEYS.systemReviewer]);
 
 // How far back a System Admin's own resolved submissions stay visible —
 // long enough to notice without becoming an unbounded audit feed.
@@ -35,7 +36,7 @@ export class QuestionBankAlertsService {
     if (role && ALERT_VISIBLE_ROLES.has(role)) {
       return this.listPendingAlerts();
     }
-    if (role === "system_admin" && store?.actorId) {
+    if (role === ROLE_KEYS.systemAdmin && store?.actorId) {
       return this.listResolvedAlerts(store.actorId);
     }
     return [];

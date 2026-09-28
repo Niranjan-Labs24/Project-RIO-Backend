@@ -1,9 +1,10 @@
 import * as os from 'node:os';
-import { Injectable, NotFoundException, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleDestroy } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma';
 import { ConfigService } from '../../config/config.service';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore } from '../../tenancy/org-context';
+import { parseDateParam } from '../../common/validation/bounded';
 import {
   SYSTEM_LOG_LEVELS,
   type RecordSystemLogInput,
@@ -82,12 +83,13 @@ export class SystemLogsService implements OnModuleDestroy {
   private buffer: Prisma.SystemLogCreateManyInput[] = [];
   private timer?: NodeJS.Timeout;
   private readonly instanceId: string;
+  private readonly logger = new Logger(SystemLogsService.name);
 
   constructor(
     private readonly tenant: TenantPrismaService,
     private readonly config: ConfigService,
   ) {
-    this.instanceId = (process.env.INSTANCE_ID ?? os.hostname()).slice(0, 120);
+    this.instanceId = (this.config.get('INSTANCE_ID') ?? os.hostname()).slice(0, 120);
   }
 
   /**
@@ -133,7 +135,7 @@ export class SystemLogsService implements OnModuleDestroy {
       }
     } catch (err) {
       // Operational logging must never be able to fail the caller.
-      console.warn('System log record warning:', err);
+      this.logger.error(`System log record failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -158,7 +160,9 @@ export class SystemLogsService implements OnModuleDestroy {
       // broken, retrying the write that just failed is how a logger turns
       // an outage into an outage plus a memory leak. stdout still has every
       // one of these lines.
-      console.warn(`System log flush failed, dropping ${batch.length} row(s):`, err);
+      this.logger.error(
+        `System log flush failed, dropping ${batch.length} row(s): ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
@@ -208,7 +212,7 @@ export class SystemLogsService implements OnModuleDestroy {
   async getById(id: string): Promise<SystemLogEntry> {
     const row = (await this.tenant.runAsSupervisor((tx) =>
       tx.systemLog.findUnique({ where: { id } }),
-    )) as SystemLogRow | null;
+    ));
     if (!row) {
       throw new NotFoundException({
         error: { code: 'SYSTEM_LOG_NOT_FOUND', message: 'System log entry not found' },
@@ -305,7 +309,7 @@ export class SystemLogsService implements OnModuleDestroy {
           slowRequests,
         },
         byCategory: byCategory.map((r) => ({
-          category: r.category as SystemLogCategory,
+          category: r.category,
           count: r._count._all,
         })),
         topEventCodes: topCodes.map((c, i) => ({
@@ -472,8 +476,8 @@ function buildWhere(opts: SystemLogQuery): Prisma.SystemLogWhereInput {
   if (opts.statusCode !== undefined) where.statusCode = opts.statusCode;
   if (opts.dateFrom || opts.dateTo) {
     where.createdAt = {
-      ...(opts.dateFrom ? { gte: new Date(opts.dateFrom) } : {}),
-      ...(opts.dateTo ? { lte: new Date(opts.dateTo) } : {}),
+      ...(opts.dateFrom ? { gte: parseDateParam(opts.dateFrom, 'dateFrom') } : {}),
+      ...(opts.dateTo ? { lte: parseDateParam(opts.dateTo, 'dateTo') } : {}),
     };
   }
   const search = opts.search?.trim();

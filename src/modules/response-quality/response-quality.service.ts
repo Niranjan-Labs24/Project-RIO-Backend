@@ -2,11 +2,8 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { requireOrgId } from "../../tenancy/org-context";
 import { MethodologyConfigService } from "../methodology-config/methodology-config.service";
-import { assessResponseQuality, generateAiSummary } from "./response-quality.placeholder";
-import { requestLocale } from "../../common/locale/request-locale";
+import { assessResponseQuality } from "./response-quality.placeholder";
 import type {
-  AiSummary,
-  AiSummaryRow,
   ResponseQualityResult,
   ResponseQualityResultRow,
 } from "./response-quality.types";
@@ -69,42 +66,6 @@ export class ResponseQualityService {
     return (rows as unknown as ResponseQualityResultRow[]).map((r) => this.toResult(r));
   }
 
-  async generateSummary(needId: string, surveyLinkId?: string): Promise<AiSummary> {
-    const need = await this.findNeedOrThrow(needId);
-    if (surveyLinkId) await this.findLinkOrThrow(needId, surveyLinkId);
-    const orgId = requireOrgId();
-
-    const row = await this.tenant.runInOrgContext(async (tx) => {
-      const responses = await tx.surveyResponse.findMany({
-        where: { needId, ...(surveyLinkId ? { surveyLinkId } : {}) },
-      });
-      const summary = generateAiSummary(
-        responses.map((r) => ({ id: r.id, answers: r.answers as Record<string, unknown>, contact: r.contact })),
-        requestLocale(),
-      );
-      return tx.aiSummary.create({
-        data: {
-          orgId,
-          needId,
-          studyId: need.studyId,
-          surveyLinkId: surveyLinkId ?? null,
-          summaryText: summary.summaryText,
-          responseCount: summary.responseCount,
-        },
-      });
-    });
-    return this.toSummary(row as unknown as AiSummaryRow);
-  }
-
-  async getLatestSummary(needId: string, surveyLinkId?: string): Promise<AiSummary | null> {
-    await this.findNeedOrThrow(needId);
-    if (surveyLinkId) await this.findLinkOrThrow(needId, surveyLinkId);
-    const row = await this.tenant.runRead((tx) =>
-      tx.aiSummary.findFirst({ where: { needId, surveyLinkId: surveyLinkId ?? null }, orderBy: { generatedAt: "desc" } }),
-    );
-    return row ? this.toSummary(row as unknown as AiSummaryRow) : null;
-  }
-
   private async findNeedOrThrow(needId: string) {
     const need = await this.tenant.runRead((tx) => tx.need.findUnique({ where: { id: needId } }));
     if (!need) throw new NotFoundException({ error: { code: "NEED_NOT_FOUND", message: "Need not found" } });
@@ -131,18 +92,6 @@ export class ResponseQualityService {
       isDuplicate: row.isDuplicate,
       duplicateOfId: row.duplicateOfId,
       assessedAt: row.assessedAt.toISOString(),
-    };
-  }
-
-  private toSummary(row: AiSummaryRow): AiSummary {
-    return {
-      id: row.id,
-      needId: row.needId,
-      studyId: row.studyId,
-      surveyLinkId: row.surveyLinkId,
-      summaryText: row.summaryText,
-      responseCount: row.responseCount,
-      generatedAt: row.generatedAt.toISOString(),
     };
   }
 }

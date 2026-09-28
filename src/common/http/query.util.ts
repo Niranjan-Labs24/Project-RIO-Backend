@@ -7,3 +7,35 @@ export function parseIntParam(value?: string): number | undefined {
   const n = Number(value);
   return Number.isFinite(n) ? Math.trunc(n) : undefined;
 }
+
+export interface Page<T> {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export const DEFAULT_PAGE_SIZE = 10;
+export const MAX_PAGE_SIZE = 100;
+
+// Clamped limit/offset for a paged list. Default page size is 10; anything
+// above MAX_PAGE_SIZE is cut back to it, and a bad value falls to the default.
+export function parsePaging(
+  limit?: string,
+  offset?: string,
+): { limit: number; offset: number } {
+  const l = parseIntParam(limit);
+  const o = parseIntParam(offset);
+  return {
+    limit: Math.min(Math.max(l ?? DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE),
+    offset: Math.max(o ?? 0, 0),
+  };
+}
+
+export function pageOf<T>(all: T[], paging: { limit: number; offset: number }): Page<T> {
+  return {
+    items: all.slice(paging.offset, paging.offset + paging.limit),
+    total: all.length,
+    ...paging,
+  };
+}

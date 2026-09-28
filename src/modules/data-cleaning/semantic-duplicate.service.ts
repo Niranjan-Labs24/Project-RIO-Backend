@@ -1,6 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'node:crypto';
-import { Prisma } from '../../generated/prisma';
 import { requireActor, requireOrgId } from '../../tenancy/org-context';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { CleaningContextService } from './cleaning-context.service';
@@ -265,13 +264,13 @@ export class SemanticDuplicateService {
             modelName: this.embeddings.modelName,
             embeddingVersion: this.embeddings.embeddingVersion,
             dimensions: this.embeddings.dimensions,
-            vector: vectors[i]! as unknown as Prisma.InputJsonValue,
+            vector: vectors[i]!,
           },
           update: {
             textHash: hashes.get(need.id)!,
             modelName: this.embeddings.modelName,
             dimensions: this.embeddings.dimensions,
-            vector: vectors[i]! as unknown as Prisma.InputJsonValue,
+            vector: vectors[i]!,
           },
         });
       }

@@ -62,7 +62,7 @@ import { loadRpt01ReferenceData, type Rpt01ReferenceData } from "./load-rpt01-in
 import { loadSegmentSeverities } from "./load-segment-severities";
 import type { DomainMeta, RollupLevelValue } from "./build-need-hierarchy";
 import type { SegmentRow } from "./derive-equity-flag";
-import { DEFAULT_THRESHOLDS, type ConfidenceFlag, type UnitGeo } from "../need-record.types";
+import { DEFAULT_THRESHOLDS, type UnitGeo } from "../need-record.types";
 
 // Real report data provider — every method reads real data. There is no mock
 // fallback: a study with no scores yet raises STUDY_NOT_SCORED (409) so the
@@ -790,8 +790,8 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
 
   private hasData(s: ReportDataSnapshot): boolean {
     return (
-      (s.severity.overallVillageNeedsIndex as number | null) !== null &&
-      (s.priority.villagePriorityScore as number | null) !== null
+      (s.severity.overallVillageNeedsIndex) !== null &&
+      (s.priority.villagePriorityScore) !== null
     );
   }
 }
@@ -891,7 +891,7 @@ function assembleUnifiedInput(input: {
     domainWeightByKey: reference.domainWeightByKey,
 
     overallNeedsIndex: sev.overallVillageNeedsIndex,
-    overallConfidence: base.responseQuality.overallConfidence as ConfidenceFlag,
+    overallConfidence: base.responseQuality.overallConfidence,
     overallConfidenceReason: base.responseQuality.confidenceReason,
     priorCycleOverallSeverity: null,
 

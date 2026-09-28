@@ -204,7 +204,7 @@ export class ConsentService {
 
     let row: ConsentPolicyRow;
     try {
-      row = (await this.prisma.consentPolicy.create({
+      row = await this.prisma.consentPolicy.create({
         data: {
           kind: payload.kind,
           version,
@@ -215,7 +215,7 @@ export class ConsentService {
           createdBy: actor,
           updatedBy: actor,
         },
-      })) as unknown as ConsentPolicyRow;
+      });
     } catch (err) {
       if (this.isUniqueViolation(err)) throw this.duplicateVersion(version);
       throw err;
@@ -292,7 +292,7 @@ export class ConsentService {
 
     let row: ConsentPolicyRow;
     try {
-      row = (await this.prisma.consentPolicy.update({
+      row = await this.prisma.consentPolicy.update({
         where: { id },
         data: {
           version,
@@ -306,7 +306,7 @@ export class ConsentService {
           reviewNotes: null,
           updatedBy: actor,
         },
-      })) as unknown as ConsentPolicyRow;
+      });
     } catch (err) {
       if (this.isUniqueViolation(err)) throw this.duplicateVersion(version);
       throw err;
@@ -362,10 +362,10 @@ export class ConsentService {
         },
       });
     }
-    const row = (await this.prisma.consentPolicy.update({
+    const row = await this.prisma.consentPolicy.update({
       where: { id },
       data: { status: 'pending_approval', updatedBy: actor },
-    })) as unknown as ConsentPolicyRow;
+    });
 
     await this.audit.record({
       action: 'edit',
@@ -415,7 +415,7 @@ export class ConsentService {
     const superseded = (await this.prisma.consentPolicy.findFirst({
       where: { kind: existing.kind, active: true },
       select: { id: true, version: true },
-    })) as { id: string; version: string } | null;
+    }));
 
     // One transaction: a window in which both versions are active (or neither
     // is) would let two registrants consent to different wording under the
@@ -441,7 +441,7 @@ export class ConsentService {
           ]
         : []),
     ]);
-    const published = row as unknown as ConsentPolicyRow;
+    const published = row;
 
     await this.audit.record({
       action: 'approve',
@@ -481,10 +481,10 @@ export class ConsentService {
         },
       });
     }
-    const row = (await this.prisma.consentPolicy.update({
+    const row = await this.prisma.consentPolicy.update({
       where: { id },
       data: { status: outcome, reviewedBy: reviewer, reviewedAt: new Date(), reviewNotes: notes },
-    })) as unknown as ConsentPolicyRow;
+    });
 
     const rejected = outcome === 'draft';
     await this.audit.record({
@@ -514,7 +514,7 @@ export class ConsentService {
         },
       });
     }
-    return row as unknown as ConsentPolicyRow;
+    return row;
   }
 
   private duplicateVersion(version: string): ConflictException {

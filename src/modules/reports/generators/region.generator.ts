@@ -13,6 +13,6 @@ export async function regionGenerator(ctx: GeneratorCtx): Promise<GeneratedRepor
   });
   return {
     title: `Regional Needs Report — ${content.header.studyName}`,
-    content: content as unknown as Record<string, unknown>,
+    content: { ...content },
   };
 }

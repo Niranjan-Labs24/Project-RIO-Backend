@@ -1,3 +1,4 @@
+import { ROLE_KEYS } from '../../rbac/role-keys';
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
@@ -141,7 +142,7 @@ export class StudiesService {
         },
         include: GEO_INCLUDE,
       });
-      return this.toStudyRow(created as RawStudyWithGeo);
+      return this.toStudyRow(created);
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
         const maxRow = await tx.study.findFirst({
@@ -169,7 +170,7 @@ export class StudiesService {
           },
           include: GEO_INCLUDE,
         });
-        return this.toStudyRow(created as RawStudyWithGeo);
+        return this.toStudyRow(created);
       }
       throw e;
     }
@@ -245,9 +246,9 @@ export class StudiesService {
     // platform-wide accounts and should see every org's data on these main
     // nav screens, not just their own (empty) one.
     const isCrossOrgReader =
-      store?.role === 'system_admin' ||
-      store?.role === 'system_reviewer' ||
-      store?.role === 'center_supervisor';
+      store?.role === ROLE_KEYS.systemAdmin ||
+      store?.role === ROLE_KEYS.systemReviewer ||
+      store?.role === ROLE_KEYS.centerSupervisor;
 
     const take = Math.min(Math.max(opts.limit ?? 100, 1), 200);
     const skip = Math.max(opts.offset ?? 0, 0);
@@ -277,7 +278,7 @@ export class StudiesService {
           tx.study.count({ where }),
         ]),
       );
-      rows = result[0] as (RawStudyWithGeo & { org?: { name: string } | null; _count?: { needs: number } })[];
+      rows = result[0];
       total = result[1];
 
       // RIO-RBAC-002 (Round 5, client-confirmed 2026-08-24) — Supervisor
@@ -287,7 +288,7 @@ export class StudiesService {
       // still logged here — logging was never about System Admin's own
       // access in the first place, this branch just happens to be shared
       // between both cross-org-reading roles.
-      if (store?.role === 'system_admin') {
+      if (store?.role === ROLE_KEYS.systemAdmin) {
         await this.audit.record({
           action: 'SYSTEM_ADMIN_VIEWED_STUDIES',
           entityType: 'study',
@@ -320,7 +321,7 @@ export class StudiesService {
           tx.study.count({ where }),
         ]),
       );
-      rows = result[0] as (RawStudyWithGeo & { org?: { name: string } | null; _count?: { needs: number } })[];
+      rows = result[0];
       total = result[1];
     }
 
@@ -339,7 +340,7 @@ export class StudiesService {
   async getById(id: string): Promise<StudyDetail> {
     const store = getOrgStore();
     // RIO-RBAC-002 (AC1, fixed 2026-08-23) — see list()'s comment above.
-    const isCrossOrgReader = store?.role === 'system_admin' || store?.role === 'center_supervisor';
+    const isCrossOrgReader = store?.role === ROLE_KEYS.systemAdmin || store?.role === ROLE_KEYS.centerSupervisor;
 
     let row: (RawStudyWithGeo & { org?: { name: string } | null }) | null = null;
     let evidenceCount = 0;
@@ -370,14 +371,14 @@ export class StudiesService {
           }),
         ]),
       );
-      row = result[0] as (RawStudyWithGeo & { org?: { name: string } | null }) | null;
+      row = result[0];
       evidenceCount = result[1];
       needCount = result[2];
       needsList = result[3];
 
       // RIO-RBAC-002 (Round 5, client-confirmed 2026-08-24) — Supervisor
       // view access isn't logged; see the list() method's comment above.
-      if (row && store?.role === 'system_admin') {
+      if (row && store?.role === ROLE_KEYS.systemAdmin) {
         await this.audit.record({
           action: 'SYSTEM_ADMIN_VIEWED_STUDIES',
           entityType: 'study',
@@ -410,7 +411,7 @@ export class StudiesService {
           }),
         ]),
       );
-      row = result[0] as (RawStudyWithGeo & { org?: { name: string } | null }) | null;
+      row = result[0];
       evidenceCount = result[1];
       needCount = result[2];
       needsList = result[3];
@@ -548,8 +549,8 @@ export class StudiesService {
     nextGovernorateIds: string[],
     nextCenterIds: string[],
   ): AuditChange[] {
-    const before = current as unknown as Record<string, unknown>;
-    const after = patch as unknown as Record<string, unknown>;
+    const before: Record<string, unknown> = { ...current };
+    const after: Record<string, unknown> = { ...patch };
     const changes: AuditChange[] = [];
     for (const f of DIFF_FIELDS) {
       if (after[f] !== undefined && JSON.stringify(before[f]) !== JSON.stringify(after[f])) {
@@ -624,7 +625,7 @@ export class StudiesService {
     // via an active grant (store.grantCitation set) — never unconditionally
     // like the read paths above. No grant, no cross-org write, exactly the
     // "cannot edit unless an explicit approved grant exists" rule.
-    const isCrossOrgWriter = store?.role === 'system_admin' || (store?.role === 'center_supervisor' && !!store.grantCitation);
+    const isCrossOrgWriter = store?.role === ROLE_KEYS.systemAdmin || (store?.role === ROLE_KEYS.centerSupervisor && !!store.grantCitation);
 
     const raw = isCrossOrgWriter
       ? await this.tenant.runAsSupervisor((tx) => tx.study.findUnique({ where: { id }, include: { needs: true, reports: true, ...GEO_INCLUDE } }))
@@ -679,14 +680,14 @@ export class StudiesService {
       metadata: { reason: reason ?? null },
     });
 
-    return this.toStudy(this.toStudyRow(updated as RawStudyWithGeo));
+    return this.toStudy(this.toStudyRow(updated));
   }
 
   async restore(id: string): Promise<Study> {
     requireActor();
     const store = getOrgStore();
     // RIO-RBAC-002 (AC2) — same rule as archive() above.
-    const isCrossOrgWriter = store?.role === 'system_admin' || (store?.role === 'center_supervisor' && !!store.grantCitation);
+    const isCrossOrgWriter = store?.role === ROLE_KEYS.systemAdmin || (store?.role === ROLE_KEYS.centerSupervisor && !!store.grantCitation);
 
     const raw = isCrossOrgWriter
       ? await this.tenant.runAsSupervisor((tx) => tx.study.findUnique({ where: { id }, include: GEO_INCLUDE }))
@@ -724,6 +725,6 @@ export class StudiesService {
       organizationId: raw.orgId,
     });
 
-    return this.toStudy(this.toStudyRow(updated as RawStudyWithGeo));
+    return this.toStudy(this.toStudyRow(updated));
   }
 }

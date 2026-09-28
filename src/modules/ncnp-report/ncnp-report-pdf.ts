@@ -306,9 +306,31 @@ function barShade(i: number, n: number): string {
 // wrap mid-name, so each name goes on its own line instead: the primary name
 // at normal size, the other-language name below it, smaller and gray.
 export function splitBilingual(label: string): { primary: string; secondary: string | null } {
-  const m = /^(.*\S)\s+\(([^()]*(?:\([^()]*\))?[^()]*)\)$/.exec(label);
-  if (!m || !/[A-Za-z]/.test(m[2]!) === !/[A-Za-z]/.test(m[1]!)) return { primary: label, secondary: null };
-  return { primary: m[1]!, secondary: m[2]! };
+  const whole = { primary: label, secondary: null };
+  if (!label.endsWith(')')) return whole;
+  // Walk back from the final ")" to its matching "(" (a single linear pass — no regex
+  // backtracking on long names, and a nested pair such as "(Riyadh (North))" stays inside).
+  let depth = 0;
+  let open = -1;
+  for (let i = label.length - 1; i >= 0; i--) {
+    const ch = label[i];
+    if (ch === ')') depth++;
+    else if (ch === '(') {
+      depth--;
+      if (depth === 0) {
+        open = i;
+        break;
+      }
+    }
+  }
+  // Needs a name before the bracket, separated from it by whitespace.
+  if (open <= 0 || !/\s/.test(label[open - 1]!)) return whole;
+  const primary = label.slice(0, open).trimEnd();
+  const secondary = label.slice(open + 1, -1);
+  if (!primary || !secondary) return whole;
+  // Only a genuine second-language name is split off ("Hope (Riyadh)" is one name).
+  if (/[A-Za-z]/.test(secondary) === /[A-Za-z]/.test(primary)) return whole;
+  return { primary, secondary };
 }
 
 interface LabelLine {

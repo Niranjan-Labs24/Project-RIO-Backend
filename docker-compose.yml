@@ -63,6 +63,11 @@ services:
   api:
     build: .
     container_name: cnap-api
+    # A real init as PID 1 (signal forwarding, zombie reaping) and no privilege escalation
+    # from inside the container; neither changes how the API behaves.
+    init: true
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       db:
         condition: service_healthy

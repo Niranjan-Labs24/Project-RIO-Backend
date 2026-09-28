@@ -69,8 +69,11 @@ export interface SharedReportSnapshot {
   // uses (see reports.types.ts's Report interface), instead of a separate,
   // visually-inconsistent renderer for shared reports.
   officerConfirmedBy: string | null;
+  officerConfirmedByName: string | null;
   officerConfirmedAt: string | null;
   reviewedBy: string | null;
+  reviewedByName: string | null;
+  reviewedByRole: string | null;
   reviewedAt: string | null;
 }
 

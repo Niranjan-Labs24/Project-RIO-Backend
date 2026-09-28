@@ -18,7 +18,6 @@ import {
   type DomainComponent,
   type ExecutiveReportContent,
   type PortfolioBlock,
-  type PriorityStatus,
   type RegionReportContent,
   type ReportHeader,
   type ResponseQuality,
@@ -265,7 +264,7 @@ export function snapshotTrendNote(snapshot: ReportDataSnapshot): string {
 
 /** Gemini `aiOutputJson` → our AI summary block (tolerant of missing fields). */
 export function aiOutputToSummaryBlock(ai: Record<string, unknown> | null | undefined): AiSummaryBlock {
-  const a = (ai ?? {}) as Record<string, unknown>;
+  const a = (ai ?? {});
   const str = (v: unknown): string => (typeof v === "string" ? v : "");
 
   const keyFindings = Array.isArray(a.keyFindings)
@@ -356,7 +355,7 @@ function mapPriority(snapshot: ReportDataSnapshot) {
   const score = snapshot.priority.villagePriorityScore;
   return {
     villagePriorityScore: score,
-    priorityStatus: priorityStatusOf(score) as PriorityStatus | null,
+    priorityStatus: priorityStatusOf(score),
     notCalculableReason:
       score === null
         ? "No village priority assessment is stored for this survey and scope — priority scoring has not been run, or no domain weights are configured."

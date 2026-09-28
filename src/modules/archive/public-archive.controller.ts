@@ -1,3 +1,5 @@
+import { RateLimit } from "../../common/guards/rate-limit.guard";
+import { UuidParamPipe } from "../../common/pipes/uuid-param.pipe";
 import { BadRequestException, Controller, Get, Param } from "@nestjs/common";
 import { Public } from "../../auth/public.decorator";
 import { PublicArchiveService } from "./public-archive.service";
@@ -44,13 +46,16 @@ export class PublicArchiveController {
 
   /** Declared before `:kind/:id` for readability; the three-segment path
    *  could not be captured by it in any case. */
+  // Parsing a stored PDF/spreadsheet costs far more than the request itself, so this
+  // route gets its own, tighter ceiling than the default 300 reads a minute.
+  @RateLimit(60, 60)
   @Get("historical/:id/document")
-  document(@Param("id") id: string): Promise<PublicDocumentResponse> {
+  document(@Param("id", new UuidParamPipe()) id: string): Promise<PublicDocumentResponse> {
     return this.publicArchive.document(id);
   }
 
   @Get(":kind/:id")
-  detail(@Param("kind") kind: string, @Param("id") id: string): Promise<PublicArchiveDetail> {
+  detail(@Param("kind") kind: string, @Param("id", new UuidParamPipe()) id: string): Promise<PublicArchiveDetail> {
     // Checked against the literal list rather than cast, so a typo in the URL
     // cannot reach the service as an unhandled kind.
     if (!KINDS.includes(kind as PublicArchiveKind)) {

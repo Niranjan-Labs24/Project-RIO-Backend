@@ -1,3 +1,4 @@
+import { parseDateParam } from "../../common/validation/bounded";
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { requireActor, requireOrgId } from '../../tenancy/org-context';
@@ -79,7 +80,7 @@ export class NeedDecisionsService {
           orgId,
           decisionType: payload.decisionType,
           responsibleParty: payload.responsibleParty,
-          decisionDate: new Date(payload.decisionDate),
+          decisionDate: parseDateParam(payload.decisionDate, "decisionDate"),
           notes: payload.notes,
           createdBy,
           status: 'open',
@@ -158,7 +159,7 @@ export class NeedDecisionsService {
         include: { statusEvents: { orderBy: { changedAt: 'asc' } } },
       }),
     );
-    return this.toDecision(row as NeedDecisionRow & { statusEvents: NeedDecisionStatusEventRow[] });
+    return this.toDecision(row);
   }
 
   private toDecision(row: NeedDecisionRow & { statusEvents: NeedDecisionStatusEventRow[] }): NeedDecision {

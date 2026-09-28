@@ -28,24 +28,3 @@ export interface ResponseQualityResult {
   duplicateOfId: string | null;
   assessedAt: string;
 }
-
-export interface AiSummaryRow {
-  id: string;
-  orgId: string;
-  needId: string;
-  studyId: string;
-  surveyLinkId: string | null;
-  summaryText: string;
-  responseCount: number;
-  generatedAt: Date;
-}
-
-export interface AiSummary {
-  id: string;
-  needId: string;
-  studyId: string;
-  surveyLinkId: string | null;
-  summaryText: string;
-  responseCount: number;
-  generatedAt: string;
-}

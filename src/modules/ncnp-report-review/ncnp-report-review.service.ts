@@ -1,5 +1,6 @@
+import { toJson } from '../../common/prisma/json';
+import { ROLE_KEYS } from '../../rbac/role-keys';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore, requireActor } from '../../tenancy/org-context';
 import { roleByKey } from '../../rbac/role-matrix';
@@ -39,8 +40,8 @@ export class NcnpReportReviewService {
     const row = await this.tenant.runAsSupervisorWrite((tx) =>
       tx.ncnpReportReview.create({
         data: {
-          content: content as unknown as Prisma.InputJsonValue,
-          filters: filters as unknown as Prisma.InputJsonValue,
+          content: toJson(content),
+          filters: filters,
           generatedBy,
         },
       }),
@@ -54,7 +55,7 @@ export class NcnpReportReviewService {
         { field: 'Status', before: null, after: row.status },
       ],
     });
-    return this.toSummary(row as unknown as NcnpReportReviewRow, await this.namesFor([row as unknown as NcnpReportReviewRow]));
+    return this.toSummary(row, await this.namesFor([row]));
   }
 
   async list(status?: string): Promise<NcnpReportReviewSummary[]> {
@@ -126,7 +127,7 @@ export class NcnpReportReviewService {
       { label: l('Published By'), value: publishedByName ?? '—' },
       { label: l('Published On'), value: row.publishedAt ? fmtDate(row.publishedAt.toISOString(), locale) : '—' },
     ];
-    const stored = row.content as unknown as NcnpReport;
+    const stored = row.content as NcnpReport;
     const content = await this.ncnpReport.localizeForExport(stored, locale);
     const dateStamp = row.generatedAt.toISOString().slice(0, 10);
     await this.audit.record({
@@ -177,7 +178,7 @@ export class NcnpReportReviewService {
       changes: [{ field: 'Reviewer Notes', before: null, after: notes }],
       metadata: { status: 'approved' },
     });
-    return this.toSummary(row as unknown as NcnpReportReviewRow, await this.namesFor([row as unknown as NcnpReportReviewRow]));
+    return this.toSummary(row, await this.namesFor([row]));
   }
 
   // System Reviewer: reject — terminal, sent back to System Admin, who must
@@ -207,7 +208,7 @@ export class NcnpReportReviewService {
       changes: [{ field: 'Reviewer Notes', before: null, after: notes }],
       metadata: { status: 'rejected' },
     });
-    return this.toSummary(row as unknown as NcnpReportReviewRow, await this.namesFor([row as unknown as NcnpReportReviewRow]));
+    return this.toSummary(row, await this.namesFor([row]));
   }
 
   // System Admin: final publish, only once a System Reviewer has approved.
@@ -237,7 +238,7 @@ export class NcnpReportReviewService {
         { field: 'Status', before: 'approved', after: row.status },
       ],
     });
-    return this.toSummary(row as unknown as NcnpReportReviewRow, await this.namesFor([row as unknown as NcnpReportReviewRow]));
+    return this.toSummary(row, await this.namesFor([row]));
   }
 
   // Derived/computed alerts for the notifications bell — same pattern as
@@ -247,11 +248,11 @@ export class NcnpReportReviewService {
   async listAlerts(): Promise<Array<{ id: string; type: string; generatedAt: string }>> {
     this.assertCrossEntity();
     const role = getOrgStore()?.role;
-    const status = role === 'system_reviewer' ? 'draft' : 'approved';
+    const status = role === ROLE_KEYS.systemReviewer ? 'draft' : 'approved';
     const rows = await this.tenant.runAsSupervisor((tx) =>
       tx.ncnpReportReview.findMany({ where: { status }, orderBy: { generatedAt: 'desc' } }),
     );
-    const type = role === 'system_reviewer' ? 'ncnp_report_pending_review' : 'ncnp_report_ready_to_publish';
+    const type = role === ROLE_KEYS.systemReviewer ? 'ncnp_report_pending_review' : 'ncnp_report_ready_to_publish';
     return (rows as unknown as NcnpReportReviewRow[]).map((r) => ({ id: r.id, type, generatedAt: r.generatedAt.toISOString() }));
   }
 
@@ -260,7 +261,7 @@ export class NcnpReportReviewService {
     if (!row) {
       throw new NotFoundException({ error: { code: 'NCNP_REPORT_REVIEW_NOT_FOUND', message: 'NCNP report review not found' } });
     }
-    return row as unknown as NcnpReportReviewRow;
+    return row;
   }
 
   private toSummary(

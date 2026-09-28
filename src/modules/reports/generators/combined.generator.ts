@@ -29,6 +29,6 @@ export async function combinedGenerator(ctx: GeneratorCtx): Promise<GeneratedRep
 
   return {
     title: `Survey & Dashboard Report — ${content.survey.surveyTitle}`,
-    content: content as unknown as Record<string, unknown>,
+    content: { ...content },
   };
 }

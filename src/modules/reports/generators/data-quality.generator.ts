@@ -21,6 +21,6 @@ export async function dataQualityGenerator(ctx: GeneratorCtx): Promise<Generated
   });
   return {
     title: `Data-Quality Report — ${content.header.studyName}`,
-    content: content as unknown as Record<string, unknown>,
+    content: { ...content },
   };
 }

@@ -1,8 +1,9 @@
+import { toJson } from '../../common/prisma/json';
 import { BadRequestException, GoneException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomInt } from 'node:crypto';
-import { Prisma } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { PasswordService } from '../../auth/password.service';
+import { ConfigService } from '../../config/config.service';
 import { SmsService } from '../../sms/sms.service';
 import { AuditService } from '../audit/audit.service';
 import { DataCleaningService } from '../data-cleaning/data-cleaning.service';
@@ -21,6 +22,16 @@ import type {
 const OTP_TTL_MINUTES = 10;
 const OTP_MAX_ATTEMPTS = 5;
 const SECONDS_PER_QUESTION = 20;
+
+/**
+ * Whether the OTP may be echoed in the API response. Only in development and
+ * test, and only when the SMS was not delivered. Driven by the validated config
+ * value (an unset NODE_ENV counts as production), never by process.env
+ * directly, so a missing or mistyped NODE_ENV cannot leak codes.
+ */
+export function shouldRevealOtp(codeTexted: boolean, nodeEnv: string | undefined): boolean {
+  return !codeTexted && (nodeEnv === 'development' || nodeEnv === 'test');
+}
 
 @Injectable()
 export class CitizenService {
@@ -43,6 +54,7 @@ export class CitizenService {
     // RIO-FR-002 — cleaning of the submitted response. Best-effort, like
     // session tracking above.
     private readonly dataCleaning: DataCleaningService,
+    private readonly config: ConfigService,
   ) {}
 
   // The published Survey Builder survey is the only source of questions for
@@ -232,7 +244,7 @@ export class CitizenService {
       challengeId: challenge.id,
       expiresAt: expiresAt.toISOString(),
       codeTexted,
-      code: !codeTexted && process.env.NODE_ENV !== 'production' ? code : undefined,
+      code: shouldRevealOtp(codeTexted, this.config.nodeEnv) ? code : undefined,
     };
   }
 
@@ -415,7 +427,7 @@ export class CitizenService {
           governorateIds: need?.needGovernorates.map((g) => g.governorateId) ?? [],
           centerIds: need?.needCenters.map((c) => c.centerId) ?? [],
           village: need?.village ?? [],
-          answers: payload.answers as unknown as Prisma.InputJsonValue,
+          answers: toJson(payload.answers),
           consentPolicyVersion: activeConsent.version,
           consentPolicyLocale: consentLocale,
           consentedAt: new Date(),

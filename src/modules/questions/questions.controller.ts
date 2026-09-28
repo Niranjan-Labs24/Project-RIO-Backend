@@ -1,9 +1,10 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
-import { QuestionsService, type CreateQuestionInput, type UpdateQuestionInput } from './questions.service';
+import { QuestionsService, type UpdateQuestionInput } from './questions.service';
 import { CreateQuestionBody, type CreateQuestionDto } from './questions.contract';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
+import { nullableText, optionalText } from '../../common/validation/bounded';
 
 @Controller('question-bank')
 export class QuestionsController {
@@ -114,7 +115,7 @@ export class QuestionsController {
   createQuestion(
     @Body(new TypeBoxValidationPipe(CreateQuestionBody)) body: CreateQuestionDto,
   ) {
-    return this.service.create(body as CreateQuestionInput);
+    return this.service.create(body);
   }
 
   // RIO-FR-012 (Q31, client-confirmed 2026-08-20) — only NCNP Admin (System
@@ -128,6 +129,10 @@ export class QuestionsController {
     @Param('id', new UuidParamPipe()) id: string,
     @Body() body: UpdateQuestionInput,
   ) {
+    for (const field of ['questionText', 'domain', 'subDomain'] as const) optionalText(body?.[field], field, 5000);
+    for (const field of ['indicator', 'kpi', 'questionTextAr', 'indicatorAr', 'kpiAr'] as const) {
+      nullableText(body?.[field], field, 5000);
+    }
     return this.service.update(id, body);
   }
 
@@ -166,6 +171,6 @@ export class QuestionsController {
     @Param('id', new UuidParamPipe()) id: string,
     @Body('reason') reason: string,
   ) {
-    return this.service.reject(id, reason);
+    return this.service.reject(id, optionalText(reason, 'reason', 20_000) as string);
   }
 }

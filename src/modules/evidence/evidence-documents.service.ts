@@ -1,7 +1,10 @@
+import { loadXlsx } from "../../common/excel/load-xlsx";
+import { parseDateParam } from "../../common/validation/bounded";
 import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import exceljs from "exceljs";
@@ -52,6 +55,8 @@ const LEGACY_OFFICE_EXTENSIONS = new Set([".doc", ".xls"]);
 
 @Injectable()
 export class EvidenceDocumentsService {
+  private readonly logger = new Logger(EvidenceDocumentsService.name);
+
   constructor(
     private readonly tenant: TenantPrismaService,
     private readonly storage: EvidenceStorageService,
@@ -89,7 +94,7 @@ export class EvidenceDocumentsService {
       extractedText = buffer.toString("utf-8").replace(/^﻿/, "").trim();
     } else if (ext === ".xlsx") {
       const workbook = new exceljs.Workbook();
-      await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
+      await loadXlsx(workbook, buffer);
       const lines: string[] = [];
       workbook.eachSheet((worksheet) => {
         lines.push(`Sheet: ${worksheet.name}`);
@@ -260,7 +265,7 @@ export class EvidenceDocumentsService {
           storageKey,
           documentType: payload.documentType,
           sourceReferenceId: payload.sourceReferenceId,
-          collectedDate: new Date(payload.collectedDate),
+          collectedDate: parseDateParam(payload.collectedDate, "collectedDate"),
           description: payload.description || null,
           linkedNeedId: payload.linkedNeedId || null,
           linkedDomainId: payload.linkedDomainId || null,
@@ -376,9 +381,10 @@ export class EvidenceDocumentsService {
     const locale = requestLocale();
     const summaries = await Promise.all(
       doc.summaries.map(async (s, i) => {
+        const sourceLocale: SupportedLocale = s.outputLocale === "ar" ? "ar" : "en";
         const args = {
           source: (s.officerEditedOutputJson ?? s.aiOutputJson) as Record<string, unknown> | null,
-          sourceLocale: (s.outputLocale === "ar" ? "ar" : "en") as SupportedLocale,
+          sourceLocale,
           targetLocale: locale,
           stored: s.localizedOutputs,
         };
@@ -393,7 +399,9 @@ export class EvidenceDocumentsService {
                 data: { localizedOutputs: toPersist as Prisma.InputJsonValue },
               }),
             )
-            .catch(() => undefined);
+            .catch((error: unknown) =>
+              this.logger.warn(`Could not cache localized summary output: ${String(error)}`),
+            );
         }
         return {
           ...s,

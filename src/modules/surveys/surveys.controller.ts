@@ -46,7 +46,7 @@ export class SurveysController {
 
   @Get('surveys/:id')
   @RequirePermission('surveyBuilder', 'read')
-  getSurveyById(@Param('id') id: string) {
+  getSurveyById(@Param('id', new UuidParamPipe()) id: string) {
     return this.service.getSurveyDetailById(id);
   }
 

@@ -419,10 +419,10 @@ describe("FR-003 priority scoring (e2e)", () => {
     // "never publicly visible until approved" rule the schema documents on
     // PriorityScore.approvedBy).
     const beforeApproval = await request(app.getHttpServer())
-      .get("/api/priority-scores")
+      .get("/api/priority-scores?limit=100")
       .set("Cookie", analystCookies)
       .expect(200);
-    const rowBefore = beforeApproval.body.find((r: { needId: string }) => r.needId === needId);
+    const rowBefore = beforeApproval.body.items.find((r: { needId: string }) => r.needId === needId);
     expect(rowBefore?.score ?? null).toBeNull();
 
     await request(app.getHttpServer())
@@ -432,10 +432,10 @@ describe("FR-003 priority scoring (e2e)", () => {
       .expect(200);
 
     const afterApproval = await request(app.getHttpServer())
-      .get("/api/priority-scores")
+      .get("/api/priority-scores?limit=100")
       .set("Cookie", analystCookies)
       .expect(200);
-    const rowAfter = afterApproval.body.find((r: { needId: string }) => r.needId === needId);
+    const rowAfter = afterApproval.body.items.find((r: { needId: string }) => r.needId === needId);
     expect(rowAfter?.score).toBeTruthy();
     expect(rowAfter.score.overallScore).toBe(62);
     expect(rowAfter.score.level).toBe("medium");
