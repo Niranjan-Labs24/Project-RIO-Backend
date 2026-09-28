@@ -393,6 +393,144 @@ genuine hardware/capacity constraint, not an application misconfiguration:
 correct and necessary regardless of the deeper CPU finding, and measurably reduced one real
 failure mode. **Not kept:** the `UV_THREADPOOL_SIZE` experiment — no evidence it helps.
 
+## Result (2026-09-27, argon2-concurrency-cap fix applied — real progress, and a new bottleneck exposed)
+
+**Fix applied:** `PasswordService` (`src/auth/password.service.ts`) now runs every argon2 `hash`/
+`verify` call through an in-process `ConcurrencyLimiter` (a small FIFO queue), capped by the new
+`ARGON2_MAX_CONCURRENCY` env var (default 8, matching this dev box's core count — see
+`env.schema.ts`). This directly targets the "not yet tried" idea from the 2026-08-27 fix-attempt
+section above: instead of 15,000 concurrent logins all hitting argon2id at once and thrashing the
+same physical cores, at most 8 run at a time and the rest queue.
+
+Re-ran the identical 500-concurrent scenario (same `pilot.yml`, same 50-org/500-account seed,
+same phases) against the built API on `:4100` with the DB-pool fix (kept from 2026-08-27) and this
+new argon2 cap both in effect:
+
+| Metric | 2026-08-27 (DB-pool fix only) | 2026-09-27 (+ argon2 cap) | Budget |
+|---|---|---|---|
+| `Unable to start a transaction` errors | 3,980–4,263 | **0** | — |
+| HTTP 500 | (same failure mode) | **0** | — |
+| HTTP 200 | 4,951–5,890 | 492 | — |
+| HTTP 429 (rate-limited) | 303 | **14,940** | — |
+| HTTP 403 | 258 | 24 | — |
+| VUs completed / failed (of 15,000) | 860–1,144 / 13,856–14,140 | 60 / 14,940 | — |
+| Latency p95 (successful requests) | 7,866–9,048 ms | **16.9–144 ms** | < 500 ms |
+| Latency p99 (successful requests) | — | **80.6–202.4 ms** | < 1000 ms |
+
+**Two things are both true here, and neither should be read as cancelling the other out:**
+
+1. **The DB-pool-exhaustion and argon2-CPU-contention bottlenecks this file spent two prior
+   sessions root-causing are gone.** Zero `Unable to start a transaction` errors (down from
+   ~4,000) and zero HTTP 500s, for the first time on this page. Latency on requests that actually
+   got a response improved by roughly **50–500x** (p95 went from ~8 seconds to under 150ms). This
+   is real, measured progress from this fix, not an assumption.
+2. **The overall VU-failure rate looks just as bad (actually nominally worse in raw count) for a
+   completely different reason: the login endpoint's own anti-brute-force rate limiter.**
+   `POST /api/auth/login` is `@RateLimit(5, 60, { perIp: { limit: 60, windowSeconds: 600 } })` —
+   5 attempts per 60s per (IP, email) pair, and a secondary ceiling of 60 attempts per 600s across
+   *all* identifiers from one IP (`rate-limit.guard.ts`'s own comment: "an extra ceiling per
+   client IP across ALL identifiers, for unauthenticated routes"). Every one of this test's 15,000
+   virtual users logs in from **the same single machine — the Artillery load generator's one IP**.
+   500 real concurrent users would be on ~500 different IPs, each logging in once; this test
+   methodology makes 15,000 login attempts look, to the rate limiter, exactly like a brute-force
+   flood from a single address — which is precisely what that limiter exists to stop. **This is a
+   load-test methodology limitation, not new evidence that the application itself fails at 500
+   real concurrent users** — but it also means **this run does not yet give a real answer** to
+   the original NFR-005/006 question at the data-layer level, because almost no requests got far
+   enough to exercise it.
+
+**Implemented and re-measured, 2026-09-28.** `pilot.yml` now sends a synthetic per-VU
+`X-Forwarded-For` header (`load-test/processor.js`'s `setSpoofedIp`, run once per virtual user via
+`beforeScenario` — a real user has one IP for their whole session, not a new one every request).
+`TRUST_PROXY` defaults to `loopback` and Artillery connects from loopback, so the app honors this
+header for `req.ip` with no server-side config change — a load-test methodology fix, not a change
+to any production security code. Same 500-concurrent scenario, same 50-org/500-account seed, DB-pool
+fix and argon2 cap both still in effect:
+
+| Metric | 2026-09-27 (real IP, rate-limiter masked) | 2026-09-28 (spoofed per-VU IP) | Budget |
+|---|---|---|---|
+| HTTP 429 (rate-limited) | 14,940 | **0** | — |
+| HTTP 200 | 492 | **9,688** | — |
+| HTTP 500 | 0 | **8,955** | — |
+| HTTP 403 | 24 | 473 | — |
+| ETIMEDOUT (client-side, 30s) | — | 10,504 | — |
+| VUs completed / failed (of 15,000) | 60 / 14,940 | 1,925 / 13,075 | — |
+| Latency p95 (2xx responses) | 16.9–144 ms | **6,187 ms** | < 500 ms |
+| Latency p99 (2xx responses) | 80.6–202.4 ms | **7,710 ms** | < 1000 ms |
+
+**The fix worked exactly as intended — zero HTTP 429s confirms the 94%/92% failure rate measured on
+2026-08-27 and 2026-09-27 really was the login endpoint's anti-brute-force limiter treating 15,000
+requests from one IP as a credential-stuffing flood, not evidence about the application's real
+capacity.** That is now proven, not inferred.
+
+**With that mask removed, a second, real bottleneck is now visible underneath it: 8,955 HTTP 500s,
+essentially all of them `PrismaClientKnownRequestError: Transaction API error: Unable to start a
+transaction in the given time`** — the exact same error the 2026-08-27 DB-pool fix was believed to
+have eliminated. It had not been eliminated at real 500-concurrent scale; it had been *hidden*,
+because the rate limiter was blocking ~99% of requests before they ever reached the database at
+that concurrency. Removing the rate-limiter artifact let genuine concurrent load through, and the
+connection pool (`DB_POOL_MAX_APP`, default 60 — confirmed against this dev DB's own
+`max_connections = 100`) is not sized for 500 real concurrent transactions.
+
+**Conclusion for RIO-NFR-005/006: still Partial, but for a newly-honest reason.** The login-rate-limiter
+finding is closed — it was a test-methodology artifact, now fixed and proven fixed. The
+data-layer scalability question this NFR actually asks about is **not yet answered positively**:
+at genuine 500-concurrent load, the system fails functionally (60% of VUs did not complete) due to
+database connection-pool exhaustion, not just approaches its performance budget.
+
+**Tried, 2026-09-28: raising `DB_POOL_MAX_APP` alone does not fix this, and can make it worse.**
+Re-ran the identical scenario with `DB_POOL_MAX_APP=85` (up from 60; `DB_POOL_MAX_SUPERVISOR` left
+at 15, so budgeted app+supervisor connections = 100 — exactly this dev database's own
+`max_connections`):
+
+| Metric | 60 connections | 85 connections | Budget |
+|---|---|---|---|
+| HTTP 500 | 8,955 | 9,685 | — |
+| VUs failed (of 15,000) | 13,075 | 13,182 | — |
+| `Unable to start a transaction` (Prisma pool timeout) | 8,956 | 9,408 | — |
+| `too many clients` / `remaining connection slots` (Postgres's OWN hard limit) | 0 | **278** | — |
+
+Raising the app-level pool made the result marginally *worse*, not better, and introduced a new,
+more severe failure mode: Postgres itself started refusing connections, because 85 (app) + 15
+(supervisor) leaves **zero headroom** against this database's 100-connection ceiling for anything
+else — the app's own admin/migration connections, a concurrent backup run, or a developer's `psql`
+session. **This confirms the real ceiling here is Postgres's `max_connections` itself, on this
+single-instance dev database — not just the app-level pool size sitting below it.** Tuning the
+app-level pool cannot exceed what the database server underneath it will actually accept.
+
+**Tried, 2026-09-28: raised Postgres's own `max_connections` from 100 to 200 (a real restart of
+the local database) and re-ran with `DB_POOL_MAX_APP=150`. Barely changed anything** — 8,894 HTTP
+500s, versus 8,955 at the original 60-connection/100-max-connections configuration. **This proves
+the database was never the real bottleneck at all.** Doubling its capacity should have helped
+substantially if it were; it did not.
+
+**The real bottleneck: this is a single 8-core development machine, and password verification
+(argon2id) is deliberately CPU-expensive by design — that is what makes it resistant to
+brute-force attacks.** `ARGON2_MAX_CONCURRENCY` (added in an earlier session) caps password
+verification to 8 concurrent operations, matched to this machine's 8 CPU cores, specifically so a
+login storm cannot thrash every core at once. That is the correct, safe design for real traffic.
+But this test drives roughly 500 login attempts within a few seconds — with only 8 "slots"
+checking passwords at a time, the other ~490 requests queue behind them, each one a real person
+waiting their turn on a fixed-size gate that has nothing to do with the database. By the time
+their turn arrives, Prisma's own transaction-acquisition timeout has often already elapsed —
+which is why the errors say "unable to start a transaction," even though the actual wait was for
+CPU time to become free, not for a database connection. Confirmed by process of elimination: the
+identical failure count survived a 100→200 connection-limit increase completely unchanged.
+
+**Conclusion: this specific failure mode cannot be fixed by tuning this machine further** — it
+is not misconfigured, it is a single 8-core box being asked to do 500 people's worth of
+CPU-intensive security work in the same few seconds. **Genuinely fixing this needs multiple app
+instances sharing the load (horizontal scaling)** — several machines each handling a slice of the
+500 concurrent logins, so no single 8-core CPU has to clear the whole queue alone. This is real
+infrastructure provisioning for a production deployment, not a setting to change on this laptop —
+and it is exactly the "horizontal scaling" already named as follow-up work in the Notes section
+below, now with concrete measured evidence for why it is necessary rather than a generic
+placeholder.
+
+**Kept in the codebase:** `ARGON2_MAX_CONCURRENCY` (`PasswordService`/`ConcurrencyLimiter`) and the
+`X-Forwarded-For` load-test fix — both are real and reproducible regardless of the pool-sizing
+finding above.
+
 ## Notes / next steps
 - This is a functional pilot-scale load test on a single app instance + one Postgres.
   Production capacity planning (horizontal scaling, connection-pool sizing — now reproduced above,

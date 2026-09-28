@@ -49,7 +49,11 @@ export const REPORT_TYPE_META: Record<
   RPT05: { name: "Governorate-wise Needs", kind: "dashboard", exportFormats: ["pdf", "excel"], requiresStudyId: false, requiresSurveyId: false },
   RPT06: { name: "Region/Governorate Filtering", kind: "dashboard", exportFormats: ["pdf", "excel"], requiresStudyId: true, requiresSurveyId: false },
   RPT07: { name: "Gender-wise Needs", kind: "report", exportFormats: ["pdf", "excel"], requiresStudyId: false, requiresSurveyId: false },
-  RPT08: { name: "KPI Results", kind: "dashboard", exportFormats: ["excel"], requiresStudyId: false, requiresSurveyId: false },
+  // Both formats, deliberately — same reasoning as RPT10 below: RIO-RPT-001
+  // acceptance criterion 2 requires every report type to export PDF *and*
+  // Excel, and the generic renderer (buildExportStub) already handles this
+  // content shape fine, same as it does for RPT05/RPT07.
+  RPT08: { name: "KPI Results", kind: "dashboard", exportFormats: ["pdf", "excel"], requiresStudyId: false, requiresSurveyId: false },
   RPT09: { name: "Priority Ranking", kind: "report", exportFormats: ["pdf", "excel"], requiresStudyId: true, requiresSurveyId: false },
   // Both formats, deliberately: the BRD's Reports & Dashboard sheet lists this
   // one as Excel-only, but RIO-RPT-001's acceptance criterion 2 requires every
@@ -57,7 +61,9 @@ export const REPORT_TYPE_META: Record<
   // acceptance criteria are the later and stricter statement, so they win; the
   // divergence is flagged for the client rather than silently resolved.
   RPT10: { name: "Data-Quality Report", kind: "report", exportFormats: ["pdf", "excel"], requiresStudyId: true, requiresSurveyId: false, supportsSurveyId: true },
-  RPT11: { name: "Previous Studies View", kind: "dashboard", exportFormats: [], requiresStudyId: false, requiresSurveyId: false },
+  // Same as RPT08 above: no technical reason to withhold either format — the
+  // generic renderer already produces these from the placeholder content shape.
+  RPT11: { name: "Previous Studies View", kind: "dashboard", exportFormats: ["pdf", "excel"], requiresStudyId: false, requiresSurveyId: false },
   RPT12: { name: "Report Sharing Status", kind: "log", exportFormats: ["pdf", "excel"], requiresStudyId: false, requiresSurveyId: false },
   RPT13: { name: "Executive Summary", kind: "report", exportFormats: ["pdf", "excel"], requiresStudyId: true, requiresSurveyId: false },
   RPT14: { name: "Village Report", kind: "report", exportFormats: ["pdf", "excel"], requiresStudyId: true, requiresSurveyId: false },

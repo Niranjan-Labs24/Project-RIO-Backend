@@ -5,8 +5,9 @@ import { orgContext } from '../../tenancy/org-context';
 import { PasswordService } from '../../auth/password.service';
 import { TokenService } from '../../auth/token.service';
 import { AuthService } from './auth.service';
+import type { ConfigService } from '../../config/config.service';
 
-const passwords = new PasswordService();
+const passwords = new PasswordService({ argon2MaxConcurrency: 8 } as ConfigService);
 const tokens = new TokenService(
   new JwtService({ secret: 'x'.repeat(32), signOptions: { expiresIn: '12h' } }),
 );

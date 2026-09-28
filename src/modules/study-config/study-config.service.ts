@@ -1,6 +1,8 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+import type { AuditChange } from '../audit/audit.types';
 import type {
   CreateStudyConfigOptionPayload, StudyConfigOption, StudyConfigOptionRow, UpdateStudyConfigOptionPayload,
 } from './study-config.types';
@@ -20,7 +22,10 @@ import type {
 // already used the old wording.
 @Injectable()
 export class StudyConfigService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   async listStudyTypes(): Promise<StudyConfigOption[]> {
     const rows = await this.prisma.studyTypeOption.findMany({ orderBy: { displayOrder: 'asc' } });
@@ -54,29 +59,29 @@ export class StudyConfigService {
   }
 
   async createNeedTheme(payload: CreateStudyConfigOptionPayload): Promise<StudyConfigOption> {
-    return this.toOption(await this.createOption(this.prisma.needThemeOption, payload));
+    return this.toOption(await this.createOption(this.prisma.needThemeOption, payload, 'Need Theme'));
   }
 
   async updateNeedTheme(id: string, payload: UpdateStudyConfigOptionPayload): Promise<StudyConfigOption> {
-    return this.toOption(await this.updateOption(this.prisma.needThemeOption, id, payload));
+    return this.toOption(await this.updateOption(this.prisma.needThemeOption, id, payload, 'Need Theme'));
   }
 
   async setNeedThemeActive(id: string, isActive: boolean): Promise<StudyConfigOption> {
-    return this.toOption(await this.setActive(this.prisma.needThemeOption, id, isActive));
+    return this.toOption(await this.setActive(this.prisma.needThemeOption, id, isActive, 'Need Theme'));
   }
 
   async createStudyType(payload: CreateStudyConfigOptionPayload): Promise<StudyConfigOption> {
-    const row = await this.createOption(this.prisma.studyTypeOption, payload);
+    const row = await this.createOption(this.prisma.studyTypeOption, payload, 'Study Type');
     return this.toOption(row);
   }
 
   async updateStudyType(id: string, payload: UpdateStudyConfigOptionPayload): Promise<StudyConfigOption> {
-    const row = await this.updateOption(this.prisma.studyTypeOption, id, payload);
+    const row = await this.updateOption(this.prisma.studyTypeOption, id, payload, 'Study Type');
     return this.toOption(row);
   }
 
   async setStudyTypeActive(id: string, isActive: boolean): Promise<StudyConfigOption> {
-    const row = await this.setActive(this.prisma.studyTypeOption, id, isActive);
+    const row = await this.setActive(this.prisma.studyTypeOption, id, isActive, 'Study Type');
     return this.toOption(row);
   }
 
@@ -95,17 +100,17 @@ export class StudyConfigService {
   }
 
   async createTargetSector(payload: CreateStudyConfigOptionPayload): Promise<StudyConfigOption> {
-    const row = await this.createOption(this.prisma.targetSectorOption, payload);
+    const row = await this.createOption(this.prisma.targetSectorOption, payload, 'Target Sector');
     return this.toOption(row);
   }
 
   async updateTargetSector(id: string, payload: UpdateStudyConfigOptionPayload): Promise<StudyConfigOption> {
-    const row = await this.updateOption(this.prisma.targetSectorOption, id, payload);
+    const row = await this.updateOption(this.prisma.targetSectorOption, id, payload, 'Target Sector');
     return this.toOption(row);
   }
 
   async setTargetSectorActive(id: string, isActive: boolean): Promise<StudyConfigOption> {
-    const row = await this.setActive(this.prisma.targetSectorOption, id, isActive);
+    const row = await this.setActive(this.prisma.targetSectorOption, id, isActive, 'Target Sector');
     return this.toOption(row);
   }
 
@@ -127,17 +132,17 @@ export class StudyConfigService {
   }
 
   async createDecisionType(payload: CreateStudyConfigOptionPayload): Promise<StudyConfigOption> {
-    const row = await this.createOption(this.prisma.decisionTypeOption, payload);
+    const row = await this.createOption(this.prisma.decisionTypeOption, payload, 'Decision Type');
     return this.toOption(row);
   }
 
   async updateDecisionType(id: string, payload: UpdateStudyConfigOptionPayload): Promise<StudyConfigOption> {
-    const row = await this.updateOption(this.prisma.decisionTypeOption, id, payload);
+    const row = await this.updateOption(this.prisma.decisionTypeOption, id, payload, 'Decision Type');
     return this.toOption(row);
   }
 
   async setDecisionTypeActive(id: string, isActive: boolean): Promise<StudyConfigOption> {
-    const row = await this.setActive(this.prisma.decisionTypeOption, id, isActive);
+    const row = await this.setActive(this.prisma.decisionTypeOption, id, isActive, 'Decision Type');
     return this.toOption(row);
   }
 
@@ -159,24 +164,32 @@ export class StudyConfigService {
   }
 
   async createGapType(payload: CreateStudyConfigOptionPayload): Promise<StudyConfigOption> {
-    const row = await this.createOption(this.prisma.gapTypeOption, payload);
+    const row = await this.createOption(this.prisma.gapTypeOption, payload, 'Gap Type');
     return this.toOption(row);
   }
 
   async updateGapType(id: string, payload: UpdateStudyConfigOptionPayload): Promise<StudyConfigOption> {
-    const row = await this.updateOption(this.prisma.gapTypeOption, id, payload);
+    const row = await this.updateOption(this.prisma.gapTypeOption, id, payload, 'Gap Type');
     return this.toOption(row);
   }
 
   async setGapTypeActive(id: string, isActive: boolean): Promise<StudyConfigOption> {
-    const row = await this.setActive(this.prisma.gapTypeOption, id, isActive);
+    const row = await this.setActive(this.prisma.gapTypeOption, id, isActive, 'Gap Type');
     return this.toOption(row);
   }
 
   // Shared CRUD body for both option tables — identical shape (id, name,
   // displayOrder, isActive), so one implementation parametrized on the
   // Prisma delegate avoids maintaining two copies of the same try/catch and
-  // not-found handling.
+  // not-found handling. `kind` (e.g. "Gap Type") labels the audit entry so an
+  // auditor reading the log can tell which of the five configurable lists
+  // changed without cross-referencing the raw entity id.
+  //
+  // RIO-NFR-014 (28 Sep 2026) — these five configurable lists (need themes,
+  // study types, target sectors, decision types, gap types) had NO audit
+  // trail at all before this. Since all of them funnel through these three
+  // helpers, adding `this.audit.record(...)` here covers every one of the 15
+  // public create/update/activate methods above in one place.
   private async createOption(
     delegate: {
       create: (args: {
@@ -184,9 +197,11 @@ export class StudyConfigService {
       }) => Promise<StudyConfigOptionRow>;
     },
     payload: CreateStudyConfigOptionPayload,
+    kind: string,
   ): Promise<StudyConfigOptionRow> {
+    let row: StudyConfigOptionRow;
     try {
-      return await delegate.create({
+      row = await delegate.create({
         data: { name: payload.name, nameAr: payload.nameAr, displayOrder: payload.displayOrder },
       });
     } catch (err) {
@@ -197,10 +212,25 @@ export class StudyConfigService {
       }
       throw err;
     }
+    await this.audit.record({
+      action: 'create',
+      entityType: 'study_config_option',
+      entityId: row.id,
+      entityLabel: `${kind}: ${row.name}`,
+      metadata: { kind },
+      // `before` is null throughout: this option did not exist a moment ago.
+      changes: [
+        { field: 'Name', before: null, after: row.name },
+        { field: 'Arabic name', before: null, after: row.nameAr },
+        { field: 'Display order', before: null, after: row.displayOrder },
+      ],
+    });
+    return row;
   }
 
   private async updateOption(
     delegate: {
+      findUnique: (args: { where: { id: string } }) => Promise<StudyConfigOptionRow | null>;
       update: (args: {
         where: { id: string };
         data: { name?: string; nameAr?: string; displayOrder?: number };
@@ -208,9 +238,15 @@ export class StudyConfigService {
     },
     id: string,
     payload: UpdateStudyConfigOptionPayload,
+    kind: string,
   ): Promise<StudyConfigOptionRow> {
+    const existing = await delegate.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException({ error: { code: 'OPTION_NOT_FOUND', message: 'Option not found.' } });
+    }
+    let row: StudyConfigOptionRow;
     try {
-      return await delegate.update({
+      row = await delegate.update({
         where: { id },
         data: { name: payload.name, nameAr: payload.nameAr, displayOrder: payload.displayOrder },
       });
@@ -227,21 +263,58 @@ export class StudyConfigService {
       }
       throw err;
     }
+    const changes: AuditChange[] = [];
+    if (payload.name !== undefined && payload.name !== existing.name) {
+      changes.push({ field: 'Name', before: existing.name, after: payload.name });
+    }
+    if (payload.nameAr !== undefined && payload.nameAr !== existing.nameAr) {
+      changes.push({ field: 'Arabic name', before: existing.nameAr, after: payload.nameAr });
+    }
+    if (payload.displayOrder !== undefined && payload.displayOrder !== existing.displayOrder) {
+      changes.push({ field: 'Display order', before: existing.displayOrder, after: payload.displayOrder });
+    }
+    await this.audit.record({
+      action: 'edit',
+      entityType: 'study_config_option',
+      entityId: row.id,
+      entityLabel: `${kind}: ${row.name}`,
+      metadata: { kind },
+      changes,
+    });
+    return row;
   }
 
   private async setActive(
-    delegate: { update: (args: { where: { id: string }; data: { isActive: boolean } }) => Promise<StudyConfigOptionRow> },
+    delegate: {
+      findUnique: (args: { where: { id: string } }) => Promise<StudyConfigOptionRow | null>;
+      update: (args: { where: { id: string }; data: { isActive: boolean } }) => Promise<StudyConfigOptionRow>;
+    },
     id: string,
     isActive: boolean,
+    kind: string,
   ): Promise<StudyConfigOptionRow> {
+    const existing = await delegate.findUnique({ where: { id } });
+    if (!existing) {
+      throw new NotFoundException({ error: { code: 'OPTION_NOT_FOUND', message: 'Option not found.' } });
+    }
+    let row: StudyConfigOptionRow;
     try {
-      return await delegate.update({ where: { id }, data: { isActive } });
+      row = await delegate.update({ where: { id }, data: { isActive } });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
         throw new NotFoundException({ error: { code: 'OPTION_NOT_FOUND', message: 'Option not found.' } });
       }
       throw err;
     }
+    await this.audit.record({
+      action: 'edit',
+      entityType: 'study_config_option',
+      entityId: row.id,
+      entityLabel: `${kind}: ${row.name}`,
+      metadata: { kind },
+      changes: [{ field: 'Active', before: existing.isActive, after: isActive }],
+    });
+    return row;
   }
 
   private toOption(row: StudyConfigOptionRow): StudyConfigOption {

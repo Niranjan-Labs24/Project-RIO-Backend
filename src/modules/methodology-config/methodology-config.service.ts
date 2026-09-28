@@ -236,9 +236,15 @@ export class MethodologyConfigService {
       });
     }
     const publishedBy = requireActor();
+    // RIO-NFR-014 acceptance criterion: methodology versions must have an
+    // "effective date". A published version takes effect immediately — there
+    // is no schedule-for-later feature — so this is always the same instant
+    // as publishedAt, computed once and reused rather than called twice to
+    // guarantee they can never read even a millisecond apart.
+    const now = new Date();
     const row = await this.prisma.methodologyConfig.update({
       where: { id: existing.id },
-      data: { status: "published", publishedBy, publishedAt: new Date(), updatedBy: publishedBy },
+      data: { status: "published", publishedBy, publishedAt: now, effectiveDate: now, updatedBy: publishedBy },
     });
     await this.recordHistory(row, "publish", publishedBy);
     return this.toConfig(row);
@@ -590,6 +596,7 @@ export class MethodologyConfigService {
       status: row.status,
       publishedByName,
       publishedAt: row.publishedAt ? row.publishedAt.toISOString() : null,
+      effectiveDate: row.effectiveDate ? row.effectiveDate.toISOString() : null,
       reviewedByName,
       reviewedAt: row.reviewedAt ? row.reviewedAt.toISOString() : null,
       reviewNotes: row.reviewNotes,

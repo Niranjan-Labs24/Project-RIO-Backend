@@ -98,6 +98,11 @@ export interface MethodologyConfigRow {
   status: MethodologyStatus;
   publishedBy: string | null;
   publishedAt: Date | null;
+  // RIO-NFR-014 — always set to the same instant as publishedAt by
+  // publish() (see its own comment); kept as a distinct, explicitly-named
+  // field so the API and UI can say "Effective Date" per the client's
+  // acceptance criterion, independent of publishedAt's own meaning.
+  effectiveDate: Date | null;
   reviewedBy: string | null;
   reviewedAt: Date | null;
   reviewNotes: string | null;
@@ -120,6 +125,7 @@ export interface MethodologyConfig {
   status: MethodologyStatus;
   publishedByName: string | null;
   publishedAt: string | null;
+  effectiveDate: string | null;
   reviewedByName: string | null;
   reviewedAt: string | null;
   reviewNotes: string | null;

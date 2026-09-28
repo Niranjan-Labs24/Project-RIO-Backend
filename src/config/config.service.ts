@@ -57,6 +57,9 @@ export class ConfigService {
   get dbPoolMaxSupervisor(): number {
     return this.config.DB_POOL_MAX_SUPERVISOR;
   }
+  get argon2MaxConcurrency(): number {
+    return this.config.ARGON2_MAX_CONCURRENCY;
+  }
   get port(): number {
     return this.config.PORT;
   }

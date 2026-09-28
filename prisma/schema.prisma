@@ -2316,6 +2316,16 @@ model MethodologyConfig {
   status                 MethodologyStatus @default(draft)
   publishedBy            String?           @map("published_by") @db.Uuid
   publishedAt            DateTime?         @map("published_at") @db.Timestamptz(6)
+  // RIO-NFR-014 (client acceptance criterion: "methodology versions have
+  // history and an effective date") — a distinct, explicitly-named field from
+  // publishedAt, even though publish() always sets them to the same instant
+  // today (a published version takes effect immediately; there is no
+  // schedule-for-later feature). Kept separate rather than reusing
+  // publishedAt under a new label so the two concepts (when an admin clicked
+  // Publish vs. when this methodology actually governs scoring) stay
+  // independently named if a future "schedule for later" feature ever needs
+  // to make them diverge — that is not this change.
+  effectiveDate          DateTime?         @map("effective_date") @db.Timestamptz(6)
   // System Reviewer's decision on the current pending_approval submission —
   // cleared back to null on every edit, since a new edit invalidates any
   // prior approval and needs its own review.

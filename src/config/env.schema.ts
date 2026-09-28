@@ -61,6 +61,18 @@ export const EnvSchema = Type.Object({
   // production answer once there's more than one app instance).
   DB_POOL_MAX_APP: Type.Number({ default: 60, minimum: 1, maximum: 500 }),
   DB_POOL_MAX_SUPERVISOR: Type.Number({ default: 15, minimum: 1, maximum: 500 }),
+  // argon2id is deliberately CPU/memory-hard (that's the point, for password
+  // security), so letting every concurrent login fire its own hash/verify at
+  // once just makes all of them slower together instead of some of them fast
+  // in sequence. RIO-NFR-005's 2026-08-27 500-concurrent re-test found
+  // /api/auth/login median latency at ~2.2s under a 15,000-fresh-login storm
+  // even after the DB pool fix, root-caused to raw CPU contention across all
+  // of them hitting argon2 simultaneously (UV_THREADPOOL_SIZE tuning made no
+  // measurable difference, ruling out thread-pool starvation). This caps how
+  // many argon2 operations run at once; the rest queue in process instead of
+  // all thrashing the same physical cores. Default matches this box's CPU
+  // count — tune it to the deployment's actual core count.
+  ARGON2_MAX_CONCURRENCY: Type.Number({ default: 8, minimum: 1, maximum: 256 }),
   // Frontend origin allowed to send credentialed (cookie) requests. Single
   // explicit origin — credentials mode forbids a wildcard.
   CORS_ORIGIN: Type.String({ default: 'http://localhost:3000' }),

@@ -15,6 +15,7 @@ const BASE_ROW: MethodologyConfigRow = {
   status: 'draft',
   publishedBy: null,
   publishedAt: null,
+  effectiveDate: null,
   reviewedBy: null,
   reviewedAt: null,
   reviewNotes: null,
@@ -136,6 +137,17 @@ describe('MethodologyConfigService.publish', () => {
     const result = await runAsAdmin(() => service.publish());
     expect(result.status).toBe('published');
     expect(result.publishedByName).toBeNull();
+  });
+
+  // RIO-NFR-014 acceptance criterion: methodology versions need a recorded
+  // effective date. A published version takes effect immediately (no
+  // schedule-for-later feature exists), so this asserts effectiveDate is
+  // always set and always equal to publishedAt — not just present.
+  it('publish() sets effectiveDate to the same instant as publishedAt', async () => {
+    const { service } = makeService(pendingRow({ status: 'approved', reviewedBy: 'reviewer-1', reviewedAt: new Date(), reviewNotes: 'ok' }));
+    const result = await runAsAdmin(() => service.publish());
+    expect(result.effectiveDate).not.toBeNull();
+    expect(result.effectiveDate).toBe(result.publishedAt);
   });
 
   it('cannot publish a config that has not been approved yet', async () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import { orgContext } from "../../tenancy/org-context";
 import { ReportsService } from "./reports.service";
-import type { ReportRow, ReportStatus } from "./reports.types";
+import type { ExportFormat, ReportRow, ReportStatus } from "./reports.types";
 
 // In-memory Report store standing in for the tenant Prisma layer, so the
 // lifecycle state machine can be exercised without a database.
@@ -225,23 +225,35 @@ describe("ReportsService.export — format support", () => {
   let h: ReturnType<typeof makeHarness>;
   beforeEach(() => { h = makeHarness(); });
 
-  it("EXPORT_FORMAT_NOT_SUPPORTED for an excel-only report type (RPT08) requested as pdf", async () => {
+  // RIO-RPT-001 AC2 requires every report type to export both PDF and Excel
+  // (RIO-NFR-008 audit finding, closed 28 Sep 2026: RPT08 was Excel-only and
+  // RPT11 had neither format — both now export both, same as every other type).
+  it("RPT08 (KPI Results) exports both pdf and excel", async () => {
     seed(h.store, { reportType: "RPT08", status: "released" });
-    await expect(
-      asRole("ngo_admin", () => h.service.export("rpt-1", "pdf")),
-    ).rejects.toMatchObject({ response: { error: { code: "EXPORT_FORMAT_NOT_SUPPORTED" } } });
-    // excel is supported for RPT08, so that should succeed
-    const file = await asRole("ngo_admin", () => h.service.export("rpt-1", "excel"));
-    expect(file.contentType).toContain("sheet");
+    const pdf = await asRole("ngo_admin", () => h.service.export("rpt-1", "pdf"));
+    expect(pdf.contentType).toBe("application/pdf");
+    const excel = await asRole("ngo_admin", () => h.service.export("rpt-1", "excel"));
+    expect(excel.contentType).toContain("sheet");
   });
 
-  it("EXPORT_FORMAT_NOT_SUPPORTED for a report type with no export formats at all (RPT11)", async () => {
+  it("RPT11 (Previous Studies View) exports both pdf and excel", async () => {
     seed(h.store, { reportType: "RPT11", status: "released" });
+    const pdf = await asRole("ngo_admin", () => h.service.export("rpt-1", "pdf"));
+    expect(pdf.contentType).toBe("application/pdf");
+    const excel = await asRole("ngo_admin", () => h.service.export("rpt-1", "excel"));
+    expect(excel.contentType).toContain("sheet");
+  });
+
+  // The controller takes `format` straight off the query string with no
+  // runtime validation pipe (`@Query("format") format: ExportFormat` is a
+  // compile-time-only type) — so an unsupported value is a real, reachable
+  // input, not just a theoretical one. Every current report type supports
+  // both pdf and excel, so this exercises the guard with a value outside
+  // that set, as a caller sending `?format=csv` would.
+  it("EXPORT_FORMAT_NOT_SUPPORTED for a format outside the type's supported set", async () => {
+    seed(h.store, { reportType: "RPT08", status: "released" });
     await expect(
-      asRole("ngo_admin", () => h.service.export("rpt-1", "pdf")),
-    ).rejects.toMatchObject({ response: { error: { code: "EXPORT_FORMAT_NOT_SUPPORTED" } } });
-    await expect(
-      asRole("ngo_admin", () => h.service.export("rpt-1", "excel")),
+      asRole("ngo_admin", () => h.service.export("rpt-1", "csv" as ExportFormat)),
     ).rejects.toMatchObject({ response: { error: { code: "EXPORT_FORMAT_NOT_SUPPORTED" } } });
   });
 
@@ -328,8 +340,12 @@ describe("ReportsService.exportForApprovedSharingGrant", () => {
   });
 
   it("refuses an unsupported format for the report's type", async () => {
+    // Every current report type supports both pdf and excel (RIO-NFR-008,
+    // closed 28 Sep 2026), so this exercises the guard with a value outside
+    // that set — see the matching comment in the `.export` format-support
+    // describe block above for why that's still a reachable runtime input.
     seed(h.store, { reportType: "RPT08", status: "released" });
-    await expect(h.service.exportForApprovedSharingGrant("rpt-1", "pdf")).rejects.toMatchObject({
+    await expect(h.service.exportForApprovedSharingGrant("rpt-1", "csv" as ExportFormat)).rejects.toMatchObject({
       response: { error: { code: "EXPORT_FORMAT_NOT_SUPPORTED" } },
     });
   });
