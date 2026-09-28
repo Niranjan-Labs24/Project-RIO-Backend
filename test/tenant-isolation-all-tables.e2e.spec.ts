@@ -45,9 +45,21 @@ describe('Cross-tenant isolation (RLS) - every tenant table', () => {
     app = new Pool({ connectionString: process.env.APP_DATABASE_URL, ssl: pgSslFromEnv() });
     owner = new Pool({ connectionString: process.env.DATABASE_URL, ssl: pgSslFromEnv() });
 
-    const orgs = await owner.query<{ id: string }>(
+    // `organisations` itself is RLS-protected (organisations_isolation: id = current_org_id),
+    // and RLS is FORCED — even the owner role can't see any row without app.current_org_id
+    // already set, which is exactly what this query is trying to discover. cnap_supervisor's
+    // own policy (organisations_supervisor_read: USING (true)) is the one role allowed to read
+    // across all organisations, so it — not the owner connection — is used for this one
+    // bootstrapping read only; every other query below still goes through asOrg()'s per-org
+    // context, same as before.
+    const supervisor = new Pool({
+      connectionString: process.env.SUPERVISOR_DATABASE_URL,
+      ssl: pgSslFromEnv(),
+    });
+    const orgs = await supervisor.query<{ id: string }>(
       `SELECT id FROM organisations ORDER BY created_at LIMIT 2`,
     );
+    await supervisor.end();
     if (orgs.rows.length < 2) throw new Error('Run `pnpm seed:demo` first (two organisations are required).');
     orgA = orgs.rows[0]!.id;
     orgB = orgs.rows[1]!.id;
