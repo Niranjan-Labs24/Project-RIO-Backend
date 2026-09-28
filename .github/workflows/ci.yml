@@ -98,3 +98,10 @@ jobs:
       # Runs the whole suite and fails if coverage drops below the minimums in vitest.config.ts.
       - run: pnpm test:coverage
       - run: pnpm audit --prod --audit-level high
+      # RIO-NFR-015 — informational only, never fails the build: warns if
+      # src/ has moved on significantly more recently than the traceability
+      # matrix has, the same drift pattern that let it go six weeks stale
+      # before. See scripts/check-traceability-freshness.ts.
+      - name: Check traceability matrix freshness (informational)
+        run: npx tsx scripts/check-traceability-freshness.ts
+        continue-on-error: true

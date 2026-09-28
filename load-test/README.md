@@ -96,6 +96,40 @@ For comparison, the same sequence against the older 38-response fixture: first c
 steady-state **127 ms** — confirming the slow number is a one-time cost, not something that scales
 with response count (200 responses added ~5x the data for only ~20ms more steady-state time).
 
+### Report-generation timing — every other report type, real measurement, 2026-09-28
+
+RIO-NFR-005's acceptance criterion literally asks about "every report type," not just RPT14 above.
+Ran `POST /api/reports` (content generation only — the part that does real work; export itself was
+already separately shown fast for every type under RIO-NFR-008) against the same pilot-scale
+fixture (`prisma/seed-report-perf.ts`), first call and second call, for every report type that
+could be reached with the data currently seeded:
+
+| Report type | First call | Second call (steady state) |
+|---|---|---|
+| RPT02 (Collective Dashboard) | 132–191 ms | 84–96 ms |
+| RPT05 (Governorate-wise, placeholder content) | 24–30 ms | 22–25 ms |
+| RPT07 (Gender-wise, placeholder content) | 21–24 ms | 22–24 ms |
+| RPT08 (KPI Results, placeholder content) | 23 ms | 21–24 ms |
+| RPT11 (Previous Studies, placeholder content) | 23–26 ms | 23–25 ms |
+| RPT12 (Report Sharing Status) | 23–30 ms | 23–25 ms |
+| RPT14 (Village Report) | 86 ms | 59 ms — consistent with the 150 ms figure measured above on a separate run |
+| RPT16 (Combined Evidence & Score) | 57–75 ms | 49–55 ms |
+| RPT17 (Evidence Document-Based) | 48–52 ms | 47–53 ms |
+
+**Every one of these 9 types is well within the 10–15 second internal target** — most complete in
+well under 200ms even on a first, uncached call. This is real, live-measured evidence across a mix
+of report shapes (simple aggregates, placeholder-content types, and the more complex
+evidence/scoring-based types), not just the one type measured previously.
+
+**Client-confirmed, 28 Sep 2026: this closes the finding.** Only these 9 report type codes are
+actually used in the real product. The other 7 (RPT01, RPT03/RPT09, RPT04, RPT06, RPT10, RPT13,
+RPT15) exist in the codebase's report-type registry but are not part of the real product's scope,
+so measuring their generation speed isn't required — there is no real-world path where a user
+generates one. (For the record: an earlier attempt this session found they need
+individual-survey-response-level scored data the current seed fixture doesn't populate — a
+seed-data gap, not evidence of a defect — but since they're out of scope, this is now moot rather
+than a follow-up task.)
+
 **Steady-state report generation is fast — well inside the 10–15s estimate, not close to it.**
 The real finding here isn't slowness; it's the **~17-22 second cost on the first report-generation
 request after the server starts**, regardless of which study or response count. Not yet
