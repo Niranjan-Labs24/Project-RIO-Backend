@@ -398,24 +398,35 @@ describe('UsersService organization scope', () => {
     });
   });
 
-  it('removes a user, but not yourself, an unknown user, or a cross-entity account as a plain admin', async () => {
+  it('removes a user as System Admin — never yourself or an unknown user; NGO Admin only their own org\'s non-admin users', async () => {
     const { svc, tx, audit } = setup();
-    await asNgo(() => svc.remove('u1'));
+    await asAdmin(() => svc.remove('u1'));
     expect(tx.user.delete).toHaveBeenCalled();
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'delete' }));
-    await expect(asNgo(() => svc.remove('admin-1'))).rejects.toMatchObject({
+    await expect(asAdmin(() => svc.remove('admin-1'))).rejects.toMatchObject({
       response: { error: { code: 'CANNOT_REMOVE_SELF' } },
     });
     tx.user.findUnique.mockResolvedValueOnce(null);
-    await expect(asNgo(() => svc.remove('x'))).rejects.toMatchObject({
+    await expect(asAdmin(() => svc.remove('x'))).rejects.toMatchObject({
       response: { error: { code: 'USER_NOT_FOUND' } },
     });
     tx.user.findUnique.mockResolvedValueOnce(user({ roleId: 'role_center_supervisor' }));
-    await expect(asNgo(() => svc.remove('u9'))).rejects.toMatchObject({
-      response: { error: { code: 'FORBIDDEN_USER_REMOVAL' } },
-    });
-    tx.user.findUnique.mockResolvedValueOnce(user({ roleId: 'role_center_supervisor' }));
     await asAdmin(() => svc.remove('u9'));
+
+    // NGO Admin (revised 2026-09-30): a regular member of their org — yes.
+    tx.user.delete.mockClear();
+    await asNgo(() => svc.remove('u1'));
+    expect(tx.user.delete).toHaveBeenCalledOnce();
+
+    // ...but never an NGO Admin account or a platform (crossEntity) account.
+    tx.user.delete.mockClear();
+    for (const roleId of ['role_ngo_admin', 'role_center_supervisor']) {
+      tx.user.findUnique.mockResolvedValueOnce(user({ id: 'u7', roleId }));
+      await expect(asNgo(() => svc.remove('u7'))).rejects.toMatchObject({
+        response: { error: { code: 'FORBIDDEN_USER_REMOVAL' } },
+      });
+    }
+    expect(tx.user.delete).not.toHaveBeenCalled();
   });
 
   it('shows an unrecognised role as unknown, and pages the list', async () => {

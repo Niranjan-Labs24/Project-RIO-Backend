@@ -566,7 +566,7 @@ describe('SurveysService methodology / sample / workflow edge cases', () => {
     const { svc, tx } = setup();
     tx.survey.findUnique.mockResolvedValueOnce(null);
     await expect(
-      as(undefined, () => svc.setSampleDescription('s1', 'a', 1, 'b', 'c')),
+      as(undefined, () => svc.setSampleDescription('s1', 'a', 1, 'b')),
     ).rejects.toThrow(code('SURVEY_NOT_FOUND'));
   });
 
@@ -822,5 +822,82 @@ describe('SurveysService.listSurveys and getSurveyDetailById', () => {
     );
     tx.survey.findUnique.mockResolvedValueOnce(null);
     await expect(svc.getSurveyDetailById('s1')).rejects.toThrow(code('SURVEY_NOT_FOUND'));
+  });
+});
+
+// UAT-09 — a survey inherits Target Sector, geography and methodology
+// version from its parent Study.
+describe('SurveysService inheritance from the parent Study (UAT-09)', () => {
+  const study = (over: Record<string, unknown> = {}) => ({
+    id: 'st1',
+    title: 'Health Study',
+    targetSector: 'Health',
+    villages: ['V2', 'V1'],
+    studyGovernorates: [
+      { governorate: { name: 'Ad-Dilam', nameAr: 'الدلم', region: { name: 'Riyadh', nameAr: 'الرياض' } } },
+    ],
+    studyCenters: [{ center: { name: 'Center A', nameAr: null } }],
+    methodologyVersion: { version: 'v5.0' },
+    ...over,
+  });
+  const need = { id: 'n1', studyId: 'st1', title: 'N', domain: 'D', subDomain: 'S', status: 'reviewer_approved' };
+
+  it("creates a survey with the Study's methodology version, not the latest published one", async () => {
+    const { svc, tx } = setup();
+    tx.study.findUnique.mockResolvedValue(study());
+    tx.need.findUnique.mockResolvedValue(need);
+    tx.survey.findFirst.mockResolvedValueOnce(null).mockResolvedValue(surveyRow());
+    tx.survey.create.mockResolvedValue({ id: 's1', title: 'N', status: 'DRAFT' });
+    await as(undefined, () => svc.createEmptySurvey('n1'));
+    expect(tx.survey.create.mock.calls[0]![0].data.methodologyVersion).toBe('v5.0');
+  });
+
+  it("refuses to change a survey's methodology version when its Study has one", async () => {
+    const { svc, tx } = setup();
+    tx.study.findUnique.mockResolvedValue(study());
+    tx.survey.findUnique.mockResolvedValue(surveyRow());
+    await expect(as('ngo_research_officer', () => svc.setMethodologyVersion('s1', 'v1'))).rejects.toMatchObject({
+      response: { error: { code: 'METHODOLOGY_VERSION_INHERITED' } },
+    });
+    expect(tx.survey.update).not.toHaveBeenCalled();
+  });
+
+  it('still lets the Researcher pick one when the Study has no methodology version', async () => {
+    const { svc, tx } = setup();
+    tx.study.findUnique.mockResolvedValue(study({ methodologyVersion: null }));
+    tx.survey.findUnique.mockResolvedValue(surveyRow());
+    tx.survey.findFirst.mockResolvedValue(null);
+    await as('ngo_research_officer', () => svc.setMethodologyVersion('s1', 'v1'));
+    expect(tx.survey.update.mock.calls[0]![0].data).toEqual({ methodologyVersion: 'v1' });
+  });
+
+  it("shows a draft survey the Study's current values, marked as not frozen", async () => {
+    const { svc, tx } = setup();
+    tx.study.findUnique.mockResolvedValue(study());
+    tx.survey.findFirst.mockResolvedValue(surveyRow({ inheritedSnapshot: null }));
+    const dto = await as(undefined, () => svc.getSurveyByNeedId('n1'));
+    expect(dto!.inherited).toMatchObject({
+      targetSector: 'Health',
+      regions: [{ name: 'Riyadh', nameAr: 'الرياض' }],
+      governorates: [{ name: 'Ad-Dilam', nameAr: 'الدلم' }],
+      centers: [{ name: 'Center A' }],
+      villages: ['V2', 'V1'],
+      frozen: false,
+      methodologyVersionInherited: true,
+    });
+  });
+
+  it('shows a published survey the snapshot frozen at publish, not the edited Study', async () => {
+    const { svc, tx } = setup();
+    // The Study has since moved on to a different sector...
+    tx.study.findUnique.mockResolvedValue(study({ targetSector: 'Education' }));
+    // ...but the survey was published while it was still Health.
+    const snapshot = {
+      studyId: 'st1', studyTitle: 'Health Study', targetSector: 'Health',
+      regions: [], governorates: [{ name: 'Ad-Dilam', nameAr: null }], centers: [], villages: [],
+    };
+    tx.survey.findFirst.mockResolvedValue(surveyRow({ status: 'PUBLISHED', inheritedSnapshot: snapshot }));
+    const dto = await as(undefined, () => svc.getSurveyByNeedId('n1'));
+    expect(dto!.inherited).toMatchObject({ targetSector: 'Health', frozen: true });
   });
 });

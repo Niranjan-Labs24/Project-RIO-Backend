@@ -25,6 +25,7 @@ import { AuthRepository, conflictFor, DEFAULT_TEMP_PASSWORD, type ConsentAccepta
 import type { SessionContext, SessionOrg, SessionUser, SignupPendingApprovalView } from './session.types';
 import type { ChangePasswordDto, ConsentDto, ForgotPasswordDto, RequestLoginOtpDto, ResetPasswordDto, SignupDto, VerifyLoginOtpDto } from './auth.contract';
 import { SmsService } from '../../sms/sms.service';
+import { toSaudiMobileE164 } from '../../common/validation/saudi-mobile';
 
 const PASSWORD_RESET_TTL_MINUTES = 30;
 // RIO MFA — same TTL/attempt budget as CitizenService's OTP challenge,
@@ -388,6 +389,14 @@ export class AuthService {
     // check and land as a second row for the same entity).
     // The organization name must also match the registry's English or Arabic
     // name for that number (case-insensitive).
+    // UAT-12: mandatory, Saudi mobile only. Checked first — a pure format
+    // check needs no lookup, so a typo fails fast before the registry call.
+    const mobileNumber = toSaudiMobileE164(dto.mobileNumber);
+    if (!mobileNumber) {
+      throw new BadRequestException({
+        error: { code: 'INVALID_MOBILE_NUMBER', message: 'Enter a valid Saudi mobile number (e.g. 05XXXXXXXX or +9665XXXXXXXX)' },
+      });
+    }
     const registrationNumber = await this.nicRegistry.assertRegistered(
       dto.registrationNumber,
       dto.organizationName,
@@ -423,7 +432,7 @@ export class AuthService {
       // Normalized, not dto.registrationNumber — see assertRegistered.
       registrationNumber,
       email: dto.email,
-      mobileNumber: dto.mobileNumber ? this.normalizeMobile(dto.mobileNumber) : null,
+      mobileNumber,
       passwordHash: placeholderPasswordHash,
       regionId: dto.regionId,
       governorateIds: dto.governorateIds,

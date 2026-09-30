@@ -74,9 +74,9 @@ export const CreateOrganizationBody = registerSchema(
     centerIds: T.Array(T.String({ format: 'uuid' }), { minItems: 1, maxItems: 1404 }),
     adminName: T.Optional(T.String({ minLength: 1, maxLength: 200 })),
     adminEmail: T.Optional(T.String({ format: 'email', maxLength: 320 })),
-    // No format check beyond length here, same as signup's mobileNumber —
-    // the service normalizes it, and delivery/format is only ever proven by
-    // OTP actually reaching the number.
+    // UAT-12 — required whenever an admin is created (adminName + adminEmail),
+    // Saudi mobile only. A conditional-required TypeBox can't express, so the
+    // service enforces it (toSaudiMobileE164), same rule as signup.
     adminMobileNumber: T.Optional(T.String({ maxLength: 32 })),
     // RIO-DATA-001 — required whenever adminName/adminEmail are both
     // present (checked in the service, not expressible in TypeBox as a
