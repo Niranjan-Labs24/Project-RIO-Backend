@@ -248,10 +248,13 @@ export class HistoricalStudiesService {
     // an empty historical study in the dashboard is worse than none.
     let result: ImportNeedsResult;
     try {
-      result = await this.needsImport.importFromFile(study.id, {
-        originalname: row.fileName,
-        buffer,
-      });
+      result = await this.needsImport.importFromFile(
+        study.id,
+        { originalname: row.fileName, buffer },
+        // Archive imports are one-shot by design — there is no screen here to
+        // review an extraction on, so a PDF is read and imported in one go.
+        { allowPdf: true },
+      );
     } catch (err) {
       await this.deleteStudyQuietly(study.id);
       throw err;

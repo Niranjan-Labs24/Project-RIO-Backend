@@ -63,6 +63,14 @@ export interface SurveyResponseListResult {
  * meaningless without this join. */
 export interface SurveyResponseAnswer {
   questionId: string;
+  /** The Question Bank row this answer's question came from — null for an
+   * additional/custom question, which has no bank row. Travels with the
+   * answer because it is the only identity that survives survey versioning
+   * (createNewVersion gives the copy a new SurveyQuestion id but keeps this
+   * one), so the frontend can merge a superseded version's answers into the
+   * right question instead of guessing from the wording — two distinct bank
+   * questions can be worded identically. */
+  bankQuestionId: string | null;
   questionText: string;
   answerType: string;
   /** RIO-FR-011: needed so the frontend can render option-based stats
