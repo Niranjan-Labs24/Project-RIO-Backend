@@ -25,7 +25,15 @@ overrides:
   'fast-uri': '>=3.1.6'
   'minimatch@10.2.5>brace-expansion': '>=5.0.9'
   'mysql2': '>=3.24.0'
-  '@xmldom/xmldom': '>=0.8.15'
+  # Upper bound matters as much as the lower one. The advisory is fixed in
+  # 0.8.15, but a bare '>=0.8.15' resolves to 0.9.x, where
+  # DOMParser.parseFromString made the mimeType argument mandatory.
+  # mammoth (the only consumer here) still calls it with one argument, so
+  # every .docx upload failed with 'the provided mimeType "undefined" is
+  # not valid' — the Document-based AI Summary simply could not read Word
+  # files. Same trap as the brace-expansion note above: a too-broad
+  # override silently breaks a consumer built against the older API.
+  '@xmldom/xmldom': '>=0.8.15 <0.9.0'
   'multer': '>=2.3.0'
   'qs': '>=6.16.0'
   find-my-way: '>=9.7.0'

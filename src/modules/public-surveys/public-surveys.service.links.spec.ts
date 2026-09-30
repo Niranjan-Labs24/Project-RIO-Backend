@@ -53,6 +53,8 @@ function setup() {
         survey('sv1', 1, 'PUBLISHED', [
           {
             id: 'q1',
+            surveyId: 'sv1',
+            questionId: 'bank-name',
             question: { questionText: 'Name?', answerType: 'short_text', answerOptions: null },
             customText: null,
             customAnswerType: null,
@@ -60,6 +62,8 @@ function setup() {
           },
           {
             id: 'q2',
+            surveyId: 'sv1',
+            questionId: 'bank-pick',
             question: { questionText: 'Pick', answerType: 'select', answerOptions: '["a","b"]' },
             customText: null,
             customAnswerType: null,
@@ -67,6 +71,8 @@ function setup() {
           },
           {
             id: 'q3',
+            surveyId: 'sv1',
+            questionId: null,
             question: null,
             customText: 'Custom?',
             customAnswerType: 'numeric',
@@ -76,6 +82,8 @@ function setup() {
         survey('sv2', 2, 'DRAFT', [
           {
             id: 'q4',
+            surveyId: 'sv2',
+            questionId: 'bank-name',
             question: { questionText: 'Name?', answerType: 'short_text', answerOptions: null },
             customText: null,
             customAnswerType: null,
@@ -83,6 +91,8 @@ function setup() {
           },
           {
             id: 'q5',
+            surveyId: 'sv2',
+            questionId: null,
             question: null,
             customText: null,
             customAnswerType: null,
@@ -240,7 +250,7 @@ describe('PublicSurveysService responses', () => {
     expect(detail!.answers.find((a) => a.questionId === 'q2')!.answerOptions).toEqual(['a', 'b']);
   });
 
-  it("shows one question's answers across versions that share its text", async () => {
+  it("shows one question's answers across every version that copied it", async () => {
     const { svc, tx } = setup();
     tx.surveyResponse.findMany.mockResolvedValue([
       response(),

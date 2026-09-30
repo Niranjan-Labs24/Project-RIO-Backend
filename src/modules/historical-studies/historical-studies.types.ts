@@ -75,8 +75,14 @@ export interface HistoricalStudyImportResult {
   errors: Array<{ row: number; message: string; type: 'duplicate' | 'validation' }>;
 }
 
-// File extensions the importer can actually read. PDF is deliberately
-// excluded: the needs module only parses PDFs through a preview-and-confirm
-// flow that needs a human in the loop, which does not fit a one-shot
-// "import this archive entry" action.
-export const IMPORTABLE_HISTORICAL_EXTENSIONS = ['.csv', '.xlsx', '.xls'] as const;
+// File extensions the importer can actually read.
+//
+// PDF was excluded because the needs module only parsed PDFs behind a
+// preview-and-confirm step, which does not fit a one-shot "import this
+// archive entry" action. Most historical studies are PDFs, though, so
+// excluding it meant the archive could hold a study it could never import.
+// It now goes through the same AI extraction the preview uses, just without
+// the confirm step — see NeedsImportService.importFromFile's `allowPdf`.
+//
+// .doc/.docx are still out: the needs module has no parser for them at all.
+export const IMPORTABLE_HISTORICAL_EXTENSIONS = ['.csv', '.xlsx', '.xls', '.pdf'] as const;

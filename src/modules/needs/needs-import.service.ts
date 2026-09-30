@@ -335,9 +335,21 @@ export class NeedsImportService {
   }
 
   // CSV/Excel only — PDF isn't parsed directly here (PDF uses preview & confirm flow)
+  /**
+   * `allowPdf` is opt-in, and only the historical-archive import passes it.
+   *
+   * A spreadsheet carries one need per row, so importing it is a straight
+   * read. A PDF does not — the rows come out of an AI extraction, which is
+   * why the ordinary bulk import routes PDFs through previewPdfFromFile and
+   * makes the Researcher check what was found before anything is written.
+   * Turning that preview off by default would quietly remove that check from
+   * the screen it was built for, so the flag names the one caller that has
+   * deliberately chosen to import without it.
+   */
   async importFromFile(
     studyId: string,
     file: { originalname: string; buffer: Buffer },
+    options: { allowPdf?: boolean } = {},
   ): Promise<ImportNeedsResult> {
     const orgId = requireOrgId();
     const createdBy = requireActor();
@@ -368,9 +380,27 @@ export class NeedsImportService {
       rows = parseCsvNeeds(file.buffer);
     } else if (ext === '.xlsx' || ext === '.xls') {
       rows = await parseExcelNeeds(file.buffer);
+    } else if (ext === '.pdf' && options.allowPdf) {
+      // Same extractor the preview flow uses, so a PDF imported here finds
+      // exactly what the preview would have shown.
+      try {
+        rows = await parsePdfNeeds(file.buffer, this.aiService);
+      } catch (err: unknown) {
+        throw new BadRequestException({
+          error: {
+            code: 'PDF_PARSING_FAILED',
+            message: err instanceof Error ? err.message : 'Failed to parse PDF document.',
+          },
+        });
+      }
     } else {
       throw new BadRequestException({
-        error: { code: 'UNSUPPORTED_FILE_TYPE', message: 'Only CSV, XLS and XLSX files are supported for direct import.' },
+        error: {
+          code: 'UNSUPPORTED_FILE_TYPE',
+          message: options.allowPdf
+            ? 'Only CSV, XLS, XLSX and PDF files are supported for direct import.'
+            : 'Only CSV, XLS and XLSX files are supported for direct import.',
+        },
       });
     }
 

@@ -23,6 +23,14 @@ export class UsersController {
     return organizationId ? this.users.listForOrg(organizationId, page) : this.users.list(page);
   }
 
+  // For the Permission Grants "grantee" picker — one cross-org, role-filtered, searchable query
+  // instead of fetching every organization's users to filter client-side.
+  @Get('center-supervisors')
+  @RequirePermission('rolesPermissions', 'read')
+  searchCenterSupervisors(@Query('search') search?: string) {
+    return this.users.searchCenterSupervisors(search);
+  }
+
   @Post()
   @RequirePermission('entityTeam', 'create')
   invite(@Body(new TypeBoxValidationPipe(InviteUserBody)) body: InviteUserPayload): Promise<InviteUserResponse> {

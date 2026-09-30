@@ -222,6 +222,33 @@ export class UsersService {
     return rows.map((r) => this.toOrgUser(r));
   }
 
+  // System-Admin fetch Center Supervisors across every organization, for the Permission Grants
+  // "grantee" picker. One cross-org query filtered server-side by role (and optionally by name) —
+  // deliberately not "list every organization, then fetch that organization's users, one request per
+  // organization" (the picker's previous approach): with 200+ organizations in a long-lived
+  // environment that becomes ~100 concurrent requests, and a single one failing silently empties the
+  // whole picker even though the account being searched for loaded fine.
+  async searchCenterSupervisors(search?: string): Promise<Array<OrgUser & { organizationId: string; organizationName: string }>> {
+    this.assertCrossEntity();
+    const q = search?.trim();
+    const rows = await this.tenant.runAsSupervisor((tx) =>
+      tx.user.findMany({
+        where: {
+          roleId: 'role_center_supervisor',
+          ...(q ? { name: { contains: q, mode: 'insensitive' as const } } : {}),
+        },
+        include: { org: { select: { name: true } } },
+        orderBy: { name: 'asc' },
+        take: 50,
+      }),
+    );
+    return rows.map((r) => ({
+      ...this.toOrgUser(r as UserRow),
+      organizationId: r.orgId,
+      organizationName: r.org.name,
+    }));
+  }
+
   // System-Admin Assign / Change NGO Admin for an organization.
   async assignNgoAdmin(organizationId: string, payload: AssignNgoAdminPayload): Promise<InviteUserResponse> {
     this.assertCrossEntity();
