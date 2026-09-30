@@ -96,6 +96,7 @@ function makeService(surveys: unknown[], responses: unknown[]) {
     { publicAppUrl: 'http://localhost:3001' } as never,
     { record: vi.fn() } as never,
     { send: vi.fn() } as never,
+    { translate: vi.fn().mockResolvedValue({ translatedText: '', unchanged: true }) } as never,
   );
   return { service, tx };
 }

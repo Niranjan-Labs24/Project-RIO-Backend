@@ -4,6 +4,8 @@ import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { getOrgStore, requireActor, requireOrgId } from "../../tenancy/org-context";
 import { roleByKey } from "../../rbac/role-matrix";
 import { AuditService } from "../audit/audit.service";
+import { MailerService } from "../../mailer/mailer.service";
+import { TranslationService } from "../translation/translation.service";
 import type {
   CreateSharingRequestPayload, DecideSharingRequestPayload, OrgLookupResult, SharedStudySnapshot,
   SharingRequest, SharingRequestRow, StudyLookupResult,
@@ -18,11 +20,38 @@ export class SharingService {
   constructor(
     private readonly tenant: TenantPrismaService,
     private readonly audit: AuditService,
+    private readonly mailer: MailerService,
+    private readonly translation: TranslationService,
   ) {}
 
   private isCrossEntity(): boolean {
     const role = getOrgStore()?.role;
     return role !== undefined && roleByKey(role)?.crossEntity === true;
+  }
+
+  // RIO-FR-014 (client Q28) — the email half of "in-app plus email". An
+  // org has no single "owner" contact of its own, so this uses the same
+  // representative-admin lookup OrganizationsService/UsersService already
+  // use for account-creation emails (`role_ngo_admin`, first one found).
+  // Best-effort: null when the org has no admin (shouldn't happen for a
+  // real org, but this must never block the sharing decision itself on a
+  // data gap).
+  private async orgAdminEmail(orgId: string): Promise<string | null> {
+    const admin = await this.tenant.runAsSupervisor((tx) =>
+      tx.user.findFirst({ where: { orgId, roleId: "role_ngo_admin" }, select: { email: true } }),
+    );
+    return admin?.email ?? null;
+  }
+
+  // The email templates' surrounding copy is Arabic, but a study title or
+  // organisation name is free text with no stored Arabic of its own (unlike
+  // Question Bank master data) — resolved live here the same way
+  // PublicSurveysService.shareLinkByEmail does for the Need title, so the
+  // email doesn't read as Arabic wrapped around untranslated English
+  // (client-reported: study/org names stayed English in the decided email).
+  private async translateForEmail(text: string): Promise<string> {
+    const { translatedText } = await this.translation.translate(text, "ar");
+    return translatedText;
   }
 
   async create(payload: CreateSharingRequestPayload): Promise<SharingRequest> {
@@ -86,6 +115,19 @@ export class SharingService {
       organizationId: payload.ownerOrgId,
       changes: auditChanges,
     });
+    // RIO-FR-014 (client Q28) — best-effort: a failed/unconfigured send
+    // must never undo the request that was already created.
+    const ownerAdminEmail = await this.orgAdminEmail(payload.ownerOrgId);
+    if (ownerAdminEmail) {
+      const [studyTitleAr, requestingOrgNameAr] = await Promise.all([
+        this.translateForEmail(study.title),
+        this.translateForEmail(requestingOrgName),
+      ]);
+      await this.mailer.sendSharingRequestCreated(ownerAdminEmail, {
+        entityLabel: `الدراسة "${studyTitleAr}"`,
+        otherOrgName: requestingOrgNameAr,
+      });
+    }
     return this.enrichOne(row);
   }
 
@@ -324,6 +366,20 @@ export class SharingService {
       organizationId: row.requestingOrgId,
       changes: auditChanges,
     });
+    // RIO-FR-014 (client Q28) — the requester learns the outcome.
+    const requesterAdminEmail = await this.orgAdminEmail(row.requestingOrgId);
+    if (requesterAdminEmail) {
+      const [studyTitleAr, ownerOrgNameAr] = await Promise.all([
+        this.translateForEmail(studyTitle),
+        this.translateForEmail(ownerOrgName),
+      ]);
+      await this.mailer.sendSharingRequestDecided(requesterAdminEmail, {
+        entityLabel: `الدراسة "${studyTitleAr}"`,
+        otherOrgName: ownerOrgNameAr,
+        status,
+        decisionNote,
+      });
+    }
     return this.enrichOne(row);
   }
 

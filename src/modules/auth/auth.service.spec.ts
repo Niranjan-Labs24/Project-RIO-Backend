@@ -240,7 +240,7 @@ describe('AuthService.signup', () => {
       user: { id: 'u1', name: 'Org Admin', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h', consentedAt: null, consentedPolicyVersion: null, failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: true },
     });
 
-    const res = await service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: NIC_FIXTURE, email: 'a@b.test', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'], consent: VALID_CONSENT });
+    const res = await service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: NIC_FIXTURE, email: 'a@b.test', mobileNumber: '0501234567', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'], consent: VALID_CONSENT });
 
     expect(res).toEqual({ status: 'pending_approval', organizationName: 'Org', email: 'a@b.test' });
     expect(mailer.sendTemporaryPassword).not.toHaveBeenCalled();
@@ -249,9 +249,28 @@ describe('AuthService.signup', () => {
     }));
   });
 
+  // UAT-12 — mobile number is mandatory, Saudi format only, stored as E.164.
+  it('signup: stores the Saudi mobile number normalized to +9665XXXXXXXX', async () => {
+    repo.findByRegistrationNumber.mockResolvedValue(null);
+    repo.findUserByEmail.mockResolvedValue(null);
+    repo.createOrganisationAndAdmin.mockResolvedValue({
+      org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: NIC_FIXTURE, logoUrl: null, region: [], email: null, sector: null, villages: [], isActive: false, approvedAt: null, createdAt: new Date() },
+      user: { id: 'u1', name: 'Org Admin', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h', consentedAt: null, consentedPolicyVersion: null, failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: true },
+    });
+    await service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: NIC_FIXTURE, email: 'a@b.test', mobileNumber: '050 123 4567', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'], consent: VALID_CONSENT });
+    expect(repo.createOrganisationAndAdmin).toHaveBeenCalledWith(expect.objectContaining({ mobileNumber: '+966501234567' }));
+  });
+
+  it.each(['', '+971501234567', '0112345678', '05012345'])('signup: rejects non-Saudi / malformed mobile %j before any lookup or write', async (mobileNumber) => {
+    await expect(service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: NIC_FIXTURE, email: 'a@b.test', mobileNumber, regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'], consent: VALID_CONSENT }))
+      .rejects.toMatchObject({ response: { error: { code: 'INVALID_MOBILE_NUMBER' } } });
+    expect(nicRegistryStub.assertRegistered).not.toHaveBeenCalled();
+    expect(repo.createOrganisationAndAdmin).not.toHaveBeenCalled();
+  });
+
   it('signup: rejects a duplicate registration number before creating', async () => {
     repo.findByRegistrationNumber.mockResolvedValue({ id: 'existing' });
-    await expect(service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: NIC_FIXTURE, email: 'a@b.test', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'], consent: VALID_CONSENT }))
+    await expect(service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: NIC_FIXTURE, email: 'a@b.test', mobileNumber: '0501234567', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'], consent: VALID_CONSENT }))
       .rejects.toMatchObject({ response: { error: { code: 'ORGANIZATION_ALREADY_REGISTERED' } } });
     expect(repo.createOrganisationAndAdmin).not.toHaveBeenCalled();
   });
@@ -332,7 +351,7 @@ describe('AuthService.signup', () => {
 
   const signupBody = {
     organizationName: 'Org', purpose: 'p', registrationNumber: NIC_FIXTURE, email: 'a@b.test',
-    regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'],
+    mobileNumber: '0501234567', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'],
   };
 
   it('passes both consents to the repository resolved with their server-side policy text', async () => {

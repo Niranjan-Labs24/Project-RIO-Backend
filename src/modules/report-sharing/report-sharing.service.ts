@@ -7,6 +7,8 @@ import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { getOrgStore, requireActor, requireOrgId } from "../../tenancy/org-context";
 import { roleByKey } from "../../rbac/role-matrix";
 import { AuditService } from "../audit/audit.service";
+import { MailerService } from "../../mailer/mailer.service";
+import { TranslationService } from "../translation/translation.service";
 import { ReportsService } from "../reports/reports.service";
 import { EXPORTABLE_STATUSES } from "../reports/reports.types";
 import type { SharingStatus } from "../sharing/sharing.types";
@@ -36,11 +38,29 @@ export class ReportSharingService {
     private readonly tenant: TenantPrismaService,
     private readonly audit: AuditService,
     private readonly reports: ReportsService,
+    private readonly mailer: MailerService,
+    private readonly translation: TranslationService,
   ) {}
 
   private isCrossEntity(): boolean {
     const role = getOrgStore()?.role;
     return role !== undefined && roleByKey(role)?.crossEntity === true;
+  }
+
+  // RIO-FR-014 (client Q28) — mirrors SharingService.orgAdminEmail exactly.
+  private async orgAdminEmail(orgId: string): Promise<string | null> {
+    const admin = await this.tenant.runAsSupervisor((tx) =>
+      tx.user.findFirst({ where: { orgId, roleId: "role_ngo_admin" }, select: { email: true } }),
+    );
+    return admin?.email ?? null;
+  }
+
+  // Mirrors SharingService.translateForEmail: a report title / org name is
+  // free text with no stored Arabic, so it's resolved live — otherwise the
+  // Arabic email reads as Arabic wrapped around untranslated English.
+  private async translateForEmail(text: string): Promise<string> {
+    const { translatedText } = await this.translation.translate(text, "ar");
+    return translatedText;
   }
 
   async create(payload: CreateReportSharingRequestPayload): Promise<ReportSharingRequest> {
@@ -113,6 +133,18 @@ export class ReportSharingService {
       organizationId: payload.ownerOrgId,
       changes: auditChanges,
     });
+    // RIO-FR-014 (client Q28) — best-effort, mirrors SharingService.create.
+    const ownerAdminEmail = await this.orgAdminEmail(payload.ownerOrgId);
+    if (ownerAdminEmail) {
+      const [reportTitleAr, requestingOrgNameAr] = await Promise.all([
+        this.translateForEmail(report.title),
+        this.translateForEmail(requestingOrgName),
+      ]);
+      await this.mailer.sendSharingRequestCreated(ownerAdminEmail, {
+        entityLabel: `التقرير "${reportTitleAr}"`,
+        otherOrgName: requestingOrgNameAr,
+      });
+    }
     return this.enrichOne(row);
   }
 
@@ -417,6 +449,20 @@ export class ReportSharingService {
       organizationId: row.requestingOrgId,
       changes: auditChanges,
     });
+    // RIO-FR-014 (client Q28) — mirrors SharingService.decide.
+    const requesterAdminEmail = await this.orgAdminEmail(row.requestingOrgId);
+    if (requesterAdminEmail) {
+      const [reportTitleAr, ownerOrgNameAr] = await Promise.all([
+        this.translateForEmail(reportTitle),
+        this.translateForEmail(ownerOrgName),
+      ]);
+      await this.mailer.sendSharingRequestDecided(requesterAdminEmail, {
+        entityLabel: `التقرير "${reportTitleAr}"`,
+        otherOrgName: ownerOrgNameAr,
+        status,
+        decisionNote,
+      });
+    }
     return this.enrichOne(row);
   }
 

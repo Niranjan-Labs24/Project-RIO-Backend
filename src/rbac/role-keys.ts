@@ -4,4 +4,5 @@ export const ROLE_KEYS = {
   systemReviewer: 'system_reviewer',
   centerSupervisor: 'center_supervisor',
   humanReviewer: 'human_reviewer',
+  ngoAdmin: 'ngo_admin',
 } as const;

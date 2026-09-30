@@ -28,6 +28,7 @@ function config(over: Record<string, unknown> = {}): ConfigService {
 
 const survey = {
   needTitle: 'Water',
+  needTitleAr: 'مياه',
   linkLabel: 'Wave 1',
   publicUrl: 'https://s/1',
   qrCodePng: Buffer.from('png'),

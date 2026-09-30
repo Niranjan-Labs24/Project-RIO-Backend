@@ -15,7 +15,23 @@ interface FakeSurvey {
   expectedSampleSize?: number | null;
   selectionApproach?: string | null;
   geographicCoverage?: string | null;
+  inheritedSnapshot?: unknown;
 }
+
+// UAT-09 — the parent Study a survey inherits Target Sector, geography and
+// methodology version from. One object serves both of SurveysService's
+// Study reads (loadStudyInheritance + loadStudyMethodologyVersion).
+const STUDY = {
+  id: 'st1',
+  title: 'Health Study',
+  targetSector: 'Health',
+  villages: ['V1'],
+  studyGovernorates: [
+    { governorate: { name: 'Ad-Dilam', nameAr: null, region: { name: 'Riyadh', nameAr: null } } },
+  ],
+  studyCenters: [{ center: { name: 'Center A', nameAr: null } }],
+  methodologyVersion: { version: 'v5.0' },
+};
 
 function fakeTenant(survey: FakeSurvey | null, questionCount = 1) {
   // A local clone, mutated in place as `update` is called — isolates each
@@ -25,9 +41,14 @@ function fakeTenant(survey: FakeSurvey | null, questionCount = 1) {
   // from an earlier update within the same test.
   let current = survey ? { ...survey } : null;
   const tx = {
+    // Read-only on purpose: no `update` — a survey must never write back
+    // to its Study (a write would throw "tx.study.update is not a function").
+    study: {
+      findUnique: async () => STUDY,
+    },
     survey: {
       findUnique: async () => current,
-      findFirst: async () => (current ? { ...current, surveyQuestions: [] } : null),
+      findFirst: async () => (current ? { studyId: 'st1', inheritedSnapshot: null, ...current, surveyQuestions: [] } : null),
       update: async ({ data }: { data: Record<string, unknown> }) => {
         if (current) current = { ...current, ...data };
         return current;
@@ -145,6 +166,20 @@ describe('SurveysService.publishSurvey', () => {
     const service = makeService({ id: 'sv1', needId: 'n1', status: 'APPROVED' });
     const result = (await runAsResearcher(() => service.publishSurvey('sv1'))) as FakeSurvey;
     expect(result.status).toBe('PUBLISHED');
+  });
+
+  it('UAT-09: freezes the inherited Study values (Target Sector + geography) at publish', async () => {
+    const service = makeService({ id: 'sv1', needId: 'n1', status: 'APPROVED' });
+    const result = (await runAsResearcher(() => service.publishSurvey('sv1'))) as FakeSurvey;
+    expect(result.inheritedSnapshot).toMatchObject({
+      studyId: 'st1',
+      targetSector: 'Health',
+      regions: [{ name: 'Riyadh' }],
+      governorates: [{ name: 'Ad-Dilam' }],
+      centers: [{ name: 'Center A' }],
+      villages: ['V1'],
+    });
+    expect(result.geographicCoverage).toContain('Governorates: Ad-Dilam');
   });
 
   it('rejects a survey that is not currently APPROVED', async () => {
@@ -269,21 +304,23 @@ describe('SurveysService.submitForApproval', () => {
 });
 
 describe('SurveysService.setSampleDescription', () => {
-  it('persists all four fields together', async () => {
+  it('persists the three entered fields and derives geographic coverage from the Study (UAT-09)', async () => {
     const service = makeService({ id: 'sv1', needId: 'n1', status: 'DRAFT' });
     const result = (await runAsApprover(() =>
-      service.setSampleDescription('sv1', 'Small business owners', 250, 'Convenience sampling', 'Eastern Province'),
+      service.setSampleDescription('sv1', 'Small business owners', 250, 'Convenience sampling'),
     )) as unknown as FakeSurvey;
     expect(result.targetGroup).toBe('Small business owners');
     expect(result.expectedSampleSize).toBe(250);
     expect(result.selectionApproach).toBe('Convenience sampling');
-    expect(result.geographicCoverage).toBe('Eastern Province');
+    expect(result.geographicCoverage).toBe(
+      'Region: Riyadh · Governorates: Ad-Dilam · Centers: Center A · Villages: V1',
+    );
   });
 
   it('is blocked once the survey is no longer editable (SUBMITTED)', async () => {
     const service = makeService({ id: 'sv1', needId: 'n1', status: 'SUBMITTED' });
     await expect(
-      runAsApprover(() => service.setSampleDescription('sv1', 'Group', 100, 'Approach', 'Coverage')),
+      runAsApprover(() => service.setSampleDescription('sv1', 'Group', 100, 'Approach')),
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
@@ -292,14 +329,13 @@ describe('SurveysService.setSampleDescription', () => {
   // calculated Sample Size — the two are independent values the NGO can
   // legitimately set differently (e.g. targeting a sub-group).
   it('RIO-FR-011/RIO-FR-024: Expected Size is independent of the Study — the write path has no Study model to touch at all', async () => {
-    // fakeTenant's tx intentionally has no `study` key (see its definition
-    // above) — if setSampleDescription ever tried to read/write a Study
-    // row, this test would throw "tx.study is undefined" rather than
-    // silently pass, so the absence of that error is itself the proof of
-    // independence, not just an assumption.
+    // fakeTenant's `study` is read-only (see its definition above) —
+    // setSampleDescription reads the Study only for inherited geography
+    // (UAT-09); if it ever tried to write a Study row, this test would throw
+    // rather than silently pass.
     const service = makeService({ id: 'sv1', needId: 'n1', status: 'DRAFT' });
     const result = (await runAsApprover(() =>
-      service.setSampleDescription('sv1', 'Households with under-5 children', 180, 'Cluster sampling', 'Ad-Dilam'),
+      service.setSampleDescription('sv1', 'Households with under-5 children', 180, 'Cluster sampling'),
     )) as unknown as FakeSurvey;
     expect(result.expectedSampleSize).toBe(180);
   });
@@ -309,7 +345,7 @@ describe('SurveysService.setSampleDescription', () => {
     // An NGO targeting a specific sub-group within the calculated sample —
     // an arbitrary, unrelated number is accepted as-is.
     const result = (await runAsApprover(() =>
-      service.setSampleDescription('sv1', 'Female-headed households only', 45, 'Purposive sampling', 'Al-Jumum North'),
+      service.setSampleDescription('sv1', 'Female-headed households only', 45, 'Purposive sampling'),
     )) as unknown as FakeSurvey;
     expect(result.expectedSampleSize).toBe(45);
   });
@@ -317,7 +353,7 @@ describe('SurveysService.setSampleDescription', () => {
   it('editing Expected Size again overwrites only the Survey row — re-saving with a new value never reintroduces an old one', async () => {
     const service = makeService({ id: 'sv1', needId: 'n1', status: 'DRAFT', expectedSampleSize: 250 });
     const result = (await runAsApprover(() =>
-      service.setSampleDescription('sv1', 'Households with under-5 children', 90, 'Cluster sampling', 'Ad-Dilam'),
+      service.setSampleDescription('sv1', 'Households with under-5 children', 90, 'Cluster sampling'),
     )) as unknown as FakeSurvey;
     expect(result.expectedSampleSize).toBe(90);
   });

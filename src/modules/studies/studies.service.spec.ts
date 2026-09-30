@@ -62,6 +62,8 @@ function setup(names: { types?: string[]; sectors?: string[] } = {}) {
     },
     evidence: { count: vi.fn().mockResolvedValue(3) },
     need: { count: vi.fn().mockResolvedValue(0), findMany: vi.fn().mockResolvedValue([]) },
+    // UAT-09 — a Study methodology change is carried down to its editable surveys.
+    survey: { updateMany: vi.fn() },
     studyGovernorate: { deleteMany: vi.fn(), createMany: vi.fn() },
     studyCenter: { deleteMany: vi.fn(), createMany: vi.fn() },
   };
@@ -328,6 +330,18 @@ describe('StudiesService.update', () => {
     expect(tx.studyCenter.createMany).not.toHaveBeenCalled(); // an empty list only clears
     const fields = audit.record.mock.calls[0]![0].changes.map((c: { field: string }) => c.field);
     expect(fields.length).toBeGreaterThan(1);
+    // UAT-09 — the new methodology version flows to the Study's editable
+    // surveys only; submitted/approved/published ones keep theirs.
+    expect(tx.survey.updateMany).toHaveBeenCalledWith({
+      where: { studyId: 's1', status: { in: ['DRAFT', 'REJECTED'] } },
+      data: { methodologyVersion: expect.any(String) },
+    });
+  });
+
+  it('does not touch surveys when the methodology version is not being changed', async () => {
+    const { svc, tx } = setup();
+    await asOrg(() => svc.update('s1', { title: 'Renamed' } as never));
+    expect(tx.survey.updateMany).not.toHaveBeenCalled();
   });
 
   it('replaces centers and skips the audit when nothing changed', async () => {

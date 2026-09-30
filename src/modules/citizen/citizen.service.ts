@@ -127,7 +127,7 @@ export class CitizenService {
   }
 
   // Maps Survey Builder's internal answerType vocabulary (Question Bank:
-  // select/numeric/boolean/text; additional questions: long_text/
+  // select/multiselect/checklist/numeric/boolean/text; additional questions: long_text/
   // short_text/multiple_choice/checkbox/yes_no/rating) onto the citizen
   // flow's rendering type — single_choice (pick one), multi_choice (pick
   // several), scale (1-5), numeric (a number box), or free text.
@@ -149,7 +149,13 @@ export class CitizenService {
       case 'select':
       case 'multiple_choice':
         return { type: 'single_choice', options: answerOptions ?? [], optionsAr: answerOptionsAr };
+      // `multiselect` / `checklist` are the Question Bank's own pick-several
+      // types (19 + 3 questions in the v5.0 bank). They fell through to the
+      // free-text default, so a citizen saw an empty text box instead of the
+      // question's (Arabic) options — found in live UAT-06 verification.
       case 'checkbox':
+      case 'multiselect':
+      case 'checklist':
         return { type: 'multi_choice', options: answerOptions ?? [], optionsAr: answerOptionsAr };
       case 'boolean':
       case 'yes_no':

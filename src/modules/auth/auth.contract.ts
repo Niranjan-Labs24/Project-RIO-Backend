@@ -123,11 +123,11 @@ export const SignupBody = registerSchema(
       purpose: T.Optional(T.String({ maxLength: 500 })),
       registrationNumber: T.String({ minLength: 1, maxLength: 100 }),
       email: T.String({ format: 'email' }),
-      // RIO MFA — optional mobile number for the first NGO Admin, so their
-      // account is eligible for "Sign in with OTP" over SMS from day one.
-      // Loosely bounded (not a strict E.164 pattern): AuthService.signup
-      // normalizes it the same way CitizenService.normalizeMobile() does.
-      mobileNumber: T.Optional(T.String({ maxLength: 32 })),
+      // UAT-12 — mandatory mobile number for the first NGO Admin (also makes
+      // the account eligible for "Sign in with OTP" over SMS from day one).
+      // Loosely bounded here; AuthService.signup enforces the Saudi mobile
+      // format and normalizes it to +9665XXXXXXXX (see toSaudiMobileE164).
+      mobileNumber: T.String({ minLength: 1, maxLength: 32 }),
       // Required, not optional — a signup payload without it is a 400 from
       // the validation pipe before any org row is created.
       consent: ConsentAcceptanceBody,

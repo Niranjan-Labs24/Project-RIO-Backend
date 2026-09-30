@@ -102,6 +102,7 @@ describe('signup -> pending approval -> System Admin approves -> entity logs in'
         purpose: 'testing',
         registrationNumber: rn,
         email,
+        mobileNumber: '0501234567',
         regionId,
         governorateIds: [governorateId],
         centerIds: [centerId],
@@ -260,6 +261,7 @@ describe('signup -> pending approval -> System Admin approves -> entity logs in'
           purpose: 'testing',
           registrationNumber: '0000000000',
           email: `unverified+${Date.now()}@e2e.test`,
+          mobileNumber: '0501234567',
           ...geo,
           consent: {
             usePolicyVersion: policies.body.usePolicy.version,
@@ -296,6 +298,7 @@ describe('signup -> pending approval -> System Admin approves -> entity logs in'
         purpose: 'testing',
         registrationNumber: nic.nicNumber,
         email: `noconsent+${stamp}@e2e.test`,
+        mobileNumber: '0501234567',
         ...geo,
         ...(consent === undefined ? {} : { consent }),
       };

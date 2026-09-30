@@ -23,9 +23,14 @@ const REVIEWED_ANY_SIGNED_IN_ROUTES = new Set([
   'modules/reviewer-sla/reviewer-sla.controller.ts GET reviewer-sla/alerts',
   'modules/study-config/study-config.controller.ts GET study-config/study-types',
   'modules/study-config/study-config.controller.ts GET study-config/target-sectors',
+  'modules/study-config/study-config.controller.ts GET study-config/gap-types',
+  'modules/study-config/study-config.controller.ts GET study-config/decision-types',
   'modules/surveys/surveys.controller.ts GET surveys/public/:id',
   'modules/surveys/surveys.controller.ts POST surveys/public/:id/submit',
   'modules/translation/translation.controller.ts POST translation',
+  // Same access as POST translation (text the caller's own screen already
+  // shows), just many strings per request — see TranslateBatchBody.
+  'modules/translation/translation.controller.ts POST translation/batch',
 ]);
 
 function controllerFiles(dir: string): string[] {

@@ -50,7 +50,7 @@ export function buildContentTranslationTask(
 RULES:
 1. Translate the meaning faithfully. Do not add, remove, summarise, or reinterpret anything.
 2. Do not add a title, heading, label, quotation marks, or any commentary. Return only the translated text itself.
-3. Preserve numbers, dates, proper nouns (place names, organisation names, person names) and technical terms exactly — transliterate a proper noun if it has no established translation, never invent one.
+3. Preserve numbers, dates, proper nouns (place names, organisation names, person names) and technical terms exactly — transliterate a proper noun if it has no established translation, never invent one. Keep every number written as digits, exactly as in the source — never spell a number out as a word or fold it into a dual/plural form (e.g. "2 valid responses" stays "2 إجابة صالحة", not "إجابتين صالحتين").
 4. Match the register of the source (a short label stays a short label; a full sentence stays a full sentence).
 5. The input may be a MIX of ${sourceName} and ${targetName} (e.g. a system-generated title that already embeds a ${targetName} name inside a ${sourceName} template, such as "Individual Survey Report — Survey: <a name already in ${targetName}>"). Translate only the ${sourceName} portions into ${targetName}; leave any part already written in ${targetName} exactly as it is, in its original position, untouched.
 6. If the source text is already entirely in ${targetName}, or contains no translatable content (e.g. it is only a number, a code, or punctuation), return it unchanged.

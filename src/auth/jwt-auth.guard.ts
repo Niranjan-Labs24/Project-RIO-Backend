@@ -97,6 +97,19 @@ export class JwtAuthGuard implements CanActivate {
             : current.sessionVersion !== claims.sessionVersion
               ? 'session_version_mismatch (this token was invalidated by a logout/password-change/consent-accept on ANY of this user\'s sessions — see logout()/changePassword())'
               : 'role_not_found (roleId no longer exists in ROLE_MATRIX)';
+      // A public route (login, signup, forgot-password, OTP) must not be
+      // blocked by a stale session COOKIE — same rule as the expired-token
+      // branch above. Otherwise a browser still holding a revoked session
+      // (logged out in another tab, password changed, consent accepted)
+      // got "Authentication is required. Please sign in again." from the
+      // sign-in request itself and could not sign in again until its
+      // cookies were cleared (client-reported: after being logged out and
+      // coming back later, login failed with exactly this message). The
+      // request continues as anonymous; login then issues a fresh cookie.
+      if (isPublic && !fromHeader) {
+        this.logger.warn(`Ignoring stale session cookie on public ${requestLabel}: ${reason} — user ${claims.sub}`);
+        return true;
+      }
       this.logger.warn(`Rejected ${requestLabel}: ${reason} — user ${claims.sub}`);
       throw this.unauthenticated();
     }

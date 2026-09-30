@@ -97,7 +97,7 @@ export const SetMethodologyVersionBody = registerSchema(
 );
 export type SetMethodologyVersionDto = Static<typeof SetMethodologyVersionBody>;
 
-// All four fields are required together — this is a single Save action for
+// The three Researcher-entered fields are required together — this is a single Save action for
 // the whole Sample Description step, not four independent field updates
 // (matches the frontend's one Card / one Save button). Whether the step as
 // a whole is required before Submit for Approval is enforced separately in
@@ -108,7 +108,10 @@ export const SetSampleDescriptionBody = registerSchema(
     targetGroup: T.String({ minLength: 1, maxLength: 500 }),
     expectedSampleSize: T.Integer({ minimum: 1 }),
     selectionApproach: T.String({ minLength: 1, maxLength: 1000 }),
-    geographicCoverage: T.String({ minLength: 1, maxLength: 500 }),
+    // UAT-09 — inherited from the parent Study now (derived server-side, see
+    // SurveysService.setSampleDescription). Still accepted so an older client
+    // doesn't 400, but ignored.
+    geographicCoverage: T.Optional(T.String({ maxLength: 500 })),
   }),
 );
 export type SetSampleDescriptionDto = Static<typeof SetSampleDescriptionBody>;
