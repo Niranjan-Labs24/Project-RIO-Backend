@@ -119,7 +119,7 @@ describe('Organizations (e2e)', () => {
         name, purpose: 'Testing', registrationNumber: rn, region: ['North'],
         email: `org-${uniq}@example.org`, sector: 'Education', villages: ['V1'],
         regionId, governorateIds: [governorateId], centerIds: [centerId],
-        adminName: 'First Admin', adminEmail: `admin-${uniq}@example.org`,
+        adminName: 'First Admin', adminEmail: `admin-${uniq}@example.org`, adminMobileNumber: '0501234567',
         consent: {
           usePolicyVersion: policies.body.usePolicy.version,
           dataSharingVersion: policies.body.dataSharing.version,
@@ -153,7 +153,7 @@ describe('Organizations (e2e)', () => {
       .send({
         name: `Dup NGO ${uniq}`, purpose: 'Testing', registrationNumber: duplicateRegistrationNumber,
         sector: 'Education', ...validGeography,
-        adminName: 'Dup Admin', adminEmail: `dup-${uniq}@example.org`,
+        adminName: 'Dup Admin', adminEmail: `dup-${uniq}@example.org`, adminMobileNumber: '0501234568',
         consent: consentVersions,
       });
     expect(res.status).toBe(409);

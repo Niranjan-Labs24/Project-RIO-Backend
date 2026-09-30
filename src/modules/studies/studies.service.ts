@@ -458,9 +458,10 @@ export class StudiesService {
       if (payload.governorateIds !== undefined || payload.centerIds !== undefined) {
         await this.assertGeographyInOrgScope(tx, orgId, nextGovernorateIds, nextCenterIds);
       }
-      if (payload.methodologyVersionId !== undefined) {
-        await this.assertMethodologyVersionPublished(tx, payload.methodologyVersionId);
-      }
+      const nextMethodologyVersion =
+        payload.methodologyVersionId !== undefined
+          ? await this.assertMethodologyVersionPublished(tx, payload.methodologyVersionId)
+          : null;
 
       const changes = this.diff(current, payload, nextGovernorateIds, nextCenterIds);
 
@@ -474,6 +475,17 @@ export class StudiesService {
           ...(payload.targetSector !== undefined ? { targetSector: payload.targetSector } : {}),
         },
       });
+
+      // UAT-09 — surveys inherit their Study's methodology version: carry a
+      // change down to this Study's still-editable surveys. Anything already
+      // submitted, approved or published keeps the version it was reviewed
+      // and published under.
+      if (nextMethodologyVersion !== null) {
+        await tx.survey.updateMany({
+          where: { studyId: id, status: { in: ['DRAFT', 'REJECTED'] } },
+          data: { methodologyVersion: nextMethodologyVersion },
+        });
+      }
 
       if (payload.governorateIds !== undefined) {
         await tx.studyGovernorate.deleteMany({ where: { studyId: id } });

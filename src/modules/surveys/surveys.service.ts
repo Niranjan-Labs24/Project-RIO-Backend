@@ -11,6 +11,7 @@ import { SURVEY_QUESTION_RECOMMENDATION_TASK } from '../ai/prompts/survey-questi
 import { MethodologyConfigService } from '../methodology-config/methodology-config.service';
 import { requireNonBlank } from '../../common/validation/require-non-blank';
 import { computeQuestionWeights } from '../questions/question-weight.util';
+import { loadStudyInheritance, loadStudyMethodologyVersion, parseInheritedSnapshot, summarizeGeography } from './survey-inheritance';
 
 @Injectable()
 export class SurveysService {
@@ -316,10 +317,20 @@ export class SurveysService {
     approvedAt: Date | null; approvedBy: string | null;
     rejectedAt: Date | null; rejectedBy: string | null;
     publishedAt: Date | null; publishedBy: string | null;
+    inheritedSnapshot: Prisma.JsonValue | null;
     surveyQuestions: Parameters<SurveysService['toQuestionDto']>[0][];
   }) {
     const names = await this.resolveUserNames(
       [row.approvedBy, row.rejectedBy, row.publishedBy].filter((id): id is string => id !== null),
+    );
+    // UAT-09 — values inherited from the parent Study: the snapshot frozen at
+    // publish if there is one, otherwise the Study's current values.
+    const snapshot = parseInheritedSnapshot(row.inheritedSnapshot);
+    const [inherited, studyMethodologyVersion] = await this.tenant.runRead(async (tx) =>
+      Promise.all([
+        snapshot ?? loadStudyInheritance(tx, row.studyId),
+        loadStudyMethodologyVersion(tx, row.studyId),
+      ]),
     );
     return {
       id: row.id,
@@ -346,6 +357,16 @@ export class SurveysService {
       publishedAt: row.publishedAt ? row.publishedAt.toISOString() : null,
       publishedBy: row.publishedBy,
       publishedByName: row.publishedBy ? (names.get(row.publishedBy) ?? null) : null,
+      inherited: inherited
+        ? {
+            ...inherited,
+            // true once published — the values shown are the frozen snapshot.
+            frozen: snapshot !== null,
+            // The survey's methodology version is inherited (and locked) when
+            // its Study has one; only a Study without one leaves it pickable.
+            methodologyVersionInherited: studyMethodologyVersion !== null,
+          }
+        : null,
       questions: row.surveyQuestions.map((sq) => this.toQuestionDto(sq, true)),
     };
   }
@@ -386,8 +407,11 @@ export class SurveysService {
       const existing = await tx.survey.findFirst({ where: { needId }, orderBy: { version: 'desc' } });
       if (existing) return { survey: existing, created: false };
 
+      // UAT-09 — inherits the parent Study's methodology version (null only
+      // for a Study without one, which then leaves it for the Researcher).
+      const methodologyVersion = await loadStudyMethodologyVersion(tx, need.studyId);
       const row = await tx.survey.create({
-        data: { orgId, needId, studyId: need.studyId, title: need.title, status: 'DRAFT', createdBy: actorId },
+        data: { orgId, needId, studyId: need.studyId, title: need.title, status: 'DRAFT', createdBy: actorId, methodologyVersion },
       });
       await tx.need.update({ where: { id: needId }, data: { status: 'survey_created' } });
       return { survey: row, created: true };
@@ -563,10 +587,12 @@ export class SurveysService {
       // scoring engine uses, so nothing can be recommended that scoring would
       // then fail to resolve). Unscoped, this spanned every imported bank at
       // once and could recommend a retired version's question.
+      // UAT-09 — a new survey inherits its Study's methodology version; the
+      // latest PUBLISHED one is only the fallback for a Study without one.
+      const inheritedVersion =
+        existingSurvey?.methodologyVersion ?? (await loadStudyMethodologyVersion(tx, need.studyId));
       const mv = await tx.methodologyVersion.findFirst({
-        where: existingSurvey?.methodologyVersion
-          ? { version: existingSurvey.methodologyVersion }
-          : { status: 'PUBLISHED' },
+        where: inheritedVersion ? { version: inheritedVersion } : { status: 'PUBLISHED' },
         orderBy: { createdAt: 'desc' },
         select: { id: true, version: true },
       });
@@ -987,7 +1013,10 @@ Eligible Questions: ${JSON.stringify(
           studyId: survey.studyId,
           title: survey.title,
           status: 'DRAFT',
-          methodologyVersion: survey.methodologyVersion,
+          // UAT-09 — a new draft re-inherits from the Study as it is now (and,
+          // with no inheritedSnapshot, reads its geography/sector live).
+          methodologyVersion:
+            (await loadStudyMethodologyVersion(tx, survey.studyId)) ?? survey.methodologyVersion,
           targetGroup: survey.targetGroup,
           expectedSampleSize: survey.expectedSampleSize,
           selectionApproach: survey.selectionApproach,
@@ -1047,6 +1076,16 @@ Eligible Questions: ${JSON.stringify(
         throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
       }
       this.assertEditable(survey.status);
+      // UAT-09 — inherited from the parent Study, so not the Researcher's to
+      // change; only a Study without a methodology version leaves it pickable.
+      if (await loadStudyMethodologyVersion(tx, survey.studyId)) {
+        throw new BadRequestException({
+          error: {
+            code: 'METHODOLOGY_VERSION_INHERITED',
+            message: "This survey's methodology version is inherited from its study and can't be changed here. Change it on the study instead.",
+          },
+        });
+      }
       await tx.survey.update({ where: { id: surveyId }, data: { methodologyVersion: version } });
       // Read before the update overwrites it — the "before" half of the pair.
       return { needId: survey.needId, previousVersion: survey.methodologyVersion };
@@ -1065,16 +1104,19 @@ Eligible Questions: ${JSON.stringify(
   }
 
   // Researcher: the Sample Description step (Target Group / Expected Sample
-  // Size / Selection Approach / Geographic Coverage) — one Save action for
-  // all four fields together, mandatory before submitForApproval will allow
-  // SUBMITTED (see below). Shown read-only to the Approver during review
-  // via toSurveyDetailDto; approveAndPublish/rejectSurvey never touch it.
+  // Size / Selection Approach) — one Save action for the three fields
+  // together. Shown read-only to the Approver during review via
+  // toSurveyDetailDto; approveAndPublish/rejectSurvey never touch it.
+  //
+  // UAT-09 — Geographic Coverage is no longer typed here: it is inherited
+  // from the parent Study, and geographicCoverage is kept as a derived
+  // plain-text summary of the Study's geography for the readers (approval
+  // view, audit, exports) that still use that column.
   async setSampleDescription(
     surveyId: string,
     targetGroup: string,
     expectedSampleSize: number,
     selectionApproach: string,
-    geographicCoverage: string,
   ) {
     // Only genuinely changed fields are recorded, so the audit entry shows
     // what the editor actually altered rather than restating all four.
@@ -1085,6 +1127,8 @@ Eligible Questions: ${JSON.stringify(
         throw new NotFoundException({ error: { code: 'SURVEY_NOT_FOUND', message: 'Survey not found' } });
       }
       this.assertEditable(survey.status);
+      const inherited = await loadStudyInheritance(tx, survey.studyId);
+      const geographicCoverage = inherited ? summarizeGeography(inherited) : survey.geographicCoverage;
       sampleChanges = (
         [
           ['Target group', survey.targetGroup, targetGroup],
@@ -1259,9 +1303,23 @@ Eligible Questions: ${JSON.stringify(
     const now = new Date();
 
     const updated = await this.tenant.runInOrgContext(async (tx) => {
+      // UAT-09 — freeze what this survey inherited from its Study (Target
+      // Sector + geography) as of publish, so a later Study edit never
+      // rewrites a published survey. Drafts keep reading the Study live.
+      const inherited = await loadStudyInheritance(tx, survey.studyId);
       const row = await tx.survey.update({
         where: { id: surveyId },
-        data: { status: 'PUBLISHED', publishedAt: now, publishedBy: actorId },
+        data: {
+          status: 'PUBLISHED',
+          publishedAt: now,
+          publishedBy: actorId,
+          ...(inherited
+            ? {
+                inheritedSnapshot: inherited as unknown as Prisma.InputJsonValue,
+                geographicCoverage: summarizeGeography(inherited),
+              }
+            : {}),
+        },
       });
       await tx.need.update({ where: { id: survey.needId }, data: { status: 'survey_published' } });
 

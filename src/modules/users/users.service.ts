@@ -14,6 +14,8 @@ import type {
   AssignNgoAdminPayload, CreateForOrgPayload, InviteUserPayload, InviteUserResponse, OrgUser, UpdateUserPayload, UpdateUserRolePayload, UpdateUserStatusPayload, UserRow,
 } from './users.types';
 
+const NGO_ADMIN_ROLE_ID = 'role_ngo_admin';
+
 const DIFF_FIELDS = ['name', 'roleId', 'status', 'mobileNumber'] as const;
 
 // RIO MFA — same punctuation-stripping normalization as
@@ -49,6 +51,7 @@ export class UsersService {
   // caller so the admin can hand it to the new user directly.
   async invite(payload: InviteUserPayload): Promise<InviteUserResponse> {
     const role = this.validateRole(payload.roleId);
+    if (role.id === NGO_ADMIN_ROLE_ID) this.assertCanManageNgoAdmin();
     const orgId = requireOrgId();
     const { created, orgName } = await this.createUser(() =>
       this.tenant.runInOrgContext(async (tx) => {
@@ -103,7 +106,9 @@ export class UsersService {
     await this.tenant.runAsOrg(orgId, (tx) =>
       tx.user.update({ where: { id: userId }, data: { passwordHash, mustChangePassword: true } }),
     );
-    await this.mailer.sendTemporaryPassword(email, orgName, temporaryPassword);
+    // UAT-11 (Ganesh's brief, 2026-09-29) — every system-triggered email
+    // defaults to Arabic.
+    await this.mailer.sendTemporaryPassword(email, orgName, temporaryPassword, 'ar');
     return { temporaryPasswordEmailed: true };
   }
 
@@ -112,8 +117,16 @@ export class UsersService {
     const { updated, changes } = await this.tenant.runInOrgContext(async (tx) => {
       const current = (await tx.user.findUnique({ where: { id } })) as UserRow | null;
       if (!current) throw new NotFoundException({ error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
+      // The NGO Admin may still edit their own profile fields (name, mobile);
+      // role/status changes — and any edit of someone else's NGO Admin
+      // account, or promoting a user to NGO Admin — stay platform-only.
+      const roleChanged = patch.roleId !== undefined && patch.roleId !== current.roleId;
+      const statusChanged = patch.status !== undefined && patch.status !== current.status;
+      const ownProfileEdit = current.id === getOrgStore()?.actorId && !roleChanged && !statusChanged;
+      const touchesNgoAdmin = current.roleId === NGO_ADMIN_ROLE_ID || (roleChanged && patch.roleId === NGO_ADMIN_ROLE_ID);
+      if (touchesNgoAdmin && !ownProfileEdit) this.assertCanManageNgoAdmin();
       const changes = this.diff(current, patch);
-      const updated = (await tx.user.update({ where: { id }, data: this.buildUpdateData(patch) })) as UserRow;
+      const updated = (await tx.user.update({ where: { id }, data: this.buildUpdateData(patch, roleChanged || statusChanged) })) as UserRow;
       return { updated, changes };
     });
     if (changes.length > 0) {
@@ -124,6 +137,20 @@ export class UsersService {
 
   async remove(id: string): Promise<void> {
     const actorId = requireActor();
+    // UAT-03 (client-confirmed, revised 2026-09-30): who may delete a user —
+    //  - System Admin: any account (except their own).
+    //  - NGO Admin: the users of their own organisation (RLS scopes the
+    //    lookup below to it), except an NGO Admin account or a platform-wide
+    //    (crossEntity) one — the NGO Admin account stays platform-managed.
+    //  - Every other role: nobody. Checked before the lookup so a caller who
+    //    can never delete can't probe which ids exist.
+    const callerRole = getOrgStore()?.role;
+    const isSystemAdmin = callerRole === ROLE_KEYS.systemAdmin;
+    if (!isSystemAdmin && callerRole !== ROLE_KEYS.ngoAdmin) {
+      throw new ForbiddenException({
+        error: { code: 'FORBIDDEN_USER_REMOVAL', message: 'You are not allowed to delete user accounts' },
+      });
+    }
     if (id === actorId) {
       throw new BadRequestException({
         error: { code: 'CANNOT_REMOVE_SELF', message: "You can't remove your own account." },
@@ -132,15 +159,16 @@ export class UsersService {
     const removed = await this.tenant.runInOrgContext(async (tx) => {
       const current = (await tx.user.findUnique({ where: { id } })) as UserRow | null;
       if (!current) throw new NotFoundException({ error: { code: 'USER_NOT_FOUND', message: 'User not found' } });
-      // Privilege guard (mirrors validateRole): only a crossEntity caller may
-      // remove a crossEntity account. Otherwise a tenant-scoped admin could
-      // delete a platform-wide user (e.g. a system_admin that shares their org
-      // via RLS), which the tenant admin has no authority over.
-      const targetRole = ROLE_MATRIX.find((r) => r.id === current.roleId);
-      if (targetRole?.crossEntity && roleByKey(getOrgStore()?.role ?? '')?.crossEntity !== true) {
-        throw new ForbiddenException({
-          error: { code: 'FORBIDDEN_USER_REMOVAL', message: 'You are not allowed to remove a cross-entity account' },
-        });
+      if (!isSystemAdmin) {
+        const targetRole = ROLE_MATRIX.find((r) => r.id === current.roleId);
+        if (current.roleId === NGO_ADMIN_ROLE_ID || targetRole?.crossEntity) {
+          throw new ForbiddenException({
+            error: {
+              code: 'FORBIDDEN_USER_REMOVAL',
+              message: 'Only a System Admin can delete an NGO Admin or a platform account',
+            },
+          });
+        }
       }
       await tx.user.delete({ where: { id } });
       return current;
@@ -539,6 +567,22 @@ export class UsersService {
     return { take: Math.min(Math.max(opts.limit ?? 100, 1), 200), skip: Math.max(opts.offset ?? 0, 0) };
   }
 
+  // UAT-03: the NGO Admin account (the entity's owner) is managed only by the
+  // platform tier — via assignNgoAdmin / updateUserRoleForOrg /
+  // updateUserStatusForOrg. Enforced here, not just by hiding buttons, so any
+  // org-level caller holding entityTeam:write (another NGO Admin, or a role
+  // granted it via permission-grants) gets a 403 on edit — and can't mint a
+  // second NGO Admin to do it for them. Sole exception, in update(): the NGO
+  // Admin editing their own name/mobile. (Deleting an NGO Admin is System
+  // Admin only — see remove().)
+  private assertCanManageNgoAdmin(): void {
+    if (roleByKey(getOrgStore()?.role ?? '')?.crossEntity !== true) {
+      throw new ForbiddenException({
+        error: { code: 'FORBIDDEN_NGO_ADMIN_MANAGEMENT', message: 'Only a platform administrator can modify the NGO Admin account' },
+      });
+    }
+  }
+
   private assertCrossEntity(): void {
     const roleKey = getOrgStore()?.role;
     if (!roleKey || roleByKey(roleKey)?.crossEntity !== true) {
@@ -598,13 +642,16 @@ export class UsersService {
     }
   }
 
-  private buildUpdateData(patch: UpdateUserPayload): Record<string, unknown> {
+  // `revokeSessions` only on an actual role/status change — the edit form
+  // always echoes both back, and bumping sessionVersion on a mere name/mobile
+  // edit signed the user out (their own session, when editing themselves).
+  private buildUpdateData(patch: UpdateUserPayload, revokeSessions: boolean): Record<string, unknown> {
     const data: Record<string, unknown> = {};
     if (patch.name !== undefined) data.name = patch.name;
     if (patch.roleId !== undefined) data.roleId = patch.roleId;
     if (patch.status !== undefined) data.status = patch.status;
     if (patch.mobileNumber !== undefined) data.mobileNumber = patch.mobileNumber ? normalizeMobile(patch.mobileNumber) : null;
-    if (patch.roleId !== undefined || patch.status !== undefined) data.sessionVersion = { increment: 1 };
+    if (revokeSessions) data.sessionVersion = { increment: 1 };
     return data;
   }
 

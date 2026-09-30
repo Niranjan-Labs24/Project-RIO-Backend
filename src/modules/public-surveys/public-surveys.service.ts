@@ -9,6 +9,7 @@ import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { requireOrgId, requireActor } from '../../tenancy/org-context';
 import { AuditService } from '../audit/audit.service';
 import { MailerService } from '../../mailer/mailer.service';
+import { TranslationService } from '../translation/translation.service';
 import { sanitizeForSpreadsheet } from '../../common/security/spreadsheet-sanitize';
 import { auditFieldLabel } from '../audit/audit-field-labels';
 import type {
@@ -71,6 +72,7 @@ export class PublicSurveysService {
     private readonly config: ConfigService,
     private readonly audit: AuditService,
     private readonly mailer: MailerService,
+    private readonly translation: TranslationService,
   ) {}
 
   async listLinks(needId: string): Promise<PublicSurveyLink[]> {
@@ -155,11 +157,26 @@ export class PublicSurveysService {
       }
       return existing;
     });
-    const publicUrl = `${this.config.publicAppUrl}/public/survey/${link.token}`;
+    // UAT-02: a bare link with no locale segment resolves to the app's
+    // default locale (English) via next-intl's `as-needed` prefix strategy.
+    // Citizen respondents are expected to see Arabic first, with English
+    // still reachable as an in-page toggle, so the generated link is
+    // explicitly `/ar`-prefixed rather than left to that default.
+    const publicUrl = `${this.config.publicAppUrl}/ar/public/survey/${link.token}`;
     const qrCodePng = await QRCode.toBuffer(publicUrl, { type: 'png', width: 300, margin: 1 });
+
+    // The Need has no stored Arabic title of its own (free text, unlike the
+    // Question Bank's bilingual fields) — resolved live here the same way
+    // the frontend's `<AutoTranslate>` would, so the email's Arabic block
+    // (see mailer.service.ts's surveyLinkText/Html) shows a real Arabic
+    // heading instead of the English title sitting inside otherwise-Arabic
+    // copy (client-reported: title stayed English while the surrounding
+    // template text was already bilingual).
+    const { translatedText: needTitleAr } = await this.translation.translate(need.title, 'ar');
 
     const sent = await this.mailer.sendSurveyLink(email, {
       needTitle: need.title,
+      needTitleAr,
       linkLabel: link.label,
       publicUrl,
       qrCodePng,
@@ -681,7 +698,7 @@ export class PublicSurveysService {
       studyId: row.studyId,
       label: row.label,
       token: row.token,
-      publicUrl: `${this.config.publicAppUrl}/public/survey/${row.token}`,
+      publicUrl: `${this.config.publicAppUrl}/ar/public/survey/${row.token}`, // UAT-02 — see comment above
       expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
       isActive: row.isActive,
       createdAt: row.createdAt.toISOString(),

@@ -73,4 +73,52 @@ describe('MailerService', () => {
     const svc = new MailerService(config());
     await expect(svc.sendTemporaryPassword('a@b.test', 'Org', 'pw')).resolves.toBe(false);
   });
+
+  // UAT-11 — every email defaults to Arabic, including the internal ones.
+  describe('Arabic by default (UAT-11)', () => {
+    const sent = () => send.mock.calls[0]![0] as { subject: string; text: string; html: string };
+
+    it('sends the backup failure alert in Arabic, naming the backup kind in Arabic', async () => {
+      send.mockResolvedValue({ data: { id: '1' }, error: null });
+      const svc = new MailerService(config());
+      await svc.sendBackupFailureAlert(['ops@rio.test'], {
+        kind: 'attachments', error: 'pg_dump: refused', runId: 'run-1', startedAt: new Date('2026-09-30T00:00:00Z'),
+      });
+      expect(sent().subject).toBe('فشل النسخ الاحتياطي في RIO — المرفقات');
+      expect(sent().html).toContain('dir="rtl"');
+      // The technical error stays verbatim (and left-to-right) for the admin.
+      expect(sent().text).toContain('pg_dump: refused');
+    });
+
+    it('falls back to the raw kind for a backup kind with no Arabic name', async () => {
+      send.mockResolvedValue({ data: { id: '1' }, error: null });
+      const svc = new MailerService(config());
+      await svc.sendBackupFailureAlert(['ops@rio.test'], {
+        kind: 'snapshot', error: 'x', runId: 'run-2', startedAt: new Date('2026-09-30T00:00:00Z'),
+      });
+      expect(sent().subject).toBe('فشل النسخ الاحتياطي في RIO — snapshot');
+    });
+
+    it('sends the contact enquiry in Arabic', async () => {
+      send.mockResolvedValue({ data: { id: '1' }, error: null });
+      const svc = new MailerService(config());
+      await svc.sendContactRequest(['team@rio.test'], {
+        orgName: 'كيان تجريبي', name: 'سارة', email: 's@x.test', region: 'الرياض', purpose: 'تعاون',
+      });
+      expect(sent().subject).toBe('استفسار جديد في RIO — سارة (الرياض)');
+      expect(sent().text).toContain('الاسم: سارة');
+      expect(sent().html).toContain('dir="rtl"');
+    });
+
+    it('sends the survey reminder in Arabic with the translated Need title', async () => {
+      send.mockResolvedValue({ data: { id: '1' }, error: null });
+      const svc = new MailerService(config());
+      await svc.sendSurveyReminder('c@x.test', {
+        needTitle: 'Water', needTitleAr: 'المياه', publicUrl: 'https://app.rio.example/ar/public/survey/t',
+      });
+      expect(sent().subject).toBe('تذكير: لم تكتمل إجابتك على استبيان المياه');
+      expect(sent().html).toContain('dir="rtl"');
+      expect(sent().html).not.toContain('Finish the survey');
+    });
+  });
 });

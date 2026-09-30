@@ -15,6 +15,7 @@ import { DomainsService } from '../domains/domains.service';
 import { GeographyService } from '../geography/geography.service';
 import { NicRegistryService } from '../nic-registry/nic-registry.service';
 import { auditFieldLabel } from '../audit/audit-field-labels';
+import { toSaudiMobileE164 } from '../../common/validation/saudi-mobile';
 import type {
   CreateOrganizationPayload, Organization, OrganizationSummary, OrgRow, UpdateOrganizationPayload,
 } from './organizations.types';
@@ -23,14 +24,6 @@ const DIFF_FIELDS = [
   'name', 'region', 'email', 'sector', 'purpose', 'logoUrl', 'villages',
   'regionId', 'isActive',
 ] as const;
-
-// RIO MFA — same punctuation-stripping normalization as
-// UsersService/CitizenService's own normalizeMobile(), kept in step so a
-// number captured here at org-creation time matches however AuthService
-// later normalizes what a user types into "Sign in with OTP".
-function normalizeMobile(mobile: string): string {
-  return mobile.trim().replace(/[\s\-()]/g, '');
-}
 
 // The technical home organisation for System Admin/System Reviewer (see
 // prisma/seed-helpers.ts and RIO-RBAC-002's platform-wide scoping) — not a
@@ -130,6 +123,17 @@ export class OrganizationsService {
   // System-Admin creates an org + optional first NGO Admin (invited) in one action.
   async createWithAdmin(payload: CreateOrganizationPayload): Promise<Organization> {
     this.assertCrossEntity();
+    // UAT-12 — the first NGO Admin's mobile is mandatory (Saudi mobile only,
+    // stored as +9665XXXXXXXX), same rule as self-signup. Only when an admin
+    // is actually created in this call (adminName + adminEmail, the same gate
+    // the user.create below uses). Pure format check, so it runs first.
+    const creatingAdmin = Boolean(payload.adminName && payload.adminEmail);
+    const adminMobileNumber = creatingAdmin ? toSaudiMobileE164(payload.adminMobileNumber ?? '') : null;
+    if (creatingAdmin && !adminMobileNumber) {
+      throw new BadRequestException({
+        error: { code: 'INVALID_MOBILE_NUMBER', message: 'Enter a valid Saudi mobile number (e.g. 05XXXXXXXX or +9665XXXXXXXX)' },
+      });
+    }
     await this.assertValidSector(payload.sector);
     // Same NIC-registry gate as public self-signup (AuthService.signup) —
     // a System-Admin-created org can't carry a number nobody checked.
@@ -148,7 +152,6 @@ export class OrganizationsService {
     // an admin is actually being created in this call. Resolved before the
     // transaction, same as the NIC-registry/geography checks above: nothing
     // gets written until every precondition holds.
-    const creatingAdmin = Boolean(payload.adminName && payload.adminEmail);
     const consents = creatingAdmin
       ? await this.resolveOrgAdminConsents(payload.consent)
       : [];
@@ -197,7 +200,7 @@ export class OrganizationsService {
           const user = await tx.user.create({
             data: {
               orgId, roleId: 'role_ngo_admin', name: payload.adminName, email: payload.adminEmail,
-              mobileNumber: payload.adminMobileNumber ? normalizeMobile(payload.adminMobileNumber) : null,
+              mobileNumber: adminMobileNumber,
               status: UserStatus.invited, passwordHash,
               // Without this, the admin's very first sign-in only ever gets
               // INVALID_CREDENTIALS-shaped confusion resolved by reading
@@ -243,7 +246,14 @@ export class OrganizationsService {
     // DEFAULT_TEMP_PASSWORD is a known constant either way, not a secret
     // that only this email carries.
     if (payload.adminName && payload.adminEmail) {
-      await this.mailer.sendTemporaryPassword(payload.adminEmail, payload.name, DEFAULT_TEMP_PASSWORD);
+      // UAT-11 (Ganesh's brief, 2026-09-29) — every system-triggered email
+      // defaults to Arabic.
+      await this.mailer.sendTemporaryPassword(
+        payload.adminEmail,
+        payload.name,
+        DEFAULT_TEMP_PASSWORD,
+        'ar',
+      );
     }
 
     // File under the newly-created org (not the acting system_admin's org) so
@@ -418,7 +428,12 @@ export class OrganizationsService {
       await tx.user.update({ where: { id: admin.id }, data: { passwordHash, mustChangePassword: true } });
     });
 
-    await this.mailer.sendTemporaryPassword(admin.email, current.name, temporaryPassword);
+    await this.mailer.sendTemporaryPassword(
+      admin.email,
+      current.name,
+      temporaryPassword,
+      'ar',
+    );
 
     await this.audit.record({
       action: 'ORGANIZATION_APPROVED',
