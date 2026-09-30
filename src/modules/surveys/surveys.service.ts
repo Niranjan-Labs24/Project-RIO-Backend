@@ -11,6 +11,7 @@ import { SURVEY_QUESTION_RECOMMENDATION_TASK } from '../ai/prompts/survey-questi
 import { MethodologyConfigService } from '../methodology-config/methodology-config.service';
 import { requireNonBlank } from '../../common/validation/require-non-blank';
 import { computeQuestionWeights } from '../questions/question-weight.util';
+import { parseNumericAnswer } from './numeric-answer.util';
 import { loadStudyInheritance, loadStudyMethodologyVersion, parseInheritedSnapshot, summarizeGeography } from './survey-inheritance';
 
 @Injectable()
@@ -1514,7 +1515,12 @@ Eligible Questions: ${JSON.stringify(
         }
 
         if (dto.answerType === "numeric") {
-          const numericAnswers = answersList.map(a => Number(a)).filter(n => !isNaN(n));
+          // "5 days" is a real answer to a numeric question — the citizen
+          // flow renders one as a free text box — and Number() made it NaN,
+          // so it never landed in any range. See parseNumericAnswer.
+          const numericAnswers = answersList
+            .map(parseNumericAnswer)
+            .filter((n): n is number => n !== null);
 
           const ranges = [
             { label: "0 - 15 minutes", filter: (n: number) => n <= 15 },

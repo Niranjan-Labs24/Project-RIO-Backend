@@ -251,10 +251,60 @@ class ResendEmailClient implements EmailClientLike {
   };
 }
 
+/**
+ * One mail account's settings, flattened out of ConfigService so the same
+ * selection logic can build the main client and the survey-OTP-only client
+ * from two unrelated sets of credentials.
+ */
+interface MailAccount {
+  provider: 'resend' | 'twilio' | 'sendgrid';
+  resendApiKey?: string;
+  twilioEmailApiKeySid?: string;
+  twilioEmailApiKeySecret?: string;
+  twilioEmailFromAddress?: string;
+  twilioEmailFromName: string;
+  sendgridApiKey?: string;
+  sendgridFromAddress?: string;
+  sendgridFromName: string;
+}
+
+/**
+ * Builds the transport for one account, or `undefined` when that account is
+ * not fully configured — the long-standing "not configured, soft-fail"
+ * convention, not an error: a missing key leaves the client unset and the
+ * send methods return false rather than throwing at boot.
+ */
+function buildEmailClient(account: MailAccount): EmailClientLike | undefined {
+  if (account.provider === 'twilio') {
+    const sid = account.twilioEmailApiKeySid;
+    const secret = account.twilioEmailApiKeySecret;
+    const fromAddress = account.twilioEmailFromAddress;
+    if (!sid || !secret || !fromAddress) return undefined;
+    return new TwilioEmailClient(sid, secret, fromAddress, account.twilioEmailFromName);
+  }
+  if (account.provider === 'sendgrid') {
+    const apiKey = account.sendgridApiKey;
+    const fromAddress = account.sendgridFromAddress;
+    if (!apiKey || !fromAddress) return undefined;
+    return new SendGridEmailClient(apiKey, fromAddress, account.sendgridFromName);
+  }
+  if (!account.resendApiKey) return undefined;
+  return new ResendEmailClient(account.resendApiKey);
+}
+
 @Injectable()
 export class MailerService {
   private readonly logger = new Logger(MailerService.name);
   private readonly client?: EmailClientLike;
+  /**
+   * The public survey's OTP, and only that, can be billed to a second
+   * account (SURVEY_OTP_MAIL_PROVIDER). Undefined whenever that is unset —
+   * which is the default — so every other deployment keeps exactly one
+   * client and sendCitizenOtpEmail behaves as it did before.
+   */
+  private readonly surveyOtpClient?: EmailClientLike;
+  private readonly surveyOtpProvider?: 'resend' | 'twilio' | 'sendgrid';
+  private readonly surveyOtpFrom?: string;
 
   constructor(
     private readonly config: ConfigService,
@@ -263,28 +313,48 @@ export class MailerService {
     // missing recorder degrades to stdout-only, never to a crash.
     @Optional() private readonly systemLogs?: SystemLogsService,
   ) {
-    if (this.config.mailProvider === 'twilio') {
-      const sid = this.config.twilioEmailApiKeySid;
-      const secret = this.config.twilioEmailApiKeySecret;
-      if (!sid || !secret) return; // not configured — every send method returns false
-      this.client = new TwilioEmailClient(
-        sid,
-        secret,
-        this.config.twilioEmailFromAddress,
-        this.config.twilioEmailFromName,
+    this.client = buildEmailClient({
+      provider: this.config.mailProvider,
+      resendApiKey: this.config.resendApiKey,
+      twilioEmailApiKeySid: this.config.twilioEmailApiKeySid,
+      twilioEmailApiKeySecret: this.config.twilioEmailApiKeySecret,
+      twilioEmailFromAddress: this.config.twilioEmailFromAddress,
+      twilioEmailFromName: this.config.twilioEmailFromName,
+      sendgridApiKey: this.config.sendgridApiKey,
+      sendgridFromAddress: this.config.sendgridFromAddress,
+      sendgridFromName: this.config.sendgridFromName,
+    });
+
+    const otpProvider = this.config.surveyOtpMailProvider;
+    if (!otpProvider) return; // the default — citizen OTP shares this.client
+    const otpClient = buildEmailClient({
+      provider: otpProvider,
+      resendApiKey: this.config.surveyOtpResendApiKey,
+      twilioEmailApiKeySid: this.config.surveyOtpTwilioEmailApiKeySid,
+      twilioEmailApiKeySecret: this.config.surveyOtpTwilioEmailApiKeySecret,
+      twilioEmailFromAddress: this.config.surveyOtpTwilioEmailFromAddress,
+      twilioEmailFromName: this.config.surveyOtpTwilioEmailFromName,
+      sendgridApiKey: this.config.surveyOtpSendgridApiKey,
+      sendgridFromAddress: this.config.surveyOtpSendgridFromAddress,
+      sendgridFromName: this.config.surveyOtpSendgridFromName,
+    });
+    if (!otpClient) {
+      // Deliberately a warning and not a throw. Someone asked for a separate
+      // OTP account and mistyped a credential; refusing to start, or leaving
+      // the OTP unsendable, would block every survey respondent over a
+      // billing preference. Falling back to the main account keeps the
+      // survey working and says loudly why the bill is landing here.
+      this.logger.warn(
+        `SURVEY_OTP_MAIL_PROVIDER is '${otpProvider}' but its credentials are incomplete — ` +
+          'citizen OTP emails will fall back to the main mail account.',
       );
       return;
     }
-    if (this.config.mailProvider === 'sendgrid') {
-      const apiKey = this.config.sendgridApiKey;
-      const fromAddress = this.config.sendgridFromAddress;
-      if (!apiKey || !fromAddress) return; // not configured — every send method returns false
-      this.client = new SendGridEmailClient(apiKey, fromAddress, this.config.sendgridFromName);
-      return;
-    }
-    const apiKey = this.config.resendApiKey;
-    if (!apiKey) return; // not configured — sendTemporaryPassword returns false
-    this.client = new ResendEmailClient(apiKey);
+    this.surveyOtpClient = otpClient;
+    this.surveyOtpProvider = otpProvider;
+    // Only ResendEmailClient reads mail.from; the Twilio and SendGrid
+    // clients carry their own verified sender and ignore it.
+    this.surveyOtpFrom = this.config.surveyOtpMailFrom ?? this.config.mailFrom;
   }
 
   // `locale` — UAT-11 (Ganesh's brief, 2026-09-29): send in the single
@@ -416,6 +486,52 @@ export class MailerService {
     } catch (err) {
       this.logger.error(`Failed to email login OTP code to ${redactEmail(email)}`, err as Error);
       this.recordSendFailure('login_otp', redactEmail(email), {}, err);
+      return false;
+    }
+  }
+
+  /**
+   * The code a citizen needs to submit a public survey response.
+   *
+   * Separate from sendLoginOtpEmail because the wording is not
+   * interchangeable: a citizen is not signing in to anything, and telling
+   * them they are invites them to look for an account they do not have.
+   * Same soft-fail contract as every other send here — never throws, so a
+   * mail outage cannot strand a respondent mid-survey.
+   */
+  async sendCitizenOtpEmail(email: string, code: string): Promise<boolean> {
+    // The one send that may go through the second account. Both fall back
+    // together: an unset SURVEY_OTP_MAIL_PROVIDER, or one whose credentials
+    // were incomplete at boot, leaves surveyOtpClient undefined and this
+    // behaves exactly as every other send method.
+    const client = this.surveyOtpClient ?? this.client;
+    const from = this.surveyOtpClient ? (this.surveyOtpFrom as string) : this.config.mailFrom;
+    if (!client) return false;
+    try {
+      const { error } = await client.emails.send({
+        from,
+        to: email,
+        subject: 'Your RIO survey verification code',
+        text: `Your verification code is ${code}. Enter it to submit your survey response. It expires in 10 minutes. If you did not request this, ignore this email.`,
+        html: `<p>Your verification code is <strong>${code}</strong>. Enter it to submit your survey response.</p><p>It expires in 10 minutes. If you did not request this, ignore this email.</p>`,
+      });
+      if (error) {
+        this.logger.error(`Failed to email citizen OTP code to ${redactEmail(email)}: ${error.name} ${error.message}`);
+        this.recordSendFailure('citizen_otp', redactEmail(email), {
+          provider: this.surveyOtpProvider ?? this.config.mailProvider,
+          providerError: `${error.name}: ${error.message}`,
+        });
+        return false;
+      }
+      return true;
+    } catch (err) {
+      this.logger.error(`Failed to email citizen OTP code to ${redactEmail(email)}`, err as Error);
+      this.recordSendFailure(
+        'citizen_otp',
+        redactEmail(email),
+        { provider: this.surveyOtpProvider ?? this.config.mailProvider },
+        err,
+      );
       return false;
     }
   }
@@ -669,7 +785,9 @@ export class MailerService {
       eventCode: 'MAILER_SEND_FAILED',
       message: `Failed to send ${kind} email to ${recipient}`,
       error,
-      context: { ...context, provider: this.config.mailProvider, kind, recipient },
+      // provider first so a caller that sent through a different account
+      // (sendCitizenOtpEmail) can name it; every other caller omits it.
+      context: { provider: this.config.mailProvider, ...context, kind, recipient },
     });
   }
 }
