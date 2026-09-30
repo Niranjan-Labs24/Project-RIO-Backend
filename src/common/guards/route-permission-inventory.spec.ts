@@ -26,6 +26,9 @@ const REVIEWED_ANY_SIGNED_IN_ROUTES = new Set([
   'modules/surveys/surveys.controller.ts GET surveys/public/:id',
   'modules/surveys/surveys.controller.ts POST surveys/public/:id/submit',
   'modules/translation/translation.controller.ts POST translation',
+  // Same access as POST translation (text the caller's own screen already
+  // shows), just many strings per request — see TranslateBatchBody.
+  'modules/translation/translation.controller.ts POST translation/batch',
 ]);
 
 function controllerFiles(dir: string): string[] {
