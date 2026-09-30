@@ -7,6 +7,8 @@ import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { getOrgStore, requireActor, requireOrgId } from "../../tenancy/org-context";
 import { roleByKey } from "../../rbac/role-matrix";
 import { AuditService } from "../audit/audit.service";
+import { MailerService } from "../../mailer/mailer.service";
+import { TranslationService } from "../translation/translation.service";
 import { ReportsService } from "../reports/reports.service";
 import { EXPORTABLE_STATUSES } from "../reports/reports.types";
 import type { SharingStatus } from "../sharing/sharing.types";
@@ -36,11 +38,21 @@ export class ReportSharingService {
     private readonly tenant: TenantPrismaService,
     private readonly audit: AuditService,
     private readonly reports: ReportsService,
+    private readonly mailer: MailerService,
+    private readonly translation: TranslationService,
   ) {}
 
   private isCrossEntity(): boolean {
     const role = getOrgStore()?.role;
     return role !== undefined && roleByKey(role)?.crossEntity === true;
+  }
+
+  // RIO-FR-014 (client Q28) — mirrors SharingService.orgAdminEmail exactly.
+  private async orgAdminEmail(orgId: string): Promise<string | null> {
+    const admin = await this.tenant.runAsSupervisor((tx) =>
+      tx.user.findFirst({ where: { orgId, roleId: "role_ngo_admin" }, select: { email: true } }),
+    );
+    return admin?.email ?? null;
   }
 
   async create(payload: CreateReportSharingRequestPayload): Promise<ReportSharingRequest> {
@@ -113,6 +125,14 @@ export class ReportSharingService {
       organizationId: payload.ownerOrgId,
       changes: auditChanges,
     });
+    // RIO-FR-014 (client Q28) — best-effort, mirrors SharingService.create.
+    const ownerAdminEmail = await this.orgAdminEmail(payload.ownerOrgId);
+    if (ownerAdminEmail) {
+      await this.mailer.sendSharingRequestCreated(ownerAdminEmail, {
+        entityLabel: `التقرير "${report.title}"`,
+        otherOrgName: requestingOrgName,
+      });
+    }
     return this.enrichOne(row);
   }
 
@@ -417,6 +437,16 @@ export class ReportSharingService {
       organizationId: row.requestingOrgId,
       changes: auditChanges,
     });
+    // RIO-FR-014 (client Q28) — mirrors SharingService.decide.
+    const requesterAdminEmail = await this.orgAdminEmail(row.requestingOrgId);
+    if (requesterAdminEmail) {
+      await this.mailer.sendSharingRequestDecided(requesterAdminEmail, {
+        entityLabel: `التقرير "${reportTitle}"`,
+        otherOrgName: ownerOrgName,
+        status,
+        decisionNote,
+      });
+    }
     return this.enrichOne(row);
   }
 

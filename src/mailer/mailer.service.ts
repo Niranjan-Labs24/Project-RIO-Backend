@@ -3,6 +3,7 @@ import { Resend } from 'resend';
 import { ConfigService } from '../config/config.service';
 import { redactEmail } from '../common/security/redact';
 import { SystemLogsService } from '../modules/system-logs/system-logs.service';
+import type { SupportedLocale } from '../modules/translation/translation.types';
 
 /**
  * Forces every transactional email in this file to render in light mode
@@ -286,15 +287,29 @@ export class MailerService {
     this.client = new ResendEmailClient(apiKey);
   }
 
-  async sendTemporaryPassword(email: string, orgName: string, tempPassword: string): Promise<boolean> {
+  // `locale` — UAT-11 (Ganesh's brief, 2026-09-29): send in the single
+  // language the recipient is actually using, not both. The caller (see
+  // OrganizationsService/UsersService) reads it via `requestLocale()` from
+  // the x-rio-locale header already on the SAME request that creates this
+  // account — the admin doing the inviting, since the invited user has
+  // never signed in yet to have a language of their own. Draft Arabic
+  // copy — pending translation review, same as every other new
+  // citizen/user-facing string in this pass.
+  async sendTemporaryPassword(
+    email: string,
+    orgName: string,
+    tempPassword: string,
+    locale: SupportedLocale = 'en',
+  ): Promise<boolean> {
     if (!this.client) return false;
     const signInUrl = this.config.corsOrigin;
     const mail = {
       from: this.config.mailFrom,
       to: email,
-      subject: `Welcome to RIO — ${orgName}`,
-      text: temporaryPasswordText({ orgName, email, tempPassword, signInUrl }),
-      html: temporaryPasswordHtml({ orgName, email, tempPassword, signInUrl }),
+      subject:
+        locale === 'ar' ? `مرحبًا بك في RIO — ${orgName}` : `Welcome to RIO — ${orgName}`,
+      text: temporaryPasswordText({ orgName, email, tempPassword, signInUrl }, locale),
+      html: temporaryPasswordHtml({ orgName, email, tempPassword, signInUrl }, locale),
     };
     // One retry after a short delay before falling back to the "reveal in
     // response" path — a single attempt against the provider occasionally
@@ -326,15 +341,19 @@ export class MailerService {
    * "if that email exists..." response regardless of what this returns, so
    * delivery failure never leaks whether the account exists.
    */
-  async sendPasswordResetEmail(email: string, resetUrl: string): Promise<boolean> {
+  async sendPasswordResetEmail(
+    email: string,
+    resetUrl: string,
+    locale: SupportedLocale = 'en',
+  ): Promise<boolean> {
     if (!this.client) return false;
     try {
       const { error } = await this.client.emails.send({
         from: this.config.mailFrom,
         to: email,
-        subject: 'Reset your RIO password',
-        text: passwordResetText({ resetUrl }),
-        html: passwordResetHtml({ resetUrl }),
+        subject: locale === 'ar' ? 'إعادة تعيين كلمة مرور RIO الخاصة بك' : 'Reset your RIO password',
+        text: passwordResetText({ resetUrl }, locale),
+        html: passwordResetHtml({ resetUrl }, locale),
       });
       if (error) {
         this.logger.error(`Failed to email password reset link to ${redactEmail(email)}: ${error.name} ${error.message}`);
@@ -368,15 +387,25 @@ export class MailerService {
    * either way. Kept here (rather than left unwritten) so turning email OTP
    * on later is a config flip, not a new send method.
    */
-  async sendLoginOtpEmail(email: string, code: string): Promise<boolean> {
+  async sendLoginOtpEmail(
+    email: string,
+    code: string,
+    locale: SupportedLocale = 'en',
+  ): Promise<boolean> {
     if (!this.client) return false;
     try {
       const { error } = await this.client.emails.send({
         from: this.config.mailFrom,
         to: email,
-        subject: 'Your RIO sign-in code',
-        text: `Your RIO sign-in verification code is ${code}. It expires in 10 minutes. If you didn't request this, ignore this email.`,
-        html: `<p>Your RIO sign-in verification code is <strong>${code}</strong>. It expires in 10 minutes.</p><p>If you didn't request this, ignore this email.</p>`,
+        subject: locale === 'ar' ? 'رمز تسجيل الدخول الخاص بك في RIO' : 'Your RIO sign-in code',
+        text:
+          locale === 'ar'
+            ? `رمز التحقق لتسجيل الدخول إلى RIO الخاص بك هو ${code}. تنتهي صلاحيته خلال 10 دقائق. إذا لم تطلب هذا، يُرجى تجاهل هذا البريد الإلكتروني.`
+            : `Your RIO sign-in verification code is ${code}. It expires in 10 minutes. If you didn't request this, ignore this email.`,
+        html:
+          locale === 'ar'
+            ? `<div dir="rtl" lang="ar"><p>رمز التحقق لتسجيل الدخول إلى RIO الخاص بك هو <strong>${code}</strong>. تنتهي صلاحيته خلال 10 دقائق.</p><p>إذا لم تطلب هذا، يُرجى تجاهل هذا البريد الإلكتروني.</p></div>`
+            : `<p>Your RIO sign-in verification code is <strong>${code}</strong>. It expires in 10 minutes.</p><p>If you didn't request this, ignore this email.</p>`,
       });
       if (error) {
         this.logger.error(`Failed to email login OTP code to ${redactEmail(email)}: ${error.name} ${error.message}`);
@@ -431,7 +460,7 @@ export class MailerService {
       const { error } = await this.client.emails.send({
         from: this.config.mailFrom,
         to: email,
-        subject: `Survey link: ${input.needTitle}`,
+        subject: `رابط استبيان: ${input.needTitleAr}`,
         text: surveyLinkText(input),
         html: surveyLinkHtml(input),
         attachments: [
@@ -484,6 +513,75 @@ export class MailerService {
     } catch (err) {
       this.logger.error(`Failed to email survey reminder to ${redactEmail(email)}`, err as Error);
       this.recordSendFailure('survey_reminder', redactEmail(email), {}, err);
+      return false;
+    }
+  }
+
+  /**
+   * RIO-FR-014 (client Q28, confirmed 2026-08-30) — "in-app plus email: to
+   * the owner when a request arrives, to the requester when it is
+   * decided." The in-app half already existed (SharingAlertsService); this
+   * is the previously-missing email half, for both Study Sharing and Report
+   * Sharing (SharingService.create / ReportSharingService.create). Always
+   * Arabic — same system-notification-email default as temp-password/
+   * password-reset (Ganesh's brief, 2026-09-29). Draft Arabic copy, pending
+   * translation review like every other new string in this pass.
+   */
+  async sendSharingRequestCreated(
+    email: string,
+    input: Omit<SharingNotificationEmailInput, 'reviewUrl'>,
+  ): Promise<boolean> {
+    if (!this.client) return false;
+    const withUrl = { ...input, reviewUrl: `${this.config.corsOrigin}/ar/sharing` };
+    try {
+      const { error } = await this.client.emails.send({
+        from: this.config.mailFrom,
+        to: email,
+        subject: 'طلب مشاركة جديد في RIO',
+        text: sharingRequestCreatedText(withUrl),
+        html: sharingRequestCreatedHtml(withUrl),
+      });
+      if (error) {
+        this.logger.error(`Failed to email sharing request created to ${redactEmail(email)}: ${error.name} ${error.message}`);
+        this.recordSendFailure('sharing_request_created', redactEmail(email), { providerError: `${error.name}: ${error.message}` });
+        return false;
+      }
+      return true;
+    } catch (err) {
+      this.logger.error(`Failed to email sharing request created to ${redactEmail(email)}`, err as Error);
+      this.recordSendFailure('sharing_request_created', redactEmail(email), {}, err);
+      return false;
+    }
+  }
+
+  /** The other half of RIO-FR-014's Q28 — the requester learning the outcome. */
+  async sendSharingRequestDecided(
+    email: string,
+    input: Omit<SharingNotificationEmailInput, 'reviewUrl'> & {
+      status: 'approved' | 'rejected';
+      decisionNote?: string | null;
+    },
+  ): Promise<boolean> {
+    if (!this.client) return false;
+    const withUrl = { ...input, reviewUrl: `${this.config.corsOrigin}/ar/sharing` };
+    try {
+      const { error } = await this.client.emails.send({
+        from: this.config.mailFrom,
+        to: email,
+        subject:
+          input.status === 'approved' ? 'تمت الموافقة على طلب المشاركة' : 'تم رفض طلب المشاركة',
+        text: sharingRequestDecidedText(withUrl),
+        html: sharingRequestDecidedHtml(withUrl),
+      });
+      if (error) {
+        this.logger.error(`Failed to email sharing request decided to ${redactEmail(email)}: ${error.name} ${error.message}`);
+        this.recordSendFailure('sharing_request_decided', redactEmail(email), { providerError: `${error.name}: ${error.message}` });
+        return false;
+      }
+      return true;
+    } catch (err) {
+      this.logger.error(`Failed to email sharing request decided to ${redactEmail(email)}`, err as Error);
+      this.recordSendFailure('sharing_request_decided', redactEmail(email), {}, err);
       return false;
     }
   }
@@ -574,16 +672,31 @@ export class MailerService {
 
 interface SurveyLinkEmailInput {
   needTitle: string;
+  /** The Need's title resolved into Arabic — same string as `needTitle`
+   * when translation wasn't needed or failed (see
+   * PublicSurveysService.shareLinkByEmail), never blank. */
+  needTitleAr: string;
   linkLabel: string;
   publicUrl: string;
   qrCodePng: Buffer;
 }
 
-function surveyLinkText({ needTitle, linkLabel, publicUrl }: SurveyLinkEmailInput): string {
+// Bilingual — Arabic first, matching the link itself (UAT-02: every
+// generated public-survey link forces `/ar/...`, since the citizen
+// respondent is expected to be an Arabic speaker; English stays reachable
+// as an in-page toggle once they open it). The surrounding email COPY was
+// English-only until now (client-reported, UAT-11) even though the link it
+// points at already opens in Arabic — this closes that gap for the one
+// email that goes to an arbitrary citizen-supplied address, not a
+// registered user with any stored language preference to read instead.
+// Draft wording: this is new citizen-facing copy and should go through the
+// same translation-review process as the rest of the citizen survey text
+// before being treated as final.
+function surveyLinkText({ needTitleAr, publicUrl }: SurveyLinkEmailInput): string {
   return (
-    `You've been sent a survey link for "${needTitle}" (${linkLabel}).\n\n` +
-    `Open the survey: ${publicUrl}\n\n` +
-    `You can also scan the attached QR code with a phone camera to open it directly.`
+    `تم إرسال رابط استبيان لك بخصوص "${needTitleAr}".\n\n` +
+    `فتح الاستبيان: ${publicUrl}\n\n` +
+    `يمكنك أيضًا مسح رمز QR المرفق باستخدام كاميرا الهاتف لفتحه مباشرة.`
   );
 }
 
@@ -592,7 +705,7 @@ function surveyLinkText({ needTitle, linkLabel, publicUrl }: SurveyLinkEmailInpu
 // The QR code is referenced via cid: (see sendSurveyLink's attachments),
 // not a data: URI — data: URIs in <img src> are stripped by several major
 // email clients (Gmail included), cid: embedding is the reliable path.
-function surveyLinkHtml({ needTitle, linkLabel, publicUrl }: SurveyLinkEmailInput): string {
+function surveyLinkHtml({ needTitleAr, publicUrl }: SurveyLinkEmailInput): string {
   const esc = (value: string): string =>
     value
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -622,27 +735,33 @@ function surveyLinkHtml({ needTitle, linkLabel, publicUrl }: SurveyLinkEmailInpu
             </tr>
             <tr>
               <td style="padding:32px;">
-                <h1 style="margin:0 0 12px;font-size:20px;color:#111827;">${esc(needTitle)}</h1>
-                <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#4b5563;">
-                  You've been sent a survey link (${esc(linkLabel)}). Open it
-                  directly, or scan the QR code below with a phone camera.
-                </p>
-                <table role="presentation" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
-                  <tr>
-                    <td style="border-radius:8px;background-color:${PRIMARY};">
-                      <a href="${esc(publicUrl)}" style="display:inline-block;padding:12px 24px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">
-                        Open Survey
-                      </a>
-                    </td>
-                  </tr>
-                </table>
-                <table role="presentation" cellpadding="0" cellspacing="0" bgcolor="${SECONDARY_TINT}" class="email-accent" style="margin-top:16px;background-color:${SECONDARY_TINT};border-radius:8px;">
-                  <tr>
-                    <td style="padding:12px;">
-                      <img src="cid:survey-qr-code" alt="QR code for the survey link" width="180" height="180" style="display:block;border-radius:4px;" />
-                    </td>
-                  </tr>
-                </table>
+                <!-- Arabic only, matching every other system-triggered
+                     email (Ganesh's brief, 2026-09-29) and the link itself
+                     (UAT-02). Arabic wording is a draft pending translation
+                     review. -->
+                <div dir="rtl" lang="ar" style="text-align:right;">
+                  <h1 style="margin:0 0 12px;font-size:20px;color:#111827;">${esc(needTitleAr)}</h1>
+                  <p style="margin:0 0 24px;font-size:14px;line-height:1.8;color:#4b5563;">
+                    تم إرسال رابط استبيان لك. افتحه مباشرة، أو امسح
+                    رمز QR أدناه باستخدام كاميرا الهاتف.
+                  </p>
+                  <table role="presentation" cellpadding="0" cellspacing="0" align="right" style="margin-bottom:24px;">
+                    <tr>
+                      <td style="border-radius:8px;background-color:${PRIMARY};">
+                        <a href="${esc(publicUrl)}" style="display:inline-block;padding:12px 24px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">
+                          فتح الاستبيان
+                        </a>
+                      </td>
+                    </tr>
+                  </table>
+                  <table role="presentation" cellpadding="0" cellspacing="0" align="right" bgcolor="${SECONDARY_TINT}" class="email-accent" style="background-color:${SECONDARY_TINT};border-radius:8px;">
+                    <tr>
+                      <td style="padding:12px;">
+                        <img src="cid:survey-qr-code" alt="QR code for the survey link" width="180" height="180" style="display:block;border-radius:4px;" />
+                      </td>
+                    </tr>
+                  </table>
+                </div>
               </td>
             </tr>
           </table>
@@ -736,7 +855,14 @@ interface PasswordResetEmailInput {
   resetUrl: string;
 }
 
-function passwordResetText({ resetUrl }: PasswordResetEmailInput): string {
+function passwordResetText({ resetUrl }: PasswordResetEmailInput, locale: SupportedLocale): string {
+  if (locale === 'ar') {
+    return (
+      `تلقينا طلبًا لإعادة تعيين كلمة مرور RIO الخاصة بك.\n\n` +
+      `إعادة تعيين كلمة المرور: ${resetUrl}\n\n` +
+      `تنتهي صلاحية هذا الرابط خلال 30 دقيقة. إذا لم تطلب ذلك، يمكنك تجاهل هذا البريد الإلكتروني بأمان.`
+    );
+  }
   return (
     `We received a request to reset your RIO password.\n\n` +
     `Reset your password: ${resetUrl}\n\n` +
@@ -744,11 +870,15 @@ function passwordResetText({ resetUrl }: PasswordResetEmailInput): string {
   );
 }
 
-function passwordResetHtml({ resetUrl }: PasswordResetEmailInput): string {
+function passwordResetHtml(
+  { resetUrl }: PasswordResetEmailInput,
+  locale: SupportedLocale,
+): string {
   const esc = (value: string): string =>
     value
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  const ar = locale === 'ar';
 
   return `
 <!doctype html>
@@ -764,24 +894,26 @@ function passwordResetHtml({ resetUrl }: PasswordResetEmailInput): string {
               </td>
             </tr>
             <tr>
-              <td style="padding:32px;">
-                <h1 style="margin:0 0 12px;font-size:20px;color:#111827;">Reset your password</h1>
+              <td style="padding:32px;" dir="${ar ? 'rtl' : 'ltr'}" lang="${ar ? 'ar' : 'en'}">
+                <h1 style="margin:0 0 12px;font-size:20px;color:#111827;">${ar ? 'إعادة تعيين كلمة المرور' : 'Reset your password'}</h1>
                 <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#4b5563;">
-                  We received a request to reset your RIO password. Click the
-                  button below to choose a new one. This link expires in 30
-                  minutes.
+                  ${
+                    ar
+                      ? 'تلقينا طلبًا لإعادة تعيين كلمة مرور RIO الخاصة بك. اضغط على الزر أدناه لاختيار كلمة مرور جديدة. تنتهي صلاحية هذا الرابط خلال 30 دقيقة.'
+                      : "We received a request to reset your RIO password. Click the button below to choose a new one. This link expires in 30 minutes."
+                  }
                 </p>
                 <table role="presentation" cellpadding="0" cellspacing="0">
                   <tr>
                     <td style="border-radius:8px;background-color:#111827;">
                       <a href="${esc(resetUrl)}" style="display:inline-block;padding:12px 24px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">
-                        Reset Password
+                        ${ar ? 'إعادة تعيين كلمة المرور' : 'Reset Password'}
                       </a>
                     </td>
                   </tr>
                 </table>
                 <p style="margin:24px 0 0;font-size:12px;line-height:1.6;color:#9ca3af;">
-                  If you didn't request this, you can safely ignore this email.
+                  ${ar ? 'إذا لم تطلب ذلك، يمكنك تجاهل هذا البريد الإلكتروني بأمان.' : "If you didn't request this, you can safely ignore this email."}
                 </p>
               </td>
             </tr>
@@ -800,7 +932,21 @@ interface TemporaryPasswordEmailInput {
   signInUrl: string;
 }
 
-function temporaryPasswordText({ orgName, email, tempPassword, signInUrl }: TemporaryPasswordEmailInput): string {
+function temporaryPasswordText(
+  { orgName, email, tempPassword, signInUrl }: TemporaryPasswordEmailInput,
+  locale: SupportedLocale,
+): string {
+  if (locale === 'ar') {
+    return (
+      `مرحبًا بك في RIO، ${orgName}!\n\n` +
+      `تم إنشاء حساب لمؤسستك. استخدم البيانات أدناه لتسجيل الدخول، ثم قم بتعيين كلمة المرور الخاصة بك.\n\n` +
+      `مساحة العمل: ${orgName}\n` +
+      `البريد الإلكتروني: ${email}\n` +
+      `كلمة المرور المؤقتة: ${tempPassword}\n\n` +
+      `تسجيل الدخول: ${signInUrl}\n\n` +
+      `سيُطلب منك تغيير كلمة المرور هذه عند أول تسجيل دخول.`
+    );
+  }
   return (
     `Welcome to RIO, ${orgName}!\n\n` +
     `An account has been created for your organization. Use the credentials ` +
@@ -816,7 +962,11 @@ function temporaryPasswordText({ orgName, email, tempPassword, signInUrl }: Temp
 // Table-based layout + inline styles — the only markup/CSS subset that
 // renders consistently across email clients (Gmail/Outlook strip <style>
 // blocks and most CSS layout properties).
-function temporaryPasswordHtml({ orgName, email, tempPassword, signInUrl }: TemporaryPasswordEmailInput): string {
+function temporaryPasswordHtml(
+  { orgName, email, tempPassword, signInUrl }: TemporaryPasswordEmailInput,
+  locale: SupportedLocale,
+): string {
+  const ar = locale === 'ar';
   // Escapes text-content chars (&, <, >) and quote chars (", ') too, so a
   // value is safe in attribute context as well — signInUrl is interpolated
   // into href="...".
@@ -839,21 +989,23 @@ function temporaryPasswordHtml({ orgName, email, tempPassword, signInUrl }: Temp
               </td>
             </tr>
             <tr>
-              <td style="padding:32px;">
-                <h1 style="margin:0 0 12px;font-size:20px;color:#111827;">Welcome to RIO, ${esc(orgName)}!</h1>
+              <td style="padding:32px;" dir="${ar ? 'rtl' : 'ltr'}" lang="${ar ? 'ar' : 'en'}">
+                <h1 style="margin:0 0 12px;font-size:20px;color:#111827;">${ar ? `مرحبًا بك في RIO، ${esc(orgName)}!` : `Welcome to RIO, ${esc(orgName)}!`}</h1>
                 <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#4b5563;">
-                  An account has been created for your organization. Use the
-                  credentials below to sign in, then you'll be asked to set
-                  your own password.
+                  ${
+                    ar
+                      ? 'تم إنشاء حساب لمؤسستك. استخدم البيانات أدناه لتسجيل الدخول، ثم سيُطلب منك تعيين كلمة المرور الخاصة بك.'
+                      : "An account has been created for your organization. Use the credentials below to sign in, then you'll be asked to set your own password."
+                  }
                 </p>
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:24px;">
                   <tr>
                     <td style="padding:16px 20px;">
-                      <p style="margin:0 0 4px;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;">Workspace</p>
+                      <p style="margin:0 0 4px;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;">${ar ? 'مساحة العمل' : 'Workspace'}</p>
                       <p style="margin:0 0 16px;font-size:14px;color:#111827;font-weight:600;">${esc(orgName)}</p>
-                      <p style="margin:0 0 4px;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;">Email</p>
+                      <p style="margin:0 0 4px;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;">${ar ? 'البريد الإلكتروني' : 'Email'}</p>
                       <p style="margin:0 0 16px;font-size:14px;color:#111827;font-weight:600;">${esc(email)}</p>
-                      <p style="margin:0 0 4px;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;">Temporary password</p>
+                      <p style="margin:0 0 4px;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;">${ar ? 'كلمة المرور المؤقتة' : 'Temporary password'}</p>
                       <p style="margin:0;font-size:14px;color:#111827;font-weight:600;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${esc(tempPassword)}</p>
                     </td>
                   </tr>
@@ -862,15 +1014,17 @@ function temporaryPasswordHtml({ orgName, email, tempPassword, signInUrl }: Temp
                   <tr>
                     <td style="border-radius:8px;background-color:#111827;">
                       <a href="${esc(signInUrl)}" style="display:inline-block;padding:12px 24px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">
-                        Sign in to RIO
+                        ${ar ? 'تسجيل الدخول إلى RIO' : 'Sign in to RIO'}
                       </a>
                     </td>
                   </tr>
                 </table>
                 <p style="margin:24px 0 0;font-size:12px;line-height:1.6;color:#9ca3af;">
-                  You'll be asked to change this password the first time you
-                  sign in. If you weren't expecting this email, you can
-                  safely ignore it.
+                  ${
+                    ar
+                      ? 'سيُطلب منك تغيير كلمة المرور هذه عند أول تسجيل دخول. إذا لم تكن تتوقع هذا البريد الإلكتروني، يمكنك تجاهله بأمان.'
+                      : "You'll be asked to change this password the first time you sign in. If you weren't expecting this email, you can safely ignore it."
+                  }
                 </p>
               </td>
             </tr>
@@ -989,6 +1143,149 @@ function backupFailureHtml(input: {
           <p style="margin:0;font-size:12px;color:#6b7280;">
             System Administration &rarr; Backups
           </p>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+}
+
+interface SharingNotificationEmailInput {
+  /** e.g. "the study \"Water Access Assessment\"" or "the report \"...\"" — the
+   * kind of entity (study vs report) is baked into this string rather than
+   * passed as a separate flag, since Study Sharing and Report Sharing are
+   * two distinct backend modules (see ReportSharingService's own comment on
+   * why they're not unified) sharing one email shape. */
+  entityLabel: string;
+  /** The requesting org's name (on creation) or the owning org's name (on
+   * decision) — whichever org the RECIPIENT needs to know about. */
+  otherOrgName: string;
+  /** Deep link straight to the Sharing screen (client-requested: a button
+   * that takes the reader into the app to actually act on the request,
+   * not just a bare notification). `/ar/` prefixed like every other
+   * system email's link — Arabic by default, same reasoning as the
+   * survey-link URL. */
+  reviewUrl: string;
+}
+
+function sharingRequestCreatedText({
+  entityLabel,
+  otherOrgName,
+  reviewUrl,
+}: SharingNotificationEmailInput): string {
+  return (
+    `تلقيت طلب مشاركة جديدًا بخصوص ${entityLabel} من ${otherOrgName}.\n\n` +
+    `مراجعة الطلب: ${reviewUrl}`
+  );
+}
+
+function sharingRequestCreatedHtml(input: SharingNotificationEmailInput): string {
+  const esc = (value: string): string =>
+    value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // Same brand teal as the survey-link email (src/styles/tokens.css
+  // --primary), not this file's generic #111827 neutral — every
+  // system-triggered email should look like it came from the same product.
+  const PRIMARY = '#145463';
+  return `
+<!doctype html>
+<html>${lightModeEmailHead({ page: '#f4f5f7', card: '#ffffff', header: PRIMARY })}
+  <body class="email-page" style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f4f5f7" class="email-page" style="background-color:#f4f5f7;padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="480" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
+            <tr>
+              <td bgcolor="${PRIMARY}" class="email-header" style="background-color:${PRIMARY};padding:24px 32px;">
+                <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px;" dir="rtl" lang="ar">
+                <h1 style="margin:0 0 12px;font-size:20px;color:#111827;">طلب مشاركة جديد</h1>
+                <p style="margin:0 0 24px;font-size:14px;line-height:1.8;color:#4b5563;">
+                  تلقيت طلب مشاركة جديدًا بخصوص ${esc(input.entityLabel)} من ${esc(input.otherOrgName)}.
+                  يمكنك مراجعة الطلب والموافقة عليه أو رفضه من داخل منصة RIO.
+                </p>
+                <table role="presentation" cellpadding="0" cellspacing="0" align="right">
+                  <tr>
+                    <td style="border-radius:8px;background-color:${PRIMARY};">
+                      <a href="${esc(input.reviewUrl)}" style="display:inline-block;padding:12px 24px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">
+                        مراجعة الطلب
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+}
+
+function sharingRequestDecidedText({
+  entityLabel,
+  otherOrgName,
+  reviewUrl,
+  status,
+  decisionNote,
+}: SharingNotificationEmailInput & { status: 'approved' | 'rejected'; decisionNote?: string | null }): string {
+  const verdict = status === 'approved' ? 'تمت الموافقة على' : 'تم رفض';
+  const base = `${verdict} طلب المشاركة الخاص بك بخصوص ${entityLabel} من ${otherOrgName}.`;
+  const withNote = decisionNote ? `${base}\n\nملاحظة: ${decisionNote}` : base;
+  return `${withNote}\n\nفتح في RIO: ${reviewUrl}`;
+}
+
+function sharingRequestDecidedHtml(
+  input: SharingNotificationEmailInput & { status: 'approved' | 'rejected'; decisionNote?: string | null },
+): string {
+  const esc = (value: string): string =>
+    value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const approved = input.status === 'approved';
+  const verdict = approved ? 'تمت الموافقة على طلبك' : 'تم رفض طلبك';
+  // Same brand teal header regardless of outcome (consistent branding,
+  // matching every other system-triggered email) — the rejection itself is
+  // still legible from the verdict heading's own red text below, not from
+  // recoloring the whole header.
+  const PRIMARY = '#145463';
+  return `
+<!doctype html>
+<html>${lightModeEmailHead({ page: '#f4f5f7', card: '#ffffff', header: PRIMARY })}
+  <body class="email-page" style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f4f5f7" class="email-page" style="background-color:#f4f5f7;padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="480" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
+            <tr>
+              <td bgcolor="${PRIMARY}" class="email-header" style="background-color:${PRIMARY};padding:24px 32px;">
+                <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px;" dir="rtl" lang="ar">
+                <h1 style="margin:0 0 12px;font-size:20px;color:${approved ? '#111827' : '#b91c1c'};">${verdict}</h1>
+                <p style="margin:0 0 16px;font-size:14px;line-height:1.8;color:#4b5563;">
+                  ${verdict} بخصوص ${esc(input.entityLabel)} من ${esc(input.otherOrgName)}.
+                </p>
+                ${
+                  input.decisionNote
+                    ? `<p style="margin:0 0 24px;font-size:13px;line-height:1.6;color:#6b7280;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px 16px;">${esc(input.decisionNote)}</p>`
+                    : '<div style="margin-bottom:24px;"></div>'
+                }
+                <table role="presentation" cellpadding="0" cellspacing="0" align="right">
+                  <tr>
+                    <td style="border-radius:8px;background-color:${PRIMARY};">
+                      <a href="${esc(input.reviewUrl)}" style="display:inline-block;padding:12px 24px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">
+                        فتح في RIO
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
         </td>
       </tr>
     </table>

@@ -99,15 +99,20 @@ function setup() {
   const audit = { record: vi.fn().mockResolvedValue(undefined) };
   const mailer = { sendSurveyLink: vi.fn().mockResolvedValue(true) };
   const config = { publicAppUrl: 'https://app.test' };
+  const translation = {
+    translate: vi.fn().mockResolvedValue({ translatedText: 'الماء', unchanged: false }),
+  };
   return {
     tx,
     audit,
     mailer,
+    translation,
     svc: new PublicSurveysService(
       tenant as never,
       config as never,
       audit as never,
       mailer as never,
+      translation as never,
     ),
   };
 }
@@ -117,7 +122,9 @@ describe('PublicSurveysService links', () => {
     const { svc } = setup();
     expect(await svc.listLinks('n1')).toEqual([
       expect.objectContaining({
-        publicUrl: 'https://app.test/public/survey/tok',
+        // UAT-02: every generated public-survey link forces `/ar/` — see
+        // toPublicLink's own comment.
+        publicUrl: 'https://app.test/ar/public/survey/tok',
         responseCount: 4,
         expiresAt: null,
       }),
@@ -185,8 +192,9 @@ describe('PublicSurveysService links', () => {
     expect(mailer.sendSurveyLink).toHaveBeenCalledWith(
       'a@b.test',
       expect.objectContaining({
-        publicUrl: 'https://app.test/public/survey/tok',
+        publicUrl: 'https://app.test/ar/public/survey/tok',
         needTitle: 'Water',
+        needTitleAr: 'الماء',
       }),
     );
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'share' }));

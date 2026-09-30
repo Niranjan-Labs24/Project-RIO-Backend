@@ -103,7 +103,9 @@ export class UsersService {
     await this.tenant.runAsOrg(orgId, (tx) =>
       tx.user.update({ where: { id: userId }, data: { passwordHash, mustChangePassword: true } }),
     );
-    await this.mailer.sendTemporaryPassword(email, orgName, temporaryPassword);
+    // UAT-11 (Ganesh's brief, 2026-09-29) — every system-triggered email
+    // defaults to Arabic.
+    await this.mailer.sendTemporaryPassword(email, orgName, temporaryPassword, 'ar');
     return { temporaryPasswordEmailed: true };
   }
 

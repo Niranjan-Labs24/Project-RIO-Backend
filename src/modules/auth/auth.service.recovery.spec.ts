@@ -240,6 +240,7 @@ describe('AuthService staff one-time codes', () => {
     expect(mailer.sendLoginOtpEmail).toHaveBeenCalledWith(
       'ana@demo.org',
       expect.stringMatching(/^\d{6}$/),
+      'ar',
     );
     expect(tx.staffOtpChallenge.create).toHaveBeenCalledTimes(2);
   });

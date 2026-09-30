@@ -573,7 +573,12 @@ export class AuthService {
     // it. Exercise this flow locally either with a real (or Resend
     // sandbox) mailer configured, or in a test by mocking
     // MailerService.sendPasswordResetEmail and reading its call args.
-    await this.mailer.sendPasswordResetEmail(found.email, resetUrl);
+    // UAT-11 (Ganesh's brief, 2026-09-29) — every system-triggered email
+    // defaults to Arabic, not whichever language the triggering screen
+    // happened to be in (the app's own default is English, so "match the
+    // current screen" silently meant "English almost always" — not what
+    // was asked for).
+    await this.mailer.sendPasswordResetEmail(found.email, resetUrl, 'ar');
     return genericResult;
   }
 
@@ -690,7 +695,7 @@ export class AuthService {
     const delivered =
       channel === 'sms'
         ? await this.sms.sendLoginOtpCode(user.mobileNumber as string, code)
-        : await this.mailer.sendLoginOtpEmail(user.email, code);
+        : await this.mailer.sendLoginOtpEmail(user.email, code, 'ar');
     return {
       ...generic,
       // Dev-only reveal, same reasoning/guard as CitizenService.requestOtp:

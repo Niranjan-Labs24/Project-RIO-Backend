@@ -58,6 +58,10 @@ function fakeTenant(reports: FakeReport[], orgs: (FakeOrg & { isActive?: boolean
     user: {
       findUnique: async ({ where }: { where: { id: string } }) =>
         users.find((u) => u.id === where.id) ?? null,
+      // No admin user seeded in these fixtures — orgAdminEmail() resolves
+      // to null, so the sharing-notification email is simply skipped (its
+      // own null-check).
+      findFirst: async () => null,
     },
   };
   return {
@@ -148,6 +152,17 @@ function fakeReportsService(reports: FakeReport[]) {
   };
 }
 
+function fakeMailer() {
+  return {
+    sendSharingRequestCreated: async () => true,
+    sendSharingRequestDecided: async () => true,
+  };
+}
+
+function fakeTranslation() {
+  return { translate: async (text: string) => ({ translatedText: text, unchanged: false }) };
+}
+
 const APPROVED_REPORT: FakeReport = {
   id: "report-1", orgId: "org-owner", title: "Village Needs Assessment", status: "released",
   reportType: "RPT13", content: { summary: "..." }, generatedBy: "user-owner-1", generatedAt: new Date(),
@@ -173,6 +188,8 @@ describe("ReportSharingService.create", () => {
     const svc = new ReportSharingService(
       fakePrisma() as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     await expect(
       runAsOrg("org-owner", "user-1", () =>
@@ -185,6 +202,8 @@ describe("ReportSharingService.create", () => {
     const svc = new ReportSharingService(
       fakePrisma() as never, fakeTenant([DRAFT_REPORT], ORGS) as never, fakeAudit() as never,
       fakeReportsService([DRAFT_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     await expect(
       runAsOrg("org-requester", "user-1", () =>
@@ -198,6 +217,8 @@ describe("ReportSharingService.create", () => {
     const svc = new ReportSharingService(
       fakePrisma() as never, fakeTenant([APPROVED_REPORT], ORGS) as never, audit as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     const result = await runAsOrg("org-requester", "user-1", () =>
       svc.create({ ownerOrgId: "org-owner", reportId: APPROVED_REPORT.id, note: "For reference" }),
@@ -230,6 +251,8 @@ describe("ReportSharingService.decide (approve/reject)", () => {
     const svc = new ReportSharingService(
       fakePrisma([seedPending()]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     await expect(
       runAsOrg("org-requester", "user-2", () => svc.approve("rsr-1")),
@@ -240,6 +263,8 @@ describe("ReportSharingService.decide (approve/reject)", () => {
     const svc = new ReportSharingService(
       fakePrisma([seedPending()]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     await expect(
       runAsOrg("org-owner", "user-2", () => svc.reject("rsr-1", {})),
@@ -251,6 +276,8 @@ describe("ReportSharingService.decide (approve/reject)", () => {
     const svc = new ReportSharingService(
       fakePrisma([seedPending()]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, audit as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     const result = await runAsOrg("org-owner", "user-2", () => svc.approve("rsr-1"));
 
@@ -264,6 +291,8 @@ describe("ReportSharingService.decide (approve/reject)", () => {
     const svc = new ReportSharingService(
       fakePrisma([seedPending()]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, audit as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     const result = await runAsOrg("org-owner", "user-2", () =>
       svc.reject("rsr-1", { note: "Doesn't match our scope" }),
@@ -295,6 +324,8 @@ describe("ReportSharingService.approve — optional expiry (RIO-FR-014, Q30)", (
     const svc = new ReportSharingService(
       fakePrisma([seedPending()]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     const result = await runAsOrg("org-owner", "user-2", () => svc.approve("rsr-1"));
     expect(result.expiresAt).toBeNull();
@@ -304,6 +335,8 @@ describe("ReportSharingService.approve — optional expiry (RIO-FR-014, Q30)", (
     const svc = new ReportSharingService(
       fakePrisma([seedPending()]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     const result = await runAsOrg("org-owner", "user-2", () =>
       svc.approve("rsr-1", { expiresAt: "2027-01-01T00:00:00.000Z" }),
@@ -315,6 +348,8 @@ describe("ReportSharingService.approve — optional expiry (RIO-FR-014, Q30)", (
     const svc = new ReportSharingService(
       fakePrisma([seedPending()]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     await expect(
       runAsOrg("org-owner", "user-2", () => svc.approve("rsr-1", { expiresAt: "not-a-date" })),
@@ -335,6 +370,8 @@ describe("ReportSharingService.withdraw (RIO-FR-014, Q30)", () => {
     const svc = new ReportSharingService(
       fakePrisma([seedApproved()]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     await expect(
       runAsOrg("org-requester", "user-1", () => svc.withdraw("rsr-1")),
@@ -346,6 +383,8 @@ describe("ReportSharingService.withdraw (RIO-FR-014, Q30)", () => {
     const svc = new ReportSharingService(
       fakePrisma([row]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     await expect(
       runAsOrg("org-owner", "user-2", () => svc.withdraw("rsr-1")),
@@ -357,6 +396,8 @@ describe("ReportSharingService.withdraw (RIO-FR-014, Q30)", () => {
     const svc = new ReportSharingService(
       fakePrisma([seedApproved()]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, audit as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     const result = await runAsOrg("org-owner", "user-3", () => svc.withdraw("rsr-1"));
 
@@ -377,6 +418,8 @@ describe("ReportSharingService.getSharedSnapshot", () => {
     const svc = new ReportSharingService(
       fakePrisma([row]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     await expect(
       runAsOrg("org-requester", "user-1", () => svc.getSharedSnapshot("rsr-1")),
@@ -392,6 +435,8 @@ describe("ReportSharingService.getSharedSnapshot", () => {
     const svc = new ReportSharingService(
       fakePrisma([row]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     await expect(
       runAsOrg("org-owner", "user-2", () => svc.getSharedSnapshot("rsr-1")),
@@ -408,6 +453,8 @@ describe("ReportSharingService.getSharedSnapshot", () => {
     const svc = new ReportSharingService(
       fakePrisma([row]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     await expect(
       runAsOrg("org-requester", "user-1", () => svc.getSharedSnapshot("rsr-1")),
@@ -425,6 +472,8 @@ describe("ReportSharingService.getSharedSnapshot", () => {
       fakeTenant([APPROVED_REPORT], ORGS, [{ id: "user-owner-1", name: "Owner Staffer" }]) as never,
       fakeAudit() as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     const snapshot = await runAsOrg("org-requester", "user-1", () => svc.getSharedSnapshot("rsr-1"));
     expect(snapshot.title).toBe(APPROVED_REPORT.title);
@@ -454,6 +503,8 @@ describe("ReportSharingService.list", () => {
     const svc = new ReportSharingService(
       fakePrisma(rows) as never, fakeTenant([APPROVED_REPORT], ORGS_WITH_THIRD) as never, fakeAudit() as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     const result = await runAsOrg("org-owner", "user-1", () => svc.list());
     expect(result.map((r) => r.id).sort()).toEqual(["rsr-1", "rsr-2"]);
@@ -467,6 +518,8 @@ describe("ReportSharingService.list", () => {
     const svc = new ReportSharingService(
       fakePrisma(rows) as never, fakeTenant([APPROVED_REPORT], ORGS_WITH_THIRD) as never, fakeAudit() as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     const result = await runAsCrossEntity("org-supervisor", "user-sup", () => svc.list());
     expect(result.map((r) => r.id).sort()).toEqual(["rsr-1", "rsr-2"]);
@@ -479,6 +532,8 @@ describe("ReportSharingService.getById", () => {
     const svc = new ReportSharingService(
       fakePrisma([row]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     const result = await runAsOrg("org-owner", "user-1", () => svc.getById("rsr-1"));
     expect(result.id).toBe("rsr-1");
@@ -489,6 +544,8 @@ describe("ReportSharingService.getById", () => {
     const svc = new ReportSharingService(
       fakePrisma([row]) as never, fakeTenant([APPROVED_REPORT], ORGS_WITH_THIRD) as never, fakeAudit() as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     await expect(
       runAsOrg("org-third", "user-1", () => svc.getById("rsr-1")),
@@ -500,6 +557,8 @@ describe("ReportSharingService.getById", () => {
     const svc = new ReportSharingService(
       fakePrisma([row]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     const result = await runAsCrossEntity("org-supervisor", "user-sup", () => svc.getById("rsr-1"));
     expect(result.id).toBe("rsr-1");
@@ -509,6 +568,8 @@ describe("ReportSharingService.getById", () => {
     const svc = new ReportSharingService(
       fakePrisma([]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     await expect(
       runAsOrg("org-owner", "user-1", () => svc.getById("missing")),
@@ -521,6 +582,8 @@ describe("ReportSharingService.create — not-found branches", () => {
     const svc = new ReportSharingService(
       fakePrisma() as never, fakeTenant([], ORGS) as never, fakeAudit() as never,
       fakeReportsService([]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     await expect(
       runAsOrg("org-requester", "user-1", () =>
@@ -533,6 +596,8 @@ describe("ReportSharingService.create — not-found branches", () => {
     const svc = new ReportSharingService(
       fakePrisma() as never, fakeTenant([APPROVED_REPORT], ORGS_WITH_THIRD) as never, fakeAudit() as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     await expect(
       runAsOrg("org-requester", "user-1", () =>
@@ -549,6 +614,8 @@ describe("ReportSharingService.decide — already-decided / not-found", () => {
     const svc = new ReportSharingService(
       fakePrisma([row]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     await expect(
       runAsOrg("org-owner", "user-2", () => svc.approve("rsr-1")),
@@ -560,6 +627,8 @@ describe("ReportSharingService.decide — already-decided / not-found", () => {
     const svc = new ReportSharingService(
       fakePrisma([row]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     await expect(
       runAsOrg("org-owner", "user-2", () => svc.reject("rsr-1", { note: "still no" })),
@@ -570,6 +639,8 @@ describe("ReportSharingService.decide — already-decided / not-found", () => {
     const svc = new ReportSharingService(
       fakePrisma([]) as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     await expect(
       runAsOrg("org-owner", "user-2", () => svc.approve("missing")),
@@ -587,6 +658,8 @@ describe("ReportSharingService.lookupOrganizations", () => {
     const svc = new ReportSharingService(
       fakePrisma() as never, fakeTenant([], orgs) as never, fakeAudit() as never,
       fakeReportsService([]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     // "ngo" (lowercase) matches all three by name, but org-owner is excluded as the
     // caller's own org and org-inactive is excluded as inactive — only org-requester survives.
@@ -602,6 +675,8 @@ describe("ReportSharingService.lookupOrganizations", () => {
     const svc = new ReportSharingService(
       fakePrisma() as never, fakeTenant([], orgs) as never, fakeAudit() as never,
       fakeReportsService([]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     const result = await runAsOrg("org-owner", "user-1", () => svc.lookupOrganizations(undefined));
     expect(result.length).toBe(20);
@@ -619,6 +694,8 @@ describe("ReportSharingService.lookupReportsForOrg", () => {
     const svc = new ReportSharingService(
       fakePrisma() as never, fakeTenant(reports, ORGS) as never, fakeAudit() as never,
       fakeReportsService(reports) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     const result = await runAsOrg("org-owner", "user-1", () => svc.lookupReportsForOrg("org-owner"));
     expect(result.map((r) => r.id).sort()).toEqual(["r-archived", "r-released"]);
@@ -631,6 +708,8 @@ describe("ReportSharingService.enrichMany", () => {
     const svc = new ReportSharingService(
       fakePrisma([row]) as never, fakeTenant([], [{ id: "org-owner", name: "Owner NGO" }]) as never, fakeAudit() as never,
       fakeReportsService([]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     const result = await runAsOrg("org-owner", "user-1", () => svc.getById("rsr-1"));
     expect(result.requestingOrgName).toBe("org-gone");
@@ -669,6 +748,8 @@ describe("ReportSharingService.enrichMany", () => {
     const svc = new ReportSharingService(
       fakePrisma(rows) as never, tenant as never, fakeAudit() as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
     const result = await runAsOrg("org-owner", "user-1", () => svc.list());
     expect(result).toHaveLength(2);
@@ -699,6 +780,8 @@ describe("ReportSharingService.listPage", () => {
     new ReportSharingService(
       prisma as never, fakeTenant([APPROVED_REPORT], ORGS) as never, fakeAudit() as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
 
   it("pages in the database and reports the full total", async () => {
@@ -753,6 +836,8 @@ describe('ReportSharingService.listPage', () => {
       fakeTenant([APPROVED_REPORT], ORGS) as never,
       fakeAudit() as never,
       fakeReportsService([APPROVED_REPORT]) as never,
+    fakeMailer() as never,
+    fakeTranslation() as never,
     );
 
   it('pages in the database and reports the full total', async () => {

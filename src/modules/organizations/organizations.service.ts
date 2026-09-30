@@ -243,7 +243,14 @@ export class OrganizationsService {
     // DEFAULT_TEMP_PASSWORD is a known constant either way, not a secret
     // that only this email carries.
     if (payload.adminName && payload.adminEmail) {
-      await this.mailer.sendTemporaryPassword(payload.adminEmail, payload.name, DEFAULT_TEMP_PASSWORD);
+      // UAT-11 (Ganesh's brief, 2026-09-29) — every system-triggered email
+      // defaults to Arabic.
+      await this.mailer.sendTemporaryPassword(
+        payload.adminEmail,
+        payload.name,
+        DEFAULT_TEMP_PASSWORD,
+        'ar',
+      );
     }
 
     // File under the newly-created org (not the acting system_admin's org) so
@@ -418,7 +425,12 @@ export class OrganizationsService {
       await tx.user.update({ where: { id: admin.id }, data: { passwordHash, mustChangePassword: true } });
     });
 
-    await this.mailer.sendTemporaryPassword(admin.email, current.name, temporaryPassword);
+    await this.mailer.sendTemporaryPassword(
+      admin.email,
+      current.name,
+      temporaryPassword,
+      'ar',
+    );
 
     await this.audit.record({
       action: 'ORGANIZATION_APPROVED',

@@ -23,7 +23,14 @@ function makeService(tx: ReturnType<typeof makeFakeTx>) {
   const config = { publicAppUrl: 'http://localhost:3001' };
   const audit = { record: vi.fn() };
   const mailer = { send: vi.fn() };
-  return new PublicSurveysService(tenant as never, config as never, audit as never, mailer as never);
+  const translation = { translate: vi.fn() };
+  return new PublicSurveysService(
+    tenant as never,
+    config as never,
+    audit as never,
+    mailer as never,
+    translation as never,
+  );
 }
 
 const NEED = { id: 'need-1' };

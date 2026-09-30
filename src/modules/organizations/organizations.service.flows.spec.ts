@@ -334,7 +334,7 @@ describe('OrganizationsService cross-entity reads and status', () => {
     await as('system_admin', () => svc.approve('o1'));
     expect(passwords.hash).toHaveBeenCalled();
     expect(tx.user.update.mock.calls[0]![0].data).toMatchObject({ mustChangePassword: true });
-    expect(mailer.sendTemporaryPassword).toHaveBeenCalledWith('a@x.org', 'Org', expect.any(String));
+    expect(mailer.sendTemporaryPassword).toHaveBeenCalledWith('a@x.org', 'Org', expect.any(String), 'ar');
     expect(audit.record.mock.calls[0]![0].action).toBe('ORGANIZATION_APPROVED');
   });
 
