@@ -100,8 +100,11 @@ export class StudyConfigController {
     return this.studyConfig.setTargetSectorActive(id, false);
   }
 
+  // Picklist read — no module check, same split as study-types above: it
+  // feeds the Priority Dashboard's Decisions panel for every role, and roles without
+  // methodologyQuestionBank (e.g. NGO Admin) got a 403 on every visit.
+  // Writes stay on methodologyQuestionBank:write.
   @Get('decision-types')
-  @RequirePermission('methodologyQuestionBank', 'read')
   listDecisionTypes(): Promise<StudyConfigOption[]> {
     return this.studyConfig.listDecisionTypes();
   }
@@ -135,8 +138,11 @@ export class StudyConfigController {
     return this.studyConfig.setDecisionTypeActive(id, false);
   }
 
+  // Picklist read — no module check, same split as study-types above: it
+  // feeds the Priority Dashboard and the need detail page (gap-type filter/label) for every role, and roles without
+  // methodologyQuestionBank (e.g. NGO Admin) got a 403 on every visit.
+  // Writes stay on methodologyQuestionBank:write.
   @Get('gap-types')
-  @RequirePermission('methodologyQuestionBank', 'read')
   listGapTypes(): Promise<StudyConfigOption[]> {
     return this.studyConfig.listGapTypes();
   }

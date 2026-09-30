@@ -812,14 +812,14 @@ function contactRequestHtml({ orgName, name, email, region, purpose }: ContactEn
 
   return `
 <!doctype html>
-<html>${lightModeEmailHead({ page: '#f4f5f7', card: '#ffffff', header: '#111827' })}
+<html>${lightModeEmailHead({ page: '#f4f5f7', card: '#ffffff', header: '#145463' })}
   <body class="email-page" style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f4f5f7" class="email-page" style="background-color:#f4f5f7;padding:32px 16px;">
       <tr>
         <td align="center">
           <table role="presentation" width="480" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
             <tr>
-              <td bgcolor="#111827" class="email-header" style="background-color:#111827;padding:24px 32px;">
+              <td bgcolor="#145463" class="email-header" style="background-color:#145463;padding:24px 32px;">
                 <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
               </td>
             </tr>
@@ -842,7 +842,7 @@ function contactRequestHtml({ orgName, name, email, region, purpose }: ContactEn
                   </table>
                   <table role="presentation" cellpadding="0" cellspacing="0" align="right">
                     <tr>
-                      <td style="border-radius:8px;background-color:#111827;">
+                      <td style="border-radius:8px;background-color:#145463;">
                         <a href="mailto:${esc(email)}" style="display:inline-block;padding:12px 24px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">
                           الرد على ${esc(name)}
                         </a>
@@ -891,14 +891,14 @@ function passwordResetHtml(
 
   return `
 <!doctype html>
-<html>${lightModeEmailHead({ page: '#f4f5f7', card: '#ffffff', header: '#111827' })}
+<html>${lightModeEmailHead({ page: '#f4f5f7', card: '#ffffff', header: '#145463' })}
   <body class="email-page" style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f4f5f7" class="email-page" style="background-color:#f4f5f7;padding:32px 16px;">
       <tr>
         <td align="center">
           <table role="presentation" width="480" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
             <tr>
-              <td bgcolor="#111827" class="email-header" style="background-color:#111827;padding:24px 32px;">
+              <td bgcolor="#145463" class="email-header" style="background-color:#145463;padding:24px 32px;">
                 <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
               </td>
             </tr>
@@ -914,7 +914,7 @@ function passwordResetHtml(
                 </p>
                 <table role="presentation" cellpadding="0" cellspacing="0">
                   <tr>
-                    <td style="border-radius:8px;background-color:#111827;">
+                    <td style="border-radius:8px;background-color:#145463;">
                       <a href="${esc(resetUrl)}" style="display:inline-block;padding:12px 24px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">
                         ${ar ? 'إعادة تعيين كلمة المرور' : 'Reset Password'}
                       </a>
@@ -986,14 +986,14 @@ function temporaryPasswordHtml(
 
   return `
 <!doctype html>
-<html>${lightModeEmailHead({ page: '#f4f5f7', card: '#ffffff', header: '#111827' })}
+<html>${lightModeEmailHead({ page: '#f4f5f7', card: '#ffffff', header: '#145463' })}
   <body class="email-page" style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f4f5f7" class="email-page" style="background-color:#f4f5f7;padding:32px 16px;">
       <tr>
         <td align="center">
           <table role="presentation" width="480" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
             <tr>
-              <td bgcolor="#111827" class="email-header" style="background-color:#111827;padding:24px 32px;">
+              <td bgcolor="#145463" class="email-header" style="background-color:#145463;padding:24px 32px;">
                 <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
               </td>
             </tr>
@@ -1021,7 +1021,7 @@ function temporaryPasswordHtml(
                 </table>
                 <table role="presentation" cellpadding="0" cellspacing="0">
                   <tr>
-                    <td style="border-radius:8px;background-color:#111827;">
+                    <td style="border-radius:8px;background-color:#145463;">
                       <a href="${esc(signInUrl)}" style="display:inline-block;padding:12px 24px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">
                         ${ar ? 'تسجيل الدخول إلى RIO' : 'Sign in to RIO'}
                       </a>
