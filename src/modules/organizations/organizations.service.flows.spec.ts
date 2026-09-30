@@ -79,7 +79,7 @@ const payload = (over: Record<string, unknown> = {}) => ({
   centerIds: ['c1'],
   adminName: 'Amy',
   adminEmail: 'amy@x.org',
-  adminMobileNumber: ' (05) 123-4567 ',
+  adminMobileNumber: ' (050) 123-4567 ',
   consent: { usePolicyVersion: 'v1', dataSharingVersion: 'v1', locale: 'ar' },
   ...over,
 });
@@ -174,7 +174,7 @@ describe('OrganizationsService.createWithAdmin', () => {
     const out = await as('system_admin', () => svc.createWithAdmin(payload() as never));
     expect(out.name).toBe('New Org');
     expect(tx.user.create.mock.calls[0]![0].data).toMatchObject({
-      mobileNumber: '051234567',
+      mobileNumber: '+966501234567',
       mustChangePassword: true,
       consentedPolicyVersion: 'v1',
     });
@@ -207,7 +207,20 @@ describe('OrganizationsService.createWithAdmin', () => {
     expect(mailer.sendTemporaryPassword).not.toHaveBeenCalled();
   });
 
-  it('records no mobile number when none is given, and no consent columns for a missing policy', async () => {
+  // UAT-12 — the first NGO Admin's mobile is mandatory, Saudi mobile only.
+  it.each([undefined, '', '+971501234567', '0112345678', '05012345'])(
+    'refuses an admin with a missing / non-Saudi mobile %j, creating nothing',
+    async (adminMobileNumber) => {
+      const { svc, tx } = setup();
+      await expect(
+        as('system_admin', () => svc.createWithAdmin(payload({ adminMobileNumber }) as never)),
+      ).rejects.toMatchObject({ response: { error: { code: 'INVALID_MOBILE_NUMBER' } } });
+      expect(tx.organisation.create).not.toHaveBeenCalled();
+      expect(tx.user.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it('records no consent locale beyond English for a policy without an Arabic translation', async () => {
     const { svc, tx, consent } = setup();
     tx.organisation.create.mockResolvedValue(raw());
     tx.user.create.mockResolvedValue({ id: 'usr' });
@@ -218,13 +231,9 @@ describe('OrganizationsService.createWithAdmin', () => {
     }));
     await as('system_admin', () =>
       svc.createWithAdmin(
-        payload({
-          adminMobileNumber: undefined,
-          consent: { usePolicyVersion: 'v1', dataSharingVersion: 'v1' },
-        }) as never,
+        payload({ consent: { usePolicyVersion: 'v1', dataSharingVersion: 'v1' } }) as never,
       ),
     );
-    expect(tx.user.create.mock.calls[0]![0].data.mobileNumber).toBeNull();
     expect(tx.consentAcceptance.createMany.mock.calls[0]![0].data[0].policyLocale).toBe('en');
   });
 

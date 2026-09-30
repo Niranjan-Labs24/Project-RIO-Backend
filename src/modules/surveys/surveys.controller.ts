@@ -142,7 +142,6 @@ export class SurveysController {
       body.targetGroup,
       body.expectedSampleSize,
       body.selectionApproach,
-      body.geographicCoverage,
     );
   }
 

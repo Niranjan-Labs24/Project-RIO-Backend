@@ -2719,6 +2719,14 @@ model Survey {
   selectionApproach   String? @map("selection_approach") @db.VarChar(1000)
   geographicCoverage  String? @map("geographic_coverage") @db.VarChar(500)
 
+  // UAT-09 — what this survey inherited from its parent Study (Target
+  // Sector + geography: region/governorates/centers/villages), frozen at
+  // publish. Null while the survey is still a draft: the Survey Builder
+  // reads those values live from the Study until then, so a Study edit
+  // flows into its draft surveys but never rewrites a published one. Shape:
+  // SurveysService's InheritedFromStudy.
+  inheritedSnapshot Json? @map("inherited_snapshot")
+
   // ──────── Survey Approval workflow ────────
   // status also takes SUBMITTED and REJECTED now, alongside the existing
   // DRAFT/PUBLISHED — see SurveysService for the state machine. The

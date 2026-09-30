@@ -130,7 +130,7 @@ describe('UsersService', () => {
   it('remove rejects deleting your own account', async () => {
     const svc = makeService(fakeTenant({}));
     await expect(
-      orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'me', role: 'ngo_admin' }, () => svc.remove('me')),
+      orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'me', role: 'system_admin' }, () => svc.remove('me')),
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
@@ -139,7 +139,7 @@ describe('UsersService', () => {
     // both "does not exist" and "exists in another org" surface as NOT_FOUND.
     const svc = makeService(fakeTenant({ current: null }));
     await expect(
-      orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'me', role: 'ngo_admin' }, () => svc.remove('someone-else')),
+      orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'me', role: 'system_admin' }, () => svc.remove('someone-else')),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
@@ -153,15 +153,114 @@ describe('UsersService', () => {
     expect(deleted).toBe(false); // never reached the delete
   });
 
-  it('removes a regular user and records a delete audit event', async () => {
+  it('lets a System Admin remove a regular user and records a delete audit event', async () => {
     const current: UserRow = { id: 'u9', orgId: 'o1', name: 'Field', email: 'field@x.org', roleId: 'role_field_researcher', status: 'active', createdAt: new Date('2026-01-01T00:00:00Z') };
     const recorded: { action?: string; entityId?: string; entityLabel?: string }[] = [];
     const audit = { record: async (i: unknown) => { recorded.push(i as never); } };
     let deletedWhere: unknown;
     const svc = makeService(fakeTenant({ current, onDelete: (w) => { deletedWhere = w; } }), audit);
-    await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'me', role: 'ngo_admin' }, () => svc.remove('u9'));
+    await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'me', role: 'system_admin' }, () => svc.remove('u9'));
     expect(deletedWhere).toEqual({ id: 'u9' });
     expect(recorded[0]).toMatchObject({ action: 'delete', entityId: 'u9', entityLabel: 'field@x.org' });
+  });
+
+  // UAT-03 (revised 2026-09-30): NGO Admin may delete their own org's users.
+  it('lets an NGO Admin delete a regular user of their organisation', async () => {
+    const current: UserRow = { id: 'u9', orgId: 'o1', name: 'Field', email: 'field@x.org', roleId: 'role_field_researcher', status: 'active', createdAt: new Date('2026-01-01T00:00:00Z') };
+    let deletedWhere: unknown;
+    const svc = makeService(fakeTenant({ current, onDelete: (w) => { deletedWhere = w; } }));
+    await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'me', role: 'ngo_admin' }, () => svc.remove('u9'));
+    expect(deletedWhere).toEqual({ id: 'u9' });
+  });
+
+  it('forbids every role other than System Admin and NGO Admin from deleting any user', async () => {
+    const current: UserRow = { id: 'u9', orgId: 'o1', name: 'Field', email: 'field@x.org', roleId: 'role_field_researcher', status: 'active', createdAt: new Date('2026-01-01T00:00:00Z') };
+    let deleted = false;
+    const svc = makeService(fakeTenant({ current, onDelete: () => { deleted = true; } }));
+    for (const role of ['system_reviewer', 'center_supervisor', 'ngo_research_officer', 'human_reviewer', 'data_analyst']) {
+      await expect(
+        orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'me', role }, () => svc.remove('u9')),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    }
+    expect(deleted).toBe(false);
+  });
+
+  // UAT-03: org-level users (incl. another NGO Admin) can't delete/edit the NGO Admin.
+  describe('NGO Admin account is platform-managed only', () => {
+    const ngoAdmin: UserRow = { id: 'na1', orgId: 'o1', name: 'Owner', email: 'owner@x.org', roleId: 'role_ngo_admin', status: 'active', createdAt: new Date('2026-01-01T00:00:00Z') };
+    const field: UserRow = { id: 'u9', orgId: 'o1', name: 'Field', email: 'field@x.org', roleId: 'role_field_researcher', status: 'active', createdAt: new Date('2026-01-01T00:00:00Z') };
+
+    it('forbids an org-level caller from removing the NGO Admin', async () => {
+      let deleted = false;
+      const svc = makeService(fakeTenant({ current: ngoAdmin, onDelete: () => { deleted = true; } }));
+      await expect(
+        orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'other', role: 'ngo_admin' }, () => svc.remove('na1')),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(deleted).toBe(false);
+    });
+
+    it('forbids an org-level caller from editing the NGO Admin (any field)', async () => {
+      const svc = makeService(fakeTenant({ current: ngoAdmin }));
+      for (const patch of [{ name: 'Renamed' }, { status: 'invited' as const }, { roleId: 'role_field_researcher' }]) {
+        await expect(
+          orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'other', role: 'ngo_admin' }, () => svc.update('na1', patch)),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      }
+    });
+
+    it('lets the NGO Admin edit their own name/mobile (unchanged role/status echoed back is fine)', async () => {
+      const svc = makeService(fakeTenant({ current: ngoAdmin }));
+      const u = await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'na1', role: 'ngo_admin' }, () =>
+        svc.update('na1', { name: 'Renamed', mobileNumber: '0500000000', roleId: 'role_ngo_admin', status: 'active' }),
+      );
+      expect(u.name).toBe('Renamed');
+    });
+
+    it('does not revoke sessions (sessionVersion) when role/status are echoed back unchanged', async () => {
+      let data: Record<string, unknown> = {};
+      const tenant = fakeTenant({ current: ngoAdmin });
+      const svc = makeService({
+        ...tenant,
+        runInOrgContext: async (fn: (tx: unknown) => unknown) =>
+          tenant.runInOrgContext((tx) => fn({ ...(tx as object), user: { ...(tx as { user: object }).user, update: async (a: { data: Record<string, unknown> }) => { data = a.data; return { ...ngoAdmin, ...a.data }; } } })),
+      });
+      await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'na1', role: 'ngo_admin' }, () =>
+        svc.update('na1', { name: 'Renamed', roleId: 'role_ngo_admin', status: 'active' }),
+      );
+      expect(data.sessionVersion).toBeUndefined();
+    });
+
+    it('forbids the NGO Admin from changing their own role or status', async () => {
+      const svc = makeService(fakeTenant({ current: ngoAdmin }));
+      for (const patch of [{ roleId: 'role_field_researcher' }, { status: 'invited' as const }]) {
+        await expect(
+          orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'na1', role: 'ngo_admin' }, () => svc.update('na1', patch)),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      }
+    });
+
+    it('forbids an org-level caller from promoting a user to NGO Admin', async () => {
+      const svc = makeService(fakeTenant({ current: field }));
+      await expect(
+        orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'other', role: 'ngo_admin' }, () => svc.update('u9', { roleId: 'role_ngo_admin' })),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('forbids an org-level caller from inviting a new NGO Admin', async () => {
+      const svc = makeService(fakeTenant({}));
+      await expect(
+        orgContext.run({ requestId: 'r', orgId: 'o1', role: 'ngo_admin' }, () => svc.invite({ name: 'X', email: 'x@x.org', roleId: 'role_ngo_admin' })),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('lets a platform admin (system_admin) edit and remove the NGO Admin', async () => {
+      let deleted = false;
+      const svc = makeService(fakeTenant({ current: ngoAdmin, onDelete: () => { deleted = true; } }));
+      const u = await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'sys', role: 'system_admin' }, () => svc.update('na1', { name: 'Renamed' }));
+      expect(u.name).toBe('Renamed');
+      await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'sys', role: 'system_admin' }, () => svc.remove('na1'));
+      expect(deleted).toBe(true);
+    });
   });
 
   it('lets a crossEntity admin (system_admin) remove a crossEntity account', async () => {
