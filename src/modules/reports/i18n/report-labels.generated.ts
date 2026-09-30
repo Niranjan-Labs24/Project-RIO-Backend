@@ -200,7 +200,12 @@ export const REPORT_LABELS_EN = {
   "es.quantitative": "Quantitative",
   "es.topCritical": "Top 3 critical needs",
   "es.topHighest": "Top 3 highest-severity needs",
+  "evidence": "Qualitative evidence",
   "evidenceDocumentsHeading": "Evidence Documents",
+  "evidenceStatus.draft": "Draft",
+  "evidenceStatus.noSummary": "No Summary",
+  "evidenceStatus.officerConfirmed": "Officer Confirmed",
+  "evidenceStatus.superseded": "Superseded",
   "excludedSubmitted": "Excluded submitted responses",
   "executiveSummary": "Executive Summary",
   "findingCount": "{count, plural, one {# finding} other {# findings}}",
@@ -648,7 +653,7 @@ export const REPORT_LABELS_AR: Record<ReportLabelKey, string> = {
   "drilldownByDomainSub": "من المجال إلى تفاصيل المؤشر",
   "drilldownIndex": "فهرس التفصيل — المجالات",
   "drilldownIndexShort": "فهرس التفصيل",
-  "entity": "الجهة",
+  "entity": "الكيان",
   "equityNotEvaluable": "لا يمكن تقييم الإنصاف: {reason}",
   "es.domainCoverage": "تغطية المجالات — جميع مجالات المنهجية",
   "es.domainsAssessed": "المجالات المقيَّمة",
@@ -660,7 +665,12 @@ export const REPORT_LABELS_AR: Record<ReportLabelKey, string> = {
   "es.quantitative": "كمّي",
   "es.topCritical": "أهم 3 احتياجات حرجة",
   "es.topHighest": "أهم 3 احتياجات الأعلى شدة",
+  "evidence": "الأدلة النوعية",
   "evidenceDocumentsHeading": "مستندات الأدلة",
+  "evidenceStatus.draft": "مسودة",
+  "evidenceStatus.noSummary": "لا يوجد ملخص",
+  "evidenceStatus.officerConfirmed": "مؤكَّد من الموظف",
+  "evidenceStatus.superseded": "مستبدَل",
   "excludedSubmitted": "استجابات مُرسلة مستبعدة",
   "executiveSummary": "الملخص التنفيذي",
   "findingCount": "{count, plural, one {# نتيجة} other {# نتائج}}",
@@ -681,7 +691,7 @@ export const REPORT_LABELS_AR: Record<ReportLabelKey, string> = {
   "geographicMaskingAlert": "تنبيه الإخفاء الجغرافي",
   "geographicScope": "النطاق الجغرافي",
   "governorates": "المحافظات",
-  "hdr.entityName": "اسم الجهة",
+  "hdr.entityName": "اسم الكيان",
   "hdr.reportGeneratedAt": "تاريخ إنشاء التقرير",
   "hdr.studyName": "اسم الدراسة",
   "header": "تفاصيل التقرير",
@@ -931,4 +941,4 @@ export const REPORT_LABELS_AR: Record<ReportLabelKey, string> = {
 };
 
 /** Fingerprint of the source namespace, for the drift check. */
-export const REPORT_LABELS_CHECKSUM = "f99ca80f138f017d";
+export const REPORT_LABELS_CHECKSUM = "ece42a978884bef6";

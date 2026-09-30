@@ -5,6 +5,7 @@ import { ConfigService } from '../../config/config.service';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { MailerService } from '../../mailer/mailer.service';
 import { SmsService } from '../../sms/sms.service';
+import { TranslationService } from '../translation/translation.service';
 import { SurveySessionsService } from './survey-sessions.service';
 import type { SweepResult } from './survey-sessions.types';
 
@@ -51,6 +52,7 @@ export class SurveyReminderService implements OnModuleInit {
     private readonly mailer: MailerService,
     private readonly sms: SmsService,
     private readonly schedulerRegistry: SchedulerRegistry,
+    private readonly translation: TranslationService,
   ) {}
 
   // Registered dynamically (same reason as BackupService / the system-log
@@ -140,7 +142,9 @@ export class SurveyReminderService implements OnModuleInit {
     let sent = 0;
     let skipped = 0;
     for (const session of due) {
-      const url = `${this.config.publicAppUrl}/public/survey/${session.surveyLink.token}`;
+      // `/ar`-prefixed, same as the generated share link (UAT-02): a citizen
+      // opens the survey in Arabic by default, English stays a toggle.
+      const url = `${this.config.publicAppUrl}/ar/public/survey/${session.surveyLink.token}`;
       const needTitle = session.surveyLink.need?.title ?? session.surveyLink.label;
       const delivered = await this.deliver(session, url, needTitle);
       if (!delivered) {
@@ -175,7 +179,19 @@ export class SurveyReminderService implements OnModuleInit {
     needTitle: string,
   ): Promise<boolean> {
     if (session.contact) {
-      const ok = await this.mailer.sendSurveyReminder(session.contact, { needTitle, publicUrl: url });
+      // The Need title is free text with no stored Arabic — resolved live,
+      // exactly as PublicSurveysService.shareLinkByEmail does for the link email.
+      // A lookup failure falls back to the source title rather than
+      // costing the nudge — same soft-fail contract as the send itself.
+      const needTitleAr = await this.translation
+        .translate(needTitle, 'ar')
+        .then((r) => r.translatedText || needTitle)
+        .catch(() => needTitle);
+      const ok = await this.mailer.sendSurveyReminder(session.contact, {
+        needTitle,
+        needTitleAr,
+        publicUrl: url,
+      });
       if (ok) return true;
     }
     if (session.mobile) {

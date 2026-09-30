@@ -66,9 +66,15 @@ export class EvidenceDocumentsController {
       title: 500, documentType: 100, sourceReferenceId: 200, collectedDate: 40,
       description: 10_000, linkedNeedId: 64, linkedDomainId: 64, linkedKpiId: 64,
     });
-    if (!body.title || !body.documentType || !body.sourceReferenceId || !body.collectedDate) {
+    // sourceReferenceId is deliberately not in this list. It is the
+    // uploader's own filing reference for the document, and plenty of
+    // documents simply do not have one — requiring it only got it filled
+    // with placeholder text. The column is NOT NULL, so an omitted one is
+    // stored as an empty string and every screen that shows it already
+    // treats blank as "no reference".
+    if (!body.title || !body.documentType || !body.collectedDate) {
       throw new BadRequestException({
-        error: { code: "MISSING_FIELDS", message: "Title, documentType, sourceReferenceId, and collectedDate are required." },
+        error: { code: "MISSING_FIELDS", message: "Title, documentType and collectedDate are required." },
       });
     }
 
@@ -76,7 +82,9 @@ export class EvidenceDocumentsController {
       studyId,
       title: body.title,
       documentType: body.documentType,
-      sourceReferenceId: body.sourceReferenceId,
+      // Stored as "" rather than left undefined: the column is NOT NULL,
+      // and blank already reads as "no reference" everywhere it is shown.
+      sourceReferenceId: body.sourceReferenceId?.trim() ?? "",
       collectedDate: body.collectedDate,
       description: body.description,
       linkedNeedId: body.linkedNeedId,

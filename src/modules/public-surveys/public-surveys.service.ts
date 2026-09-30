@@ -25,6 +25,27 @@ import type {
 
 type LinkWithResponseCount = Omit<PublicSurveyLinkRow, 'responseCount'> & { _count: { responses: number } };
 
+// One SurveyQuestion row flattened for answer mapping. `questionId` is the
+// SurveyQuestion's OWN id — the key a SurveyResponse.answers blob uses.
+// `bankQuestionId` is the Question Bank row behind it (null for an
+// additional/custom question, which has no bank row), and `surveyId` is the
+// survey version it belongs to. The last two exist so "the same question
+// across versions" can be decided by identity rather than by wording — see
+// questionIdentity below.
+type MappedQuestion = {
+  questionId: string;
+  bankQuestionId: string | null;
+  surveyId: string;
+  questionText: string;
+  answerType: string;
+  answerOptions: string[] | null;
+};
+
+// A question plus every other version's copy of it. `questionId` is the
+// copy that represents the group (the earliest version's); `aliasIds` are
+// the rest, which a response collected under that version keys off instead.
+type QuestionGroup = MappedQuestion & { aliasIds: string[] };
+
 // Hard ceiling for the two unbounded-by-design reads below
 // (listResponsesWithAnswers, the CSV/XLSX export loader) — neither paginates
 // today (the summary screen and export both need every matching row, not a
@@ -275,11 +296,13 @@ export class PublicSurveysService {
     });
 
     const question = questionMap.get(questionId);
-    // Resolve against every other version's copy of this same question
-    // (by text) too — a respondent who answered under a superseded
-    // version's question id would otherwise show "No answer" here despite
-    // having actually answered.
-    const group = this.groupQuestionsByText(questionMap).find(
+    // Resolve against every other version's copy of this same question too
+    // — a respondent who answered under a superseded version's question id
+    // would otherwise show "No answer" here despite having actually
+    // answered. Matching is on the group, not on text: two questions that
+    // merely read the same are two questions, and each must serve its own
+    // answers here (see questionIdentity).
+    const group = this.groupQuestionsByIdentity(questionMap).find(
       (g) => g.questionId === questionId || g.aliasIds.includes(questionId),
     );
     const ids = group ? [group.questionId, ...group.aliasIds] : [questionId];
@@ -321,10 +344,11 @@ export class PublicSurveysService {
         this.buildQuestionMap(tx, needId),
         this.buildVersionMap(tx, needId),
       ]);
-      // One column per question TEXT, not per version-specific id — the raw
+      // One column per real question, not per version-specific id — the raw
       // map has a separate entry for the same question in every version it
-      // was copied into.
-      const questions = this.groupQuestionsByText(questionMap);
+      // was copied into. Two questions that merely read the same still get a
+      // column each (see questionIdentity).
+      const questions = this.groupQuestionsByIdentity(questionMap);
       const lines = [
         ['Name', 'Email', 'Submitted Date', 'Survey Version', ...questions.map((q) => q.questionText)]
           .map(escape)
@@ -361,9 +385,9 @@ export class PublicSurveysService {
         this.buildQuestionMap(tx, needId),
         this.buildVersionMap(tx, needId),
       ]);
-      // One column per question TEXT, not per version-specific id — see the
+      // One column per real question, not per version-specific id — see the
       // same note in exportResponsesCsv above.
-      const questions = this.groupQuestionsByText(questionMap);
+      const questions = this.groupQuestionsByIdentity(questionMap);
 
       // Streaming writer, not the in-memory Workbook/Worksheet API: rows are
       // committed (and released from ExcelJS's own memory) one batch at a
@@ -460,9 +484,7 @@ export class PublicSurveysService {
   private async buildQuestionMap(
     tx: Prisma.TransactionClient,
     needId: string,
-  ): Promise<
-    Map<string, { questionId: string; questionText: string; answerType: string; answerOptions: string[] | null }>
-  > {
+  ): Promise<Map<string, MappedQuestion>> {
     // RIO-FR-011: a Need can now have more than one Survey row (versioning),
     // each with its OWN SurveyQuestion rows — createNewVersion copies
     // questions into fresh rows with new ids, it never reuses the old
@@ -476,18 +498,23 @@ export class PublicSurveysService {
     // questions for this Need is always correct: each response's answer
     // keys resolve against whichever version they actually came from, with
     // no need to track which version a response belongs to at all.
+    // Ordered by version, then by each version's own question order, so the
+    // map's insertion order is deterministic: grouping below takes the FIRST
+    // copy of a question as the group's representative, and that should
+    // always be the earliest version's, not whichever row the planner
+    // happened to return first.
     const surveys = await tx.survey.findMany({
       where: { needId },
+      orderBy: { version: 'asc' },
       include: { surveyQuestions: { include: { question: true }, orderBy: { order: 'asc' } } },
     });
-    const map = new Map<
-      string,
-      { questionId: string; questionText: string; answerType: string; answerOptions: string[] | null }
-    >();
+    const map = new Map<string, MappedQuestion>();
     for (const sq of surveys.flatMap((s) => s.surveyQuestions)) {
       const rawOptions = sq.question?.answerOptions ?? sq.customOptions ?? null;
       map.set(sq.id, {
         questionId: sq.id,
+        bankQuestionId: sq.questionId ?? null,
+        surveyId: sq.surveyId,
         questionText: sq.question?.questionText ?? sq.customText ?? '',
         answerType: sq.question?.answerType ?? sq.customAnswerType ?? 'long_text',
         answerOptions:
@@ -542,27 +569,55 @@ export class PublicSurveysService {
     return best ? `v${best.version} (${best.status})` : 'Unknown';
   }
 
-  // Groups buildQuestionMap's per-version entries by questionText — the
-  // same question asked across two versions has two different ids (see
-  // buildQuestionMap's comment), so a lookup keyed to only one specific id
-  // misses any response that happened to answer under a different version's
-  // copy. Mirrors the frontend's aliasIds merge (survey-response-stats.ts).
-  private groupQuestionsByText(
-    questionMap: Map<string, { questionId: string; questionText: string; answerType: string; answerOptions: string[] | null }>,
-  ): Array<{ questionId: string; questionText: string; answerType: string; answerOptions: string[] | null; aliasIds: string[] }> {
-    const byText = new Map<
-      string,
-      { questionId: string; questionText: string; answerType: string; answerOptions: string[] | null; aliasIds: string[] }
-    >();
+  // What makes two SurveyQuestion rows "the same question".
+  //
+  // The Question Bank id is the real answer: createNewVersion copies a
+  // question into a fresh SurveyQuestion row with a NEW id but keeps
+  // `questionId` (the bank row) pointing at the same question, so it is the
+  // one value that survives versioning. An additional/custom question has no
+  // bank row, and its wording is then all there is to go on.
+  //
+  // This used to key on questionText alone, which silently merged questions
+  // that merely read the same. That is not hypothetical: the Question Bank
+  // holds two distinct Education questions both worded "What is the
+  // approximate distance from this household to the nearest primary school?"
+  // (sub-domains "Access to Basic Education" and "Basic Education Access"),
+  // and a survey that asks both had the second one's answers folded into the
+  // first — no card of its own on the summary page, no column of its own in
+  // an export, and its per-question page served the FIRST question's answers
+  // instead.
+  private questionIdentity(q: MappedQuestion): string {
+    return q.bankQuestionId ? `bank:${q.bankQuestionId}` : `custom:${q.questionText.trim()}`;
+  }
+
+  // Groups buildQuestionMap's per-version entries into one entry per real
+  // question — the same question asked across two versions has two different
+  // SurveyQuestion ids (see buildQuestionMap's comment), so a lookup keyed to
+  // only one of them misses any response that answered under the other.
+  // Mirrors the frontend's aliasIds merge (survey-response-stats.ts).
+  //
+  // The occurrence index is what keeps two questions apart when one survey
+  // genuinely asks the same identity twice (the same bank question added
+  // twice, or two identically worded additional questions): each keeps its
+  // own group, and the nth copy in one version pairs with the nth copy in the
+  // next — merging across versions, never within one.
+  private groupQuestionsByIdentity(questionMap: Map<string, MappedQuestion>): QuestionGroup[] {
+    const groups = new Map<string, QuestionGroup>();
+    const seenInSurvey = new Map<string, number>();
     for (const q of questionMap.values()) {
-      const existing = byText.get(q.questionText);
-      if (!existing) {
-        byText.set(q.questionText, { ...q, aliasIds: [] });
-      } else {
+      const identity = this.questionIdentity(q);
+      const withinSurvey = `${q.surveyId}::${identity}`;
+      const occurrence = seenInSurvey.get(withinSurvey) ?? 0;
+      seenInSurvey.set(withinSurvey, occurrence + 1);
+      const key = `${identity}#${occurrence}`;
+      const existing = groups.get(key);
+      if (existing) {
         existing.aliasIds.push(q.questionId);
+      } else {
+        groups.set(key, { ...q, aliasIds: [] });
       }
     }
-    return Array.from(byText.values());
+    return Array.from(groups.values());
   }
 
   // First non-blank answer among a question's own id and every alias id
@@ -605,10 +660,7 @@ export class PublicSurveysService {
       submittedAt: Date;
       answers: unknown;
     },
-    questionMap: Map<
-      string,
-      { questionId: string; questionText: string; answerType: string; answerOptions: string[] | null }
-    >,
+    questionMap: Map<string, MappedQuestion>,
   ): SurveyResponseDetail {
     const rawAnswers = (row.answers ?? {}) as Record<string, string>;
     // buildQuestionMap unions every survey version's questions so ANY
@@ -624,6 +676,7 @@ export class PublicSurveysService {
       .filter((q) => Object.prototype.hasOwnProperty.call(rawAnswers, q.questionId))
       .map((q) => ({
         questionId: q.questionId,
+        bankQuestionId: q.bankQuestionId,
         questionText: q.questionText,
         answerType: q.answerType,
         answerOptions: q.answerOptions,

@@ -429,7 +429,7 @@ export class MailerService {
         to: this.config.mailFrom,
         bcc: recipients,
         replyTo: enquiry.email,
-        subject: `RIO enquiry — ${enquiry.name} (${enquiry.region})`,
+        subject: `استفسار جديد في RIO — ${enquiry.name} (${enquiry.region})`,
         text: contactRequestText(enquiry),
         html: contactRequestHtml(enquiry),
       });
@@ -500,7 +500,7 @@ export class MailerService {
       const { error } = await this.client.emails.send({
         from: this.config.mailFrom,
         to: email,
-        subject: `Reminder: your survey response for ${input.needTitle} is unfinished`,
+        subject: `تذكير: لم تكتمل إجابتك على استبيان ${input.needTitleAr}`,
         text: surveyReminderText(input),
         html: surveyReminderHtml(input),
       });
@@ -606,17 +606,21 @@ export class MailerService {
     if (recipients.length === 0) return false;
 
     const when = input.startedAt.toISOString();
-    const subject = `RIO backup FAILED — ${input.kind}`;
+    // Arabic by default like every other system email (Jagan, 2026-09-29).
+    // The run id, timestamp and pg_dump error stay as-is — they're technical
+    // values an administrator searches for, not copy.
+    const kindAr = BACKUP_KIND_AR[input.kind] ?? input.kind;
+    const subject = `فشل النسخ الاحتياطي في RIO — ${kindAr}`;
     // The error text is included in full. It is written by pg_dump or by this
     // module, carries no tenant data, and the first question an administrator
     // asks is "why" — sending them to a screen to find out wastes the alert.
     const text =
-      `A ${input.kind} backup failed.\n\n` +
-      `Started : ${when}\n` +
-      `Run     : ${input.runId}\n\n` +
-      `Error:\n${input.error}\n\n` +
-      `Until this is resolved the platform has no current ${input.kind} backup.\n` +
-      `See System Administration -> Backups.`;
+      `فشل النسخ الاحتياطي (${kindAr}).\n\n` +
+      `وقت البدء: ${when}\n` +
+      `معرّف التشغيل: ${input.runId}\n\n` +
+      `الخطأ:\n${input.error}\n\n` +
+      `إلى أن تُحل هذه المشكلة، لا توجد لدى المنصة نسخة احتياطية حديثة (${kindAr}).\n` +
+      `راجع: إدارة النظام ← النسخ الاحتياطي.`;
 
     try {
       const { error } = await this.client.emails.send({
@@ -626,7 +630,7 @@ export class MailerService {
         bcc: recipients,
         subject,
         text,
-        html: backupFailureHtml({ ...input, when }),
+        html: backupFailureHtml({ ...input, kind: kindAr, when }),
       });
       if (error) {
         this.logger.error(
@@ -757,7 +761,7 @@ function surveyLinkHtml({ needTitleAr, publicUrl }: SurveyLinkEmailInput): strin
                   <table role="presentation" cellpadding="0" cellspacing="0" align="right" bgcolor="${SECONDARY_TINT}" class="email-accent" style="background-color:${SECONDARY_TINT};border-radius:8px;">
                     <tr>
                       <td style="padding:12px;">
-                        <img src="cid:survey-qr-code" alt="QR code for the survey link" width="180" height="180" style="display:block;border-radius:4px;" />
+                        <img src="cid:survey-qr-code" alt="رمز QR لرابط الاستبيان" width="180" height="180" style="display:block;border-radius:4px;" />
                       </td>
                     </tr>
                   </table>
@@ -780,14 +784,16 @@ interface ContactEnquiryInput {
   purpose: string;
 }
 
+// Arabic only, like every other system email (Jagan, 2026-09-29: "all mail
+// should be Arabic by default"). Draft Arabic copy pending translation review.
 function contactRequestText({ orgName, name, email, region, purpose }: ContactEnquiryInput): string {
   return (
-    `New contact enquiry for ${orgName}\n\n` +
-    `Name: ${name}\n` +
-    `Email: ${email}\n` +
-    `Region: ${region}\n\n` +
-    `Purpose:\n${purpose}\n\n` +
-    `Reply directly to this email to reach ${name}.`
+    `استفسار تواصل جديد لـ ${orgName}\n\n` +
+    `الاسم: ${name}\n` +
+    `البريد الإلكتروني: ${email}\n` +
+    `المنطقة: ${region}\n\n` +
+    `الغرض:\n${purpose}\n\n` +
+    `رُدّ على هذا البريد مباشرةً للتواصل مع ${name}.`
   );
 }
 
@@ -801,7 +807,7 @@ function contactRequestHtml({ orgName, name, email, region, purpose }: ContactEn
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
   const row = (label: string, value: string): string => `
-                      <p style="margin:0 0 4px;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;">${esc(label)}</p>
+                      <p style="margin:0 0 4px;font-size:12px;color:#6b7280;">${esc(label)}</p>
                       <p style="margin:0 0 16px;font-size:14px;color:#111827;font-weight:600;">${esc(value)}</p>`;
 
   return `
@@ -819,28 +825,31 @@ function contactRequestHtml({ orgName, name, email, region, purpose }: ContactEn
             </tr>
             <tr>
               <td style="padding:32px;">
-                <h1 style="margin:0 0 12px;font-size:20px;color:#111827;">New contact enquiry</h1>
-                <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#4b5563;">
-                  Someone has reached out to ${esc(orgName)} through the RIO
-                  sign-in page.
-                </p>
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:24px;">
-                  <tr>
-                    <td style="padding:16px 20px;">${row('Name', name)}${row('Email', email)}${row('Region', region)}
-                      <p style="margin:0 0 4px;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;">Purpose</p>
-                      <p style="margin:0;font-size:14px;line-height:1.6;color:#111827;white-space:pre-wrap;">${esc(purpose)}</p>
-                    </td>
-                  </tr>
-                </table>
-                <table role="presentation" cellpadding="0" cellspacing="0">
-                  <tr>
-                    <td style="border-radius:8px;background-color:#111827;">
-                      <a href="mailto:${esc(email)}" style="display:inline-block;padding:12px 24px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">
-                        Reply to ${esc(name)}
-                      </a>
-                    </td>
-                  </tr>
-                </table>
+                <!-- Arabic only — see contactRequestText. -->
+                <div dir="rtl" lang="ar" style="text-align:right;">
+                  <h1 style="margin:0 0 12px;font-size:20px;color:#111827;">استفسار تواصل جديد</h1>
+                  <p style="margin:0 0 24px;font-size:14px;line-height:1.8;color:#4b5563;">
+                    تواصل أحد الأشخاص مع ${esc(orgName)} من خلال صفحة تسجيل
+                    الدخول في RIO.
+                  </p>
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:24px;">
+                    <tr>
+                      <td style="padding:16px 20px;">${row('الاسم', name)}${row('البريد الإلكتروني', email)}${row('المنطقة', region)}
+                        <p style="margin:0 0 4px;font-size:12px;color:#6b7280;">الغرض</p>
+                        <p style="margin:0;font-size:14px;line-height:1.8;color:#111827;white-space:pre-wrap;">${esc(purpose)}</p>
+                      </td>
+                    </tr>
+                  </table>
+                  <table role="presentation" cellpadding="0" cellspacing="0" align="right">
+                    <tr>
+                      <td style="border-radius:8px;background-color:#111827;">
+                        <a href="mailto:${esc(email)}" style="display:inline-block;padding:12px 24px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">
+                          الرد على ${esc(name)}
+                        </a>
+                      </td>
+                    </tr>
+                  </table>
+                </div>
               </td>
             </tr>
           </table>
@@ -939,7 +948,7 @@ function temporaryPasswordText(
   if (locale === 'ar') {
     return (
       `مرحبًا بك في RIO، ${orgName}!\n\n` +
-      `تم إنشاء حساب لمؤسستك. استخدم البيانات أدناه لتسجيل الدخول، ثم قم بتعيين كلمة المرور الخاصة بك.\n\n` +
+      `تم إنشاء حساب لكيانك. استخدم البيانات أدناه لتسجيل الدخول، ثم قم بتعيين كلمة المرور الخاصة بك.\n\n` +
       `مساحة العمل: ${orgName}\n` +
       `البريد الإلكتروني: ${email}\n` +
       `كلمة المرور المؤقتة: ${tempPassword}\n\n` +
@@ -994,7 +1003,7 @@ function temporaryPasswordHtml(
                 <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#4b5563;">
                   ${
                     ar
-                      ? 'تم إنشاء حساب لمؤسستك. استخدم البيانات أدناه لتسجيل الدخول، ثم سيُطلب منك تعيين كلمة المرور الخاصة بك.'
+                      ? 'تم إنشاء حساب لكيانك. استخدم البيانات أدناه لتسجيل الدخول، ثم سيُطلب منك تعيين كلمة المرور الخاصة بك.'
                       : "An account has been created for your organization. Use the credentials below to sign in, then you'll be asked to set your own password."
                   }
                 </p>
@@ -1039,26 +1048,26 @@ function temporaryPasswordHtml(
 
 interface SurveyReminderEmailInput {
   needTitle: string;
+  /** Same contract as SurveyLinkEmailInput.needTitleAr — the Need title
+   * resolved into Arabic, falling back to `needTitle`, never blank. */
+  needTitleAr: string;
   publicUrl: string;
 }
 
-function surveyReminderText({ needTitle, publicUrl }: SurveyReminderEmailInput): string {
+// Arabic only, like every other system-triggered email (Jagan, 2026-09-29:
+// "all mail should be Arabic by default"). Draft Arabic copy pending
+// translation review, same as surveyLinkText.
+function surveyReminderText({ needTitleAr, publicUrl }: SurveyReminderEmailInput): string {
   return (
-    `You started the survey for "${needTitle}" but did not finish it.
-
-` +
-    `Open the survey again: ${publicUrl}
-
-` +
-    `Your earlier answers were not saved, so the questions will start from the ` +
-    `beginning. A response only counts once it is submitted.
-
-` +
-    `If you would rather not take part, no action is needed — you will not be reminded again after this.`
+    `لقد بدأت الإجابة على استبيان "${needTitleAr}" ولكن لم تُكمله.\n\n` +
+    `افتح الاستبيان مرة أخرى: ${publicUrl}\n\n` +
+    `لم تُحفظ إجاباتك السابقة، لذلك ستبدأ الأسئلة من البداية. ` +
+    `لا تُحتسب الإجابة إلا بعد إرسالها.\n\n` +
+    `إذا كنت لا ترغب في المشاركة، فلا يلزمك أي إجراء — لن نرسل لك تذكيرًا آخر بعد هذه الرسالة.`
   );
 }
 
-function surveyReminderHtml({ needTitle, publicUrl }: SurveyReminderEmailInput): string {
+function surveyReminderHtml({ needTitleAr, publicUrl }: SurveyReminderEmailInput): string {
   const esc = (value: string): string =>
     value
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -1081,24 +1090,27 @@ function surveyReminderHtml({ needTitle, publicUrl }: SurveyReminderEmailInput):
             </tr>
             <tr>
               <td style="padding:32px;">
-                <h1 style="margin:0 0 12px;font-size:20px;color:#111827;">${esc(needTitle)}</h1>
-                <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#4b5563;">
-                  You started this survey but did not finish it. Your earlier answers
-                  were not saved, so the questions will start from the beginning &mdash;
-                  a response only counts once it is submitted.
-                </p>
-                <table role="presentation" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
-                  <tr>
-                    <td style="border-radius:8px;background-color:${PRIMARY};">
-                      <a href="${esc(publicUrl)}" style="display:inline-block;padding:12px 24px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">
-                        Finish the survey
-                      </a>
-                    </td>
-                  </tr>
-                </table>
-                <p style="margin:0;font-size:12px;line-height:1.6;color:#6b7280;">
-                  If you would rather not take part, no action is needed.
-                </p>
+                <!-- Arabic only — see surveyReminderText. -->
+                <div dir="rtl" lang="ar" style="text-align:right;">
+                  <h1 style="margin:0 0 12px;font-size:20px;color:#111827;">${esc(needTitleAr)}</h1>
+                  <p style="margin:0 0 24px;font-size:14px;line-height:1.8;color:#4b5563;">
+                    لقد بدأت الإجابة على هذا الاستبيان ولكن لم تُكمله. لم تُحفظ
+                    إجاباتك السابقة، لذلك ستبدأ الأسئلة من البداية &mdash;
+                    لا تُحتسب الإجابة إلا بعد إرسالها.
+                  </p>
+                  <table role="presentation" cellpadding="0" cellspacing="0" align="right" style="margin-bottom:24px;">
+                    <tr>
+                      <td style="border-radius:8px;background-color:${PRIMARY};">
+                        <a href="${esc(publicUrl)}" style="display:inline-block;padding:12px 24px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">
+                          إكمال الاستبيان
+                        </a>
+                      </td>
+                    </tr>
+                  </table>
+                  <p style="clear:both;margin:0;font-size:12px;line-height:1.8;color:#6b7280;">
+                    إذا كنت لا ترغب في المشاركة، فلا يلزمك أي إجراء.
+                  </p>
+                </div>
               </td>
             </tr>
           </table>
@@ -1108,6 +1120,11 @@ function surveyReminderHtml({ needTitle, publicUrl }: SurveyReminderEmailInput):
   </body>
 </html>`;
 }
+
+const BACKUP_KIND_AR: Record<string, string> = {
+  database: 'قاعدة البيانات',
+  attachments: 'المرفقات',
+};
 
 /** RIO-NFR-010 — the failure alert body. Plain and unmissable, not branded. */
 function backupFailureHtml(input: {
@@ -1128,20 +1145,21 @@ function backupFailureHtml(input: {
   <body class="email-page" style="margin:0;padding:24px;background-color:#f9fafb;font-family:-apple-system,Segoe UI,Roboto,sans-serif;">
     <table role="presentation" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:12px;border:1px solid #fecaca;">
       <tr>
-        <td style="padding:24px;">
+        <td dir="rtl" lang="ar" style="padding:24px;text-align:right;">
           <p style="margin:0 0 8px;font-size:18px;font-weight:700;color:#b91c1c;">
-            Backup failed &mdash; ${esc(input.kind)}
+            فشل النسخ الاحتياطي &mdash; ${esc(input.kind)}
           </p>
-          <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#374151;">
-            Until this is resolved the platform has no current ${esc(input.kind)} backup.
+          <p style="margin:0 0 16px;font-size:14px;line-height:1.8;color:#374151;">
+            إلى أن تُحل هذه المشكلة، لا توجد لدى المنصة نسخة احتياطية حديثة (${esc(input.kind)}).
           </p>
           <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin-bottom:16px;font-size:13px;color:#374151;">
-            <tr><td style="padding:4px 0;color:#6b7280;">Started</td><td style="padding:4px 0;">${esc(input.when)}</td></tr>
-            <tr><td style="padding:4px 0;color:#6b7280;">Run</td><td style="padding:4px 0;font-family:monospace;">${esc(input.runId)}</td></tr>
+            <tr><td style="padding:4px 0;color:#6b7280;">وقت البدء</td><td dir="ltr" style="padding:4px 0;text-align:right;">${esc(input.when)}</td></tr>
+            <tr><td style="padding:4px 0;color:#6b7280;">معرّف التشغيل</td><td dir="ltr" style="padding:4px 0;font-family:monospace;text-align:right;">${esc(input.runId)}</td></tr>
           </table>
-          <pre style="margin:0 0 16px;padding:12px;background:#f3f4f6;border-radius:8px;font-size:12px;line-height:1.5;color:#111827;white-space:pre-wrap;word-break:break-word;">${esc(input.error)}</pre>
+          <!-- The pg_dump error itself is English/technical; kept LTR so it stays readable. -->
+          <pre dir="ltr" style="margin:0 0 16px;padding:12px;background:#f3f4f6;border-radius:8px;font-size:12px;line-height:1.5;color:#111827;white-space:pre-wrap;word-break:break-word;text-align:left;">${esc(input.error)}</pre>
           <p style="margin:0;font-size:12px;color:#6b7280;">
-            System Administration &rarr; Backups
+            إدارة النظام &larr; النسخ الاحتياطي
           </p>
         </td>
       </tr>

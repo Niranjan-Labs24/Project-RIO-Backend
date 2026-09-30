@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MailerModule } from '../../mailer/mailer.module';
 import { SmsModule } from '../../sms/sms.module';
+import { TranslationModule } from '../translation/translation.module';
 import { SurveyReminderService } from './survey-reminder.service';
 import { SurveySessionsService } from './survey-sessions.service';
 
@@ -14,7 +15,7 @@ import { SurveySessionsService } from './survey-sessions.service';
  * AppModule — same as BackupModule and SystemLogsModule.
  */
 @Module({
-  imports: [MailerModule, SmsModule],
+  imports: [MailerModule, SmsModule, TranslationModule],
   providers: [SurveySessionsService, SurveyReminderService],
   exports: [SurveySessionsService],
 })
