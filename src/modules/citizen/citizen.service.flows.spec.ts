@@ -75,10 +75,14 @@ function setup(cfg: Record<string, unknown> = { nodeEnv: 'development' }) {
     getActiveCitizenPolicy: vi.fn().mockResolvedValue({ version: '2.0', text: 'x', textAr: null }),
   };
   const cleaning = { cleanSurveyResponse: vi.fn().mockResolvedValue(undefined) };
+  // The citizen OTP is emailed now, so this is the delivery mock the
+  // request-OTP tests assert against — `sms` stays wired but unused.
+  const mailer = { sendCitizenOtpEmail: vi.fn().mockResolvedValue(true) };
   const svc = new CitizenService(
     tenant as never,
     passwords as never,
     sms as never,
+    mailer as never,
     surveys as never,
     audit as never,
     scoring as never,
@@ -88,7 +92,7 @@ function setup(cfg: Record<string, unknown> = { nodeEnv: 'development' }) {
     cleaning as never,
     cfg as never,
   );
-  return { svc, tx, passwords, sms, surveys, audit, scoring, rollup, sessions, consent, cleaning };
+  return { svc, tx, passwords, sms, mailer, surveys, audit, scoring, rollup, sessions, consent, cleaning };
 }
 
 const question = (over: Record<string, unknown> = {}) => ({
@@ -118,6 +122,7 @@ describe('CitizenService.resolveSurvey', () => {
         question({ id: 'q7', answerType: 'rating' }),
         question({ id: 'q8', answerType: 'long_text' }),
         question({ id: 'q9', answerType: 'select', answerOptions: null, answerOptionsAr: null }),
+        question({ id: 'q10', answerType: 'numeric' }),
       ],
     });
     const result = await svc.resolveSurvey('tok');
@@ -131,14 +136,17 @@ describe('CitizenService.resolveSurvey', () => {
       'scale',
       'text',
       'single_choice',
+      // Not 'text': a numeric question gets a number box, so a respondent
+      // cannot answer "5 days" to "on how many days...".
+      'numeric',
     ]);
     expect(result.questions[3]).toMatchObject({ options: ['Yes', 'No'], optionsAr: null });
     expect(result.questions[5]).toMatchObject({ options: ['1', '2', '3', '4', '5'] });
     expect(result).toMatchObject({
       studyTitle: 'Study',
       organizationName: 'Acme',
-      questionCount: 9,
-      estimatedMinutes: 3,
+      questionCount: 10,
+      estimatedMinutes: 4,
     });
   });
 
@@ -215,28 +223,36 @@ describe('CitizenService sessions, duplicates and codes', () => {
     });
   });
 
-  it('sends a code, links it to the session, and shows it only when it could not be texted outside production', async () => {
-    const { svc, sessions, sms } = setup();
+  it('emails the code to the contact, links it to the session, and reveals it only when delivery failed outside production', async () => {
+    const { svc, sessions, mailer, sms } = setup();
     const sent = await svc.requestOtp('tok', {
       contact: 'a@b.test',
       mobile: '+966512345678',
       sessionId: 'sess',
     } as never);
-    expect(sent).toMatchObject({ challengeId: 'c1', codeTexted: true, code: undefined });
+    expect(sent).toMatchObject({ challengeId: 'c1', codeSent: true, code: undefined });
+
+    // Client decision 2026-09-30: the code goes to the email address, never
+    // to the mobile. The mobile is still collected — it is half of the
+    // duplicate check — so it must still reach the session unchanged.
+    expect(mailer.sendCitizenOtpEmail).toHaveBeenCalledWith('a@b.test', expect.stringMatching(/^\d{6}$/));
+    expect(sms.sendOtpCode).not.toHaveBeenCalled();
     expect(sessions.linkChallenge).toHaveBeenCalledWith('org-1', 'sess', {
       id: 'c1',
       contact: 'a@b.test',
       mobile: '+966512345678',
     });
-    sms.sendOtpCode.mockResolvedValue(false);
+
+    mailer.sendCitizenOtpEmail.mockResolvedValue(false);
     const notSent = await svc.requestOtp('tok', {
       contact: 'a@b.test',
       mobile: '+966512345678',
     } as never);
     expect(notSent.code).toMatch(/^\d{6}$/);
     expect(sessions.linkChallenge).toHaveBeenCalledTimes(1);
+
     const prod = setup({ nodeEnv: 'production' });
-    prod.sms.sendOtpCode.mockResolvedValue(false);
+    prod.mailer.sendCitizenOtpEmail.mockResolvedValue(false);
     expect(
       (await prod.svc.requestOtp('tok', { contact: 'a@b.test', mobile: '1' } as never)).code,
     ).toBeUndefined();

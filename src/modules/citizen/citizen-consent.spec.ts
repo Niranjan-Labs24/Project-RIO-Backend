@@ -94,6 +94,7 @@ function makeService(overrides: { activeNotice?: unknown; noticeError?: Error } 
     tenant as never,
     {} as never, // passwords — unused on this path
     {} as never, // sms
+    {} as never, // mailer — unused on this path
     {} as never, // surveys
     audit as never,
     // Scoring/rollup fire after the transaction and are deliberately

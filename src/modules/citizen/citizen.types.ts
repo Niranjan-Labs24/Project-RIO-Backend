@@ -64,8 +64,11 @@ export interface RequestOtpPayload {
 export interface RequestOtpResult {
   challengeId: string;
   expiresAt: string;
-  codeTexted: boolean;
-  /** Only present when `codeTexted` is false and SMS isn't configured
+  /** True when the code was handed to the mail provider. Named for the
+   *  channel, not the transport that used to carry it — the code now goes
+   *  to the respondent's email, never to their mobile. */
+  codeSent: boolean;
+  /** Only present when `codeSent` is false and mail isn't configured
    * (dev/test) — mirrors the temp-password reveal convention in
    * UsersService.invite/AuthService.signup, since there's otherwise no way
    * for the respondent to get the code at all. */

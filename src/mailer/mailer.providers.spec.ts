@@ -168,3 +168,94 @@ describe('MailerService over Resend', () => {
     expect(record).toHaveBeenCalledTimes(5);
   });
 });
+
+/**
+ * The public survey's OTP is the one email that may be billed to a second,
+ * unrelated account (SURVEY_OTP_MAIL_PROVIDER). These prove the two halves
+ * that matter: that it really does leave through the other account, and
+ * that nothing else follows it there.
+ */
+describe('MailerService survey-OTP-only account', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 202 }));
+    vi.stubGlobal('fetch', fetchMock);
+    send.mockReset();
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** Main account on Twilio, citizen OTP on the client's SendGrid. */
+  const split = {
+    mailProvider: 'twilio',
+    surveyOtpMailProvider: 'sendgrid',
+    surveyOtpSendgridApiKey: 'SG.client_key',
+    surveyOtpSendgridFromAddress: 'otp@client.test',
+    surveyOtpSendgridFromName: 'RIO',
+  };
+
+  const authOf = (call: number) => fetchMock.mock.calls[call]![1].headers.Authorization;
+
+  it('sends the citizen OTP through the second account', async () => {
+    const svc = new MailerService(config(split));
+    await expect(svc.sendCitizenOtpEmail('a@b.test', '123456')).resolves.toBe(true);
+    expect(fetchMock.mock.calls[0]![0]).toBe('https://api.sendgrid.com/v3/mail/send');
+    expect(authOf(0)).toBe('Bearer SG.client_key');
+    expect(JSON.parse(fetchMock.mock.calls[0]![1].body).from.email).toBe('otp@client.test');
+  });
+
+  it('leaves every other email on the main account', async () => {
+    const svc = new MailerService(config(split));
+    for (const [, call] of senders) await expect(call(svc)).resolves.toBe(true);
+    const twilioAuth = `Basic ${Buffer.from('sid:secret').toString('base64')}`;
+    for (let i = 0; i < senders.length; i++) {
+      expect(fetchMock.mock.calls[i]![0]).toBe('https://comms.twilio.com/v1/Emails');
+      expect(authOf(i)).toBe(twilioAuth);
+    }
+  });
+
+  it('keeps the citizen OTP on the main account when no second account is set', async () => {
+    const svc = new MailerService(config({ mailProvider: 'twilio' }));
+    await expect(svc.sendCitizenOtpEmail('a@b.test', '1')).resolves.toBe(true);
+    expect(fetchMock.mock.calls[0]![0]).toBe('https://comms.twilio.com/v1/Emails');
+  });
+
+  it('falls back to the main account when the second one is half-configured', async () => {
+    // A mistyped credential must not leave respondents unable to submit.
+    const svc = new MailerService(config({ ...split, surveyOtpSendgridApiKey: undefined }));
+    await expect(svc.sendCitizenOtpEmail('a@b.test', '1')).resolves.toBe(true);
+    expect(fetchMock.mock.calls[0]![0]).toBe('https://comms.twilio.com/v1/Emails');
+  });
+
+  it("sends the citizen OTP over Twilio's own Emails API when that is the second account", async () => {
+    // The reverse split, and the one the client is most likely to want: no
+    // SendGrid account at all on their side, just a Twilio Email API key.
+    const svc = new MailerService(
+      config({
+        mailProvider: 'sendgrid',
+        surveyOtpMailProvider: 'twilio',
+        surveyOtpTwilioEmailApiKeySid: 'SKclient',
+        surveyOtpTwilioEmailApiKeySecret: 'clientsecret',
+        surveyOtpTwilioEmailFromAddress: 'otp@client.test',
+        surveyOtpTwilioEmailFromName: 'RIO',
+      }),
+    );
+
+    await expect(svc.sendCitizenOtpEmail('a@b.test', '123456')).resolves.toBe(true);
+    expect(fetchMock.mock.calls[0]![0]).toBe('https://comms.twilio.com/v1/Emails');
+    expect(authOf(0)).toBe(`Basic ${Buffer.from('SKclient:clientsecret').toString('base64')}`);
+    expect(JSON.parse(fetchMock.mock.calls[0]![1].body).from.address).toBe('otp@client.test');
+
+    // ...and the main account is untouched: still SendGrid, still its key.
+    await expect(svc.sendLoginOtpEmail('a@b.test', '1')).resolves.toBe(true);
+    expect(fetchMock.mock.calls[1]![0]).toBe('https://api.sendgrid.com/v3/mail/send');
+    expect(authOf(1)).toBe('Bearer SG.key');
+  });
+
+  it('names the second account, not the main one, when its send fails', async () => {
+    fetchMock.mockResolvedValue(new Response('nope', { status: 401 }));
+    const record = vi.fn();
+    const svc = new MailerService(config(split), { record } as never);
+    await expect(svc.sendCitizenOtpEmail('a@b.test', '1')).resolves.toBe(false);
+    expect(record.mock.calls[0]![0].context.provider).toBe('sendgrid');
+  });
+});

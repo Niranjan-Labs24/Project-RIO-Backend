@@ -126,6 +126,39 @@ export class ConfigService {
   get sendgridFromName(): string {
     return this.config.SENDGRID_FROM_NAME;
   }
+  // Survey-OTP-only mail account. `surveyOtpMailProvider` being undefined is
+  // the switch: MailerService only builds its second client when it is set,
+  // so every existing environment keeps one client and one account.
+  get surveyOtpMailProvider(): 'resend' | 'twilio' | 'sendgrid' | undefined {
+    return this.config.SURVEY_OTP_MAIL_PROVIDER;
+  }
+  get surveyOtpMailFrom(): string | undefined {
+    return this.config.SURVEY_OTP_MAIL_FROM;
+  }
+  get surveyOtpResendApiKey(): string | undefined {
+    return this.config.SURVEY_OTP_RESEND_API_KEY;
+  }
+  get surveyOtpTwilioEmailApiKeySid(): string | undefined {
+    return this.config.SURVEY_OTP_TWILIO_EMAIL_API_KEY_SID;
+  }
+  get surveyOtpTwilioEmailApiKeySecret(): string | undefined {
+    return this.config.SURVEY_OTP_TWILIO_EMAIL_API_KEY_SECRET;
+  }
+  get surveyOtpTwilioEmailFromAddress(): string | undefined {
+    return this.config.SURVEY_OTP_TWILIO_EMAIL_FROM_ADDRESS;
+  }
+  get surveyOtpTwilioEmailFromName(): string {
+    return this.config.SURVEY_OTP_TWILIO_EMAIL_FROM_NAME ?? 'RIO';
+  }
+  get surveyOtpSendgridApiKey(): string | undefined {
+    return this.config.SURVEY_OTP_SENDGRID_API_KEY;
+  }
+  get surveyOtpSendgridFromAddress(): string | undefined {
+    return this.config.SURVEY_OTP_SENDGRID_FROM_ADDRESS;
+  }
+  get surveyOtpSendgridFromName(): string {
+    return this.config.SURVEY_OTP_SENDGRID_FROM_NAME ?? 'RIO';
+  }
   get csrfEnforce(): boolean {
     return this.config.CSRF_ENFORCE;
   }

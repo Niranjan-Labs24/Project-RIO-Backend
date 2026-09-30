@@ -129,6 +129,38 @@ export const EnvSchema = Type.Object({
   SENDGRID_API_KEY: Type.Optional(Type.String()),
   SENDGRID_FROM_ADDRESS: Type.Optional(Type.String()),
   SENDGRID_FROM_NAME: Type.String({ default: 'RIO' }),
+  // Survey-OTP-only email account (optional, off by default).
+  //
+  // The public survey's OTP is the one email the client wants billed to
+  // THEIR Twilio/SendGrid account rather than ours. Setting
+  // SURVEY_OTP_MAIL_PROVIDER builds a SECOND, fully independent mail client
+  // that MailerService.sendCitizenOtpEmail uses and nothing else does —
+  // invites, temp passwords, resets, survey links and reminders all keep
+  // going through MAIL_PROVIDER above, on the account they use today.
+  //
+  // Unset (the default) the behaviour is exactly as before: the citizen OTP
+  // shares the main client, so no existing environment changes. Set but
+  // missing its keys, MailerService logs a warning at startup and falls
+  // back to the main client anyway — a typo in a credential must never
+  // strand a respondent who cannot submit their response without the code.
+  SURVEY_OTP_MAIL_PROVIDER: Type.Optional(
+    Type.Union([Type.Literal('resend'), Type.Literal('twilio'), Type.Literal('sendgrid')]),
+  ),
+  // Only read when SURVEY_OTP_MAIL_PROVIDER is 'resend' — the Twilio and
+  // SendGrid clients carry their own verified sender (below) and ignore a
+  // per-message from address entirely. Falls back to MAIL_FROM.
+  SURVEY_OTP_MAIL_FROM: Type.Optional(Type.String()),
+  SURVEY_OTP_RESEND_API_KEY: Type.Optional(Type.String()),
+  SURVEY_OTP_TWILIO_EMAIL_API_KEY_SID: Type.Optional(Type.String()),
+  SURVEY_OTP_TWILIO_EMAIL_API_KEY_SECRET: Type.Optional(Type.String()),
+  // No default, unlike TWILIO_EMAIL_FROM_ADDRESS: that one defaults to the
+  // impetus.sa sender, which is exactly the account this block exists to
+  // send *away* from. Must be a verified sender on the client's account.
+  SURVEY_OTP_TWILIO_EMAIL_FROM_ADDRESS: Type.Optional(Type.String()),
+  SURVEY_OTP_TWILIO_EMAIL_FROM_NAME: Type.Optional(Type.String()),
+  SURVEY_OTP_SENDGRID_API_KEY: Type.Optional(Type.String()),
+  SURVEY_OTP_SENDGRID_FROM_ADDRESS: Type.Optional(Type.String()),
+  SURVEY_OTP_SENDGRID_FROM_NAME: Type.Optional(Type.String()),
   // Twilio (SMS OTP delivery for the citizen public survey flow — see
   // SmsService). When TWILIO_ACCOUNT_SID is unset the SMS channel is "not
   // configured", same not-configured/soft-fail convention as Resend above —
