@@ -443,8 +443,11 @@ describe('HistoricalStudiesService.importToDashboard', () => {
     expect(tenant.studyCenters).toEqual([{ studyId: result.studyId, orgId: 'org-a', centerId: 'center-1' }]);
   });
 
+  // .pdf is importable now (the archive reads it through the same AI
+  // extraction the bulk preview uses), so this needs a format the needs
+  // module genuinely has no parser for. Word is that format.
   it('refuses a file type the needs importer cannot parse', async () => {
-    const { svc } = build({ rows: [importableRow({ fileName: 'legacy-study.pdf' })] });
+    const { svc } = build({ rows: [importableRow({ fileName: 'legacy-study.docx' })] });
 
     await expect(
       runAsOrg('org-a', 'user-1', () => svc.importToDashboard('hist-1')),
