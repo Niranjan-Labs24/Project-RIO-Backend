@@ -1,4 +1,5 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { TranslationService } from '../translation/translation.service';
 import { v7 as uuidv7 } from 'uuid';
 import { ConsentPolicyKind, UserStatus } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
@@ -59,7 +60,25 @@ export class OrganizationsService {
     private readonly mailer: MailerService,
     private readonly nicRegistry: NicRegistryService,
     private readonly consentPolicies: ConsentService,
+    // Optional so a unit test that builds the service by hand needs no
+    // stub — arabicEntityName() then just keeps the stored name.
+    @Optional() private readonly translation?: TranslationService,
   ) {}
+
+  // The temporary-password email is Arabic (UAT-11), but the entity name was
+  // interpolated as stored — usually its English name — leaving English
+  // inside the Arabic copy (client-reported). Resolved the same way the
+  // sharing emails resolve names: the national registry's official Arabic
+  // name first, then the live translation. Never fails the send.
+  private async arabicEntityName(name: string): Promise<string> {
+    try {
+      if (!this.translation) return name;
+      const { translatedText } = await this.translation.translate(name, 'ar');
+      return translatedText || name;
+    } catch {
+      return name;
+    }
+  }
 
   async getCurrent(): Promise<Organization> {
     const row = await this.tenant.runInOrgContext((tx) =>
@@ -250,7 +269,7 @@ export class OrganizationsService {
       // defaults to Arabic.
       await this.mailer.sendTemporaryPassword(
         payload.adminEmail,
-        payload.name,
+        await this.arabicEntityName(payload.name),
         DEFAULT_TEMP_PASSWORD,
         'ar',
       );
@@ -430,7 +449,7 @@ export class OrganizationsService {
 
     await this.mailer.sendTemporaryPassword(
       admin.email,
-      current.name,
+      await this.arabicEntityName(current.name),
       temporaryPassword,
       'ar',
     );
