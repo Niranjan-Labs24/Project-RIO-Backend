@@ -1,5 +1,6 @@
 import { ROLE_KEYS } from '../../rbac/role-keys';
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { TranslationService } from '../translation/translation.service';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma, UserStatus } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
@@ -35,7 +36,25 @@ export class UsersService {
     private readonly audit: AuditService,
     private readonly passwords: PasswordService,
     private readonly mailer: MailerService,
+    // Optional so a unit test that builds the service by hand needs no
+    // stub — arabicEntityName() then just keeps the stored name.
+    @Optional() private readonly translation?: TranslationService,
   ) {}
+
+  // The temporary-password email is Arabic (UAT-11), but the entity name was
+  // interpolated as stored — usually its English name — leaving English
+  // inside the Arabic copy (client-reported). Resolved the same way the
+  // sharing emails resolve names: the national registry's official Arabic
+  // name first, then the live translation. Never fails the send.
+  private async arabicEntityName(name: string): Promise<string> {
+    try {
+      if (!this.translation) return name;
+      const { translatedText } = await this.translation.translate(name, 'ar');
+      return translatedText || name;
+    } catch {
+      return name;
+    }
+  }
 
   async list(opts: { limit?: number; offset?: number } = {}): Promise<OrgUser[]> {
     const { take, skip } = this.page(opts);
@@ -108,7 +127,7 @@ export class UsersService {
     );
     // UAT-11 (Ganesh's brief, 2026-09-29) — every system-triggered email
     // defaults to Arabic.
-    await this.mailer.sendTemporaryPassword(email, orgName, temporaryPassword, 'ar');
+    await this.mailer.sendTemporaryPassword(email, await this.arabicEntityName(orgName), temporaryPassword, 'ar');
     return { temporaryPasswordEmailed: true };
   }
 

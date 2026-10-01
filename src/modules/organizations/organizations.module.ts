@@ -8,9 +8,10 @@ import { UsersModule } from '../users/users.module';
 import { MailerModule } from '../../mailer/mailer.module';
 import { NicRegistryModule } from '../nic-registry/nic-registry.module';
 import { ConsentModule } from '../consent/consent.module';
+import { TranslationModule } from '../translation/translation.module';
 
 @Module({
-  imports: [DomainsModule, GeographyModule, UsersModule, MailerModule, NicRegistryModule, ConsentModule],
+  imports: [DomainsModule, GeographyModule, UsersModule, MailerModule, NicRegistryModule, ConsentModule, TranslationModule],
   controllers: [OrganizationsController],
   providers: [OrganizationsService, PasswordService],
 })
