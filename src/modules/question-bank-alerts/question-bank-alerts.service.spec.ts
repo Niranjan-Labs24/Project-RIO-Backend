@@ -26,21 +26,25 @@ const q = (over: Record<string, unknown> = {}) => ({
 });
 
 describe('QuestionBankAlertsService', () => {
-  it('shows reviewers the pending changes and what kind each one is', async () => {
+  it('shows the system reviewer the pending changes and what kind each one is', async () => {
     const { svc, tx } = setup();
     tx.question.findMany.mockResolvedValue([
       q(),
       q({ id: 'q2', previousVersionId: 'p' }),
       q({ id: 'q3', previousVersionId: 'p', isActive: false }),
     ]);
-    for (const role of ['human_reviewer', 'system_reviewer']) {
-      const out = await as(role, 'u1', () => svc.listAlerts());
-      expect(out.map((a) => (a as { changeKind: string }).changeKind)).toEqual([
-        'created',
-        'edited',
-        'deactivated',
-      ]);
-    }
+    const out = await as('system_reviewer', 'u1', () => svc.listAlerts());
+    expect(out.map((a) => (a as { changeKind: string }).changeKind)).toEqual([
+      'created',
+      'edited',
+      'deactivated',
+    ]);
+  });
+
+  it('gives the NGO-side human reviewer no feed now the Methodology screens are NCNP-only', async () => {
+    const { svc, tx } = setup();
+    tx.question.findMany.mockResolvedValue([q()]);
+    await expect(as('human_reviewer', 'u1', () => svc.listAlerts())).resolves.toEqual([]);
   });
 
   it('shows a system admin the outcome of their own recent submissions', async () => {

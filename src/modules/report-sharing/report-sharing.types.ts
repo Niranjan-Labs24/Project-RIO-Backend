@@ -88,3 +88,22 @@ export interface ReportLookupResult {
   id: string;
   title: string;
 }
+
+/**
+ * One row of the Report Catalog (client change 2026-10-05, bug 9): an
+ * approved report another organization could request. Metadata only — the
+ * content stays behind the existing request/approve flow.
+ */
+export interface ReportCatalogItem {
+  reportId: string;
+  title: string;
+  reportType: string;
+  generatedAt: string;
+  ownerOrgId: string;
+  ownerOrgName: string;
+  /** The parent Study's Target Sector, when the report belongs to one. */
+  sector: string | null;
+  /** The caller's own most recent request for this report, if any. An
+   * approved request past its expiry is reported as "expired". */
+  myRequest: { id: string; status: SharingStatus; expiresAt: string | null } | null;
+}

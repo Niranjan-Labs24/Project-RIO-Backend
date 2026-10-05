@@ -871,3 +871,51 @@ describe('ReportSharingService.listPage', () => {
     ).rejects.toMatchObject({ response: { error: { code: 'VALIDATION_ERROR' } } });
   });
 });
+
+describe("ReportSharingService.listCatalog", () => {
+  const report = (id: string, over: Record<string, unknown> = {}) => ({
+    id,
+    title: `Report ${id}`,
+    reportType: "individual_survey",
+    generatedAt: new Date("2026-09-01T00:00:00Z"),
+    orgId: "org-owner",
+    org: { name: "Owner Org" },
+    study: { targetSector: "Health" },
+    ...over,
+  });
+
+  function build(reports: unknown[], requests: unknown[]) {
+    const reportFindMany = vi.fn().mockResolvedValue(reports);
+    const tenant = { runAsSupervisor: async (fn: (tx: unknown) => unknown) => fn({ report: { findMany: reportFindMany } }) };
+    const prisma = { reportSharingRequest: { findMany: vi.fn().mockResolvedValue(requests) } };
+    const svc = new ReportSharingService(
+      prisma as never, tenant as never, {} as never, {} as never, {} as never, {} as never,
+    );
+    return { svc, reportFindMany };
+  }
+
+  it("lists other organizations' released reports with the caller's latest request status", async () => {
+    const past = new Date(Date.now() - 86_400_000);
+    const { svc, reportFindMany } = build(
+      [report("r1"), report("r2", { study: null }), report("r3"), report("r4")],
+      [
+        { id: "q-new", reportId: "r1", status: "pending", expiresAt: null },
+        { id: "q-old", reportId: "r1", status: "rejected", expiresAt: null },
+        { id: "q3", reportId: "r3", status: "approved", expiresAt: past },
+        { id: "q4", reportId: "r4", status: "approved", expiresAt: null },
+      ],
+    );
+    const out = await orgContext.run({ requestId: "r", orgId: "org-me", actorId: "u1" }, () => svc.listCatalog());
+
+    const where = reportFindMany.mock.calls[0]![0].where;
+    expect(where).toMatchObject({ orgId: { not: "org-me" }, org: { isActive: true } });
+    expect(where.status.in).toEqual(expect.arrayContaining(["released", "archived"]));
+    expect(out.map((i) => [i.reportId, i.myRequest?.status ?? null, i.sector])).toEqual([
+      ["r1", "pending", "Health"],
+      ["r2", null, null],
+      ["r3", "expired", "Health"],
+      ["r4", "approved", "Health"],
+    ]);
+    expect(out[0]).toMatchObject({ ownerOrgId: "org-owner", ownerOrgName: "Owner Org", myRequest: { id: "q-new" } });
+  });
+});

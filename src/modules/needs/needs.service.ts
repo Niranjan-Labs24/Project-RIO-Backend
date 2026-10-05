@@ -230,6 +230,31 @@ export class NeedsService {
     }
   }
 
+  // Per governorate: the Study's own Centers in it, or — when the Study
+  // picked none there — every Center of that governorate. Without the
+  // fallback a Study covering Al-Udayd but none of its Centers made a Need
+  // there impossible: assertGovernorateAndCenterRequired demanded a Center
+  // (Al-Udayd has some), yet every one was "not in the Study's scope".
+  // The Need form offers the same set (useStudyCenters).
+  private async allowedNeedCenterIds(
+    tx: Prisma.TransactionClient,
+    governorateIds: string[],
+    studyCenterIds: string[],
+  ): Promise<Set<string>> {
+    const centers = await tx.center.findMany({
+      where: { governorateId: { in: governorateIds } },
+      select: { id: true, governorateId: true },
+    });
+    const studyCenterIdSet = new Set(studyCenterIds);
+    const allowed = new Set<string>();
+    for (const governorateId of governorateIds) {
+      const inGovernorate = centers.filter((c) => c.governorateId === governorateId);
+      const picked = inGovernorate.filter((c) => studyCenterIdSet.has(c.id));
+      for (const c of picked.length > 0 ? picked : inGovernorate) allowed.add(c.id);
+    }
+    return allowed;
+  }
+
   private async assertGeographyInStudyScope(
     tx: Prisma.TransactionClient,
     studyId: string,
@@ -259,8 +284,8 @@ export class NeedsService {
 
     if (centerIds.length > 0) {
       await this.geography.validateHierarchy({ governorateIds, centerIds });
-      const studyCenterIdSet = new Set(studyCenterIds);
-      const orphanCenter = centerIds.find((id) => !studyCenterIdSet.has(id));
+      const allowed = await this.allowedNeedCenterIds(tx, governorateIds, studyCenterIds);
+      const orphanCenter = centerIds.find((id) => !allowed.has(id));
       if (orphanCenter) {
         throw new BadRequestException({
           error: { code: 'CENTER_NOT_IN_STUDY_SCOPE', message: "One or more Centers are not one of the Study's selected Centers." },

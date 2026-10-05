@@ -14,8 +14,12 @@ import { EXPORTABLE_STATUSES } from "../reports/reports.types";
 import type { SharingStatus } from "../sharing/sharing.types";
 import type {
   CreateReportSharingRequestPayload, DecideReportSharingRequestPayload, OrgLookupResult,
-  ReportLookupResult, ReportSharingRequest, ReportSharingRequestRow, SharedReportSnapshot,
+  ReportCatalogItem, ReportLookupResult, ReportSharingRequest, ReportSharingRequestRow, SharedReportSnapshot,
 } from "./report-sharing.types";
+
+// A ceiling, not paging: the catalog is searched and filtered client-side,
+// and released reports across every organization stay in the hundreds.
+const CATALOG_LIMIT = 500;
 
 const SHARING_STATUSES: SharingStatus[] = ["pending", "approved", "rejected", "expired", "withdrawn"];
 
@@ -355,6 +359,65 @@ export class ReportSharingService {
       }),
     );
     return rows.map((r) => ({ id: r.id, name: r.name }));
+  }
+
+  // The Report Catalog (client change 2026-10-05, bug 9): every report the
+  // caller could request, across all other active organizations, in one
+  // list — the same eligibility as lookupOrganizations + lookupReportsForOrg
+  // (not the caller's own, released/archived only), plus the caller's own
+  // latest request per report so the catalog can say where each one stands.
+  async listCatalog(): Promise<ReportCatalogItem[]> {
+    const orgId = requireOrgId();
+    const [reports, requests] = await Promise.all([
+      this.tenant.runAsSupervisor((tx) =>
+        tx.report.findMany({
+          where: {
+            orgId: { not: orgId },
+            status: { in: EXPORTABLE_STATUSES },
+            org: { isActive: true },
+          },
+          orderBy: { generatedAt: "desc" },
+          take: CATALOG_LIMIT,
+          select: {
+            id: true,
+            title: true,
+            reportType: true,
+            generatedAt: true,
+            orgId: true,
+            org: { select: { name: true } },
+            study: { select: { targetSector: true } },
+          },
+        }),
+      ),
+      this.prisma.reportSharingRequest.findMany({
+        where: { requestingOrgId: orgId },
+        orderBy: { requestedAt: "desc" },
+        select: { id: true, reportId: true, status: true, expiresAt: true },
+      }),
+    ]);
+    // Newest first, so the first one seen per report is the latest.
+    const latest = new Map<string, (typeof requests)[number]>();
+    for (const r of requests) if (!latest.has(r.reportId)) latest.set(r.reportId, r);
+    return reports.map((r) => {
+      const req = latest.get(r.id);
+      const lapsed = req?.status === "approved" && req.expiresAt !== null && req.expiresAt.getTime() <= Date.now();
+      return {
+        reportId: r.id,
+        title: r.title,
+        reportType: r.reportType,
+        generatedAt: r.generatedAt.toISOString(),
+        ownerOrgId: r.orgId,
+        ownerOrgName: r.org.name,
+        sector: r.study?.targetSector ?? null,
+        myRequest: req
+          ? {
+              id: req.id,
+              status: lapsed ? "expired" : req.status,
+              expiresAt: req.expiresAt ? req.expiresAt.toISOString() : null,
+            }
+          : null,
+      };
+    });
   }
 
   // Only an org's own APPROVED reports are eligible to be requested for

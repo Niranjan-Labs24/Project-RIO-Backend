@@ -154,14 +154,12 @@ describe('StudiesService.create', () => {
     await expect(asOrg(() => open.svc.create(payload))).resolves.toBeTruthy();
   });
 
-  it("rejects geography outside the organization's own scope", async () => {
-    const { svc } = setup();
+  it("accepts geography outside the organization's registered area, still validating the hierarchy", async () => {
+    const { svc, geography } = setup();
     await expect(
-      asOrg(() => svc.create({ ...(payload as object), governorateIds: ['g9'] } as never)),
-    ).rejects.toMatchObject({ response: { error: { code: 'GOVERNORATE_NOT_IN_ORG_SCOPE' } } });
-    await expect(
-      asOrg(() => svc.create({ ...(payload as object), centerIds: ['c9'] } as never)),
-    ).rejects.toMatchObject({ response: { error: { code: 'CENTER_NOT_IN_ORG_SCOPE' } } });
+      asOrg(() => svc.create({ ...(payload as object), governorateIds: ['g9'], centerIds: ['c9'] } as never)),
+    ).resolves.toBeTruthy();
+    expect(geography.validateHierarchy).toHaveBeenCalledWith({ governorateIds: ['g9'], centerIds: ['c9'] });
   });
 
   it('copes with an organization that has no geography recorded', async () => {

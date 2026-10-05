@@ -86,7 +86,7 @@ export class StudiesService {
     // Resolved inside the transaction, read by the audit record after it commits.
     let methodologyLabel: string | null = null;
     const created = await this.tenant.runInOrgContext(async (tx) => {
-      await this.assertGeographyInOrgScope(tx, orgId, payload.governorateIds, payload.centerIds);
+      await this.assertGeographyValid(payload.governorateIds, payload.centerIds);
       if (payload.methodologyVersionId) {
         methodologyLabel = await this.assertMethodologyVersionPublished(tx, payload.methodologyVersionId);
       }
@@ -176,36 +176,15 @@ export class StudiesService {
     }
   }
 
-  private async assertGeographyInOrgScope(
-    tx: Prisma.TransactionClient,
-    orgId: string,
-    governorateIds: string[],
-    centerIds: string[],
-  ): Promise<void> {
-    const org = (await tx.organisation.findUnique({
-      where: { id: orgId },
-      include: { orgGovernorates: true, orgCenters: true },
-    })) as { regionId: string | null; orgGovernorates: { governorateId: string }[]; orgCenters: { centerId: string }[] } | null;
-    const orgGovernorateIds = (org?.orgGovernorates ?? []).map((g) => g.governorateId);
-    const orgCenterIds = (org?.orgCenters ?? []).map((c) => c.centerId);
-
-    await this.geography.validateHierarchy({ regionId: org?.regionId ?? null, governorateIds, centerIds });
-
-    const orgGovernorateIdSet = new Set(orgGovernorateIds);
-    const orphanGovernorate = governorateIds.find((id) => !orgGovernorateIdSet.has(id));
-    if (orphanGovernorate) {
-      throw new BadRequestException({
-        error: { code: 'GOVERNORATE_NOT_IN_ORG_SCOPE', message: "One or more Governorates are not one of the organization's selected Governorates." },
-      });
-    }
-
-    const orgCenterIdSet = new Set(orgCenterIds);
-    const orphanCenter = centerIds.find((id) => !orgCenterIdSet.has(id));
-    if (orphanCenter) {
-      throw new BadRequestException({
-        error: { code: 'CENTER_NOT_IN_ORG_SCOPE', message: "One or more Centers are not one of the organization's selected Centers." },
-      });
-    }
+  // Client change (2026-10-05, bugs 1 & 5): a Study may cover any region(s)
+  // and governorates, not only the ones the organization registered for —
+  // the org's registered area no longer restricts study creation. What is
+  // still enforced is that the selection is real and consistent: every
+  // Governorate/Center exists and each Center sits in a selected
+  // Governorate. A Study's region(s) are derived from its governorates
+  // (see reports' resolve-geography), so nothing region-level is stored.
+  private async assertGeographyValid(governorateIds: string[], centerIds: string[]): Promise<void> {
+    await this.geography.validateHierarchy({ governorateIds, centerIds });
   }
 
   /**
@@ -456,7 +435,7 @@ export class StudiesService {
       const nextGovernorateIds = payload.governorateIds ?? current.governorateIds;
       const nextCenterIds = payload.centerIds ?? current.centerIds;
       if (payload.governorateIds !== undefined || payload.centerIds !== undefined) {
-        await this.assertGeographyInOrgScope(tx, orgId, nextGovernorateIds, nextCenterIds);
+        await this.assertGeographyValid(nextGovernorateIds, nextCenterIds);
       }
       const nextMethodologyVersion =
         payload.methodologyVersionId !== undefined
