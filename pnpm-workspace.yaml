@@ -35,6 +35,10 @@ overrides:
   # override silently breaks a consumer built against the older API.
   '@xmldom/xmldom': '>=0.8.15 <0.9.0'
   'multer': '>=2.3.0'
+  # twilio's own range (^1.13.5) already admits the patched axios; the lock
+  # was just pinned below it. Scoped and capped at 2.x so no other consumer
+  # is moved and a future axios major can't slip in under twilio.
+  'twilio>axios': '>=1.20.0 <2.0.0'
   'qs': '>=6.16.0'
   find-my-way: '>=9.7.0'
   valibot: '>=1.4.2'

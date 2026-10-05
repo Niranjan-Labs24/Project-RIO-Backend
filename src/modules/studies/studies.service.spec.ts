@@ -350,8 +350,8 @@ describe('StudiesService.update', () => {
     await asOrg(() => svc.update('s1', {} as never));
   });
 
-  it('404s an unknown study and rejects an unpublished methodology or out-of-scope geography', async () => {
-    const { svc, tx } = setup();
+  it('404s an unknown study and rejects an unpublished methodology or invalid geography', async () => {
+    const { svc, tx, geography } = setup();
     tx.study.findUnique.mockResolvedValueOnce(null);
     await expect(asOrg(() => svc.update('x', {} as never))).rejects.toBeInstanceOf(
       NotFoundException,
@@ -360,6 +360,11 @@ describe('StudiesService.update', () => {
     await expect(
       asOrg(() => svc.update('s1', { methodologyVersionId: 'mv9' } as never)),
     ).rejects.toBeInstanceOf(BadRequestException);
+    // Geography outside the org's registered area is allowed now (client
+    // change 2026-10-05); a governorate the reference data rejects is not.
+    geography.validateHierarchy.mockRejectedValueOnce(
+      new BadRequestException({ error: { code: 'GOVERNORATE_NOT_FOUND', message: 'One or more Governorates not found' } }),
+    );
     await expect(
       asOrg(() => svc.update('s1', { governorateIds: ['nope'] } as never)),
     ).rejects.toBeInstanceOf(BadRequestException);
