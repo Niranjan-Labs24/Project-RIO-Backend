@@ -3,7 +3,10 @@ import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import { parseIntParam } from '../../common/http/query.util';
-import { CreateOrganizationBody, UpdateOrganizationBody, UpdateOrganizationStatusBody } from './organizations.contract';
+import {
+  CreateOrganizationBody, SetCatalogDefaultBody, UpdateOrganizationBody, UpdateOrganizationStatusBody,
+  type SetCatalogDefaultDto,
+} from './organizations.contract';
 import { OrganizationsService } from './organizations.service';
 import { UsersService } from '../users/users.service';
 import { AssignNgoAdminBody, UpdateUserRoleBody, UpdateUserStatusBody, InviteUserBody } from '../users/users.contract';
@@ -31,6 +34,13 @@ export class OrganizationsController {
   @RequirePermission('entityTeam', 'write')
   updateCurrent(@Body(new TypeBoxValidationPipe(UpdateOrganizationBody)) body: UpdateOrganizationPayload): Promise<Organization> {
     return this.orgs.updateCurrent(body ?? {});
+  }
+
+  // Report Catalog default for this organisation's approved reports.
+  @Patch('current/catalog-default')
+  @RequirePermission('entityTeam', 'write')
+  setCatalogDefault(@Body(new TypeBoxValidationPipe(SetCatalogDefaultBody)) body: SetCatalogDefaultDto): Promise<Organization> {
+    return this.orgs.setCatalogDefault(body.visible);
   }
 
   @Get()

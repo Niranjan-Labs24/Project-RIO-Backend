@@ -94,6 +94,8 @@ export interface ReportRow {
   reviewedAt: Date | null;
   reviewerNotes: string | null;
   archivedAt: Date | null;
+  /** Report Catalog override; null follows the organisation default. */
+  catalogVisible?: boolean | null;
 }
 
 export interface Report {
@@ -124,6 +126,9 @@ export interface Report {
   // requirement extends to all four report categories).
   reviewerNotes: string | null;
   archivedAt: string | null;
+  /** Report Catalog "Show in catalog" override; null = organisation default.
+   * Pending client confirmation — the UI control is hidden until then. */
+  catalogVisible: boolean | null;
   exportFormats: ExportFormat[];
 }
 

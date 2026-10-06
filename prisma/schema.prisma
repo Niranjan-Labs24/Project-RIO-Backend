@@ -226,6 +226,11 @@ model Organisation {
   // OrganisationCenter below.
   regionId           String?  @map("region_id") @db.Uuid
   isActive           Boolean  @default(true) @map("is_active")
+  // Report Catalog (client recommendation 2026-10-05, pending confirmation):
+  // whether this organization's approved reports are listed in other
+  // organizations' Report Catalog by default. A report can override it
+  // (Report.catalogVisible). Default true = today's behaviour.
+  catalogDefaultVisible Boolean @default(true) @map("catalog_default_visible")
   // RIO-FR-010 (client-confirmed): self-registered entities require Center
   // approval before activation. Separate from `isActive` deliberately —
   // `isActive` alone can't distinguish "never yet approved" (pending, first
@@ -2229,6 +2234,10 @@ model Report {
   // NCNP Compiled Report) — see ReportsService.approve/reject.
   reviewerNotes String?     @map("reviewer_notes")
   archivedAt   DateTime?    @map("archived_at") @db.Timestamptz(6)
+  // Per-report "Show in catalog" override; null follows the organization's
+  // catalogDefaultVisible. Listing never grants access — the sharing
+  // request/approval workflow still guards the content.
+  catalogVisible Boolean? @map("catalog_visible")
 
   org    Organisation @relation(fields: [orgId], references: [id], onDelete: Cascade)
   study  Study?       @relation(fields: [studyId], references: [id], onDelete: Cascade)

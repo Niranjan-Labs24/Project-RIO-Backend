@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { TranslationService } from './translation.service';
+import { createHash } from 'node:crypto';
 
 type CacheRow = {
   cacheKey: string;
@@ -117,6 +118,34 @@ describe('TranslationService.translate', () => {
       unchanged: false,
     });
     expect(runSpy).not.toHaveBeenCalled();
+  });
+
+  it('swaps an enum value the model kept in English before caching', async () => {
+    const { service, rows } = makeService({ aiResponse: { translatedText: 'لثقة STANDARD' } });
+    const result = await service.translate('for STANDARD confidence', 'ar');
+    expect(result.translatedText).toBe('لثقة قياسي');
+    expect([...rows.values()][0]?.translatedText).toBe('لثقة قياسي');
+  });
+
+  it('does not serve a cached answer that fails the quality check', async () => {
+    // Cached before the rule existed: English prose left in the Arabic.
+    const seeded: CacheRow[] = [
+      {
+        cacheKey: createHash('sha256').update('en:ar:Water access').digest('hex'),
+        sourceLocale: 'en',
+        targetLocale: 'ar',
+        sourceText: 'Water access',
+        translatedText: 'الوصول إلى water',
+      },
+    ];
+
+    const { service, runSpy } = makeService({
+      seeded,
+      aiResponse: { translatedText: 'الوصول إلى المياه' },
+    });
+    const result = await service.translate('Water access', 'ar');
+    expect(runSpy).toHaveBeenCalled();
+    expect(result.translatedText).toBe('الوصول إلى المياه');
   });
 
   it('falls back to the original text when the AI call fails, without throwing', async () => {

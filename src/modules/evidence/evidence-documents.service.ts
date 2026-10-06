@@ -237,7 +237,10 @@ export class EvidenceDocumentsService {
     }
 
     // Secure org/study scoped storage
-    const storageKey = await this.storage.save(payload.fileName, payload.fileBuffer);
+    // .txt is a supported evidence-document type (SUPPORTED_EXTENSIONS, and the
+    // upload dialog says so) but not in the shared storage list, which
+    // rejected every .txt upload with "This file type is not supported".
+    const storageKey = await this.storage.save(payload.fileName, payload.fileBuffer, SUPPORTED_EXTENSIONS);
 
     let parsingStatus = "PARSED";
     let extractedText: string | null = null;

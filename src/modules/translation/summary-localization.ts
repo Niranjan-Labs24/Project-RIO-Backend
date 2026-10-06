@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { Logger } from '@nestjs/common';
 import type { AiService } from '../ai/ai.service';
 import { buildSummaryTranslationTask } from '../ai/prompts/summary-translation.task';
-import { rejectTranslation } from './translation-quality';
+import { localizeEnumWords, rejectTranslation } from './translation-quality';
 import type { SupportedLocale } from './translation.types';
 
 // A stored AI summary (AiPrioritySummary, CombinedReportSummary,
@@ -21,8 +21,23 @@ const logger = new Logger('SummaryLocalization');
 
 /** Shape of the `localized_outputs` JSONB column. */
 export type LocalizedOutputs = Partial<
-  Record<SupportedLocale, { sourceHash: string; output: Record<string, unknown> }>
+  Record<
+    SupportedLocale,
+    {
+      sourceHash: string;
+      output: Record<string, unknown>;
+      /** Some segments were rejected and kept in the source language. */
+      partial?: boolean;
+      /** When a partial translation was stored — it is retried after PARTIAL_RETRY_MS. */
+      at?: string;
+    }
+  >
 >;
+
+/** How long a partial translation is served before the AI is asked again.
+ *  Without storing it at all, every view of the tab re-ran the whole
+ *  translation (~10s) because one segment kept being rejected. */
+const PARTIAL_RETRY_MS = 6 * 60 * 60 * 1000;
 
 export type LocalizationStatus =
   /** The summary was generated in the requested language. */
@@ -170,8 +185,9 @@ async function translateBatch(
     return accepted;
   }
   batch.forEach((text, i) => {
-    const candidate = translations[i];
-    if (typeof candidate !== 'string') return;
+    const raw = translations[i];
+    if (typeof raw !== 'string') return;
+    const candidate = localizeEnumWords(raw, target);
     const rejection = rejectTranslation(text, candidate, target);
     if (rejection) {
       logger.warn(`Summary translation segment rejected (${rejection}).`);
@@ -231,7 +247,11 @@ export async function localizeSummaryOutput(
   // A hash mismatch means the officer edited the summary after it was
   // translated: the stored translation describes text that no longer exists.
   if (hit && hit.sourceHash === sourceHash) {
-    return { output: hit.output, locale: targetLocale, status: 'CACHED' };
+    if (!hit.partial) return { output: hit.output, locale: targetLocale, status: 'CACHED' };
+    const age = hit.at ? Date.now() - Date.parse(hit.at) : Infinity;
+    if (age < PARTIAL_RETRY_MS) {
+      return { output: hit.output, locale: targetLocale, status: 'PARTIAL' };
+    }
   }
 
   const copy = structuredClone(source);
@@ -290,5 +310,13 @@ export async function localizeSummaryOutput(
       toPersist: toPersistFor(copy),
     };
   }
-  return { output: copy, locale: targetLocale, status: 'PARTIAL' };
+  return {
+    output: copy,
+    locale: targetLocale,
+    status: 'PARTIAL',
+    toPersist: {
+      ...stored,
+      [targetLocale]: { sourceHash, output: copy, partial: true, at: new Date().toISOString() },
+    },
+  };
 }

@@ -897,7 +897,21 @@ describe("ReportSharingService.listCatalog", () => {
   it("lists other organizations' released reports with the caller's latest request status", async () => {
     const past = new Date(Date.now() - 86_400_000);
     const { svc, reportFindMany } = build(
-      [report("r1"), report("r2", { study: null }), report("r3"), report("r4")],
+      [
+        report("r1", {
+          reviewedAt: new Date("2026-09-05T00:00:00Z"),
+          study: {
+            targetSector: "Health",
+            studyGovernorates: [
+              { governorate: { name: "Al-Udayd", nameAr: "العديد", region: { name: "Eastern Province", nameAr: "المنطقة الشرقية" } } },
+              { governorate: { name: "Dammam", nameAr: "الدمام", region: { name: "Eastern Province", nameAr: "المنطقة الشرقية" } } },
+            ],
+          },
+        }),
+        report("r2", { study: null }),
+        report("r3"),
+        report("r4"),
+      ],
       [
         { id: "q-new", reportId: "r1", status: "pending", expiresAt: null },
         { id: "q-old", reportId: "r1", status: "rejected", expiresAt: null },
@@ -909,6 +923,8 @@ describe("ReportSharingService.listCatalog", () => {
 
     const where = reportFindMany.mock.calls[0]![0].where;
     expect(where).toMatchObject({ orgId: { not: "org-me" }, org: { isActive: true } });
+    // Listed by the report's own override, else its organisation's default.
+    expect(where.OR).toEqual([{ catalogVisible: true }, { catalogVisible: null, org: { catalogDefaultVisible: true } }]);
     expect(where.status.in).toEqual(expect.arrayContaining(["released", "archived"]));
     expect(out.map((i) => [i.reportId, i.myRequest?.status ?? null, i.sector])).toEqual([
       ["r1", "pending", "Health"],
@@ -916,6 +932,15 @@ describe("ReportSharingService.listCatalog", () => {
       ["r3", "expired", "Health"],
       ["r4", "approved", "Health"],
     ]);
-    expect(out[0]).toMatchObject({ ownerOrgId: "org-owner", ownerOrgName: "Owner Org", myRequest: { id: "q-new" } });
+    expect(out[0]).toMatchObject({
+      ownerOrgId: "org-owner",
+      ownerOrgName: "Owner Org",
+      myRequest: { id: "q-new" },
+      publishedAt: "2026-09-05T00:00:00.000Z",
+      regions: [{ name: "Eastern Province", nameAr: "المنطقة الشرقية" }],
+      governorates: [{ name: "Al-Udayd", nameAr: "العديد" }, { name: "Dammam", nameAr: "الدمام" }],
+    });
+    // No release stamp: the generation date stands in.
+    expect(out[1]).toMatchObject({ publishedAt: "2026-09-01T00:00:00.000Z", regions: [], governorates: [] });
   });
 });

@@ -479,6 +479,23 @@ export class ReportsService {
     return this.hydrateOne(row);
   }
 
+  // Report Catalog "Show in catalog" override (client recommendation
+  // 2026-10-05, pending confirmation; no UI yet). null clears the override so
+  // the report follows its organisation's catalogDefaultVisible. Listing is
+  // metadata only — access still goes through the sharing approval workflow.
+  async setCatalogVisibility(id: string, visible: boolean | null): Promise<Report> {
+    requireActor();
+    const existing = await this.findOrThrow(id);
+    const row = await this.tenant.runInOrgContext((tx) =>
+      tx.report.update({ where: { id }, data: { catalogVisible: visible } }),
+    );
+    await this.audit.record({
+      action: "edit", entityType: "report", entityId: row.id, entityLabel: row.title,
+      changes: [{ field: "Show in catalog", before: existing.catalogVisible ?? null, after: visible }],
+    });
+    return this.hydrateOne(row);
+  }
+
   async export(
     id: string,
     format: ExportFormat,
@@ -847,6 +864,7 @@ export class ReportsService {
       reviewedAt: row.reviewedAt ? row.reviewedAt.toISOString() : null,
       reviewerNotes: row.reviewerNotes,
       archivedAt: row.archivedAt ? row.archivedAt.toISOString() : null,
+      catalogVisible: row.catalogVisible ?? null,
       exportFormats: meta.exportFormats,
     };
   }

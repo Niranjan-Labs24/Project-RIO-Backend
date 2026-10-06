@@ -73,7 +73,12 @@ function setup(names: { types?: string[]; sectors?: string[] } = {}) {
     runAsOrg: async (_o: string, fn: (t: unknown) => unknown) => fn(tx),
   };
   const audit = { record: vi.fn().mockResolvedValue(undefined) };
-  const geography = { validateHierarchy: vi.fn().mockResolvedValue(undefined) };
+  const geography = {
+    validateHierarchy: vi.fn().mockResolvedValue(undefined),
+    countCentersIn: vi.fn().mockResolvedValue(0),
+    findGovernoratesByIds: vi.fn().mockResolvedValue([]),
+    findCentersByIds: vi.fn().mockResolvedValue([]),
+  };
   const studyConfig = {
     listActiveStudyTypeNames: vi.fn().mockResolvedValue(names.types ?? ['baseline']),
     listActiveTargetSectorNames: vi.fn().mockResolvedValue(names.sectors ?? ['Health']),
@@ -160,6 +165,16 @@ describe('StudiesService.create', () => {
       asOrg(() => svc.create({ ...(payload as object), governorateIds: ['g9'], centerIds: ['c9'] } as never)),
     ).resolves.toBeTruthy();
     expect(geography.validateHierarchy).toHaveBeenCalledWith({ governorateIds: ['g9'], centerIds: ['c9'] });
+  });
+
+  it('saves without a Center only when the selected Governorates have none', async () => {
+    const { svc, geography } = setup();
+    const noCenters = { ...(payload as object), governorateIds: ['g9'], centerIds: [] } as never;
+    await expect(asOrg(() => svc.create(noCenters))).resolves.toBeTruthy();
+    geography.countCentersIn.mockResolvedValue(3);
+    await expect(asOrg(() => svc.create(noCenters))).rejects.toMatchObject({
+      response: { error: { code: 'STUDY_CENTER_REQUIRED' } },
+    });
   });
 
   it('copes with an organization that has no geography recorded', async () => {

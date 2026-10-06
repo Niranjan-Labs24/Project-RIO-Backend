@@ -4,7 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AiService } from '../ai/ai.service';
 import { buildContentTranslationTask } from '../ai/prompts/content-translation.task';
 import type { SupportedLocale, TranslateContentResult } from './translation.types';
-import { rejectTranslation } from './translation-quality';
+import { localizeEnumWords, rejectTranslation } from './translation-quality';
 
 // Arabic block (U+0600–06FF), Arabic Supplement (U+0750–077F), Arabic
 // Extended-A (U+08A0–08FF), and the Arabic presentation-forms blocks
@@ -136,9 +136,12 @@ export class TranslationService {
 
     const cacheKey = this.cacheKeyFor(sourceLocale, targetLocale, text);
     const cached = await this.prisma.translationCache.findUnique({ where: { cacheKey } });
-    if (cached) {
+    const cachedText = cached && localizeEnumWords(cached.translatedText, targetLocale);
+    // Re-checked on read: an entry cached before a quality rule existed is
+    // treated as a miss rather than served forever.
+    if (cachedText && !rejectTranslation(text, cachedText, targetLocale)) {
       return {
-        translatedText: cached.translatedText,
+        translatedText: cachedText,
         sourceLocale,
         targetLocale,
         unchanged: false,
@@ -158,7 +161,7 @@ export class TranslationService {
     let translatedText: string;
     try {
       const { response } = await this.ai.run(task, text);
-      translatedText = response.translatedText;
+      translatedText = localizeEnumWords(response.translatedText, targetLocale);
     } catch (err) {
       // Best-effort: a translation failure (AI down, rate-limited, not
       // configured) falls back to showing the original text rather than
@@ -255,7 +258,10 @@ export class TranslationService {
     const out = new Map<string, string>();
     for (const row of rows) {
       const source = byKey.get(row.cacheKey);
-      if (source !== undefined) out.set(source, row.translatedText);
+      if (source === undefined) continue;
+      const translated = localizeEnumWords(row.translatedText, targetLocale);
+      if (rejectTranslation(source, translated, targetLocale)) continue;
+      out.set(source, translated);
     }
     return out;
   }

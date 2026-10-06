@@ -53,6 +53,12 @@ export const UpdateOrganizationBody = registerSchema(
 );
 export type UpdateOrganizationDto = Static<typeof UpdateOrganizationBody>;
 
+export const SetCatalogDefaultBody = registerSchema(
+  'SetCatalogDefaultBody',
+  T.Object({ visible: T.Boolean() }),
+);
+export type SetCatalogDefaultDto = Static<typeof SetCatalogDefaultBody>;
+
 export const CreateOrganizationBody = registerSchema(
   'CreateOrganizationBody',
   T.Object({

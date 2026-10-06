@@ -150,7 +150,7 @@ describe('localizeSummaryOutput', () => {
     expect(result.toPersist).toBeDefined();
   });
 
-  it('keeps the source for a segment that never passes, and does NOT persist', async () => {
+  it('keeps the source for a segment that never passes, and stores it as partial', async () => {
     const { ai } = fakeAi((b) =>
       b.map((t) => (t.includes('63.8') ? 'نص بدون أرقام' : arabicFor(t))),
     );
@@ -161,11 +161,33 @@ describe('localizeSummaryOutput', () => {
       stored: null,
     });
     expect(result.status).toBe('PARTIAL');
-    expect(result.toPersist).toBeUndefined();
+    expect(result.toPersist?.ar?.partial).toBe(true);
     const out = result.output as ReturnType<typeof SOURCE>;
     // The figure-changing answer was refused; the source sentence stands.
     expect(out.executiveSummary).toBe(SOURCE().executiveSummary);
     expect(out.priorityExplanation).toBe('نص عربي');
+  });
+
+  it('serves a stored partial translation without calling the AI until it is due a retry', async () => {
+    const { ai } = fakeAi((b) => b.map(arabicFor));
+    const first = await localizeSummaryOutput(ai, {
+      source: SOURCE(),
+      sourceLocale: 'en',
+      targetLocale: 'ar',
+      stored: null,
+    });
+    const stored = { ar: { ...first.toPersist!.ar!, partial: true, at: new Date().toISOString() } };
+    const again = fakeAi(() => {
+      throw new Error('should not be called');
+    });
+    const result = await localizeSummaryOutput(again.ai, {
+      source: SOURCE(),
+      sourceLocale: 'en',
+      targetLocale: 'ar',
+      stored,
+    });
+    expect(result.status).toBe('PARTIAL');
+    expect(result.output).toEqual(first.output);
   });
 
   it('discards a reply whose length does not match the segments sent', async () => {

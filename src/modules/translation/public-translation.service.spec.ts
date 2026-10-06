@@ -58,4 +58,21 @@ describe('public resource translation', () => {
     expect(containsPublicText({ title: 'Hello' }, '')).toBe(false);
     expect(containsPublicText({ title: 'Hello' }, 'unpublished')).toBe(false);
   });
+  it('accepts an enum value in the words the public report shows it as', () => {
+    expect(containsPublicText({ domainKey: 'CROSS_DOMAIN_FACTS' }, 'Cross domain facts')).toBe(true);
+    expect(containsPublicText({ domainKey: 'CROSS_DOMAIN_FACTS' }, 'Cross domain secrets')).toBe(false);
+  });
+  it('translates a batch against one load of the resource, nulling text it does not hold', async () => {
+    const { service, archive, translation } = setup();
+    const out = await service.translateBatch({
+      scope: { type: 'archive-detail', kind: 'report', id: 'released' },
+      texts: ['Public narrative', 'Private unrelated prompt', 'Executive summary'],
+      targetLocale: 'ar',
+    });
+    expect(archive.detail).toHaveBeenCalledTimes(1);
+    expect(out[0]).toEqual({ translatedText: 'مترجم' });
+    expect(out[1]).toBeNull();
+    expect(out[2]).toEqual({ translatedText: 'مترجم' });
+    expect(translation.translate).not.toHaveBeenCalledWith('Private unrelated prompt', 'ar');
+  });
 });

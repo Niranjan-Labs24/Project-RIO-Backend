@@ -93,9 +93,15 @@ export class NeedsService {
       const studyGovernorateIds = (study.studyGovernorates ?? []).map((g) => g.governorateId);
       const studyCenterIds = (study.studyCenters ?? []).map((c) => c.centerId);
       const governorateIds = (payload.governorateIds && payload.governorateIds.length > 0) ? payload.governorateIds : studyGovernorateIds;
-      const centerIds = (payload.centerIds && payload.centerIds.length > 0) ? payload.centerIds : studyCenterIds;
+      // An omitted Center selection falls back to the Study's own Centers —
+      // but only those inside the Need's governorates. Falling back to ALL of
+      // them put another governorate's Centers on the Need, which the
+      // hierarchy check then rejected (the Al-Udayd dead end).
+      const centerIds = (payload.centerIds && payload.centerIds.length > 0)
+        ? payload.centerIds
+        : await this.studyCenterIdsIn(tx, studyCenterIds, governorateIds);
       await this.assertGeographyInStudyScope(tx, studyId, governorateIds, centerIds);
-      await this.assertGovernorateAndCenterRequired(tx, governorateIds, centerIds);
+      await this.assertGovernorateAndCenterRequired(tx, studyCenterIds, governorateIds, centerIds);
       const row = (await tx.need.create({
         data: {
           studyId,
@@ -204,14 +210,16 @@ export class NeedsService {
   //   3. Every Center belongs to one of the given Governorates.
   //   4. Every Center is also one of the Study's own selected Centers.
   // Client-confirmed (2026-09-24): a Need must name at least one Governorate
-  // and at least one Center — Center only excused when every one of its
-  // selected Governorates genuinely has zero Centers configured in the KSA
-  // Geographic Reference master data (there is nothing to pick). Runs after
-  // the Study-level fallback in create()/update() has already resolved an
-  // omitted selection to the Study's own — so this only ever rejects a Need
-  // whose EFFECTIVE geography, not just its own payload, is incomplete.
+  // and at least one Center. Client clarification (2026-10-05): a Need's
+  // Centers come only from its Study's own, so Center is excused when the
+  // Study has no Center in the Need's governorates (nothing to pick) — the
+  // form says so instead of dead-ending; the fix is to add one to the Study.
+  // Runs after the Study-level fallback in create() has already resolved an
+  // omitted selection — so this only ever rejects a Need whose EFFECTIVE
+  // geography, not just its own payload, is incomplete.
   private async assertGovernorateAndCenterRequired(
     tx: Prisma.TransactionClient,
+    studyCenterIds: string[],
     governorateIds: string[],
     centerIds: string[],
   ): Promise<void> {
@@ -221,8 +229,8 @@ export class NeedsService {
       });
     }
     if (centerIds.length === 0) {
-      const availableCenters = await tx.center.count({ where: { governorateId: { in: governorateIds } } });
-      if (availableCenters > 0) {
+      const available = await this.studyCenterIdsIn(tx, studyCenterIds, governorateIds);
+      if (available.length > 0) {
         throw new BadRequestException({
           error: { code: 'NEED_CENTER_REQUIRED', message: 'Select at least one Center.' },
         });
@@ -230,29 +238,18 @@ export class NeedsService {
     }
   }
 
-  // Per governorate: the Study's own Centers in it, or — when the Study
-  // picked none there — every Center of that governorate. Without the
-  // fallback a Study covering Al-Udayd but none of its Centers made a Need
-  // there impossible: assertGovernorateAndCenterRequired demanded a Center
-  // (Al-Udayd has some), yet every one was "not in the Study's scope".
-  // The Need form offers the same set (useStudyCenters).
-  private async allowedNeedCenterIds(
+  // The Study's own Centers that sit in the given governorates.
+  private async studyCenterIdsIn(
     tx: Prisma.TransactionClient,
-    governorateIds: string[],
     studyCenterIds: string[],
-  ): Promise<Set<string>> {
-    const centers = await tx.center.findMany({
-      where: { governorateId: { in: governorateIds } },
-      select: { id: true, governorateId: true },
+    governorateIds: string[],
+  ): Promise<string[]> {
+    if (studyCenterIds.length === 0 || governorateIds.length === 0) return [];
+    const rows = await tx.center.findMany({
+      where: { id: { in: studyCenterIds }, governorateId: { in: governorateIds } },
+      select: { id: true },
     });
-    const studyCenterIdSet = new Set(studyCenterIds);
-    const allowed = new Set<string>();
-    for (const governorateId of governorateIds) {
-      const inGovernorate = centers.filter((c) => c.governorateId === governorateId);
-      const picked = inGovernorate.filter((c) => studyCenterIdSet.has(c.id));
-      for (const c of picked.length > 0 ? picked : inGovernorate) allowed.add(c.id);
-    }
-    return allowed;
+    return rows.map((r) => r.id);
   }
 
   private async assertGeographyInStudyScope(
@@ -260,8 +257,8 @@ export class NeedsService {
     studyId: string,
     governorateIds: string[],
     centerIds: string[],
-  ): Promise<void> {
-    if (governorateIds.length === 0 && centerIds.length === 0) return;
+  ): Promise<string[]> {
+    if (governorateIds.length === 0 && centerIds.length === 0) return [];
 
     if (governorateIds.length > 0) {
       await this.geography.validateHierarchy({ governorateIds, centerIds: [] });
@@ -284,14 +281,16 @@ export class NeedsService {
 
     if (centerIds.length > 0) {
       await this.geography.validateHierarchy({ governorateIds, centerIds });
-      const allowed = await this.allowedNeedCenterIds(tx, governorateIds, studyCenterIds);
-      const orphanCenter = centerIds.find((id) => !allowed.has(id));
+      const studyCenterIdSet = new Set(studyCenterIds);
+      const orphanCenter = centerIds.find((id) => !studyCenterIdSet.has(id));
       if (orphanCenter) {
         throw new BadRequestException({
           error: { code: 'CENTER_NOT_IN_STUDY_SCOPE', message: "One or more Centers are not one of the Study's selected Centers." },
         });
       }
     }
+    // The Study's Centers, for the Center-required check that follows.
+    return studyCenterIds;
   }
 
   async listByStudyId(studyId: string): Promise<Need[]> {
@@ -362,8 +361,8 @@ export class NeedsService {
       const nextGovernorateIds = patch.governorateIds ?? current.governorateIds;
       const nextCenterIds = patch.centerIds ?? current.centerIds;
       if (patch.governorateIds !== undefined || patch.centerIds !== undefined) {
-        await this.assertGeographyInStudyScope(tx, current.studyId, nextGovernorateIds, nextCenterIds);
-        await this.assertGovernorateAndCenterRequired(tx, nextGovernorateIds, nextCenterIds);
+        const studyCenterIds = await this.assertGeographyInStudyScope(tx, current.studyId, nextGovernorateIds, nextCenterIds);
+        await this.assertGovernorateAndCenterRequired(tx, studyCenterIds, nextGovernorateIds, nextCenterIds);
       }
       const changes = this.diff(current, patch, nextGovernorateIds, nextCenterIds);
       await tx.need.update({

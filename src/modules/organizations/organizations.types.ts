@@ -24,6 +24,9 @@ export interface Organization {
   // approved by System Admin (Center approval). Always non-null for an org
   // created directly via createWithAdmin, which skips this gate entirely.
   approvedAt: string | null;
+  /** Report Catalog default for this organisation's approved reports
+   * (pending client confirmation; no UI yet). */
+  catalogDefaultVisible: boolean;
   createdAt: string;
 }
 
@@ -116,5 +119,6 @@ export interface OrgRow {
   centerIds: string[];
   isActive: boolean;
   approvedAt: Date | null;
+  catalogDefaultVisible?: boolean;
   createdAt: Date;
 }
