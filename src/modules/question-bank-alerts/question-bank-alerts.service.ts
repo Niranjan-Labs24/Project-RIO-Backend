@@ -4,27 +4,26 @@ import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { getOrgStore } from "../../tenancy/org-context";
 import type { QuestionBankAlert, QuestionBankAlertChangeKind } from "./question-bank-alerts.types";
 
-// methodologyQuestionBank:read is held far more broadly than just the two
-// reviewer roles (Research Officer, Field Researcher, Data Analyst,
-// read_only_viewer, and center_supervisor all hold it too, per
-// role-matrix.ts) — those roles are browsing the bank, not reviewing
-// changes to it, so the controller's guard alone isn't a tight enough
-// filter. This is the actual gate on who gets the feed.
-const ALERT_VISIBLE_ROLES = new Set<string>([ROLE_KEYS.humanReviewer, ROLE_KEYS.systemReviewer]);
+// methodologyQuestionBank:read is held far more broadly than the reviewer
+// (Research Officer, Field Researcher, Data Analyst, read_only_viewer and
+// center_supervisor all hold it too, per role-matrix.ts) — those roles use
+// the bank, they don't review changes to it, so the controller's guard alone
+// isn't a tight enough filter. This is the actual gate on who gets the feed.
+// Client change (2026-10-05, bug 8): the Methodology screens are NCNP-only,
+// so the NGO-side Human Reviewer no longer gets this feed — the alert would
+// open a screen they can't see. System Reviewer approves these changes.
+const ALERT_VISIBLE_ROLES = new Set<string>([ROLE_KEYS.systemReviewer]);
 
 // How far back a System Admin's own resolved submissions stay visible —
 // long enough to notice without becoming an unbounded audit feed.
 const RESOLVED_ALERT_WINDOW_DAYS = 14;
 const RESOLVED_ALERT_LIMIT = 20;
 
-// Human Reviewer (methodologyQuestionBank:approve) and System Reviewer
-// (methodologyQuestionBank: read-only) both land on this single feed — every
+// System Reviewer (methodologyQuestionBank:approve) lands on this feed — every
 // Question Bank mutation (create/edit/deactivate/reactivate) already goes
 // through QuestionsService.createPendingVersion/create, which lands the
 // change as a `pending_approval` row (see questions.service.ts). That row IS
-// the alert; there is no separate event log to maintain. System Reviewer
-// can't act on it (no `approve` grant) but still needs visibility, the same
-// way ReviewerSlaService serves a read-only queue to a role that can't act.
+// the alert; there is no separate event log to maintain.
 @Injectable()
 export class QuestionBankAlertsService {
   constructor(private readonly tenant: TenantPrismaService) {}

@@ -64,6 +64,12 @@ export class GeographyService {
     return rows.map((r) => this.toGovernorate(r));
   }
 
+  /** How many Centers sit in these Governorates — 0 for the few that have none. */
+  async countCentersIn(governorateIds: string[]): Promise<number> {
+    if (governorateIds.length === 0) return 0;
+    return this.prisma.center.count({ where: { governorateId: { in: governorateIds } } });
+  }
+
   async findCentersByIds(ids: string[]): Promise<Center[]> {
     if (ids.length === 0) return [];
     const rows = await this.prisma.center.findMany({ where: { id: { in: ids } } });

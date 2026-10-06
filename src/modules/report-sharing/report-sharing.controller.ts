@@ -7,7 +7,7 @@ import { CreateReportSharingRequestBody, DecideReportSharingRequestBody } from "
 import { ReportSharingService } from "./report-sharing.service";
 import type {
   CreateReportSharingRequestPayload, DecideReportSharingRequestPayload, OrgLookupResult,
-  ReportLookupResult, ReportSharingRequest, SharedReportSnapshot,
+  ReportCatalogItem, ReportLookupResult, ReportSharingRequest, SharedReportSnapshot,
 } from "./report-sharing.types";
 
 // Same permission module as Study-sharing (archiveSharingAudit) — one
@@ -41,6 +41,13 @@ export class ReportSharingController {
   @RequirePermission("archiveSharingAudit", "create")
   lookupOrganizations(@Query("query") query?: string): Promise<OrgLookupResult[]> {
     return this.reportSharing.lookupOrganizations(query);
+  }
+
+  // Same gate as the lookups below: the catalog is where a request starts.
+  @Get("catalog")
+  @RequirePermission("archiveSharingAudit", "create")
+  listCatalog(): Promise<ReportCatalogItem[]> {
+    return this.reportSharing.listCatalog();
   }
 
   @Get("lookup/organizations/:orgId/reports")

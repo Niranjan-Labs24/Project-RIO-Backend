@@ -5,7 +5,10 @@ import { RateLimit } from "../../common/guards/rate-limit.guard";
 import { RequirePermission } from "../../common/guards/permission.guard";
 import { parseIntParam } from "../../common/http/query.util";
 import { TypeBoxValidationPipe } from "../../contract/validation.pipe";
-import { ApproveReportBody, CreateReportBody, RejectReportBody, type ApproveReportDto, type RejectReportDto } from "./reports.contract";
+import {
+  ApproveReportBody, CreateReportBody, RejectReportBody, SetCatalogVisibilityBody,
+  type ApproveReportDto, type RejectReportDto, type SetCatalogVisibilityDto,
+} from "./reports.contract";
 import { ReportsService } from "./reports.service";
 import type {
   CreateReportPayload, ExportFormat, ListReportsParams, Report, ReportStatus, ReportTypeCode,
@@ -74,6 +77,17 @@ export class ReportsController {
     @Body(new TypeBoxValidationPipe(RejectReportBody)) body: RejectReportDto,
   ): Promise<Report> {
     return this.reports.reject(id, body.notes);
+  }
+
+  // Report Catalog "Show in catalog" override — the owning org deciding what
+  // other organisations may see listed, the same `share` grant as sharing.
+  @Patch(":id/catalog-visibility")
+  @RequirePermission("reportsDashboards", "share")
+  setCatalogVisibility(
+    @Param("id", new UuidParamPipe()) id: string,
+    @Body(new TypeBoxValidationPipe(SetCatalogVisibilityBody)) body: SetCatalogVisibilityDto,
+  ): Promise<Report> {
+    return this.reports.setCatalogVisibility(id, body.visible);
   }
 
   @Patch(":id/archive")

@@ -66,6 +66,8 @@ function fakeTenant(opts: {
   onNeedUpdate?: (data: Record<string, unknown>) => void;
   onNeedDelete?: (where: unknown) => void;
   centerCount?: number;
+  /** Every Center of the governorates in play — backs allowedNeedCenterIds. */
+  centers?: { id: string; governorateId: string }[];
   // RIO-AI-001: the latest need_classification AiDecision per Need, backing
   // resolveAiConfidence. Defaults to none, i.e. "no classification has run",
   // which is what most of these fixtures represent.
@@ -107,7 +109,14 @@ function fakeTenant(opts: {
     // keep passing under the mandatory-Governorate/Center rule without also
     // having to supply a Center — see assertGovernorateAndCenterRequired.
     center: {
-      count: async () => opts.centerCount ?? 0,
+      count: async () => opts.centerCount ?? opts.centers?.length ?? 0,
+      // Honors the id / governorateId filters studyCenterIdsIn passes.
+      findMany: async ({ where }: { where?: { id?: { in: string[] }; governorateId?: { in: string[] } } } = {}) =>
+        (opts.centers ?? []).filter(
+          (c) =>
+            (!where?.id || where.id.in.includes(c.id)) &&
+            (!where?.governorateId || where.governorateId.in.includes(c.governorateId)),
+        ),
     },
     user: {
       findMany: async () => opts.users ?? [],
@@ -284,15 +293,56 @@ describe('NeedsService', () => {
       ).rejects.toMatchObject({ response: { error: { code: 'NEED_GOVERNORATE_REQUIRED' } } });
     });
 
-    it('rejects a Need with a Governorate but no Center when that Governorate has Centers available', async () => {
+    // Client clarification (2026-10-05): a Need's Centers come only from its
+    // Study's own, and the form must never dead-end.
+    it("fills an omitted Center from the Study's Centers in that governorate only", async () => {
+      let created: Record<string, unknown> | undefined;
       const svc = makeService(
         fakeTenant({
-          study: { id: 'study-1', studyGovernorates: [{ governorateId: 'g1' }], studyCenters: [] },
-          centerCount: 3,
+          study: { id: 'study-1', studyGovernorates: [{ governorateId: 'g1' }, { governorateId: 'g2' }], studyCenters: [{ centerId: 'c1' }, { centerId: 'c2' }] },
+          centers: [{ id: 'c1', governorateId: 'g1' }, { id: 'c2', governorateId: 'g2' }],
+          onNeedCreate: (d) => { created = d; },
+        }),
+      );
+      await orgContext.run(ctx, () => svc.create('study-1', { title: 'T', statement: 'S', governorateIds: ['g1'] }));
+      expect(created?.needCenters).toMatchObject({ createMany: { data: [expect.objectContaining({ centerId: 'c1' })] } });
+    });
+
+    // Al-Udayd: the Study covers the governorate but none of its Centers.
+    it('lets a Need through without a Center when the Study has none in its governorate', async () => {
+      const svc = makeService(
+        fakeTenant({
+          study: { id: 'study-1', studyGovernorates: [{ governorateId: 'g1' }, { governorateId: 'g2' }], studyCenters: [{ centerId: 'c2' }] },
+          centers: [{ id: 'c5', governorateId: 'g1' }, { id: 'c2', governorateId: 'g2' }],
         }),
       );
       await expect(
-        orgContext.run(ctx, () => svc.create('study-1', { title: 'T', statement: 'S', governorateIds: ['g1'] })),
+        orgContext.run(ctx, () => svc.create('study-1', { title: 'T', statement: 'S', governorateIds: ['g1'], centerIds: [] })),
+      ).resolves.toBeTruthy();
+    });
+
+    it("rejects a Center the Study didn't select, even in one of its governorates", async () => {
+      const svc = makeService(
+        fakeTenant({
+          study: { id: 'study-1', studyGovernorates: [{ governorateId: 'g1' }], studyCenters: [{ centerId: 'c5' }] },
+          centers: [{ id: 'c5', governorateId: 'g1' }, { id: 'c6', governorateId: 'g1' }],
+        }),
+      );
+      await expect(
+        orgContext.run(ctx, () => svc.create('study-1', { title: 'T', statement: 'S', governorateIds: ['g1'], centerIds: ['c6'] })),
+      ).rejects.toMatchObject({ response: { error: { code: 'CENTER_NOT_IN_STUDY_SCOPE' } } });
+    });
+
+    it('rejects clearing the Centers of a Need whose Study has Centers in its governorate', async () => {
+      const svc = makeService(
+        fakeTenant({
+          need: makeRow({ governorateIds: ['g1'], centerIds: ['c1'] }),
+          study: { id: 'study-1', studyGovernorates: [{ governorateId: 'g1' }], studyCenters: [{ centerId: 'c1' }] },
+          centers: [{ id: 'c1', governorateId: 'g1' }],
+        }),
+      );
+      await expect(
+        orgContext.run(ctx, () => svc.update('need-1', { centerIds: [] })),
       ).rejects.toMatchObject({ response: { error: { code: 'NEED_CENTER_REQUIRED' } } });
     });
 

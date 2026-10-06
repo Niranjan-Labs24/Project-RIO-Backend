@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { TranslationService } from './translation.service';
+import { createHash } from 'node:crypto';
 
 type CacheRow = {
   cacheKey: string;
@@ -15,30 +16,48 @@ type CacheRow = {
  * same "in-memory row store behind the real delegate shape" pattern used in
  * need-summary.service.spec.ts.
  */
-function makeService(opts: {
-  aiResponse?: { translatedText: string };
-  aiThrows?: Error;
-  seeded?: CacheRow[];
-  upsertThrows?: Error;
-  registry?: Array<{ nameEn: string | null; nameAr: string | null }>;
-} = {}) {
+function makeService(
+  opts: {
+    aiResponse?: { translatedText: string };
+    aiThrows?: Error;
+    seeded?: CacheRow[];
+    upsertThrows?: Error;
+    registry?: Array<{ nameEn: string | null; nameAr: string | null }>;
+  } = {},
+) {
   const rows = new Map<string, CacheRow>((opts.seeded ?? []).map((r) => [r.cacheKey, r]));
-  const runSpy = vi.fn(async () => {
+  const runSpy = vi.fn(async (_task?: unknown, _prompt?: string) => {
     if (opts.aiThrows) throw opts.aiThrows;
     return { response: opts.aiResponse ?? { translatedText: 'translated' } };
   });
 
   const prisma = {
     nicRegistry: {
-      findFirst: async ({ where }: { where: { OR: Array<{ nameAr?: string; nameEn?: { equals: string } }> } }) =>
+      findFirst: async ({
+        where,
+      }: {
+        where: { OR: Array<{ nameAr?: string; nameEn?: { equals: string } }> };
+      }) =>
         (opts.registry ?? []).find((r) =>
-          where.OR.some((c) => (c.nameAr !== undefined ? r.nameAr === c.nameAr : r.nameEn?.toLowerCase() === c.nameEn?.equals.toLowerCase())),
+          where.OR.some((c) =>
+            c.nameAr !== undefined
+              ? r.nameAr === c.nameAr
+              : r.nameEn?.toLowerCase() === c.nameEn?.equals.toLowerCase(),
+          ),
         ) ?? null,
     },
     translationCache: {
       findUnique: async ({ where: { cacheKey } }: { where: { cacheKey: string } }) =>
         rows.get(cacheKey) ?? null,
-      upsert: async ({ where: { cacheKey }, create }: { where: { cacheKey: string }; create: CacheRow }) => {
+      findMany: async ({ where: { cacheKey } }: { where: { cacheKey: { in: string[] } } }) =>
+        cacheKey.in.map((k) => rows.get(k)).filter((r): r is CacheRow => r !== undefined),
+      upsert: async ({
+        where: { cacheKey },
+        create,
+      }: {
+        where: { cacheKey: string };
+        create: CacheRow;
+      }) => {
         if (opts.upsertThrows) throw opts.upsertThrows;
         const row = { ...create };
         rows.set(cacheKey, row);
@@ -73,7 +92,12 @@ describe('TranslationService.translate', () => {
   it('short-circuits without calling AI when source already matches target', async () => {
     const { service, runSpy } = makeService();
     const result = await service.translate('Health', 'en');
-    expect(result).toEqual({ translatedText: 'Health', sourceLocale: 'en', targetLocale: 'en', unchanged: true });
+    expect(result).toEqual({
+      translatedText: 'Health',
+      sourceLocale: 'en',
+      targetLocale: 'en',
+      unchanged: true,
+    });
     expect(runSpy).not.toHaveBeenCalled();
   });
 
@@ -88,7 +112,12 @@ describe('TranslationService.translate', () => {
   it('calls AI and stores the result on a cache miss', async () => {
     const { service, runSpy, rows } = makeService({ aiResponse: { translatedText: 'الصحة' } });
     const result = await service.translate('Health', 'ar');
-    expect(result).toEqual({ translatedText: 'الصحة', sourceLocale: 'en', targetLocale: 'ar', unchanged: false });
+    expect(result).toEqual({
+      translatedText: 'الصحة',
+      sourceLocale: 'en',
+      targetLocale: 'ar',
+      unchanged: false,
+    });
     expect(runSpy).toHaveBeenCalledTimes(1);
     expect(rows.size).toBe(1);
   });
@@ -119,10 +148,65 @@ describe('TranslationService.translate', () => {
     expect(runSpy).not.toHaveBeenCalled();
   });
 
+  it('swaps an enum value the model kept in English before caching', async () => {
+    const { service, rows } = makeService({ aiResponse: { translatedText: 'لثقة STANDARD' } });
+    const result = await service.translate('for STANDARD confidence', 'ar');
+    expect(result.translatedText).toBe('لثقة قياسي');
+    expect([...rows.values()][0]?.translatedText).toBe('لثقة قياسي');
+  });
+
+  it('does not serve a cached answer that fails the quality check', async () => {
+    // Cached before the rule existed: English prose left in the Arabic.
+    const seeded: CacheRow[] = [
+      {
+        cacheKey: createHash('sha256').update('en:ar:Water access').digest('hex'),
+        sourceLocale: 'en',
+        targetLocale: 'ar',
+        sourceText: 'Water access',
+        translatedText: 'الوصول إلى water',
+      },
+    ];
+
+    const { service, runSpy } = makeService({
+      seeded,
+      aiResponse: { translatedText: 'الوصول إلى المياه' },
+    });
+    const result = await service.translate('Water access', 'ar');
+    expect(runSpy).toHaveBeenCalled();
+    expect(result.translatedText).toBe('الوصول إلى المياه');
+  });
+
+  it('translates many strings with one provider call, once per distinct string, then from cache', async () => {
+    const { service, runSpy, rows } = makeService({
+      aiResponse: { translations: ['الصحة', 'المياه', 'التعليم'] } as never,
+    });
+    const texts = ['Health', 'Water', 'Health', 'Education', 'Water'];
+    const out = await service.translateMany(texts, 'ar');
+    expect(runSpy).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(runSpy.mock.calls[0]![1]!)).toEqual(['Health', 'Water', 'Education']);
+    expect(out.map((r) => r.translatedText)).toEqual([
+      'الصحة',
+      'المياه',
+      'الصحة',
+      'التعليم',
+      'المياه',
+    ]);
+    expect(rows.size).toBe(3);
+
+    const again = await service.translateMany(texts, 'ar');
+    expect(runSpy).toHaveBeenCalledTimes(1);
+    expect(again.map((r) => r.translatedText)).toEqual(out.map((r) => r.translatedText));
+  });
+
   it('falls back to the original text when the AI call fails, without throwing', async () => {
     const { service, rows } = makeService({ aiThrows: new Error('provider down') });
     const result = await service.translate('Health', 'ar');
-    expect(result).toEqual({ translatedText: 'Health', sourceLocale: 'en', targetLocale: 'ar', unchanged: true });
+    expect(result).toEqual({
+      translatedText: 'Health',
+      sourceLocale: 'en',
+      targetLocale: 'ar',
+      unchanged: true,
+    });
     expect(rows.size).toBe(0);
   });
 
@@ -156,7 +240,12 @@ describe('TranslationService.translate', () => {
       upsertThrows: new Error('permission denied for table translation_cache'),
     });
     const result = await service.translate('Health', 'ar');
-    expect(result).toEqual({ translatedText: 'الصحة', sourceLocale: 'en', targetLocale: 'ar', unchanged: false });
+    expect(result).toEqual({
+      translatedText: 'الصحة',
+      sourceLocale: 'en',
+      targetLocale: 'ar',
+      unchanged: false,
+    });
     expect(rows.size).toBe(0);
   });
 });
@@ -179,7 +268,10 @@ describe('TranslationService.translate — official entity names', () => {
   });
 
   it('falls back to AI translation for text that is not a registry name', async () => {
-    const { service, runSpy } = makeService({ registry, aiResponse: { translatedText: 'Clean water need' } });
+    const { service, runSpy } = makeService({
+      registry,
+      aiResponse: { translatedText: 'Clean water need' },
+    });
     const result = await service.translate('حاجة مياه نظيفة', 'en');
     expect(result.translatedText).toBe('Clean water need');
     expect(runSpy).toHaveBeenCalledTimes(1);
@@ -187,14 +279,20 @@ describe('TranslationService.translate — official entity names', () => {
 
   it('resolves the "<organization> Admin" account name from the registry, not by AI', async () => {
     const { service, runSpy } = makeService({ registry });
-    expect((await service.translate('جمعية الإبداع الرياضي Admin', 'en')).translatedText).toBe('Sports Creativity Association Admin');
-    expect((await service.translate('Sports Creativity Association Admin', 'ar')).translatedText).toBe('جمعية الإبداع الرياضي مسؤول');
+    expect((await service.translate('جمعية الإبداع الرياضي Admin', 'en')).translatedText).toBe(
+      'Sports Creativity Association Admin',
+    );
+    expect(
+      (await service.translate('Sports Creativity Association Admin', 'ar')).translatedText,
+    ).toBe('جمعية الإبداع الرياضي مسؤول');
     expect(runSpy).not.toHaveBeenCalled();
   });
 
   it('keeps an already-Arabic "<name> Admin" account name in the registry\'s Arabic and translates the suffix', async () => {
     const { service, runSpy } = makeService({ registry });
-    expect((await service.translate('جمعية الإبداع الرياضي Admin', 'ar')).translatedText).toBe('جمعية الإبداع الرياضي مسؤول');
+    expect((await service.translate('جمعية الإبداع الرياضي Admin', 'ar')).translatedText).toBe(
+      'جمعية الإبداع الرياضي مسؤول',
+    );
     expect(runSpy).not.toHaveBeenCalled();
   });
 });

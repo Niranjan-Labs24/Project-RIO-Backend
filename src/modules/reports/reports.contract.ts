@@ -40,3 +40,10 @@ export const RejectReportBody = registerSchema(
   }),
 );
 export type RejectReportDto = Static<typeof RejectReportBody>;
+
+// null clears the per-report override (follow the organisation default).
+export const SetCatalogVisibilityBody = registerSchema(
+  "SetCatalogVisibilityBody",
+  T.Object({ visible: T.Union([T.Boolean(), T.Null()]) }),
+);
+export type SetCatalogVisibilityDto = Static<typeof SetCatalogVisibilityBody>;

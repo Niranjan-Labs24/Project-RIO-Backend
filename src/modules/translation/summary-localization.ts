@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { Logger } from '@nestjs/common';
 import type { AiService } from '../ai/ai.service';
 import { buildSummaryTranslationTask } from '../ai/prompts/summary-translation.task';
-import { rejectTranslation } from './translation-quality';
+import { localizeEnumWords, rejectTranslation } from './translation-quality';
 import type { SupportedLocale } from './translation.types';
 
 // A stored AI summary (AiPrioritySummary, CombinedReportSummary,
@@ -21,8 +21,23 @@ const logger = new Logger('SummaryLocalization');
 
 /** Shape of the `localized_outputs` JSONB column. */
 export type LocalizedOutputs = Partial<
-  Record<SupportedLocale, { sourceHash: string; output: Record<string, unknown> }>
+  Record<
+    SupportedLocale,
+    {
+      sourceHash: string;
+      output: Record<string, unknown>;
+      /** Some segments were rejected and kept in the source language. */
+      partial?: boolean;
+      /** When a partial translation was stored — it is retried after PARTIAL_RETRY_MS. */
+      at?: string;
+    }
+  >
 >;
+
+/** How long a partial translation is served before the AI is asked again.
+ *  Without storing it at all, every view of the tab re-ran the whole
+ *  translation (~10s) because one segment kept being rejected. */
+const PARTIAL_RETRY_MS = 6 * 60 * 60 * 1000;
 
 export type LocalizationStatus =
   /** The summary was generated in the requested language. */
@@ -130,7 +145,7 @@ export function summarySourceHash(source: unknown): string {
 
 /** Batches that stay well inside the provider's output-token cap — Arabic
  *  output runs noticeably longer than the English it translates. */
-function chunk(texts: string[], maxItems = 20, maxChars = 4_000): string[][] {
+export function chunk(texts: string[], maxItems = 20, maxChars = 4_000): string[][] {
   const batches: string[][] = [];
   let current: string[] = [];
   let size = 0;
@@ -151,7 +166,9 @@ function chunk(texts: string[], maxItems = 20, maxChars = 4_000): string[][] {
  * Translate a batch; returns a map of source → accepted translation.
  * Segments whose answer fails validation are simply absent from the map.
  */
-async function translateBatch(
+/** One provider call for a list of segments; only answers that pass the
+ *  quality checks are returned (see rejectTranslation). */
+export async function translateBatch(
   ai: AiService,
   batch: string[],
   source: SupportedLocale,
@@ -170,8 +187,9 @@ async function translateBatch(
     return accepted;
   }
   batch.forEach((text, i) => {
-    const candidate = translations[i];
-    if (typeof candidate !== 'string') return;
+    const raw = translations[i];
+    if (typeof raw !== 'string') return;
+    const candidate = localizeEnumWords(raw, target);
     const rejection = rejectTranslation(text, candidate, target);
     if (rejection) {
       logger.warn(`Summary translation segment rejected (${rejection}).`);
@@ -231,7 +249,11 @@ export async function localizeSummaryOutput(
   // A hash mismatch means the officer edited the summary after it was
   // translated: the stored translation describes text that no longer exists.
   if (hit && hit.sourceHash === sourceHash) {
-    return { output: hit.output, locale: targetLocale, status: 'CACHED' };
+    if (!hit.partial) return { output: hit.output, locale: targetLocale, status: 'CACHED' };
+    const age = hit.at ? Date.now() - Date.parse(hit.at) : Infinity;
+    if (age < PARTIAL_RETRY_MS) {
+      return { output: hit.output, locale: targetLocale, status: 'PARTIAL' };
+    }
   }
 
   const copy = structuredClone(source);
@@ -290,5 +312,13 @@ export async function localizeSummaryOutput(
       toPersist: toPersistFor(copy),
     };
   }
-  return { output: copy, locale: targetLocale, status: 'PARTIAL' };
+  return {
+    output: copy,
+    locale: targetLocale,
+    status: 'PARTIAL',
+    toPersist: {
+      ...stored,
+      [targetLocale]: { sourceHash, output: copy, partial: true, at: new Date().toISOString() },
+    },
+  };
 }

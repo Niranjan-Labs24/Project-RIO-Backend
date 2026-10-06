@@ -43,6 +43,7 @@ type RawOrgWithGeo = {
   id: string; name: string; purpose: string | null; registrationNumber: string | null;
   logoUrl: string | null; region: string[]; email: string | null; sector: string | null;
   villages: string[]; regionId: string | null; isActive: boolean; approvedAt: Date | null; createdAt: Date;
+  catalogDefaultVisible?: boolean;
   orgGovernorates: { governorateId: string }[];
   orgCenters: { centerId: string }[];
 };
@@ -389,6 +390,25 @@ export class OrganizationsService {
     };
   }
 
+  // Report Catalog default (client recommendation 2026-10-05, pending
+  // confirmation; no UI yet): whether this organisation's approved reports
+  // are listed for other organisations unless a report overrides it.
+  async setCatalogDefault(visible: boolean): Promise<Organization> {
+    const orgId = requireOrgId();
+    const { before, updated } = await this.tenant.runInOrgContext(async (tx) => {
+      const current = await tx.organisation.findFirst({ include: GEO_INCLUDE });
+      if (!current) throw new NotFoundException({ error: { code: 'ORG_NOT_FOUND', message: 'Organization not found' } });
+      await tx.organisation.update({ where: { id: orgId }, data: { catalogDefaultVisible: visible } });
+      const after = await tx.organisation.findFirst({ include: GEO_INCLUDE });
+      return { before: current.catalogDefaultVisible, updated: this.toOrgRow(after as RawOrgWithGeo) };
+    });
+    await this.audit.record({
+      action: 'edit', entityType: 'organization', entityId: updated.id, entityLabel: updated.name,
+      changes: [{ field: 'Reports listed in catalog by default', before, after: visible }],
+    });
+    return this.toOrganization(updated);
+  }
+
   async updateStatus(id: string, payload: { isActive: boolean; reason?: string | null }): Promise<OrganizationSummary> {
     this.assertCrossEntity();
     const current = await this.tenant.runAsSupervisor((tx) =>
@@ -591,6 +611,7 @@ export class OrganizationsService {
       id: raw.id, name: raw.name, purpose: raw.purpose, registrationNumber: raw.registrationNumber,
       logoUrl: raw.logoUrl, region: raw.region, email: raw.email, sector: raw.sector,
       villages: raw.villages, regionId: raw.regionId, isActive: raw.isActive, approvedAt: raw.approvedAt, createdAt: raw.createdAt,
+      catalogDefaultVisible: raw.catalogDefaultVisible,
       governorateIds: raw.orgGovernorates.map((g) => g.governorateId),
       centerIds: raw.orgCenters.map((c) => c.centerId),
     };
@@ -604,6 +625,7 @@ export class OrganizationsService {
       regionId: row.regionId, governorateIds: row.governorateIds, centerIds: row.centerIds,
       isActive: row.isActive, approvedAt: row.approvedAt ? row.approvedAt.toISOString() : null,
       createdAt: row.createdAt.toISOString(),
+      catalogDefaultVisible: row.catalogDefaultVisible ?? true,
     };
   }
 }

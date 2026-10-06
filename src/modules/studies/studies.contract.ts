@@ -4,12 +4,13 @@ import { registerSchema, T, type Static } from '../../contract/typebox';
 // selected from the org's configured villages, or a new one added inline.
 const Villages = T.Array(T.String({ minLength: 1, maxLength: 200 }), { maxItems: 2000 });
 
-// Mandatory multi-select — must each be one of the Organization's own
-// selected Governorates/Centers (see StudiesService for the actual
-// existence/hierarchy/org-scope checks TypeBox can't express). Non-empty:
-// a Study must scope itself to at least one of each.
+// Mandatory multi-select (see StudiesService for the existence/hierarchy
+// checks TypeBox can't express). At least one Governorate. Centers may be
+// empty only when none of the selected Governorates has a Center (five
+// genuinely have none, e.g. Ras Tanura) — StudiesService enforces that, since
+// it depends on the reference data.
 const GovernorateIds = T.Array(T.String({ format: 'uuid' }), { minItems: 1, maxItems: 200 });
-const CenterIds = T.Array(T.String({ format: 'uuid' }), { minItems: 1, maxItems: 1404 });
+const CenterIds = T.Array(T.String({ format: 'uuid' }), { maxItems: 1404 });
 
 // Mandatory link to the real, status-gated MethodologyVersion master data
 // (see priority module) — a Study must bind to one at creation; only a

@@ -223,7 +223,8 @@ describe('Sharing workflow (e2e) — FR-014', () => {
         .get(`/api/report-sharing-requests/${reportRequestId}/shared-report`)
         .set('Authorization', `Bearer ${tokenB}`);
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('SHARING_NOT_APPROVED');
+      // The reason is specific, so the requester's page can explain it.
+      expect(res.body.code).toBe('SHARING_REJECTED');
     });
 
     it('the requesting org sees a request_rejected alert carrying the reason', async () => {

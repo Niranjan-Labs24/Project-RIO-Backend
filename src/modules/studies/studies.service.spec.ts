@@ -73,7 +73,12 @@ function setup(names: { types?: string[]; sectors?: string[] } = {}) {
     runAsOrg: async (_o: string, fn: (t: unknown) => unknown) => fn(tx),
   };
   const audit = { record: vi.fn().mockResolvedValue(undefined) };
-  const geography = { validateHierarchy: vi.fn().mockResolvedValue(undefined) };
+  const geography = {
+    validateHierarchy: vi.fn().mockResolvedValue(undefined),
+    countCentersIn: vi.fn().mockResolvedValue(0),
+    findGovernoratesByIds: vi.fn().mockResolvedValue([]),
+    findCentersByIds: vi.fn().mockResolvedValue([]),
+  };
   const studyConfig = {
     listActiveStudyTypeNames: vi.fn().mockResolvedValue(names.types ?? ['baseline']),
     listActiveTargetSectorNames: vi.fn().mockResolvedValue(names.sectors ?? ['Health']),
@@ -154,14 +159,22 @@ describe('StudiesService.create', () => {
     await expect(asOrg(() => open.svc.create(payload))).resolves.toBeTruthy();
   });
 
-  it("rejects geography outside the organization's own scope", async () => {
-    const { svc } = setup();
+  it("accepts geography outside the organization's registered area, still validating the hierarchy", async () => {
+    const { svc, geography } = setup();
     await expect(
-      asOrg(() => svc.create({ ...(payload as object), governorateIds: ['g9'] } as never)),
-    ).rejects.toMatchObject({ response: { error: { code: 'GOVERNORATE_NOT_IN_ORG_SCOPE' } } });
-    await expect(
-      asOrg(() => svc.create({ ...(payload as object), centerIds: ['c9'] } as never)),
-    ).rejects.toMatchObject({ response: { error: { code: 'CENTER_NOT_IN_ORG_SCOPE' } } });
+      asOrg(() => svc.create({ ...(payload as object), governorateIds: ['g9'], centerIds: ['c9'] } as never)),
+    ).resolves.toBeTruthy();
+    expect(geography.validateHierarchy).toHaveBeenCalledWith({ governorateIds: ['g9'], centerIds: ['c9'] });
+  });
+
+  it('saves without a Center only when the selected Governorates have none', async () => {
+    const { svc, geography } = setup();
+    const noCenters = { ...(payload as object), governorateIds: ['g9'], centerIds: [] } as never;
+    await expect(asOrg(() => svc.create(noCenters))).resolves.toBeTruthy();
+    geography.countCentersIn.mockResolvedValue(3);
+    await expect(asOrg(() => svc.create(noCenters))).rejects.toMatchObject({
+      response: { error: { code: 'STUDY_CENTER_REQUIRED' } },
+    });
   });
 
   it('copes with an organization that has no geography recorded', async () => {
@@ -352,8 +365,8 @@ describe('StudiesService.update', () => {
     await asOrg(() => svc.update('s1', {} as never));
   });
 
-  it('404s an unknown study and rejects an unpublished methodology or out-of-scope geography', async () => {
-    const { svc, tx } = setup();
+  it('404s an unknown study and rejects an unpublished methodology or invalid geography', async () => {
+    const { svc, tx, geography } = setup();
     tx.study.findUnique.mockResolvedValueOnce(null);
     await expect(asOrg(() => svc.update('x', {} as never))).rejects.toBeInstanceOf(
       NotFoundException,
@@ -362,6 +375,11 @@ describe('StudiesService.update', () => {
     await expect(
       asOrg(() => svc.update('s1', { methodologyVersionId: 'mv9' } as never)),
     ).rejects.toBeInstanceOf(BadRequestException);
+    // Geography outside the org's registered area is allowed now (client
+    // change 2026-10-05); a governorate the reference data rejects is not.
+    geography.validateHierarchy.mockRejectedValueOnce(
+      new BadRequestException({ error: { code: 'GOVERNORATE_NOT_FOUND', message: 'One or more Governorates not found' } }),
+    );
     await expect(
       asOrg(() => svc.update('s1', { governorateIds: ['nope'] } as never)),
     ).rejects.toBeInstanceOf(BadRequestException);

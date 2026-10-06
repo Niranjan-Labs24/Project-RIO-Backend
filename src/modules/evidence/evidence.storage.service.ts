@@ -34,9 +34,12 @@ export class EvidenceStorageService {
 
   constructor(private readonly config: ConfigService) {}
 
-  assertAllowedExtension(originalName: string): string {
+  /** `extraAllowed` widens the shared list for one caller only — the
+   * Document-Based Summary accepts plain .txt, which supporting-document
+   * uploads deliberately do not. */
+  assertAllowedExtension(originalName: string, extraAllowed: readonly string[] = []): string {
     const ext = extname(originalName).toLowerCase();
-    if (!ALLOWED_EXTENSIONS.has(ext)) {
+    if (!ALLOWED_EXTENSIONS.has(ext) && !extraAllowed.includes(ext)) {
       throw new BadRequestException({
         error: {
           code: 'UNSUPPORTED_FILE_TYPE',
@@ -83,8 +86,8 @@ export class EvidenceStorageService {
     return createHash('sha256').update(buffer).digest('hex');
   }
 
-  async save(originalName: string, buffer: Buffer): Promise<string> {
-    const ext = this.assertAllowedExtension(originalName);
+  async save(originalName: string, buffer: Buffer, extraAllowed: readonly string[] = []): Promise<string> {
+    const ext = this.assertAllowedExtension(originalName, extraAllowed);
     const dir = resolve(this.config.evidenceStoragePath);
     await mkdir(dir, { recursive: true });
     const storageKey = `${randomUUID()}${ext}`;

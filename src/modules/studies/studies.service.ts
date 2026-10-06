@@ -86,7 +86,7 @@ export class StudiesService {
     // Resolved inside the transaction, read by the audit record after it commits.
     let methodologyLabel: string | null = null;
     const created = await this.tenant.runInOrgContext(async (tx) => {
-      await this.assertGeographyInOrgScope(tx, orgId, payload.governorateIds, payload.centerIds);
+      await this.assertGeographyValid(payload.governorateIds, payload.centerIds);
       if (payload.methodologyVersionId) {
         methodologyLabel = await this.assertMethodologyVersionPublished(tx, payload.methodologyVersionId);
       }
@@ -176,35 +176,24 @@ export class StudiesService {
     }
   }
 
-  private async assertGeographyInOrgScope(
-    tx: Prisma.TransactionClient,
-    orgId: string,
-    governorateIds: string[],
-    centerIds: string[],
-  ): Promise<void> {
-    const org = (await tx.organisation.findUnique({
-      where: { id: orgId },
-      include: { orgGovernorates: true, orgCenters: true },
-    })) as { regionId: string | null; orgGovernorates: { governorateId: string }[]; orgCenters: { centerId: string }[] } | null;
-    const orgGovernorateIds = (org?.orgGovernorates ?? []).map((g) => g.governorateId);
-    const orgCenterIds = (org?.orgCenters ?? []).map((c) => c.centerId);
-
-    await this.geography.validateHierarchy({ regionId: org?.regionId ?? null, governorateIds, centerIds });
-
-    const orgGovernorateIdSet = new Set(orgGovernorateIds);
-    const orphanGovernorate = governorateIds.find((id) => !orgGovernorateIdSet.has(id));
-    if (orphanGovernorate) {
-      throw new BadRequestException({
-        error: { code: 'GOVERNORATE_NOT_IN_ORG_SCOPE', message: "One or more Governorates are not one of the organization's selected Governorates." },
-      });
-    }
-
-    const orgCenterIdSet = new Set(orgCenterIds);
-    const orphanCenter = centerIds.find((id) => !orgCenterIdSet.has(id));
-    if (orphanCenter) {
-      throw new BadRequestException({
-        error: { code: 'CENTER_NOT_IN_ORG_SCOPE', message: "One or more Centers are not one of the organization's selected Centers." },
-      });
+  // Client change (2026-10-05, bugs 1 & 5): a Study may cover any region(s)
+  // and governorates, not only the ones the organization registered for —
+  // the org's registered area no longer restricts study creation. What is
+  // still enforced is that the selection is real and consistent: every
+  // Governorate/Center exists and each Center sits in a selected
+  // Governorate. A Study's region(s) are derived from its governorates
+  // (see reports' resolve-geography), so nothing region-level is stored.
+  private async assertGeographyValid(governorateIds: string[], centerIds: string[]): Promise<void> {
+    await this.geography.validateHierarchy({ governorateIds, centerIds });
+    // No Center is required only when the selected Governorates have none to
+    // offer — otherwise a study with no centers would never dead-end the form
+    // but would silently leave its Needs without one.
+    if (centerIds.length === 0 && governorateIds.length > 0) {
+      if ((await this.geography.countCentersIn(governorateIds)) > 0) {
+        throw new BadRequestException({
+          error: { code: 'STUDY_CENTER_REQUIRED', message: 'Select at least one Center.' },
+        });
+      }
     }
   }
 
@@ -456,14 +445,16 @@ export class StudiesService {
       const nextGovernorateIds = payload.governorateIds ?? current.governorateIds;
       const nextCenterIds = payload.centerIds ?? current.centerIds;
       if (payload.governorateIds !== undefined || payload.centerIds !== undefined) {
-        await this.assertGeographyInOrgScope(tx, orgId, nextGovernorateIds, nextCenterIds);
+        await this.assertGeographyValid(nextGovernorateIds, nextCenterIds);
       }
       const nextMethodologyVersion =
         payload.methodologyVersionId !== undefined
           ? await this.assertMethodologyVersionPublished(tx, payload.methodologyVersionId)
           : null;
 
-      const changes = this.diff(current, payload, nextGovernorateIds, nextCenterIds);
+      const changes = await this.withPlaceNames(
+        this.diff(current, payload, nextGovernorateIds, nextCenterIds),
+      );
 
       await tx.study.update({
         where: { id },
@@ -579,6 +570,35 @@ export class StudiesService {
       changes.push({ field: auditFieldLabel('centerIds'), before: current.centerIds, after: nextCenterIds });
     }
     return changes;
+  }
+
+  /** Governorate/Center changes are diffed as id sets; the audit trail shows
+   *  the places' names instead, so a reader sees "Riyadh, Jubail", not ids. */
+  private async withPlaceNames(changes: AuditChange[]): Promise<AuditChange[]> {
+    const govLabel = auditFieldLabel('governorateIds');
+    const centerLabel = auditFieldLabel('centerIds');
+    const ids = (field: string) =>
+      changes
+        .filter((c) => c.field === field)
+        .flatMap((c) => [...((c.before as string[]) ?? []), ...((c.after as string[]) ?? [])]);
+    const govIds = ids(govLabel);
+    const centerIds = ids(centerLabel);
+    if (govIds.length === 0 && centerIds.length === 0) return changes;
+    const [govs, centers] = await Promise.all([
+      govIds.length ? this.geography.findGovernoratesByIds([...new Set(govIds)]) : [],
+      centerIds.length ? this.geography.findCentersByIds([...new Set(centerIds)]) : [],
+    ]);
+    const name = new Map<string, string>([
+      ...govs.map((g) => [g.id, g.name] as [string, string]),
+      ...centers.map((c) => [c.id, c.name] as [string, string]),
+    ]);
+    const names = (v: unknown) =>
+      Array.isArray(v) ? v.map((id: string) => name.get(id) ?? id).join(', ') : v;
+    return changes.map((c) =>
+      c.field === govLabel || c.field === centerLabel
+        ? { ...c, before: names(c.before), after: names(c.after) }
+        : c,
+    );
   }
 
   private sameIdSet(a: string[], b: string[]): boolean {

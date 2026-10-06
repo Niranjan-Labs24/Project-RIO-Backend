@@ -14,8 +14,12 @@ import { EXPORTABLE_STATUSES } from "../reports/reports.types";
 import type { SharingStatus } from "../sharing/sharing.types";
 import type {
   CreateReportSharingRequestPayload, DecideReportSharingRequestPayload, OrgLookupResult,
-  ReportLookupResult, ReportSharingRequest, ReportSharingRequestRow, SharedReportSnapshot,
+  ReportCatalogItem, ReportLookupResult, ReportSharingRequest, ReportSharingRequestRow, SharedReportSnapshot,
 } from "./report-sharing.types";
+
+// A ceiling, not paging: the catalog is searched and filtered client-side,
+// and released reports across every organization stay in the hundreds.
+const CATALOG_LIMIT = 500;
 
 const SHARING_STATUSES: SharingStatus[] = ["pending", "approved", "rejected", "expired", "withdrawn"];
 
@@ -175,7 +179,9 @@ export class ReportSharingService {
         filter = { status: "rejected" };
         break;
       case "sharedReports":
-        filter = { status: "approved", requestingOrgId: orgId };
+        // Withdrawn and expired access stay listed with their status, so a
+        // report doesn't silently vanish from the requester's list.
+        filter = { status: { in: ["approved", "withdrawn", "expired"] }, requestingOrgId: orgId };
         break;
       case undefined:
       case "allOrganizations":
@@ -285,6 +291,22 @@ export class ReportSharingService {
   async getSharedSnapshot(id: string): Promise<SharedReportSnapshot> {
     const row = await this.findVisibleOrThrow(id);
     const orgId = requireOrgId();
+    // The reason, not just "no": the requester's page explains each case.
+    if (row.status === "withdrawn") {
+      throw new ForbiddenException({
+        error: { code: "SHARING_WITHDRAWN", message: "The owner has withdrawn access to this report." },
+      });
+    }
+    if (row.status === "rejected") {
+      throw new ForbiddenException({
+        error: { code: "SHARING_REJECTED", message: "The owner rejected this access request." },
+      });
+    }
+    if (row.status === "expired") {
+      throw new ForbiddenException({
+        error: { code: "SHARING_EXPIRED", message: "This sharing access has expired." },
+      });
+    }
     if (row.status !== "approved") {
       throw new ForbiddenException({
         error: { code: "SHARING_NOT_APPROVED", message: "This sharing request has not been approved." },
@@ -355,6 +377,87 @@ export class ReportSharingService {
       }),
     );
     return rows.map((r) => ({ id: r.id, name: r.name }));
+  }
+
+  // The Report Catalog (client change 2026-10-05, bug 9): every report the
+  // caller could request, across all other active organizations, in one
+  // list — the same eligibility as lookupOrganizations + lookupReportsForOrg
+  // (not the caller's own, released/archived only), plus the caller's own
+  // latest request per report so the catalog can say where each one stands.
+  // The NCNP Compiled Report is a Center-level output and lives in its own
+  // tables (NcnpReport*), never in `reports`, so it can't appear here.
+  async listCatalog(): Promise<ReportCatalogItem[]> {
+    const orgId = requireOrgId();
+    const [reports, requests] = await Promise.all([
+      this.tenant.runAsSupervisor((tx) =>
+        tx.report.findMany({
+          where: {
+            orgId: { not: orgId },
+            status: { in: EXPORTABLE_STATUSES },
+            org: { isActive: true },
+            // Listed when the report says so, or — with no override — when its
+            // organisation lists reports by default (the default is on).
+            OR: [{ catalogVisible: true }, { catalogVisible: null, org: { catalogDefaultVisible: true } }],
+          },
+          orderBy: { generatedAt: "desc" },
+          take: CATALOG_LIMIT,
+          select: {
+            id: true,
+            title: true,
+            reportType: true,
+            generatedAt: true,
+            reviewedAt: true,
+            orgId: true,
+            org: { select: { name: true } },
+            study: {
+              select: {
+                targetSector: true,
+                studyGovernorates: {
+                  select: {
+                    governorate: {
+                      select: { name: true, nameAr: true, region: { select: { name: true, nameAr: true } } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        }),
+      ),
+      this.prisma.reportSharingRequest.findMany({
+        where: { requestingOrgId: orgId },
+        orderBy: { requestedAt: "desc" },
+        select: { id: true, reportId: true, status: true, expiresAt: true },
+      }),
+    ]);
+    // Newest first, so the first one seen per report is the latest.
+    const latest = new Map<string, (typeof requests)[number]>();
+    for (const r of requests) if (!latest.has(r.reportId)) latest.set(r.reportId, r);
+    return reports.map((r) => {
+      const req = latest.get(r.id);
+      const lapsed = req?.status === "approved" && req.expiresAt !== null && req.expiresAt.getTime() <= Date.now();
+      const govs = (r.study?.studyGovernorates ?? []).map((g) => g.governorate);
+      const regions = new Map(govs.map((g) => [g.region.name, { name: g.region.name, nameAr: g.region.nameAr }]));
+      return {
+        reportId: r.id,
+        title: r.title,
+        reportType: r.reportType,
+        generatedAt: r.generatedAt.toISOString(),
+        publishedAt: (r.reviewedAt ?? r.generatedAt).toISOString(),
+        ownerOrgId: r.orgId,
+        ownerOrgName: r.org.name,
+        sector: r.study?.targetSector ?? null,
+        regions: [...regions.values()],
+        governorates: govs.map((g) => ({ name: g.name, nameAr: g.nameAr })),
+        myRequest: req
+          ? {
+              id: req.id,
+              status: lapsed ? "expired" : req.status,
+              expiresAt: req.expiresAt ? req.expiresAt.toISOString() : null,
+            }
+          : null,
+      };
+    });
   }
 
   // Only an org's own APPROVED reports are eligible to be requested for
