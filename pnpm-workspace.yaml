@@ -54,3 +54,8 @@ overrides:
   # readdir-glob (also part of exceljs's archiver chain) depends on
   # minimatch directly rather than via "glob" — same reasoning as above.
   readdir-glob>minimatch: '^10.0.0'
+  # express (via @nestjs/platform-express) and magicast (via prisma's own
+  # config tooling) haven't picked up the patched releases yet. Both fixes
+  # are within the current major, capped there for the same reason as above.
+  proxy-addr: '>=2.0.8 <3.0.0'
+  source-map-js: '>=1.2.2 <2.0.0'
