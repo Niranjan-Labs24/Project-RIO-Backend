@@ -1,4 +1,5 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Post, Req } from '@nestjs/common';
+import type { Request } from 'express';
 import { Public } from '../../auth/public.decorator';
 import { RateLimit } from '../../common/guards/rate-limit.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
@@ -25,7 +26,8 @@ export class PublicTranslationController {
   @RateLimit(20, 60)
   translateBatch(
     @Body(new TypeBoxValidationPipe(PublicTranslateBatchBody)) body: PublicTranslateBatchDto,
+    @Req() req: Request,
   ) {
-    return this.translation.translateBatch(body);
+    return this.translation.translateBatch(body, req.ip ?? 'unknown');
   }
 }

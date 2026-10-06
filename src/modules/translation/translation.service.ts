@@ -5,6 +5,7 @@ import { AiService } from '../ai/ai.service';
 import { buildContentTranslationTask } from '../ai/prompts/content-translation.task';
 import type { SupportedLocale, TranslateContentResult } from './translation.types';
 import { localizeEnumWords, rejectTranslation } from './translation-quality';
+import { chunk, translateBatch } from './summary-localization';
 
 // Arabic block (U+0600–06FF), Arabic Supplement (U+0750–077F), Arabic
 // Extended-A (U+08A0–08FF), and the Arabic presentation-forms blocks
@@ -16,10 +17,12 @@ import { localizeEnumWords, rejectTranslation } from './translation-quality';
 // evidence descriptions, decision notes, sharing purposes, ...) — it does
 // not need to be a general-purpose language detector for the whole
 // Unicode standard.
-const ARABIC_SCRIPT_RE = /[\u{0600}-\u{06FF}\u{0750}-\u{077F}\u{08A0}-\u{08FF}\u{FB50}-\u{FDFF}\u{FE70}-\u{FEFF}]/u;
+const ARABIC_SCRIPT_RE =
+  /[\u{0600}-\u{06FF}\u{0750}-\u{077F}\u{08A0}-\u{08FF}\u{FB50}-\u{FDFF}\u{FE70}-\u{FEFF}]/u;
 // At least one letter in either script — a string with no letters at all
 // (a number, a code, punctuation, whitespace) has no language to translate.
-const HAS_LETTERS_RE = /[\u{0600}-\u{06FF}\u{0750}-\u{077F}\u{08A0}-\u{08FF}\u{FB50}-\u{FDFF}\u{FE70}-\u{FEFF}A-Za-z]/u;
+const HAS_LETTERS_RE =
+  /[\u{0600}-\u{06FF}\u{0750}-\u{077F}\u{08A0}-\u{08FF}\u{FB50}-\u{FDFF}\u{FE70}-\u{FEFF}A-Za-z]/u;
 
 /**
  * RIO Arabic Localization — Approach 3 (Hybrid), client-confirmed
@@ -78,7 +81,10 @@ export class TranslationService {
   /** The registry's name in `targetLocale` when `text` is exactly the same
    *  entity's name in the other language; null when it isn't a registry name
    *  (or the lookup fails — never blocks a translation). */
-  private async registryCounterpart(text: string, targetLocale: SupportedLocale): Promise<string | null> {
+  private async registryCounterpart(
+    text: string,
+    targetLocale: SupportedLocale,
+  ): Promise<string | null> {
     // Signup names the first user "<organization name> Admin" (see
     // auth.repository), so that account's display name is a registry name
     // plus a fixed suffix. Translating the whole sentence with AI produced a
@@ -106,7 +112,9 @@ export class TranslationService {
       const found = targetLocale === 'en' ? row?.nameEn : row?.nameAr;
       return found?.trim() || null;
     } catch (err) {
-      this.logger.warn(`Registry name lookup skipped: ${err instanceof Error ? err.message : String(err)}`);
+      this.logger.warn(
+        `Registry name lookup skipped: ${err instanceof Error ? err.message : String(err)}`,
+      );
       return null;
     }
   }
@@ -225,6 +233,82 @@ export class TranslationService {
     }
 
     return { translatedText, sourceLocale, targetLocale, unchanged: false };
+  }
+
+  /**
+   * Many strings in as few provider calls as possible: cached answers come
+   * from one query, every miss goes to the provider in batched calls (not one
+   * call per string), and accepted answers are cached. Same quality rules as
+   * translate(). Used by the public batch endpoint, where one request must
+   * not fan out into hundreds of provider calls (PR #84 review). Results keep
+   * the input order; a string that could not be translated comes back as
+   * itself with `unchanged: true`.
+   */
+  async translateMany(
+    texts: readonly string[],
+    targetLocale: SupportedLocale,
+  ): Promise<TranslateContentResult[]> {
+    const unchanged = (text: string): TranslateContentResult => ({
+      translatedText: text,
+      sourceLocale: this.detectLocale(text),
+      targetLocale,
+      unchanged: true,
+    });
+    const results = new Map<string, TranslateContentResult>();
+    const needed = [...new Set(texts)].filter((t) => this.needsTranslation(t, targetLocale));
+
+    const cached = await this.cachedTranslations(needed, targetLocale);
+    for (const [text, translatedText] of cached) {
+      results.set(text, {
+        translatedText,
+        sourceLocale: this.detectLocale(text),
+        targetLocale,
+        unchanged: false,
+      });
+    }
+    // An entity's official name comes from the registry, as in translate().
+    for (const text of needed.filter((t) => !results.has(t))) {
+      const official = await this.registryCounterpart(text, targetLocale);
+      if (official) {
+        results.set(text, {
+          translatedText: official,
+          sourceLocale: this.detectLocale(text),
+          targetLocale,
+          unchanged: false,
+        });
+      }
+    }
+    const misses = needed.filter((t) => !results.has(t));
+    const promptSource: SupportedLocale = targetLocale === 'ar' ? 'en' : 'ar';
+    for (const batch of chunk(misses)) {
+      let accepted = new Map<string, string>();
+      try {
+        accepted = await translateBatch(this.ai, batch, promptSource, targetLocale);
+      } catch (err) {
+        this.logger.warn(
+          `Batch translation ${promptSource}->${targetLocale} failed, returning source text: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+      for (const [text, translatedText] of accepted) {
+        const sourceLocale = this.detectLocale(text);
+        results.set(text, { translatedText, sourceLocale, targetLocale, unchanged: false });
+        const cacheKey = this.cacheKeyFor(sourceLocale, targetLocale, text);
+        await this.prisma.translationCache
+          .upsert({
+            where: { cacheKey },
+            create: { cacheKey, sourceLocale, targetLocale, sourceText: text, translatedText },
+            update: { translatedText },
+          })
+          .catch((err: unknown) =>
+            this.logger.warn(
+              `Failed to cache batch translation: ${err instanceof Error ? err.message : String(err)}`,
+            ),
+          );
+      }
+    }
+    return texts.map((t) => results.get(t) ?? unchanged(t));
   }
 
   /**

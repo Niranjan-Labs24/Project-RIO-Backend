@@ -145,7 +145,7 @@ export function summarySourceHash(source: unknown): string {
 
 /** Batches that stay well inside the provider's output-token cap — Arabic
  *  output runs noticeably longer than the English it translates. */
-function chunk(texts: string[], maxItems = 20, maxChars = 4_000): string[][] {
+export function chunk(texts: string[], maxItems = 20, maxChars = 4_000): string[][] {
   const batches: string[][] = [];
   let current: string[] = [];
   let size = 0;
@@ -166,7 +166,9 @@ function chunk(texts: string[], maxItems = 20, maxChars = 4_000): string[][] {
  * Translate a batch; returns a map of source → accepted translation.
  * Segments whose answer fails validation are simply absent from the map.
  */
-async function translateBatch(
+/** One provider call for a list of segments; only answers that pass the
+ *  quality checks are returned (see rejectTranslation). */
+export async function translateBatch(
   ai: AiService,
   batch: string[],
   source: SupportedLocale,
