@@ -5,6 +5,7 @@ import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { PasswordService } from '../../auth/password.service';
 import { ConfigService } from '../../config/config.service';
 import { SmsService } from '../../sms/sms.service';
+import { MailerService } from '../../mailer/mailer.service';
 import { AuditService } from '../audit/audit.service';
 import { DataCleaningService } from '../data-cleaning/data-cleaning.service';
 import { SurveysService } from '../surveys/surveys.service';
@@ -29,8 +30,8 @@ const SECONDS_PER_QUESTION = 20;
  * value (an unset NODE_ENV counts as production), never by process.env
  * directly, so a missing or mistyped NODE_ENV cannot leak codes.
  */
-export function shouldRevealOtp(codeTexted: boolean, nodeEnv: string | undefined): boolean {
-  return !codeTexted && (nodeEnv === 'development' || nodeEnv === 'test');
+export function shouldRevealOtp(codeSent: boolean, nodeEnv: string | undefined): boolean {
+  return !codeSent && (nodeEnv === 'development' || nodeEnv === 'test');
 }
 
 @Injectable()
@@ -41,6 +42,7 @@ export class CitizenService {
     private readonly tenant: TenantPrismaService,
     private readonly passwords: PasswordService,
     private readonly sms: SmsService,
+    private readonly mailer: MailerService,
     private readonly surveys: SurveysService,
     private readonly audit: AuditService,
     private readonly scoringEngine: DeterministicScoringService,
@@ -128,7 +130,7 @@ export class CitizenService {
   // select/multiselect/checklist/numeric/boolean/text; additional questions: long_text/
   // short_text/multiple_choice/checkbox/yes_no/rating) onto the citizen
   // flow's rendering type — single_choice (pick one), multi_choice (pick
-  // several), scale (1-5), or free text.
+  // several), scale (1-5), numeric (a number box), or free text.
   // `optionsAr` is positionally parallel to `options` (same order, same
   // length) whenever it's present — the frontend indexes into it rather
   // than matching by value, since the *submitted* answer must always stay
@@ -160,6 +162,13 @@ export class CitizenService {
         return { type: 'single_choice', options: answerOptions ?? ['Yes', 'No'], optionsAr: answerOptions ? answerOptionsAr : null };
       case 'rating':
         return { type: 'scale', options: answerOptions ?? ['1', '2', '3', '4', '5'], optionsAr: answerOptions ? answerOptionsAr : null };
+      // Falling through to 'text' gave a "how many days?" question a free
+      // textarea, so "3", "5 days" and "3d" were all submitted against the
+      // same question and only the bare number survived the statistics.
+      // The stats now read a number out of any of those (see
+      // parseNumericAnswer, both repos); this stops new ones being created.
+      case 'numeric':
+        return { type: 'numeric' };
       default:
         return { type: 'text' };
     }
@@ -223,14 +232,21 @@ export class CitizenService {
         data: { orgId: link.orgId, surveyLinkId: link.id, contact, mobile, codeHash, expiresAt },
       }),
     );
-    // Mobile-only verification: `contact` (email) is captured for the
-    // duplicate check and stored on the eventual SurveyResponse, but never
-    // OTP'd — it's additional contact info, not a second verification
-    // channel. Deliberately soft-fail, not hard-fail: an earlier version of
-    // this rejected the request outright when delivery failed (expiring the
-    // challenge + throwing OTP_DELIVERY_FAILED), which stranded a citizen
-    // respondent with no way to ever get a code whenever SMS wasn't
-    // configured/working.
+    // Email-delivered verification (client decision, 2026-09-30): the code
+    // goes to `contact`, not to the mobile. `mobile` is still collected and
+    // still required — it is half of the duplicate check below and on
+    // checkDuplicate, so dropping it would let one person answer twice from
+    // two email addresses. It is simply no longer the channel the code
+    // travels on.
+    //
+    // Staff sign-in OTP is unaffected: that is AuthService with
+    // MailerService.sendLoginOtpEmail, a different flow with different
+    // wording.
+    //
+    // Deliberately soft-fail, not hard-fail: an earlier version rejected the
+    // request outright when delivery failed (expiring the challenge +
+    // throwing OTP_DELIVERY_FAILED), which stranded a respondent with no way
+    // to ever get a code whenever delivery wasn't configured/working.
     // Give the session the contact details it needs to be remindable —
     // the same two values the challenge above already holds, and the only
     // reason SurveySession carries them at all.
@@ -241,16 +257,16 @@ export class CitizenService {
         mobile,
       });
     }
-    const codeTexted = await this.sms.sendOtpCode(payload.mobile, code);
+    const codeSent = await this.mailer.sendCitizenOtpEmail(contact, code);
     // Dev only: surface the code in the response itself (below) so
-    // local/test runs aren't blocked on a real phone when delivery fails —
-    // never logged (OTPs and raw phone numbers must never appear in logs;
+    // local/test runs aren't blocked on real mail delivery — never logged
+    // (OTPs, raw phone numbers and addresses must never appear in logs;
     // this is the sole reveal channel, not a redundant one).
     return {
       challengeId: challenge.id,
       expiresAt: expiresAt.toISOString(),
-      codeTexted,
-      code: shouldRevealOtp(codeTexted, this.config.nodeEnv) ? code : undefined,
+      codeSent,
+      code: shouldRevealOtp(codeSent, this.config.nodeEnv) ? code : undefined,
     };
   }
 
