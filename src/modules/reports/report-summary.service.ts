@@ -384,16 +384,38 @@ export class ReportSummaryService {
       });
       if (!study) throw new NotFoundException('Study not found');
 
+      // REGION narrows the geography to the region the user picked. It used
+      // to be accepted and ignored, so every Region summary described the
+      // whole study under whichever region name was chosen — including a
+      // region the study never worked in. The dropdown sends the region name;
+      // an id is accepted too.
+      // A study with no governorates selected has no geography to narrow, so
+      // it keeps the old behaviour rather than refusing every region.
+      const regionFilter =
+        scope === 'REGION' && study.studyGovernorates.length > 0 ? scopeFilters.regionId?.trim() : undefined;
+      const scopedGovernorates = regionFilter
+        ? study.studyGovernorates.filter(
+            (sg) =>
+              sg.governorate.region.id === regionFilter ||
+              sg.governorate.region.name.toLowerCase() === regionFilter.toLowerCase(),
+          )
+        : study.studyGovernorates;
+      if (regionFilter && scopedGovernorates.length === 0) {
+        throw new BadRequestException(
+          `This study has no governorates in the region "${regionFilter}". Choose a region the study covers.`,
+        );
+      }
+
       // Governorate name(s) for the region report — a study may select several,
       // so join their names; null (→ "–") when the study has none selected.
       const governorateName =
-        study.studyGovernorates.map((sg) => sg.governorate.name).join(', ') || null;
+        scopedGovernorates.map((sg) => sg.governorate.name).join(', ') || null;
 
       // Region name(s) where the study was conducted — derived from the selected
       // governorates' parent Region. Distinct + joined; null when none selected,
       // so the report falls back to the study name.
       const regionName =
-        [...new Set(study.studyGovernorates.map((sg) => sg.governorate.region.name))].join(', ') ||
+        [...new Set(scopedGovernorates.map((sg) => sg.governorate.region.name))].join(', ') ||
         null;
 
       const survey = await tx.survey.findUnique({
@@ -444,8 +466,20 @@ export class ReportSummaryService {
         },
       });
 
-      if (scope === 'SECTOR' && scopeFilters.domainKey) {
-        domainRollups = domainRollups.filter((d) => d.entityId === scopeFilters.domainKey);
+      // SECTOR narrows every level of the snapshot to one domain. Compared
+      // NORMALIZED: the rollup stores the domain name as the question bank
+      // spells it, the dropdown sends the master Domain name, and an exact
+      // match silently kept nothing whenever the two differed in case or
+      // punctuation.
+      const sectorKey =
+        scope === 'SECTOR' && scopeFilters.domainKey ? normalizeDomainKey(scopeFilters.domainKey) : null;
+      if (sectorKey) {
+        domainRollups = domainRollups.filter((d) => normalizeDomainKey(d.entityId) === sectorKey);
+        if (domainRollups.length === 0) {
+          throw new BadRequestException(
+            `No scores for the sector "${scopeFilters.domainKey}" in this survey. Choose a sector the survey asked about.`,
+          );
+        }
       }
 
       // Count the methodology KPIs contributing to each domain's severity. The
@@ -461,7 +495,7 @@ export class ReportSummaryService {
       // domain name).
       const methodologyQuestions = await tx.question.findMany({
         where: { methodologyVersionId: mv.id, usedInMvp: true, kpi: { not: null } },
-        select: { domain: true, kpi: true, indicator: true },
+        select: { domain: true, subDomain: true, kpi: true, indicator: true },
       });
 
       // Questions THIS survey asked, by domain. SurveyQuestion.questionId is the
@@ -509,7 +543,7 @@ export class ReportSummaryService {
         unitGeo = buildUnitGeo({
           needVillages: [],
           studyVillages: study.villages ?? [],
-          governorates: study.studyGovernorates.map((sg) => ({
+          governorates: scopedGovernorates.map((sg) => ({
             id: sg.governorateId,
             name: sg.governorate.name,
             regionId: sg.governorate.regionId,
@@ -550,10 +584,35 @@ export class ReportSummaryService {
         if (q.indicator && !indicatorByKpi.has(q.kpi)) indicatorByKpi.set(q.kpi, q.indicator);
       }
 
+      // The sub-domains, indicators and KPIs that belong to the SECTOR's
+      // domain. Rollups below DOMAIN carry only their own name, so membership
+      // comes from the same question set the scoring pipeline groups by.
+      // Without this a Sector summary listed every other domain's KPIs and
+      // indicators under the one domain it claimed to describe.
+      const sector = sectorKey
+        ? {
+            subDomains: new Set(
+              methodologyQuestions.filter((q) => normalizeDomainKey(q.domain) === sectorKey).map((q) => q.subDomain),
+            ),
+            indicators: new Set(
+              methodologyQuestions
+                .filter((q) => normalizeDomainKey(q.domain) === sectorKey && q.indicator)
+                .map((q) => q.indicator as string),
+            ),
+            kpis: new Set(
+              methodologyQuestions
+                .filter((q) => normalizeDomainKey(q.domain) === sectorKey && q.kpi)
+                .map((q) => q.kpi as string),
+            ),
+          }
+        : null;
+      const inSector = (names: Set<string> | undefined) => (r: { entityId: string }) =>
+        !names || names.has(r.entityId);
+
       // The two intermediate rollup levels. Mirrors the DOMAIN query exactly —
       // same villageId filter, or these duplicate per village the way the KPI
       // query used to.
-      const [subDomainRollups, indicatorRollups, allKpiRollups] = await Promise.all([
+      const [allSubDomainRollups, allIndicatorRollups, everyKpiRollup] = await Promise.all([
         tx.scoreRollup.findMany({
           where: {
             studyId,
@@ -586,6 +645,9 @@ export class ReportSummaryService {
           orderBy: { entityId: 'asc' },
         }),
       ]);
+      const subDomainRollups = allSubDomainRollups.filter(inSector(sector?.subDomains));
+      const indicatorRollups = allIndicatorRollups.filter(inSector(sector?.indicators));
+      const allKpiRollups = everyKpiRollup.filter(inSector(sector?.kpis));
 
       const kpiRollups = await tx.scoreRollup.findMany({
         where: {
@@ -593,6 +655,8 @@ export class ReportSummaryService {
           surveyId,
           methodologyVersionId: mv.id,
           rollupLevel: 'KPI',
+          // Top KPIs of the sector, not of the whole survey.
+          ...(sector ? { entityId: { in: [...sector.kpis] } } : {}),
           // Same per-village duplication as the DOMAIN query above — without
           // this the Top KPIs table listed each KPI once per village.
           villageId: rollupVillageId,
@@ -655,8 +719,9 @@ export class ReportSummaryService {
         overallRollup?.severityScore != null ? Number(overallRollup.severityScore) : null;
       const severityBand = overallNeedsIndex === null ? 'UNSCORED' : overallNeedsIndex >= 70 ? 'CRITICAL' : overallNeedsIndex >= 50 ? 'HIGH' : overallNeedsIndex >= 30 ? 'MEDIUM' : 'LOW';
 
-      const domainComponents =
-        fromJson<DomainPriorityComponent[] | null>(priorityAssessment?.domainComponents) || [];
+      const domainComponents = (
+        fromJson<DomainPriorityComponent[] | null>(priorityAssessment?.domainComponents) || []
+      ).filter((dc) => !sectorKey || normalizeDomainKey(dc.domainKey) === sectorKey);
 
       const snapshot: ReportDataSnapshot = {
         // Deterministic id assigned below, once the content hashes exist — a
@@ -777,6 +842,7 @@ export class ReportSummaryService {
           calculatedAt: priorityAssessment?.calculatedAt?.toISOString() ?? new Date().toISOString(),
         },
         questionsAskedByDomain: [...askedByDomainKey.entries()]
+          .filter(([domainKey]) => !sectorKey || domainKey === sectorKey)
           .map(([domainKey, v]) => ({ domain: v.domain, domainKey, count: v.count }))
           .sort((a, b) => b.count - a.count || a.domain.localeCompare(b.domain)),
         unitGeo,
@@ -911,7 +977,11 @@ ${extra}${glossaryBlock}`;
     const { response: aiOutputJson } = await this.aiService.run(task, promptText);
 
     return this.tenant.runInOrgContext(async (tx) => {
-      await tx.aiPrioritySummary.updateMany({
+      // Supersede only drafts with the SAME filters. Keyed on scope alone, a
+      // new Health sector summary superseded the Education one, and a new
+      // Riyadh region summary the Makkah one — the same identity rule
+      // getSummary already follows.
+      const openDrafts = await tx.aiPrioritySummary.findMany({
         where: {
           orgId,
           studyId,
@@ -920,8 +990,17 @@ ${extra}${glossaryBlock}`;
           summaryScope: scope,
           status: { in: ['DRAFT', 'STALE'] },
         },
-        data: { status: 'SUPERSEDED' },
+        select: { id: true, scopeFilters: true },
       });
+      const sameFilterIds = openDrafts
+        .filter((d) => scopeFiltersMatch((d.scopeFilters as ScopeFilters | null) ?? { villageId }, scopeFilters))
+        .map((d) => d.id);
+      if (sameFilterIds.length > 0) {
+        await tx.aiPrioritySummary.updateMany({
+          where: { id: { in: sameFilterIds } },
+          data: { status: 'SUPERSEDED' },
+        });
+      }
 
       const summary = await tx.aiPrioritySummary.create({
         data: {
@@ -970,11 +1049,24 @@ ${extra}${glossaryBlock}`;
     surveyId: string,
     scope: SummaryScopeType = 'VILLAGE',
     villageIdOrFilters: string | ScopeFilters = '',
+    options: { newestIfUnspecified?: boolean } = {},
   ) {
     const orgId = requireOrgId();
     const filters: ScopeFilters =
       typeof villageIdOrFilters === 'string' ? { villageId: villageIdOrFilters } : villageIdOrFilters;
     const villageId = filters.villageId ?? '';
+
+    // A screen request that names no sector / region / village set for a scope
+    // that needs one ("open the Sector tab") cannot match any stored row
+    // exactly — every Sector summary has a domainKey. It asks for the newest
+    // summary of that scope instead, whatever it was generated for. Opt-in:
+    // the report provider asks with exact filters and must never be handed a
+    // summary written for a narrower scope than the report it is building.
+    const unspecified =
+      options.newestIfUnspecified === true &&
+      ((scope === 'SECTOR' && !filters.domainKey) ||
+      (scope === 'REGION' && !filters.regionId) ||
+      (scope === 'EXECUTIVE' && !filters.villageIds?.length));
 
     const found = await this.tenant.runInOrgContext(async (tx) => {
       const candidates = await tx.aiPrioritySummary.findMany({
@@ -982,7 +1074,7 @@ ${extra}${glossaryBlock}`;
           orgId,
           studyId,
           surveyId,
-          villageId: villageId || '',
+          ...(unspecified ? {} : { villageId: villageId || '' }),
           summaryScope: scope,
           status: { in: ['SAVED', 'OFFICER_CONFIRMED', 'DRAFT', 'STALE'] },
         },
@@ -991,14 +1083,31 @@ ${extra}${glossaryBlock}`;
 
       // Compared canonically rather than with a Prisma JSON `equals`, which is
       // key-order sensitive and would miss a row written by an older caller.
-      const summary = candidates.find((c) =>
+      const exact = candidates.find((c) =>
         scopeFiltersMatch((c.scopeFilters as ScopeFilters | null) ?? { villageId }, filters),
       );
+      const summary = exact ?? (unspecified ? candidates[0] : undefined);
       if (!summary) return null;
 
       // Built from the REQUESTED filters. Reading them back off the stored row
       // is what let a mismatched summary drag its own snapshot along with it.
-      const snapshotData = await this.buildReportDataSnapshot(studyId, surveyId, scope, filters);
+      // The one exception is the "newest of this scope" case above: nothing
+      // was requested, so the summary's own filters are the only right ones.
+      const snapshotFilters = exact
+        ? filters
+        : ((summary.scopeFilters as ScopeFilters | null) ?? { villageId: summary.villageId });
+      // A summary generated before the sector/region checks existed may name
+      // a sector the survey has no scores for, or a region the study does not
+      // cover. It was written against the unfiltered data, so that is the
+      // snapshot to show beside it — failing the whole read would hide a
+      // summary the user already has.
+      const snapshotData = await this.buildReportDataSnapshot(studyId, surveyId, scope, snapshotFilters).catch(
+        (err: unknown) => {
+          if (!(err instanceof BadRequestException) || (scope !== 'SECTOR' && scope !== 'REGION')) throw err;
+          const { domainKey: _d, regionId: _r, ...unfiltered } = snapshotFilters;
+          return this.buildReportDataSnapshot(studyId, surveyId, scope, unfiltered);
+        },
+      );
       return {
         summary,
         snapshot: snapshotData.snapshot,

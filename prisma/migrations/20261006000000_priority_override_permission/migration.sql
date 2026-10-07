@@ -1,0 +1,14 @@
+-- RIO-FR-003 AC 5 — a PermissionModule for overriding a priority score by hand.
+--
+-- The override used to be gated on priorityScoring `approve`. That one flag
+-- also gates approving a score and confirming an AI summary, so it could not
+-- be taken away from the Data Analyst without also taking those. Client
+-- direction (2026-10-06): the Data Analyst may no longer enter a score
+-- manually. Its own module lets that be said exactly.
+--
+-- Split across two migrations because Postgres refuses to USE a new enum
+-- value in the transaction that adds it (same as 20260904010000).
+--
+-- IF NOT EXISTS: a `prisma db push` against a dev database can already have
+-- added this value from schema.prisma, and enum values cannot be removed.
+ALTER TYPE "PermissionModule" ADD VALUE IF NOT EXISTS 'priorityOverride';

@@ -17,6 +17,21 @@ export const FIXED_SENTENCES_AR: ReadonlyArray<readonly [english: string, arabic
 ];
 
 /**
+ * Level codes as they read inside an Arabic sentence. The same wording the
+ * frontend uses for these bands (report-narrative-i18n.ts BAND), so a code
+ * field rendered by the UI and a sentence written by the model agree. Left in
+ * Latin, "HIGH" inside a short Arabic line made the frontend treat the line as
+ * untranslated and show the English source instead.
+ */
+export const LEVEL_WORDS_AR: ReadonlyArray<readonly [code: string, arabic: string]> = [
+  ['CRITICAL', 'حرج'],
+  ['HIGH', 'عالٍ'],
+  ['MEDIUM', 'متوسط'],
+  ['LOW', 'منخفض'],
+  ['STANDARD', 'قياسي'],
+];
+
+/**
  * Appends the output-language instruction to a summary task's system prompt.
  *
  * English returns the prompt UNCHANGED, byte for byte. Every English summary
@@ -39,7 +54,9 @@ export function withOutputLanguage(systemPrompt: string, locale: SupportedLocale
 OUTPUT LANGUAGE — ARABIC:
 - Write EVERY narrative string value (summaries, findings, notes, explanations, recommendations, titles) in Modern Standard Arabic.
 - Keep the JSON keys exactly as the schema names them. Never translate a key.
-- Keep enumerated values in their canonical form exactly as they appear in the input (for example HIGH, MEDIUM, LOW, STANDARD, priority status codes, domain codes).
+- A JSON field whose value is a code (priorityStatus, priorityLevel, severityBand, confidenceLevel, confidence, status, domain codes) keeps the canonical code exactly as it appears in the input (for example HIGH, MEDIUM, LOW, STANDARD).
+- Inside a sentence, never leave a level code in English. Write it in Arabic:
+${LEVEL_WORDS_AR.map(([en, ar]) => `  - ${en} → ${ar}`).join('\n')}
 - Keep every number, percentage, score, identifier and date exactly as given, written with Western digits (0-9).
 - Where the input gives an Arabic name for a place, domain, indicator, KPI or need (nameAr, *Ar fields, or a name already written in Arabic), use that Arabic name. Never invent a transliteration when an Arabic name is supplied.
 - Where these instructions tell you to write a fixed English sentence, write its Arabic equivalent instead:

@@ -42,6 +42,14 @@ export const PERMISSION_MODULES = [
   // the Initiative model — flagged for client confirmation, not treated as
   // a closed decision.
   'initiatives',
+  // RIO-FR-003 AC 5 — overriding a need's priority score by hand (typing in a
+  // number with a reason). Its OWN module, split out of priorityScoring
+  // `approve`: that one flag also gates approving a score and confirming an
+  // AI summary, so it could not be taken from one role without taking all
+  // three. Client direction (2026-10-06): the Data Analyst may no longer
+  // enter a score manually — scores reach them only from the engine.
+  // `approve` = may override.
+  'priorityOverride',
 ] as const;
 export type PermissionModule = (typeof PERMISSION_MODULES)[number];
 export type PermissionAction = 'read' | 'write' | 'create' | 'approve' | 'export' | 'share';
@@ -117,6 +125,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     // a run or delete a file.
     perm('backups', { read: true }),
     perm('initiatives', { read: true, write: true, create: true }),
+    perm('priorityOverride'),
   ] },
   { id: 'role_ngo_research_officer', key: 'ngo_research_officer', name: 'NGO Research Officer', description: 'Creates studies and surveys from the question bank and enters data.', crossEntity: false, permissions: [
     // RIO-RBAC-001 matrix (Aug 11): view-only on Organization/Users now
@@ -162,6 +171,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('surveyBuilder', { read: true, write: true, create: true }),
     perm('ncnpReport'),
     perm('initiatives', RO),
+    perm('priorityOverride'),
   ] },
   { id: 'role_field_researcher', key: 'field_researcher', name: 'Field Researcher', description: 'Enters needs and documents the source and field notes.', crossEntity: false, permissions: [
     // Confirmed matrix (product team, Aug 12): Organization/Users = View.
@@ -214,6 +224,9 @@ export const ROLE_MATRIX: RoleDef[] = [
     // flags low-confidence, routing it back to Data Analyst — a separate,
     // already-built flow, not gated on this permission).
     perm('priorityScoring', { read: true, approve: true }),
+    // The manual override moved here from priorityScoring `approve`, which
+    // this role already held — so its abilities are unchanged by the split.
+    perm('priorityOverride', { read: true, approve: true }),
     // Reviewer's work starts at Studies/Reviewer-SLA, not an executive
     // dashboard, but they still need read access to Reports/Archive/Sharing
     // once a study's classification/review work is done. `export` —
@@ -293,6 +306,11 @@ export const ROLE_MATRIX: RoleDef[] = [
     // either client answer, but the closest fit without introducing a new
     // permission action — flagged as a follow-up if the client wants a
     // stricter separation later.
+    //
+    // Superseded for the override (client, 2026-10-06): the Data Analyst may
+    // no longer enter a score by hand. Override now sits on its own
+    // `priorityOverride` module, which this role does NOT hold. `approve`
+    // stays here only for approving a score and confirming an AI summary.
     perm('priorityScoring', { read: true, write: true, create: true, approve: true, export: true }),
     // Confirmed matrix: Reports = View/Create/Edit/Export/Share — `share`
     // added (was missing), no `approve` (matches the confirmed row exactly).
@@ -306,6 +324,8 @@ export const ROLE_MATRIX: RoleDef[] = [
     // schema comment on the Initiative model for the Q41 ambiguity this
     // resolves pragmatically.
     perm('initiatives', { read: true, write: true, create: true }),
+    // No manual score override (client, 2026-10-06) — see priorityOverride.
+    perm('priorityOverride'),
   ] },
   { id: 'role_system_admin', key: 'system_admin', name: 'System Admin', description: 'Platform-wide operational authority: manages accounts, roles, permissions, audit log, and Edit rights over all configured/reference data (Methodology/Question Bank, Onboarding Consent & Data Sharing Policy content, and other configured databases) — System Reviewer holds the governance approval gate over the sensitive subset of that same data.', crossEntity: true, permissions: [
     perm('entityTeam', { read: true, write: true, create: true, export: true }),
@@ -363,6 +383,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     // RIO-FR-009 — full authority, cross-entity (create/edit for any org),
     // matching System Admin's cross-org Study-creation pattern elsewhere.
     perm('initiatives', { read: true, write: true, create: true, approve: true }),
+    perm('priorityOverride'),
   ] },
   { id: 'role_read_only_viewer', key: 'read_only_viewer', name: 'Read-only Viewer', description: 'Views authorized outputs without editing.', crossEntity: false, permissions: [
     // Confirmed matrix (product team, Aug 12): Organization/Users = View.
@@ -379,6 +400,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     // Confirmed matrix: Surveys/Survey Builder = View — was no access.
     perm('surveyBuilder', RO), perm('ncnpReport'),
     perm('initiatives', RO),
+    perm('priorityOverride'),
   ] },
   // RIO-RBAC-001 (client-confirmed): "Center supervisor / NCNP supervisor"
   // is one combined role in the client's own Roles & Permissions sheet, not
@@ -410,6 +432,7 @@ export const ROLE_MATRIX: RoleDef[] = [
     // default, read-only, same cross-entity oversight pattern as everything
     // else this role holds.
     perm('initiatives', RO),
+    perm('priorityOverride'),
   ] },
   { id: 'role_citizen_guest', key: 'citizen_guest', name: 'Citizen / Beneficiary Guest', description: 'Responds to surveys through OTP verification; no internal application access.', crossEntity: false,
     permissions: PERMISSION_MODULES.map((m) => (m === 'citizenChannel' ? perm(m, { create: true }) : perm(m))) },

@@ -38,13 +38,15 @@ export class PriorityController {
   }
 
   /**
-   * RIO-FR-003 AC 5. Gated on `priorityScoring:approve`, not `write`: an
-   * override is a reviewer decision about the number, the same class of act as
-   * approving it. Whoever can only run the scoring engine should not be able
-   * to overrule what it produced.
+   * RIO-FR-003 AC 5. An override is a reviewer decision about the number:
+   * whoever can only run the scoring engine should not be able to overrule
+   * what it produced. Gated on its own `priorityOverride` module, not
+   * `priorityScoring:approve` — that flag also lets the Data Analyst approve
+   * scores and confirm summaries, and the client has ruled (2026-10-06) that
+   * the Data Analyst may no longer enter a score by hand.
    */
   @Patch("priority-scores/:id/override")
-  @RequirePermission("priorityScoring", "approve")
+  @RequirePermission("priorityOverride", "approve")
   override(
     @Param("id", new UuidParamPipe()) id: string,
     @Body(new TypeBoxValidationPipe(OverridePriorityScoreBody)) body: OverridePriorityScoreDto,

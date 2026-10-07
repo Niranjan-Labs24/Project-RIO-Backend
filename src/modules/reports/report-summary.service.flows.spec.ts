@@ -221,6 +221,79 @@ describe('ReportSummaryService.buildReportDataSnapshot', () => {
     expect(tx.need.findUnique).not.toHaveBeenCalled();
   });
 
+  it('narrows a SECTOR snapshot to that domain at every level', async () => {
+    const { svc, tx } = setup();
+    seed(tx);
+    tx.question.findMany.mockResolvedValue([
+      { domain: 'Water', subDomain: 'Supply', kpi: 'K1', indicator: 'I1' },
+      { domain: 'Health', subDomain: 'Clinics', kpi: 'K9', indicator: 'I9' },
+    ]);
+    tx.scoreRollup.findMany.mockImplementation(async ({ where }: { where: { rollupLevel: string } }) => {
+      switch (where.rollupLevel) {
+        case 'DOMAIN':
+          return [rollup({ entityId: 'Water' }), rollup({ entityId: 'Health' })];
+        case 'SUB_DOMAIN':
+          return [rollup({ entityId: 'Supply' }), rollup({ entityId: 'Clinics' })];
+        case 'INDICATOR':
+          return [rollup({ entityId: 'I1' }), rollup({ entityId: 'I9' })];
+        default:
+          return [rollup({ entityId: 'K1' }), rollup({ entityId: 'K9' })];
+      }
+    });
+    const { snapshot } = await as('ngo_admin', () =>
+      svc.buildReportDataSnapshot('st', 'sv', 'SECTOR', { domainKey: 'water' }),
+    );
+    const ids = (rows: { entityId?: string; domainName?: string }[]) => rows.map((r) => r.entityId ?? r.domainName);
+    expect(snapshot.severity.domainSeverityScores.map((d) => d.domainName)).toEqual(['Water']);
+    expect(ids(snapshot.severity.subDomainSeverityScores)).toEqual(['Supply']);
+    expect(ids(snapshot.severity.indicatorSeverityScores)).toEqual(['I1']);
+    expect(ids(snapshot.severity.kpiSeverityScores)).toEqual(['K1']);
+    expect(snapshot.questionsAskedByDomain.map((q) => q.domainKey)).toEqual(['WATER']);
+    // Top KPIs are queried for the sector's KPIs only.
+    const topKpiCall = tx.scoreRollup.findMany.mock.calls.find(
+      ([a]: [{ where: { entityId?: unknown } }]) => a.where.entityId,
+    );
+    expect(topKpiCall![0].where.entityId).toEqual({ in: ['K1'] });
+  });
+
+  it('refuses a SECTOR the survey has no scores for', async () => {
+    const { svc, tx } = setup();
+    seed(tx);
+    await expect(
+      as('ngo_admin', () => svc.buildReportDataSnapshot('st', 'sv', 'SECTOR', { domainKey: 'Education' })),
+    ).rejects.toThrow('No scores for the sector "Education"');
+  });
+
+  it('narrows a REGION snapshot to the chosen region and refuses one the study does not cover', async () => {
+    const { svc, tx } = setup();
+    seed(tx);
+    tx.study.findUnique.mockResolvedValue({
+      ...(await tx.study.findUnique()),
+      studyGovernorates: [
+        { governorateId: 'g1', governorate: { name: 'Abha', regionId: 'r1', region: { id: 'r1', name: 'Asir' } } },
+        { governorateId: 'g2', governorate: { name: 'Jeddah', regionId: 'r2', region: { id: 'r2', name: 'Makkah' } } },
+      ],
+    });
+    const { snapshot } = await as('ngo_admin', () =>
+      svc.buildReportDataSnapshot('st', 'sv', 'REGION', { regionId: 'asir' }),
+    );
+    expect(snapshot.study.regionName).toBe('Asir');
+    expect(snapshot.study.governorateName).toBe('Abha');
+    await expect(
+      as('ngo_admin', () => svc.buildReportDataSnapshot('st', 'sv', 'REGION', { regionId: 'Riyadh' })),
+    ).rejects.toThrow('no governorates in the region "Riyadh"');
+  });
+
+  it('keeps a REGION snapshot working for a study with no governorates selected', async () => {
+    const { svc, tx } = setup();
+    seed(tx);
+    tx.study.findUnique.mockResolvedValue({ ...(await tx.study.findUnique()), studyGovernorates: [] });
+    const { snapshot } = await as('ngo_admin', () =>
+      svc.buildReportDataSnapshot('st', 'sv', 'REGION', { regionId: 'Riyadh' }),
+    );
+    expect(snapshot.study.regionName).toBeNull();
+  });
+
   it('gives INDIVIDUAL summaries no document evidence, and bands the severity levels', async () => {
     const { svc, tx } = setup();
     for (const [score, band] of [
@@ -296,6 +369,11 @@ describe('ReportSummaryService.generatePrioritySummary', () => {
     seed(tx);
     ai.run.mockResolvedValue({ response: { headline: 'h' } });
     tx.aiPrioritySummary.create.mockImplementation(async ({ data }: { data: unknown }) => data);
+    // One open draft with the same filters, one for a different sector.
+    tx.aiPrioritySummary.findMany.mockResolvedValue([
+      { id: 'same', scopeFilters: { villageId: 'V' } },
+      { id: 'other', scopeFilters: { villageId: 'V', domainKey: 'Health' } },
+    ]);
     for (const scope of scopes) {
       const out = await as('ngo_admin', () =>
         svc.generatePrioritySummary('st', 'sv', scope, { villageId: 'V' }, { extra: 1 }),
@@ -308,6 +386,23 @@ describe('ReportSummaryService.generatePrioritySummary', () => {
       });
     }
     expect(tx.aiPrioritySummary.updateMany).toHaveBeenCalledTimes(scopes.length);
+    for (const [arg] of tx.aiPrioritySummary.updateMany.mock.calls) {
+      expect(arg.where).toEqual({ id: { in: ['same'] } });
+    }
+  });
+
+  it('does not supersede a draft that has different filters', async () => {
+    const { svc, tx, ai } = setup();
+    seed(tx);
+    ai.run.mockResolvedValue({ response: {} });
+    tx.aiPrioritySummary.create.mockImplementation(async ({ data }: { data: unknown }) => data);
+    tx.aiPrioritySummary.findMany.mockResolvedValue([
+      { id: 'education', scopeFilters: { villageId: 'V', domainKey: 'Education' } },
+    ]);
+    await as('ngo_admin', () =>
+      svc.generatePrioritySummary('st', 'sv', 'VILLAGE', { villageId: 'V' }),
+    );
+    expect(tx.aiPrioritySummary.updateMany).not.toHaveBeenCalled();
   });
 
   it('adds an Arabic glossary when the requester views the app in Arabic, and survives a glossary failure', async () => {
@@ -315,6 +410,7 @@ describe('ReportSummaryService.generatePrioritySummary', () => {
     seed(tx);
     ai.run.mockResolvedValue({ response: {} });
     tx.aiPrioritySummary.create.mockImplementation(async ({ data }: { data: unknown }) => data);
+    tx.aiPrioritySummary.findMany.mockResolvedValue([]);
     m.aliases.mockResolvedValueOnce(new Map([['water', 'ماء']]));
     await as(
       'ngo_admin',
@@ -371,6 +467,44 @@ describe('ReportSummaryService reads and localisation', () => {
       await as(undefined, () => svc.getSummary('st', 'sv', 'VILLAGE', { villageId: 'V' })),
     ).toBeNull();
     expect(await as(undefined, () => svc.getSummary('st', 'sv'))).toBeNull();
+  });
+
+  it('finds a SECTOR summary again by its own filters, and the newest one only when the screen asks', async () => {
+    const { svc, tx } = setup();
+    seed(tx);
+    m.localize.mockResolvedValue({ output: {} });
+    tx.aiPrioritySummary.findMany.mockResolvedValue([
+      stored({ id: 'health', villageId: 'V', scopeFilters: { villageId: 'V', domainKey: 'Water' } }),
+    ]);
+    // Exact filters, as the panel sends them after generating.
+    const exact = await as(undefined, () =>
+      svc.getSummary('st', 'sv', 'SECTOR', { villageId: 'V', domainKey: 'Water' }),
+    );
+    expect(exact!.summary.id).toBe('health');
+
+    // No sector named: the report provider must get nothing...
+    expect(await as(undefined, () => svc.getSummary('st', 'sv', 'SECTOR', {}))).toBeNull();
+    // ...while the screen gets the newest Sector summary, with its own snapshot.
+    const newest = await as(undefined, () =>
+      svc.getSummary('st', 'sv', 'SECTOR', {}, { newestIfUnspecified: true }),
+    );
+    expect(newest!.summary.id).toBe('health');
+    expect(newest!.snapshot.scopeFilters).toEqual({ villageId: 'V', domainKey: 'Water' });
+    expect(tx.aiPrioritySummary.findMany.mock.calls.at(-1)![0].where).not.toHaveProperty('villageId');
+  });
+
+  it('still shows an old REGION summary whose region the study does not cover', async () => {
+    const { svc, tx } = setup();
+    seed(tx);
+    m.localize.mockResolvedValue({ output: {} });
+    tx.aiPrioritySummary.findMany.mockResolvedValue([
+      stored({ id: 'old', scopeFilters: { regionId: 'Riyadh' } }),
+    ]);
+    const out = await as(undefined, () =>
+      svc.getSummary('st', 'sv', 'REGION', { regionId: 'Riyadh' }),
+    );
+    expect(out!.summary.id).toBe('old');
+    expect(out!.snapshot.scopeFilters).toEqual({});
   });
 
   it('localizedOutput persists a fresh translation best-effort, tolerating a cache failure', async () => {

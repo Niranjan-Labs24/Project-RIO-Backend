@@ -61,8 +61,12 @@ export function containsPublicText(value: unknown, text: string): boolean {
   }
   if (Array.isArray(value)) return value.some((v) => containsPublicText(v, text));
   if (value && typeof value === 'object') {
+    // Case-insensitive on the label: the in-app report viewer title-cases a
+    // field name ("Priority Status") where humanise() gives "Priority status".
+    // Both are the same public field name; an exact match refused one of them.
+    const lower = text.toLowerCase();
     return Object.entries(value).some(
-      ([key, v]) => humanise(key) === text || containsPublicText(v, text),
+      ([key, v]) => humanise(key).toLowerCase() === lower || containsPublicText(v, text),
     );
   }
   return false;
