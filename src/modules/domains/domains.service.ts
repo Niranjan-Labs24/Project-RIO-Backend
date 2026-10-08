@@ -2,7 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { Prisma } from '../../generated/prisma';
 import { PrismaService } from '../../prisma/prisma.service';
 import type {
-  CreateDomainPayload, CreateSubDomainPayload, Domain, DomainRow, DomainWithSubDomains, PublicDomainOption, PublicDomainTreeOption, SubDomain, SubDomainRow,
+  CreateDomainPayload, CreateSubDomainPayload, Domain, DomainRow, DomainWithSubDomains, PublicDomainOption, PublicDomainStats, PublicDomainTreeOption, SubDomain, SubDomainRow,
   UpdateDomainPayload, UpdateSubDomainPayload,
 } from './domains.types';
 
@@ -50,6 +50,92 @@ export class DomainsService {
       },
     });
     return rows;
+  }
+
+  /**
+   * Per-domain counts of the published question bank, for the public /home
+   * page. Counts only: no question text, wording, codes or weights leave
+   * here. A question is matched to a domain by name (trimmed, any case) -
+   * the bank stores the domain name, not an id. Questions that match no
+   * active domain are the cross-domain patterns and are counted apart.
+   */
+  async publicStats(): Promise<PublicDomainStats> {
+    const [domains, version] = await Promise.all([
+      this.prisma.domain.findMany({
+        where: { isActive: true },
+        orderBy: { displayOrder: 'asc' },
+        select: { code: true, name: true, nameAr: true },
+      }),
+      this.prisma.methodologyVersion.findFirst({
+        where: { status: 'PUBLISHED' },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, version: true },
+      }),
+    ]);
+    const questions = version
+      ? await this.prisma.question.findMany({
+          where: { methodologyVersionId: version.id, usedInMvp: true },
+          select: { domain: true, subDomain: true, indicator: true, kpi: true },
+        })
+      : [];
+
+    const key = (s: string) => s.trim().toLowerCase();
+    const byDomain = new Map(
+      domains.map((d) => [
+        key(d.name),
+        { subs: new Set<string>(), inds: new Set<string>(), kpis: new Set<string>(), questions: 0 },
+      ]),
+    );
+    // Only the bank's own cross-domain patterns count as cross-domain. A
+    // question whose domain was renamed or deactivated matches nothing and
+    // is left out, rather than silently swelling the cross-domain figure.
+    let crossDomainQuestions = 0;
+    let counted = 0;
+    for (const q of questions) {
+      const bucket = byDomain.get(key(q.domain));
+      if (!bucket) {
+        if (key(q.domain).startsWith('cross-domain')) {
+          crossDomainQuestions += 1;
+          counted += 1;
+        }
+        continue;
+      }
+      counted += 1;
+      bucket.questions += 1;
+      bucket.subs.add(key(q.subDomain));
+      if (q.indicator) bucket.inds.add(key(q.indicator));
+      if (q.kpi) bucket.kpis.add(key(q.kpi));
+    }
+
+    const rows = domains.map((d) => {
+      const b = byDomain.get(key(d.name))!;
+      return {
+        code: d.code,
+        name: d.name,
+        nameAr: d.nameAr,
+        subDomains: b.subs.size,
+        indicators: b.inds.size,
+        kpis: b.kpis.size,
+        questions: b.questions,
+      };
+    });
+    const sum = (k: 'subDomains' | 'indicators' | 'kpis' | 'questions') =>
+      rows.reduce((n, r) => n + r[k], 0);
+    return {
+      // The short version ("v5.0"), not the stored label ("v5.0 - Approved
+      // methodology baseline"): a public page needs the number, not the wording.
+      methodologyVersion: version ? (version.version.split(/\s+-\s+/)[0] ?? version.version).trim() : null,
+      domains: rows,
+      totals: {
+        domains: rows.length,
+        subDomains: sum('subDomains'),
+        indicators: sum('indicators'),
+        kpis: sum('kpis'),
+        questions: counted,
+        domainQuestions: sum('questions'),
+        crossDomainQuestions,
+      },
+    };
   }
 
   async createDomain(payload: CreateDomainPayload): Promise<Domain> {

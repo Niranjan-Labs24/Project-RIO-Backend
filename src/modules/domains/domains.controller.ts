@@ -9,7 +9,7 @@ import {
 } from './domains.contract';
 import { DomainsService } from './domains.service';
 import type {
-  CreateDomainPayload, CreateSubDomainPayload, Domain, DomainWithSubDomains, PublicDomainOption, PublicDomainTreeOption, SubDomain, UpdateDomainPayload, UpdateSubDomainPayload,
+  CreateDomainPayload, CreateSubDomainPayload, Domain, DomainWithSubDomains, PublicDomainOption, PublicDomainStats, PublicDomainTreeOption, SubDomain, UpdateDomainPayload, UpdateSubDomainPayload,
 } from './domains.types';
 
 // Reads open to nearly every role (methodologyQuestionBank RO is granted
@@ -48,6 +48,16 @@ export class DomainsController {
   @Public()
   listPublicDomainTree(): Promise<PublicDomainTreeOption[]> {
     return this.domains.listActiveTree();
+  }
+
+  // The public /home page's domain cards. Counts only - no question text -
+  // from the published methodology, so the same open posture as the two
+  // routes above. GET only, under the default read rate limit.
+  @Get('public/stats')
+  @CsrfExempt()
+  @Public()
+  publicDomainStats(): Promise<PublicDomainStats> {
+    return this.domains.publicStats();
   }
 
   @Get()

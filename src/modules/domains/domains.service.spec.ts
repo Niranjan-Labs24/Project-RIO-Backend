@@ -61,6 +61,47 @@ describe('DomainsService reads', () => {
   });
 });
 
+describe('DomainsService public stats', () => {
+  it('counts the published bank per domain, apart from cross-domain questions', async () => {
+    const { prisma, svc } = setup();
+    prisma.domain.findMany.mockResolvedValue([
+      { code: 'W', name: 'Water', nameAr: 'ماء' },
+      { code: 'H', name: 'Health', nameAr: 'صحة' },
+    ]);
+    prisma.methodologyVersion.findFirst.mockResolvedValue({ id: 'mv', version: 'v5.0 - Approved methodology baseline' });
+    prisma.question.findMany.mockResolvedValue([
+      { domain: 'Water', subDomain: 'Supply', indicator: 'I1', kpi: 'K1' },
+      { domain: ' water ', subDomain: 'Supply', indicator: 'I1', kpi: 'K2' },
+      { domain: 'Water', subDomain: 'Quality', indicator: 'I2', kpi: null },
+      { domain: 'Cross-Domain', subDomain: 'Facts', indicator: null, kpi: null },
+      { domain: 'Renamed Domain', subDomain: 'Old', indicator: null, kpi: null },
+    ]);
+    const out = await svc.publicStats();
+    expect(prisma.question.findMany.mock.calls[0]![0].where).toEqual({ methodologyVersionId: 'mv', usedInMvp: true });
+    expect(out.methodologyVersion).toBe('v5.0');
+    expect(out.domains).toEqual([
+      { code: 'W', name: 'Water', nameAr: 'ماء', subDomains: 2, indicators: 2, kpis: 2, questions: 3 },
+      { code: 'H', name: 'Health', nameAr: 'صحة', subDomains: 0, indicators: 0, kpis: 0, questions: 0 },
+    ]);
+    expect(out.totals).toEqual({
+      domains: 2, subDomains: 2, indicators: 2, kpis: 2, questions: 4, domainQuestions: 3, crossDomainQuestions: 1,
+    });
+    // Counts only: nothing that identifies a question leaves the service.
+    expect(JSON.stringify(out)).not.toMatch(/Supply|Quality|I1|K1|Facts|Approved/);
+  });
+
+  it('returns zero counts when no methodology is published', async () => {
+    const { prisma, svc } = setup();
+    prisma.domain.findMany.mockResolvedValue([{ code: 'W', name: 'Water', nameAr: null }]);
+    prisma.methodologyVersion.findFirst.mockResolvedValue(null);
+    const out = await svc.publicStats();
+    expect(prisma.question.findMany).not.toHaveBeenCalled();
+    expect(out.methodologyVersion).toBeNull();
+    expect(out.totals.questions).toBe(0);
+    expect(out.domains[0]!.questions).toBe(0);
+  });
+});
+
 describe('DomainsService domain writes', () => {
   it('creates a domain with a default order, and maps a duplicate code to a conflict', async () => {
     const { prisma, svc } = setup();
