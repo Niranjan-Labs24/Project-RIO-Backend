@@ -76,6 +76,36 @@ export interface PublicDomainTreeOption {
   subDomains: { name: string; nameAr: string | null }[];
 }
 
+/** Counts only - never question text - for the public /home page. Taken from
+ *  the published methodology version's question bank. */
+export interface PublicDomainStat {
+  code: string;
+  name: string;
+  nameAr: string | null;
+  subDomains: number;
+  indicators: number;
+  kpis: number;
+  questions: number;
+}
+export interface PublicDomainStats {
+  /** The published methodology version the counts come from, or null when
+   *  none is published (every count is then 0). */
+  methodologyVersion: string | null;
+  domains: PublicDomainStat[];
+  totals: {
+    domains: number;
+    subDomains: number;
+    indicators: number;
+    kpis: number;
+    /** Questions counted: the domains' own plus the cross-domain ones. */
+    questions: number;
+    /** Questions that belong to one of the active domains. */
+    domainQuestions: number;
+    /** Questions that belong to no single domain (cross-domain patterns). */
+    crossDomainQuestions: number;
+  };
+}
+
 export interface CreateDomainPayload {
   code: string;
   name: string;
