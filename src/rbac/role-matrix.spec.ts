@@ -240,4 +240,14 @@ describe('ROLE_MATRIX', () => {
   it('lists systemLogs as a real module so the FE type stays in sync', () => {
     expect(PERMISSION_MODULES).toContain('systemLogs');
   });
+
+  // Client, 2026-10-06: the Data Analyst may no longer enter a score by hand.
+  it('lets only the Human Reviewer override a priority score, without taking other Data Analyst score rights', () => {
+    const overriders = ROLE_MATRIX.filter((r) => can(r.key, 'priorityOverride', 'approve')).map((r) => r.key);
+    expect(overriders).toEqual(['human_reviewer']);
+    // Everything else the Data Analyst does with scores stays.
+    for (const action of ['read', 'write', 'create', 'approve', 'export'] as const) {
+      expect(can('data_analyst', 'priorityScoring', action)).toBe(true);
+    }
+  });
 });

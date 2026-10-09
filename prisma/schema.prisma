@@ -67,6 +67,9 @@ enum PermissionModule {
   backups
   // RIO-FR-009 — Initiative records and their linkage to Needs.
   initiatives
+  // RIO-FR-003 AC 5 — overriding a priority score by hand. Split out of
+  // priorityScoring `approve`; see 20261006000000.
+  priorityOverride
 }
 
 // ──────── Reference (global, seeded, read-only to cnap_app) ────────

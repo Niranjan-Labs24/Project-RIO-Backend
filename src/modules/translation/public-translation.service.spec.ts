@@ -111,6 +111,11 @@ describe('public resource translation', () => {
     });
     expect(archive.document).toHaveBeenCalledWith('released');
   });
+  it('accepts a field label in either title or sentence case, but not an unrelated label', () => {
+    expect(containsPublicText({ priorityStatus: 'HIGH' }, 'Priority status')).toBe(true);
+    expect(containsPublicText({ priorityStatus: 'HIGH' }, 'Priority Status')).toBe(true);
+    expect(containsPublicText({ priorityStatus: 'HIGH' }, 'Private Notes')).toBe(false);
+  });
   it('does not accept empty text or invent content absent from the resource', () => {
     expect(containsPublicText({ title: 'Hello' }, '')).toBe(false);
     expect(containsPublicText({ title: 'Hello' }, 'unpublished')).toBe(false);

@@ -1,4 +1,5 @@
 import type { AiTask } from '../ai.task';
+import { LEVEL_WORDS_AR } from './output-language';
 
 export interface SummaryTranslationResponse {
   translations: string[];
@@ -28,7 +29,7 @@ export function buildSummaryTranslationTask(
   const targetName = LANGUAGE_NAMES[targetLocale];
   return {
     name: `summary-translation-${sourceLocale}-${targetLocale}`,
-    promptVersion: 'summary-translation-v1',
+    promptVersion: 'summary-translation-v2',
     model: 'gemini-2.5-flash',
     modelVersion: 'v1',
     temperature: 0,
@@ -42,7 +43,12 @@ RULES:
 1. Return {"translations": [...]} with EXACTLY as many items as the input array, in the SAME order. Item i is the translation of input segment i. Never merge, split, drop, or reorder segments.
 2. Translate the meaning faithfully. Do not add, remove, summarise, soften, or reinterpret anything. This is an official report: keep a formal register.
 3. Keep every number, percentage, score, rank, date and identifier exactly as written, using Western digits (0-9).
-4. Keep enumerated codes and acronyms as they are (for example HIGH, MEDIUM, LOW, KPI, SLA, RPT01).
+4. Keep acronyms and identifiers as they are (for example KPI, SLA, RPT01, HLT-01).${
+      targetLocale === 'ar'
+        ? `
+4a. Level words inside a sentence are prose, not codes. Write them in Arabic: ${LEVEL_WORDS_AR.map(([en, ar]) => `${en} → ${ar}`).join(', ')}.`
+        : ''
+    }
 5. Place names, organisation names and person names: use the established ${targetName} name when there is one; otherwise transliterate into ${targetName} script. Never leave a name in the source script.
 6. A segment may already mix ${sourceName} with ${targetName} (for example an ${sourceName} sentence containing a ${targetName} place name). Translate the ${sourceName} parts and keep the ${targetName} parts exactly as they are.
 7. If a segment is already entirely in ${targetName}, return it unchanged.

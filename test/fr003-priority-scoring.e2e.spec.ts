@@ -33,6 +33,8 @@ describe("FR-003 priority scoring (e2e)", () => {
   let analystCsrf: string;
   let adminCookies: string[];
   let adminCsrf: string;
+  let reviewerCookies: string[];
+  let reviewerCsrf: string;
   let studyId: string;
   let studyGovernorateId: string;
   let studyCenterId: string;
@@ -116,6 +118,7 @@ describe("FR-003 priority scoring (e2e)", () => {
     [officerCookies, officerCsrf] = await login("officer@demo-ngo.org");
     [analystCookies, analystCsrf] = await login("analyst@demo-ngo.org");
     [adminCookies, adminCsrf] = await login("sysadmin@platform.local");
+    [reviewerCookies, reviewerCsrf] = await login("reviewer@demo-ngo.org");
 
     const admin = await supervisor.user.findFirst({ where: { email: "admin@demo-ngo.org" } });
     // A Need now requires at least one Governorate/Center (client-confirmed
@@ -354,8 +357,8 @@ describe("FR-003 priority scoring (e2e)", () => {
     // No reason — refused by the contract before it reaches the service.
     await request(app.getHttpServer())
       .patch(`/api/priority-scores/${scoreId}/override`)
-      .set("Cookie", analystCookies)
-      .set("x-csrf-token", analystCsrf)
+      .set("Cookie", reviewerCookies)
+      .set("x-csrf-token", reviewerCsrf)
       .send({ overrideScore: 85, reason: "" })
       .expect(400);
 
@@ -367,10 +370,18 @@ describe("FR-003 priority scoring (e2e)", () => {
       .send({ overrideScore: 85, reason: "Should not be allowed." })
       .expect(403);
 
-    const overridden = await request(app.getHttpServer())
+    // Nor, since 2026-10-06, the Data Analyst: no manual score entry.
+    await request(app.getHttpServer())
       .patch(`/api/priority-scores/${scoreId}/override`)
       .set("Cookie", analystCookies)
       .set("x-csrf-token", analystCsrf)
+      .send({ overrideScore: 85, reason: "Should not be allowed." })
+      .expect(403);
+
+    const overridden = await request(app.getHttpServer())
+      .patch(`/api/priority-scores/${scoreId}/override`)
+      .set("Cookie", reviewerCookies)
+      .set("x-csrf-token", reviewerCsrf)
       .send({ overrideScore: 85, reason: "Outbreak reported after the survey closed." })
       .expect(200);
 
@@ -395,8 +406,8 @@ describe("FR-003 priority scoring (e2e)", () => {
     // signed for.
     await request(app.getHttpServer())
       .patch(`/api/priority-scores/${scoreId}/override`)
-      .set("Cookie", analystCookies)
-      .set("x-csrf-token", analystCsrf)
+      .set("Cookie", reviewerCookies)
+      .set("x-csrf-token", reviewerCsrf)
       .send({ overrideScore: 90, reason: "Too late." })
       .expect(400);
   }, TEST_TIMEOUT_MS);

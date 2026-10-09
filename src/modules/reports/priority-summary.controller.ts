@@ -15,6 +15,18 @@ import {
 } from './priority-summary.contract';
 import { ReportSummaryService, SummaryScopeType } from './report-summary.service';
 
+/** `villageIds` arrives as a JSON array — a village name may contain a comma,
+ *  so a comma-joined list would split one name in two. */
+function parseVillageIds(raw?: string): string[] | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string' && v.length > 0) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 @Controller()
 export class PrioritySummaryController {
   constructor(private readonly summaryService: ReportSummaryService) {}
@@ -57,8 +69,19 @@ export class PrioritySummaryController {
     @Param('surveyId', new UuidParamPipe()) surveyId: string,
     @Query('scope') scope?: SummaryScopeType,
     @Query('villageId') villageId?: string,
+    @Query('domainKey') domainKey?: string,
+    @Query('regionId') regionId?: string,
+    @Query('villageIds') villageIds?: string,
   ) {
-    return this.summaryService.getSummary(studyId, surveyId, scope || 'VILLAGE', villageId || '');
+    // The filters are part of a summary's identity (see getSummary). Reading
+    // only villageId meant a SECTOR, REGION or EXECUTIVE summary could never be
+    // found again — it vanished from the screen right after it was generated.
+    return this.summaryService.getSummary(studyId, surveyId, scope || 'VILLAGE', {
+      villageId: villageId || '',
+      domainKey: domainKey || undefined,
+      regionId: regionId || undefined,
+      villageIds: parseVillageIds(villageIds),
+    }, { newestIfUnspecified: true });
   }
 
   @Patch('priority-summaries/:summaryId')
