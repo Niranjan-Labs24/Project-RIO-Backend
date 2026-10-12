@@ -44,6 +44,12 @@ describe('localizeEnumWords', () => {
     expect(localizeEnumWords('Severity is HIGH', 'en')).toBe('Severity is HIGH');
     expect(localizeEnumWords('مؤشر KPI في HLT-01', 'ar')).toBe('مؤشر KPI في HLT-01');
   });
+
+  it('uses the client term for Research Officer, not the military one', () => {
+    expect(localizeEnumWords('ضابط أبحاث اختبار', 'ar')).toBe('مسؤول أبحاث اختبار');
+    expect(localizeEnumWords('مرحبًا، ضابط بحث', 'ar')).toBe('مرحبًا، مسؤول أبحاث');
+    expect(localizeEnumWords('موظف أبحاث', 'ar')).toBe('مسؤول أبحاث');
+  });
 });
 
 describe('rejectTranslation', () => {
