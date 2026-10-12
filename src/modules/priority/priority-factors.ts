@@ -73,6 +73,9 @@ export interface FactorInputs {
   /** Average severity of access/availability-category questions, 0-100. */
   serviceGapSeverity: number | null;
   affectedPeople: number | null;
+  /** True when `affectedPeople` is the need's Total population standing in
+   *  for a blank Affected people figure — only changes the basis wording. */
+  affectedPeopleIsAreaTotal?: boolean;
   /** The level key the reviewer chose, e.g. "immediate". */
   urgency: string | null;
   /** 0..1 — the share of answers that were "don't know". */
@@ -158,7 +161,9 @@ function valueFor(
         ? { value: null, basis: null }
         : {
             value: scaleToPercent(inputs.affectedPeople, scales.affectedPopulation),
-            basis: `${inputs.affectedPeople} people affected`,
+            basis: inputs.affectedPeopleIsAreaTotal
+              ? `${inputs.affectedPeople} total population (no affected-people figure)`
+              : `${inputs.affectedPeople} people affected`,
           };
 
     case 'urgency': {

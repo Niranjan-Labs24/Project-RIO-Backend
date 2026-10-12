@@ -125,6 +125,17 @@ describe('computePriority — AC 2, every component individually visible', () =>
     expect(c.contribution).toBeCloseTo(6.75, 5);
     expect(c.basis).toBe('450 people affected');
   });
+
+  it('says when the figure is the Total population standing in for Affected people', () => {
+    const r = computePriority(
+      WEIGHTS,
+      SCALES,
+      inputs({ affectedPeople: 450, affectedPeopleIsAreaTotal: true }),
+    );
+    const c = by(r, 'affected_population');
+    expect(c.value).toBe(45);
+    expect(c.basis).toBe('450 total population (no affected-people figure)');
+  });
 });
 
 describe('computePriority — missing evidence is null, never zero', () => {

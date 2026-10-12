@@ -144,14 +144,22 @@ const ENUM_WORDS_AR: Record<string, string> = {
 };
 const ENUM_WORDS_RE = new RegExp(`\\b(?:${Object.keys(ENUM_WORDS_AR).join('|')})\\b`, 'g');
 
+/** "Research Officer" comes back as ضابط أبحاث (reads as a military or police
+ *  officer) or موظف أبحاث, depending on the run. The client's term is
+ *  مسؤول أبحاث (UAT feedback, 2026-10-12) — applied to cached answers too. */
+const RESEARCH_OFFICER_RE = /(?:ال)?(?:ضابط|موظف)\s+(?:ال)?(?:أبحاث|ابحاث|بحث|بحوث)/g;
+
 /**
  * The model keeps enum values verbatim ("لثقة STANDARD"); swap them for their
- * Arabic label. Applied to every Arabic answer before it is checked or cached,
- * and to cached answers stored before this existed.
+ * Arabic label, and fixed client terms for their approved wording. Applied to
+ * every Arabic answer before it is checked or cached, and to cached answers
+ * stored before this existed.
  */
 export function localizeEnumWords(text: string, targetLocale: SupportedLocale): string {
   if (targetLocale !== 'ar') return text;
-  return text.replace(ENUM_WORDS_RE, (w) => ENUM_WORDS_AR[w] ?? w);
+  return text
+    .replace(ENUM_WORDS_RE, (w) => ENUM_WORDS_AR[w] ?? w)
+    .replace(RESEARCH_OFFICER_RE, 'مسؤول أبحاث');
 }
 
 export type TranslationRejection =

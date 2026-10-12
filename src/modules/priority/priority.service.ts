@@ -122,7 +122,11 @@ export class PriorityService {
       const inputs: FactorInputs = {
         severity,
         serviceGapSeverity,
-        affectedPeople: need.affectedPeople ?? null,
+        // Affected people is the need-specific figure; when it was left blank
+        // the need's Total population (prefilled from the Study since
+        // 2026-10-12) stands in, so a new need is not "Not measured" here.
+        affectedPeople: need.affectedPeople ?? need.affectedPopulation ?? null,
+        affectedPeopleIsAreaTotal: need.affectedPeople == null && need.affectedPopulation != null,
         urgency: need.urgency ?? null,
         dontKnowRate:
           overallRollup?.dontKnowRate !== null && overallRollup?.dontKnowRate !== undefined
