@@ -22,29 +22,47 @@ function makeService(
     aiThrows?: Error;
     seeded?: CacheRow[];
     upsertThrows?: Error;
-    registry?: Array<{ nameEn: string | null; nameAr: string | null }>;
+    registry?: Array<{ nicNumber?: string; nameEn: string | null; nameAr: string | null }>;
+    orgs?: Array<{ name: string; registrationNumber: string | null }>;
   } = {},
 ) {
   const rows = new Map<string, CacheRow>((opts.seeded ?? []).map((r) => [r.cacheKey, r]));
+  const registryRows = () => (opts.registry ?? []).map((r, i) => ({ ...r, nicNumber: r.nicNumber ?? `700000000${i}` }));
   const runSpy = vi.fn(async (_task?: unknown, _prompt?: string) => {
     if (opts.aiThrows) throw opts.aiThrows;
     return { response: opts.aiResponse ?? { translatedText: 'translated' } };
   });
 
   const prisma = {
+    // Batched lookups, as the service does them: organisations by name or
+    // registration number, registry rows by number or by either name.
     nicRegistry: {
-      findFirst: async ({
+      findMany: async ({
         where,
       }: {
-        where: { OR: Array<{ nameAr?: string; nameEn?: { equals: string } }> };
+        where: { OR: Array<{ nicNumber?: { in: string[] }; nameAr?: { in: string[] }; nameEn?: { in: string[] } }> };
       }) =>
-        (opts.registry ?? []).find((r) =>
+        registryRows().filter((r) =>
           where.OR.some((c) =>
-            c.nameAr !== undefined
-              ? r.nameAr === c.nameAr
-              : r.nameEn?.toLowerCase() === c.nameEn?.equals.toLowerCase(),
+            c.nicNumber
+              ? c.nicNumber.in.includes(r.nicNumber)
+              : c.nameAr
+                ? c.nameAr.in.includes(r.nameAr ?? '')
+                : (c.nameEn?.in ?? []).some((n) => n.toLowerCase() === (r.nameEn ?? '').toLowerCase()),
           ),
-        ) ?? null,
+        ),
+    },
+    organisation: {
+      findMany: async ({
+        where,
+      }: {
+        where: { name?: { in: string[] }; registrationNumber?: { in: string[] } };
+      }) =>
+        (opts.orgs ?? []).filter((o) =>
+          where.name
+            ? o.registrationNumber !== null && where.name.in.some((n) => n.toLowerCase() === o.name.toLowerCase())
+            : (where.registrationNumber?.in ?? []).includes(o.registrationNumber ?? ''),
+        ),
     },
     translationCache: {
       findUnique: async ({ where: { cacheKey } }: { where: { cacheKey: string } }) =>
@@ -285,6 +303,21 @@ describe('TranslationService.translate — official entity names', () => {
     expect(
       (await service.translate('Sports Creativity Association Admin', 'ar')).translatedText,
     ).toBe('جمعية الإبداع الرياضي مسؤول');
+    expect(runSpy).not.toHaveBeenCalled();
+  });
+
+  it('finds a renamed organisation through its registration number', async () => {
+    const { service, runSpy } = makeService({
+      registry: [{ nicNumber: '7000000001', nameEn: 'Sports Creativity Association', nameAr: 'جمعية الإبداع الرياضي' }],
+      orgs: [{ name: 'Sports Creativity Assoc. (Riyadh)', registrationNumber: '7000000001' }],
+    });
+    expect((await service.translate('Sports Creativity Assoc. (Riyadh)', 'ar')).translatedText).toBe(
+      'جمعية الإبداع الرياضي',
+    );
+    // English shows the organisation's own current name.
+    expect((await service.translate('جمعية الإبداع الرياضي', 'en')).translatedText).toBe(
+      'Sports Creativity Assoc. (Riyadh)',
+    );
     expect(runSpy).not.toHaveBeenCalled();
   });
 

@@ -10,6 +10,7 @@ import { requireOrgId, requireActor } from '../../tenancy/org-context';
 import { AuditService } from '../audit/audit.service';
 import { MailerService } from '../../mailer/mailer.service';
 import { TranslationService } from '../translation/translation.service';
+import type { SupportedLocale } from '../translation/translation.types';
 import { sanitizeForSpreadsheet } from '../../common/security/spreadsheet-sanitize';
 import { auditFieldLabel } from '../audit/audit-field-labels';
 import type {
@@ -37,9 +38,45 @@ type MappedQuestion = {
   bankQuestionId: string | null;
   surveyId: string;
   questionText: string;
+  /** Question bank Arabic wording; null for a custom question (shown as typed). */
+  questionTextAr: string | null;
   answerType: string;
   answerOptions: string[] | null;
+  /** Positionally parallel to answerOptions (same order, Arabic wording). */
+  answerOptionsAr: string[] | null;
 };
+
+function parseOptionList(raw: unknown): string[] | null {
+  if (typeof raw === 'string') return JSON.parse(raw) as string[];
+  return Array.isArray(raw) ? (raw as string[]) : null;
+}
+
+// Fixed wording of the responses export, per language. Answers, names and
+// emails are data; only these labels and the choice options (from the
+// question bank's Arabic columns) change with the export language.
+const EXPORT_LABELS: Record<SupportedLocale, { sheet: string; name: string; email: string; submitted: string; version: string; unknown: string; versionLabel: (v: number, status: string) => string }> = {
+  en: { sheet: 'Survey Responses', name: 'Name', email: 'Email', submitted: 'Submitted Date', version: 'Survey Version', unknown: 'Unknown', versionLabel: (v, status) => `v${v} (${status})` },
+  ar: {
+    sheet: 'استجابات الاستبيان', name: 'الاسم', email: 'البريد الإلكتروني', submitted: 'تاريخ الإرسال', version: 'إصدار الاستبيان', unknown: 'غير معروف',
+    versionLabel: (v, status) => `الإصدار ${v} (${({ PUBLISHED: 'منشور', DRAFT: 'مسودة', ARCHIVED: 'مؤرشف', SUPERSEDED: 'مستبدَل', APPROVED: 'معتمد' } as Record<string, string>)[status] ?? status})`,
+  },
+};
+
+/** A question's header and an answer in the export language. Choice answers
+ *  are stored as the English option value; the Arabic option at the same
+ *  position replaces each one (multi-choice answers are joined by ", "). */
+function exportQuestionText(q: MappedQuestion, locale: SupportedLocale): string {
+  return locale === 'ar' && q.questionTextAr ? q.questionTextAr : q.questionText;
+}
+function exportAnswer(q: MappedQuestion, answer: string, locale: SupportedLocale): string {
+  if (locale !== 'ar' || !answer || !q.answerOptions || !q.answerOptionsAr) return answer;
+  const toAr = (part: string) => {
+    const i = q.answerOptions!.indexOf(part);
+    return i >= 0 && q.answerOptionsAr![i] ? q.answerOptionsAr![i] : part;
+  };
+  const whole = toAr(answer);
+  return whole !== answer ? whole : answer.split(', ').map(toAr).join('، ');
+}
 
 // A question plus every other version's copy of it. `questionId` is the
 // copy that represents the group (the earliest version's); `aliasIds` are
@@ -336,7 +373,8 @@ export class PublicSurveysService {
     return this.toResponseDetail(row, questionMap);
   }
 
-  async exportResponsesCsv(needId: string, surveyLinkId?: string): Promise<string> {
+  async exportResponsesCsv(needId: string, surveyLinkId?: string, locale: SupportedLocale = 'en'): Promise<string> {
+    const labels = EXPORT_LABELS[locale];
     await this.findNeedOrThrow(needId);
     const escape = (value: string): string => `"${value.replace(/"/g, '""')}"`;
     return this.tenant.runRead(async (tx) => {
@@ -350,7 +388,7 @@ export class PublicSurveysService {
       // column each (see questionIdentity).
       const questions = this.groupQuestionsByIdentity(questionMap);
       const lines = [
-        ['Name', 'Email', 'Submitted Date', 'Survey Version', ...questions.map((q) => q.questionText)]
+        [labels.name, labels.email, labels.submitted, labels.version, ...questions.map((q) => exportQuestionText(q, locale))]
           .map(escape)
           .join(','),
       ];
@@ -362,10 +400,10 @@ export class PublicSurveysService {
               sanitizeForSpreadsheet(row.contactName ?? ''),
               sanitizeForSpreadsheet(row.contact),
               row.submittedAt.toISOString(),
-              this.resolveResponseVersion(answers, versionMap),
+              this.resolveResponseVersion(answers, versionMap, locale),
               ...questions.map((q) =>
                 sanitizeForSpreadsheet(
-                  this.resolveAnswerAcrossVersions(answers, [q.questionId, ...q.aliasIds]) ?? '',
+                  exportAnswer(q, this.resolveAnswerAcrossVersions(answers, [q.questionId, ...q.aliasIds]) ?? '', locale),
                 ),
               ),
             ]
@@ -374,11 +412,14 @@ export class PublicSurveysService {
           );
         }
       }
-      return lines.join('\n');
+      // A byte-order mark so Excel opens an Arabic CSV as UTF-8 rather than
+      // showing the Arabic as mojibake.
+      return (locale === 'ar' ? '\uFEFF' : '') + lines.join('\n');
     });
   }
 
-  async exportResponsesExcel(needId: string, surveyLinkId?: string): Promise<Buffer> {
+  async exportResponsesExcel(needId: string, surveyLinkId?: string, locale: SupportedLocale = 'en'): Promise<Buffer> {
+    const labels = EXPORT_LABELS[locale];
     await this.findNeedOrThrow(needId);
     return this.tenant.runRead(async (tx) => {
       const [questionMap, versionMap] = await Promise.all([
@@ -406,13 +447,13 @@ export class PublicSurveysService {
       const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({ stream: sink, useStyles: true });
       workbook.creator = 'RIO';
       workbook.created = new Date();
-      const sheet = workbook.addWorksheet('Survey Responses');
+      const sheet = workbook.addWorksheet(labels.sheet, locale === 'ar' ? { views: [{ rightToLeft: true }] } : undefined);
       sheet.columns = [
-        { header: 'Name', key: 'name', width: 24 },
-        { header: 'Email', key: 'email', width: 28 },
-        { header: 'Submitted Date', key: 'submittedAt', width: 22 },
-        { header: 'Survey Version', key: 'surveyVersion', width: 20 },
-        ...questions.map((q) => ({ header: q.questionText, key: q.questionId, width: 32 })),
+        { header: labels.name, key: 'name', width: 24 },
+        { header: labels.email, key: 'email', width: 28 },
+        { header: labels.submitted, key: 'submittedAt', width: 22 },
+        { header: labels.version, key: 'surveyVersion', width: 20 },
+        ...questions.map((q) => ({ header: exportQuestionText(q, locale), key: q.questionId, width: 32 })),
       ];
       sheet.getRow(1).font = { bold: true };
       sheet.getRow(1).commit();
@@ -424,12 +465,12 @@ export class PublicSurveysService {
             name: sanitizeForSpreadsheet(row.contactName ?? ''),
             email: sanitizeForSpreadsheet(row.contact),
             submittedAt: row.submittedAt.toISOString(),
-            surveyVersion: this.resolveResponseVersion(answers, versionMap),
+            surveyVersion: this.resolveResponseVersion(answers, versionMap, locale),
             ...Object.fromEntries(
               questions.map((q) => [
                 q.questionId,
                 sanitizeForSpreadsheet(
-                  this.resolveAnswerAcrossVersions(answers, [q.questionId, ...q.aliasIds]) ?? '',
+                  exportAnswer(q, this.resolveAnswerAcrossVersions(answers, [q.questionId, ...q.aliasIds]) ?? '', locale),
                 ),
               ]),
             ),
@@ -511,18 +552,16 @@ export class PublicSurveysService {
     const map = new Map<string, MappedQuestion>();
     for (const sq of surveys.flatMap((s) => s.surveyQuestions)) {
       const rawOptions = sq.question?.answerOptions ?? sq.customOptions ?? null;
+      const rawOptionsAr = sq.question?.answerOptionsAr ?? null;
       map.set(sq.id, {
         questionId: sq.id,
         bankQuestionId: sq.questionId ?? null,
         surveyId: sq.surveyId,
         questionText: sq.question?.questionText ?? sq.customText ?? '',
+        questionTextAr: sq.question?.questionTextAr ?? null,
         answerType: sq.question?.answerType ?? sq.customAnswerType ?? 'long_text',
-        answerOptions:
-          typeof rawOptions === 'string'
-            ? (JSON.parse(rawOptions) as string[])
-            : Array.isArray(rawOptions)
-              ? (rawOptions as string[])
-              : null,
+        answerOptions: parseOptionList(rawOptions),
+        answerOptionsAr: parseOptionList(rawOptionsAr),
       });
     }
     return map;
@@ -555,6 +594,7 @@ export class PublicSurveysService {
   private resolveResponseVersion(
     rawAnswers: Record<string, string>,
     versionMap: Array<{ version: number; status: string; questionIds: Set<string> }>,
+    locale: SupportedLocale = 'en',
   ): string {
     const answerKeys = Object.keys(rawAnswers);
     let best: { version: number; status: string } | null = null;
@@ -566,7 +606,8 @@ export class PublicSurveysService {
         best = v;
       }
     }
-    return best ? `v${best.version} (${best.status})` : 'Unknown';
+    const labels = EXPORT_LABELS[locale];
+    return best ? labels.versionLabel(best.version, best.status) : labels.unknown;
   }
 
   // What makes two SurveyQuestion rows "the same question".

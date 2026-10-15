@@ -1,3 +1,4 @@
+import { UTF8_FILE_NAMES } from '../../common/http/upload-options';
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -46,7 +47,7 @@ export class NeedsController {
   // CSV/XLSX direct import — one Need per row.
   @Post('studies/:studyId/needs/import')
   @RequirePermission('dataCollection', 'create')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_IMPORT_FILE_SIZE_BYTES } }))
+  @UseInterceptors(FileInterceptor('file', { ...UTF8_FILE_NAMES, limits: { fileSize: MAX_IMPORT_FILE_SIZE_BYTES } }))
   importNeeds(
     @Param('studyId', new UuidParamPipe()) studyId: string,
     @UploadedFile() file: Express.Multer.File,
@@ -60,7 +61,7 @@ export class NeedsController {
   // Parses an uploaded PDF and returns extracted Needs for user review
   @Post('studies/:studyId/needs/preview-pdf')
   @RequirePermission('dataCollection', 'create')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_IMPORT_FILE_SIZE_BYTES } }))
+  @UseInterceptors(FileInterceptor('file', { ...UTF8_FILE_NAMES, limits: { fileSize: MAX_IMPORT_FILE_SIZE_BYTES } }))
   previewPdf(
     @Param('studyId', new UuidParamPipe()) studyId: string,
     @UploadedFile() file: Express.Multer.File,
@@ -74,7 +75,7 @@ export class NeedsController {
   // Parses uploaded survey results document (PDF/DOCX/XLSX/CSV) and returns extracted Needs for user review
   @Post('studies/:studyId/needs/preview-survey-results')
   @RequirePermission('dataCollection', 'create')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_IMPORT_FILE_SIZE_BYTES } }))
+  @UseInterceptors(FileInterceptor('file', { ...UTF8_FILE_NAMES, limits: { fileSize: MAX_IMPORT_FILE_SIZE_BYTES } }))
   previewSurveyResults(
     @Param('studyId', new UuidParamPipe()) studyId: string,
     @UploadedFile() file: Express.Multer.File,

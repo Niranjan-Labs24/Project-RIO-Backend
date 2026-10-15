@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildReportDoc, type DocSection, type ReportDoc } from "./report-doc";
-import { keyForEnglish, label } from "./i18n/report-labels";
+import { keyForEnglish, label, localizeKnownValue } from "./i18n/report-labels";
 import { StubReportDataProvider } from "./providers/__fixtures__/report-content.fixtures";
 import type { GeneratorCtx } from "./generators";
 import { individualSurveyGenerator } from "./generators/individual-survey.generator";
@@ -120,11 +120,15 @@ describe("Arabic export labels", () => {
     const values = (d: ReportDoc) =>
       d.sections.flatMap((s) => (s.kind === "keyvalue" ? s.rows.map((r) => r.value) : []));
 
-    // Severity bands, domain names, scores and dates are data — and some of
-    // them collide by text with real labels ("CRITICAL" against the "Critical"
-    // column heading), so a careless localizer would rewrite them invisibly.
-    expect(cells(ar)).toEqual(cells(en));
-    expect(values(ar)).toEqual(values(en));
+    // Domain names, scores and dates are data — and some collide by text with
+    // real labels, so a careless localizer would rewrite them invisibly. Only
+    // the enumerated tiers and Yes/No move, exactly as the screen shows them.
+    expect(cells(ar)).toEqual(cells(en).map((c) => localizeKnownValue(c, "ar")));
+    expect(values(ar)).toEqual(values(en).map((v) => localizeKnownValue(v, "ar")));
+    expect(cells(ar)).toContain("Health");
+    expect(cells(ar)).toContain("72.00");
+    expect(cells(ar)).not.toContain("Yes");
+    expect(cells(ar)).not.toContain("CRITICAL");
 
     // ...while the column names beside those untouched cells did move. Checked
     // positionally against the English build for the same reason as headings:

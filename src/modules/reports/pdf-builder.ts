@@ -57,6 +57,16 @@ function normalizeAscii(s: string): string {
     // folded here, and esc() no longer multiplies one stray character into a
     // run of question marks.
     .replace(/±/g, "+/-")
+    // Arabic exports: the "Open ›" link arrow, Arabic quotation marks, the
+    // Arabic percent sign and maths symbols printed as "?" (Helvetica has no
+    // glyph); bidi isolate / direction marks are invisible and are dropped.
+    .replace(/›/g, ">")
+    .replace(/‹/g, "<")
+    .replace(/[«»]/g, '"')
+    .replace(/÷/g, "/")
+    .replace(/²/g, "2")
+    .replace(/٪/g, "%")
+    .replace(/[\u200E\u200F\u2060\u2066-\u2069]/g, "")
     .replace(/≈/g, "~")
     .replace(/√/g, "sqrt")
     .replace(/°/g, " deg")
@@ -104,8 +114,11 @@ const HELV_BOLD_W: readonly number[] = [
 function asciiTextWidth(str: string, size: number, bold = false): number {
   const table = bold ? HELV_BOLD_W : HELV_W;
   let units = 0;
-  for (let i = 0; i < str.length; i++) {
-    const code = str.charCodeAt(i);
+  // Measure exactly what esc() draws: the folds widen symbols ("≥" → ">=",
+  // "←" → "<-", "±" → "+/-"), and measuring the unfolded character made the
+  // next chunk of an Arabic line overprint it ("حرجة،" ran into "≥50").
+  for (const ch of normalizeAscii(str)) {
+    const code = ch.codePointAt(0) ?? 0;
     // Anything off the table is drawn as "?" by esc(), so measure it as one.
     units += (code >= 32 && code <= 126 ? table[code - 32] : table[31]) ?? 556;
   }
@@ -177,6 +190,8 @@ export class Pdf {
   // through it. A figure and the text that describes it have to move together;
   // "a disc is symmetric so it does not matter" ignores that its POSITION does.
   dir: "ltr" | "rtl" = "ltr";
+  /** The export language — for the few fixed words drawn inside a figure. */
+  locale: SupportedLocale = "en";
 
   /** Mirror a left edge within the current column. Identity in LTR. */
   private mx(x: number, width: number): number {
@@ -354,10 +369,22 @@ export class Pdf {
         }
         cursor += asciiTextWidth(chunk.text, size, bold);
       } else {
-        chunk.glyphIds.forEach((id, i) => widthMap.set(id, chunk.advances1000[i]!));
-        const hex = chunk.glyphIds.map((id) => id.toString(16).padStart(4, "0")).join("");
-        if (hex.length > 0) {
-          this.ops.push(`${color} rg BT /${arabicFont} ${size} Tf 1 0 0 1 ${cursor} ${y} Tm <${hex}> Tj ET`);
+        // The font's /W table holds ONE width per glyph, but Amiri's
+        // positioning gives the same glyph a different advance in different
+        // words. Overwriting the width with each new context moved letters
+        // in every other word that uses the glyph — "الوصول" printed with
+        // its alef pulled away from the rest. The first width seen stays in
+        // /W; any other advance is a per-glyph TJ adjustment (thousandths of
+        // an em, positive = move left).
+        const parts = chunk.glyphIds.map((id, i) => {
+          const advance = chunk.advances1000[i]!;
+          if (!widthMap.has(id)) widthMap.set(id, advance);
+          const adjust = widthMap.get(id)! - advance;
+          const hex = `<${id.toString(16).padStart(4, "0")}>`;
+          return adjust === 0 ? hex : `${hex} ${adjust}`;
+        });
+        if (parts.length > 0) {
+          this.ops.push(`${color} rg BT /${arabicFont} ${size} Tf 1 0 0 1 ${cursor} ${y} Tm [${parts.join(" ")}] TJ ET`);
         }
         cursor += (chunk.advances1000.reduce((a, b) => a + b, 0) * size) / 1000;
       }
@@ -862,7 +889,7 @@ function renderNavGrid(pdf: Pdf, tiles: DocTile[]): void {
     pdf.y = top + 22;
     pdf.text(x + 8, 7.5, false, truncate(tile.sub, 7.5, tileW - 16), GRAY);
     pdf.y = top + 33;
-    pdf.text(x + 8, 7.5, true, "View detail >", ACCENT);
+    pdf.text(x + 8, 7.5, true, pdf.locale === "en" ? "View detail >" : label("pdf.viewDetail", pdf.locale), ACCENT);
 
     pdf.y = top;
     pdf.link(x, tileW, TILE_H, tile.to);
@@ -1040,7 +1067,9 @@ function renderGauge(pdf: Pdf, value: number, max: number, sub?: string): void {
   // States the scale the dial is on. A ring with a bare number in it does not
   // say whether 51 is good or bad, or out of what.
   pdf.y = top + 2 * r + 5;
-  const scale = `0-${max} - higher = worse`;
+  // The catalogue wording is for the 0-100 severity scale; English keeps its
+  // existing text.
+  const scale = pdf.locale !== "en" && max === 100 ? label("scale.severity", pdf.locale) : `0-${max} - higher = worse`;
   pdf.text(cx - textWidth(scale, 7) / 2, 7, false, scale, GRAY);
   pdf.y += scaleH;
 }
@@ -1249,6 +1278,7 @@ function renderPass(
 ): Pdf {
   const pdf = new Pdf(knownAnchorIds);
   pdf.dir = locale === "ar" ? "rtl" : "ltr";
+  pdf.locale = locale;
   renderHeader(pdf, doc);
 
   if (doc.chapters?.length) {

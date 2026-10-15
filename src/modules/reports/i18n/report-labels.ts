@@ -111,6 +111,75 @@ export function keyForEnglish(text: string): ReportLabelKey | null {
   return KEY_BY_ENGLISH.get(text.trim().toLowerCase()) ?? null;
 }
 
+// Enumerated cell values — priority/severity tiers and Yes/No — which the
+// on-screen viewer translates from the same catalogue (report-content-view.tsx
+// tierText: tierValue.<UPPERCASED>). Only these exact tokens are swapped; every
+// other cell — a village, a KPI name, a figure — is data and stays as it is.
+const VALUE_KEY_BY_ENGLISH: ReadonlyMap<string, ReportLabelKey> = new Map(
+  (Object.entries(REPORT_LABELS_EN) as Array<[ReportLabelKey, string]>)
+    .filter(([k]) => k.startsWith('value.') || k.startsWith('scopeBasisValue.'))
+    .map(([k, v]) => [v, k]),
+);
+
+export function localizeKnownValue(text: string, locale: SupportedLocale): string {
+  if (locale === 'en') return text;
+  const tier = `tierValue.${text.trim().toUpperCase()}`;
+  if (hasLabel(tier)) return label(tier, locale);
+  // Evidence document codes, shown on screen through the same catalogue
+  // (report-content-view.tsx docTypeLabel / evidenceStatusLabel).
+  if (/^[A-Z][A-Z_]+$/.test(text)) {
+    const docType = `documentTypeValue.${text}`;
+    if (hasLabel(docType)) return label(docType, locale);
+    const status = `evidenceStatus.${text.toLowerCase().replace(/_([a-z])/g, (_m, c: string) => c.toUpperCase())}`;
+    if (hasLabel(status)) return label(status, locale);
+  }
+  // The masking column's "YES — read Max, not Avg" is a plain Yes on screen.
+  const key = VALUE_KEY_BY_ENGLISH.get(text.startsWith('YES — ') ? 'Yes' : text);
+  return key ? label(key, locale) : localizeComposedValue(text, locale);
+}
+
+// Dates the report builders format in English ("06 Oct 2026, 16:28",
+// "01 July 2026"). Rebuilt from their parts in local time and reformatted the
+// way the NCNP report's Arabic export already prints them, so the wall-clock
+// time is unchanged.
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const ENGLISH_DATE =
+  /\b(\d{1,2}) (Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?) (\d{4})(?:, (\d{2}):(\d{2}))?/g;
+const AR_DATE_LOCALE = 'ar-SA-u-nu-latn-ca-gregory';
+
+function arabicDate(day: string, month: string, year: string, hh?: string, mm?: string): string {
+  const d = new Date(Number(year), MONTHS.indexOf(month.slice(0, 3)), Number(day), Number(hh ?? 0), Number(mm ?? 0));
+  return hh === undefined
+    ? d.toLocaleDateString(AR_DATE_LOCALE, { day: '2-digit', month: 'long', year: 'numeric' })
+    : d.toLocaleString(AR_DATE_LOCALE, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+// Values the builders compose by gluing a figure to a fixed English word.
+// Only these exact shapes are rewritten; anything else is data.
+const MDE_VALUE = /^±(\d+(?:\.\d+)?) pts$/;
+const SESSION_REF = /^Session (\S+)$/;
+const KPI_COUNT = /^(\d+) KPI\(s\)$/;
+// Domain coverage (RPT01 drill-down, RPT03 needs-by-domain): report-doc.ts
+// builds these from integer counts, so the shape is exact.
+const COVERAGE_DEFINED = /^(\d+) of (\d+) indicators measured; (\d+) defined in the methodology$/;
+const COVERAGE_ASKED = /^(\d+) of (\d+) indicators measured · (\d+) questions asked$/;
+
+function localizeComposedValue(text: string, locale: SupportedLocale): string {
+  let m = MDE_VALUE.exec(text);
+  if (m) return label('rq2.minDetectableEffectValue', locale, { value: m[1]! });
+  m = SESSION_REF.exec(text);
+  if (m) return label('exportValue.session', locale, { ref: m[1]! });
+  m = KPI_COUNT.exec(text);
+  if (m) return label('exportValue.kpiCount', locale, { count: m[1]! });
+  m = COVERAGE_DEFINED.exec(text);
+  if (m) return label('exportValue.coverageDefined', locale, { scored: m[1]!, asked: m[2]!, defined: m[3]! });
+  m = COVERAGE_ASKED.exec(text);
+  if (m) return label('exportValue.coverageAsked', locale, { scored: m[1]!, asked: m[2]!, questions: m[3]! });
+  return text.replace(ENGLISH_DATE, (_all, d: string, mon: string, y: string, hh?: string, mm?: string) =>
+    arabicDate(d, mon, y, hh, mm),
+  );
+}
+
 /**
  * Translate an English label to `locale` when the catalogue knows it, otherwise
  * return it untouched.
@@ -260,15 +329,20 @@ export function localizeReportDoc<T extends ReportDocShape>(doc: T, locale: Supp
       case 'anchor':
         return s;
       case 'keyvalue':
-        // Row label is vocabulary; row value is data.
+        // Row label is vocabulary; row value is data, bar an enumerated value.
         return {
           ...s,
           heading: t(s.heading),
-          rows: s.rows.map((r) => ({ ...r, label: t(r.label) })),
+          rows: s.rows.map((r) => ({ ...r, label: t(r.label), value: localizeKnownValue(r.value, locale) })),
         };
       case 'table':
-        // Column names are vocabulary; every cell in `rows` is data.
-        return { ...s, heading: t(s.heading), columns: s.columns.map(t) };
+        // Column names are vocabulary; cells are data, bar enumerated values.
+        return {
+          ...s,
+          heading: t(s.heading),
+          columns: s.columns.map(t),
+          rows: s.rows.map((row) => row.map((cell) => localizeKnownValue(cell, locale))),
+        };
       case 'stats':
         return {
           ...s,
@@ -276,6 +350,7 @@ export function localizeReportDoc<T extends ReportDocShape>(doc: T, locale: Supp
           tiles: s.tiles.map((x) => ({
             ...x,
             label: t(x.label),
+            value: localizeKnownValue(x.value, locale),
             ...(x.sub === undefined ? {} : { sub: t(x.sub) }),
           })),
         };
@@ -291,11 +366,23 @@ export function localizeReportDoc<T extends ReportDocShape>(doc: T, locale: Supp
         return s.heading === undefined ? s : { ...s, heading: t(s.heading) };
       case 'breadcrumb':
         return { ...s, trail: s.trail.map((x) => ({ ...x, label: t(x.label) })) };
-      // Headings only. Their categories — bar/slice labels, radar axes, nav
-      // tiles — are domain, indicator and village names: data.
-      case 'navGrid':
+      // Bar and slice labels are domain, indicator and village names — data —
+      // except when they are a band ("Low", "Medium"), which is vocabulary.
       case 'bars':
+        return {
+          ...s,
+          heading: t(s.heading),
+          bars: s.bars.map((x) => ({ ...x, label: localizeKnownValue(x.label, locale) })),
+        };
       case 'pie':
+        return {
+          ...s,
+          heading: t(s.heading),
+          slices: s.slices.map((x) => ({ ...x, label: localizeKnownValue(x.label, locale) })),
+        };
+      // Headings only. Their categories — radar axes, nav tiles — are domain,
+      // indicator and village names: data.
+      case 'navGrid':
       case 'gauge':
       case 'radar':
       case 'list':
@@ -309,8 +396,8 @@ export function localizeReportDoc<T extends ReportDocShape>(doc: T, locale: Supp
     // phrase comes from the catalogue, the name after it is data and is left
     // for the master-data pass.
     title: t(doc.title),
-    headerBand: doc.headerBand.map((r) => ({ ...r, label: t(r.label) })),
-    audit: doc.audit.map((r) => ({ ...r, label: t(r.label) })),
+    headerBand: doc.headerBand.map((r) => ({ ...r, label: t(r.label), value: localizeKnownValue(r.value, locale) })),
+    audit: doc.audit.map((r) => ({ ...r, label: t(r.label), value: localizeKnownValue(r.value, locale) })),
     sections: doc.sections.map(section),
     ...(doc.chapters
       ? {

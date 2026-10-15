@@ -1,3 +1,4 @@
+import { UTF8_FILE_NAMES } from '../../common/http/upload-options';
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { BadRequestException, Controller, Delete, Get, HttpCode, Param, Post, UploadedFiles, UseInterceptors } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
@@ -14,6 +15,7 @@ export class EvidenceController {
   @RequirePermission('dataCollection', 'create')
   @UseInterceptors(
     FilesInterceptor('files', MAX_EVIDENCE_FILES_PER_STUDY, {
+      ...UTF8_FILE_NAMES,
       limits: { fileSize: MAX_EVIDENCE_FILE_SIZE_BYTES },
     }),
   )

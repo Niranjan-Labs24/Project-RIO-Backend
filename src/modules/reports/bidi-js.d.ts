@@ -4,7 +4,8 @@ declare module "bidi-js" {
     paragraphs: Array<{ start: number; end: number; level: number }>;
   }
   export interface BidiJs {
-    getEmbeddingLevels(text: string): EmbeddingLevelsResult;
+    getEmbeddingLevels(text: string, explicitDirection?: "ltr" | "rtl"): EmbeddingLevelsResult;
+    getMirroredCharacter(char: string): string | null;
     getReorderedString(text: string, levelsResult: EmbeddingLevelsResult, start?: number, end?: number): string;
     getReorderSegments(
       text: string,

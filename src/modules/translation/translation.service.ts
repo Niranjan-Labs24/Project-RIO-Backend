@@ -85,38 +85,94 @@ export class TranslationService {
     text: string,
     targetLocale: SupportedLocale,
   ): Promise<string | null> {
-    // Signup names the first user "<organization name> Admin" (see
-    // auth.repository), so that account's display name is a registry name
-    // plus a fixed suffix. Translating the whole sentence with AI produced a
-    // different organization name than the registry's own — resolve the name
-    // part from the registry and translate only the suffix.
-    const adminMatch = /^(.*\S)\s+Admin$/i.exec(text.trim());
-    if (adminMatch) {
-      const official = await this.registryName(adminMatch[1]!, targetLocale);
-      if (official) return `${official} ${targetLocale === 'ar' ? 'مسؤول' : 'Admin'}`;
-    }
-    return this.registryName(text, targetLocale);
+    return (await this.registryCounterparts([text], targetLocale)).get(text) ?? null;
   }
 
-  private async registryName(text: string, targetLocale: SupportedLocale): Promise<string | null> {
-    const name = text.trim().replace(/\s+/g, ' ');
-    if (!name || name.length > 500) return null;
+  /**
+   * Official names for every text in `texts` that names a registered
+   * organisation, in one round of queries. Organisation names are never
+   * machine-translated: the Arabic (and English) name is the NIC registry's.
+   *
+   * An organisation is found through its own row first — the name shown on
+   * screen is `organisations.name`, linked to the registry by registration
+   * number, so a renamed organisation still resolves. The registry's own
+   * name columns are the fallback (signup copies the registry name, and
+   * Arabic text has no organisation row to match).
+   *
+   * Signup names the first user "<organization name> Admin" (see
+   * auth.repository), so that account's display name is a registry name plus
+   * a fixed suffix — the name part comes from the registry and only the
+   * suffix is translated.
+   */
+  private async registryCounterparts(
+    texts: readonly string[],
+    targetLocale: SupportedLocale,
+  ): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    // Each text is tried as "<name> Admin" first, then as a name on its own.
+    const candidates = new Map<string, { name: string; admin: boolean }[]>();
+    for (const text of texts) {
+      const whole = text.trim().replace(/\s+/g, ' ');
+      if (!whole || whole.length > 500) continue;
+      const admin = /^(.*\S)\s+Admin$/i.exec(whole);
+      candidates.set(text, [
+        ...(admin ? [{ name: admin[1]!, admin: true }] : []),
+        { name: whole, admin: false },
+      ]);
+    }
+    if (candidates.size === 0) return out;
+    const names = [...new Set([...candidates.values()].flat().map((c) => c.name))];
+
     try {
-      // Either language may be what was typed — match the row on both columns
-      // and return the target-language side (which is the text itself when it
-      // is already the target-language name).
-      const row = await this.prisma.nicRegistry.findFirst({
-        where: { OR: [{ nameAr: name }, { nameEn: { equals: name, mode: 'insensitive' } }] },
-        select: { nameEn: true, nameAr: true },
+      const orgsByName = await this.prisma.organisation.findMany({
+        where: { name: { in: names, mode: 'insensitive' }, registrationNumber: { not: null } },
+        select: { name: true, registrationNumber: true },
       });
-      const found = targetLocale === 'en' ? row?.nameEn : row?.nameAr;
-      return found?.trim() || null;
+      const rows = await this.prisma.nicRegistry.findMany({
+        where: {
+          OR: [
+            { nicNumber: { in: orgsByName.map((o) => o.registrationNumber!) } },
+            { nameAr: { in: names } },
+            { nameEn: { in: names, mode: 'insensitive' } },
+          ],
+        },
+        select: { nicNumber: true, nameEn: true, nameAr: true },
+      });
+      // The organisation's own current name is its English name on screen.
+      const orgsByNic = await this.prisma.organisation.findMany({
+        where: { registrationNumber: { in: rows.map((r) => r.nicNumber) } },
+        select: { name: true, registrationNumber: true },
+      });
+
+      const key = (s: string) => s.trim().toLowerCase();
+      const nicByOrgName = new Map(orgsByName.map((o) => [key(o.name), o.registrationNumber!]));
+      const rowByNic = new Map(rows.map((r) => [r.nicNumber, r]));
+      const orgNameByNic = new Map(orgsByNic.map((o) => [o.registrationNumber!, o.name]));
+      const rowByName = new Map<string, (typeof rows)[number]>();
+      for (const r of rows) {
+        if (r.nameAr) rowByName.set(key(r.nameAr), r);
+        if (r.nameEn && !rowByName.has(key(r.nameEn))) rowByName.set(key(r.nameEn), r);
+      }
+
+      for (const [text, options] of candidates) {
+        for (const { name, admin } of options) {
+          const nic = nicByOrgName.get(key(name));
+          const row = (nic ? rowByNic.get(nic) : undefined) ?? rowByName.get(key(name));
+          if (!row) continue;
+          const official = (
+            targetLocale === 'en' ? (orgNameByNic.get(row.nicNumber) ?? row.nameEn) : row.nameAr
+          )?.trim();
+          if (!official) continue;
+          out.set(text, admin ? `${official} ${targetLocale === 'ar' ? 'مسؤول' : 'Admin'}` : official);
+          break;
+        }
+      }
     } catch (err) {
       this.logger.warn(
         `Registry name lookup skipped: ${err instanceof Error ? err.message : String(err)}`,
       );
-      return null;
     }
+    return out;
   }
 
   async translate(
@@ -257,6 +313,7 @@ export class TranslationService {
     const results = new Map<string, TranslateContentResult>();
     const needed = [...new Set(texts)].filter((t) => this.needsTranslation(t, targetLocale));
 
+    // Registry names first, then the cache — see cachedTranslations.
     const cached = await this.cachedTranslations(needed, targetLocale);
     for (const [text, translatedText] of cached) {
       results.set(text, {
@@ -265,18 +322,6 @@ export class TranslationService {
         targetLocale,
         unchanged: false,
       });
-    }
-    // An entity's official name comes from the registry, as in translate().
-    for (const text of needed.filter((t) => !results.has(t))) {
-      const official = await this.registryCounterpart(text, targetLocale);
-      if (official) {
-        results.set(text, {
-          translatedText: official,
-          sourceLocale: this.detectLocale(text),
-          targetLocale,
-          unchanged: false,
-        });
-      }
     }
     const misses = needed.filter((t) => !results.has(t));
     const promptSource: SupportedLocale = targetLocale === 'ar' ? 'en' : 'ar';
@@ -320,26 +365,32 @@ export class TranslationService {
    * nothing to show for them, since every answer was already stored. One
    * `findMany` over the same keys does it in a single trip.
    *
-   * Returns only what is already cached. The caller translates the misses
-   * through `translate()` as before, so nothing about cost or correctness
-   * changes — only the number of queries.
+   * Returns only what needs no new translation. The caller translates the
+   * misses through `translate()` as before, so nothing about cost or
+   * correctness changes — only the number of queries.
+   *
+   * Organisation names resolve from the registry BEFORE the cache, the same
+   * order as `translate()`: a machine translation of an organisation name
+   * cached at some point must never win over its official name. Both callers
+   * (translateMany and the report export's sweep) get that order from here.
    */
   async cachedTranslations(
     texts: readonly string[],
     targetLocale: SupportedLocale,
   ): Promise<Map<string, string>> {
+    const out = await this.registryCounterparts(texts, targetLocale);
     const byKey = new Map<string, string>();
     for (const text of texts) {
+      if (out.has(text)) continue;
       byKey.set(this.cacheKeyFor(this.detectLocale(text), targetLocale, text), text);
     }
-    if (byKey.size === 0) return new Map();
+    if (byKey.size === 0) return out;
 
     const rows = await this.prisma.translationCache.findMany({
       where: { cacheKey: { in: [...byKey.keys()] } },
       select: { cacheKey: true, translatedText: true },
     });
 
-    const out = new Map<string, string>();
     for (const row of rows) {
       const source = byKey.get(row.cacheKey);
       if (source === undefined) continue;

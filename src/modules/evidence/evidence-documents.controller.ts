@@ -1,3 +1,4 @@
+import { UTF8_FILE_NAMES } from "../../common/http/upload-options";
 import {
   BadRequestException,
   Body,
@@ -49,6 +50,7 @@ export class EvidenceDocumentsController {
   @RequirePermission("dataCollection", "create")
   @UseInterceptors(
     FileInterceptor("file", {
+      ...UTF8_FILE_NAMES,
       limits: { fileSize: 25 * 1024 * 1024 }, // 25MB
     }),
   )
