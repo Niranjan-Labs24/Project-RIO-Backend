@@ -698,6 +698,9 @@ export class PriorityService {
       if (!question) {
         throw new NotFoundException({ error: { code: 'QUESTION_NOT_FOUND', message: `No question found for id or kpi: ${questionId}` } });
       }
+      // Everything below keys on the resolved question's code. Using the raw
+      // parameter left a KPI-name lookup with no rollup, answers or lookups.
+      const code = question.questionId;
 
       // Find question rollup
       const rollup = await tx.scoreRollup.findUnique({
@@ -708,7 +711,7 @@ export class PriorityService {
             villageId: vId,
             methodologyVersionId: mv?.id || '',
             rollupLevel: 'QUESTION',
-            entityId: questionId,
+            entityId: code,
           }
         }
       });
@@ -718,7 +721,7 @@ export class PriorityService {
         where: {
           studyId,
           surveyId,
-          questionId,
+          questionId: code,
           ...(villageId !== null ? { villageId } : {})
         }
       });
@@ -757,7 +760,7 @@ export class PriorityService {
           }));
 
       const matchLookups = mv ? await tx.scoringLookup.findMany({
-        where: { methodologyVersionId: mv.id, questionId }
+        where: { methodologyVersionId: mv.id, questionId: code }
       }) : [];
 
       const lookups = matchLookups.map(l => ({

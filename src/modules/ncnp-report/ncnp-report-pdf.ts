@@ -301,6 +301,19 @@ function barShade(i: number, n: number): string {
 }
 
 
+/** "2026-10" → "أكتوبر 26" in the Arabic export, as on the screen's chart
+ *  (Gregorian, Latin digits). The English export keeps "2026-10". */
+function monthLabel(month: string): string {
+  if (PDF_LOCALE !== 'ar') return month;
+  const [year, m] = month.split('-').map(Number);
+  if (!year || !m) return month;
+  return new Date(Date.UTC(year, m - 1, 1)).toLocaleDateString('ar-SA-u-nu-latn-ca-gregory', {
+    month: 'short',
+    year: '2-digit',
+    timeZone: 'UTC',
+  });
+}
+
 // Organization names are exported bilingually as "Primary (Secondary)". Mixing
 // two scripts in one line makes the bidi algorithm reorder the parentheses and
 // wrap mid-name, so each name goes on its own line instead: the primary name
@@ -573,7 +586,7 @@ function renderTrendLine(pdf: Pdf, title: string, points: NcnpMonthlyPoint[]): v
     pdf.y = y - 16;
     pdf.text(x - textWidth(valStr, 10) / 2, 10, true, valStr, ACCENT);
     pdf.y = top + h + 10;
-    pdf.text(x - textWidth(points[0]!.month, 7.5) / 2, 7.5, false, points[0]!.month, GRAY);
+    pdf.text(x - textWidth(monthLabel(points[0]!.month), 7.5) / 2, 7.5, false, monthLabel(points[0]!.month), GRAY);
     pdf.y = top + h + 24;
     return;
   }
@@ -602,7 +615,7 @@ function renderTrendLine(pdf: Pdf, title: string, points: NcnpMonthlyPoint[]): v
   showIdx.forEach((idx) => {
     const p = points[idx]!;
     const [x] = coords[idx]!;
-    pdf.text(x - textWidth(p.month, 7) / 2, 7, false, p.month, GRAY);
+    pdf.text(x - textWidth(monthLabel(p.month), 7) / 2, 7, false, monthLabel(p.month), GRAY);
   });
   pdf.y = top + h + 24;
 }

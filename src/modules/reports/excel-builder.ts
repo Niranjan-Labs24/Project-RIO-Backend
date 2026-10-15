@@ -3,6 +3,7 @@ import ExcelJS from "exceljs";
 import type { DocSection, ReportDoc } from "./report-doc";
 import { hasArabic } from "./arabic-text";
 import type { SupportedLocale } from "../translation/translation.types";
+import { label } from "./i18n/report-labels";
 
 // RIO-NFR-007 / RIO-NFR-008 — Excel (unlike the PDF path) needs no font
 // embedding: exceljs writes plain Unicode strings into the workbook's XML,
@@ -95,7 +96,7 @@ function addTableSheet(
     // The drill column is what carries the PDF's clickable row into the
     // workbook. Without it the spreadsheet silently loses the interaction and
     // the two exports stop being the same report.
-    ...(hasLinks ? [{ header: "Detail", key: "__drill", width: 14 }] : []),
+    ...(hasLinks ? [{ header: label("excel.detail", locale), key: "__drill", width: 14 }] : []),
   ];
   styleHeaderRow(sheet.getRow(1));
   rows.forEach((r, i) => {
@@ -110,7 +111,7 @@ function addTableSheet(
     const target = rowLinkSheets?.[i] ?? null;
     if (hasLinks && target) {
       const cell = row.getCell(columns.length + 1);
-      cell.value = sheetLink(target, "View detail");
+      cell.value = sheetLink(target, label("excel.viewDetail", locale));
       cell.font = { color: { argb: LINK_BLUE }, underline: true };
     }
   });
@@ -123,8 +124,8 @@ function addBarsSheet(
 ): void {
   const sheet = newSheet(wb, uniqueSheetName(wb, s.heading), locale);
   sheet.columns = [
-    { header: "Item", key: "label", width: 34 },
-    { header: "Value", key: "value", width: 16 },
+    { header: label("excel.item", locale), key: "label", width: 34 },
+    { header: label("col.value", locale), key: "value", width: 16 },
   ];
   styleHeaderRow(sheet.getRow(1));
   for (const b of s.bars) {
@@ -161,10 +162,12 @@ export async function renderReportExcel(
   wb.creator = "RIO";
   wb.created = new Date();
 
-  const summary = newSheet(wb, "Summary", locale);
+  // The sheet every detail sheet links back to, named in the report's language.
+  const summaryName = label("summary", locale);
+  const summary = newSheet(wb, summaryName, locale);
   summary.columns = [
-    { header: "Field", key: "field", width: 34 },
-    { header: "Value", key: "value", width: 70 },
+    { header: label("excel.field", locale), key: "field", width: 34 },
+    { header: label("col.value", locale), key: "value", width: 70 },
   ];
 
   // Title band across both columns.
@@ -188,7 +191,7 @@ export async function renderReportExcel(
   };
 
   if (doc.headerBand.length) {
-    summary.addRow({ field: "— Header —", value: "" }).font = { bold: true };
+    summary.addRow({ field: `— ${label("excel.header", locale)} —`, value: "" }).font = { bold: true };
     for (const h of doc.headerBand) kv(h.label, h.value, true);
   }
 
@@ -203,7 +206,7 @@ export async function renderReportExcel(
   // references are the normal case: the index is written before the detail.
   const anchorSheets = new Map<string, string>();
   {
-    let current = "Summary";
+    let current = summaryName;
     for (const s of flat) {
       if (s.kind === "pageBreak") {
         current = drillSheetName(s.anchorId, s.heading);
@@ -239,14 +242,14 @@ export async function renderReportExcel(
         const name = anchorSheets.get(s.anchorId) ?? drillSheetName(s.anchorId, s.heading);
         detail = wb.getWorksheet(name) ?? newSheet(wb, name, locale);
         detail.columns = [
-          { header: "Field", key: "field", width: 34 },
-          { header: "Value", key: "value", width: 70 },
+          { header: label("excel.field", locale), key: "field", width: 34 },
+          { header: label("col.value", locale), key: "value", width: 70 },
         ];
         styleHeaderRow(detail.getRow(1));
         if (s.heading) detail.addRow([`— ${s.heading} —`, ""]).font = { bold: true };
         // Every detail sheet gets a way back, or the reader is stranded on it.
         const back = detail.addRow(["", ""]);
-        back.getCell(1).value = sheetLink("Summary", "← Back to Summary");
+        back.getCell(1).value = sheetLink(summaryName, label("excel.backToSummary", locale));
         back.getCell(1).font = { color: { argb: LINK_BLUE }, underline: true };
         break;
       }
@@ -270,9 +273,9 @@ export async function renderReportExcel(
         // the PDF's tiles offer.
         const sheet = newSheet(wb, uniqueSheetName(wb, s.heading), locale);
         sheet.columns = [
-          { header: "Item", key: "label", width: 40 },
-          { header: "Summary", key: "sub", width: 46 },
-          { header: "Detail", key: "link", width: 18 },
+          { header: label("excel.item", locale), key: "label", width: 40 },
+          { header: label("summary", locale), key: "sub", width: 46 },
+          { header: label("excel.detail", locale), key: "link", width: 18 },
         ];
         styleHeaderRow(sheet.getRow(1));
         for (const tile of s.tiles) {
@@ -284,7 +287,7 @@ export async function renderReportExcel(
           const target = sheetFor(tile.to);
           if (target) {
             const cell = row.getCell(3);
-            cell.value = sheetLink(target, "View detail");
+            cell.value = sheetLink(target, label("excel.viewDetail", locale));
             cell.font = { color: { argb: LINK_BLUE }, underline: true };
           }
         }
@@ -320,7 +323,7 @@ export async function renderReportExcel(
       case "radar": {
         const sheet = newSheet(wb, uniqueSheetName(wb, s.heading), locale);
         sheet.columns = [
-          { header: "Domain", key: "axis", width: 28 },
+          { header: label("col.domain", locale), key: "axis", width: 28 },
           ...s.series.map((se, i) => ({ header: se.name, key: `s${i}`, width: 16 })),
         ];
         styleHeaderRow(sheet.getRow(1));
@@ -358,9 +361,9 @@ export async function renderReportExcel(
       case "groupedBars": {
         const sheet = newSheet(wb, uniqueSheetName(wb, s.heading), locale);
         sheet.columns = [
-          { header: "Metric", key: "group", width: 30 },
+          { header: label("excel.metric", locale), key: "group", width: 30 },
           ...s.series.map((se, i) => ({ header: se.name, key: `s${i}`, width: 18 })),
-          ...(s.series.length === 2 ? [{ header: "Difference", key: "delta", width: 14 }] : []),
+          ...(s.series.length === 2 ? [{ header: label("excel.difference", locale), key: "delta", width: 14 }] : []),
         ];
         styleHeaderRow(sheet.getRow(1));
         s.groups.forEach((g, gi) => {
@@ -379,7 +382,7 @@ export async function renderReportExcel(
   }
 
   if (doc.audit.length) {
-    summary.addRow({ field: "— Audit Trail —", value: "" }).font = { bold: true };
+    summary.addRow({ field: `— ${label("pdf.auditTrail", locale)} —`, value: "" }).font = { bold: true };
     for (const a of doc.audit) kv(a.label, a.value, true);
   }
 

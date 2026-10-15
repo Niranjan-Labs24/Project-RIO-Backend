@@ -537,7 +537,13 @@ export class NcnpReportService {
     });
     const actorId = requireActor();
     const actor = await this.tenant.runAsSupervisor((tx) => tx.user.findUnique({ where: { id: actorId }, select: { name: true } }));
-    const generatedByName = actor?.name ?? '—';
+    let generatedByName = actor?.name ?? '—';
+    // The Arabic screen shows this name translated (and the Excel sweep
+    // translates it too); the PDF printed it as stored, so the same report
+    // named its author two ways.
+    if (locale === 'ar' && this.translation && actor?.name) {
+      generatedByName = (await this.translation.translate(actor.name, 'ar')).translatedText;
+    }
     if (format === 'pdf') {
       return {
         filename: `ncnp-compiled-report-${dateStamp}.pdf`,

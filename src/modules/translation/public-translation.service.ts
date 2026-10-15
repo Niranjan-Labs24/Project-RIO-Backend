@@ -48,7 +48,8 @@ function humanise(key: string): string {
 /** An enum value as the public report shows it: `CROSS_DOMAIN_X` →
  *  `Cross domain x`. KEEP IN SYNC with the frontend's public-archive
  *  report-content.tsx humaniseEnum. */
-const ENUM_VALUE = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/;
+// Upper-case codes (FIELD_REPORT) and lower-case ones (survey_rollup).
+const ENUM_VALUE = /^(?:[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+|[a-z][a-z0-9]*(?:_[a-z0-9]+)+)$/;
 function humaniseEnum(value: string): string {
   const words = value.toLowerCase().replace(/_/g, ' ');
   return words.charAt(0).toUpperCase() + words.slice(1);

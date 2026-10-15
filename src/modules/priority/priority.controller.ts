@@ -1,3 +1,4 @@
+import { UTF8_FILE_NAMES } from "../../common/http/upload-options";
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { Controller, Get, Param, Patch, Post, Query, Body, UseInterceptors, UploadedFile, BadRequestException } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
@@ -79,9 +80,15 @@ export class PriorityController {
   async getQuestionDetail(
     @Param("studyId", new UuidParamPipe()) studyId: string,
     @Param("surveyId", new UuidParamPipe()) surveyId: string,
-    @Param("questionId", new UuidParamPipe()) questionId: string,
+    // Not a UUID: the service takes a question code ("HLT-01") or, from the
+    // KPI ranking table, a KPI name. The UUID pipe rejected both, so the KPI
+    // detail dialog always opened empty (client UAT, 2026-10-14).
+    @Param("questionId") questionId: string,
     @Query("villageId") villageId?: string
   ) {
+    if (!questionId || questionId.length > 300) {
+      throw new BadRequestException({ error: { code: "INVALID_QUESTION_ID", message: "Invalid question id." } });
+    }
     return this.priority.getQuestionDetail(studyId, surveyId, questionId, villageId || null);
   }
 
@@ -132,7 +139,7 @@ export class PriorityController {
 
   @Post("methodology-versions/:id/upload-lookups")
   @RequirePermission("methodologyQuestionBank", "create")
-  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: MAX_LOOKUP_FILE_SIZE_BYTES } }))
+  @UseInterceptors(FileInterceptor("file", { ...UTF8_FILE_NAMES, limits: { fileSize: MAX_LOOKUP_FILE_SIZE_BYTES } }))
   async uploadLookups(
     @Param("id", new UuidParamPipe()) versionId: string,
     @UploadedFile() file: Express.Multer.File

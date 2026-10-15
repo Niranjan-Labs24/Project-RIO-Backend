@@ -1,3 +1,4 @@
+import { parseLocale, requestLocale } from '../../common/locale/request-locale';
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
@@ -102,10 +103,14 @@ export class PublicSurveysController {
     @Param('needId', new UuidParamPipe()) needId: string,
     @Query('format') format: 'csv' | 'excel' = 'csv',
     @Query('surveyLinkId') surveyLinkId?: string,
+    @Query('locale') localeParam?: string,
   ): Promise<void> {
     const date = new Date().toISOString().slice(0, 10);
+    // The language the export is read in: an explicit ?locale= wins,
+    // otherwise the language the caller is viewing the app in.
+    const locale = parseLocale(localeParam) ?? requestLocale();
     if (format === 'excel') {
-      const body = await this.surveys.exportResponsesExcel(needId, surveyLinkId || undefined);
+      const body = await this.surveys.exportResponsesExcel(needId, surveyLinkId || undefined, locale);
       res.set({
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'Content-Disposition': `attachment; filename="survey-responses-${date}.xlsx"`,
@@ -114,7 +119,7 @@ export class PublicSurveysController {
       res.end(body);
       return;
     }
-    const csv = await this.surveys.exportResponsesCsv(needId, surveyLinkId || undefined);
+    const csv = await this.surveys.exportResponsesCsv(needId, surveyLinkId || undefined, locale);
     res.set({
       'Content-Type': 'text/csv',
       'Content-Disposition': `attachment; filename="survey-responses-${date}.csv"`,

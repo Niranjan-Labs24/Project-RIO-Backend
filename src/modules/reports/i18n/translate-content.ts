@@ -1,3 +1,4 @@
+import { calculationBasisArabic } from './calculation-basis-ar';
 import type { SupportedLocale } from '../../translation/translation.types';
 
 // The free-text half of RIO-NFR-007: the prose in a report that nobody has a
@@ -69,6 +70,8 @@ const PROSE_PATHS: readonly string[] = [
   'dataCollection.abandonment.note',
   'dataCollection.invalidResponses.basis',
   'dataCollection.unansweredRequired.note',
+  // RPT04's "this study has N surveys, these figures cover one" warning.
+  'scopeBasis.partialScopeNote',
 
   // ── Per-record explanations ──
   // Why a record was flagged, why a confidence band was assigned, why equity
@@ -305,6 +308,13 @@ export async function translateReportContent(
         continue;
       }
       const source = distinct[index]!;
+      // A fixed Calculation Basis rule has an exact Arabic version; the AI is
+      // not asked (see calculation-basis-ar.ts).
+      const fixed = locale === 'ar' ? calculationBasisArabic(source) : null;
+      if (fixed) {
+        results.set(source, fixed);
+        continue;
+      }
       const out = await translator.translate(source, locale);
       // `unchanged` covers both "already in the target language" and "the
       // provider failed and we fell back to the source" — TranslationService

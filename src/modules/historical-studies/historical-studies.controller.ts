@@ -1,3 +1,4 @@
+import { UTF8_FILE_NAMES } from '../../common/http/upload-options';
 import {
   BadRequestException,
   Body,
@@ -56,7 +57,7 @@ export class HistoricalStudiesController {
 
   @Post()
   @RequirePermission('archiveSharingAudit', 'write')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_EVIDENCE_FILE_SIZE_BYTES } }))
+  @UseInterceptors(FileInterceptor('file', { ...UTF8_FILE_NAMES, limits: { fileSize: MAX_EVIDENCE_FILE_SIZE_BYTES } }))
   create(
     @UploadedFile() file: Express.Multer.File | undefined,
     @Body() body: CreateHistoricalStudyBody,

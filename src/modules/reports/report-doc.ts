@@ -1405,6 +1405,13 @@ function priorityNeedsSections(pn: Record<string, unknown>, drillable = false, n
  * Heading text matters: "Calculation Basis" is what files this under the
  * Methodology Hierarchy chapter (CHAPTER_SCHEME), which already anticipated it.
  */
+// The Arabic lead-in the fixed translation of each formula starts with
+// (i18n/calculation-basis-ar.ts) — stripped beside its label like the English one.
+const AR_PREFIX: Record<string, string> = {
+  "Needs Index": "مؤشر الاحتياجات",
+  "Priority Score": "درجة الأولوية",
+};
+
 function calculationBasisSections(cb: Record<string, unknown>): DocSection[] {
   const out: DocSection[] = [];
   const line = (v: unknown): string => (typeof v === "string" ? v : "");
@@ -1421,8 +1428,13 @@ function calculationBasisSections(cb: Record<string, unknown>): DocSection[] {
   ): { label: string; value: string } | null => {
     const v = line(value);
     if (!v) return null;
-    const escaped = textPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return { label, value: v.replace(new RegExp(`^${escaped}\\s*[=:]\\s*`, "i"), "") };
+    const escaped = [textPrefix, ...(AR_PREFIX[textPrefix] ? [AR_PREFIX[textPrefix]] : [])]
+      .map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .join("|");
+    const rest = v.replace(new RegExp(`^(?:${escaped})\\s*[=:]\\s*`, "i"), "");
+    // "mean of the measured…" once its "Needs Index =" lead-in is gone: the
+    // remaining sentence starts the cell, so it starts with a capital.
+    return { label, value: rest.charAt(0).toUpperCase() + rest.slice(1) };
   };
 
   const formulas = [
