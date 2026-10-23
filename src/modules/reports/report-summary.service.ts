@@ -1,4 +1,5 @@
 import { fromJson, toJson } from '../../common/prisma/json';
+import { CONFIDENCE_BAND_INSTRUCTION, withConfidenceBands } from './presentation/ai-confidence-bands';
 import { ROLE_KEYS } from '../../rbac/role-keys';
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
@@ -61,6 +62,10 @@ import {
   type LocalizeSummaryResult,
 } from '../translation/summary-localization';
 import { loadMasterDataAliases } from './i18n/master-data-names';
+
+/** Summaries printed in the six client-design reports (village, sector,
+ *  region, executive) use the confidence bands; survey-level ones are unchanged. */
+const BANDED_SCOPES: ReadonlySet<string> = new Set(['VILLAGE', 'SECTOR', 'REGION', 'EXECUTIVE']);
 
 /** Every string value anywhere in `node`. */
 function collectStrings(node: unknown, out: Set<string>): void {
@@ -424,7 +429,7 @@ export class ReportSummaryService {
       if (!survey) throw new NotFoundException('Survey not found');
 
       const responses = await tx.surveyResponse.findMany({
-        where: { needId: survey.needId },
+        where: { needId: survey.needId, exclusionReason: null },
       });
 
       const mv = await tx.methodologyVersion.findFirst({
@@ -955,9 +960,18 @@ export class ReportSummaryService {
       Object.keys(glossary).length > 0
         ? `\n\nArabic names JSON (use these exact Arabic names for the English names in the data):\n${JSON.stringify(glossary, null, 2)}\n`
         : '';
+    // The report-level summaries speak in the client's confidence bands.
+    const banded = BANDED_SCOPES.has(scope);
+    const aiData = banded
+      ? withConfidenceBands(
+          snapshot,
+          snapshot.study.requiredSampleSize,
+          snapshot.responseQuality.validResponseCount,
+        )
+      : snapshot;
     const promptText = `Generate the ${scope} SUMMARY narrative strictly using this ReportData JSON:
-${JSON.stringify(snapshot, null, 2)}
-${extra}${glossaryBlock}`;
+${JSON.stringify(aiData, null, 2)}
+${extra}${glossaryBlock}${banded ? `\n${CONFIDENCE_BAND_INSTRUCTION}\n` : ''}`;
 
     // main's per-scope prompt data, wrapped as an AiTask so it goes through the
     // task-based AiService.run this branch uses (retries, timeout, schema

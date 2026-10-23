@@ -23,12 +23,27 @@ export class DeterministicScoringService {
    * Normalize raw response display labels into stable option IDs.
    */
   toOptionId(label: string): string {
+    return DeterministicScoringService.normalizeOptionId(label);
+  }
+
+  static normalizeOptionId(label: string): string {
     if (!label) return '';
     return label
       .toUpperCase()
       .trim()
       .replace(/[^A-Z0-9]+/g, '_')
       .replace(/^_+|_+$/g, '');
+  }
+
+  /**
+   * The option id a saved answer stands for, after OPTION_ALIASES: an answer
+   * saved under an older wording ("Yes, graded", "30–60") resolves to the
+   * option the question offers now. Shared with the responses export so an
+   * old answer still finds its Arabic option.
+   */
+  static resolveOptionId(questionCode: string | null | undefined, label: string): string {
+    const id = DeterministicScoringService.normalizeOptionId(label);
+    return (questionCode && DeterministicScoringService.OPTION_ALIASES[questionCode]?.[id]) || id;
   }
 
   /**
@@ -44,6 +59,42 @@ export class DeterministicScoringService {
   compositeOptionId(optionIds: string[]): string {
     return [...optionIds].filter(Boolean).sort().join('__');
   }
+
+  /**
+   * Answers saved under an option wording that had no scoring lookup, mapped
+   * to the Scoring Lookup option they stand for, so a re-score counts them.
+   * Two causes, both fixed in scripts/extract-methodology-v5.py:
+   * - step 3b: options split at their own " / " — a respondent picked a piece
+   *   such as "Yes, graded";
+   * - step 3c: the Question Bank's short form of the Scoring Lookup wording —
+   *   "30–60" for "30–60 minutes", "Other — specify" for "Other", or a workbook
+   *   note left on the option.
+   * Generated from question-bank-v5.json; no entry collides with a real
+   * option of the same question.
+   */
+  private static readonly OPTION_ALIASES: Record<string, Record<string, string>> = {
+    'EDU-07': { DISTANCE: 'DISTANCE_SAFETY', SAFETY: 'DISTANCE_SAFETY' },
+    'WSH-01': { SURFACE_WATER_RIVER: 'SURFACE_WATER_RIVER_POND', POND: 'SURFACE_WATER_RIVER_POND', TANKER: 'TANKER_VENDOR', VENDOR: 'TANKER_VENDOR' },
+    'WSH-08': { SHARED: 'SHARED_PUBLIC_FACILITY', PUBLIC_FACILITY: 'SHARED_PUBLIC_FACILITY' },
+    'ENV-04': { ELECTRICITY: 'ELECTRICITY_LPG_NATURAL_GAS', LPG: 'ELECTRICITY_LPG_NATURAL_GAS', NATURAL_GAS: 'ELECTRICITY_LPG_NATURAL_GAS', FIREWOOD: 'FIREWOOD_CHARCOAL_OPEN_FIRE', CHARCOAL: 'FIREWOOD_CHARCOAL_OPEN_FIRE', OPEN_FIRE: 'FIREWOOD_CHARCOAL_OPEN_FIRE' },
+    'LIV-10': { LACK_OF_SKILLS: 'LACK_OF_SKILLS_TRAINING', TRAINING: 'LACK_OF_SKILLS_TRAINING', REGULATORY: 'REGULATORY_LICENSING_PROBLEMS', LICENSING_PROBLEMS: 'REGULATORY_LICENSING_PROBLEMS' },
+    'LIV-16': { CHILDCARE: 'CHILDCARE_HOUSEHOLD_BURDENS', HOUSEHOLD_BURDENS: 'CHILDCARE_HOUSEHOLD_BURDENS', CULTURAL: 'CULTURAL_SOCIAL_NORMS', SOCIAL_NORMS: 'CULTURAL_SOCIAL_NORMS' },
+    'INF-01': { YES_GRADED: 'YES_GRADED_UNPAVED_BUT_PASSABLE', UNPAVED_BUT_PASSABLE: 'YES_GRADED_UNPAVED_BUT_PASSABLE' },
+    'INF-05': { WEAK: 'WEAK_INTERMITTENT_SIGNAL', INTERMITTENT_SIGNAL: 'WEAK_INTERMITTENT_SIGNAL' },
+    'CUL-01': { EXISTS_BUT_UNDOCUMENTED: 'EXISTS_BUT_UNDOCUMENTED_AT_RISK', AT_RISK: 'EXISTS_BUT_UNDOCUMENTED_AT_RISK' },
+    'CUL-11': { PREMISES: 'PREMISES_HALL', HALL: 'PREMISES_HALL' },
+    'GOV-09': { NATIONAL_REPORTING_PLATFORM: 'NATIONAL_REPORTING_PLATFORM_APP', APP: 'NATIONAL_REPORTING_PLATFORM_APP', LOCAL_COUNCIL: 'LOCAL_COUNCIL_VILLAGE_MAYOR', VILLAGE_MAYOR: 'LOCAL_COUNCIL_VILLAGE_MAYOR' },
+    'HLT-16': { '30_60': '30_60_MINUTES', '60_120': '60_120_MINUTES', '120': 'MORE_THAN_120_MINUTES' },
+    'EDU-18': { OTHER_SPECIFY: 'OTHER' },
+    'WSH-16': { OTHER_SPECIFY: 'OTHER' },
+    'ENV-12': { '20_23': '20_23_HOURS', '12_19': '12_19_HOURS', '12': 'LESS_THAN_12_HOURS' },
+    'ENV-17': { OTHER_SPECIFY: 'OTHER' },
+    'ENV-18': { OTHER_SPECIFY: 'OTHER' },
+    'LIV-24': { SHOCK_TYPES_COPING_SAVINGS: 'SAVINGS', COPING_SAVINGS: 'SAVINGS', OTHER_SPECIFY: 'OTHER' },
+    'CUL-13': { PREFER_NOT_TO_ANSWER_ACTIVITY_TYPE_RECORDED: 'PREFER_NOT_TO_ANSWER' },
+    'GOV-14': { NO_RELEVANT_INFORMATION_WAS_NEEDED_INFORMATION_SOURCE_LIST_RECORDED: 'NO_RELEVANT_INFORMATION_WAS_NEEDED' },
+    'XDM-08': { OTHER_SPECIFY: 'OTHER' },
+  };
 
   /**
    * Measurement modes that never produce a severity score: the 7
@@ -159,7 +210,7 @@ export class DeterministicScoringService {
         const rawAnswer = rawAnswers[sq.id];
         if (sq.question) {
           const q = sq.question;
-          const parsed = this.parseRawAnswerValue(rawAnswer, q.measurementMode);
+          const parsed = this.parseRawAnswerValue(rawAnswer, q.measurementMode, q.questionId);
           answersMapByQuestionId.set(q.questionId, parsed);
           questionMappings.push({ surveyQuestionId: sq.id, question: q, rawAnswer });
         }
@@ -335,8 +386,10 @@ export class DeterministicScoringService {
 
   parseRawAnswerValue(
     raw: unknown,
-    mode: string
+    mode: string,
+    questionId?: string
   ): ParsedAnswer {
+    const toId = (label: string) => DeterministicScoringService.resolveOptionId(questionId, label);
     const res = { optionId: null as string | null, optionIds: null as string[] | null, numericValue: null as number | null, text: null as string | null };
     if (raw === null || raw === undefined || raw === '') return res;
 
@@ -348,18 +401,18 @@ export class DeterministicScoringService {
       // "several values at once" shape as a multi-select, differing only in how
       // it is scored (see calculateSeverity).
       if (Array.isArray(raw)) {
-        res.optionIds = raw.map(o => this.toOptionId(String(o)));
+        res.optionIds = [...new Set(raw.map(o => toId(String(o))))];
       } else if (typeof raw === 'string') {
         // ';' as well as ',': v5.0 composite option labels are ';'-joined, and a
         // client echoing a composite label back as one string must still parse
         // into its parts rather than becoming a single unmatchable option.
-        res.optionIds = raw.split(/[;,]/).map(o => this.toOptionId(o.trim())).filter(Boolean);
+        res.optionIds = [...new Set(raw.split(/[;,]/).map(o => toId(o.trim())).filter(Boolean))];
       }
     } else if (DeterministicScoringService.NON_SCORING_MODES.has(mode)) {
       res.text = String(raw);
     } else {
       // SINGLE_SELECT, LIKERT_5
-      res.optionId = this.toOptionId(String(raw));
+      res.optionId = toId(String(raw));
     }
     return res;
   }

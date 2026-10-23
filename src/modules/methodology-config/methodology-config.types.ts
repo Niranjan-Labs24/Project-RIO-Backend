@@ -14,6 +14,17 @@ export interface PriorityFactorWeight {
 export interface ConfidenceFlagSettings {
   dontKnowRatioThreshold: number;
   minRespondentsForStandardConfidence: number;
+  /** Reports' village participation share: a village holding this % or more of
+   *  its governorate's valid responses is flagged "Concentrated" (client
+   *  confirmation, Oct 2026). No default: absent = not flagged (15 Oct 2026). */
+  villageConcentrationPct?: number | null;
+  /** Core Needs Report settings v5.0 does not define (client, 15 Oct 2026):
+   *  absent / null = no threshold applied; the report states the figure. */
+  geographicCoverageMinPct?: number | null;
+  governorateMinCentresPct?: number | null;
+  /** KPI pairs analysed in "Links between indicators" (the client provides
+   *  the list); each item is [kpiA, kpiB] as the methodology names them. */
+  indicatorLinkPairs?: Array<[string, string]>;
 }
 
 /**

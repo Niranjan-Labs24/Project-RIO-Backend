@@ -178,7 +178,7 @@ export async function loadRegionBreakdown(
         : Promise.resolve([]),
       allNeedIds.length
         ? tx.surveyResponse.findMany({
-            where: { needId: { in: allNeedIds } },
+            where: { needId: { in: allNeedIds }, exclusionReason: null },
             select: { village: true },
           })
         : Promise.resolve([]),

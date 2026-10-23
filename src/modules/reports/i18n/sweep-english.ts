@@ -1,8 +1,9 @@
 import type { DocSection, ReportDoc } from '../report-doc';
 import type { SupportedLocale } from '../../translation/translation.types';
-import { localizeKnownLabel } from './report-labels';
+import { label, localizeKnownLabel } from './report-labels';
 import type { MasterDataAliases } from './master-data-names';
 import type { Translator } from './translate-content';
+import { hasArabic } from '../arabic-text';
 
 /** A translator that can also answer "what do you already have?" in one query.
  *  Optional so the unit tests can pass a plain stub. */
@@ -79,6 +80,15 @@ const KEEP_AS_IS: readonly RegExp[] = [
  *  and codes do not trigger a call on their own. */
 const HAS_ENGLISH = /[A-Za-z]{4,}/;
 
+/** The partial-scope note (load-sector-scope-basis.ts): a fixed sentence with
+ *  a survey title inside. The title is translated on its own and set into the
+ *  catalogue's Arabic sentence, so neither half is left in English. */
+const PARTIAL_SCOPE =
+  /^This study contains (\d+) surveys\. These figures cover ONE of them — "(.+)" — not the study as a whole\. Domain scores from the other (\d+) survey\(s\) are not included in this report\.$/;
+
+/** "06 Oct 2026" or "06 Oct 2026, 16:28" — the report builders' date stamp. */
+const ENGLISH_STAMP = /^(\d{1,2} [A-Z][a-z]{2} \d{4})(?:, (\d{2}:\d{2}))?$/;
+
 /** Digits in order, for the integrity guard. */
 function digitsOf(s: string): string {
   return (s.match(/\d+(?:\.\d+)?/g) ?? []).join('|');
@@ -121,7 +131,13 @@ function mapDocStrings(doc: ReportDoc, fn: (text: string) => string): ReportDoc 
       case 'keyvalue':
         return { ...x, heading: s(x.heading), rows: x.rows.map((r) => ({ label: s(r.label), value: s(r.value) })) };
       case 'table':
-        return { ...x, heading: s(x.heading), columns: x.columns.map(s), rows: x.rows.map((r) => r.map(s)) };
+        return {
+          ...x,
+          heading: s(x.heading),
+          subheading: opt(x.subheading),
+          columns: x.columns.map(s),
+          rows: x.rows.map((r) => r.map(s)),
+        };
       case 'list':
         return { ...x, heading: s(x.heading), items: x.items.map(s) };
       case 'note':
@@ -160,6 +176,41 @@ function mapDocStrings(doc: ReportDoc, fn: (text: string) => string): ReportDoc 
         return { ...x, heading: opt(x.heading) };
       case 'columns':
         return { ...x, children: x.children.map(section) };
+      case 'summaryPanel':
+        return {
+          ...x,
+          title: s(x.title),
+          columns: x.columns.map((col) => ({
+            label: s(col.label),
+            text: s(col.text),
+            lead: opt(col.lead),
+            caveat: opt(col.caveat),
+          })),
+        };
+      case 'bandScale':
+        return {
+          ...x,
+          heading: s(x.heading),
+          note: s(x.note),
+          segments: x.segments.map((g) => ({ ...g, label: s(g.label) })),
+        };
+      case 'card':
+        return { ...x, heading: s(x.heading), hint: opt(x.hint), children: x.children.map(section) };
+      case 'caption':
+      case 'panel':
+      case 'footnote':
+        return { ...x, text: s(x.text) };
+      case 'rings':
+        return {
+          ...x,
+          heading: s(x.heading),
+          items: x.items.map((it) => ({
+            label: s(it.label),
+            slices: it.slices.map((y) => ({ ...y, label: s(y.label) })),
+          })),
+        };
+      case 'callouts':
+        return { ...x, items: x.items.map((it) => ({ ...it, label: s(it.label), text: s(it.text) })) };
     }
   };
 
@@ -179,13 +230,15 @@ function mapDocStrings(doc: ReportDoc, fn: (text: string) => string): ReportDoc 
           })),
         }
       : {}),
+    ...(doc.lead ? { lead: doc.lead.map(section) } : {}),
   };
 }
 
 /**
  * Translate everything still in English, cheapest source first.
  *
- * A no-op for English. Never throws: a provider failure leaves the source text,
+ * For an English export, the reverse: Arabic data is translated to English.
+ * Never throws: a provider failure leaves the source text,
  * reported in `stats.unresolved` rather than failing the download.
  */
 export async function sweepRemainingEnglish(
@@ -208,16 +261,57 @@ export async function sweepRemainingEnglish(
     rejectedForDigits: [],
     unresolved: [],
   };
-  if (locale === 'en') return { doc, stats };
-
   const resolved = new Map<string, string>();
   const needsAi = new Set<string>();
+  const scopeNotes = new Map<string, RegExpExecArray>();
 
   // Pass 1 — classify every distinct string without changing anything.
   mapDocStrings(doc, (text) => {
     const t = text.trim();
     if (!t || resolved.has(text) || needsAi.has(text)) return text;
-    if (!HAS_ENGLISH.test(t)) return text;
+    // An English export runs the same sweep the other way: data entered in
+    // Arabic (a study name, a village) is translated for the English reader,
+    // so the document is in one language. Labels are already English there.
+    if (locale === 'en') {
+      if (hasArabic(t)) needsAi.add(text);
+      return text;
+    }
+    const scope = PARTIAL_SCOPE.exec(t);
+    if (scope) {
+      scopeNotes.set(text, scope);
+      if (HAS_ENGLISH.test(scope[2]!)) needsAi.add(scope[2]!);
+      return text;
+    }
+    if (!HAS_ENGLISH.test(t)) {
+      // Short vocabulary ("LOW", "No", "Yes") is below the length that
+      // triggers a provider call, but the catalogue still knows it.
+      // Dates the builders stamp in English ("06 Oct 2026, 16:28").
+      const stamp = ENGLISH_STAMP.exec(t);
+      if (stamp) {
+        const d = new Date(`${stamp[1]} ${stamp[2] ?? ''}`.trim());
+        if (!Number.isNaN(d.getTime())) {
+          resolved.set(
+            text,
+            d.toLocaleString('ar-SA-u-ca-gregory-nu-latn', {
+              day: '2-digit',
+              month: 'long',
+              year: 'numeric',
+              ...(stamp[2] ? { hour: '2-digit', minute: '2-digit' } : {}),
+            }),
+          );
+          stats.byCatalogue++;
+          return text;
+        }
+      }
+      if (/[A-Za-z]{2,}/.test(t)) {
+        const known = localizeKnownLabel(t, locale);
+        if (known !== t) {
+          resolved.set(text, known);
+          stats.byCatalogue++;
+        }
+      }
+      return text;
+    }
 
     // Catalogue and master data are consulted BEFORE the keep-list, not after.
     // Order matters here and getting it wrong is silent: enum VALUES a reader
@@ -310,7 +404,19 @@ export async function sweepRemainingEnglish(
     await Promise.all(Array.from({ length: Math.min(limit, pending.length) }, worker));
   }
 
-  // Pass 3 — rewrite.
+  for (const [text, m] of scopeNotes) {
+    resolved.set(
+      text,
+      label('fixedText.partialScope', locale, {
+        count: m[1]!,
+        title: resolved.get(m[2]!) ?? m[2]!,
+        other: m[3]!,
+      }),
+    );
+  }
+
+  // Pass 3 — rewrite (nothing to rewrite is the common English case).
+  if (resolved.size === 0) return { doc, stats };
   const out = mapDocStrings(doc, (text) => resolved.get(text) ?? text);
   return { doc: out, stats };
 }

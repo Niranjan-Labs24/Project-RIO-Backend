@@ -1,3 +1,4 @@
+import type { CoreNeedsContent } from "../core-needs/core-needs.types";
 import type {
   CollectiveDashboardData,
   CollectiveReportContent,
@@ -64,6 +65,10 @@ export abstract class ReportDataProvider {
   // reconcile with it and with each other rather than merely resemble it.
   abstract getTopPriorityReport(query: ScopedReportQuery): Promise<TopPriorityReportContent>;
   abstract getDataQualityReport(query: ScopedReportQuery): Promise<DataQualityReportContent>;
+
+  // RPT18 Core Needs Report — the selected scope and domains, every section of
+  // the client's mockup, computed from the study's own scored answers.
+  abstract getCoreNeedsReport(query: ScopedReportQuery): Promise<CoreNeedsContent>;
 
   // RPT02 full content (KPIs + executive-summary narrative).
   abstract getCollectiveReport(query: ScopedReportQuery): Promise<CollectiveReportContent>;

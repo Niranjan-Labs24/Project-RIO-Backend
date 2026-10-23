@@ -1,4 +1,5 @@
-import type { DocSection, DocTile, ReportDoc } from "./report-doc";
+import { chapterAnchorId, type CalloutTone, type CellTone, type DocSection, type DocTile, type ReportDoc } from "./report-doc";
+import { PRESENTATION_PALETTE } from "./presentation/presentation.config";
 import { hasArabic, shapeArabicAware, shapedWidth, getArabicFont, type ShapedChunk } from "./arabic-text";
 import type { SupportedLocale } from "../translation/translation.types";
 import { label } from "./i18n/report-labels";
@@ -25,11 +26,38 @@ export const TOP = 50;
 export const BOTTOM = 42;
 export const CONTENT_W = PAGE_W - LEFT - RIGHT;
 
-// Palette (r g b, 0–1) — a single accent + neutral grays.
-export const ACCENT = "0.12 0.35 0.60";
+// Palette (r g b, 0–1), from the client's report design (NCNP feedback,
+// Sept 2026 — hex values in presentation/presentation.config.ts).
+const hex = (h: string): string =>
+  [1, 3, 5].map((i) => (parseInt(h.slice(i, i + 2), 16) / 255).toFixed(3)).join(" ");
+export const ACCENT = hex(PRESENTATION_PALETTE.primaryText);
 export const GRAY = "0.45 0.45 0.45";
-export const LIGHT = "0.90 0.93 0.97";
-export const BAR = "0.20 0.50 0.75";
+export const LIGHT = hex(PRESENTATION_PALETTE.panel);
+export const BAR = hex(PRESENTATION_PALETTE.accent);
+const TONE: Record<CellTone, string> = {
+  danger: hex(PRESENTATION_PALETTE.danger),
+  ok: hex(PRESENTATION_PALETTE.strong),
+  strong: hex(PRESENTATION_PALETTE.primaryText),
+  medium: hex("#a8871a"),
+};
+const BAND_COLOR = {
+  VERY_LOW: hex(PRESENTATION_PALETTE.veryLow),
+  MEDIUM: hex(PRESENTATION_PALETTE.medium),
+  STRONG: hex(PRESENTATION_PALETTE.strong),
+} as const;
+const CARD_BORDER = hex(PRESENTATION_PALETTE.cardBorder);
+/** The design's table header: a light teal tint rather than grey. */
+const HEADER_TINT = hex("#e4efed");
+const MUTED = hex(PRESENTATION_PALETTE.muted);
+const INK = "0.11 0.13 0.15";
+/** Callout edge and label colours by tone (the medium label is darkened so it
+ *  stays readable on the light panel). */
+const EDGE: Record<CalloutTone, string> = {
+  ok: hex(PRESENTATION_PALETTE.strong),
+  medium: hex(PRESENTATION_PALETTE.medium),
+  danger: hex(PRESENTATION_PALETTE.veryLow),
+};
+const EDGE_LABEL: Record<CalloutTone, string> = { ...EDGE, medium: hex("#a8871a") };
 export const BLACK = "0 0 0";
 export const WHITE = "1 1 1";
 export const PIE_COLORS = ["0.16 0.47 0.84", "0.92 0.41 0.20", "0.10 0.69 0.48", "0.93 0.63 0.00", "0.91 0.48 0.64"];
@@ -40,7 +68,9 @@ function normalizeAscii(s: string): string {
     .replace(/[‘’‚‛]/g, "'")
     .replace(/[“”„‟]/g, '"')
     .replace(/…/g, "...")
-    .replace(/[•·]/g, "-")
+    // The bullet folds to "-"; the middle dot is kept (StandardEncoding has
+    // it), since "15-24 5 - 25-34 2" and "0 - 0 - 0" read as ranges.
+    .replace(/[•]/g, "-")
     .replace(/×/g, "x")
     // Base Helvetica is WinAnsi — anything outside it becomes "?", which is how
     // "Domain → Sub-domain → Indicator" printed as "Domain ??? Sub-domain".
@@ -80,9 +110,15 @@ function esc(raw: string): string {
   let out = "";
   for (const ch of normalizeAscii(raw)) {
     const code = ch.codePointAt(0) ?? 0;
-    out += code >= 0x20 && code <= 0x7e ? ch : "?";
+    // Middle dot: a placeholder here, its StandardEncoding code (octal 264)
+    // after the escaping below, so its backslash is not doubled.
+    out += ch === "\u00B7" ? "\u0001" : code >= 0x20 && code <= 0x7e ? ch : "?";
   }
-  return out.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+  return out
+    .replace(/\\/g, "\\\\")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)")
+    .replace(/\u0001/g, "\\264");
 }
 
 // ── Text metrics ────────────────────────────────────────────────────────────
@@ -120,7 +156,8 @@ function asciiTextWidth(str: string, size: number, bold = false): number {
   for (const ch of normalizeAscii(str)) {
     const code = ch.codePointAt(0) ?? 0;
     // Anything off the table is drawn as "?" by esc(), so measure it as one.
-    units += (code >= 32 && code <= 126 ? table[code - 32] : table[31]) ?? 556;
+    // Middle dot: periodcentered, 278 in both weights.
+    units += code === 0xb7 ? 278 : ((code >= 32 && code <= 126 ? table[code - 32] : table[31]) ?? 556);
   }
   return (units * size) / 1000;
 }
@@ -192,6 +229,9 @@ export class Pdf {
   dir: "ltr" | "rtl" = "ltr";
   /** The export language — for the few fixed words drawn inside a figure. */
   locale: SupportedLocale = "en";
+  /** The client's design (ReportDoc.design): headings, key/values and the
+   *  chapter furniture drawn in its style. */
+  design = false;
 
   /** Mirror a left edge within the current column. Identity in LTR. */
   private mx(x: number, width: number): number {
@@ -410,6 +450,44 @@ export class Pdf {
       thickness,
     );
   }
+  /** Rounded-rectangle path (PDF space) for the box at the current y. */
+  private roundPath(x: number, w: number, h: number, r: number): string {
+    r = Math.max(0, Math.min(r, w / 2, h / 2));
+    const k = r * 0.5523;
+    const x0 = this.mx(x, w);
+    const x1 = x0 + w;
+    const yb = this.py(this.y + h);
+    const yt = this.py(this.y);
+    const f = (n: number) => n.toFixed(2);
+    return [
+      `${f(x0 + r)} ${f(yb)} m`,
+      `${f(x1 - r)} ${f(yb)} l`,
+      `${f(x1 - r + k)} ${f(yb)} ${f(x1)} ${f(yb + r - k)} ${f(x1)} ${f(yb + r)} c`,
+      `${f(x1)} ${f(yt - r)} l`,
+      `${f(x1)} ${f(yt - r + k)} ${f(x1 - r + k)} ${f(yt)} ${f(x1 - r)} ${f(yt)} c`,
+      `${f(x0 + r)} ${f(yt)} l`,
+      `${f(x0 + r - k)} ${f(yt)} ${f(x0)} ${f(yt - r + k)} ${f(x0)} ${f(yt - r)} c`,
+      `${f(x0)} ${f(yb + r)} l`,
+      // Ends exactly where it began, at the middle of a straight edge, so no
+      // explicit close is needed (and the path stays distinguishable from the
+      // closed pie wedges the chart checks look for).
+      `${f(x0)} ${f(yb + r - k)} ${f(x0 + r - k)} ${f(yb)} ${f(x0 + r)} ${f(yb)} c`,
+    ].join(" ");
+  }
+  /** A rounded box at the current y: filled, outlined, or both. */
+  roundRect(x: number, w: number, h: number, r: number, fill: string | null, stroke: string | null, lineW = 0.8): void {
+    const path = this.roundPath(x, w, h, r);
+    if (fill && stroke) this.ops.push(`${fill} rg ${stroke} RG ${lineW} w ${path} B`);
+    else if (fill) this.ops.push(`${fill} rg ${path} f`);
+    else if (stroke) this.ops.push(`${stroke} RG ${lineW} w ${path} S`);
+  }
+  /** Clip what follows to a rounded box at the current y, until unclip(). */
+  clipRound(x: number, w: number, h: number, r: number): void {
+    this.ops.push(`q ${this.roundPath(x, w, h, r)} W n`);
+  }
+  unclip(): void {
+    this.ops.push("Q");
+  }
   rect(x: number, w: number, h: number, color: string): void {
     this.ops.push(`${color} rg ${this.mx(x, w)} ${this.py(this.y + h)} ${w} ${h} re f`);
   }
@@ -524,6 +602,35 @@ export class Pdf {
     parts.push("h f");
     this.ops.push(parts.join(" "));
   }
+  /** Clip what follows to a closed polygon, until unclip(). Mirrors like
+   *  fillPolygon. */
+  clipPolygon(points: Array<[number, number]>): void {
+    if (points.length === 0) return;
+    const pts = points.map(([x, y]): [number, number] => [this.mx(x, 0), y]);
+    const parts = pts.map(([x, y], i) => `${x.toFixed(2)} ${this.py(y).toFixed(2)} ${i === 0 ? "m" : "l"}`);
+    this.ops.push(`q ${parts.join(" ")} h W n`);
+  }
+  /** Draw `fn` rotated by `deg` (counter-clockwise) about a point given in
+   *  layout coordinates (left edge mirrored like every other primitive). Used
+   *  for the usage-status watermark. */
+  withRotation(cx: number, cyFromTop: number, deg: number, fn: () => void): void {
+    const x = this.mx(cx, 0);
+    const y = this.py(cyFromTop);
+    const r = (deg * Math.PI) / 180;
+    const c = Math.cos(r).toFixed(4);
+    const s = Math.sin(r).toFixed(4);
+    const f = (n: number) => n.toFixed(2);
+    this.ops.push(`q 1 0 0 1 ${f(x)} ${f(y)} cm ${c} ${s} ${(-Math.sin(r)).toFixed(4)} ${c} 0 0 cm 1 0 0 1 ${f(-x)} ${f(-y)} cm`);
+    fn();
+    this.ops.push("Q");
+  }
+  /** Draw `fn` see-through (every page declares the /GSwm opacity), so a
+   *  watermark laid over the content leaves the text under it legible. */
+  withWatermarkOpacity(fn: () => void): void {
+    this.ops.push("q /GSwm gs");
+    fn();
+    this.ops.push("Q");
+  }
   swatch(x: number, colorIndex: number, size = 7): void {
     this.rect(x, size, size, PIE_COLORS[colorIndex % PIE_COLORS.length]!);
   }
@@ -594,6 +701,13 @@ export class Pdf {
     });
   }
 
+  /** 1-based page an anchor was registered on, or null — for a contents
+   *  line that states real page numbers from a first render pass. */
+  anchorPage(id: string): number | null {
+    const a = this.anchors.get(id);
+    return a ? a.pageIndex + 1 : null;
+  }
+
   /** Anchor ids registered during this pass — feeds the second render pass. */
   anchorIds(): ReadonlySet<string> {
     return new Set(this.anchors.keys());
@@ -612,53 +726,78 @@ export class Pdf {
 }
 
 function renderHeader(pdf: Pdf, doc: ReportDoc): void {
-  // Generators name a report "<Report type> — <subject>" (survey / village /
-  // study). One 16pt line only fits ~55 characters, so a long subject used to
-  // be swallowed by the ellipsis — losing the very field that tells two
-  // sibling reports apart. Split at the dash: report type on the masthead
-  // line, subject wrapped beneath it at a smaller size.
+  // As the client's design: the report title large in teal, wrapped rather
+  // than cut (the subject after the dash is what tells sibling reports apart),
+  // the organisation as a badge on the opposite side, then the reference
+  // details in a light rounded panel.
+  const badge = doc.badge?.trim();
+  const BADGE_SIZE = 8;
+  const badgeW = badge ? Math.min(textWidth(badge, BADGE_SIZE, true) + 20, CONTENT_W * 0.38) : 0;
+  const titleW = CONTENT_W - (badge ? badgeW + 16 : 0);
+  const top = pdf.y;
+  if (badge) {
+    const lbl = truncate(badge, BADGE_SIZE, badgeW - 16, true);
+    pdf.roundRect(LEFT + CONTENT_W - badgeW, badgeW, 24, 4, LIGHT, hex(PRESENTATION_PALETTE.summaryLabel), 0.8);
+    pdf.y = top + 8;
+    pdf.text(LEFT + CONTENT_W - badgeW + (badgeW - textWidth(lbl, BADGE_SIZE, true)) / 2, BADGE_SIZE, true, lbl, ACCENT);
+    // The badge is the owning organisation; NCNP is named as platform owner.
+    const owner = truncate(label("presentation.platformOwner", pdf.dir === "rtl" ? "ar" : "en"), 7, CONTENT_W * 0.45);
+    pdf.y = top + 30;
+    pdf.text(LEFT + CONTENT_W - textWidth(owner, 7), 7, false, owner, MUTED);
+  }
   const [typeName, ...subjectParts] = doc.title.split("—");
   const heading = (typeName ?? doc.title).trim();
   const subject = subjectParts.join("—").trim();
-
-  pdf.text(LEFT, 16, true, truncate(heading, 16, CONTENT_W), ACCENT);
-  pdf.y += 21;
-  if (subject) {
-    for (const line of wrap(subject, 12, CONTENT_W)) {
-      pdf.text(LEFT, 12, true, line, ACCENT);
-      pdf.y += 15;
-    }
-    pdf.y += 2;
+  pdf.y = top;
+  for (const ln of wrap(subject ? `${heading} — ${subject}` : heading, 17, titleW, true)) {
+    pdf.text(LEFT, 17, true, ln, ACCENT);
+    pdf.y += 21;
   }
-  pdf.rule(ACCENT, 1.4);
-  pdf.y += 6;
+  pdf.y = Math.max(pdf.y, top + (badge ? 40 : 28)) + 8;
   if (doc.headerBand.length) {
     // Single full-width row per field, wrapped rather than truncated — a
     // fixed two-column grid left long values (e.g. a Methodology Version
     // sentence) truncated mid-word since each value only got ~154pt.
-    const labelW = 106;
-    const valW = CONTENT_W - labelW - 10;
+    const PAD = 12;
+    const labelW = 110;
+    const valW = CONTENT_W - labelW - PAD * 2;
     const size = 8;
+    const LINE = 11.5;
     const linesPerRow = doc.headerBand.map((m) => wrap(m.value, size, valW));
-    const bandH = linesPerRow.reduce((h, lines) => h + Math.max(1, lines.length) * 11, 0) + 6;
-    pdf.rect(LEFT, CONTENT_W, bandH, LIGHT);
-    let rowY = pdf.y + 5;
+    const bandH = linesPerRow.reduce((h, lines) => h + Math.max(1, lines.length) * LINE, 0) + PAD * 2 - 3;
+    pdf.roundRect(LEFT, CONTENT_W, bandH, 8, LIGHT, null);
+    let rowY = pdf.y + PAD;
     doc.headerBand.forEach((m, i) => {
-      const x = LEFT + 5;
+      const x = LEFT + PAD;
       pdf.y = rowY;
-      pdf.text(x, size, true, `${m.label}:`);
+      pdf.text(x, size, true, m.label, BAR);
       const lines = linesPerRow[i]!;
       lines.forEach((ln, li) => {
-        pdf.y = rowY + li * 11;
-        pdf.text(x + labelW, size, false, ln);
+        pdf.y = rowY + li * LINE;
+        pdf.text(x + labelW, size, false, ln, INK);
       });
-      rowY += Math.max(1, lines.length) * 11;
+      rowY += Math.max(1, lines.length) * LINE;
     });
-    pdf.y = rowY + 4;
+    pdf.y = rowY + PAD - 3;
   }
+  pdf.y += 16;
 }
 
 export function heading(pdf: Pdf, text: string): void {
+  if (pdf.design) {
+    // Room for the heading and the start of what it heads, so a heading is
+    // never left alone at the foot of a page.
+    pdf.ensure(80);
+    for (const ln of wrap(text, 13, pdf.rw, true)) {
+      pdf.text(pdf.rx, 13, true, ln, ACCENT);
+      pdf.y += 17;
+    }
+    // Underlined, as the report's headings always were.
+    pdf.y += 1;
+    pdf.rule(hex(PRESENTATION_PALETTE.summaryDivider), 0.8);
+    pdf.y += 9;
+    return;
+  }
   pdf.ensure(22);
   pdf.y += 4;
   pdf.text(pdf.rx, 11.5, true, truncate(text, 11.5, pdf.rw), ACCENT);
@@ -668,9 +807,11 @@ export function heading(pdf: Pdf, text: string): void {
 }
 
 function renderKeyValue(pdf: Pdf, rows: Array<{ label: string; value: string }>): void {
-  const size = 8.5;
-  const LINE = 11;
-  const GAP = 10;
+  const size = pdf.design ? 10 : 8.5;
+  const LINE = pdf.design ? 13.5 : 11;
+  // The design keeps a clear, even gap between label and value, and one
+  // label column width for every block on the page where it fits.
+  const GAP = pdf.design ? 24 : 10;
   // The label column is measured from the labels themselves rather than fixed
   // at 150pt. A fixed column truncated every long label in "Calculation Basis
   // - Thresholds Applied" ("Severity at or above which a sust..") while its
@@ -680,29 +821,35 @@ function renderKeyValue(pdf: Pdf, rows: Array<{ label: string; value: string }>)
   // reading is, to them, a threshold that was never stated.
   const labelNeed = Math.max(0, ...rows.map((r) => textWidth(r.label, size, true))) + GAP;
   const valueNeed = Math.max(0, ...rows.map((r) => textWidth(r.value, size)));
-  const labelW =
-    labelNeed + valueNeed <= pdf.rw
+  const labelW = pdf.design
+    ? Math.min(pdf.rw * 0.45, Math.max(170, labelNeed))
+    : labelNeed + valueNeed <= pdf.rw
       ? Math.max(60, labelNeed)
       : Math.max(60, Math.min(labelNeed, pdf.rw * 0.62));
   const valX = pdf.rx + labelW;
   const valW = pdf.rx + pdf.rw - valX;
-  for (const { label, value } of rows) {
+  for (const [i, { label, value }] of rows.entries()) {
     const labelLines = wrap(label, size, labelW - GAP, true);
     const valueLines = wrap(value, size, valW);
     const lineCount = Math.max(labelLines.length, valueLines.length);
     pdf.ensure(lineCount * LINE + 2);
     // Both columns are drawn from the SAME top, so a wrapped label and a
     // wrapped value stay on the rows they belong to.
-    const top = pdf.y;
+    const top = pdf.y + (pdf.design ? 4 : 0);
     labelLines.forEach((ln, i) => {
       pdf.y = top + i * LINE;
-      pdf.text(pdf.rx + 1, size, true, ln);
+      pdf.text(pdf.rx + 1, size, true, ln, pdf.design ? BAR : BLACK);
     });
     valueLines.forEach((ln, i) => {
       pdf.y = top + i * LINE;
-      pdf.text(valX, size, false, ln);
+      pdf.text(valX, size, false, ln, pdf.design ? INK : BLACK);
     });
     pdf.y = top + lineCount * LINE + 1.5;
+    // The design's rows are separated by a hairline, as in its tables.
+    if (pdf.design && i < rows.length - 1) {
+      pdf.y += 3;
+      pdf.rule(CARD_BORDER, 0.6);
+    }
   }
 }
 
@@ -723,21 +870,57 @@ function renderTable(
   columns: string[],
   rows: string[][],
   rowLinks?: Array<string | null>,
+  tones?: Array<Array<CellTone | null>>,
+  roomy = false,
 ): void {
   const n = columns.length || 1;
-  const size = n > 6 ? 7 : n > 4 ? 7.5 : 8.5;
-  const rowH = size + 5;
+  // The design's tables: larger type (stepping down only as columns are
+  // added), padded rows, hairline separators, a teal-tinted header.
+  const designed = roomy || pdf.design;
+  const size = designed
+    ? n <= 6
+      ? 10
+      : n <= 8
+        ? 9.5
+        : n <= 10
+          ? 8.5
+          : 8
+    : n > 6
+      ? 7
+      : n > 4
+        ? 7.5
+        : 8.5;
+  // Vertical padding inside each row, and the gap between wrapped lines.
+  const PADV = designed ? 7 : 0;
+  const LEAD = designed ? size + 3 : size + 1;
+  // Room at the row end for the drill chevron, so it never sits on a value.
+  const GUTTER = rowLinks?.some((l) => l !== null) ? 16 : 0;
+  const tableW = pdf.rw - GUTTER;
+  // Horizontal room a cell keeps free (badge outline and side padding).
+  const INSET = roomy ? (n > 5 ? 20 : 26) : designed ? (n > 8 ? 8 : 10) : 6;
+  const rowH = size + 5 + PADV * 2;
 
   // Minimum width per column = whatever CANNOT be broken: its own header, and
   // the widest unbreakable word in its cells. Sizing on the header alone left
   // "Domain" 32pt wide, so every "Livelihood" printed as "Livel.." — the column
   // was legally full while its only value was unreadable.
   const minW = columns.map((c, i) => {
-    const header = textWidth(c, size, true);
-    const word = Math.max(0, ...rows.map((r) => widestWord(r[i] ?? "", size)));
+    // Design-style headers wrap, so only their longest word is unbreakable.
+    const header = designed ? widestWord(c, size, true) : textWidth(c, size, true);
+    // A badge (coloured word cell) reads as one unit, so it is not wrapped.
+    const word = Math.max(
+      0,
+      ...rows.map((r, ri) =>
+        roomy && tones?.[ri]?.[i] && tones[ri][i] !== "strong"
+          ? textWidth(r[i] ?? "", size - 0.5) + 14
+          : widestWord(r[i] ?? "", size),
+      ),
+    );
     // +12 is the cell's own padding (3pt in, 3pt out) plus a hair of gutter, so
     // two adjacent columns never read as one run of text.
-    return Math.max(header, word) + 12;
+    return (
+      Math.max(header, word) + (roomy ? (n > 5 ? 22 : 28) : designed ? (n > 8 ? 10 : 14) : 12)
+    );
   });
   const minSum = minW.reduce((a, b) => a + b, 0) || 1;
   // How much room each column's FULL content wants, measured the same way it
@@ -748,11 +931,11 @@ function renderTable(
   );
 
   let widths: number[];
-  if (minSum <= pdf.rw) {
+  if (minSum <= tableW) {
     // Everything unbreakable fits. Hand out the slack proportional to how much
     // each column's full content still overflows, so a long prose column (Notes)
     // takes most of it without starving the short ones.
-    const extra = pdf.rw - minSum;
+    const extra = tableW - minSum;
     const overflow = wantW.map((want, i) => Math.max(0, want - minW[i]!));
     const totalOverflow = overflow.reduce((a, b) => a + b, 0);
     widths = minW.map((w, i) => w + (totalOverflow > 0 ? (overflow[i]! / totalOverflow) * extra : extra / n));
@@ -760,10 +943,10 @@ function renderTable(
     // Too many columns for the page. Scale the minimums down together — some
     // mid-word truncation is then unavoidable, and the right fix is a narrower
     // column set (see report-doc's compact vs full need-record columns).
-    widths = minW.map((w) => Math.max(26, (w / minSum) * pdf.rw));
+    widths = minW.map((w) => Math.max(26, (w / minSum) * tableW));
   }
   const sum = widths.reduce((a, b) => a + b, 0);
-  if (sum > pdf.rw) widths = widths.map((w) => (w / sum) * pdf.rw);
+  if (sum > tableW) widths = widths.map((w) => (w / sum) * tableW);
 
   const xs: number[] = [];
   let cursor = pdf.rx;
@@ -771,49 +954,74 @@ function renderTable(
     xs.push(cursor);
     cursor += w;
   }
-  const numeric = columns.map((_, i) => isNumericColumn(rows, i));
+  // The design's tables read left to right throughout, figures included.
+  const numeric = columns.map((_, i) => !designed && isNumericColumn(rows, i));
   // Prose cells (a Notes column) wrap over several lines rather than being cut
   // off — a reason a reader cannot finish reading is no reason at all.
   const MAX_LINES = 4;
   const rowHeight = (cells: string[], wrapCells: boolean, bold = false): number => {
     const cellLines = cells.map((c, i) => {
       const w = widths[i] ?? 40;
-      if (!wrapCells) return [truncate(c, size, w - 6, bold)];
-      const lines = wrap(c, size, w - 6, bold);
+      if (!wrapCells) return [truncate(c, size, w - INSET, bold)];
+      const lines = wrap(c, size, w - INSET, bold);
       if (lines.length <= MAX_LINES) return lines;
-      return [...lines.slice(0, MAX_LINES - 1), truncate(lines.slice(MAX_LINES - 1).join(" "), size, w - 6, bold)];
+      return [...lines.slice(0, MAX_LINES - 1), truncate(lines.slice(MAX_LINES - 1).join(" "), size, w - INSET, bold)];
     });
     const lineCount = Math.max(1, ...cellLines.map((l) => l.length));
-    return size + 5 + (lineCount - 1) * (size + 1);
+    return size + 5 + PADV * 2 + (lineCount - 1) * LEAD;
   };
-  const drawRow = (cells: string[], bold: boolean, wrapCells: boolean) => {
+  const drawRow = (
+    cells: string[],
+    bold: boolean,
+    wrapCells: boolean,
+    rowTones?: Array<CellTone | null>,
+  ) => {
     const cellLines = cells.map((c, i) => {
       const w = widths[i] ?? 40;
-      if (!wrapCells) return [truncate(c, size, w - 6, bold)];
-      const lines = wrap(c, size, w - 6, bold);
+      if (!wrapCells) return [truncate(c, size, w - INSET, bold)];
+      const lines = wrap(c, size, w - INSET, bold);
       if (lines.length <= MAX_LINES) return lines;
-      return [...lines.slice(0, MAX_LINES - 1), truncate(lines.slice(MAX_LINES - 1).join(" "), size, w - 6, bold)];
+      return [...lines.slice(0, MAX_LINES - 1), truncate(lines.slice(MAX_LINES - 1).join(" "), size, w - INSET, bold)];
     });
     const lineCount = Math.max(1, ...cellLines.map((l) => l.length));
-    const h = size + 5 + (lineCount - 1) * (size + 1);
+    const h = size + 5 + PADV * 2 + (lineCount - 1) * LEAD;
     const top = pdf.y;
     cellLines.forEach((lines, i) => {
       const w = widths[i] ?? 40;
       const cx = xs[i] ?? pdf.rx;
+      const tone = rowTones?.[i];
+      // A coloured word cell ("Fully concentrated", "Not yet — …") is a badge
+      // in the design: outlined in its colour, regular weight.
+      const badge = roomy && !!tone && tone !== "strong" && /[^\d\s.,%—-]/.test(cells[i] ?? "");
+      if (badge) {
+        const bw = Math.min(w - 6, Math.max(...lines.map((ln) => textWidth(ln, size - 0.5))) + 18);
+        pdf.y = top + PADV - 4;
+        pdf.roundRect(cx + 4, bw, lines.length * LEAD + 6, 4, null, TONE[tone], 0.8);
+      }
       lines.forEach((ln, li) => {
-        pdf.y = top + li * (size + 1);
-        pdf.text(numeric[i] ? cx + w - 4 - textWidth(ln, size, bold) : cx + 3, size, bold, ln);
+        pdf.y = top + PADV + li * LEAD;
+        if (badge) {
+          pdf.text(cx + 13, size - 0.5, false, ln, TONE[tone]);
+          return;
+        }
+        pdf.text(
+          numeric[i] ? cx + w - 4 - textWidth(ln, size, bold || !!tone) : cx + (designed ? 8 : 3),
+          size,
+          bold || !!tone,
+          ln,
+          tone ? TONE[tone] : bold && designed ? ACCENT : designed ? INK : BLACK,
+        );
       });
     });
     pdf.y = top + h;
   };
   const drawHeader = () => {
-    pdf.rect(pdf.rx, pdf.rw, rowH, LIGHT);
-    drawRow(columns, true, false);
-    pdf.rule(GRAY, 0.5);
-    pdf.y += 2;
+    pdf.rect(pdf.rx, pdf.rw, designed ? rowHeight(columns, true, true) : rowH, designed ? HEADER_TINT : LIGHT);
+    drawRow(columns, true, designed);
+    pdf.rule(designed ? hex(PRESENTATION_PALETTE.summaryDivider) : GRAY, designed ? 0.9 : 0.5);
+    if (!designed) pdf.y += 2;
   };
-  const headerH = rowHeight(columns, false, true);
+  const headerH = rowHeight(columns, designed, true);
   // Small tables (the "top N" / "Showing N of Total" summary tables this
   // report is built from — see this file's own header comment) are placed
   // as one atomic block: header + every row reserved together upfront. Without
@@ -851,10 +1059,21 @@ function renderTable(
       pdf.link(pdf.rx, pdf.rw, h, target);
       // A drill affordance the reader can see. Without it a clickable row is
       // indistinguishable from a static one and nobody discovers the drill.
-      const marker = ">";
-      pdf.text(pdf.rx + pdf.rw - textWidth(marker, 8) - 2, 8, true, marker, ACCENT);
+      // A drawn chevron in its own gutter, so it never overlaps a value.
+      const mx = pdf.rx + pdf.rw - 10;
+      const my = pdf.y + PADV + size * 0.5;
+      pdf.strokePath(
+        [
+          [mx, my - 3.5],
+          [mx + 3.5, my],
+          [mx, my + 3.5],
+        ],
+        BAR,
+        1.4,
+      );
     }
-    drawRow(row, false, true);
+    drawRow(row, false, true, tones?.[i] ?? undefined);
+    if (designed && i < rows.length - 1) pdf.rule(CARD_BORDER, 0.6);
   });
 }
 
@@ -1194,22 +1413,347 @@ function renderGroupedBars(
 
 function renderList(pdf: Pdf, items: string[]): void {
   const textW = pdf.rw - 12;
+  const size = pdf.design ? 10 : 8.5;
+  const line = pdf.design ? 14 : 11;
   for (const item of items) {
-    const lines = wrap(item, 8.5, textW);
-    pdf.ensure(lines.length * 11 + 1);
+    const lines = wrap(item, size, textW);
+    pdf.ensure(lines.length * line + 1);
     lines.forEach((ln, i) => {
-      pdf.text(pdf.rx + 2, 8.5, false, i === 0 ? `- ${ln}` : `  ${ln}`);
-      pdf.y += 11;
+      pdf.text(pdf.rx + 2, size, false, i === 0 ? `- ${ln}` : `  ${ln}`, pdf.design ? INK : BLACK);
+      pdf.y += line;
     });
     pdf.y += 2;
   }
 }
 
+function renderSubheading(pdf: Pdf, text: string): void {
+  const size = pdf.design ? 9.5 : 7.5;
+  const line = pdf.design ? 13 : 10;
+  for (const ln of wrap(text, size, pdf.rw)) {
+    pdf.ensure(line);
+    pdf.text(pdf.rx, size, false, ln, BAR);
+    pdf.y += line;
+  }
+  pdf.y += pdf.design ? 6 : 3;
+}
+
+/** The one-page executive summary: a dark teal panel of labelled columns. */
+function renderSummaryPanel(
+  pdf: Pdf,
+  title: string,
+  columns: Array<{ label: string; text: string; lead?: string; caveat?: string }>,
+): void {
+  const PAD = 20;
+  const GAP = 16;
+  const SIZE = 10.5;
+  const LINE = 15;
+  const n = columns.length || 1;
+  const colW = (pdf.rw - PAD * 2 - GAP * (n - 1)) / n;
+  const bodies = columns.map((c) => ({
+    lead: c.lead ? wrap(c.lead, SIZE, colW, true) : [],
+    text: wrap(c.text, SIZE, colW),
+    caveat: c.caveat ? wrap(c.caveat, 9, colW) : [],
+  }));
+  const bodyH = Math.max(
+    ...bodies.map((b) => (b.lead.length + b.text.length) * LINE + (b.caveat.length ? 4 + b.caveat.length * 11 : 0)),
+  );
+  const titleLines = wrap(title, 15, pdf.rw - PAD * 2, true);
+  const head = titleLines.length * 19 + 10;
+  const h = PAD + head + 14 + 16 + bodyH + PAD - 4;
+  pdf.ensure(h + 6);
+  const top = pdf.y;
+  pdf.roundRect(pdf.rx, pdf.rw, h, 10, hex(PRESENTATION_PALETTE.primary), null);
+  pdf.y = top + PAD;
+  for (const ln of titleLines) {
+    pdf.text(pdf.rx + PAD, 15, true, ln, WHITE);
+    pdf.y += 19;
+  }
+  pdf.y = top + PAD + head;
+  pdf.rect(pdf.rx + PAD, pdf.rw - PAD * 2, 1.2, hex(PRESENTATION_PALETTE.summaryDivider));
+  const colTop = top + PAD + head + 14;
+  // Columns run in reading order: left to right in English, right to left in
+  // Arabic (the page is mirrored by pdf.dir, so x is laid out LTR here).
+  columns.forEach((c, i) => {
+    const x = pdf.rx + PAD + i * (colW + GAP);
+    pdf.y = colTop;
+    pdf.text(x, 8, true, truncate(c.label.toUpperCase(), 8, colW, true), hex(PRESENTATION_PALETTE.summaryLabel));
+    pdf.y += 16;
+    const b = bodies[i]!;
+    for (const ln of b.lead) {
+      pdf.text(x, SIZE, true, ln, WHITE);
+      pdf.y += LINE;
+    }
+    for (const ln of b.text) {
+      pdf.text(x, SIZE, false, ln, WHITE);
+      pdf.y += LINE;
+    }
+    if (b.caveat.length) pdf.y += 4;
+    for (const ln of b.caveat) {
+      pdf.text(x, 8, false, ln, "0.85 0.90 0.90");
+      pdf.y += 11;
+    }
+  });
+  pdf.y = top + h;
+}
+
+/** Confidence level by sample size: coloured segments, a marker under the
+ *  current band, and the explanatory line. */
+function renderBandScale(
+  pdf: Pdf,
+  segments: Array<{ band: "VERY_LOW" | "MEDIUM" | "STRONG"; label: string; grow: number; active: boolean }>,
+  note: string,
+): void {
+  const H = 22;
+  const SIZE = 8;
+  pdf.ensure(H + 44);
+  const top = pdf.y;
+  const total = segments.reduce((n, g) => n + g.grow, 0) || 1;
+  pdf.clipRound(pdf.rx, pdf.rw, H, 4);
+  let x = pdf.rx;
+  for (const g of segments) {
+    const w = (g.grow / total) * pdf.rw;
+    pdf.y = top;
+    pdf.rect(x, w, H, BAND_COLOR[g.band]);
+    const lbl = truncate(g.label, SIZE, w - 6, true);
+    pdf.y = top + (H - SIZE) / 2 - 0.5;
+    pdf.text(x + (w - textWidth(lbl, SIZE, true)) / 2, SIZE, true, lbl, WHITE);
+    x += w;
+  }
+  pdf.unclip();
+  // The marker under the current band.
+  x = pdf.rx;
+  for (const g of segments) {
+    const w = (g.grow / total) * pdf.rw;
+    if (g.active) {
+      const cx = x + w / 2;
+      pdf.fillPolygon(
+        [
+          [cx - 5, top + H + 10],
+          [cx + 5, top + H + 10],
+          [cx, top + H + 3],
+        ],
+        INK,
+      );
+    }
+    x += w;
+  }
+  pdf.y = top + H + 18;
+  for (const ln of wrap(note, 9.5, pdf.rw)) {
+    pdf.ensure(13);
+    pdf.text(pdf.rx, 9.5, false, ln, BAR);
+    pdf.y += 13;
+  }
+}
+
+/** Design card: rounded outline, padded, its title and hint inside. Measured
+ *  on a scratch page first so the frame fits what is drawn; a card taller than
+ *  a page is drawn unframed rather than split. */
+const CARD_PAD = 18;
+function cardBody(pdf: Pdf, s: Extract<DocSection, { kind: "card" }>): void {
+  const end = pdf.column(pdf.rx + CARD_PAD, pdf.rw - CARD_PAD * 2, pdf.y + CARD_PAD, () => {
+    if (s.heading) {
+      for (const ln of wrap(s.heading, 13, pdf.rw, true)) {
+        pdf.ensure(18);
+        pdf.text(pdf.rx, 13, true, ln, ACCENT);
+        pdf.y += 17;
+      }
+    }
+    if (s.hint) {
+      pdf.y += 1;
+      for (const ln of wrap(s.hint, 9, pdf.rw)) {
+        pdf.text(pdf.rx, 9, false, ln, BAR);
+        pdf.y += 12;
+      }
+    }
+    if (s.heading || s.hint) pdf.y += 10;
+    s.children.forEach((child, i) => {
+      // Sections of one chapter, each under its own heading, are separated
+      // by a hairline rather than boxed separately.
+      // Headed sections carry their own underline; a gap separates them.
+      const headed = "heading" in child && !!child.heading && child.kind !== "card";
+      if (i) pdf.y += headed ? 18 : 10;
+      renderSection(pdf, child);
+    });
+  });
+  pdf.y = end + CARD_PAD;
+}
+
+function renderCard(pdf: Pdf, s: Extract<DocSection, { kind: "card" }>): void {
+  const probe = new Pdf();
+  probe.dir = pdf.dir;
+  probe.design = pdf.design;
+  probe.rx = pdf.rx;
+  probe.rw = pdf.rw;
+  probe.y = TOP;
+  cardBody(probe, s);
+  const h = probe.y - TOP;
+  const spaceLeft = PAGE_H - BOTTOM - pdf.y;
+  if (probe.pageCount > 1 || (s.flow && h > spaceLeft)) {
+    cardBody(pdf, s);
+    return;
+  }
+  pdf.ensure(h);
+  const top = pdf.y;
+  pdf.roundRect(pdf.rx, pdf.rw, h, 10, WHITE, CARD_BORDER, 1);
+  cardBody(pdf, s);
+  pdf.y = top + h;
+}
+
+/** Ring segment colours, one per share (Male, Female, …), as the earlier
+ *  pie's distinct colours so every share can be told apart. */
+const RING_COLORS = ["#4a80b4", "#e07a3f", "#59a694", "#dccf6e", "#b05a8c"].map(hex);
+const RING_TRACK = hex("#e3e8e6");
+
+/** The design's demographic rings, side by side: each share an arc in its own
+ *  colour, the breakdown's name and a coloured legend beneath. */
+function renderRings(pdf: Pdf, items: Array<{ label: string; slices: Array<{ label: string; value: number }> }>): void {
+  const R = 38;
+  const W = 11;
+  const n = Math.max(1, items.length);
+  const colW = pdf.rw / Math.max(n, 2);
+  const offset = (pdf.rw - colW * n) / 2;
+  const LEG = 13;
+  const legendRows = Math.max(...items.map((it) => it.slices.length), 1);
+  const h = R * 2 + W + 30 + legendRows * LEG;
+  pdf.ensure(h);
+  const top = pdf.y;
+  items.forEach((it) => {
+    const i = items.indexOf(it);
+    const cx = pdf.rx + offset + colW * i + colW / 2;
+    const cy = top + W / 2 + R;
+    const total = it.slices.reduce((a, b2) => a + b2.value, 0);
+    const arc = (from: number, to: number): Array<[number, number]> => {
+      const steps = Math.max(2, Math.ceil((to - from) * 60));
+      return Array.from({ length: steps + 1 }, (_, k) => {
+        const a2 = -Math.PI / 2 + 2 * Math.PI * (from + ((to - from) * k) / steps);
+        return [cx + R * Math.cos(a2), cy + R * Math.sin(a2)] as [number, number];
+      });
+    };
+    pdf.strokePath(arc(0, 1), RING_TRACK, W);
+    let at = 0;
+    it.slices.forEach((x, k) => {
+      const share = total > 0 ? x.value / total : 0;
+      if (share > 0) pdf.strokePath(arc(at, at + share), RING_COLORS[k % RING_COLORS.length]!, W);
+      at += share;
+    });
+    pdf.y = top + R * 2 + W + 8;
+    const name = truncate(it.label, 10.5, colW - 8, true);
+    pdf.text(cx - textWidth(name, 10.5, true) / 2, 10.5, true, name, INK);
+    pdf.y += 17;
+    // Legend: a colour dot per share, then "Male 25%".
+    it.slices.forEach((x, k) => {
+      const pct = total > 0 ? Math.round((x.value / total) * 100) : 0;
+      const txt = truncate(`${x.label} ${pct}%`, 9.5, colW - 24);
+      const w = textWidth(txt, 9.5) + 12;
+      const x0 = cx - w / 2;
+      pdf.disc(x0 + 3.5, pdf.y + 4.5, 3.5, RING_COLORS[k % RING_COLORS.length]!);
+      pdf.text(x0 + 12, 9.5, false, txt, INK);
+      pdf.y += LEG;
+    });
+  });
+  pdf.y = top + h;
+}
+
+/** Every top-level section framed as a design card, its heading inside. */
+function designCard(s: DocSection): DocSection {
+  switch (s.kind) {
+    case "anchor":
+    case "pageBreak":
+    case "breadcrumb":
+    case "navGrid":
+    case "card":
+    case "summaryPanel":
+      return s;
+    case "columns":
+      return { kind: "card", heading: "", children: [s] };
+    default: {
+      const heading = "heading" in s ? s.heading : "";
+      return { kind: "card", heading, children: [{ ...s, heading: "" } as DocSection] };
+    }
+  }
+}
+
+function renderCaption(pdf: Pdf, text: string): void {
+  pdf.ensure(28);
+  for (const ln of wrap(text.toUpperCase(), 8.5, pdf.rw, true)) {
+    pdf.text(pdf.rx, 8.5, true, ln, BAR);
+    pdf.y += 12;
+  }
+  pdf.y += 4;
+}
+
+function renderCallouts(pdf: Pdf, items: Array<{ label: string; text: string; tone: CalloutTone }>): void {
+  const GAP = 10;
+  const PAD = 12;
+  const SIZE = 10;
+  const LINE = 14.5;
+  const n = items.length || 1;
+  const w = (pdf.rw - GAP * (n - 1)) / n;
+  const inner = w - PAD * 2 - 3;
+  const bodies = items.map((it) => ({
+    label: wrap(it.label.toUpperCase(), 8, inner, true),
+    text: wrap(it.text, SIZE, inner),
+  }));
+  const h = PAD * 2 + Math.max(...bodies.map((b) => b.label.length * 11 + 6 + b.text.length * LINE)) - 3;
+  pdf.ensure(h + 2);
+  const top = pdf.y;
+  items.forEach((it, i) => {
+    const x = pdf.rx + i * (w + GAP);
+    pdf.y = top;
+    pdf.clipRound(x, w, h, 5);
+    pdf.rect(x, w, h, LIGHT);
+    pdf.rect(x, 3.5, h, EDGE[it.tone]);
+    pdf.unclip();
+    let y = top + PAD;
+    for (const ln of bodies[i]!.label) {
+      pdf.y = y;
+      pdf.text(x + PAD + 3, 8, true, ln, EDGE_LABEL[it.tone]);
+      y += 10;
+    }
+    y += 5;
+    for (const ln of bodies[i]!.text) {
+      pdf.y = y;
+      pdf.text(x + PAD + 3, SIZE, false, ln, INK);
+      y += LINE;
+    }
+  });
+  pdf.y = top + h;
+}
+
+function renderPanel(pdf: Pdf, text: string): void {
+  const PAD = 12;
+  const SIZE = 10;
+  const LINE = 14.5;
+  const lines = wrap(text, SIZE, pdf.rw - PAD * 2);
+  const h = PAD * 2 + lines.length * LINE - 3;
+  pdf.ensure(h);
+  const top = pdf.y;
+  pdf.roundRect(pdf.rx, pdf.rw, h, 5, LIGHT, null);
+  lines.forEach((ln, i) => {
+    pdf.y = top + PAD + i * LINE;
+    pdf.text(pdf.rx + PAD, SIZE, false, ln, INK);
+  });
+  pdf.y = top + h;
+}
+
+function renderFootnote(pdf: Pdf, text: string): void {
+  pdf.ensure(30);
+  pdf.y += 3;
+  pdf.rule(CARD_BORDER, 0.8);
+  pdf.y += 10;
+  for (const ln of wrap(text, 9.5, pdf.rw)) {
+    pdf.text(pdf.rx, 9.5, false, ln, MUTED);
+    pdf.y += 13;
+  }
+}
+
 function renderNote(pdf: Pdf, text: string): void {
-  for (const ln of wrap(text, 8.5, pdf.rw - 4)) {
-    pdf.ensure(12);
-    pdf.text(pdf.rx + 2, 8.5, false, ln, GRAY);
-    pdf.y += 11;
+  const size = pdf.design ? 10 : 8.5;
+  const line = pdf.design ? 14 : 11;
+  for (const ln of wrap(text, size, pdf.rw - 4)) {
+    pdf.ensure(line + 1);
+    pdf.text(pdf.rx + 2, size, false, ln, pdf.design ? "0.22 0.25 0.28" : GRAY);
+    pdf.y += line;
   }
   pdf.y += 2;
 }
@@ -1244,10 +1788,24 @@ export function renderSection(pdf: Pdf, s: DocSection): void {
   // `pageBreak` draws its own heading AFTER breaking the page — drawing it here
   // would put the detail page's title on the bottom of the previous page.
   // `anchor` and `breadcrumb` have no heading at all.
-  if ("heading" in s && s.heading && s.kind !== "pageBreak") heading(pdf, s.heading);
+  // A small table moves to the next page whole; keep its heading with it.
+  if (pdf.design && s.kind === "table" && s.heading && s.rows.length <= 20) {
+    pdf.ensure(Math.min(PAGE_H - TOP - BOTTOM - 40, 70 + s.rows.length * 30));
+  }
+  if ("heading" in s && s.heading && s.kind !== "pageBreak" && s.kind !== "card") heading(pdf, s.heading);
   switch (s.kind) {
     case "keyvalue": return renderKeyValue(pdf, s.rows);
-    case "table": return renderTable(pdf, s.columns, s.rows, s.rowLinks);
+    case "table":
+      if (s.subheading) renderSubheading(pdf, s.subheading);
+      return renderTable(pdf, s.columns, s.rows, s.rowLinks, s.tones, s.roomy);
+    case "summaryPanel": return renderSummaryPanel(pdf, s.title, s.columns);
+    case "bandScale": return renderBandScale(pdf, s.segments, s.note);
+    case "card": return renderCard(pdf, s);
+    case "caption": return renderCaption(pdf, s.text);
+    case "callouts": return renderCallouts(pdf, s.items);
+    case "panel": return renderPanel(pdf, s.text);
+    case "footnote": return renderFootnote(pdf, s.text);
+    case "rings": return renderRings(pdf, s.items);
     case "anchor": return pdf.anchor(s.id);
     case "navGrid": return renderNavGrid(pdf, s.tiles);
     case "breadcrumb": return renderBreadcrumb(pdf, s.trail);
@@ -1279,13 +1837,24 @@ function renderPass(
   const pdf = new Pdf(knownAnchorIds);
   pdf.dir = locale === "ar" ? "rtl" : "ltr";
   pdf.locale = locale;
+  pdf.design = doc.design === true;
   renderHeader(pdf, doc);
+  // One-page summary and the other presentation blocks, before anything else —
+  // each its own rounded card, as in the client's design.
+  for (const section of doc.lead ?? []) {
+    renderSection(pdf, section);
+    pdf.y += 16;
+  }
+  // The contents grid starts on its own page rather than as an orphaned
+  // heading under the summary.
+  if (doc.lead?.length && doc.chapters?.length) pdf.newPage();
 
   if (doc.chapters?.length) {
     // Page 1 is the contents grid; each chapter follows.
     renderContentsPage(pdf, doc.chapters, mode, locale);
     if (doc.audit.length) {
-      renderSection(pdf, { kind: "keyvalue", heading: label("pdf.auditTrail", locale), rows: doc.audit });
+      if (pdf.design) pdf.y += 8;
+      renderSection(pdf, frame(pdf, { kind: "keyvalue", heading: label("pdf.auditTrail", locale), rows: doc.audit }));
     }
     const canvasPage = pdf.pageCount; // first page after the contents
     // In layer mode chapters overlay onto the same canvas pages, so the file
@@ -1296,18 +1865,28 @@ function renderPass(
     return pdf;
   }
 
-  for (const section of doc.sections) {
-    renderSection(pdf, section);
-    pdf.y += 6;
+  if (pdf.design) {
+    renderSection(pdf, { kind: "card", heading: "", children: doc.sections, flow: true });
+    pdf.y += 14;
+  } else {
+    for (const section of doc.sections) {
+      renderSection(pdf, section);
+      pdf.y += 6;
+    }
   }
-  if (doc.audit.length) renderSection(pdf, { kind: "keyvalue", heading: label("pdf.auditTrail", locale), rows: doc.audit });
+  if (doc.audit.length) {
+    renderSection(pdf, frame(pdf, { kind: "keyvalue", heading: label("pdf.auditTrail", locale), rows: doc.audit }));
+  }
   return pdf;
 }
+
+/** A section as the current style draws it: a design card, or unchanged. */
+const frame = (pdf: Pdf, s: DocSection): DocSection => (pdf.design ? designCard(s) : s);
 
 const CONTENTS_ANCHOR = "contents";
 /** PDF names cannot carry arbitrary text; layers are addressed by index. */
 const layerId = (i: number): string => `L${i}`;
-const chapterAnchor = (i: number): string => `chapter:${i}`;
+const chapterAnchor = chapterAnchorId;
 
 /**
  * How the exported PDF realises "click a box, see that section".
@@ -1348,17 +1927,21 @@ function renderContentsPage(
     const top = top0 + row * (TILE_H + GAP);
 
     pdf.y = top;
-    pdf.rect(x, tileW, TILE_H, LIGHT);
-    pdf.strokeRect(x, tileW, TILE_H, GRAY, 0.5);
+    if (pdf.design) {
+      pdf.roundRect(x, tileW, TILE_H, 8, WHITE, CARD_BORDER, 1);
+    } else {
+      pdf.rect(x, tileW, TILE_H, LIGHT);
+      pdf.strokeRect(x, tileW, TILE_H, GRAY, 0.5);
+    }
     // A number on each box so a reader can refer to a chapter out loud, and so
     // the grid reads as an ordered document rather than a menu.
     pdf.y = top + 9;
-    pdf.text(x + 10, 8, true, String(i + 1).padStart(2, "0"), ACCENT);
-    pdf.text(x + 30, 10.5, true, truncate(c.name, 10.5, tileW - 44));
+    pdf.text(x + 10, 8, true, String(i + 1).padStart(2, "0"), pdf.design ? BAR : ACCENT);
+    pdf.text(x + 30, 10.5, true, truncate(c.name, 10.5, tileW - 44), pdf.design ? ACCENT : BLACK);
     pdf.y = top + 26;
-    pdf.text(x + 30, 8, false, truncate(c.summary, 8, tileW - 44), GRAY);
+    pdf.text(x + 30, 8, false, truncate(c.summary, 8, tileW - 44), pdf.design ? MUTED : GRAY);
     pdf.y = top + 39;
-    pdf.text(x + 30, 8, true, label("pdf.open", locale), ACCENT);
+    pdf.text(x + 30, 8, true, label("pdf.open", locale), pdf.design ? BAR : ACCENT);
 
     pdf.y = top;
     // In "pages" mode the box is a plain jump — no layer state to change.
@@ -1402,9 +1985,16 @@ function renderChapter(
   // layer and returns to the contents page, which is what makes "closed" mean
   // invisible rather than merely scrolled past.
   const barTop = pdf.y;
-  pdf.rect(pdf.rx, pdf.rw, 22, LIGHT);
-  pdf.y = barTop + 6;
-  pdf.text(pdf.rx + 8, 11, true, truncate(chapter.name, 11, pdf.rw - 120));
+  if (pdf.design) {
+    // The design's page title: large teal name over a divider, no grey bar.
+    pdf.y = barTop + 2;
+    pdf.text(pdf.rx, 15, true, truncate(chapter.name, 15, pdf.rw - 120, true), ACCENT);
+    pdf.y = barTop + 6;
+  } else {
+    pdf.rect(pdf.rx, pdf.rw, 22, LIGHT);
+    pdf.y = barTop + 6;
+    pdf.text(pdf.rx + 8, 11, true, truncate(chapter.name, 11, pdf.rw - 120));
+  }
   // Composed by the renderer, so it never reached the document localisation.
   // The chevron flips with the page direction along with the words.
   const closeLabel = label(mode === "layers" ? "pdf.close" : "pdf.backToContents", locale);
@@ -1419,10 +2009,21 @@ function renderChapter(
     mode === "layers" ? { hideAll: true } : undefined,
   );
   pdf.y = barTop + 30;
+  if (pdf.design) {
+    pdf.y = barTop + 24;
+    pdf.rule(hex(PRESENTATION_PALETTE.summaryDivider), 1.2);
+    pdf.y += 16;
+  }
 
-  for (const section of chapter.sections) {
-    renderSection(pdf, section);
-    pdf.y += 6;
+  if (pdf.design) {
+    // One card for the chapter (as the earlier single-flow layout, in the
+    // design's colours); drawn unframed when it runs past a page.
+    renderSection(pdf, { kind: "card", heading: "", children: chapter.sections, flow: true });
+  } else {
+    for (const section of chapter.sections) {
+      renderSection(pdf, section);
+      pdf.y += 6;
+    }
   }
   if (mode === "layers") pdf.endLayer();
 }
@@ -1577,7 +2178,7 @@ function assemble(
       : "";
     const arabicFontEntry = needsArabic ? ` /F5 ${fontArabicRegularType0} 0 R /F6 ${fontArabicBoldType0} 0 R` : "";
     objects.push(
-      `<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 ${fontBold} 0 R /F2 ${fontReg} 0 R /F3 ${fontSerifBold} 0 R /F4 ${fontSerifReg} 0 R${arabicFontEntry} >>${propsEntry} >> /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] /Contents ${firstContent + i} 0 R${annotsEntry} >>`,
+      `<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 ${fontBold} 0 R /F2 ${fontReg} 0 R /F3 ${fontSerifBold} 0 R /F4 ${fontSerifReg} 0 R${arabicFontEntry} >> /ExtGState << /GSwm << /ca 0.3 /CA 0.3 >> >>${propsEntry} >> /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] /Contents ${firstContent + i} 0 R${annotsEntry} >>`,
     );
   });
   objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");

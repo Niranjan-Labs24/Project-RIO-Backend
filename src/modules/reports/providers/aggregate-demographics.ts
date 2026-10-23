@@ -29,7 +29,9 @@ export async function aggregateDemographics(
   villageIds?: string[],
 ): Promise<Demographics | null> {
   return tenant.runInOrgContext(async (tx) => {
-    const where: Record<string, unknown> = { ...scope };
+    // Responses excluded as outside the study geography are not respondents
+    // of the study's area.
+    const where: Record<string, unknown> = { ...scope, exclusionReason: null };
     if (villageId) where.village = { has: villageId };
     else if (villageIds?.length) where.village = { hasSome: villageIds };
 

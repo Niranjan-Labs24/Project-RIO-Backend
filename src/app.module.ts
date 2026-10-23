@@ -35,6 +35,7 @@ import { StudyConfigModule } from './modules/study-config/study-config.module';
 import { NeedDecisionsModule } from './modules/need-decisions/need-decisions.module';
 import { GeographyModule } from './modules/geography/geography.module';
 import { MethodologyConfigModule } from './modules/methodology-config/methodology-config.module';
+import { AreaProfilesModule } from './modules/area-profiles/area-profiles.module';
 import { SupervisorOverviewModule } from './modules/supervisor-overview/supervisor-overview.module';
 import { NcnpReportModule } from './modules/ncnp-report/ncnp-report.module';
 import { NcnpReportReviewModule } from './modules/ncnp-report-review/ncnp-report-review.module';
@@ -105,6 +106,7 @@ import { AppController } from './app.controller';
     NeedDecisionsModule,
     GeographyModule,
     MethodologyConfigModule,
+    AreaProfilesModule,
     SupervisorOverviewModule,
     NcnpReportModule,
     NcnpReportReviewModule,

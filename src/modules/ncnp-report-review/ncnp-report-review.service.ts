@@ -11,6 +11,18 @@ import type { NcnpReport } from '../ncnp-report/ncnp-report.types';
 import type { SupportedLocale } from '../translation/translation.types';
 import { requireNonBlank } from '../../common/validation/require-non-blank';
 import type { NcnpReportReviewDetail, NcnpReportReviewRow, NcnpReportReviewSummary } from './ncnp-report-review.types';
+import { TranslationService } from '../translation/translation.service';
+import { loadMasterDataAliases } from '../reports/i18n/master-data-names';
+import { isCoreNeedsContent, type CoreNeedsContent, type ScopeLevel } from '../reports/core-needs/core-needs.types';
+import { loadCoreNeedsInputs, resolveStudySurveyId, type CoreInputs } from '../reports/core-needs/load-core-needs';
+import { buildCoreNeedsContent } from '../reports/core-needs/build-core-needs';
+import { mergeCoreInputs, type NcnpStudyReliability } from '../reports/core-needs/ncnp-needs';
+import { loadCoreScopeOptions, type CoreScopeOptions } from '../reports/core-needs/load-core-scope-options';
+import { resolveCoreView } from '../reports/core-needs/resolve-core-view';
+import { renderCoreNeedsPdf } from '../reports/core-needs/core-needs-pdf';
+import { renderCoreNeedsExcel } from '../reports/core-needs/core-needs-excel';
+import { requestLocale } from '../../common/locale/request-locale';
+import type { GenerateNcnpNeedsDto } from './ncnp-report-review.contract';
 
 // The NCNP Compiled Report's own review workflow — System Admin generates a
 // frozen snapshot, System Reviewer approves/rejects it with mandatory
@@ -26,7 +38,159 @@ export class NcnpReportReviewService {
     private readonly tenant: TenantPrismaService,
     private readonly audit: AuditService,
     private readonly ncnpReport: NcnpReportService,
+    private readonly translation: TranslationService,
   ) {}
+
+  // ── NCNP needs report (Core Needs Report across organisations) ──
+
+  /** Areas and domains across every study on the platform. */
+  async needsScopeOptions(): Promise<CoreScopeOptions> {
+    this.assertCrossEntity();
+    return this.tenant.runAsSupervisor(async (tx) => {
+      // Archived studies are left out, as in the organisation's own report.
+      const studies = await tx.study.findMany({ where: { isHistorical: false, archivedAt: null }, select: { id: true } });
+      return loadCoreScopeOptions(tx, studies.map((s) => s.id));
+    });
+  }
+
+  /** Every study with scored answers in the scope, with its reliability, so
+   *  NCNP can see the data quality behind what it combines (point 2). */
+  async needsStudies(scopeLevel: ScopeLevel, unitId: string | null): Promise<NcnpStudyReliability[]> {
+    this.assertCrossEntity();
+    return this.tenant.runAsSupervisor(async (tx) => {
+      const studies = await tx.study.findMany({
+        where: { isHistorical: false, archivedAt: null, scoreRollups: { some: {} } },
+        select: { id: true },
+        orderBy: { createdAt: 'desc' },
+      });
+      const out: NcnpStudyReliability[] = [];
+      for (const s of studies) {
+        const inputs = await this.studyInputs(tx, s.id, scopeLevel, unitId);
+        if (inputs) out.push(this.reliabilityOf(inputs));
+      }
+      return out;
+    });
+  }
+
+  async generateNeeds(body: GenerateNcnpNeedsDto): Promise<NcnpReportReviewSummary> {
+    this.assertCrossEntity();
+    const generatedBy = requireActor();
+    const unitId = body.scopeLevel === 'KINGDOM' ? null : (body.unitId?.trim() || null);
+    if (body.scopeLevel !== 'KINGDOM' && !unitId) {
+      throw new BadRequestException({ error: { code: 'SCOPE_UNIT_REQUIRED', message: 'Choose the area for this scope level.' } });
+    }
+    const content = await this.tenant.runAsSupervisor(async (tx) => {
+      const list: CoreInputs[] = [];
+      // Only active studies, even if a list opened before a study was
+      // archived still sends it.
+      const active = new Set(
+        (
+          await tx.study.findMany({
+            where: { id: { in: body.studyIds }, isHistorical: false, archivedAt: null },
+            select: { id: true },
+          })
+        ).map((st) => st.id),
+      );
+      // In the order chosen: the first study is the base the others are compared with.
+      for (const id of [...new Set(body.studyIds)].filter((x) => active.has(x))) {
+        const inputs = await this.studyInputs(tx, id, body.scopeLevel, unitId);
+        if (inputs) list.push(inputs);
+      }
+      if (!list.length) {
+        throw new ConflictException({ error: { code: 'STUDY_NOT_SCORED', message: 'None of the selected studies has scored data in this area.' } });
+      }
+      const merged = mergeCoreInputs(list);
+      const filters = { kind: 'NEEDS', scopeLevel: body.scopeLevel, unitId, domainKeys: body.domainKeys ?? [], studyIds: body.studyIds, output: body.output ?? 'FULL' };
+      const built: CoreNeedsContent = buildCoreNeedsContent({
+        inputs: merged,
+        output: body.output === 'SUMMARY' ? 'SUMMARY' : 'FULL',
+        domainKeys: body.domainKeys?.length ? body.domainKeys : null,
+        filters,
+        generatedAt: new Date().toISOString(),
+      });
+      // Each study's own result, and its share of the pooled valid responses.
+      const studies = list.map((i) => this.reliabilityOf(i));
+      const pooled = studies.reduce((t, st) => t + st.valid, 0);
+      for (const st of studies) st.sharePct = pooled ? Math.round((st.valid / pooled) * 1000) / 10 : 0;
+      return { ...built, header: { ...built.header, isNcnp: true }, studies };
+    });
+
+    const row = await this.tenant.runAsSupervisorWrite((tx) =>
+      tx.ncnpReportReview.create({
+        data: { content: toJson(content), filters: toJson(content.filters), generatedBy },
+      }),
+    );
+    await this.audit.record({
+      action: 'create',
+      entityType: 'ncnp_report',
+      entityId: row.id,
+      entityLabel: 'NCNP needs report generated for review',
+      changes: [
+        { field: 'Status', before: null, after: row.status },
+        { field: 'Studies', before: null, after: String(content.studies?.length ?? 0) },
+      ],
+    });
+    return this.toSummary(row, await this.namesFor([row]));
+  }
+
+  private async studyInputs(
+    tx: Parameters<Parameters<TenantPrismaService['runAsSupervisor']>[0]>[0],
+    studyId: string,
+    scopeLevel: ScopeLevel,
+    unitId: string | null,
+  ): Promise<CoreInputs | null> {
+    const surveyId = await resolveStudySurveyId(tx, studyId);
+    if (!surveyId) return null;
+    try {
+      const inputs = await loadCoreNeedsInputs(tx, { studyId, surveyId, scopeLevel, unitId });
+      return inputs.answers.some((a) => a.status === 'SCORED') ? inputs : null;
+    } catch (err) {
+      if ((err as Error).message === 'no-data') return null;
+      throw err;
+    }
+  }
+
+  private reliabilityOf(inputs: CoreInputs): NcnpStudyReliability {
+    const c = buildCoreNeedsContent({ inputs, output: 'SUMMARY', domainKeys: null, filters: {}, generatedAt: new Date().toISOString() });
+    return {
+      studyId: inputs.study.id,
+      title: inputs.study.title,
+      organization: inputs.study.organizationName,
+      valid: c.confidence.sample.valid,
+      required: c.confidence.sample.required,
+      villagesWithData: c.profile.villages.withData,
+      unitsWithData: c.confidence.coverage.withData,
+      unitsTotal: c.confidence.coverage.total,
+      sharePct: null,
+      sampleResult: c.confidence.sample.result,
+      completenessResult: c.confidence.completeness.result,
+      overall: c.confidence.overall,
+      methodologyVersion: inputs.study.methodologyVersionLabel,
+    };
+  }
+
+  /** The needs report's view in the reader's language. */
+  private async needsViewFor(row: NcnpReportReviewRow, content: CoreNeedsContent, locale = requestLocale()) {
+    const names = await this.namesFor([row]);
+    const aliases = await this.tenant.runAsSupervisor((tx) => loadMasterDataAliases(tx as never, locale));
+    return resolveCoreView({
+      content,
+      locale,
+      aliases,
+      translateMany: (texts, l) => this.translation.translateMany(texts, l),
+      audit: {
+        generatedBy: names.get(row.generatedBy) ?? null,
+        generatedAt: row.generatedAt.toISOString(),
+        confirmedBy: null,
+        confirmedAt: null,
+        reviewedBy: row.reviewedBy ? (names.get(row.reviewedBy) ?? null) : null,
+        reviewedRole: row.reviewedBy ? 'System Reviewer' : null,
+        reviewedAt: row.reviewedAt ? row.reviewedAt.toISOString() : null,
+        reviewerNotes: row.reviewerNotes,
+        version: 1,
+      },
+    });
+  }
 
   // System Admin: snapshot NcnpReportService.getReport()'s current output
   // into a new draft row — the one genuinely new piece of "generation"
@@ -75,7 +239,11 @@ export class NcnpReportReviewService {
     this.assertCrossEntity();
     const row = await this.findOrThrow(id);
     const nameById = await this.namesFor([row]);
-    return { ...this.toSummary(row, nameById), content: row.content as Record<string, unknown> };
+    const content = row.content as Record<string, unknown>;
+    if (isCoreNeedsContent(content)) {
+      return { ...this.toSummary(row, nameById), content: { ...content, coreView: await this.needsViewFor(row, content) } };
+    }
+    return { ...this.toSummary(row, nameById), content };
   }
 
   // Export the frozen snapshot this specific review holds — not the
@@ -96,6 +264,21 @@ export class NcnpReportReviewService {
       throw new BadRequestException({
         error: { code: 'NCNP_REPORT_REVIEW_NOT_RELEASED', message: 'Only a Released report can be exported.' },
       });
+    }
+    if (isCoreNeedsContent(row.content)) {
+      const view = await this.needsViewFor(row, row.content, locale);
+      const stamp = row.generatedAt.toISOString().slice(0, 10);
+      await this.audit.record({
+        action: 'export', entityType: 'ncnp_report', entityId: row.id,
+        entityLabel: `NCNP needs report exported (${format})`, metadata: { format },
+      });
+      return format === 'pdf'
+        ? { filename: `ncnp-needs-report-${stamp}.pdf`, contentType: 'application/pdf', body: renderCoreNeedsPdf(view) }
+        : {
+            filename: `ncnp-needs-report-${stamp}.xlsx`,
+            contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            body: await renderCoreNeedsExcel(view),
+          };
     }
     const nameById = await this.namesFor([row]);
     const generatedByName = nameById.get(row.generatedBy) ?? '—';
