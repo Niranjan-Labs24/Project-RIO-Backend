@@ -39,6 +39,11 @@ overrides:
   # was just pinned below it. Scoped and capped at 2.x so no other consumer
   # is moved and a future axios major can't slip in under twilio.
   'twilio>axios': '>=1.20.0 <2.0.0'
+  # axios (via twilio) still pins follow-redirects 1.16.0, which leaks
+  # credential headers on cross-origin redirects (GHSA-q3jh-wrc6-jgq8,
+  # GHSA-8r9p-f939-6h3c). Fixed in 1.16.1; scoped to axios's own edge and
+  # capped at 1.x, as above.
+  'axios>follow-redirects': '>=1.16.1 <2.0.0'
   'qs': '>=6.16.0'
   find-my-way: '>=9.7.0'
   valibot: '>=1.4.2'
