@@ -40,6 +40,13 @@ export interface ResolvedSurvey {
   // constant) on the frontend.
   questionCount: number;
   estimatedMinutes: number;
+  // The registration step's mandatory location field (client, 19 Oct 2026):
+  // the study's geography at its lowest defined level. The page adds the
+  // last option, "Outside these areas", itself.
+  locations: {
+    level: 'GOVERNORATE' | 'CENTRE' | 'VILLAGE' | 'MIXED';
+    options: Array<{ value: string; label: string; labelAr: string | null }>;
+  };
 }
 
 export interface CheckDuplicatePayload {
@@ -99,6 +106,8 @@ export interface SubmitResponsePayload {
   gender?: Gender;
   ageBracket: AgeBracket;
   answers: Record<string, unknown>;
+  /** The area picked at registration — a `locations.options[].value`. */
+  location?: string;
   /** Abandonment tracking (RPT10 Q-2) — the session the citizen page opened
    *  on load, echoed back so this step can be attributed to that sitting.
    *  Optional throughout: tracking is best-effort and must never be able to
@@ -107,6 +116,16 @@ export interface SubmitResponsePayload {
   /** RIO-NFR-002 — the citizen-consent version accepted, and the language it
    *  was read in. Verified against the live policy before anything is written
    *  (see CitizenService.submitResponse). */
+  consent: { version: string; locale: 'en' | 'ar' };
+}
+
+export interface RecordOutsidePayload {
+  contact: string;
+  mobile: string;
+  contactName?: string;
+  gender?: Gender;
+  ageBracket: AgeBracket;
+  sessionId?: string;
   consent: { version: string; locale: 'en' | 'ar' };
 }
 

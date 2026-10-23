@@ -1,6 +1,9 @@
 import { flattenReportContent } from "./report-content-flatten";
 import { localizeReportDoc } from "./i18n/report-labels";
 import { severityBandOf } from "./providers/severity-bands";
+import { presentationDocSections } from "./presentation/presentation-doc";
+import { applyDesign } from "./presentation/design-sections";
+import type { ReportPresentation } from "./presentation/build-presentation";
 import type { SupportedLocale } from "../translation/translation.types";
 
 // Normalized, render-agnostic report document. The PDF and Excel renderers
@@ -46,6 +49,54 @@ export type DocSection =
       columns: string[];
       rows: string[][];
       rowLinks?: Array<string | null>;
+      /** One line under the heading (the presentation tables carry a hint). */
+      subheading?: string;
+      /** Per-cell colour cue, parallel to `rows` (presentation badges). */
+      tones?: Array<Array<CellTone | null>>;
+      /** The design's roomier table: taller rows, figures left-aligned, and
+       *  coloured text cells drawn as outlined badges. */
+      roomy?: boolean;
+    }
+  // The one-page executive summary: a dark panel of labelled columns
+  // (NCNP feedback, see presentation/presentation-doc.ts).
+  | {
+      kind: "summaryPanel";
+      title: string;
+      columns: Array<{ label: string; text: string; lead?: string; caveat?: string }>;
+    }
+  // Confidence level by sample size: coloured band segments with a marker
+  // under the current one.
+  | {
+      kind: "bandScale";
+      heading: string;
+      segments: Array<{ band: "VERY_LOW" | "MEDIUM" | "STRONG"; label: string; grow: number; active: boolean }>;
+      note: string;
+    }
+  // The client's report design (NCNP feedback): a rounded, padded card with a
+  // title and optional hint line, holding other sections.
+  | {
+      kind: "card";
+      heading: string;
+      hint?: string;
+      children: DocSection[];
+      /** Flow on from the current page (unframed) when the framed card would
+       *  not fit the space left, rather than leaving that space empty. */
+      flow?: boolean;
+    }
+  // Small upper-case label inside a card ("EXCLUDED RESPONSES").
+  | { kind: "caption"; text: string }
+  // Side-by-side panels with a coloured edge (confidence-adaptive wording).
+  | { kind: "callouts"; items: Array<{ label: string; text: string; tone: CalloutTone }> }
+  // A shaded box of prose.
+  | { kind: "panel"; text: string }
+  // A muted closing line under a rule (the reviewer sign-off).
+  | { kind: "footnote"; text: string }
+  // The design's demographic rings: one ring per breakdown, its first share
+  // drawn as the arc, the split written beneath.
+  | {
+      kind: "rings";
+      heading: string;
+      items: Array<{ label: string; slices: Array<{ label: string; value: number }> }>;
     }
   | DocAnchor
   // Grid of clickable tiles — the drill-down index.
@@ -89,6 +140,12 @@ export type DocSection =
   // wants the narrower half, not an even split.
   | { kind: "columns"; children: DocSection[]; weights?: number[] };
 
+/** Colour cue for a table cell. */
+export type CellTone = "danger" | "ok" | "strong" | "medium";
+
+/** Edge colour of a callout panel, by confidence band. */
+export type CalloutTone = "ok" | "medium" | "danger";
+
 /** One collapsible chapter of a report. */
 export interface DocChapter {
   /** Box label on the contents page. */
@@ -110,6 +167,16 @@ export interface ReportDoc {
    * reading order, so Excel and the on-screen viewer are unaffected.
    */
   chapters?: DocChapter[];
+  /**
+   * Drawn on page 1 straight after the masthead, before the contents grid:
+   * the one-page summary and the other presentation blocks (NCNP feedback).
+   * Kept apart from `sections` so the chapter pass never moves it.
+   */
+  lead?: DocSection[];
+  /** Organisation shown as a badge beside the masthead title. */
+  badge?: string;
+  /** Draw every section in the client's design (cards, design tables). */
+  design?: boolean;
 }
 
 function titleCase(key: string): string {
@@ -178,7 +245,8 @@ const RESPONSE_QUALITY_ROWS: Array<{ key: string; label: string; format?: (v: un
   {
     key: "dontKnowRate",
     label: "Don't-know rate",
-    format: (v) => (typeof v === "number" ? `${v.toFixed(2)}%` : scalar(v)),
+    // Stored as a fraction (0.0556), printed as a percentage (5.56%).
+    format: (v) => (typeof v === "number" ? `${(v * 100).toFixed(2)}%` : scalar(v)),
   },
   { key: "dontKnowBand", label: "Don't-know band" },
   // RIO-FR-024: the study's own signed-off sample-size target — renders "—"
@@ -550,6 +618,22 @@ const REGION_VILLAGE_COLS: Col[] = [
   { key: "governorate", label: "Governorate" },
   { key: "needCount", label: "Needs" },
   { key: "responseCount", label: "Responses" },
+  // NCNP feedback point 3 (see presentation/governorate-share.ts).
+  {
+    key: "governorateSharePct",
+    label: "Share of Governorate Total",
+    format: (o) => (typeof o.governorateSharePct === "number" ? `${o.governorateSharePct}%` : "—"),
+  },
+  {
+    key: "governorateShareStatus",
+    label: "Participation",
+    format: (o) =>
+      o.governorateShareStatus === "FULLY_CONCENTRATED"
+        ? "Fully concentrated"
+        : o.governorateShareStatus === "CONCENTRATED"
+          ? "Concentrated"
+          : "—",
+  },
   { key: "severityScore", label: "Severity", format: severityCell },
   {
     key: "priorityScore",
@@ -1595,6 +1679,8 @@ const CHAPTER_SCHEME: Array<{ name: string; match: RegExp }> = [
 
 const FALLBACK_CHAPTER = "Additional Detail";
 
+export const chapterAnchorId = (i: number): string => `chapter:${i}`;
+
 function chapterFor(section: DocSection): string {
   // A `columns` pair is a layout device with no heading of its own. Classify it
   // by what it CONTAINS, or the severity radar and its bar chart get filed under
@@ -1664,14 +1750,20 @@ export function buildReportDoc(
   audit: Array<{ label: string; value: string }>,
   locale: SupportedLocale = "en",
 ): ReportDoc {
-  const { headerBand, sections: body, drillSections } = buildReportSections(content);
+  const presentation = content.presentation as ReportPresentation | undefined;
+  const design = presentation?.design === true;
+  const built = buildReportSections(content);
+  const { headerBand, drillSections } = built;
+  const body = design ? applyDesign(built.sections, presentation, locale, content) : built.sections;
   const chapters = chapterize(body);
+  const badge = presentation?.signOff?.organization ?? undefined;
+  const lead = presentationDocSections(presentation, locale);
 
   // One chapter (or none) is not worth a contents page — a box grid listing a
   // single entry is furniture, not navigation.
   if (chapters.length < 2) {
     return localizeReportDoc(
-      { title, headerBand, sections: [...body, ...drillSections], audit },
+      { title, headerBand, sections: [...body, ...drillSections], audit, lead, badge, design },
       locale,
     );
   }
@@ -1703,6 +1795,9 @@ export function buildReportDoc(
       sections: docChapters.flatMap((c) => c.sections),
       audit,
       chapters: docChapters,
+      lead,
+      badge,
+      design,
     },
     locale,
   );

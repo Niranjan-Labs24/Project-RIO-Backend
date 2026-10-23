@@ -81,7 +81,7 @@ export class ScoreRollupService {
       if (!survey) { earlyExit = 'SURVEY_NOT_FOUND'; return; }
 
       const responses = await tx.surveyResponse.findMany({
-        where: { needId: survey.needId },
+        where: { needId: survey.needId, exclusionReason: null },
         include: { need: true }
       });
 
@@ -115,7 +115,7 @@ export class ScoreRollupService {
         for (const sq of survey.surveyQuestions) {
           if (sq.question) {
             const q = sq.question;
-            const parsed = this.scoringEngine.parseRawAnswerValue(rawAnswers[sq.id], q.measurementMode);
+            const parsed = this.scoringEngine.parseRawAnswerValue(rawAnswers[sq.id], q.measurementMode, q.questionId);
             answersMap.set(q.questionId, parsed);
             questionMappings.push({ sqId: sq.id, question: q, rawAnswer: rawAnswers[sq.id] });
           }

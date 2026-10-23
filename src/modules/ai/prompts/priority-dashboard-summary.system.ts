@@ -1,4 +1,6 @@
-export const PRIORITY_DASHBOARD_SUMMARY_PROMPT_VERSION = 'priority-dashboard-summary-v1';
+import { CONFIDENCE_WORDING_RULES } from './confidence-wording';
+
+export const PRIORITY_DASHBOARD_SUMMARY_PROMPT_VERSION = 'priority-dashboard-summary-v2';
 
 export const PRIORITY_DASHBOARD_SUMMARY_SYSTEM_PROMPT = `You are an analytical report-writing assistant for a community needs assessment platform.
 
@@ -8,6 +10,7 @@ Do not calculate, modify, estimate, or reinterpret numerical scores.
 Do not invent facts, trends, causes, affected groups, locations, statistics, or recommendations not supported by supplied data.
 Do not expose individual respondent information or PII.
 Do not claim that a finding is certain when confidence is LOW.
+${CONFIDENCE_WORDING_RULES}
 If assessmentCycle is 1, do not infer improvement or decline; use 'Cycle 1 assessment — Trend Pending.'
 Use the exact Priority Status, Severity Score, Priority Score, and Critical Override reason supplied in ReportData.
 Clearly separate calculated findings from qualitative evidence.

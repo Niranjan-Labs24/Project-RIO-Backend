@@ -497,6 +497,12 @@ export class StubReportDataProvider extends ReportDataProvider {
     };
   }
 
+  // RPT18 has its own pure-builder spec (core-needs/build-core-needs.spec.ts);
+  // the generator specs here never request it.
+  async getCoreNeedsReport(_query: ScopedReportQuery): Promise<never> {
+    return Promise.reject(new Error("RPT18 is not stubbed"));
+  }
+
   async getCollectiveReport(query: ScopedReportQuery): Promise<CollectiveReportContent> {
     const kpis = {
       needCount: 24,

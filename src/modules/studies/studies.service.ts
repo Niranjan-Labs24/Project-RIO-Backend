@@ -27,7 +27,7 @@ const DIFF_FIELDS = ['title', 'villages', 'methodologyVersionId'] as const;
 type NeedWithSurveyMeta = Prisma.NeedGetPayload<{
   include: {
     surveys: { include: { _count: { select: { surveyQuestions: true } } } };
-    surveyResponses: { select: { id: true } };
+    surveyResponses: { where: { exclusionReason: null }, select: { id: true } };
     _count: { select: { evidence: true } };
     priorityScores: true;
   };
@@ -353,7 +353,7 @@ export class StudiesService {
             orderBy: { createdAt: 'desc' },
             include: {
               surveys: { include: { _count: { select: { surveyQuestions: true } } } },
-              surveyResponses: { select: { id: true } },
+              surveyResponses: { where: { exclusionReason: null }, select: { id: true } },
               _count: { select: { evidence: true } },
               priorityScores: { take: 1, orderBy: { scoredAt: 'desc' } },
             },
@@ -393,7 +393,7 @@ export class StudiesService {
             orderBy: { createdAt: 'desc' },
             include: {
               surveys: { include: { _count: { select: { surveyQuestions: true } } } },
-              surveyResponses: { select: { id: true } },
+              surveyResponses: { where: { exclusionReason: null }, select: { id: true } },
               _count: { select: { evidence: true } },
               priorityScores: { take: 1, orderBy: { scoredAt: 'desc' } },
             },

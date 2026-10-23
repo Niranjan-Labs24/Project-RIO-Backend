@@ -63,6 +63,9 @@ import { loadSegmentSeverities } from "./load-segment-severities";
 import type { DomainMeta, RollupLevelValue } from "./build-need-hierarchy";
 import type { SegmentRow } from "./derive-equity-flag";
 import { DEFAULT_THRESHOLDS, type UnitGeo } from "../need-record.types";
+import type { CoreNeedsContent, ScopeLevel } from "../core-needs/core-needs.types";
+import { loadCoreNeedsInputs } from "../core-needs/load-core-needs";
+import { buildCoreNeedsContent } from "../core-needs/build-core-needs";
 
 // Real report data provider — every method reads real data. There is no mock
 // fallback: a study with no scores yet raises STUDY_NOT_SCORED (409) so the
@@ -486,6 +489,37 @@ export class ReportSummaryDataProvider extends ReportDataProvider {
       return snapshotToExecutiveContent({ snapshot, aiOutput, filters: query.filters, demographics });
     } catch (err) {
       this.rethrow("Executive", err);
+    }
+  }
+
+  // RPT18 Core Needs Report. Computed from the study's own scored answers at the
+  // selected scope (see core-needs/compute-unit-rollups.ts for why the stored
+  // per-survey rollups are not reused here). No AI narrative: the decision
+  // summary is fixed, rule-based wording (client confirmation 5a).
+  async getCoreNeedsReport(query: ScopedReportQuery): Promise<CoreNeedsContent> {
+    try {
+      if (!query.studyId) throw new Error("studyId required");
+      const studyId = query.studyId;
+      const surveyId = await this.resolveSurveyId(studyId, query.filters);
+      const f = query.filters;
+      const inputs = await this.tenant.runInOrgContext((tx) =>
+        loadCoreNeedsInputs(tx, {
+          studyId,
+          surveyId,
+          scopeLevel: (f.scopeLevel as ScopeLevel) ?? "KINGDOM",
+          unitId: typeof f.unitId === "string" && f.unitId ? f.unitId : null,
+        }),
+      );
+      if (!inputs.answers.some((a) => a.status === "SCORED")) throw new Error("no-data");
+      return buildCoreNeedsContent({
+        inputs,
+        output: f.output === "SUMMARY" ? "SUMMARY" : "FULL",
+        domainKeys: Array.isArray(f.domainKeys) && f.domainKeys.length ? (f.domainKeys as string[]) : null,
+        filters: f,
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      this.rethrow("Core needs", err);
     }
   }
 

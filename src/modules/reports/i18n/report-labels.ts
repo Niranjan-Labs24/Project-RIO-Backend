@@ -209,7 +209,7 @@ export function localizeKnownLabel(text: string, locale: SupportedLocale): strin
 // number is never touched, which is the point — these are counts and
 // percentages in a document that gets approved and archived, and Latin digits
 // are the project's convention regardless of locale.
-const NUMERIC_PREFIX = /^([\d.,]+%?)\s+(.+)$/;
+const NUMERIC_PREFIX = /^([±+-]?[\d.,]+%?)\s+(.+)$/;
 const COMPOUND_SEPARATOR = ' · ';
 
 function localizeNumericPhrase(text: string, locale: SupportedLocale): string | null {
@@ -387,6 +387,19 @@ export function localizeReportDoc<T extends ReportDocShape>(doc: T, locale: Supp
       case 'radar':
       case 'list':
         return { ...s, heading: t(s.heading) };
+      case 'summaryPanel':
+      case 'bandScale':
+      case 'caption':
+      case 'callouts':
+      case 'panel':
+      case 'footnote':
+        // Built from the catalogue in the right locale already.
+        return s;
+      case 'card':
+        return { ...s, children: s.children.map(section) };
+      case 'rings':
+        // Heading is vocabulary; the rings were labelled in-locale already.
+        return { ...s, heading: t(s.heading) };
     }
   };
 
@@ -409,6 +422,7 @@ export function localizeReportDoc<T extends ReportDocShape>(doc: T, locale: Supp
           })),
         }
       : {}),
+    ...(doc.lead ? { lead: doc.lead.map(section) } : {}),
   };
 }
 

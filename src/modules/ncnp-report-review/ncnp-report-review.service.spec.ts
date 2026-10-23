@@ -65,7 +65,7 @@ function makeService(initial: FakeRow[] = []) {
   const { rows, tenant } = fakeTenant(initial);
   const audit = { record: async () => undefined };
   const ncnpReport = { getReport: async () => ({ generatedAt: new Date().toISOString() }) };
-  const service = new NcnpReportReviewService(tenant as never, audit as never, ncnpReport as never);
+  const service = new NcnpReportReviewService(tenant as never, audit as never, ncnpReport as never, { translateMany: async (t: readonly string[]) => t.map((x) => ({ translatedText: x, unchanged: true })) } as never);
   return { service, rows };
 }
 

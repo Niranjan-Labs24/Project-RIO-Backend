@@ -2,13 +2,13 @@ import { Body, Controller, Get, Param, Post } from '@nestjs/common';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import { Public } from '../../auth/public.decorator';
 import { RateLimit } from '../../common/guards/rate-limit.guard';
-import { CheckDuplicateBody, RequestOtpBody, SubmitResponseBody, VerifyOtpBody } from './citizen.contract';
+import { CheckDuplicateBody, RecordOutsideBody, RequestOtpBody, SubmitResponseBody, VerifyOtpBody } from './citizen.contract';
 import { RecordSessionEventBody, type RecordSessionEventDto } from '../survey-sessions/survey-sessions.contract';
 import type { RecordEventResult, StartSessionResult } from '../survey-sessions/survey-sessions.types';
 import { CitizenService } from './citizen.service';
 import type {
   CheckDuplicatePayload, CheckDuplicateResult, RequestOtpPayload, RequestOtpResult, ResolvedSurvey,
-  SubmitResponsePayload, SubmitResponseResult, VerifyOtpPayload, VerifyOtpResult,
+  RecordOutsidePayload, SubmitResponsePayload, SubmitResponseResult, VerifyOtpPayload, VerifyOtpResult,
 } from './citizen.types';
 
 // Fully unauthenticated (no @RequirePermission anywhere in this file — see
@@ -84,5 +84,16 @@ export class CitizenController {
     @Body(new TypeBoxValidationPipe(SubmitResponseBody)) body: SubmitResponsePayload,
   ): Promise<SubmitResponseResult> {
     return this.citizen.submitResponse(token, body);
+  }
+
+  // "Outside these areas" at registration (client, 19 Oct 2026) — kept as an
+  // excluded response, no answers. Same rate limit as a submission.
+  @Post(':token/outside')
+  @RateLimit(5, 600)
+  recordOutside(
+    @Param('token') token: string,
+    @Body(new TypeBoxValidationPipe(RecordOutsideBody)) body: RecordOutsidePayload,
+  ): Promise<SubmitResponseResult> {
+    return this.citizen.recordOutside(token, body);
   }
 }

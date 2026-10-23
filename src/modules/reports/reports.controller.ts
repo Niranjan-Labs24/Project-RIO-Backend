@@ -47,6 +47,16 @@ export class ReportsController {
     return this.reports.list(params);
   }
 
+  // RPT18 Generate dialog: the areas and domains a Core Needs Report can be
+  // scoped to — the organisation's, or one study's when studyId is given.
+  // Declared before ":id" so the literal path wins.
+  @Get("core-scope-options")
+  @RequirePermission("reportsDashboards", "create")
+  coreScopeOptions(@Query("studyId") studyId?: string) {
+    if (studyId) new UuidParamPipe().transform(studyId, { type: "query", data: "studyId" });
+    return this.reports.coreScopeOptions(studyId);
+  }
+
   @Get(":id")
   @RequirePermission("reportsDashboards", "read")
   getById(@Param("id", new UuidParamPipe()) id: string): Promise<Report> {
