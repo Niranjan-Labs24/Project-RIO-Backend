@@ -278,42 +278,6 @@ describe('scoring engine against real v5.0 severity values', () => {
     expect(at('Always')).toBe(100);
   });
 
-  it('keeps options containing " / " whole, and scores answers saved as a cut-off piece (INF-01)', () => {
-    expect(bank.questions.find((b) => b.questionId === 'INF-01')?.answerOptions).toContain('Yes, graded / unpaved but passable');
-    const ls = lookupsFor('INF-01');
-    const at = (label: string) =>
-      svc.calculateSeverity(q('INF-01'), svc.parseRawAnswerValue(label, 'SINGLE_SELECT', 'INF-01'), ls).score;
-    expect(at('Yes, graded / unpaved but passable')).toBe(45);
-    expect(at('Yes, graded')).toBe(45);
-    expect(at('unpaved but passable')).toBe(45);
-  });
-
-  it('offers the Scoring Lookup wording and still scores the old short form (HLT-16)', () => {
-    expect(bank.questions.find((b) => b.questionId === 'HLT-16')?.answerOptions).toContain('30–60 minutes');
-    const ls = lookupsFor('HLT-16');
-    const at = (label: string) =>
-      svc.calculateSeverity(q('HLT-16'), svc.parseRawAnswerValue(label, 'SINGLE_SELECT', 'HLT-16'), ls).score;
-    expect(at('30–60 minutes')).toBe(33);
-    expect(at('30–60')).toBe(33);
-    expect(at('>120')).toBe(100);
-  });
-
-  it('every option of a scored choice question has a scoring lookup, apart from those awaiting the methodology owner', () => {
-    // EDU-01 / SOC-07: asked per person, scored per household. SOC-13:
-    // "Signage" alone has no score. GOV-18: a heading stands in for the options.
-    const awaitingOwner = new Set(['EDU-01', 'SOC-07', 'SOC-13', 'GOV-18']);
-    const unscorable = bank.questions
-      .filter((b) => b.isScoreable && ['SINGLE_SELECT', 'LIKERT_5', 'MULTI_SELECT'].includes(b.measurementMode))
-      .filter((b) => !awaitingOwner.has(b.questionId))
-      .flatMap((b) => {
-        const ids = new Set(lookupsFor(b.questionId).map((l) => l.optionId));
-        return (b.answerOptions ?? [])
-          .filter((o) => !ids.has(svc.parseRawAnswerValue(o, 'SINGLE_SELECT', b.questionId).optionId!))
-          .map((o) => `${b.questionId}: ${o}`);
-      });
-    expect(unscorable).toEqual([]);
-  });
-
   it('maps a numeric answer onto floor..ceiling and clamps (HLT-02, 0-120 min)', () => {
     const ls = lookupsFor('HLT-02');
     const at = (v: number) =>

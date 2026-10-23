@@ -1,7 +1,7 @@
 export const REPORT_TYPES = [
   "RPT01", "RPT02", "RPT03", "RPT04", "RPT05", "RPT06",
   "RPT07", "RPT08", "RPT09", "RPT10", "RPT11", "RPT12", "RPT13", "RPT14", "RPT15",
-  "RPT16", "RPT17", "RPT18",
+  "RPT16", "RPT17",
 ] as const;
 export type ReportTypeCode = (typeof REPORT_TYPES)[number];
 
@@ -74,10 +74,6 @@ export const REPORT_TYPE_META: Record<
   // quantitative severity/priority half on top of the same evidence.
   RPT16: { name: "Combined Evidence & Score Report", kind: "report", exportFormats: ["pdf", "excel"], requiresStudyId: true, requiresSurveyId: false },
   RPT17: { name: "Evidence Document-Based Report", kind: "report", exportFormats: ["pdf", "excel"], requiresStudyId: true, requiresSurveyId: false },
-  // Core Needs Report (client, 7 Oct 2026): one report for the selected scope
-  // and domains, replacing the six viewpoint reports. filters.output = SUMMARY
-  // issues its first page alone as the one-page Executive Summary.
-  RPT18: { name: "Core Needs Report", kind: "report", exportFormats: ["pdf", "excel"], requiresStudyId: true, requiresSurveyId: false },
 };
 
 export interface ReportRow {

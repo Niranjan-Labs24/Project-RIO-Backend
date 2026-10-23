@@ -79,11 +79,6 @@ export const SubmitResponseBody = registerSchema(
       gender: T.Optional(Gender),
       ageBracket: AgeBracket,
       answers: T.Record(T.String(), T.Unknown()),
-      // The area the respondent picked at registration — one of the
-      // `locations.options[].value` the resolved survey offered (client,
-      // 19 Oct 2026). "Outside these areas" is recorded separately, through
-      // :token/outside, and never reaches this submission.
-      location: T.Optional(T.String({ minLength: 1, maxLength: 260 })),
       sessionId: T.Optional(T.String({ format: 'uuid' })),
       // RIO-NFR-002 — which citizen-consent version this respondent read and
       // accepted, and in which language. Required, and the version is checked
@@ -103,31 +98,3 @@ export const SubmitResponseBody = registerSchema(
   ),
 );
 export type SubmitResponseDto = Static<typeof SubmitResponseBody>;
-
-// "Outside these areas" at registration (client, 19 Oct 2026): the survey
-// ends there with a thank-you, and the record is kept as an excluded
-// response — no answers, no score — with the reason "Outside the study
-// geography". Same identity and consent fields as a submission; no OTP,
-// since no answer is ever recorded against it.
-export const RecordOutsideBody = registerSchema(
-  'RecordOutsideBody',
-  T.Object(
-    {
-      contact: T.String({ format: 'email' }),
-      mobile: T.String({ minLength: 3, maxLength: 32 }),
-      contactName: T.Optional(T.String({ maxLength: 200 })),
-      gender: T.Optional(Gender),
-      ageBracket: AgeBracket,
-      sessionId: T.Optional(T.String({ format: 'uuid' })),
-      consent: T.Object(
-        {
-          version: T.String({ minLength: 1, maxLength: 64 }),
-          locale: T.Union([T.Literal('en'), T.Literal('ar')]),
-        },
-        { additionalProperties: false },
-      ),
-    },
-    { additionalProperties: false },
-  ),
-);
-export type RecordOutsideDto = Static<typeof RecordOutsideBody>;

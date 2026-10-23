@@ -197,27 +197,7 @@ export async function renderReportExcel(
 
   // Tables and bar charts get their own sheets; text sections fold into Summary.
   // Columns are a PDF-only layout concern — flatten them for the workbook.
-  // The presentation blocks (one-page summary, confidence, participation, …)
-  // come first, as on page 1 of the PDF.
-  // A design card is a PDF frame too: its children carry on as sections, and
-  // an untitled table or band scale inside one takes the nearest title (the
-  // card's, or the caption just above it) for its sheet name.
-  const uncard = (s: DocSection): DocSection[] => {
-    if (s.kind === "columns") return s.children;
-    if (s.kind !== "card") return [s];
-    let title = s.heading;
-    return s.children.flatMap((child) => {
-      if (child.kind === "caption") {
-        title = child.text;
-        return [];
-      }
-      if ((child.kind === "table" || child.kind === "bandScale") && !child.heading) {
-        return [{ ...child, heading: title }];
-      }
-      return uncard(child);
-    });
-  };
-  const flat = [...(doc.lead ?? []), ...doc.sections].flatMap(uncard);
+  const flat = doc.sections.flatMap((s) => (s.kind === "columns" ? s.children : [s]));
 
   // ── Drill-down pre-pass ──
   //
@@ -367,36 +347,6 @@ export async function renderReportExcel(
       case "note":
         textSheet().addRow([`— ${s.heading} —`, ""]).font = { bold: true };
         addText("", s.text);
-        break;
-      // A spreadsheet has no card layout: the summary panel is its labelled
-      // paragraphs, the band scale its explanatory line.
-      case "summaryPanel":
-        textSheet().addRow([`— ${s.title} —`, ""]).font = { bold: true };
-        for (const col of s.columns) {
-          addText(col.label, [col.lead, col.text, col.caveat].filter(Boolean).join(" "));
-        }
-        break;
-      case "bandScale":
-        textSheet().addRow([`— ${s.heading} —`, ""]).font = { bold: true };
-        addText("", s.note);
-        break;
-      case "callouts":
-        for (const it of s.items) addText(it.label, it.text);
-        break;
-      case "rings":
-        textSheet().addRow([`— ${s.heading} —`, ""]).font = { bold: true };
-        for (const it of s.items) {
-          const total = it.slices.reduce((a, b) => a + b.value, 0) || 1;
-          addText(it.label, it.slices.map((x) => `${x.label} ${x.value} (${Math.round((x.value / total) * 100)}%)`).join(" · "));
-        }
-        break;
-      case "panel":
-      case "footnote":
-        addText("", s.text);
-        break;
-      case "caption":
-      case "card":
-        // Flattened by uncard() above.
         break;
       // Count tiles are label/value pairs — they belong on the Summary sheet
       // next to the rest of the report's identity, not on a chart sheet of

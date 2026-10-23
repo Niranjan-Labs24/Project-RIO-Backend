@@ -11,7 +11,6 @@ import { MailerService } from "../../mailer/mailer.service";
 import { TranslationService } from "../translation/translation.service";
 import { ReportsService } from "../reports/reports.service";
 import { EXPORTABLE_STATUSES } from "../reports/reports.types";
-import { assertShareable, NOT_INTERNAL_ONLY } from "../reports/core-needs/internal-only";
 import type { SharingStatus } from "../sharing/sharing.types";
 import type {
   CreateReportSharingRequestPayload, DecideReportSharingRequestPayload, OrgLookupResult,
@@ -90,8 +89,6 @@ export class ReportSharingService {
         error: { code: "REPORT_NOT_RELEASED", message: "Only a released or archived report can be requested for sharing." },
       });
     }
-    // Village-level Core Needs Reports stay inside their organisation.
-    assertShareable(report);
 
     const row = await this.prisma.reportSharingRequest.create({
       data: {
@@ -326,8 +323,6 @@ export class ReportSharingService {
       });
     }
     const report = await this.reports.findAcrossOrgsOrThrow(row.reportId);
-    // Also closes a share approved before the village rule existed.
-    assertShareable(report);
     const [ownerOrg, generatedByUser] = await Promise.all([
       this.tenant.runAsSupervisor((tx) => tx.organisation.findUnique({ where: { id: row.ownerOrgId } })),
       this.tenant.runAsSupervisor((tx) => tx.user.findUnique({ where: { id: report.generatedBy } })),
@@ -403,8 +398,6 @@ export class ReportSharingService {
             // Listed when the report says so, or — with no override — when its
             // organisation lists reports by default (the default is on).
             OR: [{ catalogVisible: true }, { catalogVisible: null, org: { catalogDefaultVisible: true } }],
-            // Never listed: village-level Core Needs Reports (internal only).
-            ...NOT_INTERNAL_ONLY,
           },
           orderBy: { generatedAt: "desc" },
           take: CATALOG_LIMIT,
@@ -472,7 +465,7 @@ export class ReportSharingService {
   async lookupReportsForOrg(ownerOrgId: string): Promise<ReportLookupResult[]> {
     const rows = await this.tenant.runAsSupervisor((tx) =>
       tx.report.findMany({
-        where: { orgId: ownerOrgId, status: { in: EXPORTABLE_STATUSES }, ...NOT_INTERNAL_ONLY },
+        where: { orgId: ownerOrgId, status: { in: EXPORTABLE_STATUSES } },
         orderBy: { generatedAt: "desc" },
       }),
     );
@@ -500,12 +493,6 @@ export class ReportSharingService {
       throw new BadRequestException({
         error: { code: "REPORT_SHARING_REQUEST_ALREADY_DECIDED", message: "This request has already been decided." },
       });
-    }
-    if (status === "approved") {
-      const report = await this.tenant.runAsSupervisor((tx) =>
-        tx.report.findUnique({ where: { id: existing.reportId }, select: { reportType: true, filters: true } }),
-      );
-      if (report) assertShareable(report);
     }
     // A reject must always explain why -- the requesting org otherwise has
     // no idea what to change before asking again. Approve has no such

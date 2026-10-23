@@ -1452,40 +1452,6 @@ model Governorate {
   @@map("governorates")
 }
 
-// Official area figures for the Core Needs Report's area profile (client,
-// 7 Oct 2026, point 4e): no GASTAT integration — the platform team enters the
-// figures once a year. Platform-wide reference data like Region/Governorate/
-// Center, so no orgId and no RLS. `unitKey` identifies the area as one string
-// (Postgres treats NULLs as distinct, so a unique over the nullable id columns
-// would not stop duplicates): KINGDOM, REGION:<id>, GOVERNORATE:<id>,
-// CENTRE:<id>, or VILLAGE:<governorateId>:<name> — villages are free text,
-// so a village is named within its governorate.
-model AreaProfile {
-  id            String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  level         String   @db.VarChar(20)
-  unitKey       String   @map("unit_key") @db.VarChar(320)
-  regionId      String?  @map("region_id") @db.Uuid
-  governorateId String?  @map("governorate_id") @db.Uuid
-  centerId      String?  @map("center_id") @db.Uuid
-  villageName   String?  @map("village_name") @db.VarChar(150)
-  year          Int
-  population    Int?
-  growthRatePct Decimal? @map("growth_rate_pct") @db.Decimal(6, 2)
-  densityPerKm2 Decimal? @map("density_per_km2") @db.Decimal(12, 2)
-  malePct       Decimal? @map("male_pct") @db.Decimal(5, 2)
-  femalePct     Decimal? @map("female_pct") @db.Decimal(5, 2)
-  saudiPct      Decimal? @map("saudi_pct") @db.Decimal(5, 2)
-  ruralPct      Decimal? @map("rural_pct") @db.Decimal(5, 2)
-  source        String   @db.VarChar(200)
-  updatedBy     String?  @map("updated_by") @db.Uuid
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  @@unique([unitKey, year])
-  @@index([level])
-  @@map("area_profiles")
-}
-
 model Center {
   id            String @id @default(dbgenerated("uuidv7()")) @db.Uuid
   // The spreadsheet's own "Center Code", e.g. "0101-001".
@@ -1754,14 +1720,6 @@ model SurveyResponse {
   governorateIds String[] @default([]) @map("governorate_ids") @db.Uuid
   centerIds      String[] @default([]) @map("center_ids") @db.Uuid
   village        String[] @default([])
-  // Public-survey location (client, 19 Oct 2026): the area the respondent
-  // picked at registration, from the study's own geography, so a response
-  // is placed where it was given rather than across the Need's whole area.
-  locationLabel  String?  @map("location_label") @db.VarChar(200)
-  // Set when the response is kept but left out of every score — today only
-  // OUTSIDE_STUDY_GEOGRAPHY ("Outside these areas"), recorded with no
-  // answers and shown in the report's evidence section with its reason.
-  exclusionReason String? @map("exclusion_reason") @db.VarChar(64)
   answers      Json
   // RIO-NFR-002 — which citizen-consent version this respondent accepted, and
   // in which language they read it. Nullable only because responses collected
@@ -2231,7 +2189,6 @@ enum ReportType {
   RPT15
   RPT16
   RPT17
-  RPT18
 }
 
 enum ReportStatus {

@@ -56,21 +56,9 @@ interface SourceFile {
 // same way, positionally — this is how the source workbook itself pairs
 // them (same " / " separator, same option order) rather than anything this
 // script infers.
-function splitOptions(raw: string | null, separator: string | RegExp = '/'): string[] | null {
+function splitOptions(raw: string | null): string[] | null {
   if (!raw) return null;
-  return raw.split(separator).map((s) => s.trim()).filter((s) => s.length > 0);
-}
-
-// Some options carry a slash in their own wording ("صهريج/بائع" — "Tanker /
-// vendor"). The spaced " / " is the separator between options; an unspaced
-// "/" sits inside one. Split on the spaced form first and keep it when it
-// matches the English option count in question-bank-v5.json (the options the
-// `questions` table actually holds); otherwise fall back to every "/", as
-// before, so rows this does not concern keep their stored options.
-function splitArabicOptions(raw: string | null, englishCount: number | null): string[] | null {
-  const spaced = splitOptions(raw, / \/ /);
-  if (spaced && englishCount !== null && spaced.length === englishCount) return spaced;
-  return splitOptions(raw);
+  return raw.split('/').map((s) => s.trim()).filter((s) => s.length > 0);
 }
 
 async function main() {
@@ -88,12 +76,6 @@ async function main() {
 
   const arabicByCode = new Map(arabic.map((r) => [r.qCode, r]));
 
-  const bankPath = path.join(__dirname, 'methodology', 'question-bank-v5.json');
-  const bank: { questions: Array<{ questionId: string; answerOptions: string[] | null }> } = JSON.parse(
-    fs.readFileSync(bankPath, 'utf-8'),
-  );
-  const englishOptionsByCode = new Map(bank.questions.map((q) => [q.questionId, q.answerOptions]));
-
   let matched = 0;
   let updatedRows = 0;
   let mismatchedOptionCounts = 0;
@@ -106,8 +88,8 @@ async function main() {
     }
     matched++;
 
-    const enOptions = englishOptionsByCode.get(en.qCode) ?? splitOptions(en.responseOptions);
-    const arOptions = splitArabicOptions(ar.responseOptions, enOptions?.length ?? null);
+    const enOptions = splitOptions(en.responseOptions);
+    const arOptions = splitOptions(ar.responseOptions);
     if (enOptions && arOptions && enOptions.length !== arOptions.length) {
       mismatchedOptionCounts++;
       console.warn(

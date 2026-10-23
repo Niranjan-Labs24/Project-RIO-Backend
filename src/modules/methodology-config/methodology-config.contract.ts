@@ -25,14 +25,6 @@ export const UpdateMethodologyConfigBody = registerSchema(
         T.Object({
           dontKnowRatioThreshold: T.Optional(T.Number({ minimum: 0, maximum: 1 })),
           minRespondentsForStandardConfidence: T.Optional(T.Integer({ minimum: 0 })),
-          // Report settings v5.0 does not define (client, 15 Oct 2026): no
-          // value until the methodology owner approves one; null clears it.
-          villageConcentrationPct: T.Optional(T.Union([T.Number({ minimum: 1, maximum: 100 }), T.Null()])),
-          geographicCoverageMinPct: T.Optional(T.Union([T.Number({ minimum: 1, maximum: 100 }), T.Null()])),
-          governorateMinCentresPct: T.Optional(T.Union([T.Number({ minimum: 1, maximum: 100 }), T.Null()])),
-          indicatorLinkPairs: T.Optional(
-            T.Array(T.Tuple([T.String({ minLength: 1, maxLength: 300 }), T.String({ minLength: 1, maxLength: 300 })]), { maxItems: 50 }),
-          ),
         }),
       ),
       // RIO-AI-001. 0..1 (AiDecision.confidence's scale), not 0-100 — see

@@ -9,8 +9,6 @@ import {
   ApproveNcnpReportDto,
   GenerateNcnpReportBody,
   GenerateNcnpReportDto,
-  GenerateNcnpNeedsBody,
-  GenerateNcnpNeedsDto,
   RejectNcnpReportBody,
   RejectNcnpReportDto,
 } from './ncnp-report-review.contract';
@@ -25,28 +23,6 @@ export class NcnpReportReviewController {
   @RequirePermission('ncnpReport', 'write')
   generate(@Body(new TypeBoxValidationPipe(GenerateNcnpReportBody)) body: GenerateNcnpReportDto) {
     return this.service.generate(body.periodDays, body.dormantDays);
-  }
-
-  // NCNP needs report (Core Needs Report across organisations). Literal
-  // paths are declared before ':id' so they are not read as an id.
-  @Post('needs')
-  @RequirePermission('ncnpReport', 'write')
-  generateNeeds(@Body(new TypeBoxValidationPipe(GenerateNcnpNeedsBody)) body: GenerateNcnpNeedsDto) {
-    return this.service.generateNeeds(body);
-  }
-
-  @Get('needs-scope-options')
-  @RequirePermission('ncnpReport', 'write')
-  needsScopeOptions() {
-    return this.service.needsScopeOptions();
-  }
-
-  @Get('needs-studies')
-  @RequirePermission('ncnpReport', 'write')
-  needsStudies(@Query('scopeLevel') scopeLevel?: string, @Query('unitId') unitId?: string) {
-    const level = (['KINGDOM', 'REGION', 'GOVERNORATE', 'CENTRE', 'VILLAGE'] as const).find((l) => l === scopeLevel);
-    if (!level) throw new BadRequestException({ error: { code: 'SCOPE_LEVEL_INVALID', message: 'Unknown scope level.' } });
-    return this.service.needsStudies(level, unitId || null);
   }
 
   @Get()

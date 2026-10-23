@@ -16,7 +16,7 @@ import type { Translator } from "./i18n/translate-content";
 export type PlaceholderReportType = Exclude<
   ReportTypeCode,
   | "RPT01" | "RPT02" | "RPT03" | "RPT04" | "RPT06" | "RPT09" | "RPT10"
-  | "RPT12" | "RPT13" | "RPT14" | "RPT15" | "RPT16" | "RPT17" | "RPT18"
+  | "RPT12" | "RPT13" | "RPT14" | "RPT15" | "RPT16" | "RPT17"
 >;
 export const PLACEHOLDER_REPORT_TYPES: PlaceholderReportType[] = [
   "RPT05", "RPT07", "RPT08", "RPT11",
@@ -104,10 +104,6 @@ export async function buildExportStub(
    *  which no content-level pass can reach. Omitted, the export behaves exactly
    *  as before. */
   translator?: Translator,
-  /** How long the final translation pass may spend. A download keeps the
-   *  sweep's short default; the background preparation at release allows
-   *  longer, since nobody is waiting on it. */
-  options: { budgetMs?: number } = {},
 ): Promise<{ filename: string; contentType: string; body: Buffer; sweep?: SweepStats }> {
   const auditRows = auditMetaLines(meta).map((r) => ({ label: r.field, value: r.value }));
   // The audit labels above are still composed in English here and translated
@@ -128,11 +124,7 @@ export async function buildExportStub(
   // the AI only sees genuinely novel prose.
   let sweep: SweepStats | undefined;
   if (translator) {
-    const swept = await sweepRemainingEnglish(doc, locale, {
-      aliases,
-      translator,
-      ...(options.budgetMs ? { budgetMs: options.budgetMs } : {}),
-    });
+    const swept = await sweepRemainingEnglish(doc, locale, { aliases, translator });
     doc = swept.doc;
     sweep = swept.stats;
   }

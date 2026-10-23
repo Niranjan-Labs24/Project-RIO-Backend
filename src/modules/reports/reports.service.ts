@@ -23,41 +23,13 @@ import { collectiveGenerator } from "./generators/collective.generator";
 import { sharingStatusGenerator } from "./generators/sharing-status.generator";
 import { topPriorityGenerator } from "./generators/top-priority.generator";
 import { dataQualityGenerator } from "./generators/data-quality.generator";
-import { coreNeedsGenerator } from "./generators/core-needs.generator";
-import { isCoreNeedsContent, type CoreNeedsContent } from "./core-needs/core-needs.types";
-import type { CoreAudit, CoreView } from "./core-needs/core-needs-view";
-import { resolveCoreView } from "./core-needs/resolve-core-view";
-import { renderCoreNeedsPdf } from "./core-needs/core-needs-pdf";
-import { renderCoreNeedsExcel } from "./core-needs/core-needs-excel";
-import {
-  loadCoreScopeOptions,
-  loadOrgCoreScopeOptions,
-  type CoreScopeOptions,
-} from "./core-needs/load-core-scope-options";
 import type { SupportedLocale } from "../translation/translation.types";
 import { loadMasterDataAliases, type MasterDataAliases } from "./i18n/master-data-names";
-import { buildPresentation, type ReportPresentation } from "./presentation/build-presentation";
-import { hasArabic } from "./arabic-text";
-import { withGovernorateShare } from "./presentation/governorate-share";
-import { SECTION_HOME } from "./presentation/presentation.config";
-
-/** Survey age brackets, in display order (Prisma AgeBracket). */
-const AGE_BANDS = [
-  "age_15_24",
-  "age_25_34",
-  "age_35_44",
-  "age_45_54",
-  "age_55_64",
-  "age_65_plus",
-  "prefer_not_to_say",
-] as const;
-import { loadParticipation } from "./presentation/load-participation";
 import { translateReportContent } from "./i18n/translate-content";
 import { TranslationService } from "../translation/translation.service";
 import { requestLocale } from "../../common/locale/request-locale";
 import { combinedEvidenceGenerator, evidenceDocumentGenerator } from "./generators/evidence-reports.generator";
 import { ReportDataProvider } from "./providers/report-data.provider";
-import { assertShareable } from "./core-needs/internal-only";
 import {
   EXPORTABLE_STATUSES,
   REPORT_TYPE_META,
@@ -309,15 +281,6 @@ export class ReportsService {
     return this.hydrate(rows);
   }
 
-  /** RPT18: the areas and domains this study's report can be scoped to. */
-  /** With a study: that study's areas. Without: every area the
-   *  organisation's studies cover, each listing its studies. */
-  coreScopeOptions(studyId?: string): Promise<CoreScopeOptions> {
-    return this.tenant.runInOrgContext((tx) =>
-      studyId ? loadCoreScopeOptions(tx, studyId) : loadOrgCoreScopeOptions(tx, requireOrgId()),
-    );
-  }
-
   async getById(id: string): Promise<Report> {
     const store = getOrgStore();
     // RIO-RBAC-002 (AC1, fixed 2026-08-23) — see list()'s comment above.
@@ -339,7 +302,7 @@ export class ReportsService {
           organizationId: row.orgId,
         });
       }
-      return this.withPresentation(await this.withViewLocale(await this.hydrateOne(row, true)), row, true);
+      return this.withViewLocale(await this.hydrateOne(row, true));
     }
 
     const row = await this.findOrThrow(id);
@@ -347,160 +310,7 @@ export class ReportsService {
     if (!this.canSeeAllStatuses() && !EXPORTABLE_STATUSES.includes(row.status)) {
       throw new NotFoundException({ error: { code: "REPORT_NOT_FOUND", message: "Report not found" } });
     }
-    return this.withPresentation(await this.withViewLocale(await this.hydrateOne(row)), row, false);
-  }
-
-  /**
-   * Adds the presentation block (NCNP feedback, Sept 2026 — see
-   * presentation/presentation.config.ts) to a report's content: confidence
-   * band, one-page summary, village participation, KPI publish flags,
-   * excluded responses and the reviewer sign-off. Derived on read, never
-   * stored, so every existing report gets it too. Never fails the request:
-   * a block whose lookup fails is simply left out.
-   */
-  private async presentationFor(
-    row: ReportRow,
-    content: Record<string, unknown>,
-    reviewer: { name: string | null; role: string | null; at: string | null },
-    crossOrg: boolean,
-    locale: SupportedLocale,
-  ): Promise<ReportPresentation> {
-    const run = crossOrg
-      ? this.tenant.runAsSupervisor.bind(this.tenant)
-      : this.tenant.runInOrgContext.bind(this.tenant);
-    // System Admin's village concentration threshold (Methodology Settings);
-    // the config default when it was never set.
-    const concentratedFromPct = await run(async (tx) => {
-      const cfg = await tx.methodologyConfig.findFirst({ select: { confidenceFlagSettings: true } });
-      const v = (cfg?.confidenceFlagSettings as { villageConcentrationPct?: unknown } | null)?.villageConcentrationPct;
-      return typeof v === "number" && v >= 50 && v <= 100 ? v : undefined;
-    }).catch(() => undefined);
-    const [participation, org] = await Promise.all([
-      row.studyId
-        ? run(async (tx) => loadParticipation(tx as never, row.studyId!, locale, concentratedFromPct)).catch((err: unknown) => {
-            this.logger.warn(`Participation share for report ${row.id} skipped: ${String(err)}`);
-            return [];
-          })
-        : Promise.resolve([]),
-      run(async (tx) => tx.organisation.findUnique({ where: { id: row.orgId }, select: { name: true } })).catch(
-        () => null,
-      ),
-    ]);
-    // Names and the role are stored in English; an Arabic export prints them
-    // in Arabic (cached translations, same as every other name in a report).
-    const inLocale = async (text: string | null): Promise<string | null> => {
-      if (!text || locale !== "ar") return text;
-      return (await this.translation.translate(text, locale)).translatedText;
-    };
-    const [reviewerName, reviewerRole, organization] = await Promise.all([
-      inLocale(reviewer.name),
-      inLocale(reviewer.role),
-      inLocale(org?.name ?? null),
-    ]);
-    // The report that holds the demographics in full also shows respondents by
-    // age band (the client's demographic card, from the survey's own answers).
-    const ageBands =
-      row.studyId && SECTION_HOME.demographics === row.reportType
-        ? await run(async (tx) =>
-            (tx as unknown as {
-              surveyResponse: { findMany(a: unknown): Promise<Array<{ ageBracket: string | null }>> };
-            }).surveyResponse.findMany({ where: { studyId: row.studyId!, exclusionReason: null }, select: { ageBracket: true } }),
-          )
-            .then((rs) =>
-              AGE_BANDS.map((band) => ({ band, count: rs.filter((r) => r.ageBracket === band).length })),
-            )
-            .catch(() => null)
-        : null;
-    // Reports whose content carries no response-quality block (domain-wise,
-    // regional) take the study's own figures, so every report shows the same
-    // confidence band.
-    const hasRq = typeof content.responseQuality === "object" && content.responseQuality !== null;
-    const responseQuality =
-      !hasRq && row.studyId
-        ? await run(async (tx) => this.studyResponseQuality(tx as never, row.studyId!)).catch(() => null)
-        : null;
-    return buildPresentation(row.reportType, content, {
-      responseQuality,
-      participation,
-      ageBands,
-      reviewerName,
-      reviewerRole,
-      reviewedAt: reviewer.at,
-      organization,
-    });
-  }
-
-  /** A study's valid/submitted responses (latest OVERALL rollup per survey)
-   *  and its required sample size — the presentation's fallback. */
-  private async studyResponseQuality(
-    tx: {
-      study: { findUnique(args: unknown): Promise<{ population: number | null; requiredSampleSize: number | null } | null> };
-      scoreRollup: {
-        findMany(args: unknown): Promise<Array<{ surveyId: string; validResponseCount: number; excludedResponseCount: number }>>;
-      };
-    },
-    studyId: string,
-  ): Promise<{ validResponses: number; submittedResponses: number; requiredSampleSize: number | null; population: number | null } | null> {
-    const [study, rollups] = await Promise.all([
-      tx.study.findUnique({ where: { id: studyId }, select: { population: true, requiredSampleSize: true } }),
-      tx.scoreRollup.findMany({
-        where: { studyId, rollupLevel: "OVERALL", villageId: "" },
-        select: { surveyId: true, validResponseCount: true, excludedResponseCount: true },
-        orderBy: { calculatedAt: "desc" },
-      }),
-    ]);
-    if (!study) return null;
-    const latest = new Map<string, { valid: number; excluded: number }>();
-    for (const r of rollups) {
-      if (!latest.has(r.surveyId)) latest.set(r.surveyId, { valid: r.validResponseCount, excluded: r.excludedResponseCount });
-    }
-    const valid = [...latest.values()].reduce((n, r) => n + r.valid, 0);
-    const excluded = [...latest.values()].reduce((n, r) => n + r.excluded, 0);
-    return {
-      validResponses: valid,
-      submittedResponses: valid + excluded,
-      requiredSampleSize: study.requiredSampleSize,
-      population: study.population,
-    };
-  }
-
-  private async withPresentation(report: Report, row: ReportRow, crossOrg: boolean): Promise<Report> {
-    const content = report.content;
-    if (!content || typeof content !== "object" || Array.isArray(content)) return report;
-    // RPT18 carries its own design end to end: the view model the PDF and Excel
-    // render from, resolved in the reader's language, so the screen reads the
-    // same sentences as the download.
-    if (isCoreNeedsContent(content)) {
-      try {
-        const coreView = await this.coreViewFor(row, content, this.coreAuditOf(report), crossOrg, requestLocale());
-        return { ...report, content: { ...content, coreView } };
-      } catch (err) {
-        this.logger.warn(`Report ${row.id}: core view skipped: ${String(err)}`);
-        return report;
-      }
-    }
-    const presentation = await this.safePresentation(() => this.presentationFor(
-      row,
-      content,
-      { name: report.reviewedByName, role: report.reviewedByRole, at: report.reviewedAt },
-      crossOrg,
-      requestLocale(),
-    ), row.id);
-    const shared = withGovernorateShare(content, presentation?.participation);
-    return { ...report, content: presentation ? { ...shared, presentation } : shared };
-  }
-
-  /** The presentation is an addition to a report, never a reason to fail one. */
-  private async safePresentation(
-    build: () => Promise<ReportPresentation>,
-    reportId: string,
-  ): Promise<ReportPresentation | null> {
-    try {
-      return await build();
-    } catch (err) {
-      this.logger.warn(`Report ${reportId}: presentation block skipped: ${String(err)}`);
-      return null;
-    }
+    return this.withViewLocale(await this.hydrateOne(row));
   }
 
   /**
@@ -619,52 +429,7 @@ export class ReportsService {
         { field: "Reviewer Notes", before: null, after: notes },
       ],
     });
-    // Not awaited: approval returns now; the translations fill in behind it.
-    void this.prepareTranslations(row);
     return this.hydrateOne(row);
-  }
-
-  /**
-   * Translates a just-released report's text in both export languages ahead of
-   * time, so its first Arabic (or English) export is already complete.
-   *
-   * An export waits only a few seconds for the translator so a download never
-   * hangs; on a report's very first export a slow translator could leave a
-   * sentence untranslated until the next export. This runs the same export
-   * steps once, at release, with time to finish, and discards the file — the
-   * only effect is that every translation is already saved. Never affects the
-   * approval: a failure here is logged and the export behaves as before.
-   */
-  private async prepareTranslations(row: ReportRow): Promise<void> {
-    // RPT18 renders from its own view model; its free text is translated (and
-    // cached) the first time the report is opened or exported.
-    if (isCoreNeedsContent(row.content)) return;
-    for (const locale of ["ar", "en"] as const) {
-      try {
-        const auditMeta = await this.tenant.runInOrgContext((tx) => this.resolveExportAuditMeta(row, tx));
-        const aliases = await this.masterDataAliases(locale, false);
-        const { sweep } = await buildExportStub(
-          "pdf",
-          {
-            id: row.id,
-            title: row.title,
-            reportType: row.reportType,
-            content: await this.exportContent(row, auditMeta, false, locale, aliases),
-          },
-          auditMeta,
-          locale,
-          aliases,
-          this.translation,
-          { budgetMs: 120_000 },
-        );
-        this.logger.log(
-          `Report ${row.id}: ${locale} translations prepared — ${sweep?.byTranslator ?? 0} translated now, ` +
-            `${sweep?.byCache ?? 0} already saved, ${sweep?.unresolved.length ?? 0} left in the source language.`,
-        );
-      } catch (err) {
-        this.logger.warn(`Report ${row.id}: ${locale} translations not prepared in advance: ${String(err)}`);
-      }
-    }
   }
 
   async reject(id: string, notes: string): Promise<Report> {
@@ -721,9 +486,6 @@ export class ReportsService {
   async setCatalogVisibility(id: string, visible: boolean | null): Promise<Report> {
     requireActor();
     const existing = await this.findOrThrow(id);
-    // Village-level Core Needs Reports are internal only: they can be hidden,
-    // never listed.
-    if (visible === true) assertShareable(existing);
     const row = await this.tenant.runInOrgContext((tx) =>
       tx.report.update({ where: { id }, data: { catalogVisible: visible } }),
     );
@@ -783,16 +545,10 @@ export class ReportsService {
         });
       }
       const auditMeta = await this.tenant.runAsSupervisor((tx) => this.resolveExportAuditMeta(row, tx));
-      if (isCoreNeedsContent(row.content)) return this.exportCoreNeeds(row, auditMeta, true, format, locale);
       const aliases = await this.masterDataAliases(locale, true);
       return buildExportStub(
         format,
-        {
-          id: row.id,
-          title: row.title,
-          reportType: row.reportType,
-          content: await this.exportContent(row, auditMeta, true, locale, aliases),
-        },
+        { id: row.id, title: row.title, reportType: row.reportType, content: await this.localizedContent(row, locale) },
         auditMeta,
         locale,
         aliases,
@@ -815,16 +571,10 @@ export class ReportsService {
       ],
     });
     const auditMeta = await this.tenant.runInOrgContext((tx) => this.resolveExportAuditMeta(row, tx));
-    if (isCoreNeedsContent(row.content)) return this.exportCoreNeeds(row, auditMeta, false, format, locale);
     const aliases = await this.masterDataAliases(locale, false);
     return buildExportStub(
       format,
-      {
-        id: row.id,
-        title: row.title,
-        reportType: row.reportType,
-        content: await this.exportContent(row, auditMeta, false, locale, aliases),
-      },
+      { id: row.id, title: row.title, reportType: row.reportType, content: await this.localizedContent(row, locale) },
       auditMeta,
       locale,
       aliases,
@@ -846,97 +596,6 @@ export class ReportsService {
    * than a 500 — which is the right trade for a download, but must not be
    * silent, hence the tally.
    */
-  /** Export content: localized prose plus the presentation block. */
-  private async exportContent(
-    row: ReportRow,
-    auditMeta: ExportAuditMeta,
-    crossOrg: boolean,
-    locale: SupportedLocale,
-    aliases: MasterDataAliases,
-  ): Promise<Record<string, unknown>> {
-    const localized = await this.localizedContent(row, locale);
-    const presentation = await this.safePresentation(
-      () =>
-        this.presentationFor(
-          row,
-          localized,
-          { name: auditMeta.reviewedByName, role: auditMeta.reviewedByRole, at: auditMeta.reviewedAt },
-          crossOrg,
-          locale,
-        ),
-      row.id,
-    );
-    // The village table's share comes from the same (valid-response) figures
-    // as the participation card, matched before village names are translated.
-    const content = withGovernorateShare(localized, presentation?.participation);
-    if (!presentation) return content;
-    const named = await this.localizePresentationNames(presentation, locale, aliases).catch((err: unknown) => {
-      this.logger.warn(`Report ${row.id}: presentation names left as stored: ${String(err)}`);
-      return presentation;
-    });
-    return { ...content, presentation: named };
-  }
-
-  /**
-   * The names inside the presentation's sentences (KPIs, domain, area,
-   * villages), put in the export's language BEFORE the sentences are composed.
-   * Translating the finished sentence instead lets one rejected translation
-   * leave an English KPI name inside an Arabic paragraph, or an Arabic village
-   * inside an English one. Official master-data names first, then the cached
-   * translation service — the same sources as the rest of the export.
-   */
-  private async localizePresentationNames(
-    p: ReportPresentation,
-    locale: SupportedLocale,
-    aliases: MasterDataAliases,
-  ): Promise<ReportPresentation> {
-    const foreign = (t: string): boolean =>
-      locale === "ar" ? /[A-Za-z]{4,}/.test(t) && !hasArabic(t) : hasArabic(t);
-    const names = new Set<string>();
-    const add = (t: string | null | undefined): void => {
-      if (t && foreign(t)) names.add(t);
-    };
-    add(p.summary?.topDomain?.name);
-    add(p.summary?.topArea?.name);
-    p.summary?.topKpis.forEach((k) => add(k.name));
-    p.kpis?.forEach((k) => add(k.kpi));
-    p.participation?.forEach((g) => {
-      add(g.governorate);
-      g.rows.forEach((r) => add(r.village));
-    });
-    if (names.size === 0) return p;
-
-    const map = new Map<string, string>();
-    const rest: string[] = [];
-    for (const name of names) {
-      const official = locale === "ar" ? aliases.get(name.trim().toLowerCase()) : undefined;
-      if (official) map.set(name, official);
-      else rest.push(name);
-    }
-    if (rest.length) {
-      const out = await this.translation.translateMany(rest, locale);
-      rest.forEach((name, i) => map.set(name, out[i]?.translatedText ?? name));
-    }
-    const tr = (t: string): string => map.get(t) ?? t;
-    return {
-      ...p,
-      summary: p.summary && {
-        ...p.summary,
-        topDomain: p.summary.topDomain && { ...p.summary.topDomain, name: tr(p.summary.topDomain.name) },
-        topArea: p.summary.topArea && { ...p.summary.topArea, name: tr(p.summary.topArea.name) },
-        topKpis: p.summary.topKpis.map((k) => ({ ...k, name: tr(k.name) })),
-      },
-      kpis: p.kpis && p.kpis.map((k) => ({ ...k, kpi: tr(k.kpi) })),
-      participation:
-        p.participation &&
-        p.participation.map((g) => ({
-          ...g,
-          governorate: tr(g.governorate),
-          rows: g.rows.map((r) => ({ ...r, village: tr(r.village) })),
-        })),
-    };
-  }
-
   private async localizedContent(
     row: ReportRow,
     locale: SupportedLocale,
@@ -967,82 +626,6 @@ export class ReportsService {
    * because every query in this service does; `crossOrg` picks the same one
    * the surrounding export path already used.
    */
-  private coreAuditOf(r: {
-    generatedByName: string | null;
-    generatedAt: string;
-    officerConfirmedByName: string | null;
-    officerConfirmedAt: string | null;
-    reviewedByName: string | null;
-    reviewedByRole: string | null;
-    reviewedAt: string | null;
-    reviewerNotes: string | null;
-  }): CoreAudit {
-    return {
-      generatedBy: r.generatedByName,
-      generatedAt: r.generatedAt,
-      confirmedBy: r.officerConfirmedByName,
-      confirmedAt: r.officerConfirmedAt,
-      reviewedBy: r.reviewedByName,
-      reviewedRole: r.reviewedByRole,
-      reviewedAt: r.reviewedAt,
-      reviewerNotes: r.reviewerNotes,
-      version: 1,
-    };
-  }
-
-  /** RPT18's view model in `locale`: catalogue wording, master-data names in
-   *  that language, and the free text (village names, study title, target
-   *  group) through the translation cache. */
-  private async coreViewFor(
-    _row: ReportRow,
-    content: CoreNeedsContent,
-    audit: CoreAudit,
-    crossOrg: boolean,
-    locale: SupportedLocale,
-  ): Promise<CoreView> {
-    return resolveCoreView({
-      content,
-      locale,
-      aliases: await this.masterDataAliases(locale, crossOrg),
-      translateMany: (texts, l) => this.translation.translateMany(texts, l),
-      audit,
-    });
-  }
-
-  /** RPT18 export: its own PDF and Excel, drawn to the client's mockup. */
-  private async exportCoreNeeds(
-    row: ReportRow,
-    auditMeta: ExportAuditMeta,
-    crossOrg: boolean,
-    format: ExportFormat,
-    locale: SupportedLocale,
-  ): Promise<{ filename: string; contentType: string; body: Buffer }> {
-    const content = row.content as CoreNeedsContent;
-    const view = await this.coreViewFor(
-      row,
-      content,
-      this.coreAuditOf({
-        generatedByName: auditMeta.generatedByName,
-        generatedAt: auditMeta.generatedAt,
-        officerConfirmedByName: auditMeta.officerConfirmedByName,
-        officerConfirmedAt: auditMeta.officerConfirmedAt,
-        reviewedByName: auditMeta.reviewedByName,
-        reviewedByRole: auditMeta.reviewedByRole,
-        reviewedAt: auditMeta.reviewedAt,
-        reviewerNotes: row.reviewerNotes,
-      }),
-      crossOrg,
-      locale,
-    );
-    const filename = `${row.reportType}-${row.id}.${format === "pdf" ? "pdf" : "xlsx"}`;
-    if (format === "pdf") return { filename, contentType: "application/pdf", body: renderCoreNeedsPdf(view) };
-    return {
-      filename,
-      contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      body: await renderCoreNeedsExcel(view),
-    };
-  }
-
   private masterDataAliases(locale: SupportedLocale, crossOrg: boolean): Promise<MasterDataAliases> {
     const run = crossOrg
       ? this.tenant.runAsSupervisor.bind(this.tenant)
@@ -1148,8 +731,7 @@ export class ReportsService {
       tx.report.findUnique({ where: { id } }),
     )) as unknown as ReportRow | null;
     if (!row) throw new NotFoundException({ error: { code: "REPORT_NOT_FOUND", message: "Report not found" } });
-    // A shared report shows the same presentation blocks as the owner's view.
-    return this.withPresentation(await this.hydrateOne(row, true), row, true);
+    return this.hydrateOne(row, true);
   }
 
   // RPT-01 and RPT-14 have real generators. RPT-14 (Village Report) reads
@@ -1207,7 +789,6 @@ export class ReportsService {
     // be kept reconciled with each other.
     if (reportType === "RPT03" || reportType === "RPT09") return topPriorityGenerator(providerCtx);
     if (reportType === "RPT10") return dataQualityGenerator(providerCtx);
-    if (reportType === "RPT18") return coreNeedsGenerator(providerCtx);
 
     // RPT16 / RPT17 — evidence documents (plus, for RPT16, the quantitative
     // half). Assembled in generators/evidence-reports.generator.ts like every

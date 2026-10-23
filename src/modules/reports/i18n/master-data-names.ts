@@ -156,23 +156,6 @@ export function localizeDataValues<T extends ReportDoc>(doc: T, aliases: MasterD
         return s.heading === undefined ? s : { ...s, heading: localizeComposedName(s.heading, t) };
       case 'columns':
         return { ...s, children: s.children.map(section) };
-      case 'summaryPanel':
-      case 'bandScale':
-        // Composed sentences from the catalogue; a name inside one is left to
-        // the final sweep, like a note's prose.
-        return s;
-      case 'card':
-        return { ...s, heading: localizeComposedName(s.heading, t), children: s.children.map(section) };
-      case 'rings':
-        return {
-          ...s,
-          items: s.items.map((it) => ({ ...it, slices: it.slices.map((x) => ({ ...x, label: t(x.label) })) })),
-        };
-      case 'caption':
-      case 'callouts':
-      case 'panel':
-      case 'footnote':
-        return s;
     }
   };
 
@@ -187,7 +170,6 @@ export function localizeDataValues<T extends ReportDoc>(doc: T, aliases: MasterD
     ...(doc.chapters
       ? { chapters: doc.chapters.map((c) => ({ ...c, sections: c.sections.map(section) })) }
       : {}),
-    ...(doc.lead ? { lead: doc.lead.map(section) } : {}),
   };
 }
 

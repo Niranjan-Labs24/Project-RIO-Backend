@@ -73,9 +73,9 @@ export async function buildCoverageBlock(
       tx.surveyQuestion.findMany({ where: { surveyId }, select: { questionId: true } }),
       tx.publicSurveyLink.count({ where: { needId } }),
       tx.publicSurveyLink.count({ where: { needId, isActive: true } }),
-      tx.surveyResponse.count({ where: { needId, exclusionReason: null } }),
+      tx.surveyResponse.count({ where: { needId } }),
       tx.surveyResponse.aggregate({
-        where: { needId, exclusionReason: null },
+        where: { needId },
         _min: { submittedAt: true },
         _max: { submittedAt: true },
       }),

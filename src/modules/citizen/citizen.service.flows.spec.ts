@@ -28,7 +28,7 @@ const challenge = (over: Record<string, unknown> = {}) => ({
 function setup(cfg: Record<string, unknown> = { nodeEnv: 'development' }) {
   const tx = {
     publicSurveyLink: { findUnique: vi.fn().mockResolvedValue(link()) },
-    study: { findUnique: vi.fn().mockResolvedValue({ title: 'Study', villages: ['V'], studyGovernorates: [], studyCenters: [] }) },
+    study: { findUnique: vi.fn().mockResolvedValue({ title: 'Study' }) },
     organisation: { findUnique: vi.fn().mockResolvedValue({ name: 'Acme', regionId: 'r1' }) },
     surveyResponse: {
       findFirst: vi.fn().mockResolvedValue(null),
@@ -44,7 +44,6 @@ function setup(cfg: Record<string, unknown> = { nodeEnv: 'development' }) {
       findFirst: vi.fn().mockResolvedValue({ id: 'sv1', surveyQuestions: [{ id: 'sq1' }] }),
     },
     need: {
-      findMany: vi.fn().mockResolvedValue([{ village: ['V'], needGovernorates: [{ governorateId: 'g1' }], needCenters: [{ centerId: 'c1' }] }]),
       findUnique: vi.fn().mockResolvedValue({
         title: 'Water',
         village: ['V'],
@@ -319,7 +318,6 @@ describe('CitizenService.submitResponse', () => {
     challengeId: 'c1',
     ageBracket: 'age_25_34',
     answers: { sq1: 'yes' },
-    location: 'village:V',
     consent: { version: '2.0', locale: 'en' },
     contactName: 'Ana',
     gender: 'female',
@@ -382,10 +380,8 @@ describe('CitizenService.submitResponse', () => {
       contactName: null,
       gender: null,
       regionId: null,
-      // Placed by the area the respondent picked, even when the Need has none.
-      governorateIds: ['g1'],
-      village: ['V'],
-      locationLabel: 'V',
+      governorateIds: [],
+      village: [],
     });
     expect(ctx.sessions.markSubmitted).not.toHaveBeenCalled();
   });

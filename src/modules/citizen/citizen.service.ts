@@ -1,5 +1,4 @@
 import { toJson } from '../../common/prisma/json';
-import type { Prisma } from '../../generated/prisma';
 import { BadRequestException, GoneException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomInt } from 'node:crypto';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
@@ -15,20 +14,15 @@ import { ScoreRollupService } from '../priority/rollup.service';
 import { SurveySessionsService } from '../survey-sessions/survey-sessions.service';
 import { ConsentService } from '../consent/consent.service';
 import { resolveConsentLocale } from '../consent/consent.types';
-import { villageKey, villageNameKey } from '../reports/core-needs/load-core-needs';
 import type { RecordEventPayload, RecordEventResult, StartSessionResult } from '../survey-sessions/survey-sessions.types';
 import type {
   CheckDuplicatePayload, CheckDuplicateResult, CitizenOtpChallengeRow, PublicSurveyLinkRow, RequestOtpPayload,
-  RecordOutsidePayload, RequestOtpResult, ResolvedSurvey, SubmitResponsePayload, SubmitResponseResult, VerifyOtpPayload,
-  VerifyOtpResult,
+  RequestOtpResult, ResolvedSurvey, SubmitResponsePayload, SubmitResponseResult, VerifyOtpPayload, VerifyOtpResult,
 } from './citizen.types';
 
 const OTP_TTL_MINUTES = 10;
 const OTP_MAX_ATTEMPTS = 5;
 const SECONDS_PER_QUESTION = 20;
-/** Exclusion reason of a respondent who chose "Outside these areas". */
-export const OUTSIDE_STUDY_GEOGRAPHY = 'OUTSIDE_STUDY_GEOGRAPHY';
-const OUTSIDE_LOCATION_LABEL = 'Outside these areas';
 
 /**
  * Whether the OTP may be echoed in the API response. Only in development and
@@ -71,11 +65,10 @@ export class CitizenService {
   // very next citizen to open the link sees the latest version.
   async resolveSurvey(token: string): Promise<ResolvedSurvey> {
     const link = await this.findActiveLinkOrThrow(token);
-    const [{ study, org, locations }, survey] = await Promise.all([
+    const [{ study, org }, survey] = await Promise.all([
       this.tenant.runAsSupervisor(async (tx) => ({
         study: await tx.study.findUnique({ where: { id: link.studyId } }),
         org: await tx.organisation.findUnique({ where: { id: link.orgId } }),
-        locations: await studyLocations(tx, link.studyId),
       })),
       this.surveys.getPublishedSurveyByNeedId(link.needId),
     ]);
@@ -130,10 +123,6 @@ export class CitizenService {
       questions,
       questionCount: questions.length,
       estimatedMinutes: Math.max(1, Math.ceil((questions.length * SECONDS_PER_QUESTION) / 60)),
-      locations: {
-        level: locations.level,
-        options: locations.options.map(({ value, label, labelAr }) => ({ value, label, labelAr })),
-      },
     };
   }
 
@@ -367,21 +356,6 @@ export class CitizenService {
     // Resolved, not echoed: asking for Arabic against an untranslated notice
     // yields the English text, and the record has to say so.
     const consentLocale = resolveConsentLocale(activeConsent, payload.consent.locale);
-    // The area picked at registration, from the study's own geography —
-    // checked before the challenge is consumed, like the consent above.
-    const { options: locationOptions } = await this.tenant.runAsSupervisor((tx) => studyLocations(tx, link.studyId));
-    // A study with no geography offers no choice, and so requires none.
-    const location = locationOptions.length
-      ? (locationOptions.find((o) => o.value === payload.location) ??
-        // A page loaded before villages carried their governorate sends
-        // "village:<name>": the first village of that name.
-        locationOptions.find((o) => o.level === 'VILLAGE' && `village:${o.village[0]}` === payload.location))
-      : { label: null, level: 'GOVERNORATE' as const, governorateIds: [], centerIds: [], village: [] };
-    if (!location) {
-      throw new BadRequestException({
-        error: { code: 'LOCATION_INVALID', message: 'Select your area from the list.' },
-      });
-    }
 
     const { row, needTitle } = await this.tenant.runAsOrg(link.orgId, async (tx) => {
       // Atomic claim, before any other work — closes a race the plain
@@ -472,15 +446,9 @@ export class CitizenService {
           gender: payload.gender ?? null,
           ageBracket: payload.ageBracket,
           regionId: org?.regionId ?? null,
-          // Placed exactly where the respondent said they live (client, 19
-          // Oct 2026): a governorate or centre pick carries no village. Only
-          // a study with no geography to choose from falls back to the Need's.
-          governorateIds: locationOptions.length
-            ? location.governorateIds
-            : (need?.needGovernorates.map((g) => g.governorateId) ?? []),
-          centerIds: locationOptions.length ? location.centerIds : (need?.needCenters.map((c) => c.centerId) ?? []),
-          village: locationOptions.length ? location.village : (need?.village ?? []),
-          locationLabel: location.label,
+          governorateIds: need?.needGovernorates.map((g) => g.governorateId) ?? [],
+          centerIds: need?.needCenters.map((c) => c.centerId) ?? [],
+          village: need?.village ?? [],
           answers: toJson(payload.answers),
           consentPolicyVersion: activeConsent.version,
           consentPolicyLocale: consentLocale,
@@ -568,74 +536,6 @@ export class CitizenService {
     return { id: row.id, submittedAt: row.submittedAt.toISOString() };
   }
 
-  // "Outside these areas" at registration (client, 19 Oct 2026). The survey
-  // ends there, and the record is kept as an excluded response: no answers,
-  // never scored, shown in the Core Needs Report's evidence section with the
-  // reason "Outside the study geography". No OTP — nothing is answered — but
-  // the same consent and one-per-contact rules as a submission.
-  async recordOutside(token: string, payload: RecordOutsidePayload): Promise<SubmitResponseResult> {
-    const link = await this.findActiveLinkOrThrow(token);
-    const activeConsent = await this.consent.getActiveCitizenPolicy();
-    if (activeConsent.version !== payload.consent.version) {
-      throw new BadRequestException({
-        error: {
-          code: 'CONSENT_VERSION_STALE',
-          message: 'The consent notice was updated. Please reload the page, review it, and try again.',
-          details: { submittedVersion: payload.consent.version, currentVersion: activeConsent.version },
-        },
-      });
-    }
-    const consentLocale = resolveConsentLocale(activeConsent, payload.consent.locale);
-    const contact = this.normalizeContact(payload.contact);
-    const mobile = this.normalizeMobile(payload.mobile);
-
-    const row = await this.tenant.runAsOrg(link.orgId, async (tx) => {
-      const existing = await tx.surveyResponse.findFirst({
-        where: { needId: link.needId, OR: [{ contact }, { mobile }] },
-      });
-      if (existing) {
-        throw new BadRequestException({
-          error: { code: 'DUPLICATE_SUBMISSION', message: 'A response for this need has already been submitted with this contact.' },
-        });
-      }
-      const org = await tx.organisation.findUnique({ where: { id: link.orgId }, select: { regionId: true } });
-      return tx.surveyResponse.create({
-        data: {
-          orgId: link.orgId,
-          needId: link.needId,
-          studyId: link.studyId,
-          surveyLinkId: link.id,
-          contact,
-          mobile,
-          contactName: payload.contactName ?? null,
-          gender: payload.gender ?? null,
-          ageBracket: payload.ageBracket,
-          regionId: org?.regionId ?? null,
-          answers: toJson({}),
-          locationLabel: OUTSIDE_LOCATION_LABEL,
-          exclusionReason: OUTSIDE_STUDY_GEOGRAPHY,
-          consentPolicyVersion: activeConsent.version,
-          consentPolicyLocale: consentLocale,
-          consentedAt: new Date(),
-        },
-      });
-    });
-    await this.audit.record({
-      action: 'create',
-      entityType: 'survey_response',
-      entityId: row.id,
-      entityLabel: 'Survey response recorded as outside the study geography',
-      organizationId: link.orgId,
-      changes: [
-        { field: 'Survey response', before: null, after: 'excluded: outside the study geography' },
-        { field: 'Consent version', before: null, after: activeConsent.version },
-      ],
-      metadata: { consentPolicyVersion: activeConsent.version, consentPolicyLocale: consentLocale },
-    });
-    if (payload.sessionId) await this.sessions.markSubmitted(link.orgId, payload.sessionId, row.id);
-    return { id: row.id, submittedAt: row.submittedAt.toISOString() };
-  }
-
   private async findActiveLinkOrThrow(token: string): Promise<PublicSurveyLinkRow> {
     const link = await this.tenant.runAsSupervisor((tx) =>
       tx.publicSurveyLink.findUnique({ where: { token }, include: { org: true } }),
@@ -668,130 +568,4 @@ export class CitizenService {
   private normalizeMobile(mobile: string): string {
     return mobile.trim().replace(/[\s\-()]/g, '');
   }
-}
-
-type TxClient = Prisma.TransactionClient;
-
-interface StudyLocation {
-  value: string;
-  label: string;
-  labelAr: string | null;
-  level: 'GOVERNORATE' | 'CENTRE' | 'VILLAGE';
-  governorateIds: string[];
-  centerIds: string[];
-  village: string[];
-}
-
-/**
- * The public survey's location options (client, 19 Oct 2026): the study's own
- * geography at its lowest defined level. Villages when the study names them,
- * each shown with its governorate so two villages with one name stay apart;
- * then every selected centre, and every governorate, that has nothing listed
- * beneath it — so a resident of a governorate whose villages were never typed
- * still finds their area instead of being pushed to "Outside these areas".
- * A village carries the governorate and centre of the Need that names it.
- */
-export async function studyLocations(
-  tx: TxClient,
-  studyId: string,
-): Promise<{ level: StudyLocation['level'] | 'MIXED'; options: StudyLocation[] }> {
-  const study = await tx.study.findUnique({
-    where: { id: studyId },
-    include: {
-      studyGovernorates: { include: { governorate: { select: { id: true, name: true, nameAr: true } } } },
-      studyCenters: { include: { center: { select: { id: true, name: true, nameAr: true, governorateId: true } } } },
-    },
-  });
-  if (!study) return { level: 'GOVERNORATE', options: [] };
-  const govs = (study.studyGovernorates ?? []).map((g) => g.governorate);
-  const centres = (study.studyCenters ?? []).map((c) => c.center);
-  const govById = new Map(govs.map((g) => [g.id, g]));
-  const withGov = (name: string, govId: string | undefined, ar = false) => {
-    const g = govId ? govById.get(govId) : undefined;
-    const gName = g ? (ar ? (g.nameAr ?? g.name) : g.name) : null;
-    return gName ? `${name} — ${gName}` : name;
-  };
-
-  const options: StudyLocation[] = [];
-  // Governorates and centres that already have an option beneath them.
-  const coveredGov = new Set<string>();
-  const coveredCentre = new Set<string>();
-  // Governorates reached through a listed village — kept apart from
-  // coveredGov, which the centre loop below also fills.
-  const villageGov = new Set<string>();
-
-  // Villages are recorded on the study or, in the usual flow, on each Need.
-  const needs = await tx.need.findMany({
-    where: { studyId },
-    select: { village: true, needGovernorates: { select: { governorateId: true } }, needCenters: { select: { centerId: true } } },
-  });
-  // One village is its governorate plus its name, ignoring case and spacing
-  // (the Core Needs Report's villageKey): "Al-Jafr" in Al-Ahsa and in Qatif are
-  // two options, "Al-Jafr" and "al  jafr" in one governorate are one. A village
-  // listed only on the study (no governorate) is added when no Need names it.
-  const villages = new Map<string, { name: string; governorateIds: string[]; centerIds: string[] }>();
-  for (const n of needs)
-    for (const raw of n.village) {
-      const name = raw.trim();
-      const governorateIds = n.needGovernorates.map((g) => g.governorateId);
-      const key = villageKey(governorateIds[0] ?? null, name);
-      if (name && !villages.has(key))
-        villages.set(key, { name, governorateIds, centerIds: n.needCenters.map((c) => c.centerId) });
-    }
-  const namedOnNeeds = new Set([...villages.values()].map((v) => villageNameKey(v.name)));
-  for (const raw of study.villages ?? []) {
-    const name = raw.trim();
-    if (name && !namedOnNeeds.has(villageNameKey(name)) && !villages.has(villageKey(null, name)))
-      villages.set(villageKey(null, name), { name, governorateIds: [], centerIds: [] });
-  }
-  for (const { name, governorateIds, centerIds } of villages.values()) {
-    governorateIds.forEach((id) => { coveredGov.add(id); villageGov.add(id); });
-    centerIds.forEach((id) => coveredCentre.add(id));
-    options.push({
-      value: `village:${governorateIds[0] ?? ''}:${name}`,
-      label: withGov(name, governorateIds[0]),
-      // The village name is free text with no Arabic of its own: the page
-      // translates the whole label.
-      labelAr: null,
-      level: 'VILLAGE',
-      governorateIds,
-      centerIds,
-      village: [name],
-    });
-  }
-
-  // A centre with no listed village under it. When the Needs record no centre
-  // at all, a centre counts as covered once its governorate has villages.
-  for (const c of centres) {
-    const covered = coveredCentre.has(c.id) || (coveredCentre.size === 0 && villageGov.has(c.governorateId));
-    if (covered) continue;
-    coveredGov.add(c.governorateId);
-    options.push({
-      value: `centre:${c.id}`,
-      label: withGov(c.name, c.governorateId),
-      labelAr: c.nameAr ? withGov(c.nameAr, c.governorateId, true) : null,
-      level: 'CENTRE',
-      governorateIds: [c.governorateId],
-      centerIds: [c.id],
-      village: [],
-    });
-  }
-
-  // A governorate with nothing beneath it in the study.
-  for (const g of govs) {
-    if (coveredGov.has(g.id)) continue;
-    options.push({
-      value: `gov:${g.id}`,
-      label: g.name,
-      labelAr: g.nameAr,
-      level: 'GOVERNORATE',
-      governorateIds: [g.id],
-      centerIds: [],
-      village: [],
-    });
-  }
-
-  const levels = new Set(options.map((o) => o.level));
-  const level = levels.size === 1 ? [...levels][0]! : levels.size === 0 ? 'GOVERNORATE' : 'MIXED';
-  return { level, options };
 }

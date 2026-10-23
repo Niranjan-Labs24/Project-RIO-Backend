@@ -62,10 +62,7 @@ function makeService(overrides: { activeNotice?: unknown; noticeError?: Error } 
         surveyQuestions: [{ id: 'q1' }],
       })),
     },
-    // The study's geography behind the registration step's location field.
-    study: { findUnique: vi.fn(async () => ({ villages: ['V1'], studyGovernorates: [], studyCenters: [] })) },
     need: {
-      findMany: vi.fn(async () => []),
       findUnique: vi.fn(async () => ({
         title: 'Water access',
         village: ['V1'],
@@ -126,7 +123,6 @@ const BASE_PAYLOAD = {
   challengeId: VERIFIED_CHALLENGE.id,
   ageBracket: 'age_25_34' as never,
   answers: { q1: 'yes' },
-  location: 'village:V1',
   consent: { version: '2.0', locale: 'en' as const },
 };
 

@@ -13,7 +13,6 @@ import { TranslationService } from '../translation/translation.service';
 import type { SupportedLocale } from '../translation/translation.types';
 import { sanitizeForSpreadsheet } from '../../common/security/spreadsheet-sanitize';
 import { auditFieldLabel } from '../audit/audit-field-labels';
-import { DeterministicScoringService } from '../priority/scoring.service';
 import type {
   CreateSurveyLinkPayload,
   PublicSurveyLink,
@@ -37,8 +36,6 @@ type LinkWithResponseCount = Omit<PublicSurveyLinkRow, 'responseCount'> & { _cou
 type MappedQuestion = {
   questionId: string;
   bankQuestionId: string | null;
-  /** Methodology code of the bank question ("INF-01"); null for a custom question. */
-  questionCode: string | null;
   surveyId: string;
   questionText: string;
   /** Question bank Arabic wording; null for a custom question (shown as typed). */
@@ -67,22 +64,15 @@ const EXPORT_LABELS: Record<SupportedLocale, { sheet: string; name: string; emai
 
 /** A question's header and an answer in the export language. Choice answers
  *  are stored as the English option value; the Arabic option at the same
- *  position replaces each one (multi-choice answers are joined by ", "). An
- *  answer saved under an older option wording ("Yes, graded" before the
- *  option was kept whole) is matched by its scoring option id instead. */
+ *  position replaces each one (multi-choice answers are joined by ", "). */
 function exportQuestionText(q: MappedQuestion, locale: SupportedLocale): string {
   return locale === 'ar' && q.questionTextAr ? q.questionTextAr : q.questionText;
 }
 function exportAnswer(q: MappedQuestion, answer: string, locale: SupportedLocale): string {
   if (locale !== 'ar' || !answer || !q.answerOptions || !q.answerOptionsAr) return answer;
   const toAr = (part: string) => {
-    const exact = q.answerOptions!.indexOf(part);
-    const id = DeterministicScoringService.resolveOptionId(q.questionCode, part);
-    const i = exact >= 0 || !q.questionCode
-      ? exact
-      : q.answerOptions!.findIndex((o) => DeterministicScoringService.normalizeOptionId(o) === id);
-    const ar = i >= 0 ? q.answerOptionsAr![i] : undefined;
-    return ar || part;
+    const i = q.answerOptions!.indexOf(part);
+    return i >= 0 && q.answerOptionsAr![i] ? q.answerOptionsAr![i] : part;
   };
   const whole = toAr(answer);
   return whole !== answer ? whole : answer.split(', ').map(toAr).join('، ');
@@ -566,7 +556,6 @@ export class PublicSurveysService {
       map.set(sq.id, {
         questionId: sq.id,
         bankQuestionId: sq.questionId ?? null,
-        questionCode: sq.question?.questionId ?? null,
         surveyId: sq.surveyId,
         questionText: sq.question?.questionText ?? sq.customText ?? '',
         questionTextAr: sq.question?.questionTextAr ?? null,

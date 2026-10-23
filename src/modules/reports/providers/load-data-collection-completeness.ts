@@ -172,7 +172,7 @@ export async function loadDataCollectionCompleteness(
   const responses = needIds.length
     ? await tenant.runInOrgContext((tx) =>
         tx.surveyResponse.findMany({
-          where: { studyId, needId: { in: needIds }, exclusionReason: null },
+          where: { studyId, needId: { in: needIds } },
           select: { id: true, needId: true, answers: true },
         }),
       )
