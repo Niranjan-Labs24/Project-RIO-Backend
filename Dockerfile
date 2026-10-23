@@ -3,7 +3,7 @@
 # floating `node:24-slim` tag, so a rebuild can't silently pull a different
 # image. Re-pin deliberately (docker pull node:24-slim && docker inspect ...)
 # when a genuine upgrade is wanted — never widen this back to a bare tag.
-FROM node:24-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS build
+FROM node:24-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS build
 WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -23,7 +23,7 @@ COPY . .
 ENV DATABASE_URL=postgresql://build:build@build-time-only:5432/build
 RUN pnpm prisma generate && pnpm build
 
-FROM node:24-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS runtime
+FROM node:24-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS runtime
 WORKDIR /app
 RUN corepack enable
 ENV NODE_ENV=production
