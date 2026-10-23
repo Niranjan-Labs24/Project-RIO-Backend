@@ -30,12 +30,18 @@ const ALIASES = new Map([['health', 'الصحة']]);
 const deps = (t: Translator) => ({ aliases: ALIASES, translator: t });
 
 describe('sweepRemainingEnglish', () => {
-  it('is a no-op in English and calls nothing', async () => {
+  it('is a no-op for an all-English document and calls nothing', async () => {
     const { translator, seen } = fake();
-    const d = doc();
+    const d = doc({ headerBand: [{ label: 'Study Name', value: 'Health services review' }] });
     const out = await sweepRemainingEnglish(d, 'en', deps(translator));
     expect(out.doc).toBe(d);
     expect(seen).toEqual([]);
+  });
+
+  it('translates Arabic data (a study name) into an English export, and only that', async () => {
+    const { translator, seen } = fake();
+    await sweepRemainingEnglish(doc(), 'en', deps(translator));
+    expect(seen).toEqual(['تقييم خدمات الرعاية الصحية']);
   });
 
   it('resolves from the catalogue before ever calling the translator', async () => {

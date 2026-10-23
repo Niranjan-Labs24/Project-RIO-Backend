@@ -655,9 +655,9 @@
       "isAdminRecord": false,
       "answerOptions": [
         "Under 30 minutes",
-        "30–60",
-        "60–120",
-        ">120",
+        "30–60 minutes",
+        "60–120 minutes",
+        "More than 120 minutes",
         "Don't know"
       ],
       "analyticalCategory": "Access",
@@ -1282,8 +1282,7 @@
       "isCompound": false,
       "isAdminRecord": false,
       "answerOptions": [
-        "Distance",
-        "safety",
+        "Distance / safety",
         "Shortage of female teachers",
         "Early marriage",
         "Household burdens",
@@ -1669,7 +1668,7 @@
         "Missed school",
         "Delayed enrolment",
         "Lacked supplies or uniform",
-        "Other — specify",
+        "Other",
         "Prefer not to answer"
       ],
       "analyticalCategory": "Affordability",
@@ -1740,10 +1739,8 @@
         "Public tap",
         "Protected well",
         "Unprotected well",
-        "Surface water (river",
-        "pond)",
-        "Tanker",
-        "vendor",
+        "Surface water (river / pond)",
+        "Tanker / vendor",
         "Other"
       ],
       "analyticalCategory": "Access",
@@ -1981,8 +1978,7 @@
         "Flush toilet connected to a sewer or septic tank",
         "Pit latrine with a slab",
         "Pit latrine without a slab",
-        "Shared",
-        "public facility",
+        "Shared / public facility",
         "Open defecation"
       ],
       "analyticalCategory": "Access",
@@ -2268,7 +2264,7 @@
         "Open drain",
         "Open ground",
         "Reused",
-        "Other — specify",
+        "Other",
         "Don't know"
       ],
       "analyticalCategory": "Structural",
@@ -2479,13 +2475,9 @@
       "isCompound": false,
       "isAdminRecord": false,
       "answerOptions": [
-        "Electricity",
-        "LPG",
-        "natural gas",
+        "Electricity / LPG / natural gas",
         "Improved stove",
-        "Firewood",
-        "charcoal",
-        "open fire",
+        "Firewood / charcoal / open fire",
         "Other"
       ],
       "analyticalCategory": "Access",
@@ -2755,9 +2747,9 @@
       "isAdminRecord": false,
       "answerOptions": [
         "24 hours",
-        "20–23",
-        "12–19",
-        "<12"
+        "20–23 hours",
+        "12–19 hours",
+        "Less than 12 hours"
       ],
       "analyticalCategory": "Utilization",
       "targetRespondent": "Head of household or an informed adult respondent",
@@ -2928,7 +2920,7 @@
         "Dust or quarrying",
         "Agricultural chemicals",
         "None",
-        "Other — specify"
+        "Other"
       ],
       "analyticalCategory": "Exposure",
       "targetRespondent": "Head of household or an informed adult respondent",
@@ -2966,7 +2958,7 @@
         "Using early warning",
         "Relocating",
         "None",
-        "Other — specify"
+        "Other"
       ],
       "analyticalCategory": "Resilience",
       "targetRespondent": "Head of household or an informed adult respondent",
@@ -3343,11 +3335,9 @@
       "isAdminRecord": false,
       "answerOptions": [
         "Lack of capital",
-        "Lack of skills",
-        "training",
+        "Lack of skills / training",
         "No market",
-        "Regulatory",
-        "licensing problems",
+        "Regulatory / licensing problems",
         "No mentoring",
         "Other"
       ],
@@ -3555,10 +3545,8 @@
       "isCompound": false,
       "isAdminRecord": false,
       "answerOptions": [
-        "Childcare",
-        "household burdens",
-        "Cultural",
-        "social norms",
+        "Childcare / household burdens",
+        "Cultural / social norms",
         "No nearby opportunities",
         "Transport",
         "Lack of skills",
@@ -3839,13 +3827,13 @@
       "isCompound": true,
       "isAdminRecord": false,
       "answerOptions": [
-        "Shock types;coping: Savings",
+        "Savings",
         "Borrowing",
         "Selling assets",
         "Cutting back on food or essentials",
         "External support",
         "No coping mechanism was needed",
-        "Other — specify"
+        "Other"
       ],
       "analyticalCategory": "Resilience",
       "targetRespondent": "Head of household or an informed adult respondent",
@@ -3985,8 +3973,7 @@
       "isAdminRecord": false,
       "answerOptions": [
         "Yes, paved",
-        "Yes, graded",
-        "unpaved but passable",
+        "Yes, graded / unpaved but passable",
         "No, often impassable"
       ],
       "analyticalCategory": "Access",
@@ -4125,8 +4112,7 @@
       "isAdminRecord": false,
       "answerOptions": [
         "Yes, strong signal",
-        "Weak",
-        "intermittent signal",
+        "Weak / intermittent signal",
         "No coverage"
       ],
       "analyticalCategory": "Access",
@@ -4592,7 +4578,7 @@
       "answerOptions": [
         "Owned",
         "Rented (formal)",
-        "Provided by relatives-employer",
+        "Provided by relatives / employer",
         "No formal arrangement"
       ],
       "analyticalCategory": "Utilization",
@@ -5482,8 +5468,7 @@
       "isAdminRecord": false,
       "answerOptions": [
         "Yes, actively maintained",
-        "Exists but undocumented",
-        "at risk",
+        "Exists but undocumented / at risk",
         "Nothing identified"
       ],
       "analyticalCategory": "Availability",
@@ -5824,8 +5809,7 @@
       "answerOptions": [
         "Documentation",
         "Training apprentices",
-        "Premises",
-        "hall",
+        "Premises / hall",
         "Funding",
         "Raw materials",
         "Legal recognition",
@@ -5908,7 +5892,7 @@
         "Yes — regularly",
         "Yes — sometimes",
         "No",
-        "Prefer not to answer; activity type recorded"
+        "Prefer not to answer"
       ],
       "analyticalCategory": "Livelihood link",
       "targetRespondent": "Head of household or an informed adult respondent",
@@ -6221,11 +6205,9 @@
       "isAdminRecord": false,
       "answerOptions": [
         "Municipality office",
-        "National reporting platform",
-        "app",
+        "National reporting platform / app",
         "Hotline",
-        "Local council",
-        "village mayor",
+        "Local council / village mayor",
         "Other — specify",
         "Cannot name a channel"
       ],
@@ -6402,7 +6384,7 @@
         "Usually",
         "Sometimes",
         "Never",
-        "No relevant information was needed; information-source list recorded"
+        "No relevant information was needed"
       ],
       "analyticalCategory": "Transparency",
       "targetRespondent": "Head of household or an informed adult respondent",
@@ -6846,7 +6828,7 @@
         "Natural disaster",
         "Displacement",
         "Conflict",
-        "Other — specify",
+        "Other",
         "None"
       ],
       "analyticalCategory": "Vulnerability",

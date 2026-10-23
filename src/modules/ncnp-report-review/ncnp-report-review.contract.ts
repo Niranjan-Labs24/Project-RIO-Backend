@@ -32,3 +32,28 @@ export const GenerateNcnpReportBody = registerSchema(
   }),
 );
 export type GenerateNcnpReportDto = Static<typeof GenerateNcnpReportBody>;
+
+const ScopeLevel = T.Union([
+  T.Literal('KINGDOM'),
+  T.Literal('REGION'),
+  T.Literal('GOVERNORATE'),
+  T.Literal('CENTRE'),
+  T.Literal('VILLAGE'),
+]);
+
+// NCNP needs report (client, 7 Oct 2026, point 2): the Core Needs Report for a
+// scope and domains, combining the selected studies across organisations.
+export const GenerateNcnpNeedsBody = registerSchema(
+  'GenerateNcnpNeedsBody',
+  T.Object(
+    {
+      scopeLevel: ScopeLevel,
+      unitId: T.Optional(T.Union([T.String({ minLength: 1, maxLength: 200 }), T.Null()])),
+      domainKeys: T.Optional(T.Array(T.String({ minLength: 1, maxLength: 120 }), { maxItems: 20 })),
+      studyIds: T.Array(T.String({ format: 'uuid' }), { minItems: 1, maxItems: 50 }),
+      output: T.Optional(T.Union([T.Literal('FULL'), T.Literal('SUMMARY')])),
+    },
+    { additionalProperties: false },
+  ),
+);
+export type GenerateNcnpNeedsDto = Static<typeof GenerateNcnpNeedsBody>;

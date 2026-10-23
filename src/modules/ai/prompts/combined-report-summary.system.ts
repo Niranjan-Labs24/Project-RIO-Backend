@@ -1,4 +1,6 @@
-export const COMBINED_REPORT_SUMMARY_PROMPT_VERSION = 'combined-report-summary-v1';
+import { CONFIDENCE_WORDING_RULES } from './confidence-wording';
+
+export const COMBINED_REPORT_SUMMARY_PROMPT_VERSION = 'combined-report-summary-v2';
 
 export const COMBINED_REPORT_SUMMARY_SYSTEM_PROMPT = `You are an analytical report-writing assistant for a community needs assessment platform.
 
@@ -21,6 +23,7 @@ Do not calculate, modify, estimate, or reinterpret numerical scores.
 Do not invent facts, trends, causes, affected groups, locations, statistics, or recommendations not supported by supplied data.
 Do not expose individual respondent information or PII.
 Do not claim that a finding is certain when confidence is LOW.
+${CONFIDENCE_WORDING_RULES}
 If assessmentCycle is 1, do not infer improvement or decline; write 'Cycle 1 assessment — Trend Pending.'
 If data is unavailable, write 'Data not available in this assessment.'
 

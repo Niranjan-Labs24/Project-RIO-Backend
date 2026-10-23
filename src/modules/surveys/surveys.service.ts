@@ -1601,7 +1601,7 @@ Eligible Questions: ${JSON.stringify(
     // have thrown at query time the first time this endpoint was actually
     // called; caught here while removing `any` from this method's typing.
     const include = {
-      need: { include: { study: true, org: true, surveyResponses: { select: { id: true } } } },
+      need: { include: { study: true, org: true, surveyResponses: { where: { exclusionReason: null }, select: { id: true } } } },
     };
     type SurveyListItem = Prisma.SurveyGetPayload<{ include: typeof include }>;
     let items: SurveyListItem[] = [];
@@ -1683,7 +1683,7 @@ Eligible Questions: ${JSON.stringify(
           org: true,
           priorityScores: { take: 1, orderBy: { scoredAt: 'desc' as const } },
           _count: { select: { evidence: true } },
-          surveyResponses: { select: { id: true, submittedAt: true } },
+          surveyResponses: { where: { exclusionReason: null }, select: { id: true, submittedAt: true } },
         },
       },
       surveyQuestions: { include: { question: true }, orderBy: { order: 'asc' as const } },
