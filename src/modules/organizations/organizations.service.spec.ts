@@ -93,6 +93,55 @@ describe('OrganizationsService', () => {
     expect(recorded).toHaveLength(0);
   });
 
+  // UAT ORG-12 — status is System Admin only (updateStatus); the NGO-side
+  // "edit organization" path must not be able to switch it.
+  it('updateCurrent refuses to change isActive', async () => {
+    const recorded: unknown[] = [];
+    const audit = { record: async (i: unknown) => { recorded.push(i); } };
+    const svc = new OrganizationsService(fakeTenant(baseRow) as never, audit as never, {} as never, domainsStub as never, geographyStub as never, { sendTemporaryPassword: async () => true } as never, {} as never, {} as never);
+    await expect(
+      orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'u1', role: 'ngo_admin' }, () =>
+        svc.updateCurrent({ name: 'New', isActive: false }),
+      ),
+    ).rejects.toMatchObject({ status: 403, response: { error: { code: 'ORG_STATUS_ADMIN_ONLY' } } });
+    // Nothing in the patch is applied, and nothing is audited.
+    const org = await orgContext.run({ requestId: 'r', orgId: 'o1' }, () => svc.getCurrent());
+    expect(org).toMatchObject({ name: 'Old', isActive: true });
+    expect(recorded).toHaveLength(0);
+  });
+
+  it('updateCurrent tolerates an isActive equal to the current one, and never writes it', async () => {
+    const writes: Record<string, unknown>[] = [];
+    const tenant = fakeTenant(baseRow);
+    const run = tenant.runInOrgContext;
+    tenant.runInOrgContext = (fn) =>
+      run((tx) => {
+        const t = tx as { organisation: { update: (a: { data: Record<string, unknown> }) => unknown } };
+        const update = t.organisation.update;
+        t.organisation.update = (a) => { writes.push(a.data); return update(a); };
+        return fn(t);
+      });
+    const svc = new OrganizationsService(tenant as never, { record: async () => {} } as never, {} as never, domainsStub as never, geographyStub as never, { sendTemporaryPassword: async () => true } as never, {} as never, {} as never);
+    const result = await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'u1', role: 'ngo_admin' }, () =>
+      svc.updateCurrent({ name: 'New', isActive: true }),
+    );
+    expect(result.name).toBe('New');
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).not.toHaveProperty('isActive');
+  });
+
+  it('updateCurrent clears the logo when sent logoUrl: null, auditing it without the image data', async () => {
+    const recorded: { changes?: { field: string; before: unknown; after: unknown }[] }[] = [];
+    const audit = { record: async (i: unknown) => { recorded.push(i as never); } };
+    const withLogo = { ...baseRow, logoUrl: 'data:image/png;base64,AAAA' };
+    const svc = new OrganizationsService(fakeTenant(withLogo) as never, audit as never, {} as never, domainsStub as never, geographyStub as never, { sendTemporaryPassword: async () => true } as never, {} as never, {} as never);
+    const result = await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'u1', role: 'ngo_admin' }, () =>
+      svc.updateCurrent({ logoUrl: null }),
+    );
+    expect(result.logoUrl).toBeNull();
+    expect(recorded[0]?.changes?.[0]).toMatchObject({ before: '(logo)', after: null });
+  });
+
   it('updateStatus toggles isActive and records ORGANIZATION_DEACTIVATED audit event', async () => {
     const recorded: { action: string; entityId: string; metadata?: { reason?: string } }[] = [];
     const audit = { record: async (i: unknown) => { recorded.push(i as never); } };

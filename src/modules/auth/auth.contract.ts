@@ -185,8 +185,14 @@ export type VerifyRegistrationNumberDto = Static<typeof VerifyRegistrationNumber
 
 export interface VerifyRegistrationNumberView {
   verified: boolean;
-  /** Why it failed, for the frontend to localize. Absent when verified. */
-  reason?: 'INVALID_FORMAT' | 'NOT_FOUND' | 'NAME_MISMATCH';
+  /**
+   * Why it failed, for the frontend to localize. Absent when verified.
+   * ALREADY_REGISTERED (UAT ORG-01): the number checks out against the
+   * registry but an organisation with it already exists on the platform —
+   * reported here so the registrant learns it before filling in the rest of
+   * the form, not on the final submit.
+   */
+  reason?: 'INVALID_FORMAT' | 'NOT_FOUND' | 'NAME_MISMATCH' | 'ALREADY_REGISTERED';
 }
 
 /**

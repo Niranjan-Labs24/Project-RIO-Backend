@@ -107,7 +107,8 @@ describe('OrganizationsService current organisation', () => {
         logoUrl: 'data:new',
         villages: ['v'],
         regionId: 'r2',
-        isActive: false,
+        // No isActive: a status change is refused on this path (UAT ORG-12,
+        // see organizations.service.spec.ts).
         governorateIds: ['g2', 'g3'],
         centerIds: [],
       } as never),

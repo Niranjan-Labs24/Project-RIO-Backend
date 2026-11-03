@@ -23,7 +23,7 @@ import type {
 
 const DIFF_FIELDS = [
   'name', 'region', 'email', 'sector', 'purpose', 'logoUrl', 'villages',
-  'regionId', 'isActive',
+  'regionId',
 ] as const;
 
 // The technical home organisation for System Admin/System Reviewer (see
@@ -97,6 +97,21 @@ export class OrganizationsService {
       const currentRaw = await tx.organisation.findFirst({ include: GEO_INCLUDE });
       if (!currentRaw) throw new NotFoundException({ error: { code: 'ORG_NOT_FOUND', message: 'Organization not found' } });
       const current = this.toOrgRow(currentRaw);
+
+      // UAT ORG-12 — an organization's status is System Admin only
+      // (PATCH /organizations/:id/status, which takes a reason and writes
+      // its own audit entry). Before this, an NGO Admin could deactivate —
+      // and so lock out — their own organization from here. A value equal
+      // to the current one is tolerated (older clients echoed it on every
+      // save) and simply never written.
+      if (patch.isActive !== undefined && patch.isActive !== current.isActive) {
+        throw new ForbiddenException({
+          error: {
+            code: 'ORG_STATUS_ADMIN_ONLY',
+            message: "An organization's status can only be changed by a System Admin.",
+          },
+        });
+      }
 
       // A patch that omits regionId/governorateIds/centerIds leaves that
       // value unchanged — validate against whatever the *final* state will
@@ -559,7 +574,7 @@ export class OrganizationsService {
     if (patch.logoUrl !== undefined) data.logoUrl = patch.logoUrl;
     if (patch.villages !== undefined) data.villages = patch.villages;
     if (patch.regionId !== undefined) data.regionId = patch.regionId;
-    if (patch.isActive !== undefined) data.isActive = patch.isActive;
+    // isActive deliberately absent — see updateCurrent (UAT ORG-12).
     return data;
   }
 

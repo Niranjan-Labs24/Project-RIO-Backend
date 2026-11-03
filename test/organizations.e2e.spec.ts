@@ -79,6 +79,38 @@ describe('Organizations (e2e)', () => {
     expect(res.body.region).toEqual(regions);
   });
 
+  // UAT ORG-12 — status is System Admin only. Without this, an NGO Admin
+  // could deactivate (and so lock out) their own organization.
+  it('ngo_admin cannot change its own organization status', async () => {
+    const res = await request(app.getHttpServer())
+      .patch('/api/organizations/current').set('Authorization', `Bearer ${adminToken}`)
+      .send({ isActive: false }).expect(403);
+    expect(res.body.error.code).toBe('ORG_STATUS_ADMIN_ONLY');
+    const after = await request(app.getHttpServer())
+      .get('/api/organizations/current').set('Authorization', `Bearer ${adminToken}`).expect(200);
+    expect(after.body.isActive).toBe(true);
+  });
+
+  it('ngo_admin can remove its organization logo', async () => {
+    const server = app.getHttpServer();
+    const before = await request(server)
+      .get('/api/organizations/current').set('Authorization', `Bearer ${adminToken}`).expect(200);
+    const tinyPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    await request(server)
+      .patch('/api/organizations/current').set('Authorization', `Bearer ${adminToken}`)
+      .send({ logoUrl: tinyPng }).expect(200);
+    const cleared = await request(server)
+      .patch('/api/organizations/current').set('Authorization', `Bearer ${adminToken}`)
+      .send({ logoUrl: null }).expect(200);
+    expect(cleared.body.logoUrl).toBeNull();
+    // Leave the shared seed org as this test found it.
+    if (before.body.logoUrl) {
+      await request(server)
+        .patch('/api/organizations/current').set('Authorization', `Bearer ${adminToken}`)
+        .send({ logoUrl: before.body.logoUrl }).expect(200);
+    }
+  });
+
   it('system_admin lists all organizations with memberCount', async () => {
     const res = await request(app.getHttpServer())
       .get('/api/organizations').set('Authorization', `Bearer ${sysToken}`).expect(200);
