@@ -1,5 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
-import { TranslationService } from '../translation/translation.service';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { v7 as uuidv7 } from 'uuid';
 import { ConsentPolicyKind, UserStatus } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
@@ -32,7 +31,7 @@ const DIFF_FIELDS = [
 // entity-management screen shows. Matched by its fixed registration number
 // (client-confirmed sentinel, same one the seed script uses), not by name,
 // since a display name is editable and shouldn't be load-bearing.
-const PLATFORM_ADMIN_REGISTRATION_NUMBER = '8000000000';
+export const PLATFORM_ADMIN_REGISTRATION_NUMBER = '8000000000';
 
 // Shape Prisma actually returns once the join tables are included — the raw
 // input to toOrgRow() below. Kept separate from OrgRow (this module's own
@@ -43,6 +42,7 @@ type RawOrgWithGeo = {
   id: string; name: string; purpose: string | null; registrationNumber: string | null;
   logoUrl: string | null; region: string[]; email: string | null; sector: string | null;
   villages: string[]; regionId: string | null; isActive: boolean; approvedAt: Date | null; createdAt: Date;
+  declinedAt?: Date | null; declineReason?: string | null;
   catalogDefaultVisible?: boolean;
   orgGovernorates: { governorateId: string }[];
   orgCenters: { centerId: string }[];
@@ -61,25 +61,7 @@ export class OrganizationsService {
     private readonly mailer: MailerService,
     private readonly nicRegistry: NicRegistryService,
     private readonly consentPolicies: ConsentService,
-    // Optional so a unit test that builds the service by hand needs no
-    // stub — arabicEntityName() then just keeps the stored name.
-    @Optional() private readonly translation?: TranslationService,
   ) {}
-
-  // The temporary-password email is Arabic (UAT-11), but the entity name was
-  // interpolated as stored — usually its English name — leaving English
-  // inside the Arabic copy (client-reported). Resolved the same way the
-  // sharing emails resolve names: the national registry's official Arabic
-  // name first, then the live translation. Never fails the send.
-  private async arabicEntityName(name: string): Promise<string> {
-    try {
-      if (!this.translation) return name;
-      const { translatedText } = await this.translation.translate(name, 'ar');
-      return translatedText || name;
-    } catch {
-      return name;
-    }
-  }
 
   async getCurrent(): Promise<Organization> {
     const row = await this.tenant.runInOrgContext((tx) =>
@@ -270,7 +252,7 @@ export class OrganizationsService {
       // defaults to Arabic.
       await this.mailer.sendTemporaryPassword(
         payload.adminEmail,
-        await this.arabicEntityName(payload.name),
+        payload.name,
         DEFAULT_TEMP_PASSWORD,
         'ar',
       );
@@ -301,7 +283,7 @@ export class OrganizationsService {
         where: { registrationNumber: { not: PLATFORM_ADMIN_REGISTRATION_NUMBER } },
         include: {
           ...GEO_INCLUDE,
-          users: { where: { roleId: 'role_ngo_admin' }, take: 1, select: { name: true, email: true } },
+          users: { where: { roleId: 'role_ngo_admin' }, take: 1, select: { name: true, email: true, mobileNumber: true } },
           _count: { select: { users: true, studies: true, surveys: true, reports: true } },
         },
         orderBy: { createdAt: 'desc' },
@@ -310,7 +292,7 @@ export class OrganizationsService {
       }),
     );
     const typedRows = rows as (RawOrgWithGeo & {
-      users: { name: string; email: string }[];
+      users: { name: string; email: string; mobileNumber: string | null }[];
       _count: { users: number; studies: number; surveys: number; reports: number };
     })[];
 
@@ -350,6 +332,8 @@ export class OrganizationsService {
       responseCount: responseCountByOrgId.get(r.id) ?? 0,
       ngoAdminName: r.users[0]?.name ?? null,
       ngoAdminEmail: r.users[0]?.email ?? null,
+      // UAT ORG-08 — the approval screen shows every submitted contact.
+      ngoAdminMobile: r.users[0]?.mobileNumber ?? null,
     }));
   }
 
@@ -360,12 +344,12 @@ export class OrganizationsService {
         where: { id },
         include: {
           ...GEO_INCLUDE,
-          users: { where: { roleId: 'role_ngo_admin' }, take: 1, select: { name: true, email: true } },
+          users: { where: { roleId: 'role_ngo_admin' }, take: 1, select: { name: true, email: true, mobileNumber: true } },
           _count: { select: { users: true, studies: true, surveys: true, reports: true } },
         },
       }),
     )) as (RawOrgWithGeo & {
-      users: { name: string; email: string }[];
+      users: { name: string; email: string; mobileNumber: string | null }[];
       _count: { users: number; studies: number; surveys: number; reports: number };
     }) | null;
 
@@ -387,6 +371,7 @@ export class OrganizationsService {
       reportCount: row._count.reports,
       ngoAdminName: row.users[0]?.name ?? null,
       ngoAdminEmail: row.users[0]?.email ?? null,
+      ngoAdminMobile: row.users[0]?.mobileNumber ?? null,
     };
   }
 
@@ -463,13 +448,16 @@ export class OrganizationsService {
     const passwordHash = await this.passwords.hash(temporaryPassword);
 
     await this.tenant.runAsOrg(id, async (tx) => {
-      await tx.organisation.update({ where: { id }, data: { isActive: true, approvedAt: new Date(), approvedBy: actorId } });
+      await tx.organisation.update({
+        where: { id },
+        data: { isActive: true, approvedAt: new Date(), approvedBy: actorId, declinedAt: null, declinedBy: null, declineReason: null },
+      });
       await tx.user.update({ where: { id: admin.id }, data: { passwordHash, mustChangePassword: true } });
     });
 
     await this.mailer.sendTemporaryPassword(
       admin.email,
-      await this.arabicEntityName(current.name),
+      current.name,
       temporaryPassword,
       'ar',
     );
@@ -482,6 +470,50 @@ export class OrganizationsService {
       organizationId: current.id,
     });
 
+    return this.getById(id);
+  }
+
+  /**
+   * UAT ORG-09 — decline a self-registration with a mandatory reason. The
+   * entity stays inactive (its admin still cannot sign in), the reason is
+   * kept on the record and emailed to the entity's admin in Arabic, and the
+   * decision is audited. Approving later is still possible and clears it.
+   */
+  async decline(id: string, reason: string): Promise<OrganizationSummary> {
+    this.assertCrossEntity();
+    const actorId = requireActor();
+    const text = reason?.trim() ?? '';
+    if (!text) {
+      throw new BadRequestException({ error: { code: 'DECLINE_REASON_REQUIRED', message: 'A reason is required to decline a registration.' } });
+    }
+    const current = (await this.tenant.runAsSupervisor((tx) =>
+      tx.organisation.findUnique({
+        where: { id },
+        include: { users: { where: { roleId: 'role_ngo_admin' }, take: 1, select: { id: true, email: true } } },
+      }),
+    )) as (RawOrgWithGeo & { users: { id: string; email: string }[] }) | null;
+    if (!current) throw new NotFoundException({ error: { code: 'ORG_NOT_FOUND', message: 'Organization not found' } });
+    if (current.approvedAt) {
+      throw new BadRequestException({ error: { code: 'ORG_ALREADY_APPROVED', message: 'This organization has already been approved.' } });
+    }
+    await this.tenant.runAsOrg(id, (tx) =>
+      tx.organisation.update({
+        where: { id },
+        data: { isActive: false, declinedAt: new Date(), declinedBy: actorId, declineReason: text },
+      }),
+    );
+    const admin = current.users[0];
+    if (admin) {
+      await this.mailer.sendOrganizationDeclined(admin.email, current.name, text);
+    }
+    await this.audit.record({
+      action: 'ORGANIZATION_DECLINED',
+      entityType: 'organization',
+      entityId: current.id,
+      entityLabel: current.name,
+      organizationId: current.id,
+      changes: [{ field: 'Decline reason', before: null, after: text }],
+    });
     return this.getById(id);
   }
 
@@ -611,6 +643,7 @@ export class OrganizationsService {
       id: raw.id, name: raw.name, purpose: raw.purpose, registrationNumber: raw.registrationNumber,
       logoUrl: raw.logoUrl, region: raw.region, email: raw.email, sector: raw.sector,
       villages: raw.villages, regionId: raw.regionId, isActive: raw.isActive, approvedAt: raw.approvedAt, createdAt: raw.createdAt,
+      declinedAt: raw.declinedAt ?? null, declineReason: raw.declineReason ?? null,
       catalogDefaultVisible: raw.catalogDefaultVisible,
       governorateIds: raw.orgGovernorates.map((g) => g.governorateId),
       centerIds: raw.orgCenters.map((c) => c.centerId),
@@ -625,6 +658,8 @@ export class OrganizationsService {
       regionId: row.regionId, governorateIds: row.governorateIds, centerIds: row.centerIds,
       isActive: row.isActive, approvedAt: row.approvedAt ? row.approvedAt.toISOString() : null,
       createdAt: row.createdAt.toISOString(),
+      declinedAt: row.declinedAt ? row.declinedAt.toISOString() : null,
+      declineReason: row.declineReason ?? null,
       catalogDefaultVisible: row.catalogDefaultVisible ?? true,
     };
   }

@@ -107,6 +107,11 @@ export interface PriorityDashboardEntry {
 // type, and affected population."
 /** One Domain's mean within a Centre. Same scale and direction as every
  *  other priority number here: 0-100, high = urgent. */
+/** One Sub-domain's mean within a Centre (UAT PRI-08); same fields as a Domain's. */
+export interface CenterSubDomainBreakdown extends CenterDomainBreakdown {
+  subDomain: string;
+}
+
 export interface CenterDomainBreakdown {
   domain: string;
   needCount: number;
@@ -197,6 +202,8 @@ export interface CenterComparisonEntry {
    *  mistaken for one scored on all 9. */
   scoredNeedCount: number;
   domainBreakdown: CenterDomainBreakdown[];
+  /** UAT PRI-08 — the same comparison one level down the methodology tree. */
+  subDomainBreakdown: CenterSubDomainBreakdown[];
   criticalNeedCount: number;
   highNeedCount: number;
   /** Need count grouped by its approved Domain — the closest existing

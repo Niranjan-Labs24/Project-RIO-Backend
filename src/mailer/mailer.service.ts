@@ -670,6 +670,34 @@ export class MailerService {
     }
   }
 
+  /**
+   * UAT ORG-09 — the entity's admin learns their registration was declined,
+   * and why. Arabic, like every other system email (UAT-11).
+   */
+  async sendOrganizationDeclined(email: string, orgName: string, reason: string): Promise<boolean> {
+    if (!this.client) return false;
+    const safe = (v: string) => v.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+    try {
+      const { error } = await this.client.emails.send({
+        from: this.config.mailFrom,
+        to: email,
+        subject: `لم تتم الموافقة على تسجيل ${orgName} في RIO`,
+        text: `نشكركم على تسجيل ${orgName} في RIO.\n\nنأسف لإبلاغكم بأنه لم تتم الموافقة على طلب التسجيل.\n\nالسبب: ${reason}\n\nيمكنكم التواصل معنا لأي استفسار.`,
+        html: `<div dir="rtl" lang="ar" style="text-align:right;"><p>نشكركم على تسجيل <strong>${safe(orgName)}</strong> في RIO.</p><p>نأسف لإبلاغكم بأنه لم تتم الموافقة على طلب التسجيل.</p><p><strong>السبب:</strong> ${safe(reason)}</p><p>يمكنكم التواصل معنا لأي استفسار.</p></div>`,
+      });
+      if (error) {
+        this.logger.error(`Failed to email organization declined to ${redactEmail(email)}: ${error.name} ${error.message}`);
+        this.recordSendFailure('organization_declined', redactEmail(email), { providerError: `${error.name}: ${error.message}` });
+        return false;
+      }
+      return true;
+    } catch (err) {
+      this.logger.error(`Failed to email organization declined to ${redactEmail(email)}`, err as Error);
+      this.recordSendFailure('organization_declined', redactEmail(email), {}, err);
+      return false;
+    }
+  }
+
   /** The other half of RIO-FR-014's Q28 — the requester learning the outcome. */
   async sendSharingRequestDecided(
     email: string,

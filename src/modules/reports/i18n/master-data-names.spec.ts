@@ -203,7 +203,7 @@ describe('report titles', () => {
     const aliases = await loadMasterDataAliases(tx(), 'ar');
     const doc = buildReportDoc('Al-Qassim — Evidence Document Report', { summary: 'x' }, [], 'ar');
 
-    expect(localizeDataValues(doc, aliases).title).toBe('القصيم — تقرير مستندات الأدلة');
+    expect(localizeDataValues(doc, aliases).title).toBe('القصيم — تقرير مستندات الأدلة الداعمة للدراسة');
   });
 
   it('keeps a name the master data does not know', async () => {

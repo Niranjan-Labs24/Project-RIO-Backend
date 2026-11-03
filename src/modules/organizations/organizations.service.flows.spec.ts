@@ -21,7 +21,7 @@ function setup() {
     ]),
   };
   const geography = { validateHierarchy: vi.fn().mockResolvedValue(undefined) };
-  const mailer = { sendTemporaryPassword: vi.fn().mockResolvedValue(true) };
+  const mailer = { sendTemporaryPassword: vi.fn().mockResolvedValue(true), sendOrganizationDeclined: vi.fn().mockResolvedValue(true) };
   const nic = { assertRegistered: vi.fn().mockResolvedValue('8123456789') };
   const consent = {
     getActivePolicy: vi.fn(async (kind: string) => ({
@@ -345,6 +345,20 @@ describe('OrganizationsService cross-entity reads and status', () => {
     expect(tx.user.update.mock.calls[0]![0].data).toMatchObject({ mustChangePassword: true });
     expect(mailer.sendTemporaryPassword).toHaveBeenCalledWith('a@x.org', 'Org', expect.any(String), 'ar');
     expect(audit.record.mock.calls[0]![0].action).toBe('ORGANIZATION_APPROVED');
+  });
+
+  it('declines a registration with a reason, emails the entity and audits it (UAT ORG-09)', async () => {
+    const { svc, tx, mailer, audit } = setup();
+    await expect(as('system_admin', () => svc.decline('o1', '   '))).rejects.toThrow(code('DECLINE_REASON_REQUIRED'));
+    tx.organisation.findUnique
+      .mockResolvedValueOnce(withStats({ approvedAt: null, users: [{ id: 'adm', email: 'a@x.org' }] }))
+      .mockResolvedValueOnce(withStats());
+    await as('system_admin', () => svc.decline('o1', 'السجل غير مطابق'));
+    expect(tx.organisation.update.mock.calls.at(-1)![0].data).toMatchObject({ isActive: false, declineReason: 'السجل غير مطابق' });
+    expect(mailer.sendOrganizationDeclined).toHaveBeenCalledWith('a@x.org', 'Org', 'السجل غير مطابق');
+    expect(audit.record.mock.calls.map((c) => c[0].action)).toContain('ORGANIZATION_DECLINED');
+    tx.organisation.findUnique.mockResolvedValueOnce(withStats({ approvedAt: new Date(), users: [] }));
+    await expect(as('system_admin', () => svc.decline('o1', 'x'))).rejects.toThrow(code('ORG_ALREADY_APPROVED'));
   });
 
   it('refuses to approve an unknown, already approved or admin-less organisation', async () => {

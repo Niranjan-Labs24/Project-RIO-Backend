@@ -11,6 +11,8 @@ import { MailerService } from "../../mailer/mailer.service";
 import { TranslationService } from "../translation/translation.service";
 import { ReportsService } from "../reports/reports.service";
 import { EXPORTABLE_STATUSES } from "../reports/reports.types";
+import { PLATFORM_ADMIN_REGISTRATION_NUMBER } from "../organizations/organizations.service";
+import { hasShareFilters, requestableOrgWhere, studyMatchesFilters, type ShareFilters } from "../sharing/share-filters";
 import type { SharingStatus } from "../sharing/sharing.types";
 import type {
   CreateReportSharingRequestPayload, DecideReportSharingRequestPayload, OrgLookupResult,
@@ -57,14 +59,6 @@ export class ReportSharingService {
       tx.user.findFirst({ where: { orgId, roleId: "role_ngo_admin" }, select: { email: true } }),
     );
     return admin?.email ?? null;
-  }
-
-  // Mirrors SharingService.translateForEmail: a report title / org name is
-  // free text with no stored Arabic, so it's resolved live — otherwise the
-  // Arabic email reads as Arabic wrapped around untranslated English.
-  private async translateForEmail(text: string): Promise<string> {
-    const { translatedText } = await this.translation.translate(text, "ar");
-    return translatedText;
   }
 
   async create(payload: CreateReportSharingRequestPayload): Promise<ReportSharingRequest> {
@@ -140,10 +134,8 @@ export class ReportSharingService {
     // RIO-FR-014 (client Q28) — best-effort, mirrors SharingService.create.
     const ownerAdminEmail = await this.orgAdminEmail(payload.ownerOrgId);
     if (ownerAdminEmail) {
-      const [reportTitleAr, requestingOrgNameAr] = await Promise.all([
-        this.translateForEmail(report.title),
-        this.translateForEmail(requestingOrgName),
-      ]);
+      // UAT GEN-03 — names exactly as entered, in emails too.
+      const [reportTitleAr, requestingOrgNameAr] = [report.title, requestingOrgName];
       await this.mailer.sendSharingRequestCreated(ownerAdminEmail, {
         entityLabel: `التقرير "${reportTitleAr}"`,
         otherOrgName: requestingOrgNameAr,
@@ -165,12 +157,16 @@ export class ReportSharingService {
       ? {}
       : { OR: [{ ownerOrgId: orgId }, { requestingOrgId: orgId }] };
     let filter: Prisma.ReportSharingRequestWhereInput = {};
+    const byStatus: Prisma.ReportSharingRequestWhereInput =
+      status && SHARING_STATUSES.includes(status as SharingStatus) ? { status: status as SharingStatus } : {};
     switch (view) {
+      // UAT SHR-03 — incoming / outgoing list every status, narrowed by the
+      // status filter (which replaces the separate Approved / Rejected tabs).
       case "incoming":
-        filter = { ownerOrgId: orgId, status: "pending" };
+        filter = { ownerOrgId: orgId, ...byStatus };
         break;
       case "outgoing":
-        filter = { requestingOrgId: orgId, status: "pending" };
+        filter = { requestingOrgId: orgId, ...byStatus };
         break;
       case "approved":
         filter = { status: "approved" };
@@ -185,9 +181,7 @@ export class ReportSharingService {
         break;
       case undefined:
       case "allOrganizations":
-        if (status && SHARING_STATUSES.includes(status as SharingStatus)) {
-          filter = { status: status as SharingStatus };
-        }
+        filter = byStatus;
         break;
       default:
         throw new BadRequestException({
@@ -363,14 +357,23 @@ export class ReportSharingService {
 
   // Organizations searchable for a new sharing request — name-only, active
   // orgs, excluding the caller's own (you can't request your own report).
-  async lookupOrganizations(query: string | undefined): Promise<OrgLookupResult[]> {
+  async lookupOrganizations(
+    query: string | undefined,
+    filters: ShareFilters = {},
+  ): Promise<OrgLookupResult[]> {
     const orgId = requireOrgId();
     const rows = await this.tenant.runAsSupervisor((tx) =>
       tx.organisation.findMany({
         where: {
-          id: { not: orgId },
-          isActive: true,
-          ...(query ? { name: { contains: query, mode: "insensitive" } } : {}),
+          ...requestableOrgWhere(orgId, query),
+          // With filters, only entities that own a matching approved report.
+          ...(hasShareFilters(filters)
+            ? {
+                reports: {
+                  some: { status: { in: EXPORTABLE_STATUSES }, study: studyMatchesFilters(filters) },
+                },
+              }
+            : {}),
         },
         orderBy: { name: "asc" },
         take: 20,
@@ -394,7 +397,7 @@ export class ReportSharingService {
           where: {
             orgId: { not: orgId },
             status: { in: EXPORTABLE_STATUSES },
-            org: { isActive: true },
+            org: { isActive: true, registrationNumber: { not: PLATFORM_ADMIN_REGISTRATION_NUMBER } },
             // Listed when the report says so, or — with no override — when its
             // organisation lists reports by default (the default is on).
             OR: [{ catalogVisible: true }, { catalogVisible: null, org: { catalogDefaultVisible: true } }],
@@ -462,14 +465,18 @@ export class ReportSharingService {
 
   // Only an org's own APPROVED reports are eligible to be requested for
   // sharing (RIO-FR-014's "sharing only after approval").
-  async lookupReportsForOrg(ownerOrgId: string): Promise<ReportLookupResult[]> {
+  async lookupReportsForOrg(ownerOrgId: string, filters: ShareFilters = {}): Promise<ReportLookupResult[]> {
     const rows = await this.tenant.runAsSupervisor((tx) =>
       tx.report.findMany({
-        where: { orgId: ownerOrgId, status: { in: EXPORTABLE_STATUSES } },
+        where: {
+          orgId: ownerOrgId,
+          status: { in: EXPORTABLE_STATUSES },
+          ...(hasShareFilters(filters) ? { study: studyMatchesFilters(filters) } : {}),
+        },
         orderBy: { generatedAt: "desc" },
       }),
     );
-    return rows.map((r) => ({ id: r.id, title: r.title }));
+    return rows.map((r) => ({ id: r.id, title: r.title, reportType: r.reportType }));
   }
 
   private async decide(
@@ -555,10 +562,8 @@ export class ReportSharingService {
     // RIO-FR-014 (client Q28) — mirrors SharingService.decide.
     const requesterAdminEmail = await this.orgAdminEmail(row.requestingOrgId);
     if (requesterAdminEmail) {
-      const [reportTitleAr, ownerOrgNameAr] = await Promise.all([
-        this.translateForEmail(reportTitle),
-        this.translateForEmail(ownerOrgName),
-      ]);
+      // UAT GEN-03 — names exactly as entered, in emails too.
+      const [reportTitleAr, ownerOrgNameAr] = [reportTitle, ownerOrgName];
       await this.mailer.sendSharingRequestDecided(requesterAdminEmail, {
         entityLabel: `التقرير "${reportTitleAr}"`,
         otherOrgName: ownerOrgNameAr,

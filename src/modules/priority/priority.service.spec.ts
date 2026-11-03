@@ -346,6 +346,9 @@ describe('PriorityService dashboards', () => {
     tx.scoreRollup.findFirst.mockResolvedValue(rollup());
     tx.scoreRollup.findMany.mockResolvedValue([rollup(), rollup({ severityScore: null })]);
     tx.survey.findUnique.mockResolvedValueOnce({ methodologyVersion: null });
+    // UAT GEN-04: Arabic names come from master data and the question bank.
+    (tx as unknown as Record<string, unknown>).domain = { findMany: vi.fn().mockResolvedValue([]) };
+    (tx as unknown as Record<string, unknown>).subDomain = { findMany: vi.fn().mockResolvedValue([]) };
     const dashboard = await svc.getDashboard('s1', 'sv1', 'v1');
     expect(dashboard.overall).toMatchObject({ severityScore: 2, dontKnowRate: 0.2 });
     expect(dashboard.domains[1]!.severityScore).toBeNull();

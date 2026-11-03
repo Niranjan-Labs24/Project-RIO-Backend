@@ -1,6 +1,5 @@
 import { ROLE_KEYS } from '../../rbac/role-keys';
-import { TranslationService } from '../translation/translation.service';
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma, UserStatus } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-context';
@@ -36,25 +35,7 @@ export class UsersService {
     private readonly audit: AuditService,
     private readonly passwords: PasswordService,
     private readonly mailer: MailerService,
-    // Optional so a unit test that builds the service by hand needs no
-    // stub — arabicEntityName() then just keeps the stored name.
-    @Optional() private readonly translation?: TranslationService,
   ) {}
-
-  // The temporary-password email is Arabic (UAT-11), but the entity name was
-  // interpolated as stored — usually its English name — leaving English
-  // inside the Arabic copy (client-reported). Resolved the same way the
-  // sharing emails resolve names: the national registry's official Arabic
-  // name first, then the live translation. Never fails the send.
-  private async arabicEntityName(name: string): Promise<string> {
-    try {
-      if (!this.translation) return name;
-      const { translatedText } = await this.translation.translate(name, 'ar');
-      return translatedText || name;
-    } catch {
-      return name;
-    }
-  }
 
   async list(opts: { limit?: number; offset?: number } = {}): Promise<OrgUser[]> {
     const { take, skip } = this.page(opts);
@@ -72,12 +53,14 @@ export class UsersService {
     const role = this.validateRole(payload.roleId);
     if (role.id === NGO_ADMIN_ROLE_ID) this.assertCanManageNgoAdmin();
     const orgId = requireOrgId();
+    const { name, email } = this.cleanIdentity(payload);
     const { created, orgName } = await this.createUser(() =>
       this.tenant.runInOrgContext(async (tx) => {
+        if (!payload.confirmDuplicateName) await this.assertNameNotInOrg(tx, orgId, name);
         const org = await tx.organisation.findUnique({ where: { id: orgId } });
         const user = await tx.user.create({
           data: {
-            orgId, name: payload.name, email: payload.email, roleId: role.id, status: UserStatus.invited,
+            orgId, name, email, roleId: role.id, status: UserStatus.invited,
             mobileNumber: payload.mobileNumber ? normalizeMobile(payload.mobileNumber) : null,
           },
         });
@@ -127,7 +110,7 @@ export class UsersService {
     );
     // UAT-11 (Ganesh's brief, 2026-09-29) — every system-triggered email
     // defaults to Arabic.
-    await this.mailer.sendTemporaryPassword(email, await this.arabicEntityName(orgName), temporaryPassword, 'ar');
+    await this.mailer.sendTemporaryPassword(email, orgName, temporaryPassword, 'ar');
     return { temporaryPasswordEmailed: true };
   }
 
@@ -553,12 +536,14 @@ export class UsersService {
   async createForOrg(payload: CreateForOrgPayload): Promise<InviteUserResponse> {
     this.assertCrossEntity();
     const role = this.validateRole(payload.roleId);
+    const { name, email } = this.cleanIdentity(payload);
     const { created, orgName } = await this.createUser(() =>
       this.tenant.runAsOrg(payload.organizationId, async (tx) => {
+        if (!payload.confirmDuplicateName) await this.assertNameNotInOrg(tx, payload.organizationId, name);
         const org = await tx.organisation.findUnique({ where: { id: payload.organizationId } });
         const user = await tx.user.create({
           data: {
-            orgId: payload.organizationId, name: payload.name, email: payload.email, roleId: role.id, status: UserStatus.invited,
+            orgId: payload.organizationId, name, email, roleId: role.id, status: UserStatus.invited,
             mobileNumber: payload.mobileNumber ? normalizeMobile(payload.mobileNumber) : null,
           },
         });
@@ -645,6 +630,27 @@ export class UsersService {
       }
     }
     return role;
+  }
+
+  // UAT USR-01 — sign-in matches the email in lower case, so a new user's email
+  // is stored the same way; otherwise "Ali@x.sa" and "ali@x.sa" became two
+  // accounts and the duplicate check below never fired.
+  private cleanIdentity(payload: InviteUserPayload): { name: string; email: string } {
+    return { name: payload.name.trim(), email: payload.email.trim().toLowerCase() };
+  }
+
+  // UAT USR-01 — two people may share a name, so a same-name user in the
+  // organization is a warning the admin confirms (confirmDuplicateName), not a block.
+  private async assertNameNotInOrg(tx: Prisma.TransactionClient, orgId: string, name: string): Promise<void> {
+    const sameName = await tx.user.findFirst({
+      where: { orgId, name: { equals: name, mode: 'insensitive' } },
+      select: { id: true },
+    });
+    if (sameName) {
+      throw new ConflictException({
+        error: { code: 'USER_NAME_EXISTS', message: 'A user with this name already exists in this organization' },
+      });
+    }
   }
 
   // Runs a user-creating transaction, translating a duplicate-email unique

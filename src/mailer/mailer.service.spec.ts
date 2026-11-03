@@ -99,6 +99,30 @@ describe('MailerService', () => {
       expect(sent().subject).toBe('فشل النسخ الاحتياطي في RIO — snapshot');
     });
 
+    it('approval: the entity gets the Arabic welcome with its name exactly as entered and the temporary password (UAT ORG-09, GEN-03)', async () => {
+      send.mockResolvedValue({ data: { id: '1' }, error: null });
+      const svc = new MailerService(config());
+      await svc.sendTemporaryPassword('admin@ngo.test', 'Al Noor Society', 'temp-pw-123', 'ar');
+      expect(sent().html).toContain('dir="rtl"');
+      for (const body of [sent().text, sent().html]) {
+        expect(body).toContain('Al Noor Society');
+        expect(body).toContain('temp-pw-123');
+      }
+    });
+
+    it('decline: Arabic email with the name as entered and the reason, HTML-escaped (UAT ORG-09)', async () => {
+      send.mockResolvedValue({ data: { id: '1' }, error: null });
+      const svc = new MailerService(config());
+      await expect(
+        svc.sendOrganizationDeclined('admin@ngo.test', 'Al Noor <Society>', 'الترخيص منتهي & غير ساري'),
+      ).resolves.toBe(true);
+      expect(sent().subject).toBe('لم تتم الموافقة على تسجيل Al Noor <Society> في RIO');
+      expect(sent().text).toContain('السبب: الترخيص منتهي & غير ساري');
+      expect(sent().html).toContain('dir="rtl"');
+      expect(sent().html).toContain('Al Noor &lt;Society&gt;');
+      expect(sent().html).toContain('الترخيص منتهي &amp; غير ساري');
+    });
+
     it('sends the contact enquiry in Arabic', async () => {
       send.mockResolvedValue({ data: { id: '1' }, error: null });
       const svc = new MailerService(config());

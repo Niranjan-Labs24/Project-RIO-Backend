@@ -794,7 +794,7 @@ describe("ReportSharingService.listPage", () => {
     expect(prisma.calls[0]!.where).toEqual({
       AND: [
         { OR: [{ ownerOrgId: "org-owner" }, { requestingOrgId: "org-owner" }] },
-        { ownerOrgId: "org-owner", status: "pending" },
+        { ownerOrgId: "org-owner" },
       ],
     });
   });
@@ -850,7 +850,7 @@ describe('ReportSharingService.listPage', () => {
     expect(prisma.calls[0]!.where).toEqual({
       AND: [
         { OR: [{ ownerOrgId: 'org-owner' }, { requestingOrgId: 'org-owner' }] },
-        { ownerOrgId: 'org-owner', status: 'pending' },
+        { ownerOrgId: 'org-owner' },
       ],
     });
   });

@@ -2,6 +2,7 @@ import type { DocSection, ReportDoc } from '../report-doc';
 import type { SupportedLocale } from '../../translation/translation.types';
 import { localizeKnownLabel } from './report-labels';
 import type { MasterDataAliases } from './master-data-names';
+import { nameMask, withoutNames } from './keep-names';
 import type { Translator } from './translate-content';
 
 /** A translator that can also answer "what do you already have?" in one query.
@@ -196,6 +197,10 @@ export async function sweepRemainingEnglish(
     translator: BulkTranslator;
     concurrency?: number;
     budgetMs?: number;
+    /** UAT GEN-03 — names as entered (study titles, organisation and people's
+     *  names). Never translated: a string that IS one is kept, and inside a
+     *  longer string each one is masked for the translator and put back. */
+    keepNames?: readonly string[];
   },
 ): Promise<SweepResult> {
   const stats: SweepStats = {
@@ -212,12 +217,22 @@ export async function sweepRemainingEnglish(
 
   const resolved = new Map<string, string>();
   const needsAi = new Set<string>();
+  const names = nameMask(deps.keepNames);
+  // What the translator sees for a string containing names.
+  const masked = new Map<string, string>();
+  const unmask = (source: string, translated: string): string | null =>
+    masked.has(source) ? names.unmask(source, translated) : translated;
+  const aiText = (source: string): string => masked.get(source) ?? source;
 
   // Pass 1 — classify every distinct string without changing anything.
   mapDocStrings(doc, (text) => {
     const t = text.trim();
     if (!t || resolved.has(text) || needsAi.has(text)) return text;
     if (!HAS_ENGLISH.test(t)) return text;
+    if (names.isName(t)) {
+      stats.keptAsIs++;
+      return text;
+    }
 
     // Catalogue and master data are consulted BEFORE the keep-list, not after.
     // Order matters here and getting it wrong is silent: enum VALUES a reader
@@ -245,6 +260,15 @@ export async function sweepRemainingEnglish(
       return text;
     }
 
+    const m = names.mask(text);
+    if (m.count > 0) {
+      // Nothing but names and punctuation left: nothing to translate.
+      if (!HAS_ENGLISH.test(withoutNames(m.text))) {
+        stats.keptAsIs++;
+        return text;
+      }
+      masked.set(text, m.text);
+    }
     needsAi.add(text);
     return text;
   });
@@ -253,11 +277,12 @@ export async function sweepRemainingEnglish(
   // the whole job in one query instead of one round trip per string.
   let pending = [...needsAi];
   if (pending.length > 0 && deps.translator.cachedTranslations) {
-    const cached = await deps.translator.cachedTranslations(pending, locale);
+    const cached = await deps.translator.cachedTranslations(pending.map(aiText), locale);
     const misses: string[] = [];
     for (const source of pending) {
-      const hit = cached.get(source);
-      if (hit === undefined || hit === source) {
+      const raw = cached.get(aiText(source));
+      const hit = raw === undefined || raw === aiText(source) ? undefined : (unmask(source, raw) ?? undefined);
+      if (hit === undefined) {
         misses.push(source);
         continue;
       }
@@ -287,9 +312,10 @@ export async function sweepRemainingEnglish(
           stats.unresolved.push(source);
           continue;
         }
-        const { translatedText } = await deps.translator.translate(source, locale);
+        const { translatedText: raw } = await deps.translator.translate(aiText(source), locale);
+        const translatedText = raw === aiText(source) ? source : unmask(source, raw);
 
-        if (translatedText === source) {
+        if (translatedText === null || translatedText === source) {
           stats.unresolved.push(source);
           continue;
         }

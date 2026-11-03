@@ -68,6 +68,10 @@ const EXPORT_LABELS: Record<SupportedLocale, { sheet: string; name: string; emai
 function exportQuestionText(q: MappedQuestion, locale: SupportedLocale): string {
   return locale === 'ar' && q.questionTextAr ? q.questionTextAr : q.questionText;
 }
+/** UAT SVB-07: an "Other" answer carries the respondent's own words. */
+function withOtherText(answer: string, other: string | null): string {
+  return other ? `${answer} — ${other}` : answer;
+}
 function exportAnswer(q: MappedQuestion, answer: string, locale: SupportedLocale): string {
   if (locale !== 'ar' || !answer || !q.answerOptions || !q.answerOptionsAr) return answer;
   const toAr = (part: string) => {
@@ -355,6 +359,7 @@ export class PublicSurveysService {
         respondentName: r.contactName,
         contact: r.contact,
         answer: this.resolveAnswerAcrossVersions((r.answers ?? {}) as Record<string, string>, ids),
+        otherText: this.resolveOtherAcrossVersions((r.answers ?? {}) as Record<string, string>, ids),
         submittedAt: r.submittedAt.toISOString(),
       })),
     };
@@ -403,7 +408,10 @@ export class PublicSurveysService {
               this.resolveResponseVersion(answers, versionMap, locale),
               ...questions.map((q) =>
                 sanitizeForSpreadsheet(
-                  exportAnswer(q, this.resolveAnswerAcrossVersions(answers, [q.questionId, ...q.aliasIds]) ?? '', locale),
+                  withOtherText(
+                    exportAnswer(q, this.resolveAnswerAcrossVersions(answers, [q.questionId, ...q.aliasIds]) ?? '', locale),
+                    this.resolveOtherAcrossVersions(answers, [q.questionId, ...q.aliasIds]),
+                  ),
                 ),
               ),
             ]
@@ -470,7 +478,10 @@ export class PublicSurveysService {
               questions.map((q) => [
                 q.questionId,
                 sanitizeForSpreadsheet(
-                  exportAnswer(q, this.resolveAnswerAcrossVersions(answers, [q.questionId, ...q.aliasIds]) ?? '', locale),
+                  withOtherText(
+                    exportAnswer(q, this.resolveAnswerAcrossVersions(answers, [q.questionId, ...q.aliasIds]) ?? '', locale),
+                    this.resolveOtherAcrossVersions(answers, [q.questionId, ...q.aliasIds]),
+                  ),
                 ),
               ]),
             ),
@@ -665,10 +676,29 @@ export class PublicSurveysService {
   // sharing its text — checking only the requested id silently returns "no
   // answer" for any response that was actually collected under a different
   // version's copy of the same question.
+  // UAT SVB-07: the free text a respondent typed after choosing "Other",
+  // stored next to the answer under `<question id>:other`.
+  private resolveOtherAcrossVersions(rawAnswers: Record<string, string>, ids: string[]): string | null {
+    for (const id of ids) {
+      const text = rawAnswers[`${id}:other`];
+      if (typeof text === 'string' && text.trim()) return text.trim();
+    }
+    return null;
+  }
+
   private resolveAnswerAcrossVersions(rawAnswers: Record<string, string>, ids: string[]): string | null {
     for (const id of ids) {
-      const answer = rawAnswers[id];
-      if (answer && answer.trim()) return answer;
+      // Stored answers are normally strings ("a, b" for multi-choice), but a
+      // list or a number must never break an export or a response screen.
+      const raw: unknown = rawAnswers[id];
+      const answer = Array.isArray(raw)
+        ? raw.map(String).join(', ')
+        : typeof raw === 'number'
+          ? String(raw)
+          : typeof raw === 'string'
+            ? raw
+            : '';
+      if (answer.trim()) return answer;
     }
     return null;
   }
@@ -722,6 +752,7 @@ export class PublicSurveysService {
         answerType: q.answerType,
         answerOptions: q.answerOptions,
         answer: rawAnswers[q.questionId] ?? null,
+        otherText: this.resolveOtherAcrossVersions(rawAnswers, [q.questionId]),
       }));
     return { ...this.toResponseSummary(row), answers };
   }

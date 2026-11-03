@@ -1,6 +1,11 @@
 import { parseDateParam } from "../../common/validation/bounded";
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { hasShareFilters, requestableOrgWhere, studyMatchesFilters, type ShareFilters } from "./share-filters";
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException, Optional, forwardRef } from "@nestjs/common";
+import type { Prisma } from "../../generated/prisma";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
+import { ReportsService } from "../reports/reports.service";
+import { EXPORTABLE_STATUSES } from "../reports/reports.types";
+import type { SharedReportSnapshot } from "../report-sharing/report-sharing.types";
 import { getOrgStore, requireActor, requireOrgId } from "../../tenancy/org-context";
 import { roleByKey } from "../../rbac/role-matrix";
 import { AuditService } from "../audit/audit.service";
@@ -15,6 +20,11 @@ import type {
 // schema.prisma) — a request is inherently visible to both the owning and
 // requesting orgs, plus the cross-entity Center Supervisor. Authorization
 // is enforced here instead of at the DB layer.
+/** A study can be requested once it has at least one approved need. */
+const SHAREABLE_STUDY = {
+  needs: { some: { status: { in: ["reviewer_approved", "survey_created", "survey_published"] } } },
+} satisfies Prisma.StudyWhereInput;
+
 @Injectable()
 export class SharingService {
   constructor(
@@ -22,6 +32,9 @@ export class SharingService {
     private readonly audit: AuditService,
     private readonly mailer: MailerService,
     private readonly translation: TranslationService,
+    // UAT SHR-04 — reads a shared study's report; optional so unit tests that
+    // build the service by hand need no stub.
+    @Optional() @Inject(forwardRef(() => ReportsService)) private readonly reports?: ReportsService,
   ) {}
 
   private isCrossEntity(): boolean {
@@ -41,17 +54,6 @@ export class SharingService {
       tx.user.findFirst({ where: { orgId, roleId: "role_ngo_admin" }, select: { email: true } }),
     );
     return admin?.email ?? null;
-  }
-
-  // The email templates' surrounding copy is Arabic, but a study title or
-  // organisation name is free text with no stored Arabic of its own (unlike
-  // Question Bank master data) — resolved live here the same way
-  // PublicSurveysService.shareLinkByEmail does for the Need title, so the
-  // email doesn't read as Arabic wrapped around untranslated English
-  // (client-reported: study/org names stayed English in the decided email).
-  private async translateForEmail(text: string): Promise<string> {
-    const { translatedText } = await this.translation.translate(text, "ar");
-    return translatedText;
   }
 
   async create(payload: CreateSharingRequestPayload): Promise<SharingRequest> {
@@ -119,10 +121,8 @@ export class SharingService {
     // must never undo the request that was already created.
     const ownerAdminEmail = await this.orgAdminEmail(payload.ownerOrgId);
     if (ownerAdminEmail) {
-      const [studyTitleAr, requestingOrgNameAr] = await Promise.all([
-        this.translateForEmail(study.title),
-        this.translateForEmail(requestingOrgName),
-      ]);
+      // UAT GEN-03 — names exactly as entered, in emails too.
+      const [studyTitleAr, requestingOrgNameAr] = [study.title, requestingOrgName];
       await this.mailer.sendSharingRequestCreated(ownerAdminEmail, {
         entityLabel: `الدراسة "${studyTitleAr}"`,
         otherOrgName: requestingOrgNameAr,
@@ -212,7 +212,9 @@ export class SharingService {
     return this.enrichOne(row);
   }
 
-  async getSharedSnapshot(id: string): Promise<SharedStudySnapshot> {
+  // Who may open a shared study (and its reports): the requester, while the
+  // grant is approved and not expired — or a cross-entity role.
+  private async findViewableOrThrow(id: string) {
     const row = await this.findVisibleOrThrow(id);
     const orgId = requireOrgId();
     if (row.status !== "approved") {
@@ -231,20 +233,113 @@ export class SharingService {
       });
     }
 
+    return row;
+  }
+
+  async getSharedSnapshot(id: string): Promise<SharedStudySnapshot> {
+    const row = await this.findViewableOrThrow(id);
     return this.tenant.runAsSupervisor(async (tx) => {
-      const study = await tx.study.findUnique({ where: { id: row.studyId } });
+      const study = await tx.study.findUnique({
+        where: { id: row.studyId },
+        include: {
+          studyGovernorates: { include: { governorate: { select: { name: true, nameAr: true } } } },
+          studyCenters: { include: { center: { select: { name: true, nameAr: true } } } },
+        },
+      });
       if (!study) throw new NotFoundException({ error: { code: "STUDY_NOT_FOUND", message: "Study not found" } });
       // A Study can hold many Needs now — sharing the whole Study means
       // sharing all of them, not "the" one.
       const needs = await tx.need.findMany({ where: { studyId: row.studyId }, orderBy: { createdAt: "asc" } });
-      const evidenceCount = await tx.evidence.count({ where: { studyId: row.studyId } });
+      const needIds = needs.map((n) => n.id);
+      const [evidenceCount, owner, scores, surveys, responses, reports] = await Promise.all([
+        tx.evidence.count({ where: { studyId: row.studyId } }),
+        tx.organisation.findUnique({ where: { id: row.ownerOrgId }, select: { name: true } }),
+        tx.priorityScore.findMany({
+          where: { needId: { in: needIds }, surveyLinkId: null, approvedAt: { not: null } },
+          orderBy: { scoredAt: "desc" },
+          select: { needId: true, overallScore: true, overrideScore: true },
+        }),
+        tx.survey.findMany({
+          where: { needId: { in: needIds } },
+          orderBy: { version: "desc" },
+          select: { needId: true, status: true },
+        }),
+        tx.surveyResponse.groupBy({ by: ["needId"], where: { needId: { in: needIds } }, _count: true }),
+        // UAT SHR-04 — "through to its report": the study's released reports.
+        tx.report.findMany({
+          where: { studyId: row.studyId, status: { in: EXPORTABLE_STATUSES } },
+          orderBy: { generatedAt: "desc" },
+          select: { id: true, title: true, reportType: true, generatedAt: true },
+        }),
+      ]);
+      const firstBy = <T extends { needId: string }>(rows: T[]) => {
+        const m = new Map<string, T>();
+        for (const r of rows) if (!m.has(r.needId)) m.set(r.needId, r);
+        return m;
+      };
+      const scoreBy = firstBy(scores);
+      const surveyBy = firstBy(surveys);
+      const responsesBy = new Map(responses.map((r) => [r.needId, r._count]));
       return {
         studyId: study.id,
         title: study.title,
-        needs: needs.map((n) => ({ id: n.id, statement: n.statement, village: n.village, status: n.status })),
+        needs: needs.map((n) => {
+          const score = scoreBy.get(n.id);
+          return {
+            id: n.id,
+            statement: n.statement,
+            village: n.village,
+            status: n.status,
+            title: n.title,
+            domain: n.domain,
+            subDomain: n.subDomain,
+            priorityScore: score ? (score.overrideScore ?? score.overallScore) : null,
+            surveyStatus: surveyBy.get(n.id)?.status ?? null,
+            responseCount: responsesBy.get(n.id) ?? 0,
+          };
+        }),
         evidenceCount,
+        ownerOrgName: owner?.name ?? row.ownerOrgId,
+        studyType: study.studyType,
+        targetSector: study.targetSector,
+        population: study.population,
+        governorates: study.studyGovernorates.map((g) => g.governorate),
+        centers: study.studyCenters.map((c) => c.center),
+        createdAt: study.createdAt.toISOString(),
+        reports: reports.map((r) => ({ ...r, reportType: String(r.reportType), generatedAt: r.generatedAt.toISOString() })),
       };
     });
+  }
+
+  // UAT SHR-04 — one of the shared study's released reports, read-only, under
+  // the same grant as the study itself (no separate report request needed).
+  async getSharedStudyReport(id: string, reportId: string): Promise<SharedReportSnapshot> {
+    const row = await this.findViewableOrThrow(id);
+    if (!this.reports) throw new NotFoundException({ error: { code: "REPORT_NOT_FOUND", message: "Report not found" } });
+    const report = await this.reports.findAcrossOrgsOrThrow(reportId);
+    if (report.studyId !== row.studyId || !EXPORTABLE_STATUSES.includes(report.status)) {
+      throw new NotFoundException({ error: { code: "REPORT_NOT_FOUND", message: "Report not found" } });
+    }
+    const [owner, generatedBy] = await Promise.all([
+      this.tenant.runAsSupervisor((tx) => tx.organisation.findUnique({ where: { id: row.ownerOrgId }, select: { name: true } })),
+      this.tenant.runAsSupervisor((tx) => tx.user.findUnique({ where: { id: report.generatedBy }, select: { name: true } })),
+    ]);
+    return {
+      reportId: report.id,
+      title: report.title,
+      reportType: report.reportType,
+      content: report.content,
+      generatedAt: report.generatedAt,
+      ownerOrgName: owner?.name ?? row.ownerOrgId,
+      generatedByName: generatedBy?.name ?? null,
+      officerConfirmedBy: report.officerConfirmedBy,
+      officerConfirmedByName: report.officerConfirmedByName,
+      officerConfirmedAt: report.officerConfirmedAt,
+      reviewedBy: report.reviewedBy,
+      reviewedByName: report.reviewedByName,
+      reviewedByRole: report.reviewedByRole,
+      reviewedAt: report.reviewedAt,
+    };
   }
 
   // Organizations searchable for a new sharing request — name-only, active
@@ -253,14 +348,19 @@ export class SharingService {
   // rls_domain migration) — a bare PrismaService read here would silently
   // return nothing for every other org, so this goes through the same
   // SELECT-only supervisor path as the cross-org study lookups.
-  async lookupOrganizations(query: string | undefined): Promise<OrgLookupResult[]> {
+  async lookupOrganizations(
+    query: string | undefined,
+    filters: ShareFilters = {},
+  ): Promise<OrgLookupResult[]> {
     const orgId = requireOrgId();
     const rows = await this.tenant.runAsSupervisor((tx) =>
       tx.organisation.findMany({
         where: {
-          id: { not: orgId },
-          isActive: true,
-          ...(query ? { name: { contains: query, mode: "insensitive" } } : {}),
+          ...requestableOrgWhere(orgId, query),
+          // With filters, only entities that own a matching shareable study.
+          ...(hasShareFilters(filters)
+            ? { studies: { some: { ...SHAREABLE_STUDY, ...studyMatchesFilters(filters) } } }
+            : {}),
         },
         orderBy: { name: "asc" },
         take: 20,
@@ -273,12 +373,12 @@ export class SharingService {
   // the only ones eligible to be requested for sharing. Study/Need are
   // RLS-scoped per org, so a cross-org read has to go through the same
   // SELECT-only supervisor path used elsewhere for cross-org lookups.
-  async lookupStudiesForOrg(ownerOrgId: string): Promise<StudyLookupResult[]> {
+  async lookupStudiesForOrg(ownerOrgId: string, filters: ShareFilters = {}): Promise<StudyLookupResult[]> {
     const rows = await this.tenant.runAsSupervisor((tx) =>
       tx.study.findMany({
         where: {
           orgId: ownerOrgId,
-          needs: { some: { status: { in: ["reviewer_approved", "survey_created", "survey_published"] } } },
+          AND: [SHAREABLE_STUDY, studyMatchesFilters(filters)],
         },
         orderBy: { updatedAt: "desc" },
       }),
@@ -369,10 +469,8 @@ export class SharingService {
     // RIO-FR-014 (client Q28) — the requester learns the outcome.
     const requesterAdminEmail = await this.orgAdminEmail(row.requestingOrgId);
     if (requesterAdminEmail) {
-      const [studyTitleAr, ownerOrgNameAr] = await Promise.all([
-        this.translateForEmail(studyTitle),
-        this.translateForEmail(ownerOrgName),
-      ]);
+      // UAT GEN-03 — names exactly as entered, in emails too.
+      const [studyTitleAr, ownerOrgNameAr] = [studyTitle, ownerOrgName];
       await this.mailer.sendSharingRequestDecided(requesterAdminEmail, {
         entityLabel: `الدراسة "${studyTitleAr}"`,
         otherOrgName: ownerOrgNameAr,

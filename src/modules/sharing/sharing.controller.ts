@@ -1,10 +1,12 @@
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
+import { parseShareFilters } from "./share-filters";
 import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { RequirePermission } from "../../common/guards/permission.guard";
 import { parseIntParam } from "../../common/http/query.util";
 import { TypeBoxValidationPipe } from "../../contract/validation.pipe";
 import { CreateSharingRequestBody, DecideSharingRequestBody } from "./sharing.contract";
 import { SharingService } from "./sharing.service";
+import type { SharedReportSnapshot } from "../report-sharing/report-sharing.types";
 import type {
   CreateSharingRequestPayload, DecideSharingRequestPayload, OrgLookupResult, SharedStudySnapshot,
   SharingRequest, StudyLookupResult,
@@ -35,14 +37,18 @@ export class SharingController {
   // paths first instead of treating "lookup" as an :id.
   @Get("lookup/organizations")
   @RequirePermission("archiveSharingAudit", "create")
-  lookupOrganizations(@Query("query") query?: string): Promise<OrgLookupResult[]> {
-    return this.sharing.lookupOrganizations(query);
+  lookupOrganizations(@Query() q: Record<string, unknown>): Promise<OrgLookupResult[]> {
+    const query = typeof q.query === "string" ? q.query : undefined;
+    return this.sharing.lookupOrganizations(query, parseShareFilters(q));
   }
 
   @Get("lookup/organizations/:orgId/studies")
   @RequirePermission("archiveSharingAudit", "create")
-  lookupStudiesForOrg(@Param("orgId", new UuidParamPipe()) orgId: string): Promise<StudyLookupResult[]> {
-    return this.sharing.lookupStudiesForOrg(orgId);
+  lookupStudiesForOrg(
+    @Param("orgId", new UuidParamPipe()) orgId: string,
+    @Query() q: Record<string, unknown>,
+  ): Promise<StudyLookupResult[]> {
+    return this.sharing.lookupStudiesForOrg(orgId, parseShareFilters(q));
   }
 
   @Get(":id")
@@ -79,5 +85,15 @@ export class SharingController {
   @RequirePermission("archiveSharingAudit", "read")
   getSharedSnapshot(@Param("id", new UuidParamPipe()) id: string): Promise<SharedStudySnapshot> {
     return this.sharing.getSharedSnapshot(id);
+  }
+
+  // UAT SHR-04 — a released report of the shared study, read-only.
+  @Get(":id/shared-study/reports/:reportId")
+  @RequirePermission("archiveSharingAudit", "read")
+  getSharedStudyReport(
+    @Param("id", new UuidParamPipe()) id: string,
+    @Param("reportId", new UuidParamPipe()) reportId: string,
+  ): Promise<SharedReportSnapshot> {
+    return this.sharing.getSharedStudyReport(id, reportId);
   }
 }

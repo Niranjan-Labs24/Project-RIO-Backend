@@ -244,6 +244,11 @@ model Organisation {
   // which is inherently pre-approved and skips this gate entirely.
   approvedAt         DateTime? @map("approved_at") @db.Timestamptz(6)
   approvedBy         String?   @map("approved_by") @db.Uuid
+  // UAT ORG-09 — a registration the System Admin declined, with the reason
+  // the entity was emailed. Null when never declined; cleared on approval.
+  declinedAt         DateTime? @map("declined_at") @db.Timestamptz(6)
+  declinedBy         String?   @map("declined_by") @db.Uuid
+  declineReason      String?   @map("decline_reason") @db.VarChar(2000)
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -972,6 +977,11 @@ model Initiative {
   // client wants map-level initiative plotting (client Q39 explicitly
   // deferred this out of the FR-008 map for Sprint 3).
   geography           String?
+  // UAT INI-01 — the scope picked from the geographic reference (same as a
+  // Study). `geography` above keeps the readable names for display.
+  regionIds           String[]  @default([]) @map("region_ids") @db.Uuid
+  governorateIds      String[]  @default([]) @map("governorate_ids") @db.Uuid
+  centerIds           String[]  @default([]) @map("center_ids") @db.Uuid
   startDate           DateTime? @map("start_date") @db.Date
   expectedEndDate     DateTime? @map("expected_end_date") @db.Date
   status              String    @default("active") @db.VarChar(30)

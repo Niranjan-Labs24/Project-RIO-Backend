@@ -23,7 +23,8 @@ export interface UpdateQuestionInput {
 }
 
 export interface CreateQuestionInput {
-  questionId: string;
+  /** Ignored — UAT MET-05: the code is generated from the domain (see nextQuestionId). */
+  questionId?: string;
   domain: string;
   subDomain: string;
   indicator?: string;
@@ -372,7 +373,16 @@ export class QuestionsService {
         },
       });
     }
-    if (current.approvalStatus === 'pending_approval') {
+    // The pending change lives on its OWN row, so the current (approved) row
+    // never carries the status itself. Without this check a second change
+    // collided with the first on the version number and failed with a 500
+    // (UAT MET-01: "تعذّر حفظ التغييرات" on deactivating a question).
+    const pendingChange =
+      current.approvalStatus === 'pending_approval' ||
+      (await this.tenant.runAsSupervisor((tx) =>
+        tx.question.count({ where: { previousVersionId: current.id, approvalStatus: 'pending_approval' } }),
+      )) > 0;
+    if (pendingChange) {
       throw new ConflictException({
         error: {
           code: 'QUESTION_HAS_PENDING_CHANGE',
@@ -450,9 +460,42 @@ export class QuestionsService {
   // until this becomes it. It still can't be recommended or selected for a
   // new survey while pending: selectableWhere requires
   // approvalStatus:'approved' as well, which this only gets on approval.
+  // UAT MET-05 — a new question's code follows its domain's prefix and
+  // sequence in upper case (GOV-20 after GOV-19), the way the methodology
+  // numbers its own questions; typed codes produced "hlt-070" for a
+  // Governance question. The prefix is the one the domain's questions in this
+  // version already use, so it matches whatever the imported methodology chose.
+  async nextQuestionId(domain: string, methodologyVersionId?: string): Promise<string> {
+    const versionId = methodologyVersionId ?? (await this.resolveVersionId());
+    const ids = await this.tenant.runAsSupervisor(async (tx) => {
+      const inDomain = await tx.question.findMany({
+        where: { methodologyVersionId: versionId, domain },
+        select: { questionId: true },
+      });
+      return inDomain.map((q) => q.questionId);
+    });
+    const counts = new Map<string, number>();
+    for (const id of ids) {
+      const m = /^([A-Za-z]+)-\d+$/.exec(id);
+      if (m) counts.set(m[1]!.toUpperCase(), (counts.get(m[1]!.toUpperCase()) ?? 0) + 1);
+    }
+    const prefix =
+      [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ??
+      (domain.replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase() || 'Q');
+    const used = await this.tenant.runAsSupervisor((tx) =>
+      tx.question.findMany({
+        where: { methodologyVersionId: versionId, questionId: { startsWith: `${prefix}-`, mode: 'insensitive' } },
+        select: { questionId: true },
+      }),
+    );
+    const max = used.reduce((n, q) => Math.max(n, Number(/-(\d+)$/.exec(q.questionId)?.[1] ?? 0)), 0);
+    return `${prefix}-${String(max + 1).padStart(2, '0')}`;
+  }
+
   async create(input: CreateQuestionInput) {
     const actorId = requireActor();
     const methodologyVersionId = await this.resolveVersionId();
+    const questionId = await this.nextQuestionId(input.domain, methodologyVersionId);
 
     if ((input.answerType === 'select' || input.answerType === 'multiselect' || input.answerType === 'checklist')
       && (!input.answerOptions || input.answerOptions.length === 0)) {
@@ -469,7 +512,7 @@ export class QuestionsService {
       created = await this.tenant.runAsSupervisorWrite((tx) =>
         tx.question.create({
           data: {
-            questionId: input.questionId,
+            questionId,
             domain: input.domain,
             subDomain: input.subDomain,
             indicator: input.indicator ?? null,
@@ -503,7 +546,7 @@ export class QuestionsService {
         throw new ConflictException({
           error: {
             code: 'QUESTION_ID_TAKEN',
-            message: `"${input.questionId}" already exists in this methodology version.`,
+            message: `"${questionId}" already exists in this methodology version.`,
           },
         });
       }

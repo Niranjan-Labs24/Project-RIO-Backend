@@ -331,7 +331,7 @@ export class ReportsService {
       content,
       locale,
       this.translation,
-      { budgetMs: VIEW_TRANSLATION_BUDGET_MS },
+      { budgetMs: VIEW_TRANSLATION_BUDGET_MS, keepNames: await this.keepNames(report.studyId) },
     );
     if (failed > 0 || (skipped ?? 0) > 0) {
       this.logger.warn(
@@ -553,6 +553,7 @@ export class ReportsService {
         locale,
         aliases,
         this.translation,
+      await this.keepNames(row.studyId),
       );
     }
 
@@ -579,7 +580,23 @@ export class ReportsService {
       locale,
       aliases,
       this.translation,
+      await this.keepNames(row.studyId),
     );
+  }
+
+  // UAT GEN-03 — names that must reach a report exactly as entered: every
+  // organisation's name and the report's study title (platform reference
+  // data and the report's own study, read the same way for every caller).
+  private async keepNames(studyId: string | null): Promise<string[]> {
+    return this.tenant
+      .runAsSupervisor(async (tx) => {
+        const [orgs, study] = await Promise.all([
+          tx.organisation.findMany({ select: { name: true } }),
+          studyId ? tx.study.findUnique({ where: { id: studyId }, select: { title: true } }) : null,
+        ]);
+        return [...orgs.map((o) => o.name), ...(study ? [study.title] : [])];
+      })
+      .catch(() => []);
   }
 
   /**
@@ -605,6 +622,7 @@ export class ReportsService {
       content,
       locale,
       this.translation,
+      { keepNames: await this.keepNames(row.studyId) },
     );
     if (failed > 0) {
       this.logger.warn(
@@ -717,6 +735,7 @@ export class ReportsService {
       locale,
       aliases,
       this.translation,
+      await this.keepNames(row.studyId),
     );
   }
 

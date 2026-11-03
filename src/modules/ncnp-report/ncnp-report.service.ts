@@ -537,13 +537,8 @@ export class NcnpReportService {
     });
     const actorId = requireActor();
     const actor = await this.tenant.runAsSupervisor((tx) => tx.user.findUnique({ where: { id: actorId }, select: { name: true } }));
-    let generatedByName = actor?.name ?? '—';
-    // The Arabic screen shows this name translated (and the Excel sweep
-    // translates it too); the PDF printed it as stored, so the same report
-    // named its author two ways.
-    if (locale === 'ar' && this.translation && actor?.name) {
-      generatedByName = (await this.translation.translate(actor.name, 'ar')).translatedText;
-    }
+    const generatedByName = actor?.name ?? '—';
+    // UAT GEN-03 — the author's name as entered, on screen, in PDF and in Excel.
     if (format === 'pdf') {
       return {
         filename: `ncnp-compiled-report-${dateStamp}.pdf`,
@@ -572,7 +567,13 @@ export class NcnpReportService {
     const aliases = await this.tenant.runAsSupervisor((tx) => loadMasterDataAliases(tx as never, locale)).catch(() => NO_ALIASES);
     let doc = localizeDataValues(buildNcnpReportDoc(report, generatedByName, auditRows, locale), aliases);
     if (this.translation && locale === 'ar') {
-      doc = (await sweepRemainingEnglish(doc, locale, { aliases, translator: this.translation })).doc;
+      // UAT GEN-03 — entity and people's names stay as entered.
+      const orgNames = await this.tenant
+        .runAsSupervisor((tx) => tx.organisation.findMany({ select: { name: true } }))
+        .then((rows) => rows.map((o) => o.name))
+        .catch(() => [] as string[]);
+      const keepNames = [...orgNames, generatedByName];
+      doc = (await sweepRemainingEnglish(doc, locale, { aliases, translator: this.translation, keepNames })).doc;
     }
     return renderReportExcel(doc, locale);
   }

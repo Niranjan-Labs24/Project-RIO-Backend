@@ -316,9 +316,25 @@ describe("SharingService.getSharedSnapshot", () => {
       ...base,
       runAsSupervisor: async (fn: (tx: unknown) => unknown) =>
         fn({
-          study: { findUnique: async () => STUDY },
-          need: { findMany: async () => [{ id: "n1", statement: "Need water", village: ["V1"], status: "reviewer_approved" }] },
+          study: {
+            findUnique: async () => ({
+              ...STUDY,
+              createdAt: new Date("2026-11-01T00:00:00Z"),
+              studyGovernorates: [{ governorate: { name: "Ad-Dawadmi", nameAr: "الدوادمي" } }],
+              studyCenters: [],
+            }),
+          },
+          need: {
+            findMany: async () => [
+              { id: "n1", title: "Water", statement: "Need water", village: ["V1"], status: "survey_published", domain: "Water & Sanitation", subDomain: "Drinking Water Access" },
+            ],
+          },
           evidence: { count: async () => 2 },
+          organisation: { findUnique: async () => ({ name: "Owner Org" }) },
+          priorityScore: { findMany: async () => [{ needId: "n1", overallScore: 70, overrideScore: 82 }] },
+          survey: { findMany: async () => [{ needId: "n1", status: "PUBLISHED" }] },
+          surveyResponse: { groupBy: async () => [{ needId: "n1", _count: 12 }] },
+          report: { findMany: async () => [{ id: "r1", title: "Village report", reportType: "RPT14", generatedAt: new Date("2026-11-02T00:00:00Z") }] },
         }),
     };
   }
@@ -371,5 +387,9 @@ describe("SharingService.getSharedSnapshot", () => {
     expect(snapshot.title).toBe(STUDY.title);
     expect(snapshot.needs).toHaveLength(1);
     expect(snapshot.evidenceCount).toBe(2);
+    // UAT SHR-04 — the full study: details, each need's score / survey / responses, its reports.
+    expect(snapshot.needs[0]).toMatchObject({ title: "Water", priorityScore: 82, surveyStatus: "PUBLISHED", responseCount: 12 });
+    expect(snapshot).toMatchObject({ ownerOrgName: "Owner Org", governorates: [{ name: "Ad-Dawadmi", nameAr: "الدوادمي" }] });
+    expect(snapshot.reports).toEqual([{ id: "r1", title: "Village report", reportType: "RPT14", generatedAt: "2026-11-02T00:00:00.000Z" }]);
   });
 });

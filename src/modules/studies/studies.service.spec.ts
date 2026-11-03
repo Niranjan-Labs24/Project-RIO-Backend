@@ -78,6 +78,7 @@ function setup(names: { types?: string[]; sectors?: string[] } = {}) {
     countCentersIn: vi.fn().mockResolvedValue(0),
     findGovernoratesByIds: vi.fn().mockResolvedValue([]),
     findCentersByIds: vi.fn().mockResolvedValue([]),
+    governorateIdsWithCenters: vi.fn().mockResolvedValue(new Set<string>()),
   };
   const studyConfig = {
     listActiveStudyTypeNames: vi.fn().mockResolvedValue(names.types ?? ['baseline']),
@@ -175,6 +176,20 @@ describe('StudiesService.create', () => {
     await expect(asOrg(() => svc.create(noCenters))).rejects.toMatchObject({
       response: { error: { code: 'STUDY_CENTER_REQUIRED' } },
     });
+  });
+
+  it('UAT STU-01: refuses a governorate whose own centers were not selected', async () => {
+    const { svc, geography } = setup();
+    // Ad-Dilam (g1) and Ad-Dawadmi (g2) both have centers; only g2's centre was picked.
+    geography.governorateIdsWithCenters.mockResolvedValue(new Set(['g1', 'g2']));
+    geography.findCentersByIds.mockResolvedValue([{ id: 'c2', governorateId: 'g2' }]);
+    const leaky = { ...(payload as object), governorateIds: ['g1', 'g2'], centerIds: ['c2'] } as never;
+    await expect(asOrg(() => svc.create(leaky))).rejects.toMatchObject({
+      response: { error: { code: 'STUDY_CENTER_PER_GOVERNORATE_REQUIRED', details: { governorateIds: ['g1'] } } },
+    });
+    // A governorate with no centers at all in the reference data is still fine.
+    geography.governorateIdsWithCenters.mockResolvedValue(new Set(['g2']));
+    await expect(asOrg(() => svc.create(leaky))).resolves.toBeTruthy();
   });
 
   it('copes with an organization that has no geography recorded', async () => {

@@ -30,6 +30,27 @@ const ALIASES = new Map([['health', 'الصحة']]);
 const deps = (t: Translator) => ({ aliases: ALIASES, translator: t });
 
 describe('sweepRemainingEnglish', () => {
+  it('keeps names as entered: a name alone is not sent, a name inside a line comes back unchanged (UAT GEN-03)', async () => {
+    const { translator, seen } = fake({ '⟦0⟧ — Village Report': '⟦0⟧ — تقرير القرية' });
+    const out = await sweepRemainingEnglish(
+      doc({ title: 'Al Noor Society — Village Report', headerBand: [{ label: 'Study Name', value: 'Al Noor Society' }] }),
+      'ar',
+      { ...deps(translator), keepNames: ['Al Noor Society'] },
+    );
+    expect(out.doc.title).toBe('Al Noor Society — تقرير القرية');
+    expect(out.doc.headerBand[0]!.value).toBe('Al Noor Society');
+    expect(seen.some((t) => t.includes('Al Noor'))).toBe(false);
+  });
+
+  it('leaves a line as written when the translator drops a name placeholder (UAT GEN-03)', async () => {
+    const { translator } = fake({ '⟦0⟧ — Village Report': 'تقرير القرية' });
+    const out = await sweepRemainingEnglish(doc({ title: 'Al Noor Society — Village Report' }), 'ar', {
+      ...deps(translator),
+      keepNames: ['Al Noor Society'],
+    });
+    expect(out.doc.title).toBe('Al Noor Society — Village Report');
+  });
+
   it('is a no-op in English and calls nothing', async () => {
     const { translator, seen } = fake();
     const d = doc();

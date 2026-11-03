@@ -3,13 +3,14 @@ import { orgContext } from '../../tenancy/org-context';
 import { UsersService } from './users.service';
 import type { UserRow } from './users.types';
 
-function fakeTenant(opts: { rows?: UserRow[]; current?: UserRow | null; onDelete?: (where: unknown) => void }) {
+function fakeTenant(opts: { rows?: UserRow[]; current?: UserRow | null; onDelete?: (where: unknown) => void; sameName?: boolean }) {
   const tx = {
     organisation: {
       findUnique: async () => ({ name: 'Test Org' }),
     },
     user: {
       findMany: async () => opts.rows ?? [],
+      findFirst: async () => (opts.sameName ? { id: 'existing' } : null),
       create: async ({ data }: { data: Record<string, unknown> }) => ({ id: 'new', createdAt: new Date('2026-01-01T00:00:00Z'), ...data }),
       findUnique: async () => opts.current ?? null,
       update: async ({ data }: { data: Record<string, unknown> }) => ({ ...(opts.current as object), ...data }),
@@ -76,6 +77,18 @@ describe('UsersService', () => {
     // the raw password is never returned to the caller anymore.
     expect(u.temporaryPasswordEmailed).toBe(true);
     expect(u.temporaryPassword).toBeUndefined();
+  });
+
+  it('warns on a name already in the organization until confirmed, and stores the email in lower case (UAT USR-01)', async () => {
+    const svc = makeService(fakeTenant({ sameName: true }), auditStub);
+    const run = (confirmDuplicateName?: boolean) =>
+      orgContext.run({ requestId: 'r', orgId: 'o1' }, () =>
+        svc.invite({ name: ' Same Name ', email: ' New@X.org ', roleId: 'role_field_researcher', confirmDuplicateName }),
+      );
+    await expect(run()).rejects.toMatchObject({ response: { error: { code: 'USER_NAME_EXISTS' } } });
+    const u = await run(true);
+    expect(u.name).toBe('Same Name');
+    expect(u.email).toBe('new@x.org');
   });
 
   it('forbids a tenant admin (non-crossEntity) from assigning a crossEntity role (privilege escalation)', async () => {

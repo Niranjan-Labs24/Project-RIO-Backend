@@ -59,6 +59,27 @@ export interface SharedNeedSnapshot {
   statement: string;
   village: string[];
   status: string;
+  // UAT SHR-04 — the full read-only study view.
+  title: string;
+  domain: string | null;
+  subDomain: string | null;
+  /** Latest approved priority score (the reviewer's override when set). */
+  priorityScore: number | null;
+  /** Status of the need's latest survey version, if any. */
+  surveyStatus: string | null;
+  responseCount: number;
+}
+
+export interface SharedPlace {
+  name: string;
+  nameAr: string | null;
+}
+
+export interface SharedReportListItem {
+  id: string;
+  title: string;
+  reportType: string;
+  generatedAt: string;
 }
 
 export interface SharedStudySnapshot {
@@ -67,6 +88,15 @@ export interface SharedStudySnapshot {
   // A Study can hold many Needs — sharing the whole Study shares all of them.
   needs: SharedNeedSnapshot[];
   evidenceCount: number;
+  // UAT SHR-04 — "View full study": its details and its approved reports.
+  ownerOrgName: string;
+  studyType: string | null;
+  targetSector: string | null;
+  population: number | null;
+  governorates: SharedPlace[];
+  centers: SharedPlace[];
+  createdAt: string;
+  reports: SharedReportListItem[];
 }
 
 // Lookup rows for the "search organization → pick its completed study"

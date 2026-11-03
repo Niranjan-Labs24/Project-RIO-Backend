@@ -200,6 +200,8 @@ export class CenterAggregationService {
     // so the equivalent guarantee here is: a domain's own average tier must
     // never be the only visible signal when one of its Needs is
     // individually Critical or High.
+    // UAT PRI-08 — the same means one level down (sub-domain), keyed by domain + sub-domain.
+    const subDomainTotals = new Map<string, Map<string, { domain: string; subDomain: string; sum: number; count: number; criticalCount: number; highCount: number }>>();
     const domainTotals = new Map<
       string,
       Map<string, { sum: number; count: number; criticalCount: number; highCount: number }>
@@ -276,6 +278,7 @@ export class CenterAggregationService {
             priorityStatus: null,
             scoredNeedCount: 0,
             domainBreakdown: [],
+            subDomainBreakdown: [],
             criticalNeedCount: 0,
             highNeedCount: 0,
             needTypeCounts: {},
@@ -286,6 +289,7 @@ export class CenterAggregationService {
           byCenter.set(placeKey, entry);
           totals.set(placeKey, { sum: 0, count: 0 });
           domainTotals.set(placeKey, new Map());
+          subDomainTotals.set(placeKey, new Map());
           if (kind === 'village') contributingCenterNames.set(placeKey, new Set());
         }
 
@@ -331,15 +335,25 @@ export class CenterAggregationService {
           d.sum += effective;
           d.count += 1;
 
+          const subDomainKey = need.subDomain ?? '(unclassified)';
+          const perSub = subDomainTotals.get(placeKey)!;
+          const sk = `${domainKey}\u0000${subDomainKey}`;
+          const sd = perSub.get(sk) ?? { domain: domainKey, subDomain: subDomainKey, sum: 0, count: 0, criticalCount: 0, highCount: 0 };
+          sd.sum += effective;
+          sd.count += 1;
+
           const level = mapPriorityLevel(effective, false, thresholds);
           if (level === 'critical') {
             entry.criticalNeedCount += 1;
             d.criticalCount += 1;
+            sd.criticalCount += 1;
           } else if (level === 'high') {
             entry.highNeedCount += 1;
             d.highCount += 1;
+            sd.highCount += 1;
           }
           perDomain.set(domainKey, d);
+          perSub.set(sk, sd);
         }
 
         // RIO-FR-005 (Round 4, client-confirmed 2026-08-24) — sum only the
@@ -396,6 +410,22 @@ export class CenterAggregationService {
           };
         })
         // Worst first — that is the order a reviewer scanning a place reads in.
+        .sort((a, b) => b.averageScore - a.averageScore);
+      entry.subDomainBreakdown = [...subDomainTotals.get(centerId)!.values()]
+        .map((d) => {
+          const mean = d.sum / d.count;
+          const level = mapPriorityLevel(mean, false, thresholds);
+          return {
+            domain: d.domain,
+            subDomain: d.subDomain,
+            needCount: d.count,
+            averageScore: Math.round(mean * 10) / 10,
+            level,
+            criticalNeedCount: d.criticalCount,
+            highNeedCount: d.highCount,
+            maskedCritical: level !== 'critical' && d.criticalCount > 0,
+          };
+        })
         .sort((a, b) => b.averageScore - a.averageScore);
       entry.villages.sort((a, b) => a.localeCompare(b));
     }

@@ -104,6 +104,8 @@ export async function buildExportStub(
    *  which no content-level pass can reach. Omitted, the export behaves exactly
    *  as before. */
   translator?: Translator,
+  /** UAT GEN-03 — further names to keep as entered (e.g. organisation names). */
+  extraNames?: readonly string[],
 ): Promise<{ filename: string; contentType: string; body: Buffer; sweep?: SweepStats }> {
   const auditRows = auditMetaLines(meta).map((r) => ({ label: r.field, value: r.value }));
   // The audit labels above are still composed in English here and translated
@@ -124,7 +126,10 @@ export async function buildExportStub(
   // the AI only sees genuinely novel prose.
   let sweep: SweepStats | undefined;
   if (translator) {
-    const swept = await sweepRemainingEnglish(doc, locale, { aliases, translator });
+    // UAT GEN-03 — the study title and people's names stay as entered.
+    const keepNames = [meta.studyTitle, meta.generatedByName, meta.officerConfirmedByName, meta.reviewedByName, ...(extraNames ?? [])]
+      .filter((n): n is string => Boolean(n));
+    const swept = await sweepRemainingEnglish(doc, locale, { aliases, translator, keepNames });
     doc = swept.doc;
     sweep = swept.stats;
   }

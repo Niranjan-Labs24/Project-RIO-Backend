@@ -24,6 +24,9 @@ export interface Organization {
   // approved by System Admin (Center approval). Always non-null for an org
   // created directly via createWithAdmin, which skips this gate entirely.
   approvedAt: string | null;
+  /** UAT ORG-09 — when and why System Admin declined the registration. */
+  declinedAt: string | null;
+  declineReason: string | null;
   /** Report Catalog default for this organisation's approved reports
    * (pending client confirmation; no UI yet). */
   catalogDefaultVisible: boolean;
@@ -47,6 +50,7 @@ export interface OrganizationSummary extends Organization {
   responseCount?: number;
   ngoAdminName?: string | null;
   ngoAdminEmail?: string | null;
+  ngoAdminMobile?: string | null;
   deactivationReason?: string | null;
 }
 
@@ -119,6 +123,8 @@ export interface OrgRow {
   centerIds: string[];
   isActive: boolean;
   approvedAt: Date | null;
+  declinedAt?: Date | null;
+  declineReason?: string | null;
   catalogDefaultVisible?: boolean;
   createdAt: Date;
 }

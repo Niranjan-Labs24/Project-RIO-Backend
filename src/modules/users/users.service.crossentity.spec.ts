@@ -25,6 +25,7 @@ function setup() {
     user: {
       findMany: vi.fn().mockResolvedValue([user()]),
       findUnique: vi.fn().mockResolvedValue(user()),
+      findFirst: vi.fn().mockResolvedValue(null),
       create: vi
         .fn()
         .mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>

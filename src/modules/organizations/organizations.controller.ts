@@ -4,8 +4,8 @@ import { RequirePermission } from '../../common/guards/permission.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import { parseIntParam } from '../../common/http/query.util';
 import {
-  CreateOrganizationBody, SetCatalogDefaultBody, UpdateOrganizationBody, UpdateOrganizationStatusBody,
-  type SetCatalogDefaultDto,
+  CreateOrganizationBody, DeclineOrganizationBody, SetCatalogDefaultBody, UpdateOrganizationBody, UpdateOrganizationStatusBody,
+  type DeclineOrganizationDto, type SetCatalogDefaultDto,
 } from './organizations.contract';
 import { OrganizationsService } from './organizations.service';
 import { UsersService } from '../users/users.service';
@@ -73,6 +73,16 @@ export class OrganizationsController {
   @RequirePermission('entityTeam', 'approve')
   approve(@Param('id', new UuidParamPipe()) id: string): Promise<OrganizationSummary> {
     return this.orgs.approve(id);
+  }
+
+  // UAT ORG-09 — the other answer to a registration, same authority.
+  @Patch(':id/decline')
+  @RequirePermission('entityTeam', 'approve')
+  decline(
+    @Param('id', new UuidParamPipe()) id: string,
+    @Body(new TypeBoxValidationPipe(DeclineOrganizationBody)) body: DeclineOrganizationDto,
+  ): Promise<OrganizationSummary> {
+    return this.orgs.decline(id, body.reason);
   }
 
   @Post()

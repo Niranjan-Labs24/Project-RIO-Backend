@@ -14,6 +14,8 @@ export const InviteUserBody = registerSchema(
     // what makes "Sign in with OTP" available to that user later, regardless
     // of role. See UsersService.invite / AuthService.requestLoginOtp.
     mobileNumber: T.Optional(T.String({ maxLength: 32 })),
+    // UAT USR-01 — set once the admin confirms the same-name warning.
+    confirmDuplicateName: T.Optional(T.Boolean()),
   }),
 );
 export type InviteUserDto = Static<typeof InviteUserBody>;

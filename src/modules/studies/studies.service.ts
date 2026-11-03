@@ -194,6 +194,23 @@ export class StudiesService {
           error: { code: 'STUDY_CENTER_REQUIRED', message: 'Select at least one Center.' },
         });
       }
+    }    // UAT STU-01: each governorate that has centers needs one of its OWN
+    // centers — otherwise it rides along on another governorate's centers and
+    // shows up in the study's outputs without being covered.
+    if (centerIds.length > 0 && governorateIds.length > 1) {
+      const withCenters = await this.geography.governorateIdsWithCenters(governorateIds);
+      const centers = await this.geography.findCentersByIds(centerIds);
+      const covered = new Set(centers.map((c) => c.governorateId));
+      const missing = governorateIds.filter((id) => withCenters.has(id) && !covered.has(id));
+      if (missing.length > 0) {
+        throw new BadRequestException({
+          error: {
+            code: 'STUDY_CENTER_PER_GOVERNORATE_REQUIRED',
+            message: 'Select at least one Center in every selected Governorate that has Centers.',
+            details: { governorateIds: missing },
+          },
+        });
+      }
     }
   }
 
@@ -455,6 +472,15 @@ export class StudiesService {
       const changes = await this.withPlaceNames(
         this.diff(current, payload, nextGovernorateIds, nextCenterIds),
       );
+      // UAT STU-04 — the population sizes the sample, so a new population
+      // recalculates it with the study's own margin of error.
+      const populationChanged = payload.population !== undefined && payload.population !== current.population;
+      const resized = populationChanged
+        ? calculateSampleSize(payload.population!, current.marginOfError ?? DEFAULT_MARGIN_OF_ERROR)
+        : null;
+      if (populationChanged) {
+        changes.push({ field: auditFieldLabel('population'), before: current.population, after: payload.population });
+      }
 
       await tx.study.update({
         where: { id },
@@ -464,6 +490,13 @@ export class StudiesService {
           ...(payload.methodologyVersionId !== undefined ? { methodologyVersionId: payload.methodologyVersionId } : {}),
           ...(payload.studyType !== undefined ? { studyType: payload.studyType } : {}),
           ...(payload.targetSector !== undefined ? { targetSector: payload.targetSector } : {}),
+          ...(resized
+            ? {
+                population: payload.population,
+                requiredSampleSize: resized.requiredSampleSize,
+                minimumDetectableEffect: resized.minimumDetectableEffect,
+              }
+            : {}),
         },
       });
 

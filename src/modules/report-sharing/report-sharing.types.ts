@@ -87,6 +87,8 @@ export interface OrgLookupResult {
 export interface ReportLookupResult {
   id: string;
   title: string;
+  /** So the picker can show the report type in the page language (GEN-03). */
+  reportType: string;
 }
 
 /**

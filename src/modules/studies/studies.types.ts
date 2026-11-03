@@ -112,6 +112,8 @@ export interface UpdateStudyPayload {
   methodologyVersionId?: string;
   studyType?: string;
   targetSector?: string;
+  /** UAT STU-04 — the study scope's population; recalculates the required sample size. */
+  population?: number;
 }
 
 export interface ListStudiesQuery {

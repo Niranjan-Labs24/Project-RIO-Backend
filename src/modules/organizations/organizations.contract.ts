@@ -103,3 +103,10 @@ export const UpdateOrganizationStatusBody = registerSchema(
   }),
 );
 export type UpdateOrganizationStatusDto = Static<typeof UpdateOrganizationStatusBody>;
+
+// UAT ORG-09 — declining a self-registration; the reason is mandatory.
+export const DeclineOrganizationBody = registerSchema(
+  'DeclineOrganizationBody',
+  T.Object({ reason: T.String({ minLength: 1, maxLength: 2000 }) }, { additionalProperties: false }),
+);
+export type DeclineOrganizationDto = Static<typeof DeclineOrganizationBody>;

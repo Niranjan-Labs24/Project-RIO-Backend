@@ -1,4 +1,5 @@
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
+import { parseShareFilters } from "../sharing/share-filters";
 import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { parsePaging, type Page } from "../../common/http/query.util";
 import { RequirePermission } from "../../common/guards/permission.guard";
@@ -39,8 +40,9 @@ export class ReportSharingController {
   // paths first instead of treating "lookup" as an :id.
   @Get("lookup/organizations")
   @RequirePermission("archiveSharingAudit", "create")
-  lookupOrganizations(@Query("query") query?: string): Promise<OrgLookupResult[]> {
-    return this.reportSharing.lookupOrganizations(query);
+  lookupOrganizations(@Query() q: Record<string, unknown>): Promise<OrgLookupResult[]> {
+    const query = typeof q.query === "string" ? q.query : undefined;
+    return this.reportSharing.lookupOrganizations(query, parseShareFilters(q));
   }
 
   // Same gate as the lookups below: the catalog is where a request starts.
@@ -52,8 +54,11 @@ export class ReportSharingController {
 
   @Get("lookup/organizations/:orgId/reports")
   @RequirePermission("archiveSharingAudit", "create")
-  lookupReportsForOrg(@Param("orgId", new UuidParamPipe()) orgId: string): Promise<ReportLookupResult[]> {
-    return this.reportSharing.lookupReportsForOrg(orgId);
+  lookupReportsForOrg(
+    @Param("orgId", new UuidParamPipe()) orgId: string,
+    @Query() q: Record<string, unknown>,
+  ): Promise<ReportLookupResult[]> {
+    return this.reportSharing.lookupReportsForOrg(orgId, parseShareFilters(q));
   }
 
   @Get(":id")

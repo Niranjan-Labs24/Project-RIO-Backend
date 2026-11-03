@@ -21,6 +21,8 @@ export interface InviteUserPayload {
   roleId: string;
   /** RIO MFA — optional at invite time; enables "Sign in with OTP" for this user. */
   mobileNumber?: string;
+  /** UAT USR-01 — the admin confirmed creating a user whose name already exists in the organization. */
+  confirmDuplicateName?: boolean;
 }
 
 /** Same shape as auth's SignupResponseView — a temporary password is
