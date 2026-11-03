@@ -79,17 +79,16 @@ export class NeedsService {
   async create(studyId: string, payload: CreateNeedPayload): Promise<Need> {
     const orgId = requireOrgId();
     const createdBy = requireActor();
-    // Title is optional on the create form — a Need still needs something
-    // to show as its display title everywhere (Needs table, workspace page
-    // header, audit log), so fall back to a snippet of the Statement rather
-    // than allowing an empty string through.
-    const title = payload.title?.trim() || payload.statement.trim().slice(0, 80);
+    // UAT NED-02 — the title is mandatory (no more silent fallback to a
+    // snippet of the Statement) and must be unique within the study.
+    const title = this.requireTitle(payload.title);
     const created = await this.tenant.runInOrgContext(async (tx) => {
       const study = await tx.study.findUnique({
         where: { id: studyId },
         include: { studyGovernorates: true, studyCenters: true },
       });
       if (!study) throw new NotFoundException({ error: { code: 'STUDY_NOT_FOUND', message: 'Study not found' } });
+      await this.assertTitleUniqueInStudy(tx, studyId, title);
       const studyGovernorateIds = (study.studyGovernorates ?? []).map((g) => g.governorateId);
       const studyCenterIds = (study.studyCenters ?? []).map((c) => c.centerId);
       const governorateIds = (payload.governorateIds && payload.governorateIds.length > 0) ? payload.governorateIds : studyGovernorateIds;
@@ -211,6 +210,41 @@ export class NeedsService {
   //   4. Every Center is also one of the Study's own selected Centers.
   // Client-confirmed (2026-09-24): a Need must name at least one Governorate
   // and at least one Center. Client clarification (2026-10-05): a Need's
+  // UAT NED-02 — Need Title is mandatory. Trims it and rejects a missing or
+  // whitespace-only value (the contract's minLength can't see whitespace).
+  private requireTitle(raw: string | undefined): string {
+    const title = raw?.trim() ?? '';
+    if (!title) {
+      throw new BadRequestException({ error: { code: 'NEED_TITLE_REQUIRED', message: 'Enter a title for the need.' } });
+    }
+    return title;
+  }
+
+  // UAT NED-02 — no two needs in the same study may share a title
+  // (case-insensitive). Needs retired by a merge (mergedIntoNeedId set) no
+  // longer count; excludeNeedId lets update() keep its own title.
+  private async assertTitleUniqueInStudy(
+    tx: Prisma.TransactionClient,
+    studyId: string,
+    title: string,
+    excludeNeedId?: string,
+  ): Promise<void> {
+    const clash = await tx.need.findFirst({
+      where: {
+        studyId,
+        title: { equals: title, mode: 'insensitive' },
+        mergedIntoNeedId: null,
+        ...(excludeNeedId ? { id: { not: excludeNeedId } } : {}),
+      },
+      select: { id: true },
+    });
+    if (clash) {
+      throw new ConflictException({
+        error: { code: 'NEED_TITLE_DUPLICATE', message: 'Another need in this study already has this title. Use a different title.' },
+      });
+    }
+  }
+
   // Centers come only from its Study's own, so Center is excused when the
   // Study has no Center in the Need's governorates (nothing to pick) — the
   // form says so instead of dead-ending; the fix is to add one to the Study.
@@ -357,6 +391,12 @@ export class NeedsService {
       const current = this.toNeedRow(currentRaw);
       if (!NEED_EDITABLE_STATUSES.includes(current.status)) {
         throw new ConflictException({ error: { code: 'NEED_NOT_EDITABLE', message: 'This need can no longer be edited once AI Classification has run; reject it on the AI Review screen to make changes' } });
+      }
+      // UAT NED-02 — same title rules as create(): trimmed, non-blank, and
+      // not already used by another need in this study.
+      if (patch.title !== undefined) {
+        patch = { ...patch, title: this.requireTitle(patch.title) };
+        await this.assertTitleUniqueInStudy(tx, current.studyId, patch.title as string, needId);
       }
       const nextGovernorateIds = patch.governorateIds ?? current.governorateIds;
       const nextCenterIds = patch.centerIds ?? current.centerIds;

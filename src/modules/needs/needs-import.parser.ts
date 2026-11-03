@@ -253,6 +253,49 @@ export async function parsePdfNeeds(
     throw new Error('PDF file was read successfully but contains no extractable text layer.');
   }
 
+  return extractNeedsFromText(cleanedText, aiService);
+}
+
+/**
+ * UAT NED-08 — reads the plain text of a Word (.docx) file. mammoth emits
+ * every paragraph followed by a blank line, so taken as-is each paragraph
+ * would look like its own need. Re-joined here so a paragraph is one line
+ * and an EMPTY paragraph is the blank line between needs — the same shape
+ * the PDF text has, so both share one extractor.
+ * Only .docx: mammoth cannot read the legacy binary .doc format.
+ */
+export async function readDocxText(buffer: Buffer): Promise<string> {
+  const mammoth = await import('mammoth');
+  let raw: string;
+  try {
+    raw = (await mammoth.extractRawText({ buffer })).value;
+  } catch (err: unknown) {
+    throw new Error(`The Word document could not be read: ${err instanceof Error ? err.message : 'damaged or invalid DOCX'}`);
+  }
+  return raw.replace(/\r\n/g, '\n').split('\n\n').join('\n').trim();
+}
+
+/** UAT NED-08 — need import from a Word (.docx) document; same extraction as a PDF. */
+export async function parseDocxNeeds(
+  buffer: Buffer,
+  aiService?: AiService,
+): Promise<ParsedNeedRow[]> {
+  const text = await readDocxText(buffer);
+  if (!text) {
+    throw new Error('The Word document was read successfully but contains no text.');
+  }
+  return extractNeedsFromText(text, aiService);
+}
+
+/**
+ * Turns a document's plain text into need rows: the AI extraction task when
+ * available, otherwise one need per blank-line-separated block (with
+ * optional "Title:", "Statement:", "Village:", "Reference ID:" lines).
+ */
+async function extractNeedsFromText(
+  cleanedText: string,
+  aiService?: AiService,
+): Promise<ParsedNeedRow[]> {
   if (aiService) {
     try {
       const { response } = await aiService.run<PdfNeedsExtractionResponse>(
@@ -267,6 +310,10 @@ export async function parsePdfNeeds(
     }
   }
 
+  return textBlocksToNeeds(cleanedText);
+}
+
+function textBlocksToNeeds(cleanedText: string): ParsedNeedRow[] {
   const blocks = cleanedText.split(/\n\s*\n/).filter((b) => b.trim().length > 0);
   const rawFallback: Array<{ title: string; statement: string; village?: string; referenceId?: string }> = [];
 
@@ -317,12 +364,10 @@ export async function parseSurveyDocumentNeeds(
       throw new Error(`The survey PDF file could not be read: ${err instanceof Error ? err.message : 'damaged PDF'}`);
     }
   } else if (ext === '.docx' || ext === '.doc') {
-    const mammoth = await import('mammoth');
     try {
-      const res = await mammoth.extractRawText({ buffer });
-      extractedText = res.value;
+      extractedText = await readDocxText(buffer);
     } catch (err: unknown) {
-      throw new Error(`The survey Word document could not be read: ${err instanceof Error ? err.message : 'damaged DOCX'}`);
+      throw new Error(`The survey Word document could not be read: ${err instanceof Error ? err.message.replace(/^The Word document could not be read: /, '') : 'damaged DOCX'}`);
     }
   } else if (ext === '.xlsx' || ext === '.xls') {
     const workbook = new ExcelJS.Workbook();
@@ -362,6 +407,10 @@ export async function parseSurveyDocumentNeeds(
     }
   }
 
-  // Fallback to text block parsing
-  return parsePdfNeeds(buffer, aiService);
+  // Fallback to text block parsing. A PDF is re-read by the PDF extractor
+  // (unchanged behaviour). Any other type is split from the text already
+  // extracted above — UAT NED-08: this used to hand a Word/Excel/CSV buffer
+  // to the PDF reader, which could only fail with "PDF could not be read".
+  if (ext === '.pdf') return parsePdfNeeds(buffer, aiService);
+  return textBlocksToNeeds(cleanedText);
 }

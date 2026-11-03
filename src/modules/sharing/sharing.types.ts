@@ -56,6 +56,8 @@ export interface CreateSharingRequestPayload {
 
 export interface SharedNeedSnapshot {
   id: string;
+  // UAT NED-02 — the sharing panel lists needs by title.
+  title: string;
   statement: string;
   village: string[];
   status: string;

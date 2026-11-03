@@ -8,6 +8,7 @@ const link = (over: Record<string, unknown> = {}) => ({
   studyId: 's1',
   token: 'tok',
   isActive: true,
+  startsAt: null as Date | null,
   expiresAt: null as Date | null,
   org: { isActive: true },
   ...over,
@@ -190,6 +191,16 @@ describe('CitizenService.resolveSurvey', () => {
       response: { error: { code: 'SURVEY_LINK_EXPIRED' } },
     });
   });
+
+  it('UAT DST-04 — refuses a link before its start date, saying when it opens', async () => {
+    const { svc, tx } = setup();
+    const startsAt = new Date(Date.now() + 2 * 86_400_000);
+    tx.publicSurveyLink.findUnique.mockResolvedValueOnce(link({ startsAt, expiresAt: new Date(Date.now() + 9 * 86_400_000) }));
+    await expect(svc.resolveSurvey('tok')).rejects.toMatchObject({
+      status: 403,
+      response: { error: { code: 'SURVEY_LINK_NOT_STARTED', details: { startsAt: startsAt.toISOString() } } },
+    });
+  });
 });
 
 describe('CitizenService sessions, duplicates and codes', () => {
@@ -218,7 +229,7 @@ describe('CitizenService sessions, duplicates and codes', () => {
       { mobile: '+966512345678' },
     ]);
     tx.surveyResponse.findFirst.mockResolvedValue({ id: 'r' });
-    expect(await svc.checkDuplicate('tok', { contact: 'a@b.test', mobile: '1' } as never)).toEqual({
+    expect(await svc.checkDuplicate('tok', { contact: 'a@b.test', mobile: '0512345678' } as never)).toEqual({
       isDuplicate: true,
     });
   });
@@ -254,9 +265,35 @@ describe('CitizenService sessions, duplicates and codes', () => {
     const prod = setup({ nodeEnv: 'production' });
     prod.mailer.sendCitizenOtpEmail.mockResolvedValue(false);
     expect(
-      (await prod.svc.requestOtp('tok', { contact: 'a@b.test', mobile: '1' } as never)).code,
+      (await prod.svc.requestOtp('tok', { contact: 'a@b.test', mobile: '0512345678' } as never)).code,
     ).toBeUndefined();
   });
+});
+
+describe('UAT RSP-01 — respondent mobile must be a Saudi mobile', () => {
+  it.each(['+15551234567', 'abc', '12345', '+966112345678', '05123456789', '0412345678'])(
+    'refuses %s with INVALID_MOBILE_NUMBER before any duplicate lookup or code is sent',
+    async (mobile) => {
+      const { svc, tx, mailer } = setup();
+      for (const call of [
+        () => svc.checkDuplicate('tok', { contact: 'a@b.test', mobile } as never),
+        () => svc.requestOtp('tok', { contact: 'a@b.test', mobile } as never),
+      ]) {
+        await expect(call()).rejects.toMatchObject({ response: { error: { code: 'INVALID_MOBILE_NUMBER' } } });
+      }
+      expect(tx.surveyResponse.findFirst).not.toHaveBeenCalled();
+      expect(mailer.sendCitizenOtpEmail).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['0512345678', '512345678', '+966512345678', '00966512345678', '966512345678', '+966 51 234 5678'])(
+    'accepts %s and stores it as +966512345678',
+    async (mobile) => {
+      const { svc, tx } = setup();
+      await svc.checkDuplicate('tok', { contact: 'a@b.test', mobile } as never);
+      expect(tx.surveyResponse.findFirst.mock.calls[0]![0].where.OR[1]).toEqual({ mobile: '+966512345678' });
+    },
+  );
 });
 
 describe('CitizenService.verifyOtp', () => {
@@ -365,6 +402,23 @@ describe('CitizenService.submitResponse', () => {
     expect(ctx.cleaning.cleanSurveyResponse).toHaveBeenCalledWith('r1', 'org-1');
     expect(ctx.scoring.scoreResponse).toHaveBeenCalledWith('r1', 'org-1');
     expect(ctx.rollup.calculateRollups).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['A', '12345', 'John123', '@@@ ###', '   ', 'محمد٣'])(
+    'UAT RSP-02 — refuses the name %j with INVALID_CONTACT_NAME, saving nothing and keeping the code unused',
+    async (contactName) => {
+      const { ctx, result } = await submit({ contactName });
+      expect(result.response).toMatchObject({ error: { code: 'INVALID_CONTACT_NAME' } });
+      expect(ctx.tx.surveyResponse.create).not.toHaveBeenCalled();
+      expect(ctx.tx.citizenOtpChallenge.updateMany).not.toHaveBeenCalled();
+    },
+  );
+
+  it('UAT RSP-02 — stores a valid Arabic or English name trimmed, with single spaces', async () => {
+    for (const [given, stored] of [['  محمد   العتيبي ', 'محمد العتيبي'], ["Sara O'Neil-Smith", "Sara O'Neil-Smith"]]) {
+      const { ctx } = await submit({ contactName: given });
+      expect(ctx.tx.surveyResponse.create.mock.calls[0]![0].data.contactName).toBe(stored);
+    }
   });
 
   it('works without optional fields, and with a need or organization that has no details', async () => {

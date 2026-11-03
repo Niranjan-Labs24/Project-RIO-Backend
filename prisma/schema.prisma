@@ -1591,6 +1591,11 @@ model PublicSurveyLink {
   // id, so a citizen link can be revoked/rotated independently of the Study.
   token     String    @unique @db.VarChar(64)
   createdBy String    @map("created_by") @db.Uuid
+  // UAT DST-04 — the link's active window, both dates mandatory on create:
+  // opens at 00:00 Saudi time on the start date, closes at the end of the
+  // end date. Nullable only for links created before DST-04 (no start =
+  // open from creation; no expiry = never expires).
+  startsAt  DateTime? @map("starts_at") @db.Timestamptz(6)
   expiresAt DateTime? @map("expires_at") @db.Timestamptz(6)
   isActive  Boolean   @default(true) @map("is_active")
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)

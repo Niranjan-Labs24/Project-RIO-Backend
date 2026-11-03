@@ -1,6 +1,8 @@
 import { toJson } from '../../common/prisma/json';
-import { BadRequestException, GoneException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, GoneException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomInt } from 'node:crypto';
+import { toSaudiMobileE164 } from '../../common/validation/saudi-mobile';
+import { normalizePersonName } from '../../common/validation/person-name';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { PasswordService } from '../../auth/password.service';
 import { ConfigService } from '../../config/config.service';
@@ -311,6 +313,21 @@ export class CitizenService {
 
   async submitResponse(token: string, payload: SubmitResponsePayload): Promise<SubmitResponseResult> {
     const link = await this.findActiveLinkOrThrow(token);
+    // UAT RSP-02 — a given name must be letters only (Arabic/English) and at
+    // least 3 characters; checked before anything is written or the
+    // verification code is used up. Stored trimmed, with single spaces.
+    let contactName: string | null = null;
+    if (payload.contactName !== undefined) {
+      contactName = normalizePersonName(payload.contactName);
+      if (!contactName) {
+        throw new BadRequestException({
+          error: {
+            code: 'INVALID_CONTACT_NAME',
+            message: 'Enter your name using letters only (Arabic or English), at least 3 characters.',
+          },
+        });
+      }
+    }
     const challenge = await this.findChallengeOrThrow(link, payload.challengeId);
     if (!challenge.verifiedAt) {
       throw new BadRequestException({ error: { code: 'OTP_NOT_VERIFIED', message: 'Verify the OTP code before submitting a response.' } });
@@ -442,7 +459,7 @@ export class CitizenService {
           surveyLinkId: link.id,
           contact: challenge.contact,
           mobile: challenge.mobile,
-          contactName: payload.contactName ?? null,
+          contactName,
           gender: payload.gender ?? null,
           ageBracket: payload.ageBracket,
           regionId: org?.regionId ?? null,
@@ -543,6 +560,18 @@ export class CitizenService {
     if (!link || !link.isActive || !link.org?.isActive) {
       throw new NotFoundException({ error: { code: 'SURVEY_LINK_NOT_FOUND', message: 'This survey link is not available.' } });
     }
+    // UAT DST-04 — a link is only open from its start date. Links created
+    // before start dates existed have none and stay open as before. The
+    // opening time goes back in details so the page can say when it opens.
+    if (link.startsAt && link.startsAt.getTime() > Date.now()) {
+      throw new ForbiddenException({
+        error: {
+          code: 'SURVEY_LINK_NOT_STARTED',
+          message: 'This survey link is not open yet.',
+          details: { startsAt: link.startsAt.toISOString() },
+        },
+      });
+    }
     if (link.expiresAt && link.expiresAt.getTime() < Date.now()) {
       throw new GoneException({ error: { code: 'SURVEY_LINK_EXPIRED', message: 'This survey link has expired.' } });
     }
@@ -561,11 +590,19 @@ export class CitizenService {
     return contact.trim().toLowerCase();
   }
 
-  // Strips phone punctuation (spaces, dashes, parens) but keeps the
-  // leading '+' and digits — good enough for exact-match dedup/lookup
-  // without a full E.164 validator; genuinely malformed numbers just fail
-  // at the Unifonic call and soft-fail like any other delivery error.
+  // UAT RSP-01 — respondents must give a valid Saudi mobile. Accepts every
+  // common way of writing one (05XXXXXXXX, 5XXXXXXXX, +9665XXXXXXXX,
+  // 009665XXXXXXXX) and returns the one stored form "+9665XXXXXXXX", so
+  // dedup/lookup still compare like with like. Anything else (another
+  // country, a landline, letters, too short/long) is refused before any OTP
+  // is sent. Same rule and error code as staff sign-up (toSaudiMobileE164).
   private normalizeMobile(mobile: string): string {
-    return mobile.trim().replace(/[\s\-()]/g, '');
+    const e164 = toSaudiMobileE164(mobile);
+    if (!e164) {
+      throw new BadRequestException({
+        error: { code: 'INVALID_MOBILE_NUMBER', message: 'Enter a valid Saudi mobile number (e.g. 05XXXXXXXX or +9665XXXXXXXX)' },
+      });
+    }
+    return e164;
   }
 }

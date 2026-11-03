@@ -10,6 +10,7 @@ import { requireOrgId, requireActor } from '../../tenancy/org-context';
 import { AuditService } from '../audit/audit.service';
 import { MailerService } from '../../mailer/mailer.service';
 import { TranslationService } from '../translation/translation.service';
+import { resolveSurveyLinkWindow } from './survey-link-window';
 import type { SupportedLocale } from '../translation/translation.types';
 import { sanitizeForSpreadsheet } from '../../common/security/spreadsheet-sanitize';
 import { auditFieldLabel } from '../audit/audit-field-labels';
@@ -129,9 +130,9 @@ export class PublicSurveysService {
     const orgId = requireOrgId();
     const actorId = requireActor();
     const token = randomBytes(24).toString('base64url');
-    const expiresAt = payload.expiresInDays
-      ? new Date(Date.now() + payload.expiresInDays * 24 * 60 * 60 * 1000)
-      : null;
+    // UAT DST-04 — mandatory start/end dates; throws 400 on a past start,
+    // an end before the start, or a window over 365 days.
+    const { startsAt, expiresAt } = resolveSurveyLinkWindow(payload.startDate, payload.endDate);
     // Contract-level `pattern: '\S'` already rejects an all-whitespace body,
     // so trimming here can only shrink a valid label, never produce a blank
     // one — no need to re-check blankness after trim.
@@ -141,7 +142,7 @@ export class PublicSurveysService {
     try {
       row = await this.tenant.runInOrgContext((tx) =>
         tx.publicSurveyLink.create({
-          data: { orgId, needId, studyId: need.studyId, label, token, createdBy: actorId, expiresAt },
+          data: { orgId, needId, studyId: need.studyId, label, token, createdBy: actorId, startsAt, expiresAt },
           include: { _count: { select: { responses: true } } },
         }),
       );
@@ -158,6 +159,8 @@ export class PublicSurveysService {
       changes: [
         { field: 'Link label', before: null, after: label },
         { field: 'Linked need', before: null, after: need.title },
+        { field: 'Start date', before: null, after: payload.startDate },
+        { field: 'End date', before: null, after: payload.endDate },
         { field: 'Active', before: null, after: row.isActive },
       ],
     });
@@ -740,6 +743,7 @@ export class PublicSurveysService {
       label: row.label,
       token: row.token,
       publicUrl: `${this.config.publicAppUrl}/ar/public/survey/${row.token}`, // UAT-02 — see comment above
+      startsAt: row.startsAt ? row.startsAt.toISOString() : null,
       expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
       isActive: row.isActive,
       createdAt: row.createdAt.toISOString(),
