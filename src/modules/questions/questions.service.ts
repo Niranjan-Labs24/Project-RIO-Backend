@@ -386,7 +386,7 @@ export class QuestionsService {
       throw new ConflictException({
         error: {
           code: 'QUESTION_HAS_PENDING_CHANGE',
-          message: 'This question already has a change awaiting Human Reviewer approval.',
+          message: 'This question already has a change awaiting approval.',
         },
       });
     }
