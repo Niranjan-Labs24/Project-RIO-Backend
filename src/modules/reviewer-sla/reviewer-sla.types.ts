@@ -86,6 +86,8 @@ export interface SlaAlert {
   surveyId: string | null;
   reportId: string | null;
   studyTitle: string;
+  // UAT NED-02 — lists show the need's title; the statement stays for detail views.
+  needTitle: string | null;
   needStatement: string | null;
   touchpoint: string;
   createdAt: string;

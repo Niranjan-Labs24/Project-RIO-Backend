@@ -108,7 +108,7 @@ describe("Need -> multi-pair Override Domain -> Approve (e2e)", () => {
       .post(`/api/studies/${studyId}/needs`)
       .set("Cookie", officerCookies)
       .set("x-csrf-token", officerCsrf)
-      .send({ statement: "Multi-domain override e2e test — clear-cut healthcare need.", governorateIds: [studyGovernorateId], centerIds: [studyCenterId] })
+      .send({ title: "Override e2e — healthcare need", statement: "Multi-domain override e2e test — clear-cut healthcare need.", governorateIds: [studyGovernorateId], centerIds: [studyCenterId] })
       .expect(201);
     const needId = created.body.id as string;
 

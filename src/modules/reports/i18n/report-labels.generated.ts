@@ -775,7 +775,7 @@ export const REPORT_LABELS_AR: Record<ReportLabelKey, string> = {
   "kv.notCalculableReason": "سبب تعذر الحساب",
   "kv.override": "التجاوز",
   "kv.overrideApplied": "تم تطبيق التجاوز",
-  "kv.overrideReason": "سبب التجاوز",
+  "kv.overrideReason": "سبب التعديل",
   "kv.priorityStatus": "حالة الأولوية",
   "kv.reportType": "نوع التقرير",
   "kv.requiredSampleSize": "حجم العينة المطلوب (الدراسة)",
@@ -989,4 +989,4 @@ export const REPORT_LABELS_AR: Record<ReportLabelKey, string> = {
 };
 
 /** Fingerprint of the source namespace, for the drift check. */
-export const REPORT_LABELS_CHECKSUM = "47a975606b00354e";
+export const REPORT_LABELS_CHECKSUM = "b6822cdb1a59e848";

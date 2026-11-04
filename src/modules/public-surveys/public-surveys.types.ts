@@ -6,6 +6,7 @@ export interface PublicSurveyLinkRow {
   label: string;
   token: string;
   createdBy: string;
+  startsAt: Date | null;
   expiresAt: Date | null;
   isActive: boolean;
   createdAt: Date;
@@ -23,6 +24,8 @@ export interface PublicSurveyLink {
   // The plain public URL the frontend renders as a QR code client-side —
   // no server-generated image, see the plan's "Publish Survey + QR" note.
   publicUrl: string;
+  // UAT DST-04 — null only on links created before start dates existed.
+  startsAt: string | null;
   expiresAt: string | null;
   isActive: boolean;
   createdAt: string;
@@ -31,7 +34,9 @@ export interface PublicSurveyLink {
 
 export interface CreateSurveyLinkPayload {
   label: string;
-  expiresInDays?: number;
+  // UAT DST-04 — both mandatory, YYYY-MM-DD (Saudi calendar days).
+  startDate: string;
+  endDate: string;
 }
 
 /** One row in the Survey Responses list — Name/Email/Submitted Date, the

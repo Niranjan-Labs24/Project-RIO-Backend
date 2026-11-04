@@ -48,6 +48,9 @@ export const UpdateOrganizationBody = registerSchema(
     regionId: T.Optional(T.Union([T.String({ format: 'uuid' }), T.Null()])),
     governorateIds: T.Optional(T.Array(T.String({ format: 'uuid' }), { maxItems: 150 })),
     centerIds: T.Optional(T.Array(T.String({ format: 'uuid' }), { maxItems: 1404 })),
+    // Accepted only so a client that echoes the current value still
+    // validates; a *change* is refused with 403 ORG_STATUS_ADMIN_ONLY (UAT
+    // ORG-12) — status belongs to UpdateOrganizationStatusBody below.
     isActive: T.Optional(T.Boolean()),
   }),
 );
