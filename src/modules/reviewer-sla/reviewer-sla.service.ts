@@ -147,6 +147,7 @@ export class ReviewerSlaService {
         surveyId: survey.id,
         reportId: null,
         studyTitle: studyById.get(survey.studyId)?.title ?? survey.studyId,
+        needTitle: needById.get(survey.needId)?.title ?? null,
         needStatement: needById.get(survey.needId)?.statement ?? null,
         touchpoint: "survey_approval",
         createdAt: submittedAt.toISOString(),
@@ -196,6 +197,7 @@ export class ReviewerSlaService {
         surveyId: survey.id,
         reportId: null,
         studyTitle: studyById.get(survey.studyId)?.title ?? survey.studyId,
+        needTitle: needById.get(survey.needId)?.title ?? null,
         needStatement: needById.get(survey.needId)?.statement ?? null,
         touchpoint: isApproved ? "survey_ready_to_publish" : "survey_rejected",
         createdAt: resolvedAt.toISOString(),
@@ -249,6 +251,7 @@ export class ReviewerSlaService {
         // comment), so this can't always resolve to a real Study title; the
         // Report's own title is always meaningful either way.
         studyTitle: report.title,
+        needTitle: null,
         needStatement: report.studyId ? (studyById.get(report.studyId)?.title ?? null) : null,
         touchpoint: "report_approval",
         createdAt: confirmedAt.toISOString(),
@@ -286,6 +289,7 @@ export class ReviewerSlaService {
         surveyId: null,
         reportId: report.id,
         studyTitle: report.title,
+        needTitle: null,
         needStatement: null,
         touchpoint: isApproved ? "report_released" : "report_rejected",
         createdAt: resolvedAt.toISOString(),
@@ -340,6 +344,7 @@ export class ReviewerSlaService {
       surveyId: null,
       reportId: null,
       studyTitle: studyById.get(doc.studyId)?.title ?? doc.studyId,
+      needTitle: doc.linkedNeedId ? (needById.get(doc.linkedNeedId)?.title ?? null) : null,
       needStatement: doc.linkedNeedId ? (needById.get(doc.linkedNeedId)?.statement ?? null) : null,
       touchpoint: "evidence_document_uploaded",
       createdAt: doc.createdAt.toISOString(),
@@ -372,7 +377,7 @@ export class ReviewerSlaService {
       const pending = await tx.needStatementSummary.findMany({
         where: { status: "DRAFT" },
         orderBy: { generatedAt: "asc" },
-        include: { need: { select: { statement: true } } },
+        include: { need: { select: { title: true, statement: true } } },
       });
       const studyIds = Array.from(new Set(pending.map((row) => row.studyId)));
       const studyRows = await tx.study.findMany({ where: { id: { in: studyIds } } });
@@ -389,6 +394,7 @@ export class ReviewerSlaService {
       surveyId: null,
       reportId: null,
       studyTitle: studyById.get(row.studyId)?.title ?? row.studyId,
+      needTitle: row.need?.title ?? null,
       needStatement: row.need?.statement ?? null,
       touchpoint: "need_summary_approval",
       createdAt: row.generatedAt.toISOString(),
@@ -424,6 +430,7 @@ export class ReviewerSlaService {
       surveyId: null,
       reportId: null,
       studyTitle: studyById.get(need.studyId)?.title ?? need.studyId,
+      needTitle: need.title,
       needStatement: need.statement,
       touchpoint: "ai_classification",
       // classifiedAt is always set once a Need reaches ai_classified (see
@@ -472,6 +479,7 @@ export class ReviewerSlaService {
         surveyId: null,
         reportId: null,
         studyTitle: studyById.get(row.studyId)?.title ?? row.studyId,
+        needTitle: needById.get(row.needId)?.title ?? null,
         needStatement: needById.get(row.needId)?.statement ?? null,
         touchpoint: isRejected ? "ai_classification_rejected" : "ai_classification_approved",
         createdAt: row.decidedAt!.toISOString(),

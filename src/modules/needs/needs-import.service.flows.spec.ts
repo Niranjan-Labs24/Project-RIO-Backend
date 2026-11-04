@@ -6,12 +6,14 @@ const parser = vi.hoisted(() => ({
   csv: vi.fn(),
   excel: vi.fn(),
   pdf: vi.fn(),
+  docx: vi.fn(),
   survey: vi.fn(),
 }));
 vi.mock('./needs-import.parser', () => ({
   parseCsvNeeds: parser.csv,
   parseExcelNeeds: parser.excel,
   parsePdfNeeds: parser.pdf,
+  parseDocxNeeds: parser.docx,
   parseSurveyDocumentNeeds: parser.survey,
 }));
 
@@ -53,9 +55,11 @@ describe('NeedsImportService previews', () => {
     expect(preview).toMatchObject({ totalExtracted: 2, needs: [{ id: 'extracted-1', title: 'Wells' }, { id: 'extracted-2' }] });
   });
 
-  it('refuses a non-PDF preview and reports an unreadable PDF or survey document', async () => {
+  it('refuses a preview that is neither PDF nor Word, and reports an unreadable PDF or survey document', async () => {
     const { svc } = setup();
-    await expect(svc.previewPdfFromFile('s1', { originalname: 'a.docx', buffer: Buffer.from('x') })).rejects.toMatchObject({ response: { error: { code: 'UNSUPPORTED_FILE_TYPE' } } });
+    // UAT NED-08 — .docx is now previewable (see the next test); .txt/.doc are still refused.
+    await expect(svc.previewPdfFromFile('s1', { originalname: 'a.txt', buffer: Buffer.from('x') })).rejects.toMatchObject({ response: { error: { code: 'UNSUPPORTED_FILE_TYPE' } } });
+    await expect(svc.previewPdfFromFile('s1', { originalname: 'a.doc', buffer: Buffer.from('x') })).rejects.toMatchObject({ response: { error: { code: 'UNSUPPORTED_FILE_TYPE' } } });
     parser.pdf.mockRejectedValue(new Error('damaged'));
     await expect(svc.previewPdfFromFile('s1', { originalname: 'a.pdf', buffer: Buffer.from('x') })).rejects.toMatchObject({ response: { error: { code: 'PDF_PARSING_FAILED', message: 'damaged' } } });
     parser.pdf.mockRejectedValue('weird');
@@ -64,6 +68,16 @@ describe('NeedsImportService previews', () => {
     await expect(svc.previewSurveyResultsFromFile('s1', { originalname: 'a.docx', buffer: Buffer.from('x') })).rejects.toMatchObject({ response: { error: { code: 'SURVEY_PARSING_FAILED' } } });
     parser.survey.mockRejectedValue(42);
     await expect(svc.previewSurveyResultsFromFile('s1', { originalname: 'a.docx', buffer: Buffer.from('x') })).rejects.toMatchObject({ response: { error: { message: 'Failed to parse survey results document.' } } });
+  });
+
+  it('UAT NED-08 — previews a Word (.docx) need import with the Word parser and reports an unreadable one', async () => {
+    const { svc } = setup();
+    parser.docx.mockResolvedValue([row()]);
+    const preview = await svc.previewPdfFromFile('s1', { originalname: 'Needs.DOCX', buffer: Buffer.from('x') });
+    expect(preview.totalExtracted).toBe(1);
+    expect(parser.docx).toHaveBeenCalled();
+    parser.docx.mockRejectedValue(new Error('The Word document could not be read: bad zip'));
+    await expect(svc.previewPdfFromFile('s1', { originalname: 'a.docx', buffer: Buffer.from('x') })).rejects.toMatchObject({ response: { error: { code: 'DOCX_PARSING_FAILED', message: 'The Word document could not be read: bad zip' } } });
   });
 
   it('previews the needs found in a survey results document', async () => {

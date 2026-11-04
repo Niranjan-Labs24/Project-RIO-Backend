@@ -3,6 +3,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { Prisma } from '../../generated/prisma';
 import { orgContext } from '../../tenancy/org-context';
 import { PublicSurveysService } from './public-surveys.service';
+import { saudiToday } from './survey-link-window';
+
+// UAT DST-04 — every new link needs a start and an end date (Saudi calendar days).
+const addDays = (iso: string, n: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+const TODAY = saudiToday();
+const WINDOW = { startDate: TODAY, endDate: addDays(TODAY, 6) };
 
 vi.mock('qrcode', () => ({ default: { toBuffer: vi.fn().mockResolvedValue(Buffer.from('png')) } }));
 
@@ -149,27 +155,37 @@ describe('PublicSurveysService links', () => {
     });
   });
 
-  it('creates a link with an expiry and audits it', async () => {
+  it('creates a link open from 00:00 Saudi time on the start date to the end of the end date, and audits both dates', async () => {
     const { svc, tx, audit } = setup();
     tx.publicSurveyLink.create.mockResolvedValue(
-      linkRow({ expiresAt: new Date('2026-02-01T00:00:00Z') }),
+      linkRow({ startsAt: new Date('2026-02-01T00:00:00+03:00'), expiresAt: new Date('2026-02-07T23:59:59.999+03:00') }),
     );
-    const link = await asActor(() =>
-      svc.createLink('n1', { label: '  Wave 1 ', expiresInDays: 7 } as never),
-    );
-    expect(link.expiresAt).toBe('2026-02-01T00:00:00.000Z');
+    const link = await asActor(() => svc.createLink('n1', { label: '  Wave 1 ', ...WINDOW }));
+    expect(link.startsAt).toBe('2026-01-31T21:00:00.000Z');
+    expect(link.expiresAt).toBe('2026-02-07T20:59:59.999Z');
     const data = tx.publicSurveyLink.create.mock.calls[0]![0].data;
     expect(data).toMatchObject({ label: 'Wave 1', orgId: 'org-1', createdBy: 'u1', needId: 'n1' });
-    expect(data.expiresAt).toBeInstanceOf(Date);
-    expect(audit.record).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'create', entityType: 'survey' }),
-    );
+    expect((data.startsAt as Date).toISOString()).toBe(new Date(`${WINDOW.startDate}T00:00:00+03:00`).toISOString());
+    expect((data.expiresAt as Date).toISOString()).toBe(new Date(`${WINDOW.endDate}T23:59:59.999+03:00`).toISOString());
+    const changes = (audit.record.mock.calls[0]![0] as { changes: { field: string; after: unknown }[] }).changes;
+    expect(changes).toEqual(expect.arrayContaining([
+      { field: 'Start date', before: null, after: WINDOW.startDate },
+      { field: 'End date', before: null, after: WINDOW.endDate },
+    ]));
   });
 
-  it('creates a link that never expires when no lifetime is given', async () => {
+  it('UAT DST-04 — refuses a past start date, an end before the start, and a window over 365 days, creating nothing', async () => {
     const { svc, tx } = setup();
-    await asActor(() => svc.createLink('n1', { label: 'L' } as never));
-    expect(tx.publicSurveyLink.create.mock.calls[0]![0].data.expiresAt).toBeNull();
+    for (const [startDate, endDate, code] of [
+      [addDays(TODAY, -1), TODAY, 'SURVEY_LINK_START_IN_PAST'],
+      [addDays(TODAY, 5), addDays(TODAY, 4), 'SURVEY_LINK_END_BEFORE_START'],
+      [TODAY, addDays(TODAY, 365), 'SURVEY_LINK_WINDOW_TOO_LONG'],
+    ]) {
+      await expect(asActor(() => svc.createLink('n1', { label: 'L', startDate: startDate!, endDate: endDate! }))).rejects.toMatchObject({
+        response: { error: { code } },
+      });
+    }
+    expect(tx.publicSurveyLink.create).not.toHaveBeenCalled();
   });
 
   it('maps a duplicate label to a conflict and rethrows other failures', async () => {
@@ -178,10 +194,10 @@ describe('PublicSurveysService links', () => {
       new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: 'x' }),
     );
     await expect(
-      asActor(() => svc.createLink('n1', { label: 'L' } as never)),
+      asActor(() => svc.createLink('n1', { label: 'L', ...WINDOW })),
     ).rejects.toBeInstanceOf(ConflictException);
     tx.publicSurveyLink.create.mockRejectedValueOnce(new Error('db'));
-    await expect(asActor(() => svc.createLink('n1', { label: 'L' } as never))).rejects.toThrow(
+    await expect(asActor(() => svc.createLink('n1', { label: 'L', ...WINDOW }))).rejects.toThrow(
       'db',
     );
   });

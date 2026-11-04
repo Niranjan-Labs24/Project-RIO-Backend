@@ -103,7 +103,7 @@ describe("Need -> AI classification unclear -> allDomainsSelected (e2e)", () => 
       .post(`/api/studies/${studyId}/needs`)
       .set("Cookie", officerCookies)
       .set("x-csrf-token", officerCsrf)
-      .send({ statement: "Multi-domain workflow e2e test — AI declines to classify.", governorateIds: [studyGovernorateId], centerIds: [studyCenterId] })
+      .send({ title: "Workflow e2e — AI declines", statement: "Multi-domain workflow e2e test — AI declines to classify.", governorateIds: [studyGovernorateId], centerIds: [studyCenterId] })
       .expect(201);
     const needId = created.body.id as string;
 
@@ -262,7 +262,7 @@ describe("Need -> AI service failure -> ai_classification_failed + Retry (e2e)",
       .post(`/api/studies/${studyId}/needs`)
       .set("Cookie", officerCookies)
       .set("x-csrf-token", officerCsrf)
-      .send({ statement: "Multi-domain workflow e2e test — AI service outage.", governorateIds: [studyGovernorateId], centerIds: [studyCenterId] })
+      .send({ title: "Workflow e2e — AI outage", statement: "Multi-domain workflow e2e test — AI service outage.", governorateIds: [studyGovernorateId], centerIds: [studyCenterId] })
       .expect(201);
     const needId = created.body.id as string;
 

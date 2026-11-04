@@ -157,12 +157,14 @@ describe("Need statement summarisation (e2e)", () => {
     throw new Error(`No summary appeared for need ${needId} within the poll window.`);
   }
 
+  // UAT NED-02 — titles are mandatory and unique per study.
+  let needSeq = 0;
   async function createNeed(statement: string): Promise<string> {
     const created = await request(app.getHttpServer())
       .post(`/api/studies/${studyId}/needs`)
       .set("Cookie", officerCookies)
       .set("x-csrf-token", officerCsrf)
-      .send({ statement, governorateIds: [studyGovernorateId], centerIds: [studyCenterId] })
+      .send({ title: `Need summary e2e ${++needSeq}`, statement, governorateIds: [studyGovernorateId], centerIds: [studyCenterId] })
       .expect(201);
     return created.body.id as string;
   }

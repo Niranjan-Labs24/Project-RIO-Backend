@@ -72,6 +72,9 @@ function fakeTenant(opts: {
   // resolveAiConfidence. Defaults to none, i.e. "no classification has run",
   // which is what most of these fixtures represent.
   aiDecisions?: { needId: string; confidence: number | null }[];
+  /** UAT NED-02 — a need already holding the requested title in the study. */
+  titleClash?: { id: string } | null;
+  onTitleLookup?: (where: Record<string, unknown>) => void;
 }) {
   const tx = {
     study: {
@@ -83,6 +86,10 @@ function fakeTenant(opts: {
       // whatever onNeedUpdate mutated it to, same as a real transaction.
       findUnique: async () => (opts.need ? withGeo(opts.need) : null),
       findMany: async () => (opts.needs ?? []).map(withGeo),
+      findFirst: async ({ where }: { where: Record<string, unknown> }) => {
+        opts.onTitleLookup?.(where);
+        return opts.titleClash ?? null;
+      },
       create: async ({ data }: { data: Record<string, unknown> }) => {
         opts.onNeedCreate?.(data);
         return { id: 'need-new', createdAt: new Date('2026-01-01T00:00:00Z'), updatedAt: new Date('2026-01-01T00:00:00Z'), ...data };
@@ -442,6 +449,79 @@ describe('NeedsService', () => {
       );
       const need = await orgContext.run(ctx, () => svc.getById('need-1'));
       expect(need).toMatchObject({ aiConfidence: 0.88, aiConfidenceBand: 'standard' });
+    });
+  });
+
+  describe('UAT NED-02 — mandatory, unique-per-study title', () => {
+    const study = { id: 'study-1', studyGovernorates: [{ governorateId: 'g1' }], studyCenters: [] };
+    const errorCode = async (p: Promise<unknown>) =>
+      p.then(
+        () => null,
+        (e: { getResponse?: () => { error?: { code?: string } } }) => e.getResponse?.().error?.code,
+      );
+
+    it.each([undefined, '', '   '])('create rejects a missing/blank title (%j) with NEED_TITLE_REQUIRED and creates nothing', async (title) => {
+      let created = false;
+      const svc = makeService(fakeTenant({ study, onNeedCreate: () => { created = true; } }));
+      const p = orgContext.run(ctx, () =>
+        svc.create('study-1', { title: title as string, statement: 'A long statement', governorateIds: ['g1'] }),
+      );
+      expect(await errorCode(p)).toBe('NEED_TITLE_REQUIRED');
+      expect(created).toBe(false);
+    });
+
+    it('create no longer derives a title from the statement — it stores the trimmed title as entered', async () => {
+      let createdData: Record<string, unknown> | undefined;
+      const svc = makeService(fakeTenant({ study, onNeedCreate: (d) => { createdData = d; } }));
+      await orgContext.run(ctx, () =>
+        svc.create('study-1', { title: '  Water access  ', statement: 'A long statement', governorateIds: ['g1'] }),
+      );
+      expect(createdData?.title).toBe('Water access');
+    });
+
+    it('create rejects a title already used in the same study (409 NEED_TITLE_DUPLICATE), case-insensitively, ignoring merged needs', async () => {
+      let lookup: Record<string, unknown> | undefined;
+      let created = false;
+      const svc = makeService(fakeTenant({
+        study,
+        titleClash: { id: 'need-existing' },
+        onTitleLookup: (w) => { lookup = w; },
+        onNeedCreate: () => { created = true; },
+      }));
+      const p = orgContext.run(ctx, () =>
+        svc.create('study-1', { title: 'Water Access', statement: 'S', governorateIds: ['g1'] }),
+      );
+      expect(await errorCode(p)).toBe('NEED_TITLE_DUPLICATE');
+      expect(created).toBe(false);
+      expect(lookup).toEqual({
+        studyId: 'study-1',
+        title: { equals: 'Water Access', mode: 'insensitive' },
+        mergedIntoNeedId: null,
+      });
+    });
+
+    it('update rejects a blank title and a title used by another need in the study, excluding the need itself', async () => {
+      const blank = makeService(fakeTenant({ need: makeRow() }));
+      expect(await errorCode(orgContext.run(ctx, () => blank.update('need-1', { title: '  ' })))).toBe('NEED_TITLE_REQUIRED');
+
+      let lookup: Record<string, unknown> | undefined;
+      let updated = false;
+      const dup = makeService(fakeTenant({
+        need: makeRow(),
+        titleClash: { id: 'need-2' },
+        onTitleLookup: (w) => { lookup = w; },
+        onNeedUpdate: () => { updated = true; },
+      }));
+      expect(await errorCode(orgContext.run(ctx, () => dup.update('need-1', { title: 'Taken' })))).toBe('NEED_TITLE_DUPLICATE');
+      expect(updated).toBe(false);
+      expect(lookup?.id).toEqual({ not: 'need-1' });
+    });
+
+    it('update trims the new title before saving', async () => {
+      let updateData: Record<string, unknown> | undefined;
+      const svc = makeService(fakeTenant({ need: makeRow(), onNeedUpdate: (d) => { updateData = d; } }));
+      await orgContext.run(ctx, () => svc.update('need-1', { title: '  New title  ' }));
+      expect(updateData?.title).toBe('New title');
     });
   });
 

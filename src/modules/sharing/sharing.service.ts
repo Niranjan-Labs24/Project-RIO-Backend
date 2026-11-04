@@ -241,7 +241,7 @@ export class SharingService {
       return {
         studyId: study.id,
         title: study.title,
-        needs: needs.map((n) => ({ id: n.id, statement: n.statement, village: n.village, status: n.status })),
+        needs: needs.map((n) => ({ id: n.id, title: n.title, statement: n.statement, village: n.village, status: n.status })),
         evidenceCount,
       };
     });

@@ -11,9 +11,12 @@ export const CreateSurveyLinkBody = registerSchema(
       // PublicSurveyLink.@@unique([studyId, label]) schema comment) — a
       // TypeBox schema has no notion of "unique within this Study".
       label: T.String({ minLength: 1, maxLength: 150, pattern: '\\S' }),
-      // Omitted = no expiry. RIO-NFR-014-style configurability: callers pick
-      // the window per link rather than a single hardcoded TTL.
-      expiresInDays: T.Optional(T.Integer({ minimum: 1, maximum: 365 })),
+      // UAT DST-04 — start and end dates are mandatory (YYYY-MM-DD, Saudi
+      // calendar days, end date included). Replaces the optional
+      // `expiresInDays` (omitted = never expires). Window rules live in
+      // resolveSurveyLinkWindow (survey-link-window.ts).
+      startDate: T.String({ format: 'date' }),
+      endDate: T.String({ format: 'date' }),
     },
     { additionalProperties: false },
   ),
