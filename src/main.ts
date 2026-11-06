@@ -42,7 +42,7 @@ async function bootstrap(): Promise<void> {
   // exposedHeaders: Content-Disposition isn't readable via fetch() cross-origin
   // by default — the Reports export download (ReportsService.download) needs
   // it to recover the real filename instead of falling back to a generic one.
-  app.enableCors({ origin: config.corsOrigin, credentials: true, exposedHeaders: ['Content-Disposition'] });
+  app.enableCors({ origin: config.corsOrigins, credentials: true, exposedHeaders: ['Content-Disposition'] });
 
   // RIO-NFR-016 — the filter is constructed by hand (it always has been),
   // so the operational-log recorder is handed to it explicitly rather than

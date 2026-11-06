@@ -73,8 +73,11 @@ export const EnvSchema = Type.Object({
   // all thrashing the same physical cores. Default matches this box's CPU
   // count — tune it to the deployment's actual core count.
   ARGON2_MAX_CONCURRENCY: Type.Number({ default: 8, minimum: 1, maximum: 256 }),
-  // Frontend origin allowed to send credentialed (cookie) requests. Single
-  // explicit origin — credentials mode forbids a wildcard.
+  // Origins allowed to send credentialed (cookie) requests, comma-separated.
+  // Each one explicit — credentials mode forbids a wildcard — but more than
+  // one is allowed: the platform application and the public website are
+  // served from different hosts and both call this API (the website only
+  // ever reads the @Public() routes).
   CORS_ORIGIN: Type.String({ default: 'http://localhost:3000' }),
   // Public-facing base URL citizens actually load in their browser (what a
   // scanned QR code should point at). Deliberately separate from

@@ -88,8 +88,16 @@ export class ConfigService {
   get systemLogRetentionCron(): string {
     return this.config.SYSTEM_LOG_RETENTION_CRON;
   }
+  /** Every allowed origin. One value stays one entry, so a deployment that
+   *  sets a single origin behaves exactly as before. */
+  get corsOrigins(): string[] {
+    return this.config.CORS_ORIGIN.split(',')
+      .map((o) => o.trim())
+      .filter(Boolean);
+  }
+  /** The first allowed origin — what PUBLIC_APP_URL falls back to. */
   get corsOrigin(): string {
-    return this.config.CORS_ORIGIN;
+    return this.corsOrigins[0] ?? this.config.CORS_ORIGIN;
   }
   // See the PUBLIC_APP_URL comment in env.schema.ts — the citizen-facing
   // base URL, distinct from (but defaulting to) CORS_ORIGIN.
