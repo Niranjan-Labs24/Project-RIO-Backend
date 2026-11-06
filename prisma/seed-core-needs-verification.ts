@@ -39,6 +39,7 @@ import { randomBytes } from "node:crypto";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma";
 import { pgSslFromEnv } from "../src/prisma/pg-ssl";
+import { seedOrgEmail } from "./seed-core-needs-org";
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL, ssl: pgSslFromEnv() }),
@@ -95,7 +96,7 @@ const INCLUDE_NOT_SHOWN = true;
 // Each governorate's required sample comes from its own profile population.
 const STUDY: StudyPlan = {
   title: "Core Needs Verification — Al-Qassim",
-  orgEmail: "admin@demo-ngo.org",
+  orgEmail: seedOrgEmail(),
   population: 150,
   extraGovernorates: ["0401"], // Buraydah: in the study, no data
   governorates: [

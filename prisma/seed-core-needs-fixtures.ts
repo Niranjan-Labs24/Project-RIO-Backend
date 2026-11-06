@@ -22,6 +22,7 @@ import { randomBytes } from "node:crypto";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma";
 import { pgSslFromEnv } from "../src/prisma/pg-ssl";
+import { seedOrgEmail } from "./seed-core-needs-org";
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL, ssl: pgSslFromEnv() }),
@@ -167,8 +168,9 @@ async function seedFixture(f: Fixture, ctx: { orgId: string; createdBy: string; 
 }
 
 async function main(): Promise<void> {
-  const admin = await supervisor.user.findFirst({ where: { email: "admin@demo-ngo.org" } });
-  if (!admin) throw new Error("Run `pnpm prisma:seed` first (admin@demo-ngo.org not found).");
+  const email = seedOrgEmail();
+  const admin = await supervisor.user.findFirst({ where: { email } });
+  if (!admin) throw new Error(`${email} not found. Set SEED_ORG_EMAIL to an NGO Admin of the target organisation, or run \`pnpm prisma:seed\` for the demo one.`);
   const org = await supervisor.organisation.findUnique({ where: { id: admin.orgId }, select: { regionId: true } });
   const mv = await prisma.methodologyVersion.findFirst({ where: { status: "PUBLISHED" } });
   if (!mv) throw new Error("No PUBLISHED MethodologyVersion — run `pnpm import:methodology -- --publish`.");

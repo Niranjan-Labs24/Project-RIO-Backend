@@ -41,6 +41,7 @@ import { randomBytes } from "node:crypto";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma";
 import { pgSslFromEnv } from "../src/prisma/pg-ssl";
+import { seedOrgEmail, seedSecondOrgEmail } from "./seed-core-needs-org";
 import { calculateSampleSize } from "../src/modules/studies/sample-size";
 
 const prisma = new PrismaClient({
@@ -88,7 +89,7 @@ interface StudyPlan {
 // Study A (Demo NGO): Riyadh region (T3/T4) and Madinah (T5), so Kingdom shows two of 13 regions.
 const STUDY_A: StudyPlan = {
   title: "Core Needs Geography — Riyadh and Madinah",
-  orgEmail: "admin@demo-ngo.org",
+  orgEmail: seedOrgEmail(),
   population: 150,
   extraGovernorates: ["0116", "0121"], // Rumah, Marat: in the study, no data
   governorates: [
@@ -119,7 +120,7 @@ const STUDY_A: StudyPlan = {
 // 1, same name, so it is one village across studies) and Az-Zulfi, and adds Marat.
 const STUDY_B: StudyPlan = {
   title: "Riyadh Region Needs — Riverside Community Trust",
-  orgEmail: "admin@riverside-ngo.org",
+  orgEmail: seedSecondOrgEmail() ?? "",
   population: 80,
   extraGovernorates: [],
   governorates: [
@@ -313,8 +314,11 @@ async function seedProfiles(): Promise<void> {
 }
 
 /** Riverside has only an admin, who cannot run scoring; give it a data analyst
- *  (same role and password as analyst@demo-ngo.org) so its study can be scored. */
+ *  (same role and password as the first organisation's analyst) so its study
+ *  can be scored. Only for the demo pair: on another environment the second
+ *  organisation is named by SEED_ORG_EMAIL_2 and already has its own users. */
 async function ensureRiversideAnalyst(): Promise<void> {
+  if (seedSecondOrgEmail() !== "admin@riverside-ngo.org") return;
   const admin = await supervisor.user.findFirst({ where: { email: "admin@riverside-ngo.org" } });
   const model = await supervisor.user.findFirst({ where: { email: "analyst@demo-ngo.org" } });
   if (!admin || !model?.passwordHash) throw new Error("admin@riverside-ngo.org or analyst@demo-ngo.org not found.");
@@ -331,7 +335,11 @@ async function main(): Promise<void> {
   const mv = await prisma.methodologyVersion.findFirst({ where: { status: "PUBLISHED" } });
   if (!mv) throw new Error("No PUBLISHED MethodologyVersion — run `pnpm import:methodology -- --publish`.");
   await seedStudy(STUDY_A, mv);
-  await seedStudy(STUDY_B, mv);
+  // The cross-organisation case needs a genuinely second organisation. With
+  // none named, it is skipped rather than written into the first, where it
+  // would look like data proving a rule it cannot exercise.
+  if (STUDY_B.orgEmail) await seedStudy(STUDY_B, mv);
+  else console.log("No SEED_ORG_EMAIL_2 — skipping the second organisation's study (the cross-org case).");
 }
 
 main()
