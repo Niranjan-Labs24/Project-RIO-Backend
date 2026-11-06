@@ -94,6 +94,10 @@ export interface CoreView {
       band: ConfidenceResult | null;
       bandLabel: string;
       ratio: number;
+      /** The figures behind the headline, opened from the row on screen.
+       *  The PDF ignores it — it prints the same figures in its own
+       *  geography and evidence sections. */
+      detail: string[];
     }>;
   };
   /** Reader guide. `part` names the section a PDF box links to; `pageLabel`
@@ -386,12 +390,17 @@ export function buildCoreView(input: CoreViewInput): CoreView {
 
   // ── Decision summary ──
   const s = c.summary;
-  const where =
-    s.villagesWithData.length === 1
-      ? name(s.villagesWithData[0])
-      : s.villagesWithData.length > 1
-        ? t('find.whereMany', { count: n(s.villagesWithData.length) })
-        : areaName;
+  /**
+   * A list of names, cut to `cap` with "and N more" as its last item.
+   *
+   * The tail is an item of the list rather than a suffix so that `list()`
+   * punctuates it: "A, B and 4 more", not "A, B and C and 4 more".
+   */
+  const capped = (items: string[], cap: number): string =>
+    items.length <= cap
+      ? list(items)
+      : list([...items.slice(0, cap), t('andMore', { count: n(items.length - cap) })]);
+  const where = s.villagesWithData.length ? capped(s.villagesWithData.map(name), 3) : areaName;
   let findText: string;
   if (!s.topDomain) findText = t('find.none');
   else {
@@ -418,6 +427,28 @@ export function buildCoreView(input: CoreViewInput): CoreView {
   }
 
   const conf = c.confidence;
+  // Rolled up to the unit the coverage figure counts, not left at the level
+  // the distribution happens to be stored at. A region-scope report
+  // distributes by village but counts governorates, so listing the rows as
+  // they come printed "5 of 6 governorates have data: Unayzah Village 1 (6),
+  // … and 22 more" — a list at one level under a count at another. A row's
+  // `parent` is the unit it belongs to; where there is none the row is the
+  // unit itself.
+  const coverageTotals = new Map<string, number>();
+  for (const d of c.evidence.distribution) {
+    if (d.n <= 0) continue;
+    const unit = d.parent ?? d.unit;
+    coverageTotals.set(unit, (coverageTotals.get(unit) ?? 0) + d.n);
+  }
+  const coverageUnits = [...coverageTotals]
+    .map(([unit, total]) => ({ unit, n: total }))
+    .sort((a, b) => b.n - a.n)
+    // Built here rather than in the label catalogue: a name, a number and
+    // brackets hold nothing to translate, and an Arabic entry identical to
+    // its English one is what report-labels.spec.ts exists to catch.
+    // Brackets round a figure are already used in Arabic elsewhere in this
+    // sentence (confident.completeness), so they render as they should.
+    .map((d) => `${name(d.unit)} (${n(d.n)})`);
   const confParts = [
     conf.sample.required != null
       ? t(conf.sample.valid >= conf.sample.required ? 'confident.sampleMet' : 'confident.sample', {
@@ -428,11 +459,21 @@ export function buildCoreView(input: CoreViewInput): CoreView {
           valid: n(conf.sample.valid),
           minimum: n(conf.sample.minimum),
         }),
+    // Named units with their exact response counts, largest first, rather
+    // than a count and a share alone (client, 6 Nov 2026: "list specific
+    // centre names and exact survey response counts"). "2 of 2 centres have
+    // data" with one name underneath also read as a contradiction; the
+    // breakdown shows both, and a thin unit declares itself by its own
+    // number without having to be labelled.
+    //
+    // Read from evidence.distribution, which every stored report carries, so
+    // reports generated before today gain the names on their next export.
     conf.coverage.total > 1
-      ? t('confident.coverage', {
+      ? t(coverageUnits.length ? 'confident.coverageNamed' : 'confident.coverage', {
           withData: n(conf.coverage.withData),
           total: n(conf.coverage.total),
           units: units(conf.coverage.unitKind),
+          list: capped(coverageUnits, 6),
         })
       : null,
     conf.coverage.largest && conf.coverage.total > 1
@@ -478,7 +519,16 @@ export function buildCoreView(input: CoreViewInput): CoreView {
       : t(`decide.${s.decision}`, { domain: topDomainName || areaName });
 
   // ── Confidence rows ──
+  //
+  // Each row carries `detail`: the figures behind the headline, which the
+  // reader opens from the row itself. The box used to state a verdict and
+  // stop — "2 of 2 centres · largest 90.3% · For information" reads as a
+  // contradiction until you can see that one centre holds 28 responses and
+  // the other 3, and that no threshold has been approved to judge it by.
+  // The PDF does not need this: it prints the same figures in full in its
+  // own geography and evidence sections.
   const sampleTarget = conf.sample.required ?? conf.sample.minimum;
+  const rd = c.reading;
   const confRows: CoreView['confidence']['rows'] = [
     {
       label: t('confidence.sample'),
@@ -489,6 +539,18 @@ export function buildCoreView(input: CoreViewInput): CoreView {
       value: `${n(conf.sample.valid)} / ${n(sampleTarget)}`,
       band: conf.sample.result,
       ratio: sampleTarget ? Math.min(1, conf.sample.valid / sampleTarget) : 0,
+      detail: [
+        t('confidence.detailSample', { valid: n(conf.sample.valid), target: n(sampleTarget) }),
+        // Where the required figure came from, so it is not a number the
+        // reader has to take on trust.
+        rd.requiredSample != null && rd.population != null && rd.marginOfErrorPct != null
+          ? t('reading.required', {
+              required: n(rd.requiredSample),
+              population: n(rd.population),
+              margin: n(rd.marginOfErrorPct),
+            })
+          : t('reading.requiredUnknown'),
+      ],
     },
     {
       label: t('confidence.completeness'),
@@ -496,6 +558,13 @@ export function buildCoreView(input: CoreViewInput): CoreView {
       value: t('confidence.completenessValue', { dk: n(conf.completeness.dontKnowPct) }),
       band: conf.completeness.result,
       ratio: Math.max(0, 1 - conf.completeness.dontKnowPct / 100),
+      detail: [
+        t('confidence.detailCompleteness', {
+          validRate: n(conf.completeness.validRatePct),
+          dk: n(conf.completeness.dontKnowPct),
+          limit: n(conf.completeness.dontKnowLimitPct),
+        }),
+      ],
     },
     {
       label: t('confidence.coverage'),
@@ -514,8 +583,31 @@ export function buildCoreView(input: CoreViewInput): CoreView {
           : ''),
       band: conf.coverage.result,
       ratio: conf.coverage.total ? conf.coverage.withData / conf.coverage.total : 0,
+      detail: [
+        coverageUnits.length
+          ? t('confidence.detailBreakdown', {
+              units: units(conf.coverage.unitKind),
+              list: list(coverageUnits),
+            })
+          : null,
+        s.unitsWithoutData.length
+          ? t('confidence.detailNoData', { units: list(s.unitsWithoutData.map(name)) })
+          : null,
+        conf.coverage.largest
+          ? t('confidence.detailLargest', {
+              unit: name(conf.coverage.largest.unit),
+              pct: n(conf.coverage.largest.sharePct),
+            })
+          : null,
+        // The reason the row says "For information" rather than passing or
+        // failing — the one question the band label provokes and never
+        // answered.
+        conf.coverage.thresholdPct != null
+          ? t('confidence.detailThreshold', { pct: n(conf.coverage.thresholdPct) })
+          : t('confidence.detailNoThreshold'),
+      ].filter((x): x is string => !!x),
     },
-  ].map((r) => ({ ...r, bandLabel: bandLabel(r.band) }));
+  ].map((row) => ({ ...row, bandLabel: bandLabel(row.band) }));
 
   // ── Approval line ──
   const a = input.audit;

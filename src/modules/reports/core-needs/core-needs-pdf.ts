@@ -244,6 +244,10 @@ function fit(s: string, size: number, w: number, bold = false): string {
 function pageSummary(d: Doc): void {
   const v = d.v;
   d.pageStart(false);
+  // The Management box of the reader guide points here. Its own page, so the
+  // jump moves nothing — but a box that does nothing on click reads as a
+  // broken one, and the guide was approved as four jump links, not three.
+  d.pdf.anchor('part-summary');
 
   // Header band, full bleed.
   const badgeW = Math.min(190, Math.max(120, textWidth(v.header.organization, 10, true) + 28));
@@ -409,7 +413,7 @@ function pageSummary(d: Doc): void {
       donors: range(P['part-cards'] ?? P['part-evidence'], d.totalPages || undefined),
     };
     const target: Record<(typeof v.guide)[number]['part'], PartAnchor | null> = {
-      summary: null,
+      summary: 'part-summary',
       programmes: 'part-where',
       research: 'part-evidence',
       donors: P['part-cards'] != null ? 'part-cards' : 'part-evidence',
@@ -1420,8 +1424,9 @@ function needCard(d: Doc, card: CoreView['evidence']['cards'][number]): void {
 
 // ───────────────────────── entry ─────────────────────────
 
-type PartAnchor = 'part-where' | 'part-design' | 'part-evidence' | 'part-cards';
+type PartAnchor = 'part-summary' | 'part-where' | 'part-design' | 'part-evidence' | 'part-cards';
 const PART_ANCHORS: readonly PartAnchor[] = [
+  'part-summary',
   'part-where',
   'part-design',
   'part-evidence',
