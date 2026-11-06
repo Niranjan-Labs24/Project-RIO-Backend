@@ -269,8 +269,8 @@ async function main(): Promise<void> {
     sector: 'other',
     villages: [],
     users: [
-      { roleId: 'role_system_admin', name: 'System Admin', email: 'sysadmin@platform.local' },
-      { roleId: 'role_system_reviewer', name: 'System Reviewer', email: 'sysreviewer@platform.local' },
+      { roleId: 'role_system_admin', name: 'Samir Haddad', email: 'sysadmin@platform.local' },
+      { roleId: 'role_system_reviewer', name: 'Sara Whitfield', email: 'sysreviewer@platform.local' },
     ],
   });
 

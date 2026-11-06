@@ -68,7 +68,11 @@
     "load:seed": "tsx load-test/load-seed.ts",
     "test:load": "artillery run load-test/pilot.yml",
     "db:up": "docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d db",
-    "db:down": "docker compose -f docker-compose.yml -f docker-compose.dev.yml down"
+    "db:down": "docker compose -f docker-compose.yml -f docker-compose.dev.yml down",
+    "seed:core-needs": "tsx prisma/seed-core-needs.ts",
+    "seed:core-needs-fixtures": "tsx prisma/seed-core-needs-fixtures.ts",
+    "seed:core-needs-geography": "tsx prisma/seed-core-needs-geography.ts",
+    "seed:core-needs-verification": "tsx prisma/seed-core-needs-verification.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
