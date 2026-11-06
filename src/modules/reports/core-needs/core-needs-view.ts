@@ -7,7 +7,7 @@
 // the study title) through a lookup the caller fills from the translation
 // service. Numbers keep Latin digits in both languages, as every other report.
 
-import { label as catalogueLabel, type ReportLabelKey } from '../i18n/report-labels';
+import { label as catalogueLabel, hasLabel, type ReportLabelKey } from '../i18n/report-labels';
 import type { MasterDataAliases } from '../i18n/master-data-names';
 import type { SupportedLocale } from '../../translation/translation.types';
 import type { SeverityBand } from '../need-record.types';
@@ -23,6 +23,14 @@ export interface CoreAudit {
   generatedAt: string;
   confirmedBy: string | null;
   confirmedAt: string | null;
+  /**
+   * Whether this report type has an officer sign-off at all. An NGO report
+   * does: analyst confirms, reviewer releases. The NCNP compiled report does
+   * not — System Admin generates, System Reviewer approves, System Admin
+   * publishes — so its audit trail used to print "Officer confirmed: pending"
+   * for a step that can never happen. Left out, it defaults to true.
+   */
+  officerStep?: boolean;
   reviewedBy: string | null;
   reviewedRole: string | null;
   reviewedAt: string | null;
@@ -308,8 +316,13 @@ export function buildCoreView(input: CoreViewInput): CoreView {
   })();
   // The v5.0 flag is LOW: confidence-adaptive wording (client, 4b).
   const below = c.confidence.overall === 'LOW';
-  const tierLabel = (b: SeverityBand): string =>
-    b === 'CRITICAL' && below ? t('tier.CRITICAL_PROVISIONAL') : t(`tier.${b}`);
+  // D12: an equity-flagged KPI is raised to High by the v5.0 rule. Saying so
+  // beside the tier is what makes that raise visible; without it the reader
+  // sees a tier the severity alone does not explain.
+  const tierLabel = (b: SeverityBand, equityFlagged = false): string => {
+    const base = b === 'CRITICAL' && below ? t('tier.CRITICAL_PROVISIONAL') : t(`tier.${b}`);
+    return equityFlagged ? t('tier.EQUITY', { tier: base }) : base;
+  };
 
   // ── Header ──
   const scopeValue =
@@ -678,7 +691,7 @@ export function buildCoreView(input: CoreViewInput): CoreView {
       text: n(r.severity),
       tone: tone(r.band),
       badge: true,
-      sub: r.band ? tierLabel(r.band) : undefined,
+      sub: r.band ? tierLabel(r.band, r.equityFlagged) : undefined,
     },
   ]);
 
@@ -690,6 +703,21 @@ export function buildCoreView(input: CoreViewInput): CoreView {
     s === 'FIT' ? t('fitShort.FIT') : s === 'PRELIMINARY' ? t('fitShort.PRELIMINARY') : t('noValue');
   const measured = c.domains.filter((d) => d.severity !== null);
   const unmeasured = c.domains.filter((d) => d.severity === null);
+  // E15 (client, 15 Oct 2026): "Target group: confirmed. Show it once at
+  // survey/section level. Where a report combines surveys, show each KPI's
+  // target group from its source survey." A column repeating one value on
+  // every row is not "once", so it is kept only when the KPIs disagree —
+  // which is exactly the combined-survey case the rule carves out.
+  const kpiTargetGroups = new Set(
+    c.hierarchy.flatMap((d) =>
+      d.subDomains.flatMap((sd) =>
+        sd.indicators.flatMap((ind) => ind.kpis.map((k) => k.targetGroup ?? c.targetGroup ?? '')),
+      ),
+    ),
+  );
+  const showTargetColumn = kpiTargetGroups.size > 1;
+  const sectionTargetGroup = c.targetGroup ?? [...kpiTargetGroups][0] ?? null;
+
   const hierarchyGroups = c.hierarchy.flatMap((d) =>
     d.subDomains.map((sd) => ({
       title: `${name(d.name)}${sep}${name(sd.name)}`,
@@ -700,19 +728,23 @@ export function buildCoreView(input: CoreViewInput): CoreView {
           { text: kpiName(k.name), bold: true, sub: name(ind.name) },
           { text: actual(k.actual, true) },
           { text: n(k.severity), tone: tone(k.band), badge: true },
-          { text: k.band ? tierLabel(k.band) : t('noValue'), tone: tone(k.band) },
+          { text: k.band ? tierLabel(k.band, k.equityFlagged) : t('noValue'), tone: tone(k.band) },
           { text: fitShort(k.fit), tone: k.fit === 'FIT' ? 'low' : k.fit ? 'critical' : undefined },
           {
             text: k.gapType
               ? catalogueLabel(`presentation.gapType.${k.gapType}` as ReportLabelKey, locale)
               : t('noValue'),
           },
-          {
-            text:
-              (k.targetGroup ?? c.targetGroup)
-                ? name(k.targetGroup ?? c.targetGroup)
-                : t('noValue'),
-          },
+          ...(showTargetColumn
+            ? [
+                {
+                  text:
+                    (k.targetGroup ?? c.targetGroup)
+                      ? name(k.targetGroup ?? c.targetGroup)
+                      : t('noValue'),
+                },
+              ]
+            : []),
           { text: t('hierarchy.baselineNotYet'), muted: true },
         ]),
       ),
@@ -723,6 +755,14 @@ export function buildCoreView(input: CoreViewInput): CoreView {
   // The priority score appears only in the villages table, so it is
   // explained only when that table shows one.
   const showsPriority = !!villagesTable && c.villages.some((v) => v.priorityScore != null);
+  const anyDomainWeight = c.domains.some((d) => d.weight != null);
+  const anyEquityFlagged =
+    c.rankedNeeds.some((r) => r.equityFlagged) ||
+    c.hierarchy.some((d) =>
+      d.subDomains.some((sd) =>
+        sd.indicators.some((ind) => ind.kpis.some((k) => k.equityFlagged)),
+      ),
+    );
   const readingLines = [
     { lead: '', text: t('reading.severity') },
     ...(showsPriority ? [{ lead: '', text: t('reading.priority') }] : []),
@@ -741,6 +781,32 @@ export function buildCoreView(input: CoreViewInput): CoreView {
       ? [{ lead: '', text: t('reading.mde', { mde: n(r.minimumDetectableEffect) }) }]
       : []),
     ...(showsPriority ? [{ lead: '', text: t('reading.formula') }] : []),
+    // D12: only said when the flag actually raised something, so the line
+    // explains a mark the reader can see rather than describing a rule that
+    // did not fire in this report.
+    ...(anyEquityFlagged ? [{ lead: '', text: t('reading.equity') }] : []),
+    // #37: the tiers are coloured and named all through the report but their
+    // thresholds were stated nowhere, so a reader could not tell why a score
+    // sat in one band rather than the next. Values come from the methodology
+    // configuration the report was generated with, not from constants here.
+    {
+      lead: '',
+      text: t('reading.tiers', {
+        critical: n(tiers.critical),
+        high: n(tiers.high),
+        medium: n(tiers.medium),
+      }),
+    },
+    // #51: "w" beside each domain had no legend. Said only when a weight is
+    // actually printed, so a report whose domains carry none stays quiet.
+    ...(anyDomainWeight ? [{ lead: '', text: t('reading.weights') }] : []),
+    // #22: the reviewer asked to see the calculation behind "relevance" —
+    // "if it was multiplied by a weight, show that". It is severity × the
+    // domain's weight, and it only breaks ties, because weighting it as a
+    // full sort put a 42-severity Governance KPI above a 98-severity Health
+    // one. Stating that is what makes the ranking reconstructable from the
+    // figures printed beside it.
+    ...(anyDomainWeight ? [{ lead: '', text: t('reading.relevance') }] : []),
   ];
 
   // Only the pairs held in the methodology configuration (client, 15 Oct).
@@ -774,7 +840,16 @@ export function buildCoreView(input: CoreViewInput): CoreView {
   const e = c.evidence;
   const distRows = e.distribution.map((d): Cell[] => [
     { text: d.parent ? `${name(d.parent)}${sep}${name(d.unit)}` : name(d.unit), bold: d.n > 0 },
-    { text: n(d.n) },
+    // #43: collected against the unit's own required sample, with the bar the
+    // renderer already supports. Falls back to the plain count where no
+    // population has been entered, so a unit without a target is not drawn as
+    // one that has missed it.
+    d.required != null
+      ? {
+          text: `${n(d.n)} / ${n(d.required)}`,
+          progress: Math.min(1, d.n / d.required),
+        }
+      : { text: n(d.n) },
     { text: `${n(d.sharePct)}%`, bold: d.n > 0 },
   ]);
   const resp = e.responses;
@@ -787,7 +862,13 @@ export function buildCoreView(input: CoreViewInput): CoreView {
     : t('age.pending');
 
   const fitRows = e.fitToPublish.map((fr): Cell[] => [
-    { text: name(fr.name), bold: true },
+    {
+      text: name(fr.name),
+      bold: true,
+      sub: fr.subDomains?.length
+        ? fr.subDomains.map((sd) => name(sd)).join(t('listSep'))
+        : undefined,
+    },
     {
       text: t(`fit.${fr.status}`),
       tone: fr.status === 'FIT' ? 'low' : fr.status === 'PRELIMINARY' ? 'medium' : 'none',
@@ -907,12 +988,18 @@ export function buildCoreView(input: CoreViewInput): CoreView {
         .filter(Boolean)
         .join(' · '),
     },
-    {
-      label: t('audit.confirmed'),
-      value: a.confirmedBy
-        ? `${a.confirmedBy} · ${date(a.confirmedAt)} ${time(a.confirmedAt)}`
-        : t('audit.pending'),
-    },
+    // Omitted entirely for a report type that has no officer sign-off, rather
+    // than shown as forever "pending".
+    ...(a.officerStep === false
+      ? []
+      : [
+          {
+            label: t('audit.confirmed'),
+            value: a.confirmedBy
+              ? `${a.confirmedBy} · ${date(a.confirmedAt)} ${time(a.confirmedAt)}`
+              : t('audit.pending'),
+          },
+        ]),
     {
       label: t('audit.reviewed'),
       value: a.reviewedBy
@@ -938,8 +1025,13 @@ export function buildCoreView(input: CoreViewInput): CoreView {
     output: c.output,
     overall: conf.overall,
     watermark: conf.overall === 'LOW' ? t('watermark.LOW') : null,
-    // The running header names the usage status only when it is a warning.
-    running: { left: running, usage: conf.overall === 'LOW' ? t(`usage.${conf.overall}`).toUpperCase() : '' },
+    // The running header always names the usage status, in both directions
+    // (D3, 29 Oct verification): a report that goes to a donor or a
+    // supervisory unit has to say it is fit to use, not stay silent and leave
+    // the reader to infer it from the absence of a warning. `usage.MEETS` was
+    // already in the catalogue in both languages; only the LOW branch was
+    // ever rendered.
+    running: { left: running, usage: t(`usage.${conf.overall}`).toUpperCase() },
     footer: {
       left: `${org} · ${t('platformShort')}`,
       pageOf: t('pageOf', { page: '{page}', count: '{count}' }),
@@ -1118,11 +1210,15 @@ export function buildCoreView(input: CoreViewInput): CoreView {
           t('hierarchy.colPriority'),
           t('hierarchy.colFit'),
           t('hierarchy.colGapType'),
-          t('hierarchy.colTarget'),
+          ...(showTargetColumn ? [t('hierarchy.colTarget')] : []),
           t('hierarchy.colBaseline'),
         ],
         groups: hierarchyGroups,
         note:
+          // Stated once for the section when every KPI shares it (E15).
+          (!showTargetColumn && sectionTargetGroup
+            ? `${t('hierarchy.targetGroupNote', { group: name(sectionTargetGroup) })} `
+            : '') +
           t('hierarchy.note') +
           (c.methodologySplit?.length
             ? ` ${t('hierarchy.versionNote', { kpis: c.methodologySplit.map((x) => `${kpiName(x.kpi)} (${x.versions.join(t('listSep'))})`).join(t('listSep')) })}`
@@ -1130,12 +1226,16 @@ export function buildCoreView(input: CoreViewInput): CoreView {
       },
       reading: { title: t('reading.title'), lines: readingLines },
       links: {
-        // Only when pairs are configured and the overall result meets the
-        // standard (Jagan, 19 Oct 2026); hidden when it is Low.
-        show: L.pairsConfigured > 0 && conf.overall === 'MEETS',
+        // Hidden when the overall result is Low (Jagan, 19 Oct 2026). When it
+        // meets the standard the section is always rendered — with its reason
+        // when no pairs are loaded yet, rather than vanishing silently. The
+        // pair list exists only as an unapproved draft (Indicator_Pairs_v0.1,
+        // 19 Oct), and a section that disappears without explanation was the
+        // substance of the 29 Oct finding (#33).
+        show: conf.overall === 'MEETS',
         title: t('links.title'),
         tag: t('links.hypotheses'),
-        lines: linkLines,
+        lines: L.pairsConfigured === 0 ? [t('links.pending')] : linkLines,
       },
     },
     evidence: {
@@ -1176,6 +1276,24 @@ export function buildCoreView(input: CoreViewInput): CoreView {
               pct: n(answersPct),
             }),
           },
+          // D4: name the reasons behind that count, as the response-level row
+          // above already does. A reason with no catalogue entry falls back to
+          // its stored code rather than disappearing, so a new one is visible
+          // (and obviously unlocalised) instead of silently uncounted.
+          ...(resp.answersExcludedByReason?.length
+            ? [
+                {
+                  label: t('responses.answersExcludedByReason'),
+                  value: resp.answersExcludedByReason
+                    .map((r) => {
+                      const key = `core.exclusionReason.${r.reason}`;
+                      const text = hasLabel(key) ? catalogueLabel(key, locale) : r.reason;
+                      return `${text} ${n(r.count)}`;
+                    })
+                    .join(' · '),
+                },
+              ]
+            : []),
           {
             label: t('responses.dontKnow'),
             value: t('responses.dontKnowValue', {

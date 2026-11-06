@@ -1,6 +1,6 @@
 import { chapterAnchorId, type CalloutTone, type CellTone, type DocSection, type DocTile, type ReportDoc } from "./report-doc";
 import { PRESENTATION_PALETTE } from "./presentation/presentation.config";
-import { hasArabic, shapeArabicAware, shapedWidth, getArabicFont, type ShapedChunk } from "./arabic-text";
+import { hasArabic, shapeArabicAware, shapedWidth, getArabicFont, glyphUnicode, type ShapedChunk } from "./arabic-text";
 import type { SupportedLocale } from "../translation/translation.types";
 import { label } from "./i18n/report-labels";
 
@@ -177,8 +177,25 @@ export function truncate(str: string, size: number, width: number, bold = false)
   while (s.length > 1 && !fits(s + "..", size, width, bold)) s = s.slice(0, -1);
   return s + "..";
 }
+// In Arabic text a Latin token with half a bracket ("(JMP", "SDG)") must not be
+// left alone on a line: shaped by itself it has no Arabic around it to mirror
+// the bracket against, so it prints as "JMP)". Such a token is joined to its
+// neighbouring word and wraps with it.
+function keepBracketedLatinWhole(words: string[]): string[] {
+  const out: string[] = [];
+  let glueNext = false;
+  for (const w of words) {
+    const latin = !hasArabic(w) && /[A-Za-z]/.test(w);
+    const open = latin && /^[(\[][^)\]]*$/.test(w);
+    const close = latin && /^[^(\[]*[)\]][.,;:\u060C\u061B]?$/.test(w);
+    if (out.length > 0 && (glueNext || close)) out[out.length - 1] += ` ${w}`;
+    else out.push(w);
+    glueNext = open;
+  }
+  return out;
+}
 export function wrap(str: string, size: number, width: number, bold = false): string[] {
-  const words = str.split(/\s+/);
+  const words = hasArabic(str) ? keepBracketedLatinWhole(str.split(/\s+/)) : str.split(/\s+/);
   const lines: string[] = [];
   let cur = "";
   for (const w of words) {
@@ -400,6 +417,9 @@ export class Pdf {
     const arabicFont = bold ? "F6" : "F5";
     const latinFont = bold ? "F1" : "F2";
     const widthMap = bold ? this.arabicGlyphWidthsBold : this.arabicGlyphWidthsRegular;
+    // Written in visual (paint) order, the convention readers expect for
+    // right-to-left text; the font's ToUnicode CMap maps each glyph back to
+    // its characters so copy and search return real Arabic.
     let cursor = x;
     const y = this.py(baseline);
     for (const chunk of chunks) {
@@ -2083,11 +2103,23 @@ function buildArabicFontObjects(weight: "regular" | "bold", used: Map<number, nu
     .sort((a, b) => a[0] - b[0])
     .map(([cid, w]) => `${cid}[${w}]`)
     .join(" ");
+  // ToUnicode: glyph id -> characters, for the glyphs this document draws.
+  const hex4 = (n: number) => n.toString(16).padStart(4, "0");
+  const utf16 = (cps: number[]) => cps.map((c) => (c > 0xffff ? hex4(0xd800 + ((c - 0x10000) >> 10)) + hex4(0xdc00 + ((c - 0x10000) & 0x3ff)) : hex4(c))).join("");
+  const uni = glyphUnicode(weight);
+  const bfchars = [...used.keys()]
+    .sort((a, b) => a - b)
+    .filter((cid) => uni.has(cid))
+    .map((cid) => `<${hex4(cid)}> <${utf16(uni.get(cid)!)}>`);
+  const cmapParts: string[] = [];
+  for (let i = 0; i < bfchars.length; i += 100) cmapParts.push(`${Math.min(100, bfchars.length - i)} beginbfchar\n${bfchars.slice(i, i + 100).join("\n")}\nendbfchar`);
+  const cmap = `/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n/CMapName /Adobe-Identity-UCS def\n/CMapType 2 def\n1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n${cmapParts.join("\n")}\nendcmap\nCMapName currentdict /CMap defineresource pop\nend\nend`;
   return [
     `<< /Length ${Buffer.byteLength(ttfLatin1, "latin1")} /Length1 ${ttfByteLength} >>\nstream\n${ttfLatin1}\nendstream`,
     `<< /Type /FontDescriptor /FontName /${baseFontName} /Flags 4 /FontBBox [${bbox.minX} ${bbox.minY} ${bbox.maxX} ${bbox.maxY}] /ItalicAngle 0 /Ascent ${Math.round(font.ascent)} /Descent ${Math.round(font.descent)} /CapHeight ${Math.round(font.capHeight || font.ascent)} /StemV 80 /FontFile2 ${fontFileNum} 0 R >>`,
     `<< /Type /Font /Subtype /CIDFontType2 /BaseFont /${baseFontName} /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor ${descNum} 0 R /CIDToGIDMap /Identity /DW 500${wEntries ? ` /W [${wEntries}]` : ""} >>`,
-    `<< /Type /Font /Subtype /Type0 /BaseFont /${baseFontName} /Encoding /Identity-H /DescendantFonts [${cidNum} 0 R] >>`,
+    `<< /Type /Font /Subtype /Type0 /BaseFont /${baseFontName} /Encoding /Identity-H /DescendantFonts [${cidNum} 0 R] /ToUnicode ${firstObjNum + 4} 0 R >>`,
+    `<< /Length ${Buffer.byteLength(cmap, "latin1")} >>\nstream\n${cmap}\nendstream`,
   ];
 }
 
@@ -2125,10 +2157,10 @@ function assemble(
   // (bold) — see buildArabicFontObjects below.
   const needsArabic = arabicGlyphs.regular.size > 0 || arabicGlyphs.bold.size > 0;
   const arabicRegularFirst = fontSerifReg + 1;
-  const arabicBoldFirst = arabicRegularFirst + (needsArabic ? 4 : 0);
+  const arabicBoldFirst = arabicRegularFirst + (needsArabic ? 5 : 0);
   const fontArabicRegularType0 = arabicRegularFirst + 3;
   const fontArabicBoldType0 = arabicBoldFirst + 3;
-  const firstContent = arabicBoldFirst + (needsArabic ? 4 : 0);
+  const firstContent = arabicBoldFirst + (needsArabic ? 5 : 0);
 
   // Annotation objects come after the content streams. Their count is known up
   // front, so the numbering stays a simple offset rather than needing a

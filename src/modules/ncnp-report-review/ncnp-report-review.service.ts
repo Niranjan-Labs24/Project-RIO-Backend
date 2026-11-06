@@ -181,8 +181,11 @@ export class NcnpReportReviewService {
       audit: {
         generatedBy: names.get(row.generatedBy) ?? null,
         generatedAt: row.generatedAt.toISOString(),
+        // No officer sign-off in this chain: System Admin generates, System
+        // Reviewer approves, System Admin publishes.
         confirmedBy: null,
         confirmedAt: null,
+        officerStep: false,
         reviewedBy: row.reviewedBy ? (names.get(row.reviewedBy) ?? null) : null,
         reviewedRole: row.reviewedBy ? 'System Reviewer' : null,
         reviewedAt: row.reviewedAt ? row.reviewedAt.toISOString() : null,

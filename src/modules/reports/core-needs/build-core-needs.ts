@@ -99,6 +99,34 @@ function requiredFor(
   }
 }
 
+/**
+ * The same calculation as `requiredFor`, keeping the minimum detectable effect
+ * the helper already returns beside the sample size.
+ *
+ * The "how to read the numbers" block used to read required sample, population
+ * and MDE from the Study row alone, so entering a unit's official population
+ * through Admin Data Entry filled the profile card and nothing else — the
+ * three figures that population exists to drive stayed blank (#5, #43, #57 and
+ * T8, 29 Oct verification). The per-unit tables below already fall back to the
+ * area profile this way; this gives the reading block the same fallback
+ * instead of a second source of truth.
+ */
+function sampleFor(
+  population: number | null | undefined,
+  marginOfError: number | null,
+): { requiredSampleSize: number; minimumDetectableEffect: number } | null {
+  if (!population || population <= 0 || !Number.isInteger(population)) return null;
+  try {
+    const r = calculateSampleSize(population, marginOfError ?? undefined);
+    return {
+      requiredSampleSize: r.requiredSampleSize,
+      minimumDetectableEffect: r.minimumDetectableEffect,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Households counted once: distinct responses with at least one scored answer. */
 function households(answers: GeoAnswer[]): { valid: number; submitted: number } {
   const all = new Set<string>();
@@ -131,10 +159,36 @@ export function buildCoreNeedsContent(input: BuildCoreNeedsInput): CoreNeedsCont
   const cfg = input.config ?? CORE_NEEDS_CONFIG;
   const { inputs } = input;
   const study = inputs.study;
+
+  // The required sample this report is judged against (client, 15 Oct 2026:
+  // "Sample adequacy: Low when there are fewer than 10 valid responses, or
+  // fewer than the required sample size").
+  //
+  // It comes from the population of the area THIS report covers, taken from
+  // that unit's own area profile, and falls back to the study's figure only
+  // when the unit has no profile entered. A study's own required sample is
+  // computed once at creation from the whole study area, so judging a
+  // governorate or a village against it asks a sub-unit to carry the sample
+  // the entire study needs: the Al-Ghat report read "20 of the 94 required"
+  // on page 1 while its own distribution table, which has always used the
+  // unit's population, read "Mulayh Village 17 / 6" two pages later. The
+  // per-unit tables and this box now derive the figure the same way, so a
+  // report states one required sample, not two.
+  //
+  // Computed before `settings` so the per-KPI rollups below judge confidence
+  // against the same figure as the report-level box; the two disagreeing
+  // would be worse than either value on its own.
+  const unitFigures = (() => {
+    const key = unitProfileKey(inputs);
+    return key ? (inputs.profiles.get(key) ?? null) : null;
+  })();
+  const unitSample = sampleFor(unitFigures?.population, study.marginOfError);
+  const requiredSample = unitSample?.requiredSampleSize ?? study.requiredSampleSize;
+
   const settings: ConfidenceSettings = {
     minRespondents: inputs.confidence.minRespondents,
     dontKnowRatio: inputs.confidence.dontKnowRatio,
-    requiredSampleSize: study.requiredSampleSize,
+    requiredSampleSize: requiredSample,
   };
 
   // ── Domain selection ──
@@ -216,7 +270,23 @@ export function buildCoreNeedsContent(input: BuildCoreNeedsInput): CoreNeedsCont
     (a) => a.status === 'SCORED' && a.severity !== null,
   ).length;
   const dontKnowPct = pct(dk, scoredAnswers + dk);
-  const answersExcluded = unitAnswers.filter((a) => a.status === 'EXCLUDED').length;
+  const excludedAnswers = unitAnswers.filter((a) => a.status === 'EXCLUDED');
+  const answersExcluded = excludedAnswers.length;
+  // D4: the same breakdown response-level exclusions already carry. Counted
+  // from the stored reason so a reason added later shows up without a code
+  // change; an answer excluded with no reason recorded is grouped under
+  // UNSPECIFIED rather than silently dropped from the total.
+  const answersExcludedByReason = [
+    ...excludedAnswers
+      .reduce((acc, a) => {
+        const reason = a.exclusionReason ?? 'UNSPECIFIED';
+        return acc.set(reason, (acc.get(reason) ?? 0) + 1);
+      }, new Map<string, number>())
+      .entries(),
+  ]
+    .map(([reason, count]) => ({ reason, count }))
+    // Commonest first, then by code, so the order is stable between runs.
+    .sort((x, y) => y.count - x.count || x.reason.localeCompare(y.reason));
 
   // ── Child units: the geography one level below the scope ──
   const level = inputs.unit.level;
@@ -400,6 +470,15 @@ export function buildCoreNeedsContent(input: BuildCoreNeedsInput): CoreNeedsCont
   // within a governorate: its share is of the whole scope and never flagged.
   const shareOf: Array<string | null> = [];
   const villageGov = (name: string) => inputs.villages.find((v) => v.name === name)?.governorateId ?? null;
+  // #43: each row's own required sample, from that unit's entered population.
+  // Null when none is entered, so the bar appears only where it can mean
+  // something rather than implying a target of zero.
+  const villageRequired = (name: string): number | null => {
+    const v = inputs.villages.find((x) => x.name === name);
+    if (!v) return null;
+    const pop = inputs.profiles.get(villageUnitKey(v.governorateId, v.typedName))?.population;
+    return requiredFor(pop, study.marginOfError);
+  };
   const villageCounts = new Map<string, number>();
   for (const v of inputs.villages) {
     const n = households(answers.filter((a) => a.village === v.name)).valid;
@@ -414,12 +493,27 @@ export function buildCoreNeedsContent(input: BuildCoreNeedsInput): CoreNeedsCont
       const own = ch.villages.filter((v) => villageCounts.has(v));
       if (own.length)
         for (const v of own) {
-          distribution.push({ unit: v, parent: ch.name, n: villageCounts.get(v)!, sharePct: 0 });
+          distribution.push({
+            unit: v,
+            parent: ch.name,
+            n: villageCounts.get(v)!,
+            sharePct: 0,
+            required: villageRequired(v),
+          });
           shareOf.push(villageGov(v));
         }
       else {
         const n = households(answers.filter(ch.matches)).valid;
-        distribution.push({ unit: ch.name, parent: null, n, sharePct: 0 });
+        distribution.push({
+          unit: ch.name,
+          parent: null,
+          n,
+          sharePct: 0,
+          required: requiredFor(
+            ch.profileKey ? inputs.profiles.get(ch.profileKey)?.population : null,
+            study.marginOfError,
+          ),
+        });
         shareOf.push(childKind === 'CENTRE' ? inputs.unit.id : null);
       }
     }
@@ -430,6 +524,7 @@ export function buildCoreNeedsContent(input: BuildCoreNeedsInput): CoreNeedsCont
         parent: null,
         n: villageCounts.get(v.name) ?? 0,
         sharePct: 0,
+        required: villageRequired(v.name),
       });
       shareOf.push(v.governorateId);
     }
@@ -467,7 +562,7 @@ export function buildCoreNeedsContent(input: BuildCoreNeedsInput): CoreNeedsCont
           : null;
 
   // ── Confidence: a breakdown of the v5.0 flag (client, 15 Oct 2026) ──
-  const sampleResult = sampleResultOf(hh.valid, study.requiredSampleSize, minimum);
+  const sampleResult = sampleResultOf(hh.valid, requiredSample, minimum);
   const coverageTotal = children.length || 1;
   const coverageWith = children.length
     ? geographyUnits.filter((u) => u.households > 0).length
@@ -486,7 +581,7 @@ export function buildCoreNeedsContent(input: BuildCoreNeedsInput): CoreNeedsCont
   const overall = anyLow(sampleResult, coverageResult, completenessResult);
   const confidence: ConfidenceComponents = {
     overall,
-    sample: { valid: hh.valid, required: study.requiredSampleSize, minimum, result: sampleResult },
+    sample: { valid: hh.valid, required: requiredSample, minimum, result: sampleResult },
     coverage: {
       // With no units beneath it (a centre whose study names no villages),
       // coverage counts the area itself: "1 of 1 centres", not villages.
@@ -607,6 +702,7 @@ export function buildCoreNeedsContent(input: BuildCoreNeedsInput): CoreNeedsCont
         actual: actualFor(k.entityId, answers),
         severity,
         band: tierOf(severity, tiers, kpiCriticalEligible(k.entityId), kpiEquityFlagged(k.entityId)),
+        equityFlagged: kpiEquityFlagged(k.entityId),
         gapType: gapTypeFor(k.entityId),
       };
     });
@@ -656,13 +752,14 @@ export function buildCoreNeedsContent(input: BuildCoreNeedsInput): CoreNeedsCont
                   actual: actualFor(kpi, answers),
                   severity,
                   band: tierOf(severity, tiers, kpiCriticalEligible(kpi), kpiEquityFlagged(kpi)),
+                  equityFlagged: kpiEquityFlagged(kpi),
                   gapType: gapTypeFor(kpi),
                   targetGroup: targetGroupFor(kpi),
                   fit:
                     severity === null
                       ? null
                       : anyLow(
-                            sampleResultOf(kr.validResponseCount, study.requiredSampleSize, minimum),
+                            sampleResultOf(kr.validResponseCount, requiredSample, minimum),
                             coverageResult,
                             completenessResult,
                           ) === 'MEETS'
@@ -746,38 +843,45 @@ export function buildCoreNeedsContent(input: BuildCoreNeedsInput): CoreNeedsCont
 
   const fitToPublish: CoreEvidence['fitToPublish'] = selectedDomains.map((d) => {
     const r = roll.domain.get(d.name);
+    // Read straight off the hierarchy built above rather than re-derived from
+    // the question bank: the bank lists every sub-domain a domain has, while
+    // the hierarchy keeps only the ones this survey actually measured. Taking
+    // it from there is the only way the two tables cannot disagree.
+    const subDomains = hierarchy.find((h) => h.key === d.key)?.subDomains.map((sd) => sd.name) ?? [];
     if (!r || r.severityScore === null)
       return {
         key: d.key,
         name: d.name,
+        subDomains,
         status: 'NOT_MEASURED',
         valid: 0,
-        required: study.requiredSampleSize,
+        required: requiredSample,
         unitsWithData: 0,
         unitsTotal: coverageTotal,
       };
     const result = anyLow(
-      sampleResultOf(r.validResponseCount, study.requiredSampleSize, minimum),
+      sampleResultOf(r.validResponseCount, requiredSample, minimum),
       coverageResult,
       completenessResult,
     );
     return {
       key: d.key,
       name: d.name,
+      subDomains,
       status: result === 'MEETS' ? 'FIT' : 'PRELIMINARY',
       valid: r.validResponseCount,
-      required: study.requiredSampleSize,
+      required: requiredSample,
       unitsWithData: coverageWith,
       unitsTotal: coverageTotal,
     };
   });
 
   const collectNext: CoreEvidence['collectNext'] = [];
-  if (study.requiredSampleSize != null && hh.valid < study.requiredSampleSize) {
+  if (requiredSample != null && hh.valid < requiredSample) {
     const withData = [...villageCounts.keys()];
     collectNext.push({
       kind: 'MORE_HOUSEHOLDS',
-      count: study.requiredSampleSize - hh.valid,
+      count: requiredSample - hh.valid,
       where: withData.length === 1 ? withData[0]! : (inputs.unit.name ?? study.title),
     });
   }
@@ -816,6 +920,7 @@ export function buildCoreNeedsContent(input: BuildCoreNeedsInput): CoreNeedsCont
         .length,
       incomplete: unitResponses.filter((r) => r.incomplete).length,
       answersExcluded,
+      answersExcludedByReason,
       outsideGeography: inputs.outsideGeography,
       totalAnswers: unitAnswers.length,
       dontKnowPct,
@@ -867,7 +972,7 @@ export function buildCoreNeedsContent(input: BuildCoreNeedsInput): CoreNeedsCont
         beneficiaries,
         evidence: {
           valid: hh.valid,
-          required: study.requiredSampleSize,
+          required: requiredSample,
           villages: villageCounts.size,
           result: overall,
         },
@@ -899,6 +1004,12 @@ export function buildCoreNeedsContent(input: BuildCoreNeedsInput): CoreNeedsCont
   };
 
   const profileKey = unitProfileKey(inputs);
+  // The same order as the required sample above: the unit's own entered
+  // figures first, the study's only when the unit has none. The reading
+  // block explains the number the confidence box uses, so the two have to be
+  // derived from one population, not two.
+  const readingPopulation = unitFigures?.population ?? study.population ?? null;
+  const derivedSample = unitSample ?? sampleFor(study.population, study.marginOfError);
   return {
     kind: 'CORE_NEEDS',
     version: 2,
@@ -944,11 +1055,15 @@ export function buildCoreNeedsContent(input: BuildCoreNeedsInput): CoreNeedsCont
     methodologySplit: inputs.methodologySplit,
     targetGroup: inputs.survey.targetGroup,
     reading: {
-      requiredSample: study.requiredSampleSize,
-      population: study.population,
+      requiredSample: requiredSample ?? derivedSample?.requiredSampleSize ?? null,
+      population: readingPopulation,
       marginOfErrorPct: study.marginOfError != null ? round1(study.marginOfError * 100) : null,
       minimumDetectableEffect:
-        study.minimumDetectableEffect != null ? round1(study.minimumDetectableEffect) : null,
+        derivedSample != null
+          ? round1(derivedSample.minimumDetectableEffect)
+          : study.minimumDetectableEffect != null
+            ? round1(study.minimumDetectableEffect)
+            : null,
     },
     links,
     evidence,

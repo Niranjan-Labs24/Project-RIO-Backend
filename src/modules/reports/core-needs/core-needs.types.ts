@@ -184,6 +184,12 @@ export interface CoreRankedNeed {
   actual: ActualValue | null;
   severity: number;
   band: SeverityBand | null;
+  /** The v5.0 equity flag that raised this KPI to High (results differ
+   *  materially between gender or age groups). The rule has always run in
+   *  scoring, but nothing in the report said so, which left a raised tier
+   *  unexplained to the reader (D12, 29 Oct verification).
+   *  Absent on reports generated before 30 Oct 2026. */
+  equityFlagged?: boolean;
   /** From the need behind the KPI's answers; null when they disagree.
    *  Absent on reports generated before 22 Oct 2026. */
   gapType?: GapType | null;
@@ -206,6 +212,8 @@ export interface CoreHierarchyKpi {
   actual: ActualValue | null;
   severity: number | null;
   band: SeverityBand | null;
+  /** See CoreRankedNeed.equityFlagged (D12). */
+  equityFlagged?: boolean;
   gapType: GapType | null;
   /** The target group of the survey(s) the KPI comes from. */
   targetGroup: string | null;
@@ -248,7 +256,17 @@ export interface CoreLinks {
 }
 
 export interface CoreEvidence {
-  distribution: Array<{ unit: string; parent: string | null; n: number; sharePct: number }>;
+  /** `required` is the unit's own Cochran sample from its entered population
+   *  (#43, 29 Oct verification: "a progress bar per unit showing households
+   *  collected vs. required"). Null where no population has been entered for
+   *  that unit, which is why the bar is per-row rather than report-wide. */
+  distribution: Array<{
+    unit: string;
+    parent: string | null;
+    n: number;
+    sharePct: number;
+    required?: number | null;
+  }>;
   concentration: "CONCENTRATED" | "FULLY_CONCENTRATED" | null;
   /** Approved concentration threshold; null = the share is only stated. */
   concentratedFromPct: number | null;
@@ -259,6 +277,14 @@ export interface CoreEvidence {
     lowConfidence: number;
     incomplete: number;
     answersExcluded: number;
+    /** `answersExcluded` broken down by its stored reason, commonest first
+     *  (D4, 29 Oct verification). Response-level exclusions have always named
+     *  their reasons; the answer-level count was a bare number, which left the
+     *  report's single largest exclusion unexplained. Reason codes are the
+     *  stored `ResponseSeverityScore.exclusionReason` values, not display
+     *  text — the view maps each to the label catalogue.
+     *  Absent on reports generated before 30 Oct 2026, which still export. */
+    answersExcludedByReason?: Array<{ reason: string; count: number }>;
     /** Responses excluded as outside the study geography (registration pick). */
     outsideGeography?: number;
     totalAnswers: number;
@@ -270,6 +296,15 @@ export interface CoreEvidence {
   fitToPublish: Array<{
     key: string;
     name: string;
+    /** The sub-domains measured under this domain, in the order the hierarchy
+     *  shows them (client comment 59: name the sub-domains here too, not only
+     *  in the needs hierarchy). Empty for a domain with no questions.
+     *
+     *  Optional: a report generated before this field existed is still
+     *  re-rendered from its stored content every time it is exported, and
+     *  reading `.length` off a missing field there turned the whole report
+     *  into a 500. */
+    subDomains?: string[];
     status: "FIT" | "PRELIMINARY" | "NOT_MEASURED";
     valid: number;
     required: number | null;

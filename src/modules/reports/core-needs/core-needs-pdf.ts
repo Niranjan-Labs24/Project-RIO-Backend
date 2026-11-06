@@ -63,6 +63,10 @@ class Doc {
   constructor(
     readonly v: CoreView,
     readonly pages: Partial<Record<PartAnchor, number>> = {},
+    /** Total pages from that same pass, so the guide can state a section's
+     *  last page and not only its first (D11). 0 on the first pass, when
+     *  the guide prints section titles without page numbers anyway. */
+    readonly totalPages = 0,
   ) {
     this.pdf.dir = v.dir;
   }
@@ -264,18 +268,21 @@ function pageSummary(d: Doc): void {
     d.line(LEFT + chip.x + 8, 7.5, false, chip.text, COLOR.white);
     d.y = keep;
   }
-  // Organisation badge and the platform-owner line.
-  d.box(R - badgeW, 20, badgeW, 26, COLOR.white, null, 5);
-  d.y = 28.5;
-  d.line(
-    R - badgeW + 12,
-    10,
-    true,
-    fit(v.header.organization, 10, badgeW - 24, true),
-    COLOR.tealText,
-  );
-  d.y = 54;
-  d.right(R, 7.5, false, v.header.platformOwner, COLOR.white);
+  // Organisation badge and the platform-owner line. A long name wraps to a
+  // second line rather than truncating, and the owner line is dropped when it
+  // only repeats the badge (the owner is the organisation itself).
+  const orgLines = wrap(v.header.organization, 10, badgeW - 24, true).slice(0, 2);
+  const badgeH = orgLines.length > 1 ? 38 : 26;
+  d.box(R - badgeW, 20, badgeW, badgeH, COLOR.white, null, 5);
+  d.y = orgLines.length > 1 ? 25.5 : 28.5;
+  for (const ln of orgLines) {
+    d.line(R - badgeW + 12, 10, true, ln, COLOR.tealText);
+    d.y += 12.5;
+  }
+  if (!v.header.platformOwner.includes(v.header.organization)) {
+    d.y = 20 + badgeH + 8;
+    d.right(R, 7.5, false, v.header.platformOwner, COLOR.white);
+  }
 
   d.y = bandH + 14;
 
@@ -391,8 +398,15 @@ function pageSummary(d: Doc): void {
         P['part-where'],
         P['part-evidence'] != null ? P['part-evidence'] - 1 : undefined,
       ),
-      research: range(P['part-evidence']),
-      donors: range(P['part-cards'] ?? P['part-evidence']),
+      // D11: both of these used to print only a start page, so a section
+      // spanning two pages was announced as one — the need cards run across
+      // the last two pages and the strip said just the first. The end comes
+      // from the next section's start, or from the total where none follows.
+      research: range(
+        P['part-evidence'],
+        P['part-cards'] != null ? P['part-cards'] - 1 : d.totalPages || undefined,
+      ),
+      donors: range(P['part-cards'] ?? P['part-evidence'], d.totalPages || undefined),
     };
     const target: Record<(typeof v.guide)[number]['part'], PartAnchor | null> = {
       summary: null,
@@ -1110,9 +1124,7 @@ function pageEvidence(d: Doc): void {
   d.partTitle(e.title, e.lead);
 
   const half = (CONTENT_W - 12) / 2;
-  const top = d.y;
   // Sample distribution (left).
-  const distRows = e.distribution.rows.length;
   // A label and value that do not fit on one line (the exclusion reason, the
   // collection method) take two, the value under its label.
   const respTwoLine = (row: { label: string; value: string }) =>
@@ -1123,40 +1135,115 @@ function pageEvidence(d: Doc): void {
     0,
   );
   const noteH = d.measure(e.responses.note, 6.8, half - 24, false, 1.25);
-  const boxH = Math.max(46 + distRows * 15 + 34, 32 + respH + 44 + noteH + 4);
-  d.ensure(boxH);
-  d.box(LEFT, top, half, boxH, COLOR.white, COLOR.border, 6);
-  d.y = top + 12;
-  d.cardTitle(LEFT + 12, e.distribution.title, 9.5);
-  d.y = top + 32;
+  // A row carrying a progress bar (#43) is 22pt tall, not 15 — see the row
+  // loop below. Sizing the box at 15 a row made it too short for every unit
+  // that has a required sample, and a long list then ran past the box, past
+  // the page and straight over the footer. A Kingdom-scope report lists
+  // every village: 60 rows here, which no single page can hold, so the rows
+  // are also split across pages instead of being drawn as one tall box.
+  const DIST_HEAD = 46;
+  const DIST_FOOT = 34;
+  const distRowH = e.distribution.rows.map((row) =>
+    row.some((cell) => cell.progress != null) ? 22 : 15,
+  );
+  // Which gender segments will be too narrow to carry their label inside the
+  // bar. Worked out here, not while drawing, because the box has to be tall
+  // enough for the line that names them.
+  const genderTotal = e.responses.gender.reduce((sum, g) => sum + g.count, 0);
+  const genderUnlabelled = genderTotal
+    ? e.responses.gender
+        .filter((g) => g.count)
+        .filter((g) => {
+          const label = `${g.label} ${g.count}`;
+          return textWidth(label, 6.8, true) >= (half - 24) * (g.count / genderTotal) - 4;
+        })
+        .map((g) => `${g.label} ${g.count}`)
+    : [];
+  const rightH = 32 + respH + 44 + noteH + 4 + (genderUnlabelled.length ? 11 : 0);
+  d.ensure(Math.min(DIST_HEAD + DIST_FOOT + (distRowH[0] ?? 15) * 3, rightH));
+  let top = d.y;
   const cw = [0.62, 0.16, 0.22].map((f) => f * (half - 24));
-  e.distribution.columns.forEach((c, i) => {
-    const x = LEFT + 12 + cw.slice(0, i).reduce((a, b) => a + b, 0);
-    if (i === 0) d.line(x, 7.5, true, c, COLOR.ink);
-    else d.right(x + cw[i]!, 7.5, true, c, COLOR.ink);
-  });
-  d.y = top + 46;
-  for (const row of e.distribution.rows) {
+  // One chunk of the table: its own box, title and column header, so a list
+  // that spills onto further pages still reads as the same table.
+  const distChunkHead = (boxTop: number, boxH: number): void => {
+    d.box(LEFT, boxTop, half, boxH, COLOR.white, COLOR.border, 6);
+    d.y = boxTop + 12;
+    d.cardTitle(LEFT + 12, e.distribution.title, 9.5);
+    d.y = boxTop + 32;
+    e.distribution.columns.forEach((c, i) => {
+      const x = LEFT + 12 + cw.slice(0, i).reduce((a, b) => a + b, 0);
+      if (i === 0) d.line(x, 7.5, true, c, COLOR.ink);
+      else d.right(x + cw[i]!, 7.5, true, c, COLOR.ink);
+    });
+    d.y = boxTop + DIST_HEAD;
+  };
+
+  const distRow = (row: Cell[]): void => {
     const yy = d.y;
+    // #43: "a progress bar per unit showing households collected vs.
+    // required". This table is drawn by hand rather than through the shared
+    // cell renderer, so it carried the figures but never the bar. Drawn to
+    // the same spec as that renderer: a track with the collected share over
+    // it, green once the required sample is reached.
+    const hasProgress = row.some((cell) => cell.progress != null);
     row.forEach((cell, i) => {
       d.y = yy;
       const x = LEFT + 12 + cw.slice(0, i).reduce((a, b) => a + b, 0);
       if (i === 0)
         d.line(x, 7.8, !!cell.bold, fit(cell.text, 7.8, cw[0]! - 4, !!cell.bold), COLOR.ink);
       else d.right(x + cw[i]!, 7.8, !!cell.bold, cell.text, COLOR.ink);
+      if (cell.progress != null) {
+        const pw = Math.min(cw[i]! - 4, 60);
+        const px = x + cw[i]! - pw;
+        d.box(px, yy + 10, pw, 3.5, COLOR.track, null, 1.75);
+        if (cell.progress > 0)
+          d.box(
+            px,
+            yy + 10,
+            Math.max(3.5, pw * cell.progress),
+            3.5,
+            cell.progress >= 1 ? TONE.low : COLOR.teal,
+            null,
+            1.75,
+          );
+      }
     });
-    d.y = yy + 15;
-  }
-  d.y += 4;
-  if (e.distribution.flag) {
-    const fw = textWidth(e.distribution.flag, 7.2, true) + 12;
-    d.box(LEFT + 12, d.y - 2, fw, 14, null, BAND.LOW.fg, 3, 0.8);
-    const keep = d.y;
-    d.y += 1.5;
-    d.line(LEFT + 18, 7.2, true, e.distribution.flag, BAND.LOW.fg);
-    d.y = keep;
-    d.para(LEFT + 18 + fw, half - fw - 30, e.distribution.note, 7, false, COLOR.muted, 1.25);
-  } else d.para(LEFT + 12, half - 24, e.distribution.note, 7, false, COLOR.muted, 1.25);
+    d.y = yy + (hasProgress ? 22 : 15);
+  };
+
+  const distNote = (): void => {
+    d.y += 4;
+    if (e.distribution.flag) {
+      const fw = textWidth(e.distribution.flag, 7.2, true) + 12;
+      d.box(LEFT + 12, d.y - 2, fw, 14, null, BAND.LOW.fg, 3, 0.8);
+      const keep = d.y;
+      d.y += 1.5;
+      d.line(LEFT + 18, 7.2, true, e.distribution.flag, BAND.LOW.fg);
+      d.y = keep;
+      d.para(LEFT + 18 + fw, half - fw - 30, e.distribution.note, 7, false, COLOR.muted, 1.25);
+    } else d.para(LEFT + 12, half - 24, e.distribution.note, 7, false, COLOR.muted, 1.25);
+  };
+
+  /** How many rows fit from `from` in `room` points. At least one, so a row
+   *  taller than a whole page cannot spin the loop for ever. */
+  const distFit = (from: number, room: number): { take: number; used: number } => {
+    let take = 0;
+    let used = 0;
+    while (from + take < distRowH.length && used + distRowH[from + take]! <= room) {
+      used += distRowH[from + take]!;
+      take += 1;
+    }
+    if (take === 0 && from < distRowH.length) return { take: 1, used: distRowH[from]! };
+    return { take, used };
+  };
+
+  const firstChunk = distFit(0, BODY_BOTTOM - top - DIST_HEAD - DIST_FOOT);
+  const restAfterFirst = firstChunk.take < e.distribution.rows.length;
+  const boxH = Math.max(DIST_HEAD + firstChunk.used + DIST_FOOT, rightH);
+  distChunkHead(top, boxH);
+  for (let i = 0; i < firstChunk.take; i += 1) distRow(e.distribution.rows[i]!);
+  // The note closes the table, so it belongs under the last chunk.
+  if (!restAfterFirst) distNote();
 
   // Responses and exclusions (right).
   const rx = LEFT + half + 12;
@@ -1185,6 +1272,10 @@ function pageEvidence(d: Doc): void {
   const gTop = d.y + 2;
   const gColors = [COLOR.blue, hex('#3f8a78'), hex('#8a959c')];
   let acc = 0;
+  // A segment too narrow for its own label is named under the bar instead.
+  // Three respondents in thirty-eight is an 8% slice: the label never fitted,
+  // so the reader saw a grey block with no idea what it stood for — which is
+  // the bucket comment 13 asked to have named.
   e.responses.gender.forEach((g, i) => {
     if (!total || !g.count) return;
     const w = (gw * g.count) / total;
@@ -1200,10 +1291,31 @@ function pageEvidence(d: Doc): void {
   });
   if (!total) d.bar(gx, gTop, gw, 14, COLOR.track);
   d.y = gTop + 20;
+  if (genderUnlabelled.length) {
+    d.line(rx + 12, 7.2, false, fit(genderUnlabelled.join(' · '), 7.2, half - 24), COLOR.muted);
+    d.y += 11;
+  }
   d.line(rx + 12, 7.2, false, fit(e.responses.age, 7.2, half - 24), COLOR.muted);
   d.y += 12;
   d.para(rx + 12, half - 24, e.responses.note, 6.8, false, COLOR.muted, 1.25);
   d.y = top + boxH + 12;
+
+  // Whatever did not fit beside the responses box carries on, one page at a
+  // time. Only the first page pairs the two boxes; the rest is the table on
+  // its own, which is why the continuation boxes are sized to their rows.
+  let distIdx = firstChunk.take;
+  while (distIdx < e.distribution.rows.length) {
+    d.newPage();
+    top = d.y;
+    const chunk = distFit(distIdx, BODY_BOTTOM - top - DIST_HEAD - DIST_FOOT);
+    const last = distIdx + chunk.take >= e.distribution.rows.length;
+    const h = DIST_HEAD + chunk.used + DIST_FOOT;
+    distChunkHead(top, h);
+    for (let i = distIdx; i < distIdx + chunk.take; i += 1) distRow(e.distribution.rows[i]!);
+    if (last) distNote();
+    distIdx += chunk.take;
+    d.y = top + h + 12;
+  }
 
   // Fit to publish (left, wide) + collect next (right).
   const fitW = CONTENT_W - 190;
@@ -1316,8 +1428,8 @@ const PART_ANCHORS: readonly PartAnchor[] = [
   'part-cards',
 ];
 
-function draw(view: CoreView, pages: Partial<Record<PartAnchor, number>>): Doc {
-  const d = new Doc(view, pages);
+function draw(view: CoreView, pages: Partial<Record<PartAnchor, number>>, totalPages = 0): Doc {
+  const d = new Doc(view, pages, totalPages);
   pageSummary(d);
   if (view.output === 'FULL') {
     pageWhere(d);
@@ -1339,5 +1451,5 @@ export function renderCoreNeedsPdf(view: CoreView): Buffer {
     const p = first.pdf.anchorPage(a);
     if (p != null) pages[a] = p;
   }
-  return draw(view, pages).pdf.build();
+  return draw(view, pages, first.pdf.pageCount).pdf.build();
 }
