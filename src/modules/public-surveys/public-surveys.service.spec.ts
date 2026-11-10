@@ -175,7 +175,7 @@ describe('PublicSurveysService bounded reads (Task 8)', () => {
 
     // Row completeness: exactly 2,250 data rows (+1 header) survive the
     // cursor-batched read, none dropped or duplicated across the boundary.
-    const dataLines = csv.split('\n').slice(1);
+    const dataLines = csv.trimEnd().split('\r\n').slice(1);
     expect(dataLines).toHaveLength(2_250);
     expect(dataLines[0]).toContain('answer-0');
     expect(dataLines[dataLines.length - 1]).toContain('answer-2249');
@@ -212,7 +212,7 @@ describe('PublicSurveysService bounded reads (Task 8)', () => {
     const csv = await service.exportResponsesCsv('need-1');
     const after = process.memoryUsage().heapUsed;
 
-    expect(csv.split('\n')).toHaveLength(totalRows + 1);
+    expect(csv.trimEnd().split('\r\n')).toHaveLength(totalRows + 1);
     // Holding all 20,000 raw Prisma-row objects (each with a ~2KB answer
     // string plus Date/object overhead) simultaneously, on top of whatever
     // else is already live on the heap from the rest of this test run

@@ -667,7 +667,9 @@ describe("ReportSharingService.lookupOrganizations", () => {
     expect(result).toEqual([{ id: "org-requester", name: "Requester NGO" }]);
   });
 
-  it("caps results at 20 and matches active orgs other than the caller's own", async () => {
+  // UAT SHR-01 — the full list (it used to stop at 20, so most entities could
+  // never be picked); the dialog searches it in the browser in both languages.
+  it("returns every other active org when there is no query", async () => {
     const orgs = [
       { id: "org-owner", name: "Owner NGO", isActive: true },
       ...Array.from({ length: 25 }, (_, i) => ({ id: `org-${i}`, name: `Partner NGO ${i}`, isActive: true })),
@@ -679,7 +681,7 @@ describe("ReportSharingService.lookupOrganizations", () => {
     fakeTranslation() as never,
     );
     const result = await runAsOrg("org-owner", "user-1", () => svc.lookupOrganizations(undefined));
-    expect(result.length).toBe(20);
+    expect(result.length).toBe(25);
     expect(result.every((o) => o.id !== "org-owner")).toBe(true);
   });
 });
@@ -942,5 +944,81 @@ describe("ReportSharingService.listCatalog", () => {
     });
     // No release stamp: the generation date stands in.
     expect(out[1]).toMatchObject({ publishedAt: "2026-09-01T00:00:00.000Z", regions: [], governorates: [] });
+  });
+});
+
+// UAT SHR-01 — find a report to request by place and domain.
+describe("ReportSharingService.findReports", () => {
+  function build(rows: unknown[]) {
+    const reportFindMany = vi.fn().mockResolvedValue(rows);
+    const tenant = { runAsSupervisor: async (fn: (tx: unknown) => unknown) => fn({ report: { findMany: reportFindMany } }) };
+    const svc = new ReportSharingService({} as never, tenant as never, {} as never, {} as never, {} as never, {} as never);
+    return { svc, reportFindMany };
+  }
+  const run = <T>(fn: () => Promise<T>) => orgContext.run({ requestId: "r", orgId: "org-me", actorId: "u1" }, fn);
+  const REGION = "11111111-1111-4111-8111-111111111111";
+  const GOV = "22222222-2222-4222-8222-222222222222";
+
+  it("lists other organizations' requestable reports with entity, study and region", async () => {
+    const { svc, reportFindMany } = build([
+      {
+        id: "r1",
+        title: "Health report",
+        orgId: "org-owner",
+        org: { name: "Owner Org" },
+        study: {
+          title: "Study A",
+          targetSector: "Health",
+          studyGovernorates: [
+            { governorate: { name: "Abha", nameAr: "أبها", region: { name: "Aseer", nameAr: "عسير" } } },
+            { governorate: { name: "Bisha", nameAr: "بيشة", region: { name: "Aseer", nameAr: "عسير" } } },
+          ],
+        },
+      },
+    ]);
+    const out = await run(() => svc.findReports({}));
+    const where = reportFindMany.mock.calls[0]![0].where;
+    expect(where).toMatchObject({ orgId: { not: "org-me" }, org: { isActive: true } });
+    expect(where.study).toBeUndefined();
+    expect(out).toEqual([
+      {
+        id: "r1",
+        title: "Health report",
+        orgId: "org-owner",
+        orgName: "Owner Org",
+        studyTitle: "Study A",
+        regions: [{ name: "Aseer", nameAr: "عسير" }],
+        governorates: [
+          { name: "Abha", nameAr: "أبها" },
+          { name: "Bisha", nameAr: "بيشة" },
+        ],
+        domain: "Health",
+      },
+    ]);
+  });
+
+  it("filters on the most specific place given, and on domain / sub-domain", async () => {
+    const { svc, reportFindMany } = build([]);
+    await run(() => svc.findReports({ regionId: REGION, governorateId: GOV, domain: "Health", subDomain: "Clinics" }));
+    expect(reportFindMany.mock.calls[0]![0].where.study).toEqual({
+      AND: [
+        { studyGovernorates: { some: { governorateId: GOV } } },
+        { needs: { some: { needDomains: { some: { subDomain: "Clinics", domain: "Health" } } } } },
+      ],
+    });
+
+    await run(() => svc.findReports({ regionId: REGION, domain: "Water" }));
+    expect(reportFindMany.mock.calls[1]![0].where.study).toEqual({
+      AND: [
+        { studyGovernorates: { some: { governorate: { regionId: REGION } } } },
+        { OR: [{ targetSector: "Water" }, { needs: { some: { needDomains: { some: { domain: "Water" } } } } }] },
+      ],
+    });
+  });
+
+  it("ignores ids that are not UUIDs", async () => {
+    const { svc, reportFindMany } = build([]);
+    await run(() => svc.findReports({ regionId: "'; drop table x; --" }));
+    expect(reportFindMany.mock.calls[0]![0].where.study).toBeUndefined();
   });
 });

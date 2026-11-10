@@ -237,6 +237,47 @@ describe('FlagReviewService.review', () => {
     });
   });
 
+  // UAT DQ-01 — a village finding with several suggestions: the reviewer
+  // picks one and Accept writes exactly that one.
+  it('accepts the suggestion the reviewer picked, and only one of its own suggestions', async () => {
+    const { svc, tx } = setup();
+    const village = flag({
+      field: 'village[0]',
+      ruleCode: 'VILLAGE_NEAR_MATCH',
+      proposedValue: null,
+      detail: { candidates: [{ code: 'C-01', name: 'One' }, { code: 'C-02', name: 'Two' }] },
+    });
+    tx.cleaningFlag.findUnique.mockResolvedValue(village);
+    await asOrg(() => svc.review('f1', 'accept', undefined, 'C-02'));
+    expect(tx.center.findUnique).toHaveBeenCalledWith({ where: { code: 'C-02' }, select: { name: true } });
+    expect(tx.need.update).toHaveBeenCalledWith({
+      where: { id: 'n1' },
+      data: { village: ['Riyadh Centre', 'B'] },
+    });
+
+    await expect(asOrg(() => svc.review('f1', 'accept', undefined, 'C-99'))).rejects.toMatchObject({
+      response: { error: { code: 'INVALID_CHOICE' } },
+    });
+    // Without a pick there is no single proposal to apply.
+    await expect(asOrg(() => svc.review('f1', 'accept', undefined))).rejects.toMatchObject({
+      response: { error: { code: 'CHOICE_REQUIRED' } },
+    });
+  });
+
+  it('lists village findings with suggestions as acceptable, and an unreadable phone as not', async () => {
+    const { svc, tx } = setup();
+    tx.cleaningFlag.findMany.mockResolvedValue([
+      flag({ id: 'v', field: 'village[0]', ruleCode: 'VILLAGE_NEAR_MATCH', proposedValue: null, detail: { candidates: [{ code: 'C-01' }] } }),
+      flag({ id: 'p', entityType: 'survey_response', field: 'mobile', ruleCode: 'PHONE_UNPARSEABLE', proposedValue: null, detail: { redacted: true } }),
+    ]);
+    tx.cleaningFlag.count.mockResolvedValue(2);
+    const page = await asOrg(() => svc.list({}));
+    expect(page.items.map((i) => [i.id, i.acceptable])).toEqual([
+      ['v', true],
+      ['p', false],
+    ]);
+  });
+
   it('rejects a proposal without changing the record, but only with a note', async () => {
     const { svc, tx } = setup();
     await expect(asOrg(() => svc.review('f1', 'reject', '  '))).rejects.toMatchObject({

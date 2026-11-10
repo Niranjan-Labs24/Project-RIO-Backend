@@ -83,7 +83,7 @@ export class CleaningContextService {
         select: { name: true, domainId: true },
       }),
       this.prisma.center.findMany({
-        select: { code: true, name: true, governorate: { select: { name: true } } },
+        select: { code: true, name: true, nameAr: true, governorate: { select: { name: true } } },
       }),
       // Only the version of a question that actually governs new surveys.
       this.prisma.question.findMany({
@@ -143,6 +143,7 @@ export class CleaningContextService {
     const places: PlaceReference[] = centers.map((c) => ({
       code: c.code,
       name: c.name,
+      nameAr: c.nameAr,
       governorate: c.governorate?.name,
     }));
 

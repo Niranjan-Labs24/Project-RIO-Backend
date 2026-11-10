@@ -134,7 +134,7 @@ export class FlagReviewService {
           note: row.note,
           reviewedAt: row.reviewedAt,
           createdAt: row.createdAt,
-          acceptable: this.isAcceptable(row.entityType, row.field, row.proposedValue, row.detail),
+          acceptable: this.isAcceptable(row),
         })),
       };
     });
@@ -195,6 +195,12 @@ export class FlagReviewService {
     flagId: string,
     decision: "accept" | "reject",
     note: string | undefined,
+    /**
+     * UAT DQ-01 — the suggestion the reviewer picked (a Center code) when a
+     * village finding offers several. Must be one of THAT flag's own
+     * candidates; anything else is refused.
+     */
+    choice?: string,
   ): Promise<FlagListItem> {
     const orgId = requireOrgId();
     const actor = requireActor();
@@ -237,7 +243,11 @@ export class FlagReviewService {
 
       let applied: { field: string; before: string | null; after: string } | null = null;
       if (decision === "accept") {
-        applied = await this.applyProposal(tx, existing, context.settings.phoneDefaultRegion);
+        applied = await this.applyProposal(
+          tx,
+          { ...existing, proposedValue: this.chosenValue(existing, choice) },
+          context.settings.phoneDefaultRegion,
+        );
       }
 
       const updated = await tx.cleaningFlag.update({
@@ -422,6 +432,45 @@ export class FlagReviewService {
    * belong to any entity, so it is read through the SELECT-only supervisor
    * client first — the one path allowed to see across the boundary.
    */
+  private candidateCodes(detail: unknown): string[] {
+    const candidates = (detail as { candidates?: { code?: unknown }[] } | null)?.candidates;
+    return Array.isArray(candidates)
+      ? candidates.map((c) => c?.code).filter((c): c is string => typeof c === "string")
+      : [];
+  }
+
+  /**
+   * The value an Accept writes: the reviewer's pick among the flag's own
+   * suggestions when they made one, otherwise the flag's proposal. A pick that
+   * isn't one of this flag's suggestions is refused, so Accept can never be
+   * used to write an arbitrary value.
+   */
+  private chosenValue(
+    flag: { field: string; proposedValue: string | null; detail: unknown },
+    choice: string | undefined,
+  ): string | null {
+    if (!choice) {
+      if (flag.proposedValue === null && VILLAGE_FIELD.test(flag.field) && this.candidateCodes(flag.detail).length > 0) {
+        throw new BadRequestException({
+          error: {
+            code: "CHOICE_REQUIRED",
+            message: "This finding lists several possible places. Pick one of the suggestions to accept.",
+          },
+        });
+      }
+      return flag.proposedValue;
+    }
+    if (!VILLAGE_FIELD.test(flag.field) || !this.candidateCodes(flag.detail).includes(choice)) {
+      throw new BadRequestException({
+        error: {
+          code: "INVALID_CHOICE",
+          message: "Pick one of the suggestions listed for this finding.",
+        },
+      });
+    }
+    return choice;
+  }
+
   private async resolveFlagOrg(flagId: string, actorOrgId: string): Promise<string> {
     if (!isCrossOrgReader()) return actorOrgId;
     const row = await this.tenant.runAsSupervisor((tx) =>
@@ -441,14 +490,25 @@ export class FlagReviewService {
    * one-click corrections. An import_row flag never can either: the row is in
    * the uploader's file, not in the database.
    */
-  private isAcceptable(
-    entityType: string,
-    field: string,
-    proposedValue: string | null,
-    detail: unknown,
-  ): boolean {
+  private isAcceptable(flag: {
+    entityType: string;
+    field: string;
+    ruleCode: string;
+    proposedValue: string | null;
+    detail: unknown;
+  }): boolean {
+    const { entityType, field, proposedValue, detail } = flag;
     if (entityType === "import_row") return false;
+    // UAT DQ-01 — an unreadable number has no correction: there is nothing to
+    // recompute, so Accept could only ever fail. The reviewer rejects it with
+    // a note, or the record is fixed at source.
+    if (flag.ruleCode === "PHONE_UNPARSEABLE") return false;
     if (proposedValue !== null) return true;
+    // UAT DQ-01 — a village finding with suggestions is acceptable once the
+    // reviewer picks one of them (see chosenValue).
+    if (VILLAGE_FIELD.test(field) && entityType === "need" && this.candidateCodes(detail).length > 0) {
+      return true;
+    }
     // A redacted PII flag carries no proposal by design — the value is
     // recomputed at accept time instead. See survey-response.rules.ts.
     return this.isRedacted(detail) && entityType === "survey_response" && field === "mobile";
@@ -469,12 +529,13 @@ export class FlagReviewService {
       entityType: string;
       entityId: string | null;
       field: string;
+      ruleCode: string;
       proposedValue: string | null;
       detail: unknown;
     },
     phoneRegion: string,
   ): Promise<{ field: string; before: string | null; after: string }> {
-    if (!this.isAcceptable(flag.entityType, flag.field, flag.proposedValue, flag.detail)) {
+    if (!this.isAcceptable(flag)) {
       throw new BadRequestException({
         error: {
           code: "NOTHING_TO_APPLY",

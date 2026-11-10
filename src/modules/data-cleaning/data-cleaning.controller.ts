@@ -101,7 +101,7 @@ export class DataCleaningController {
     @Param('flagId', new UuidParamPipe()) flagId: string,
     @Body(new TypeBoxValidationPipe(ReviewFlagBody)) body: ReviewFlagDto,
   ): Promise<FlagListItem> {
-    return this.review.review(flagId, body.decision, body.note);
+    return this.review.review(flagId, body.decision, body.note, body.choice);
   }
 
   @Post('flags/bulk-accept')

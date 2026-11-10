@@ -1,4 +1,6 @@
 import { toJson } from '../../common/prisma/json';
+import { formatRiyadhTime, toCsv, type ExportTable } from '../../common/export/tabular-export';
+import type { SupportedLocale } from '../translation/translation.types';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
@@ -12,6 +14,13 @@ import type {
   AuditQuery,
   RecordAuditInput,
 } from './audit.types';
+
+/** UAT AUD-03 — readable column names for the audit-log export. */
+const AUDIT_EXPORT_HEADERS: Record<SupportedLocale, string[]> = {
+  en: ['Date & time (Riyadh)', 'User', 'User email', 'Action', 'Record type', 'Record', 'Reference', 'IP address'],
+  ar: ['التاريخ والوقت (الرياض)', 'المستخدم', 'البريد الإلكتروني للمستخدم', 'الإجراء', 'نوع السجل', 'السجل', 'المرجع', 'عنوان IP'],
+};
+
 
 interface AuditRow {
   id: string;
@@ -133,17 +142,31 @@ export class AuditService {
    * contract Reports export uses (see reports.placeholder.ts) so a future
    * real renderer swap doesn't change the response shape.
    */
-  async exportCsv(opts: AuditQuery): Promise<string> {
+  async exportCsv(opts: AuditQuery, locale: SupportedLocale = 'en'): Promise<string> {
+    return toCsv(await this.exportTable(opts, locale));
+  }
+
+  /**
+   * UAT AUD-03 — the export as a table, written as CSV (UTF-8 with BOM) or
+   * .xlsx by the controller. Column names say what each column is, in the
+   * reader's language, and the time is shown in Saudi time, readable.
+   */
+  async exportTable(opts: AuditQuery, locale: SupportedLocale = 'en'): Promise<ExportTable> {
     const { logs, actors } = await this.query(opts, 5000, 0);
     const events = this.mapRows(logs, actors);
-    const header = ['Timestamp', 'Actor', 'Action', 'Entity Type', 'Entity', 'IP Address'];
-    const escape = (value: string): string => `"${value.replace(/"/g, '""')}"`;
-    const rows = events.map((e) =>
-      [e.createdAt, e.actor?.email ?? '', e.action, e.entityType, e.entityLabel, e.ipAddress ?? '']
-        .map((v) => escape(String(v)))
-        .join(','),
-    );
-    return [header.map(escape).join(','), ...rows].join('\n');
+    return {
+      headers: AUDIT_EXPORT_HEADERS[locale],
+      rows: events.map((e) => [
+        formatRiyadhTime(e.createdAt),
+        e.actor?.name ?? '',
+        e.actor?.email ?? '',
+        e.action,
+        e.entityType,
+        e.entityLabel,
+        e.sourceRef ?? '',
+        e.ipAddress ?? '',
+      ]),
+    };
   }
 
   private async query(

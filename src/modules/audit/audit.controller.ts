@@ -1,9 +1,13 @@
-import { Controller, Get, Param, Query, Res } from '@nestjs/common';
+import { Controller, Get, Param, Query, Res, StreamableFile } from '@nestjs/common';
 import type { Response } from 'express';
 import { RateLimit } from '../../common/guards/rate-limit.guard';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { parseIntParam } from '../../common/http/query.util';
 import { AuditService } from './audit.service';
+import {
+  EXPORT_CONTENT_TYPE, exportFilename, parseExportFormat, toCsv, toXlsx,
+} from '../../common/export/tabular-export';
+import { parseLocale, requestLocale } from '../../common/locale/request-locale';
 import type { AuditListResult } from './audit.types';
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 
@@ -58,8 +62,14 @@ export class AuditController {
     @Query('dateTo') dateTo?: string,
     @Query('search') search?: string,
     @Query('sourceRef') sourceRef?: string,
-  ): Promise<string> {
-    const csv = await this.audit.exportCsv({
+    // UAT AUD-03 — csv (UTF-8 with BOM) or xlsx; headers in ?locale= or the
+    // caller's own language.
+    @Query('format') formatParam?: string,
+    @Query('locale') localeParam?: string,
+  ): Promise<string | StreamableFile> {
+    const format = parseExportFormat(formatParam);
+    const locale = parseLocale(localeParam) ?? requestLocale();
+    const table = await this.audit.exportTable({
       organizationId: organizationId || undefined,
       entityType: entityType || undefined,
       entityId: entityId || undefined,
@@ -69,12 +79,15 @@ export class AuditController {
       dateTo: dateTo || undefined,
       search: search || undefined,
       sourceRef: sourceRef || undefined,
-    });
+    }, locale);
     res.set({
-      'Content-Type': 'text/csv',
-      'Content-Disposition': `attachment; filename="audit-log-${new Date().toISOString().slice(0, 10)}.csv"`,
+      'Content-Type': EXPORT_CONTENT_TYPE[format],
+      'Content-Disposition': `attachment; filename="${exportFilename('audit-log', format)}"`,
     });
-    return csv;
+    return format === 'xlsx'
+      // A Buffer returned as-is would be JSON-serialised by Nest ({"type":"Buffer",...}).
+      ? new StreamableFile(await toXlsx(table, { sheetName: locale === 'ar' ? 'سجل التدقيق' : 'Audit log', rightToLeft: locale === 'ar' }))
+      : toCsv(table);
   }
 
   @Get('summary')

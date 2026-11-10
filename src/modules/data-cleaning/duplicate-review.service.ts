@@ -38,9 +38,79 @@ export interface DuplicateNeedSummary {
   village: string[];
   domain: string | null;
   subDomain: string | null;
+  /**
+   * The submitter's OWN external reference (a form number, a partner's case
+   * id): free text, often the same placeholder on every row of an import, so
+   * it says nothing about whether two needs match. `reference` above is the
+   * system's need reference (RIO-DATA-003). UAT DQ-06.
+   */
   referenceId: string | null;
   studyTitle: string | null;
+  /** UAT DQ-10 — where each side comes from, shown on both queues. */
+  entityName: string | null;
+  regions: PlaceName[];
+  governorates: PlaceName[];
+  centers: PlaceName[];
   createdAt: Date;
+}
+
+export interface PlaceName {
+  name: string;
+  nameAr: string | null;
+}
+
+/**
+ * Everything a reviewer needs to place a need: entity, study and geography
+ * (UAT DQ-10). One select for both queues so they can't drift apart.
+ */
+const NEED_SUMMARY_SELECT = {
+  id: true,
+  internalRefSeq: true,
+  title: true,
+  statement: true,
+  village: true,
+  domain: true,
+  subDomain: true,
+  referenceId: true,
+  createdAt: true,
+  study: { select: { title: true } },
+  org: { select: { name: true } },
+  needGovernorates: {
+    select: {
+      governorate: {
+        select: { name: true, nameAr: true, region: { select: { name: true, nameAr: true } } },
+      },
+    },
+  },
+  needCenters: { select: { center: { select: { name: true, nameAr: true } } } },
+} satisfies Prisma.NeedSelect;
+
+type NeedSummaryRow = Prisma.NeedGetPayload<{ select: typeof NEED_SUMMARY_SELECT }>;
+
+function uniquePlaces(places: PlaceName[]): PlaceName[] {
+  const seen = new Map<string, PlaceName>();
+  for (const p of places) if (!seen.has(p.name)) seen.set(p.name, p);
+  return [...seen.values()];
+}
+
+function toNeedSummary(n: NeedSummaryRow): DuplicateNeedSummary {
+  const governorates = n.needGovernorates.map((g) => g.governorate);
+  return {
+    id: n.id,
+    reference: `NEED-${String(n.internalRefSeq).padStart(6, "0")}`,
+    title: n.title,
+    statement: n.statement,
+    village: n.village,
+    domain: n.domain,
+    subDomain: n.subDomain,
+    referenceId: n.referenceId,
+    studyTitle: n.study?.title ?? null,
+    entityName: n.org?.name ?? null,
+    regions: uniquePlaces(governorates.map((g) => ({ name: g.region.name, nameAr: g.region.nameAr }))),
+    governorates: uniquePlaces(governorates.map((g) => ({ name: g.name, nameAr: g.nameAr }))),
+    centers: uniquePlaces(n.needCenters.map((c) => ({ name: c.center.name, nameAr: c.center.nameAr }))),
+    createdAt: n.createdAt,
+  };
 }
 
 export interface DuplicateCandidateItem {
@@ -112,39 +182,9 @@ export class DuplicateReviewService {
 
       const needIds = [...new Set(rows.flatMap((r) => [r.needAId, r.needBId]))];
       const needs = needIds.length
-        ? await tx.need.findMany({
-            where: { id: { in: needIds } },
-            select: {
-              id: true,
-              internalRefSeq: true,
-              title: true,
-              statement: true,
-              village: true,
-              domain: true,
-              subDomain: true,
-              referenceId: true,
-              createdAt: true,
-              study: { select: { title: true } },
-            },
-          })
+        ? await tx.need.findMany({ where: { id: { in: needIds } }, select: NEED_SUMMARY_SELECT })
         : [];
-      const byId = new Map(
-        needs.map((n) => [
-          n.id,
-          {
-            id: n.id,
-            reference: `NEED-${String(n.internalRefSeq).padStart(6, "0")}`,
-            title: n.title,
-            statement: n.statement,
-            village: n.village,
-            domain: n.domain,
-            subDomain: n.subDomain,
-            referenceId: n.referenceId,
-            studyTitle: n.study?.title ?? null,
-            createdAt: n.createdAt,
-          } satisfies DuplicateNeedSummary,
-        ]),
-      );
+      const byId = new Map(needs.map((n) => [n.id, toNeedSummary(n)]));
 
       return {
         total,
@@ -210,43 +250,12 @@ export class DuplicateReviewService {
       ]);
 
       const needIds = [...new Set(rows.flatMap((r) => [r.needAId, r.needBId]))];
-      const orgIds = [...new Set(rows.flatMap((r) => [r.needAOrgId, r.needBOrgId]))];
-      const [needs, orgs] = await Promise.all([
-        needIds.length
-          ? tx.need.findMany({
-              where: { id: { in: needIds } },
-              select: {
-                id: true, internalRefSeq: true, title: true, statement: true,
-                village: true, domain: true, subDomain: true, referenceId: true,
-                orgId: true, createdAt: true,
-              },
-            })
-          : [],
-        orgIds.length
-          ? tx.organisation.findMany({ where: { id: { in: orgIds } }, select: { id: true, name: true } })
-          : [],
-      ]);
-      const orgName = new Map(orgs.map((o) => [o.id, o.name]));
-      const byId = new Map(
-        needs.map((n) => [
-          n.id,
-          {
-            id: n.id,
-            reference: `NEED-${String(n.internalRefSeq).padStart(6, "0")}`,
-            title: n.title,
-            statement: n.statement,
-            village: n.village,
-            domain: n.domain,
-            subDomain: n.subDomain,
-            referenceId: n.referenceId,
-            // The owning ENTITY, not the study: on this queue the question a
-            // reviewer is answering is "are these two entities recording the
-            // same need?", so whose need it is has to be on screen.
-            studyTitle: orgName.get(n.orgId) ?? null,
-            createdAt: n.createdAt,
-          } satisfies DuplicateNeedSummary,
-        ]),
-      );
+      // UAT DQ-10 — entity AND study AND geography for each side. This used to
+      // put the entity name in `studyTitle`, so the study was never shown.
+      const needs = needIds.length
+        ? await tx.need.findMany({ where: { id: { in: needIds } }, select: NEED_SUMMARY_SELECT })
+        : [];
+      const byId = new Map(needs.map((n) => [n.id, toNeedSummary(n)]));
 
       return {
         total,

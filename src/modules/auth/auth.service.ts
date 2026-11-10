@@ -23,7 +23,10 @@ import { MailerService } from '../../mailer/mailer.service';
 import { clearExpiredLock, registerFailedLogin } from './login-lockout';
 import { AuthRepository, conflictFor, DEFAULT_TEMP_PASSWORD, type ConsentAcceptanceInput } from './auth.repository';
 import type { SessionContext, SessionOrg, SessionUser, SignupPendingApprovalView } from './session.types';
-import type { ChangePasswordDto, ConsentDto, ForgotPasswordDto, RequestLoginOtpDto, ResetPasswordDto, SignupDto, VerifyLoginOtpDto } from './auth.contract';
+import type {
+  ChangePasswordDto, ConsentDto, ForgotPasswordDto, RequestLoginOtpDto, ResetPasswordDto, SignupDto, VerifyLoginOtpDto,
+  VerifyRegistrationNumberDto, VerifyRegistrationNumberView,
+} from './auth.contract';
 import { SmsService } from '../../sms/sms.service';
 import { toSaudiMobileE164 } from '../../common/validation/saudi-mobile';
 
@@ -380,6 +383,20 @@ export class AuthService {
   // org and admin rows — registration cannot complete without both the use
   // policy and the data-sharing consent. AuthService.consent() below is now
   // only the re-prompt path (accounts predating this, and policy bumps).
+  // Behind POST /auth/verify-registration-number. UAT ORG-01: the duplicate
+  // check runs here, at Verify time, instead of only on the final submit.
+  // Only after the registry check passes (including the name match when a
+  // name is sent) — the same order signup() uses, so this reveals nothing a
+  // signup attempt with the same number and name wouldn't already.
+  async verifyRegistrationNumber(dto: VerifyRegistrationNumberDto): Promise<VerifyRegistrationNumberView> {
+    const { nicNumber, verified, reason } = await this.nicRegistry.check(dto.registrationNumber, dto.organizationName);
+    if (!verified) return { verified, reason };
+    if (await this.repo.findByRegistrationNumber(nicNumber)) {
+      return { verified: false, reason: 'ALREADY_REGISTERED' };
+    }
+    return { verified: true };
+  }
+
   async signup(dto: SignupDto): Promise<SignupPendingApprovalView> {
     // The registration number must belong to an entity in the NIC registry —
     // checked before the duplicate lookup because "we've never heard of this

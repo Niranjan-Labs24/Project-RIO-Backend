@@ -1,4 +1,5 @@
 import { ConflictException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { formatRiyadhTime, toCsv, type ExportCell } from '../../common/export/tabular-export';
 import { randomBytes } from 'node:crypto';
 import { Writable } from 'node:stream';
 import ExcelJS from 'exceljs';
@@ -386,7 +387,6 @@ export class PublicSurveysService {
   async exportResponsesCsv(needId: string, surveyLinkId?: string, locale: SupportedLocale = 'en'): Promise<string> {
     const labels = EXPORT_LABELS[locale];
     await this.findNeedOrThrow(needId);
-    const escape = (value: string): string => `"${value.replace(/"/g, '""')}"`;
     return this.tenant.runRead(async (tx) => {
       const [questionMap, versionMap] = await Promise.all([
         this.buildQuestionMap(tx, needId),
@@ -397,34 +397,31 @@ export class PublicSurveysService {
       // was copied into. Two questions that merely read the same still get a
       // column each (see questionIdentity).
       const questions = this.groupQuestionsByIdentity(questionMap);
-      const lines = [
-        [labels.name, labels.email, labels.submitted, labels.version, ...questions.map((q) => exportQuestionText(q, locale))]
-          .map(escape)
-          .join(','),
-      ];
+      const headers = [labels.name, labels.email, labels.submitted, labels.version, ...questions.map((q) => exportQuestionText(q, locale))];
+      const rows: ExportCell[][] = [];
       for await (const batch of this.iterateResponsesForExport(tx, needId, surveyLinkId)) {
         for (const row of batch) {
           const answers = (row.answers ?? {}) as Record<string, string>;
-          lines.push(
+          rows.push(
             [
               sanitizeForSpreadsheet(row.contactName ?? ''),
               sanitizeForSpreadsheet(row.contact),
-              row.submittedAt.toISOString(),
+              formatRiyadhTime(row.submittedAt.toISOString()),
               this.resolveResponseVersion(answers, versionMap, locale),
               ...questions.map((q) =>
                 sanitizeForSpreadsheet(
                   exportAnswer(q, this.resolveAnswerAcrossVersions(answers, [q.questionId, ...q.aliasIds]) ?? '', locale),
                 ),
               ),
-            ]
-              .map((v) => escape(String(v)))
-              .join(','),
+            ],
           );
         }
       }
-      // A byte-order mark so Excel opens an Arabic CSV as UTF-8 rather than
-      // showing the Arabic as mojibake.
-      return (locale === 'ar' ? '\uFEFF' : '') + lines.join('\n');
+      // UAT AUD-03 \u2014 always UTF-8 with a byte-order mark and CRLF rows (see
+      // tabular-export.ts). The BOM used to be added only for an Arabic-language
+      // export, but respondents answer in Arabic whatever language the export
+      // is read in, so an English export showed their answers as mojibake.
+      return toCsv({ headers, rows });
     });
   }
 

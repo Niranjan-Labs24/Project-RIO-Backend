@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { Prisma } from "../../generated/prisma";
 import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
+import { getOrgStore } from "../../tenancy/org-context";
 import { CleaningContextService } from "./cleaning-context.service";
 
 /**
@@ -60,13 +61,50 @@ interface CandidateRow {
   org_id: string;
   study_id: string;
   score: number;
+  /** Shares a DISTINCTIVE submitter reference (see findCandidates). */
   same_reference: boolean;
 }
+
+/**
+ * UAT DQ-06 — a submitter reference only identifies a submission when it is
+ * distinctive: held by at most this many live needs in the entity. A
+ * placeholder stamped on every row of an import ("REF-SA-001") is not.
+ */
+const MAX_NEEDS_PER_DISTINCTIVE_REFERENCE = 2;
+
+/**
+ * UAT DQ-06 / DQ-10 — why a pending pair left the queue without a reviewer.
+ * Kept on the row so the decision is explained wherever it is read back.
+ */
+export const RESCORED_DISMISS_NOTE =
+  "Dismissed automatically: re-scored on the needs' own title and statement (literal-v2), the pair is below the similarity threshold. It had matched only on a shared submitter reference.";
+
+/** Literal score of a stored pair from both needs' current text. */
+const PAIR_TEXT_SCORE_SQL = Prisma.sql`GREATEST(
+  similarity(rio_fold_text(a.title), rio_fold_text(b.title)),
+  similarity(rio_fold_text(a.statement), rio_fold_text(b.statement))
+)`;
+
+/**
+ * Within one entity, a DISTINCTIVE shared reference still scores 1 (it is how
+ * an English and an Arabic copy of the same need are caught). The count runs
+ * under the row's own org context, so it is per entity.
+ */
+const PAIR_SCORE_WITH_REFERENCE_SQL = Prisma.sql`CASE
+  WHEN a.reference_id IS NOT NULL AND btrim(a.reference_id) <> '' AND a.reference_id = b.reference_id
+   AND (SELECT count(*) FROM needs r
+         WHERE r.org_id = a.org_id AND r.reference_id = a.reference_id
+           AND r.merged_into_need_id IS NULL) <= ${MAX_NEEDS_PER_DISTINCTIVE_REFERENCE}
+  THEN 1
+  ELSE ${PAIR_TEXT_SCORE_SQL}
+END`;
 
 @Injectable()
 export class DuplicateDetectionService {
   private readonly logger = new Logger(DuplicateDetectionService.name);
-  private readonly detectorVersion = "literal-v1";
+  // literal-v2 (UAT DQ-06/DQ-10): scored on the needs' own text; a shared
+  // reference counts only within an entity and only when it is distinctive.
+  private readonly detectorVersion = "literal-v2";
 
   constructor(
     private readonly tenant: TenantPrismaService,
@@ -94,7 +132,7 @@ export class DuplicateDetectionService {
         let written = 0;
 
         for (const row of rows) {
-          const score = row.same_reference ? 1 : row.score;
+          const score = row.same_reference ? 1 : Number(row.score);
           if (score < threshold) continue;
 
           const scope = row.study_id === need.studyId ? "within_study" : "within_org";
@@ -141,6 +179,17 @@ export class DuplicateDetectionService {
           });
           written++;
         }
+
+        // Pending pairs with this need that no longer reach the threshold on
+        // their own wording (e.g. ones raised by a shared reference alone)
+        // leave the queue now rather than waiting for a reviewer.
+        await this.reconcilePendingLiteral(
+          tx,
+          Prisma.sql`(dc.need_a_id = ${needId}::uuid OR dc.need_b_id = ${needId}::uuid) AND dc.scope <> 'cross_org'`,
+          threshold,
+          getOrgStore()?.actorId ?? null,
+          true,
+        );
         return written;
       });
     } catch (err) {
@@ -158,9 +207,14 @@ export class DuplicateDetectionService {
    * ones exactly (rio_fold_text("title"), rio_fold_text("statement")) or
    * Postgres falls back to a sequential scan.
    *
-   * A shared referenceId is treated as a match on its own, regardless of
-   * wording: two rows carrying the same submitter reference are the same
-   * submission by definition, and their text may legitimately differ.
+   * UAT DQ-06 / DQ-10: a shared referenceId used to be a match on its own,
+   * scored 100%, whatever the wording. Imports reuse one placeholder
+   * reference ("REF-SA-001") on every row, so completely different needs
+   * (hospital access vs drinking water) were proposed as 100% duplicates.
+   * It now counts only when DISTINCTIVE (held by at most
+   * MAX_NEEDS_PER_DISTINCTIVE_REFERENCE live needs in the entity), which
+   * keeps the real case it exists for: the same need entered twice, e.g. in
+   * English and in Arabic, under one form number.
    *
    * RLS scopes this to the caller's org, so cross-entity comparison cannot
    * happen here even by accident — that is AI-004's, and Q9 confines it to the
@@ -175,6 +229,19 @@ export class DuplicateDetectionService {
       ? Prisma.sql``
       : Prisma.sql`AND n.study_id = ${need.studyId}::uuid`;
     const reference = need.referenceId?.trim() || null;
+    // RLS scopes this count to the caller's org.
+    const distinctive = reference
+      ? Number(
+          (
+            await tx.$queryRaw<{ c: bigint }[]>`
+              SELECT count(*) AS c FROM needs
+               WHERE reference_id = ${reference} AND merged_into_need_id IS NULL`
+          )[0]?.c ?? 0,
+        ) <= MAX_NEEDS_PER_DISTINCTIVE_REFERENCE
+      : false;
+    const refMatch = distinctive
+      ? Prisma.sql`n.reference_id = ${reference}::text`
+      : Prisma.sql`false`;
 
     return tx.$queryRaw<CandidateRow[]>`
       SELECT
@@ -185,7 +252,7 @@ export class DuplicateDetectionService {
           similarity(rio_fold_text(n.title), rio_fold_text(${need.title})),
           similarity(rio_fold_text(n.statement), rio_fold_text(${need.statement}))
         ) AS score,
-        (${reference}::text IS NOT NULL AND n.reference_id = ${reference}::text) AS same_reference
+        (${refMatch}) AS same_reference
       FROM needs n
       WHERE n.id <> ${need.id}::uuid
         -- A retired need must never be proposed again (RIO-AI-004). It is not
@@ -196,9 +263,9 @@ export class DuplicateDetectionService {
         AND (
           rio_fold_text(n.title) % rio_fold_text(${need.title})
           OR rio_fold_text(n.statement) % rio_fold_text(${need.statement})
-          OR (${reference}::text IS NOT NULL AND n.reference_id = ${reference}::text)
+          OR ${refMatch}
         )
-      ORDER BY score DESC
+      ORDER BY same_reference DESC, score DESC
       LIMIT 20
     `;
   }
@@ -306,6 +373,21 @@ export class DuplicateDetectionService {
       if (truncated || batch.length < CROSS_ORG_BATCH) break;
     }
 
+    // A complete pass has re-scored every pair it still proposes; any pending
+    // cross-entity pair below the threshold now (DQ-10's false positives)
+    // leaves the queue. Skipped on a truncated run, which saw only part.
+    if (!truncated) {
+      await this.tenant.runAsSupervisorWrite((tx) =>
+        this.reconcilePendingLiteral(
+          tx,
+          Prisma.sql`dc.scope = 'cross_org'`,
+          threshold,
+          getOrgStore()?.actorId ?? null,
+          false,
+        ),
+      );
+    }
+
     this.logger.log(
       `Cross-entity duplicate pass: ${scanned} needs scanned, ${proposed} candidate(s) proposed` +
         `${truncated ? " (TRUNCATED — maxNeeds reached, the scan is incomplete)" : ""}.`,
@@ -326,8 +408,8 @@ export class DuplicateDetectionService {
     need: CrossOrgSeed,
     threshold: number,
   ): Promise<number> {
-    const reference = need.referenceId?.trim() || null;
-
+    // Needs level only (UAT DQ-10): one entity's reference numbering means
+    // nothing to another's, so it never makes a cross-entity pair.
     const rows = await this.tenant.runAsSupervisor((tx) =>
       tx.$queryRaw<CandidateRow[]>`
         SELECT
@@ -337,8 +419,7 @@ export class DuplicateDetectionService {
           GREATEST(
             similarity(rio_fold_text(n.title), rio_fold_text(${need.title})),
             similarity(rio_fold_text(n.statement), rio_fold_text(${need.statement}))
-          ) AS score,
-          (${reference}::text IS NOT NULL AND n.reference_id = ${reference}::text) AS same_reference
+          ) AS score
         FROM needs n
         WHERE n.id > ${need.id}::uuid
           AND n.org_id <> ${need.orgId}::uuid
@@ -346,7 +427,6 @@ export class DuplicateDetectionService {
           AND (
             rio_fold_text(n.title) % rio_fold_text(${need.title})
             OR rio_fold_text(n.statement) % rio_fold_text(${need.statement})
-            OR (${reference}::text IS NOT NULL AND n.reference_id = ${reference}::text)
           )
         ORDER BY score DESC
         LIMIT ${CROSS_ORG_PARTNERS_PER_NEED}
@@ -355,7 +435,7 @@ export class DuplicateDetectionService {
 
     let written = 0;
     for (const row of rows) {
-      const score = row.same_reference ? 1 : Number(row.score);
+      const score = Number(row.score);
       if (score < threshold) continue;
       // `n.id > need.id` in the query already guarantees the order the
       // duplicate_candidates_ordered_pair CHECK requires.
@@ -368,6 +448,49 @@ export class DuplicateDetectionService {
       if (ok) written++;
     }
     return written;
+  }
+
+  /**
+   * Re-scores PENDING literal pairs matching `filter` from both needs' current
+   * text, and dismisses the ones now below `threshold` with an explanatory
+   * note. Decided pairs are never touched: a reviewer's decision is not
+   * something a later scan revisits. Returns how many were dismissed.
+   *
+   * A dismissal is a decision, and the duplicate_candidates_decision_needs_reviewer
+   * CHECK requires one to name who made it. `actorId` is the person whose
+   * action caused the re-score (the need's editor, the admin running the
+   * scan, or the operator running the backlog script). Without one, scores
+   * are refreshed but nothing is dismissed.
+   *
+   * Public so the one-off backlog script (scripts/rescore-literal-duplicates.ts)
+   * runs exactly the same rule over pairs created before literal-v2.
+   */
+  async reconcilePendingLiteral(
+    tx: Prisma.TransactionClient,
+    filter: Prisma.Sql,
+    threshold: number,
+    actorId: string | null,
+    /** Within-entity pairs only; cross-entity pairs are text-only (DQ-10). */
+    allowReference: boolean,
+  ): Promise<number> {
+    const scoreSql = allowReference ? PAIR_SCORE_WITH_REFERENCE_SQL : PAIR_TEXT_SCORE_SQL;
+    await tx.$executeRaw`
+      UPDATE duplicate_candidates dc
+         SET score = ${scoreSql}, detector_version = ${this.detectorVersion}, updated_at = now()
+        FROM needs a, needs b
+       WHERE dc.need_a_id = a.id AND dc.need_b_id = b.id
+         AND dc.method = 'literal' AND dc.status = 'pending'
+         AND ${filter}
+    `;
+    if (!actorId) return 0;
+    return tx.$executeRaw`
+      UPDATE duplicate_candidates dc
+         SET status = 'dismissed', note = ${RESCORED_DISMISS_NOTE},
+             reviewed_by = ${actorId}::uuid, reviewed_at = now(), updated_at = now()
+       WHERE dc.method = 'literal' AND dc.status = 'pending'
+         AND dc.score < ${threshold}
+         AND ${filter}
+    `;
   }
 
   private async writeCrossOrgCandidate(
