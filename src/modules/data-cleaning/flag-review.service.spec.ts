@@ -249,7 +249,7 @@ describe('FlagReviewService.review', () => {
     });
     tx.cleaningFlag.findUnique.mockResolvedValue(village);
     await asOrg(() => svc.review('f1', 'accept', undefined, 'C-02'));
-    expect(tx.center.findUnique).toHaveBeenCalledWith({ where: { code: 'C-02' }, select: { name: true } });
+    expect(tx.center.findUnique).toHaveBeenCalledWith({ where: { code: 'C-02' }, select: { name: true, nameAr: true } });
     expect(tx.need.update).toHaveBeenCalledWith({
       where: { id: 'n1' },
       data: { village: ['Riyadh Centre', 'B'] },
@@ -262,6 +262,19 @@ describe('FlagReviewService.review', () => {
     await expect(asOrg(() => svc.review('f1', 'accept', undefined))).rejects.toMatchObject({
       response: { error: { code: 'CHOICE_REQUIRED' } },
     });
+  });
+
+  // A village typed in Arabic is corrected to the official Arabic name, not
+  // replaced by the English transliteration ("Al-Uyaynah" for «العيينه»).
+  it('writes the Arabic official name when the village was typed in Arabic', async () => {
+    const { svc, tx } = setup();
+    tx.cleaningFlag.findUnique.mockResolvedValue(
+      flag({ field: 'village[0]', ruleCode: 'VILLAGE_NEAR_MATCH', proposedValue: 'C-01' }),
+    );
+    tx.need.findUnique.mockResolvedValue({ id: 'n1', village: ['العيينه'] });
+    tx.center.findUnique.mockResolvedValue({ name: 'Al-Uyaynah', nameAr: 'العيينة' });
+    await asOrg(() => svc.review('f1', 'accept', undefined));
+    expect(tx.need.update).toHaveBeenCalledWith({ where: { id: 'n1' }, data: { village: ['العيينة'] } });
   });
 
   it('lists village findings with suggestions as acceptable, and an unreadable phone as not', async () => {

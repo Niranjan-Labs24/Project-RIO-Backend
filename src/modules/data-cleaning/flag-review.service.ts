@@ -27,6 +27,7 @@ const WRITABLE_NEED_FIELDS = new Set(["title", "statement", "domain", "subDomain
 
 /** village[0], village[12] — the index matters, the flag is per value. */
 const VILLAGE_FIELD = /^village\[(\d+)\]$/;
+const ARABIC_SCRIPT = /[\u0600-\u06FF]/;
 
 /** answers[HLT-02] — one numeric answer inside the response's answers JSON. */
 const ANSWER_FIELD = /^answers\[([^\]]+)\]$/;
@@ -589,7 +590,7 @@ export class FlagReviewService {
       // covers, which is a research decision and not a spelling correction.
       const center = await tx.center.findUnique({
         where: { code: value },
-        select: { name: true },
+        select: { name: true, nameAr: true },
       });
       if (!center) {
         throw new BadRequestException({
@@ -599,10 +600,15 @@ export class FlagReviewService {
           },
         });
       }
+      // Written in the language it was typed in: a village entered in Arabic
+      // gets the official Arabic name, not the English transliteration (UAT
+      // DQ-01 — accepting «العيينه» used to store "Al-Uyaynah").
+      const canonical =
+        before && ARABIC_SCRIPT.test(before) && center.nameAr ? center.nameAr : center.name;
       const village = [...need.village];
-      village[index] = center.name;
+      village[index] = canonical;
       await tx.need.update({ where: { id: needId }, data: { village } });
-      return { field: flag.field, before, after: center.name };
+      return { field: flag.field, before, after: canonical };
     }
 
     if (!WRITABLE_NEED_FIELDS.has(flag.field)) {

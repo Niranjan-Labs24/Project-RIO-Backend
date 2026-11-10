@@ -39,6 +39,12 @@ export interface PlaceReference {
   nameAr?: string | null;
   /** Governorate name, shown to the reviewer to tell same-named places apart. */
   governorate?: string;
+  /**
+   * The governorate's official Arabic name, so the Arabic review screen names
+   * it in Arabic instead of sending the English one to AI translation (UAT
+   * DQ-01, found on the merged branch 10 Nov).
+   */
+  governorateAr?: string | null;
 }
 
 export interface PlaceMatchOptions {
@@ -60,6 +66,7 @@ export interface PlaceCandidate {
   name: string;
   nameAr?: string | null;
   governorate: string | null;
+  governorateAr?: string | null;
   score: number;
 }
 
@@ -107,6 +114,7 @@ function rank(raw: string, reference: PlaceReference[], limit: number): PlaceCan
       name: ref.name,
       nameAr: ref.nameAr ?? null,
       governorate: ref.governorate ?? null,
+      governorateAr: ref.governorateAr ?? null,
       // The better of the two official names: Arabic input is scored against
       // the Arabic name, Latin input against the English one.
       score: Math.max(...namesOf(ref).map((n) => trigramSimilarity(key, placeKey(n)))),
@@ -164,6 +172,7 @@ export function matchPlace(
         matchedName: match.name,
         matchedNameAr: match.nameAr ?? null,
         governorate: match.governorate ?? null,
+        governorateAr: match.governorateAr ?? null,
         reason: "exact_match_after_folding",
         // Shown so the one choice is selectable like any other suggestion.
         candidates: [
@@ -172,6 +181,7 @@ export function matchPlace(
             name: match.name,
             nameAr: match.nameAr ?? null,
             governorate: match.governorate ?? null,
+            governorateAr: match.governorateAr ?? null,
             score: 1,
           },
         ],
@@ -198,6 +208,7 @@ export function matchPlace(
           name: ref.name,
           nameAr: ref.nameAr ?? null,
           governorate: ref.governorate ?? null,
+          governorateAr: ref.governorateAr ?? null,
           score: 1,
         })),
       },
@@ -240,6 +251,7 @@ export function matchPlace(
         field: options.field,
         matchedName: top.name,
         governorate: top.governorate,
+        governorateAr: top.governorateAr ?? null,
         candidates,
       },
     });

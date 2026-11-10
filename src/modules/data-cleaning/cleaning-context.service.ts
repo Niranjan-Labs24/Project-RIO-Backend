@@ -83,7 +83,7 @@ export class CleaningContextService {
         select: { name: true, domainId: true },
       }),
       this.prisma.center.findMany({
-        select: { code: true, name: true, nameAr: true, governorate: { select: { name: true } } },
+        select: { code: true, name: true, nameAr: true, governorate: { select: { name: true, nameAr: true } } },
       }),
       // Only the version of a question that actually governs new surveys.
       this.prisma.question.findMany({
@@ -145,6 +145,7 @@ export class CleaningContextService {
       name: c.name,
       nameAr: c.nameAr,
       governorate: c.governorate?.name,
+      governorateAr: c.governorate?.nameAr ?? null,
     }));
 
     if (vocabulary.length === 0) {
