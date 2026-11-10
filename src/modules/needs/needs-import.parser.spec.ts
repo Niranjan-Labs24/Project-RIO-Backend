@@ -19,6 +19,7 @@ vi.mock('mammoth', () => ({
 
 import {
   parseCsvNeeds,
+  parseDocxNeeds,
   parseExcelNeeds,
   parsePdfNeeds,
   parseSurveyDocumentNeeds,
@@ -181,7 +182,50 @@ describe('parsePdfNeeds', () => {
   });
 });
 
+describe('UAT NED-08 — parseDocxNeeds (need import from Word)', () => {
+  beforeEach(() => {
+    mammothState.value = '';
+    mammothState.fail = false;
+  });
+
+  it('treats each Word paragraph as a line and an empty paragraph as the gap between needs', async () => {
+    // mammoth emits "paragraph\n\n" per paragraph; an empty paragraph adds another "\n\n".
+    mammothState.value =
+      'Title: Water tanker delays\n\nStatement: The tanker comes twice a month\n\nVillage: Bawdah\n\n\n\n' +
+      'Title: نقص الأطباء\n\nStatement: طبيب واحد فقط في المركز\n\n';
+    const rows = await parseDocxNeeds(Buffer.from('x'));
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ title: 'Water tanker delays', statement: 'The tanker comes twice a month', village: 'Bawdah' });
+    expect(rows[1]).toMatchObject({ title: 'نقص الأطباء', statement: 'طبيب واحد فقط في المركز' });
+  });
+
+  it('uses the AI extraction when available, like a PDF', async () => {
+    mammothState.value = 'anything\n\n';
+    const run = vi.fn().mockResolvedValue({ response: { needs: [{ title: 'From AI', statement: 'S' }] } });
+    const rows = await parseDocxNeeds(Buffer.from('x'), { run } as never);
+    expect(rows[0]!.title).toBe('From AI');
+    expect(run.mock.calls[0]![1]).toContain('anything');
+  });
+
+  it('explains an unreadable Word file and one with no text', async () => {
+    mammothState.fail = true;
+    await expect(parseDocxNeeds(Buffer.from('x'))).rejects.toThrow('Word document could not be read: bad docx');
+    mammothState.fail = false;
+    mammothState.value = '\n\n\n\n';
+    await expect(parseDocxNeeds(Buffer.from('x'))).rejects.toThrow('contains no text');
+  });
+});
+
 describe('parseSurveyDocumentNeeds', () => {
+  it('UAT NED-08 — without AI, a Word survey falls back to its own text, never to the PDF reader', async () => {
+    pdf.fail = true; // the PDF reader would throw if it were (wrongly) used for a .docx
+    mammothState.fail = false;
+    mammothState.value = 'Health\n\nNo clinic nearby\n\n';
+    const rows = await parseSurveyDocumentNeeds(Buffer.from('PK-not-a-pdf'), 'results.docx');
+    expect(rows[0]).toMatchObject({ title: 'Health', statement: 'No clinic nearby' });
+    pdf.fail = false;
+  });
+
   beforeEach(() => {
     pdf.text = 'Water\nNo water at all';
     pdf.fail = false;

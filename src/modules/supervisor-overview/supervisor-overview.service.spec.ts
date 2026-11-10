@@ -41,7 +41,7 @@ describe('SupervisorOverviewService', () => {
       { studyId: 's2', status: 'draft' },
     ]);
     tx.report.findMany.mockResolvedValue([
-      { orgId: 'o1', title: 'R2' },
+      { orgId: 'o1', title: 'R2', reportType: 'RPT10' },
       { orgId: 'o1', title: 'R1' },
     ]);
     tx.sharingRequest.findMany.mockResolvedValue([
@@ -58,12 +58,14 @@ describe('SupervisorOverviewService', () => {
     expect(out.rows[0]).toMatchObject({
       activeStudyTitle: 'Open',
       latestReportTitle: 'R2',
+      latestReportType: 'RPT10',
       sharingStatus: 'approved',
       lastActivity: at('2026-02-01').toISOString(),
     });
     expect(out.rows[1]).toMatchObject({
       activeStudyTitle: null,
       latestReportTitle: null,
+      latestReportType: null,
       sharingStatus: 'approved',
       lastActivity: at('2026-01-05').toISOString(),
     });

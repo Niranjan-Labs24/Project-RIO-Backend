@@ -48,13 +48,17 @@ export class SmsService {
    * MailerService's sends (never throws; a hard failure would strand a
    * citizen with no way to get a code).
    */
-  async sendOtpCode(phoneNumber: string, code: string): Promise<boolean> {
+  async sendOtpCode(phoneNumber: string, code: string, locale: 'en' | 'ar' = 'en'): Promise<boolean> {
     if (!this.client || !this.fromNumber) return false;
     try {
       await this.client.messages.create({
         to: phoneNumber,
         from: this.fromNumber,
-        body: `Your RIO survey verification code is ${code}. It expires in 10 minutes.`,
+        // UAT DST-06 — in Arabic for a respondent answering in Arabic.
+        body:
+          locale === 'ar'
+            ? `رمز التحقق لاستبيان RIO هو ${code}. تنتهي صلاحيته خلال 10 دقائق.`
+            : `Your RIO survey verification code is ${code}. It expires in 10 minutes.`,
       });
       return true;
     } catch (err) {
@@ -90,7 +94,11 @@ export class SmsService {
       await this.client.messages.create({
         to: phoneNumber,
         from: this.fromNumber,
-        body: `Your RIO sign-in verification code is ${code}. It expires in 10 minutes. If you didn't request this, ignore this message.`,
+        // Arabic first, then English: the sender does not know the user's
+        // language here, and the sign-in email defaults to Arabic.
+        body:
+          `رمز التحقق لتسجيل الدخول إلى RIO هو ${code}. تنتهي صلاحيته خلال 10 دقائق. إذا لم تطلب هذا، يُرجى تجاهل هذه الرسالة.\n\n` +
+          `Your RIO sign-in verification code is ${code}. It expires in 10 minutes. If you didn't request this, ignore this message.`,
       });
       return true;
     } catch (err) {
@@ -123,9 +131,12 @@ export class SmsService {
       await this.client.messages.create({
         to: phoneNumber,
         from: this.fromNumber,
+        // Arabic first, then English, like the reminder email: the session
+        // does not store the respondent's language.
         body:
-          `You started a RIO survey but did not submit it. Earlier answers were not saved. ` +
-          `Finish it here: ${publicUrl}`,
+          `لقد بدأت الإجابة على استبيان RIO ولكن لم تُكمله. لم تُحفظ إجاباتك السابقة. أكمله من هنا:\n` +
+          `You started a RIO survey but did not submit it. Earlier answers were not saved. Finish it here:\n` +
+          publicUrl,
       });
       return true;
     } catch (err) {

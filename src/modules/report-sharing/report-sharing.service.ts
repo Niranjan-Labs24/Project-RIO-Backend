@@ -60,14 +60,6 @@ export class ReportSharingService {
     return admin?.email ?? null;
   }
 
-  // Mirrors SharingService.translateForEmail: a report title / org name is
-  // free text with no stored Arabic, so it's resolved live — otherwise the
-  // Arabic email reads as Arabic wrapped around untranslated English.
-  private async translateForEmail(text: string): Promise<string> {
-    const { translatedText } = await this.translation.translate(text, "ar");
-    return translatedText;
-  }
-
   async create(payload: CreateReportSharingRequestPayload): Promise<ReportSharingRequest> {
     const requestingOrgId = requireOrgId();
     const requestedBy = requireActor();
@@ -143,10 +135,8 @@ export class ReportSharingService {
     // RIO-FR-014 (client Q28) — best-effort, mirrors SharingService.create.
     const ownerAdminEmail = await this.orgAdminEmail(payload.ownerOrgId);
     if (ownerAdminEmail) {
-      const [reportTitleAr, requestingOrgNameAr] = await Promise.all([
-        this.translateForEmail(report.title),
-        this.translateForEmail(requestingOrgName),
-      ]);
+      // UAT GEN-03 — names exactly as entered, in emails too.
+      const [reportTitleAr, requestingOrgNameAr] = [report.title, requestingOrgName];
       await this.mailer.sendSharingRequestCreated(ownerAdminEmail, {
         entityLabel: `التقرير "${reportTitleAr}"`,
         otherOrgName: requestingOrgNameAr,
@@ -568,10 +558,8 @@ export class ReportSharingService {
     // RIO-FR-014 (client Q28) — mirrors SharingService.decide.
     const requesterAdminEmail = await this.orgAdminEmail(row.requestingOrgId);
     if (requesterAdminEmail) {
-      const [reportTitleAr, ownerOrgNameAr] = await Promise.all([
-        this.translateForEmail(reportTitle),
-        this.translateForEmail(ownerOrgName),
-      ]);
+      // UAT GEN-03 — names exactly as entered, in emails too.
+      const [reportTitleAr, ownerOrgNameAr] = [reportTitle, ownerOrgName];
       await this.mailer.sendSharingRequestDecided(requesterAdminEmail, {
         entityLabel: `التقرير "${reportTitleAr}"`,
         otherOrgName: ownerOrgNameAr,

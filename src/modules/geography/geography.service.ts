@@ -70,6 +70,17 @@ export class GeographyService {
     return this.prisma.center.count({ where: { governorateId: { in: governorateIds } } });
   }
 
+  /** Which of these governorates have at least one center in the reference data. */
+  async governorateIdsWithCenters(governorateIds: string[]): Promise<Set<string>> {
+    if (governorateIds.length === 0) return new Set();
+    const rows = await this.prisma.center.findMany({
+      where: { governorateId: { in: governorateIds } },
+      select: { governorateId: true },
+      distinct: ['governorateId'],
+    });
+    return new Set(rows.map((r) => r.governorateId));
+  }
+
   async findCentersByIds(ids: string[]): Promise<Center[]> {
     if (ids.length === 0) return [];
     const rows = await this.prisma.center.findMany({ where: { id: { in: ids } } });

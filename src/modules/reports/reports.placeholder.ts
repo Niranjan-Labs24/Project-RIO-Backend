@@ -106,8 +106,9 @@ export async function buildExportStub(
   translator?: Translator,
   /** How long the final translation pass may spend. A download keeps the
    *  sweep's short default; the background preparation at release allows
-   *  longer, since nobody is waiting on it. */
-  options: { budgetMs?: number } = {},
+   *  longer, since nobody is waiting on it. `extraNames` (UAT GEN-03): further
+   *  names to keep as entered, e.g. organisation names. */
+  options: { budgetMs?: number; extraNames?: readonly string[] } = {},
 ): Promise<{ filename: string; contentType: string; body: Buffer; sweep?: SweepStats }> {
   const auditRows = auditMetaLines(meta).map((r) => ({ label: r.field, value: r.value }));
   // The audit labels above are still composed in English here and translated
@@ -128,9 +129,18 @@ export async function buildExportStub(
   // the AI only sees genuinely novel prose.
   let sweep: SweepStats | undefined;
   if (translator) {
+    // UAT GEN-03 — the study title and people's names stay as entered.
+    const keepNames = [
+      meta.studyTitle,
+      meta.generatedByName,
+      meta.officerConfirmedByName,
+      meta.reviewedByName,
+      ...(options.extraNames ?? []),
+    ].filter((n): n is string => Boolean(n));
     const swept = await sweepRemainingEnglish(doc, locale, {
       aliases,
       translator,
+      keepNames,
       ...(options.budgetMs ? { budgetMs: options.budgetMs } : {}),
     });
     doc = swept.doc;

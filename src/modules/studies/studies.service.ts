@@ -194,6 +194,23 @@ export class StudiesService {
           error: { code: 'STUDY_CENTER_REQUIRED', message: 'Select at least one Center.' },
         });
       }
+    }    // UAT STU-01: each governorate that has centers needs one of its OWN
+    // centers — otherwise it rides along on another governorate's centers and
+    // shows up in the study's outputs without being covered.
+    if (centerIds.length > 0 && governorateIds.length > 1) {
+      const withCenters = await this.geography.governorateIdsWithCenters(governorateIds);
+      const centers = await this.geography.findCentersByIds(centerIds);
+      const covered = new Set(centers.map((c) => c.governorateId));
+      const missing = governorateIds.filter((id) => withCenters.has(id) && !covered.has(id));
+      if (missing.length > 0) {
+        throw new BadRequestException({
+          error: {
+            code: 'STUDY_CENTER_PER_GOVERNORATE_REQUIRED',
+            message: 'Select at least one Center in every selected Governorate that has Centers.',
+            details: { governorateIds: missing },
+          },
+        });
+      }
     }
   }
 

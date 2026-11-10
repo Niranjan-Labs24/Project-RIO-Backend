@@ -1,5 +1,6 @@
 import { AiService } from '../ai/ai.service';
-import { NEED_CLASSIFICATION_TASK } from '../ai/prompts/need-classification.task';
+import { NEED_CLASSIFICATION_TASK, needClassificationTaskFor } from '../ai/prompts/need-classification.task';
+import { requestLocale } from '../../common/locale/request-locale';
 import type { ClassificationCandidate, ClassificationResult, ClassificationSubject } from './classification.placeholder';
 
 // Thrown only when the AI genuinely ran and declined/couldn't decide (a
@@ -28,7 +29,8 @@ Villages: ${subject.village.join(', ') || 'not specified'}
 Available domains (pick domain/subDomain by their exact "name"):
 ${JSON.stringify(candidates)}`;
 
-  const { response } = await ai.run(NEED_CLASSIFICATION_TASK, prompt);
+  // UAT GEN-15: the rationale in the language of the person creating the need.
+  const { response } = await ai.run(needClassificationTaskFor(requestLocale()), prompt);
 
   // Treated as a failed classification by the caller (AiDecisionsService —
   // no fallback tier, lands on ai_classification_failed) — this is the
