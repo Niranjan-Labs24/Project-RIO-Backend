@@ -304,6 +304,37 @@ describe('OrganizationsService cross-entity reads and status', () => {
     expect(tx.organisation.findMany.mock.calls[1]![0]).toMatchObject({ take: 100, skip: 0 });
   });
 
+  // UAT ORG-10 — four statuses, derived from isActive, approvedAt and the
+  // organisation's latest sign-in (read in one grouped query).
+  it('derives each organisation lifecycle status from approval and sign-in', async () => {
+    const { svc, tx } = setup();
+    const approved = new Date('2026-10-01T00:00:00Z');
+    tx.organisation.findMany.mockResolvedValue([
+      withStats({ id: 'used', isActive: true, approvedAt: approved }),
+      withStats({ id: 'never-signed-in', isActive: true, approvedAt: approved }),
+      withStats({ id: 'pending', isActive: false, approvedAt: null }),
+      withStats({ id: 'stopped', isActive: false, approvedAt: approved }),
+    ]);
+    tx.user.groupBy.mockResolvedValue([
+      { orgId: 'used', _max: { lastLoginAt: new Date('2026-11-01T08:00:00Z') } },
+      { orgId: 'stopped', _max: { lastLoginAt: new Date('2026-10-05T08:00:00Z') } },
+    ]);
+    const out = await as('system_admin', () => svc.listAll());
+    expect(out.map((o) => [o.id, o.lifecycleStatus])).toEqual([
+      ['used', 'active'],
+      ['never-signed-in', 'inactive'],
+      ['pending', 'pending_approval'],
+      ['stopped', 'suspended'],
+    ]);
+    expect(out[0]!.lastSignInAt).toBe('2026-11-01T08:00:00.000Z');
+    expect(out[1]!.lastSignInAt).toBeNull();
+    expect(tx.user.groupBy).toHaveBeenCalledTimes(1);
+    expect(tx.user.groupBy.mock.calls[0]![0]).toMatchObject({
+      by: ['orgId'],
+      where: { orgId: { in: ['used', 'never-signed-in', 'pending', 'stopped'] } },
+    });
+  });
+
   it('returns an organisation and audits the view, or refuses an unknown one', async () => {
     const { svc, tx, audit } = setup();
     tx.organisation.findUnique

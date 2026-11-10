@@ -1,5 +1,5 @@
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
-import { Controller, Get, Param, Query, Res } from '@nestjs/common';
+import { Controller, Get, Param, Query, Res, StreamableFile } from '@nestjs/common';
 import type { Response } from 'express';
 import { RateLimit } from '../../common/guards/rate-limit.guard';
 import { RequirePermission } from '../../common/guards/permission.guard';
@@ -14,6 +14,10 @@ import {
   type SystemLogSummary,
   type SystemLogSummaryWindow,
 } from './system-logs.types';
+import {
+  EXPORT_CONTENT_TYPE, exportFilename, parseExportFormat, toCsv, toXlsx,
+} from '../../common/export/tabular-export';
+import { parseLocale, requestLocale } from '../../common/locale/request-locale';
 
 const WINDOWS: readonly SystemLogSummaryWindow[] = ['1h', '24h', '7d', '30d'];
 
@@ -93,8 +97,13 @@ export class SystemLogsController {
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
     @Query('search') search?: string,
-  ): Promise<string> {
-    const csv = await this.logs.exportCsv(
+    // UAT AUD-03 — csv (UTF-8 with BOM) or xlsx, headers in the reader's language.
+    @Query('format') formatParam?: string,
+    @Query('locale') localeParam?: string,
+  ): Promise<string | StreamableFile> {
+    const format = parseExportFormat(formatParam);
+    const locale = parseLocale(localeParam) ?? requestLocale();
+    const table = await this.logs.exportTable(
       parseFilters({
         level,
         minLevel,
@@ -109,12 +118,16 @@ export class SystemLogsController {
         dateTo,
         search,
       }),
+      locale,
     );
     res.set({
-      'Content-Type': 'text/csv',
-      'Content-Disposition': `attachment; filename="system-logs-${new Date().toISOString().slice(0, 10)}.csv"`,
+      'Content-Type': EXPORT_CONTENT_TYPE[format],
+      'Content-Disposition': `attachment; filename="${exportFilename('system-logs', format)}"`,
     });
-    return csv;
+    return format === 'xlsx'
+      // A Buffer returned as-is would be JSON-serialised by Nest ({"type":"Buffer",...}).
+      ? new StreamableFile(await toXlsx(table, { sheetName: locale === 'ar' ? 'سجلات النظام' : 'System logs', rightToLeft: locale === 'ar' }))
+      : toCsv(table);
   }
 
   // Declared before ':id' so a literal path segment can never be swallowed

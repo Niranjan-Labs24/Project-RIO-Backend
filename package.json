@@ -33,6 +33,7 @@
     "translation:purge-untranslated": "tsx scripts/purge-untranslated-cache.ts",
     "geo:seed": "tsx prisma/seed-geo-coordinates.ts",
     "ai004:repair-stranded": "tsx scripts/ai004-repair-stranded-candidates.ts",
+    "dq:rescore-duplicates": "tsx scripts/rescore-literal-duplicates.ts",
     "ai004:verify-crossorg": "tsx scripts/ai004-verify-crossorg-coverage.ts",
     "verify:scoring-idempotent": "tsx scripts/verify-scoring-idempotent.ts",
     "sync:report-labels": "tsx scripts/sync-report-labels.ts",

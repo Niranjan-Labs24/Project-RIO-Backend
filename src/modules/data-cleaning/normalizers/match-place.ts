@@ -31,6 +31,12 @@ export interface PlaceReference {
   code: string;
   /** Center.name as seeded. */
   name: string;
+  /**
+   * Center.nameAr — the official Arabic name. UAT DQ-03: matched as well as
+   * `name`, so a village typed in Arabic is compared with Arabic, not only
+   * with the English transliteration it can never resemble.
+   */
+  nameAr?: string | null;
   /** Governorate name, shown to the reviewer to tell same-named places apart. */
   governorate?: string;
 }
@@ -52,6 +58,7 @@ export interface PlaceMatchOptions {
 export interface PlaceCandidate {
   code: string;
   name: string;
+  nameAr?: string | null;
   governorate: string | null;
   score: number;
 }
@@ -64,15 +71,45 @@ export interface PlaceCandidate {
  */
 const AMBIGUITY_MARGIN = 0.02;
 
+/** Standalone words that carry no identity in a place name. */
+const FILLER_WORDS = new Set(["al", "el", "و"]);
+
+/**
+ * UAT DQ-03 — the key place names are compared on. On top of foldText (case,
+ * accents, tashkeel, أإآ→ا, ى→ي, ة→ه), it ignores what varies between two
+ * spellings of the same place without changing which place is meant:
+ * - the definite article: «العيينة» = «عيينة», "Al-Uyaynah" = "Uyaynah";
+ * - a conjunction written attached or apart: «والجبيلة» = «و الجبيلة».
+ * Scoring-only. foldText itself is unchanged, because it mirrors the
+ * database's rio_fold_text used by the duplicate queries.
+ */
+export function placeKey(input: string): string {
+  return foldText(input)
+    .split(" ")
+    .map((word) => (word.length > 4 && word.startsWith("وال") ? word.slice(1) : word))
+    .map((word) => (word.length > 3 && word.startsWith("ال") ? word.slice(2) : word))
+    .filter((word) => word && !FILLER_WORDS.has(word))
+    .join(" ");
+}
+
+/** The same key with spaces removed, for "is this the same name" checks. */
+const compactKey = (input: string): string => placeKey(input).replace(/ /g, "");
+
+const namesOf = (ref: PlaceReference): string[] =>
+  ref.nameAr ? [ref.name, ref.nameAr] : [ref.name];
+
 function rank(raw: string, reference: PlaceReference[], limit: number): PlaceCandidate[] {
-  const folded = foldText(raw);
-  if (!folded) return [];
+  const key = placeKey(raw);
+  if (!key) return [];
   return reference
     .map((ref) => ({
       code: ref.code,
       name: ref.name,
+      nameAr: ref.nameAr ?? null,
       governorate: ref.governorate ?? null,
-      score: trigramSimilarity(folded, foldText(ref.name)),
+      // The better of the two official names: Arabic input is scored against
+      // the Arabic name, Latin input against the English one.
+      score: Math.max(...namesOf(ref).map((n) => trigramSimilarity(key, placeKey(n)))),
     }))
     .filter((c) => c.score > 0)
     .sort((a, b) => (b.score - a.score) || a.code.localeCompare(b.code))
@@ -98,12 +135,14 @@ export function matchPlace(
   }
 
   const original = raw!.trim();
-  const foldedInput = foldText(original);
+  const inputKey = compactKey(original);
 
-  // An exact folded match against a single reference entry is not a guess —
-  // it is the same name written differently, which is precisely what folding
-  // exists to recognise.
-  const exactMatches = options.reference.filter((ref) => foldText(ref.name) === foldedInput);
+  // An exact match on the place key against a single reference entry is not
+  // a guess — it is the same name written differently (UAT DQ-03: «العيينه»,
+  // «عيينة» and «العيينة» are all the official «العيينة»).
+  const exactMatches = inputKey
+    ? options.reference.filter((ref) => namesOf(ref).some((n) => compactKey(n) === inputKey))
+    : [];
   if (exactMatches.length === 1) {
     const match = exactMatches[0]!;
     // ...but if the stored text is ALREADY the reference spelling, there is
@@ -112,7 +151,8 @@ export function matchPlace(
     // changes nothing, and the reviewer learns to distrust the queue. Caught
     // by fr002:verify-review against real data, where center 0707-001 is
     // itself named "Qiyal".
-    if (match.name === original) return clean(match.code);
+    // An official name in either language is already standard.
+    if (match.name === original || match.nameAr === original) return clean(match.code);
     return proposed(match.code, {
       ruleCode: "VILLAGE_NEAR_MATCH",
       severity: "non_standard",
@@ -122,8 +162,19 @@ export function matchPlace(
       detail: {
         field: options.field,
         matchedName: match.name,
+        matchedNameAr: match.nameAr ?? null,
         governorate: match.governorate ?? null,
         reason: "exact_match_after_folding",
+        // Shown so the one choice is selectable like any other suggestion.
+        candidates: [
+          {
+            code: match.code,
+            name: match.name,
+            nameAr: match.nameAr ?? null,
+            governorate: match.governorate ?? null,
+            score: 1,
+          },
+        ],
       },
     });
   }
@@ -145,6 +196,7 @@ export function matchPlace(
         candidates: exactMatches.slice(0, options.maxCandidates).map((ref) => ({
           code: ref.code,
           name: ref.name,
+          nameAr: ref.nameAr ?? null,
           governorate: ref.governorate ?? null,
           score: 1,
         })),

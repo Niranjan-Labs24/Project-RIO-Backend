@@ -15,7 +15,7 @@ import { assertShareable, NOT_INTERNAL_ONLY } from "../reports/core-needs/intern
 import type { SharingStatus } from "../sharing/sharing.types";
 import type {
   CreateReportSharingRequestPayload, DecideReportSharingRequestPayload, OrgLookupResult,
-  ReportCatalogItem, ReportLookupResult, ReportSharingRequest, ReportSharingRequestRow, SharedReportSnapshot,
+  PlaceLabel, ReportCatalogItem, ReportFinderFilters, ReportFinderResult, ReportLookupResult, ReportSharingRequest, ReportSharingRequestRow, SharedReportSnapshot,
 } from "./report-sharing.types";
 
 // A ceiling, not paging: the catalog is searched and filtered client-side,
@@ -368,7 +368,11 @@ export class ReportSharingService {
           ...(query ? { name: { contains: query, mode: "insensitive" } } : {}),
         },
         orderBy: { name: "asc" },
-        take: 20,
+        // UAT SHR-01 — the full list (it was cut at 20, so most entities could
+        // never be picked). The dialog filters it in the browser on both the
+        // stored name and the Arabic name it displays, which the server can't
+        // search because organisation names are stored in one language.
+        take: query ? 50 : 1000,
       }),
     );
     return rows.map((r) => ({ id: r.id, name: r.name }));
@@ -459,6 +463,81 @@ export class ReportSharingService {
 
   // Only an org's own APPROVED reports are eligible to be requested for
   // sharing (RIO-FR-014's "sharing only after approval").
+  /**
+   * UAT SHR-01 — find a report to request by WHERE and WHAT it covers rather
+   * than by knowing the owning entity's name first: region → governorate →
+   * centre, and domain → sub-domain, matched on the report's study. Same
+   * eligibility as lookupReportsForOrg (released/archived, not internal-only),
+   * across every other active organisation.
+   */
+  async findReports(filters: ReportFinderFilters): Promise<ReportFinderResult[]> {
+    const orgId = requireOrgId();
+    const uuid = (v: string | undefined) =>
+      v && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) ? v : undefined;
+    const regionId = uuid(filters.regionId);
+    const governorateId = uuid(filters.governorateId);
+    const centerId = uuid(filters.centerId);
+    const domain = filters.domain?.trim() || undefined;
+    const subDomain = filters.subDomain?.trim() || undefined;
+
+    const study: Prisma.StudyWhereInput[] = [];
+    if (centerId) study.push({ studyCenters: { some: { centerId } } });
+    else if (governorateId) study.push({ studyGovernorates: { some: { governorateId } } });
+    else if (regionId) study.push({ studyGovernorates: { some: { governorate: { regionId } } } });
+    if (subDomain) {
+      study.push({ needs: { some: { needDomains: { some: { subDomain, ...(domain ? { domain } : {}) } } } } });
+    } else if (domain) {
+      study.push({ OR: [{ targetSector: domain }, { needs: { some: { needDomains: { some: { domain } } } } }] });
+    }
+
+    const rows = await this.tenant.runAsSupervisor((tx) =>
+      tx.report.findMany({
+        where: {
+          orgId: { not: orgId },
+          org: { isActive: true },
+          status: { in: EXPORTABLE_STATUSES },
+          ...NOT_INTERNAL_ONLY,
+          ...(study.length > 0 ? { study: { AND: study } } : {}),
+        },
+        orderBy: { generatedAt: "desc" },
+        take: 100,
+        select: {
+          id: true,
+          title: true,
+          orgId: true,
+          org: { select: { name: true } },
+          study: {
+            select: {
+              title: true,
+              targetSector: true,
+              studyGovernorates: {
+                select: {
+                  governorate: {
+                    select: { name: true, nameAr: true, region: { select: { name: true, nameAr: true } } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      }),
+    );
+    const unique = (list: PlaceLabel[]) => [...new Map(list.map((p) => [p.name, p])).values()];
+    return rows.map((r) => {
+      const govs = r.study?.studyGovernorates.map((g) => g.governorate) ?? [];
+      return {
+        id: r.id,
+        title: r.title,
+        orgId: r.orgId,
+        orgName: r.org.name,
+        studyTitle: r.study?.title ?? null,
+        regions: unique(govs.map((g) => ({ name: g.region.name, nameAr: g.region.nameAr }))),
+        governorates: unique(govs.map((g) => ({ name: g.name, nameAr: g.nameAr }))),
+        domain: r.study?.targetSector ?? null,
+      };
+    });
+  }
+
   async lookupReportsForOrg(ownerOrgId: string): Promise<ReportLookupResult[]> {
     const rows = await this.tenant.runAsSupervisor((tx) =>
       tx.report.findMany({

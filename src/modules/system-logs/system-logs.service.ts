@@ -17,6 +17,14 @@ import {
   type SystemLogSummary,
   type SystemLogSummaryWindow,
 } from './system-logs.types';
+import { formatRiyadhTime, toCsv, type ExportTable } from '../../common/export/tabular-export';
+import type { SupportedLocale } from '../translation/translation.types';
+
+/** UAT AUD-03 — readable column names for the system-logs export. */
+const SYSTEM_LOG_EXPORT_HEADERS: Record<SupportedLocale, string[]> = {
+  en: ['Date & time (Riyadh)', 'Level', 'Category', 'Source', 'Event code', 'Message', 'HTTP status', 'Duration (ms)', 'Request ID', 'Organization', 'User email', 'IP address'],
+  ar: ['التاريخ والوقت (الرياض)', 'المستوى', 'الفئة', 'المصدر', 'رمز الحدث', 'الرسالة', 'حالة HTTP', 'المدة (مللي ثانية)', 'معرّف الطلب', 'الجهة', 'البريد الإلكتروني للمستخدم', 'عنوان IP'],
+};
 
 /** Flush cadence — a partially-filled buffer never waits longer than this. */
 const FLUSH_INTERVAL_MS = 2_000;
@@ -328,47 +336,35 @@ export class SystemLogsService implements OnModuleDestroy {
    * multi-KB blobs that destroy the file's usability in a spreadsheet; the
    * detail drawer is where those belong.
    */
-  async exportCsv(opts: SystemLogQuery): Promise<string> {
+  async exportCsv(opts: SystemLogQuery, locale: SupportedLocale = 'en'): Promise<string> {
+    return toCsv(await this.exportTable(opts, locale));
+  }
+
+  /** UAT AUD-03 — the export as a table (see tabular-export.ts). */
+  async exportTable(opts: SystemLogQuery, locale: SupportedLocale = 'en'): Promise<ExportTable> {
     const where = buildWhere(opts);
     const rows = (await this.tenant.runAsSupervisor((tx) =>
       tx.systemLog.findMany({ where, orderBy: { createdAt: 'desc' }, take: EXPORT_ROW_CAP }),
     )) as SystemLogRow[];
     const entries = await this.mapRows(rows);
 
-    const header = [
-      'Timestamp',
-      'Level',
-      'Category',
-      'Source',
-      'Event Code',
-      'Message',
-      'Status',
-      'Duration (ms)',
-      'Request ID',
-      'Organization',
-      'Actor Email',
-      'IP Address',
-    ];
-    const escape = (value: string): string => `"${value.replace(/"/g, '""')}"`;
-    const body = entries.map((e) =>
-      [
-        e.createdAt,
+    return {
+      headers: SYSTEM_LOG_EXPORT_HEADERS[locale],
+      rows: entries.map((e) => [
+        formatRiyadhTime(e.createdAt),
         e.level,
         e.category,
         e.source,
         e.eventCode ?? '',
         e.message,
-        e.http.statusCode ?? '',
-        e.http.durationMs ?? '',
+        e.http.statusCode ?? null,
+        e.http.durationMs ?? null,
         e.requestId ?? '',
         e.organizationName ?? '',
         e.actor?.email ?? '',
         e.ipAddress ?? '',
-      ]
-        .map((v) => escape(String(v)))
-        .join(','),
-    );
-    return [header.map(escape).join(','), ...body].join('\n');
+      ]),
+    };
   }
 
   /**

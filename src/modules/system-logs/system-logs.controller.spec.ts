@@ -48,7 +48,7 @@ function makeService() {
     getSummary: vi.fn().mockResolvedValue({}),
     getById: vi.fn().mockResolvedValue({}),
     getByRequestId: vi.fn().mockResolvedValue({ items: [] }),
-    exportCsv: vi.fn().mockResolvedValue('csv'),
+    exportTable: vi.fn().mockResolvedValue({ headers: ['Level'], rows: [['error']] }),
   } as unknown as SystemLogsService & Record<string, ReturnType<typeof vi.fn>>;
 }
 
@@ -138,10 +138,10 @@ describe('SystemLogsController filter parsing', () => {
 
     const csv = await controller.export({ set } as never);
 
-    expect(csv).toBe('csv');
+    expect(csv).toBe('\uFEFF"Level"\r\n"error"\r\n');
     expect(set).toHaveBeenCalledWith(
       expect.objectContaining({
-        'Content-Type': 'text/csv',
+        'Content-Type': 'text/csv; charset=utf-8',
         'Content-Disposition': expect.stringContaining('attachment; filename="system-logs-'),
       }),
     );
