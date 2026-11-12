@@ -16,6 +16,7 @@ import type {
   PriorityDashboardEntry, PriorityScore, PriorityScoreRow,
 } from "./priority.types";
 import { auditFieldLabel } from "../audit/audit-field-labels";
+import type { Prisma } from '../../generated/prisma';
 
 @Injectable()
 export class PriorityService {
@@ -572,6 +573,11 @@ export class PriorityService {
       const survey = await tx.survey.findUnique({ where: { id: surveyId } });
       const version = survey?.methodologyVersion || 'v5.0';
 
+      // UAT GEN-04: official Arabic names for every level, from the master
+      // data (domains, sub-domains) and the question bank (indicators, KPIs)
+      // of the version these scores were computed under.
+      const arabic = await this.arabicHierarchyNames(tx, kpis[0]?.methodologyVersionId ?? domains[0]?.methodologyVersionId ?? null);
+
       return {
         overall: overall ? {
           severityScore: overall.severityScore !== null ? Number(overall.severityScore) : null,
@@ -582,6 +588,7 @@ export class PriorityService {
         domains: domains.map(d => ({
           id: d.entityId,
           name: d.entityNameSnapshot,
+          nameAr: arabic.domain.get(d.entityNameSnapshot) ?? arabic.domain.get(d.entityId) ?? null,
           severityScore: d.severityScore !== null ? Number(d.severityScore) : null,
           confidenceLevel: d.confidenceLevel,
           validResponseCount: d.validResponseCount,
@@ -589,24 +596,52 @@ export class PriorityService {
         subDomains: subDomains.map(d => ({
           id: d.entityId,
           name: d.entityNameSnapshot,
+          nameAr: arabic.subDomain.get(d.entityNameSnapshot) ?? arabic.subDomain.get(d.entityId) ?? null,
           severityScore: d.severityScore !== null ? Number(d.severityScore) : null,
           confidenceLevel: d.confidenceLevel,
         })),
         indicators: indicators.map(d => ({
           id: d.entityId,
           name: d.entityNameSnapshot,
+          nameAr: arabic.indicator.get(d.entityNameSnapshot) ?? arabic.indicator.get(d.entityId) ?? null,
           severityScore: d.severityScore !== null ? Number(d.severityScore) : null,
           confidenceLevel: d.confidenceLevel,
         })),
         kpis: kpis.map(d => ({
           id: d.entityId,
           name: d.entityNameSnapshot,
+          nameAr: arabic.kpi.get(d.entityNameSnapshot) ?? arabic.kpi.get(d.entityId) ?? null,
           severityScore: d.severityScore !== null ? Number(d.severityScore) : null,
           confidenceLevel: d.confidenceLevel,
         })),
         methodologyVersion: version,
       };
     });
+  }
+
+  /** Official Arabic names by English name, per level (UAT GEN-04). */
+  private async arabicHierarchyNames(tx: Prisma.TransactionClient, methodologyVersionId: string | null) {
+    const [domainRows, subDomainRows, questions] = await Promise.all([
+      tx.domain.findMany({ select: { name: true, nameAr: true } }),
+      tx.subDomain.findMany({ select: { name: true, nameAr: true } }),
+      methodologyVersionId
+        ? tx.question.findMany({
+            where: { methodologyVersionId },
+            select: { indicator: true, indicatorAr: true, kpi: true, kpiAr: true },
+          })
+        : Promise.resolve([] as Array<{ indicator: string | null; indicatorAr: string | null; kpi: string | null; kpiAr: string | null }>),
+    ]);
+    const map = (pairs: Array<[string | null, string | null]>) => {
+      const m = new Map<string, string>();
+      for (const [en, ar] of pairs) if (en && ar && !m.has(en)) m.set(en, ar);
+      return m;
+    };
+    return {
+      domain: map(domainRows.map((d) => [d.name, d.nameAr])),
+      subDomain: map(subDomainRows.map((d) => [d.name, d.nameAr])),
+      indicator: map(questions.map((q) => [q.indicator, q.indicatorAr])),
+      kpi: map(questions.map((q) => [q.kpi, q.kpiAr])),
+    };
   }
 
   async getKpiRanking(studyId: string, surveyId: string, villageId: string | null) {
@@ -644,6 +679,9 @@ export class PriorityService {
           indicator: mapping?.indicator || '',
           subDomain: mapping?.subDomain || '',
           domain: mapping?.domain || '',
+          // UAT GEN-04: official Arabic names from the question bank.
+          kpiAr: mapping?.kpiAr ?? null,
+          indicatorAr: mapping?.indicatorAr ?? null,
           severityScore: r.severityScore !== null ? Number(r.severityScore) : null,
           validResponseCount: r.validResponseCount,
           dontKnowRate: Number(r.dontKnowRate),

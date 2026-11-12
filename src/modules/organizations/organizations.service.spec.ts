@@ -113,6 +113,8 @@ describe('OrganizationsService', () => {
               return state;
             },
           },
+          // UAT ORG-10 — getById reads the latest sign-in for the status.
+          user: { groupBy: async () => [] },
         }),
       runAsOrg: async (_orgId: string, fn: (tx: unknown) => unknown) =>
         fn({

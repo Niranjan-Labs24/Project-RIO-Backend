@@ -99,6 +99,15 @@ describe('MailerService', () => {
       expect(sent().subject).toBe('فشل النسخ الاحتياطي في RIO — snapshot');
     });
 
+    it('sends the citizen survey code in Arabic to an Arabic respondent (UAT DST-06)', async () => {
+      send.mockResolvedValue({ data: { id: '1' }, error: null });
+      const svc = new MailerService(config());
+      await svc.sendCitizenOtpEmail('c@x.test', '123456', 'ar');
+      expect(sent().subject).toBe('رمز التحقق لاستبيان RIO');
+      expect(sent().text).toContain('123456');
+      expect(sent().html).toContain('dir="rtl"');
+    });
+
     it('sends the contact enquiry in Arabic', async () => {
       send.mockResolvedValue({ data: { id: '1' }, error: null });
       const svc = new MailerService(config());

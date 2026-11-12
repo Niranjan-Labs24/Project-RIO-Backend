@@ -111,6 +111,62 @@ export function keyForEnglish(text: string): ReportLabelKey | null {
   return KEY_BY_ENGLISH.get(text.trim().toLowerCase()) ?? null;
 }
 
+/**
+ * UAT GEN-04 — fixed report sentences with blanks (fixedText.* in the
+ * catalogue: "{abandoned} of {resolved} resolved session(s) were started…").
+ * The English template becomes a pattern; a match is rewritten with the
+ * catalogue Arabic and the same values, so an Arabic export never depends on
+ * the AI for these sentences. Same rules as the screen
+ * (report-narrative-i18n.ts on the frontend): longest first, a blank at either
+ * end takes one token, and sentences shorter than 30 characters without a
+ * blank are left to the exact-match lookup; shorter ones with a blank match a
+ * whole string only.
+ */
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const SHORT_TEMPLATE = 30;
+const FIXED_SENTENCES = (Object.entries(REPORT_LABELS_EN) as Array<[ReportLabelKey, string]>)
+  .filter(([k, en]) => k.startsWith('fixedText.') && (en.includes('{') || en.length >= SHORT_TEMPLATE) && !/,\s*(plural|select)/.test(en))
+  .sort((a, b) => b[1].length - a[1].length)
+  .map(([key, en]) => {
+    const names: string[] = [];
+    const parts = en.split(/(\{\w+\})/).filter((x) => x !== '');
+    const pattern = parts
+      .map((part, i) => {
+        const m = /^\{(\w+)\}$/.exec(part);
+        if (!m) return escapeRe(part);
+        names.push(m[1]!);
+        return i === 0 || i === parts.length - 1 ? '(\\S+)' : '(.+?)';
+      })
+      .join('');
+    // A short template ("Session {ref}", "{answered} of {total} answered") is
+    // mostly blank, so inside prose it would rewrite a fragment of an
+    // unrelated sentence and leave the rest English. It matches only a whole
+    // string; long templates may still appear mid-paragraph.
+    const fixedWords = en.replace(/\{\w+\}/g, '').length;
+    const re = fixedWords < SHORT_TEMPLATE ? new RegExp(`^${pattern}$`) : new RegExp(pattern, 'g');
+    return { key, re, names };
+  });
+
+export function fillFixedSentences(text: string, locale: SupportedLocale): string {
+  if (locale === 'en') return text;
+  let out = text.replace(/[\u2066-\u2069]/g, '');
+  const before = out;
+  for (const { key, re, names } of FIXED_SENTENCES) {
+    re.lastIndex = 0;
+    out = out.replace(re, (...args: string[]) => {
+      const values = args.slice(1, 1 + names.length).map((v) => {
+        const value = (v ?? '').trim();
+        const k = keyForEnglish(value);
+        if (k) return label(k, locale);
+        return /[A-Za-z]{3}/.test(value) ? fillFixedSentences(value, locale) : value;
+      });
+      const params = Object.fromEntries(names.map((n, i) => [n, values[i] ?? '']));
+      return label(key, locale, params);
+    });
+  }
+  return out === before ? text : out;
+}
+
 // Enumerated cell values — priority/severity tiers and Yes/No — which the
 // on-screen viewer translates from the same catalogue (report-content-view.tsx
 // tierText: tierValue.<UPPERCASED>). Only these exact tokens are swapped; every

@@ -110,6 +110,14 @@ export class QuestionsController {
   // "Creating a new question" is explicitly one of the change types
   // requiring Human Reviewer approval before it's active for new surveys —
   // same gate and same pending-approval mechanism as the edit actions below.
+  // UAT MET-05 — the code a new question in this domain will get, shown in
+  // the Add Question dialog before it is saved.
+  @Get('questions/next-id')
+  @RequirePermission('methodologyQuestionBank', 'write')
+  async nextQuestionId(@Query('domain') domain?: string): Promise<{ questionId: string }> {
+    return { questionId: await this.service.nextQuestionId(optionalText(domain, 'domain', 120) ?? '') };
+  }
+
   @Post('questions')
   @RequirePermission('methodologyQuestionBank', 'write')
   createQuestion(
@@ -156,6 +164,16 @@ export class QuestionsController {
   @Get('questions/pending-approvals')
   @RequirePermission('methodologyQuestionBank', 'approve')
   listPendingApprovals() {
+    return this.service.listPendingApprovals();
+  }
+
+  // UAT MET-01 — the same awaiting-approval list for whoever MAKES changes
+  // (System Admin), so the bank shows "Deactivation awaiting approval" on the
+  // question they just changed instead of a plain "Active" that reads as if
+  // the deactivation failed. Read-only; deciding stays behind `approve`.
+  @Get('questions/pending-changes')
+  @RequirePermission('methodologyQuestionBank', 'write')
+  listPendingChanges() {
     return this.service.listPendingApprovals();
   }
 

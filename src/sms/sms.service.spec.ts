@@ -105,6 +105,27 @@ describe('SmsService', () => {
     expect(twilioFactoryMock).not.toHaveBeenCalled();
   });
 
+  it('texts the citizen OTP in Arabic when asked (UAT DST-06)', async () => {
+    createMock.mockResolvedValue({ sid: 'SM123' });
+    await new SmsService(makeConfig()).sendOtpCode('+15559876543', '123456', 'ar');
+    expect(createMock.mock.calls[0]![0].body).toBe('رمز التحقق لاستبيان RIO هو 123456. تنتهي صلاحيته خلال 10 دقائق.');
+  });
+
+  it('sends the sign-in code and the reminder in one language each', async () => {
+    createMock.mockResolvedValue({ sid: 'SM123' });
+    const service = new SmsService(makeConfig());
+    await service.sendLoginOtpCode('+15559876543', '123456');
+    await service.sendLoginOtpCode('+15559876543', '123456', 'en');
+    await service.sendSurveyReminder('+15559876543', 'https://x.test/s');
+    const [ar, en, reminder] = createMock.mock.calls.map((c) => c[0].body as string);
+    expect(ar).toContain('123456');
+    expect(ar).not.toContain('verification');
+    expect(en).toMatch(/^Your RIO sign-in verification code is 123456/);
+    expect(en).not.toMatch(/[\u0600-\u06FF]/);
+    expect(reminder).not.toContain('You started');
+    expect(reminder).toContain('https://x.test/s');
+  });
+
   it('returns false (no throw) when the send times out or otherwise rejects', async () => {
     createMock.mockRejectedValue(new Error('ETIMEDOUT'));
     const service = new SmsService(makeConfig());

@@ -108,12 +108,19 @@ export class ArchiveService {
     // offer one value however many regions the work actually covered.
     const govById = new Map(governorates.map((g) => [g.id, g]));
     const govNamesByStudyId = new Map<string, string[]>();
+    // Same list in Arabic (master-data nameAr), position for position.
+    const govNamesArByStudyId = new Map<string, string[]>();
     const regionNamesByStudyId = new Map<string, string[]>();
     for (const link of studyGovernorates) {
       const gov = govById.get(link.governorateId);
       if (!gov) continue;
       const names = govNamesByStudyId.get(link.studyId) ?? [];
-      if (!names.includes(gov.name)) names.push(gov.name);
+      if (!names.includes(gov.name)) {
+        names.push(gov.name);
+        const namesAr = govNamesArByStudyId.get(link.studyId) ?? [];
+        namesAr.push(gov.nameAr ?? gov.name);
+        govNamesArByStudyId.set(link.studyId, namesAr);
+      }
       govNamesByStudyId.set(link.studyId, names);
       const regionName = gov.region?.name;
       if (!regionName) continue;
@@ -173,6 +180,7 @@ export class ArchiveService {
           sector: study.targetSector ?? null,
           villages: villagesByStudyId.get(study.id) ?? [],
           governorateNames: govNamesByStudyId.get(study.id) ?? [],
+          governorateNamesAr: govNamesArByStudyId.get(study.id) ?? [],
           domains: domainsOfStudy(study.id),
         });
       }
@@ -185,6 +193,8 @@ export class ArchiveService {
           id: report.id,
           kind: "report",
           title: report.title,
+          // Lets the screen show the type name in the reader's language.
+          reportType: report.reportType,
           status: report.status,
           date: (report.reviewedAt ?? report.generatedAt).toISOString(),
           studyId: report.studyId,
@@ -196,6 +206,7 @@ export class ArchiveService {
           villages: report.studyId ? (villagesByStudyId.get(report.studyId) ?? []) : [],
           // A Report has no geography of its own — it inherits its Study's.
           governorateNames: report.studyId ? (govNamesByStudyId.get(report.studyId) ?? []) : [],
+          governorateNamesAr: report.studyId ? (govNamesArByStudyId.get(report.studyId) ?? []) : [],
           domains: domainsOfStudy(report.studyId),
         });
       }

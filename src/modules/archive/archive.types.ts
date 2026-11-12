@@ -27,6 +27,8 @@ export interface ArchiveEntry {
   // match it. Study/Report now resolve their own StudyGovernorate rows
   // (client, 2026-09-23: "show all region and governorate, not only few").
   governorateNames?: string[];
+  /** The same governorates in Arabic (master-data nameAr), for the Arabic screen. */
+  governorateNamesAr?: string[];
   centerNames?: string[];
   author?: string;
   methodologyVersionLabel?: string;
@@ -37,6 +39,9 @@ export interface ArchiveEntry {
    * be imported into the dashboard at all: only one-need-per-row formats
    * (.csv/.xlsx/.xls) can, so a PDF upload must not be offered the action. */
   fileName?: string | null;
+  /** Set only for `report` entries: its type code (RPT01...), so the screen
+   *  can show the type name in the reader's language (UAT GEN-04). */
+  reportType?: string;
 }
 
 export interface ListArchiveParams {

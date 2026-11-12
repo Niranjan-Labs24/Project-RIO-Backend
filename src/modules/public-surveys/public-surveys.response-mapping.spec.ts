@@ -202,3 +202,29 @@ describe('answers map to the question that was actually asked', () => {
     expect(second.items[0]!.answer).toBe('second');
   });
 });
+
+// UAT SVB-07 — the citizen form sends the text typed after "Other" under
+// `<survey question id>:other` (the question's `code` in the resolved survey).
+// This pins that spelling, so a rename on either side shows up here and not
+// as a blank column in the export.
+describe('the "Other" free text (UAT SVB-07)', () => {
+  const OTHER = response('r1', {
+    'v1-qa': '2 km',
+    'v1-qb': '5 km',
+    'v1-qc': 'Other',
+    'v1-qc:other': 'Only in winter',
+  });
+
+  it('is shown next to its answer in the response detail', async () => {
+    const { service } = makeService([SURVEY_V1, SURVEY_V2], [OTHER]);
+    const [detail] = await service.listResponsesWithAnswers('need-1');
+    const route = detail!.answers.find((a) => a.questionId === 'v1-qc');
+    expect(route).toMatchObject({ answer: 'Other', otherText: 'Only in winter' });
+  });
+
+  it('reaches the CSV export', async () => {
+    const { service } = makeService([SURVEY_V1, SURVEY_V2], [OTHER]);
+    const csv = await service.exportResponsesCsv('need-1');
+    expect(csv).toContain('Only in winter');
+  });
+});

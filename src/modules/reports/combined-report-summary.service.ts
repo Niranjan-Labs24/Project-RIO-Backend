@@ -162,8 +162,10 @@ export class CombinedReportSummaryService {
     // study has none.
     const confirmedScoreSummary = availableScoreSummaries[0] ?? null;
 
+    // Only documents the officer switched "Include in Combined Report" on for
+    // (UAT PRI-03: the switch was saved but never read, so it did nothing).
     const confirmedDocumentSummaries = study.evidenceDocuments
-      .filter((doc) => doc.summaries.length > 0)
+      .filter((doc) => doc.isIncludedInCombinedReport && doc.summaries.length > 0)
       .map((doc) => ({
         documentId: doc.id,
         documentTitle: doc.title,
@@ -182,6 +184,7 @@ export class CombinedReportSummaryService {
         ? await this.localizedCombinedOutput(latestCombinedSummary, !isCrossOrgReader)
         : null;
 
+    const arabic = requestLocale() === "ar";
     return {
       study: {
         id: study.id,
@@ -189,8 +192,14 @@ export class CombinedReportSummaryService {
         cycleNumber: study.cycleNumber,
         orgName: study.org.name,
         methodologyVersion: study.methodologyVersion?.version || "v5.0",
-        region: study.org.region[0] || "National",
-        governorate: study.studyGovernorates.map((g) => g.governorate.name).join(", ") || "All Governorates",
+        // UAT GEN-04: governorates use their official Arabic name and the
+        // fixed fallbacks are worded in the reader's language. The region is
+        // the entity's own free-text value and stays as entered.
+        region: study.org.region[0] || (arabic ? "على المستوى الوطني" : "National"),
+        governorate:
+          study.studyGovernorates
+            .map((g) => (arabic ? (g.governorate.nameAr ?? g.governorate.name) : g.governorate.name))
+            .join(arabic ? "، " : ", ") || (arabic ? "جميع المحافظات" : "All Governorates"),
         documentCount: study.evidenceDocuments.length,
       },
       availableScoreSummaries,

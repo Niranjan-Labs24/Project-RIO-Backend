@@ -475,8 +475,10 @@ describe('AuditService.exportCsv (RIO-FR-007 — System Admin download)', () => 
       svc.exportCsv({}),
     );
 
-    const lines = csv.split('\n');
-    expect(lines[0]).toBe('"Timestamp","Actor","Action","Entity Type","Entity","IP Address"');
+    // UAT AUD-03 — UTF-8 BOM, CRLF rows, readable headers.
+    expect(csv.charCodeAt(0)).toBe(0xfeff);
+    const lines = csv.slice(1).trimEnd().split('\r\n');
+    expect(lines[0]).toBe('"Date & time (Riyadh)","User","User email","Action","Record type","Record","Reference","IP address"');
     expect(lines).toHaveLength(3);
   });
 
@@ -499,7 +501,8 @@ describe('AuditService.exportCsv (RIO-FR-007 — System Admin download)', () => 
     );
 
     expect(csv).toContain('"admin@demo.org"');
-    expect(csv).toContain('"2026-08-06T10:00:00.000Z"');
+    // UAT AUD-03 — readable Saudi time (UTC+3), not a raw ISO instant.
+    expect(csv).toContain('"2026-08-06 13:00:00"');
   });
 
   it('applies the same filters as list()', async () => {
@@ -530,7 +533,7 @@ describe('AuditService.exportCsv (RIO-FR-007 — System Admin download)', () => 
       svc.exportCsv({ action: 'nothing-matches' }),
     );
 
-    expect(csv).toBe('"Timestamp","Actor","Action","Entity Type","Entity","IP Address"');
+    expect(csv).toBe('\uFEFF' + '"Date & time (Riyadh)","User","User email","Action","Record type","Record","Reference","IP address"' + '\r\n');
   });
 
   // RIO-FR-007 AC1 regression — audit_logs.entity_id is a uuid column, so a

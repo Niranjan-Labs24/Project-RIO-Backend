@@ -499,7 +499,11 @@ export class MailerService {
    * Same soft-fail contract as every other send here — never throws, so a
    * mail outage cannot strand a respondent mid-survey.
    */
-  async sendCitizenOtpEmail(email: string, code: string): Promise<boolean> {
+  async sendCitizenOtpEmail(
+    email: string,
+    code: string,
+    locale: SupportedLocale = 'en',
+  ): Promise<boolean> {
     // The one send that may go through the second account. Both fall back
     // together: an unset SURVEY_OTP_MAIL_PROVIDER, or one whose credentials
     // were incomplete at boot, leaves surveyOtpClient undefined and this
@@ -511,9 +515,16 @@ export class MailerService {
       const { error } = await client.emails.send({
         from,
         to: email,
-        subject: 'Your RIO survey verification code',
-        text: `Your verification code is ${code}. Enter it to submit your survey response. It expires in 10 minutes. If you did not request this, ignore this email.`,
-        html: `<p>Your verification code is <strong>${code}</strong>. Enter it to submit your survey response.</p><p>It expires in 10 minutes. If you did not request this, ignore this email.</p>`,
+        // UAT DST-06 — in Arabic for a respondent answering in Arabic.
+        subject: locale === 'ar' ? 'رمز التحقق لاستبيان RIO' : 'Your RIO survey verification code',
+        text:
+          locale === 'ar'
+            ? `رمز التحقق الخاص بك هو ${code}. أدخله لإرسال إجابتك على الاستبيان. تنتهي صلاحيته خلال 10 دقائق. إذا لم تطلب هذا الرمز، يُرجى تجاهل هذه الرسالة.`
+            : `Your verification code is ${code}. Enter it to submit your survey response. It expires in 10 minutes. If you did not request this, ignore this email.`,
+        html:
+          locale === 'ar'
+            ? `<div dir="rtl" lang="ar"><p>رمز التحقق الخاص بك هو <strong>${code}</strong>. أدخله لإرسال إجابتك على الاستبيان.</p><p>تنتهي صلاحيته خلال 10 دقائق. إذا لم تطلب هذا الرمز، يُرجى تجاهل هذه الرسالة.</p></div>`
+            : `<p>Your verification code is <strong>${code}</strong>. Enter it to submit your survey response.</p><p>It expires in 10 minutes. If you did not request this, ignore this email.</p>`,
       });
       if (error) {
         this.logger.error(`Failed to email citizen OTP code to ${redactEmail(email)}: ${error.name} ${error.message}`);

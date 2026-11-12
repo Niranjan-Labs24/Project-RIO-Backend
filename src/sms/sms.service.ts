@@ -48,13 +48,17 @@ export class SmsService {
    * MailerService's sends (never throws; a hard failure would strand a
    * citizen with no way to get a code).
    */
-  async sendOtpCode(phoneNumber: string, code: string): Promise<boolean> {
+  async sendOtpCode(phoneNumber: string, code: string, locale: 'en' | 'ar' = 'en'): Promise<boolean> {
     if (!this.client || !this.fromNumber) return false;
     try {
       await this.client.messages.create({
         to: phoneNumber,
         from: this.fromNumber,
-        body: `Your RIO survey verification code is ${code}. It expires in 10 minutes.`,
+        // UAT DST-06 — in Arabic for a respondent answering in Arabic.
+        body:
+          locale === 'ar'
+            ? `رمز التحقق لاستبيان RIO هو ${code}. تنتهي صلاحيته خلال 10 دقائق.`
+            : `Your RIO survey verification code is ${code}. It expires in 10 minutes.`,
       });
       return true;
     } catch (err) {
@@ -84,13 +88,19 @@ export class SmsService {
    * contract — a staff member who never receives their code falls back to
    * their password, so this must never throw.
    */
-  async sendLoginOtpCode(phoneNumber: string, code: string): Promise<boolean> {
+  async sendLoginOtpCode(phoneNumber: string, code: string, locale: 'en' | 'ar' = 'ar'): Promise<boolean> {
     if (!this.client || !this.fromNumber) return false;
     try {
       await this.client.messages.create({
         to: phoneNumber,
         from: this.fromNumber,
-        body: `Your RIO sign-in verification code is ${code}. It expires in 10 minutes. If you didn't request this, ignore this message.`,
+        // One language per message, the one the user signs in with (Arabic
+        // when unknown, like the sign-in email). Both in one text forced
+        // Unicode encoding and about four SMS segments instead of one.
+        body:
+          locale === 'ar'
+            ? `رمز التحقق لتسجيل الدخول إلى RIO هو ${code}. تنتهي صلاحيته خلال 10 دقائق. إذا لم تطلب هذا، يُرجى تجاهل هذه الرسالة.`
+            : `Your RIO sign-in verification code is ${code}. It expires in 10 minutes. If you didn't request this, ignore this message.`,
       });
       return true;
     } catch (err) {
@@ -117,15 +127,20 @@ export class SmsService {
    * data is persisted (client answer, 24 Aug) and the respondent will start
    * the question set again.
    */
-  async sendSurveyReminder(phoneNumber: string, publicUrl: string): Promise<boolean> {
+  async sendSurveyReminder(phoneNumber: string, publicUrl: string, locale: 'en' | 'ar' = 'ar'): Promise<boolean> {
     if (!this.client || !this.fromNumber) return false;
     try {
       await this.client.messages.create({
         to: phoneNumber,
         from: this.fromNumber,
+        // One language per message (two in one text cost several SMS
+        // segments). The session does not store the respondent's language,
+        // so the caller sends Arabic, the platform's primary language.
         body:
-          `You started a RIO survey but did not submit it. Earlier answers were not saved. ` +
-          `Finish it here: ${publicUrl}`,
+          (locale === 'ar'
+            ? `لقد بدأت الإجابة على استبيان RIO ولكن لم تُكمله. لم تُحفظ إجاباتك السابقة. أكمله من هنا:\n`
+            : `You started a RIO survey but did not submit it. Earlier answers were not saved. Finish it here:\n`) +
+          publicUrl,
       });
       return true;
     } catch (err) {

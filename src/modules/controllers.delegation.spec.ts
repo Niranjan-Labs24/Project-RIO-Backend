@@ -18,7 +18,16 @@ const modules = import.meta.glob('./**/*.controller.ts', { eager: true }) as Rec
 >;
 
 // RolesController.list serves the static role matrix, with no service behind it.
-const SKIP = new Set(['constructor', 'RolesController.list']);
+const SKIP = new Set([
+  'constructor',
+  'RolesController.list',
+  // UAT AUD-03 — these write the service's table as CSV/xlsx, which the
+  // catch-all stub can't stand in for. Covered by their own controller specs
+  // (audit.controller.spec.ts, system-logs.controller.spec.ts), including the
+  // bytes actually sent.
+  'AuditController.export',
+  'SystemLogsController.export',
+]);
 // Handlers normalise incoming strings; the stand-in answers those calls like a string would.
 const STRING_METHODS = new Set([
   'trim',

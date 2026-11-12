@@ -1,3 +1,4 @@
+import { StreamableFile } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { PATH_METADATA, METHOD_METADATA } from '@nestjs/common/constants';
 import { RequestMethod } from '@nestjs/common';
@@ -99,7 +100,7 @@ describe('AuditController permission gating (RIO-FR-007)', () => {
 describe('AuditController delegation', () => {
   const service = {
     list: vi.fn().mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 }),
-    exportCsv: vi.fn().mockResolvedValue('Timestamp,Actor\n'),
+    exportTable: vi.fn().mockResolvedValue({ headers: ['Timestamp', 'Actor'], rows: [['2026-11-09 09:00:00', 'محمد']] }),
     getSummary: vi.fn().mockResolvedValue({}),
     getById: vi.fn().mockResolvedValue({}),
   };
@@ -131,11 +132,32 @@ describe('AuditController delegation', () => {
 
     const csv = await controller.export(res as never, 'o1');
 
-    expect(csv).toBe('Timestamp,Actor\n');
-    expect(headers['Content-Type']).toBe('text/csv');
+    // UAT AUD-03 — UTF-8 with BOM, CRLF, and the charset declared.
+    expect(csv).toBe('\uFEFF"Timestamp","Actor"\r\n"2026-11-09 09:00:00","محمد"\r\n');
+    expect(headers['Content-Type']).toBe('text/csv; charset=utf-8');
     expect(headers['Content-Disposition']).toMatch(
       /^attachment; filename="audit-log-\d{4}-\d{2}-\d{2}\.csv"$/,
     );
-    expect(service.exportCsv).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'o1' }));
+    expect(service.exportTable).toHaveBeenCalledWith(expect.objectContaining({ organizationId: 'o1' }), 'en');
+  });
+
+  it('exports .xlsx when asked, with the Arabic headers', async () => {
+    const headers: Record<string, string> = {};
+    const res = { set: (h: Record<string, string>) => Object.assign(headers, h) };
+
+    const file = await controller.export(
+      res as never, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      'xlsx', 'ar',
+    );
+
+    // Sent as raw bytes: a Buffer returned as-is would be JSON-serialised by
+    // Nest ({"type":"Buffer",...}), which is how the first version broke.
+    expect(file).toBeInstanceOf(StreamableFile);
+    const chunks: Buffer[] = [];
+    for await (const chunk of (file as StreamableFile).getStream()) chunks.push(chunk as Buffer);
+    expect(Buffer.concat(chunks).subarray(0, 2).toString()).toBe('PK'); // an .xlsx is a zip
+    expect(headers['Content-Type']).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    expect(headers['Content-Disposition']).toMatch(/\.xlsx"$/);
+    expect(service.exportTable).toHaveBeenLastCalledWith(expect.anything(), 'ar');
   });
 });

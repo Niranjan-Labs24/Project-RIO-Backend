@@ -521,7 +521,7 @@ export class ReportsService {
       content,
       locale,
       this.translation,
-      { budgetMs: VIEW_TRANSLATION_BUDGET_MS },
+      { budgetMs: VIEW_TRANSLATION_BUDGET_MS, keepNames: await this.keepNames(report.studyId) },
     );
     if (failed > 0 || (skipped ?? 0) > 0) {
       this.logger.warn(
@@ -797,6 +797,7 @@ export class ReportsService {
         locale,
         aliases,
         this.translation,
+      { extraNames: await this.keepNames(row.studyId) },
       );
     }
 
@@ -829,8 +830,36 @@ export class ReportsService {
       locale,
       aliases,
       this.translation,
+      { extraNames: await this.keepNames(row.studyId) },
     );
   }
+
+  // UAT GEN-03 — names that must reach a report exactly as entered: every
+  // organisation's name and the report's study title (platform reference
+  // data and the report's own study, read the same way for every caller).
+  // UAT GEN-03 — names a report must show as entered. A study's report names
+  // only its own organisation and study, so only those are kept: reading every
+  // organisation on the platform cost a full table read per view/export, and
+  // one organisation named with a common word ("Water") froze that word in
+  // every other organisation's Arabic reports. Reports with no study (area
+  // and platform-level reports can cite several organisations) keep the full
+  // list.
+  private async keepNames(studyId: string | null): Promise<string[]> {
+    return this.tenant
+      .runAsSupervisor(async (tx) => {
+        if (studyId) {
+          const study = await tx.study.findUnique({
+            where: { id: studyId },
+            select: { title: true, org: { select: { name: true } } },
+          });
+          return study ? [study.org.name, study.title] : [];
+        }
+        const orgs = await tx.organisation.findMany({ select: { name: true } });
+        return orgs.map((o) => o.name);
+      })
+      .catch(() => []);
+  }
+
 
   /**
    * A report's content with its free prose in `locale`.
@@ -946,6 +975,7 @@ export class ReportsService {
       content,
       locale,
       this.translation,
+      { keepNames: await this.keepNames(row.studyId) },
     );
     if (failed > 0) {
       this.logger.warn(
@@ -1134,6 +1164,7 @@ export class ReportsService {
       locale,
       aliases,
       this.translation,
+      { extraNames: await this.keepNames(row.studyId) },
     );
   }
 

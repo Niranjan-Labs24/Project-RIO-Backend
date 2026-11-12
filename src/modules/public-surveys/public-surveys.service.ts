@@ -1,4 +1,5 @@
 import { ConflictException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { formatRiyadhTime, toCsv, type ExportCell } from '../../common/export/tabular-export';
 import { randomBytes } from 'node:crypto';
 import { Writable } from 'node:stream';
 import ExcelJS from 'exceljs';
@@ -72,6 +73,10 @@ const EXPORT_LABELS: Record<SupportedLocale, { sheet: string; name: string; emai
  *  option was kept whole) is matched by its scoring option id instead. */
 function exportQuestionText(q: MappedQuestion, locale: SupportedLocale): string {
   return locale === 'ar' && q.questionTextAr ? q.questionTextAr : q.questionText;
+}
+/** UAT SVB-07: an "Other" answer carries the respondent's own words. */
+function withOtherText(answer: string, other: string | null): string {
+  return other ? `${answer} — ${other}` : answer;
 }
 function exportAnswer(q: MappedQuestion, answer: string, locale: SupportedLocale): string {
   if (locale !== 'ar' || !answer || !q.answerOptions || !q.answerOptionsAr) return answer;
@@ -365,6 +370,7 @@ export class PublicSurveysService {
         respondentName: r.contactName,
         contact: r.contact,
         answer: this.resolveAnswerAcrossVersions((r.answers ?? {}) as Record<string, string>, ids),
+        otherText: this.resolveOtherAcrossVersions((r.answers ?? {}) as Record<string, string>, ids),
         submittedAt: r.submittedAt.toISOString(),
       })),
     };
@@ -386,7 +392,6 @@ export class PublicSurveysService {
   async exportResponsesCsv(needId: string, surveyLinkId?: string, locale: SupportedLocale = 'en'): Promise<string> {
     const labels = EXPORT_LABELS[locale];
     await this.findNeedOrThrow(needId);
-    const escape = (value: string): string => `"${value.replace(/"/g, '""')}"`;
     return this.tenant.runRead(async (tx) => {
       const [questionMap, versionMap] = await Promise.all([
         this.buildQuestionMap(tx, needId),
@@ -397,34 +402,34 @@ export class PublicSurveysService {
       // was copied into. Two questions that merely read the same still get a
       // column each (see questionIdentity).
       const questions = this.groupQuestionsByIdentity(questionMap);
-      const lines = [
-        [labels.name, labels.email, labels.submitted, labels.version, ...questions.map((q) => exportQuestionText(q, locale))]
-          .map(escape)
-          .join(','),
-      ];
+      const headers = [labels.name, labels.email, labels.submitted, labels.version, ...questions.map((q) => exportQuestionText(q, locale))];
+      const rows: ExportCell[][] = [];
       for await (const batch of this.iterateResponsesForExport(tx, needId, surveyLinkId)) {
         for (const row of batch) {
           const answers = (row.answers ?? {}) as Record<string, string>;
-          lines.push(
+          rows.push(
             [
               sanitizeForSpreadsheet(row.contactName ?? ''),
               sanitizeForSpreadsheet(row.contact),
-              row.submittedAt.toISOString(),
+              formatRiyadhTime(row.submittedAt.toISOString()),
               this.resolveResponseVersion(answers, versionMap, locale),
               ...questions.map((q) =>
                 sanitizeForSpreadsheet(
-                  exportAnswer(q, this.resolveAnswerAcrossVersions(answers, [q.questionId, ...q.aliasIds]) ?? '', locale),
+                  withOtherText(
+                    exportAnswer(q, this.resolveAnswerAcrossVersions(answers, [q.questionId, ...q.aliasIds]) ?? '', locale),
+                    this.resolveOtherAcrossVersions(answers, [q.questionId, ...q.aliasIds]),
+                  ),
                 ),
               ),
-            ]
-              .map((v) => escape(String(v)))
-              .join(','),
+            ],
           );
         }
       }
-      // A byte-order mark so Excel opens an Arabic CSV as UTF-8 rather than
-      // showing the Arabic as mojibake.
-      return (locale === 'ar' ? '\uFEFF' : '') + lines.join('\n');
+      // UAT AUD-03 \u2014 always UTF-8 with a byte-order mark and CRLF rows (see
+      // tabular-export.ts). The BOM used to be added only for an Arabic-language
+      // export, but respondents answer in Arabic whatever language the export
+      // is read in, so an English export showed their answers as mojibake.
+      return toCsv({ headers, rows });
     });
   }
 
@@ -480,7 +485,10 @@ export class PublicSurveysService {
               questions.map((q) => [
                 q.questionId,
                 sanitizeForSpreadsheet(
-                  exportAnswer(q, this.resolveAnswerAcrossVersions(answers, [q.questionId, ...q.aliasIds]) ?? '', locale),
+                  withOtherText(
+                    exportAnswer(q, this.resolveAnswerAcrossVersions(answers, [q.questionId, ...q.aliasIds]) ?? '', locale),
+                    this.resolveOtherAcrossVersions(answers, [q.questionId, ...q.aliasIds]),
+                  ),
                 ),
               ]),
             ),
@@ -676,10 +684,29 @@ export class PublicSurveysService {
   // sharing its text — checking only the requested id silently returns "no
   // answer" for any response that was actually collected under a different
   // version's copy of the same question.
+  // UAT SVB-07: the free text a respondent typed after choosing "Other",
+  // stored next to the answer under `<question id>:other`.
+  private resolveOtherAcrossVersions(rawAnswers: Record<string, string>, ids: string[]): string | null {
+    for (const id of ids) {
+      const text = rawAnswers[`${id}:other`];
+      if (typeof text === 'string' && text.trim()) return text.trim();
+    }
+    return null;
+  }
+
   private resolveAnswerAcrossVersions(rawAnswers: Record<string, string>, ids: string[]): string | null {
     for (const id of ids) {
-      const answer = rawAnswers[id];
-      if (answer && answer.trim()) return answer;
+      // Stored answers are normally strings ("a, b" for multi-choice), but a
+      // list or a number must never break an export or a response screen.
+      const raw: unknown = rawAnswers[id];
+      const answer = Array.isArray(raw)
+        ? raw.map(String).join(', ')
+        : typeof raw === 'number'
+          ? String(raw)
+          : typeof raw === 'string'
+            ? raw
+            : '';
+      if (answer.trim()) return answer;
     }
     return null;
   }
@@ -733,6 +760,7 @@ export class PublicSurveysService {
         answerType: q.answerType,
         answerOptions: q.answerOptions,
         answer: rawAnswers[q.questionId] ?? null,
+        otherText: this.resolveOtherAcrossVersions(rawAnswers, [q.questionId]),
       }));
     return { ...this.toResponseSummary(row), answers };
   }

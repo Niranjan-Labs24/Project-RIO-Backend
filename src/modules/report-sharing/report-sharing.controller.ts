@@ -7,7 +7,7 @@ import { CreateReportSharingRequestBody, DecideReportSharingRequestBody } from "
 import { ReportSharingService } from "./report-sharing.service";
 import type {
   CreateReportSharingRequestPayload, DecideReportSharingRequestPayload, OrgLookupResult,
-  ReportCatalogItem, ReportLookupResult, ReportSharingRequest, SharedReportSnapshot,
+  ReportCatalogItem, ReportFinderResult, ReportLookupResult, ReportSharingRequest, SharedReportSnapshot,
 } from "./report-sharing.types";
 
 // Same permission module as Study-sharing (archiveSharingAudit) — one
@@ -48,6 +48,20 @@ export class ReportSharingController {
   @RequirePermission("archiveSharingAudit", "create")
   listCatalog(): Promise<ReportCatalogItem[]> {
     return this.reportSharing.listCatalog();
+  }
+
+  // UAT SHR-01 — find requestable reports by region/governorate/centre and
+  // domain/sub-domain. Same gate as the other lookups.
+  @Get("lookup/reports")
+  @RequirePermission("archiveSharingAudit", "create")
+  findReports(
+    @Query("regionId") regionId?: string,
+    @Query("governorateId") governorateId?: string,
+    @Query("centerId") centerId?: string,
+    @Query("domain") domain?: string,
+    @Query("subDomain") subDomain?: string,
+  ): Promise<ReportFinderResult[]> {
+    return this.reportSharing.findReports({ regionId, governorateId, centerId, domain, subDomain });
   }
 
   @Get("lookup/organizations/:orgId/reports")

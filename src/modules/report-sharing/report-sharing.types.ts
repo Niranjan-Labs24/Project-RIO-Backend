@@ -89,6 +89,34 @@ export interface ReportLookupResult {
   title: string;
 }
 
+/** UAT SHR-01 — filters for finding a report to request. All optional. */
+export interface ReportFinderFilters {
+  regionId?: string;
+  governorateId?: string;
+  centerId?: string;
+  domain?: string;
+  subDomain?: string;
+}
+
+export interface PlaceLabel {
+  name: string;
+  nameAr: string | null;
+}
+
+/** UAT SHR-01 — one requestable report, with what identifies it. */
+export interface ReportFinderResult {
+  id: string;
+  title: string;
+  /** Lets the screen show the type in the page language and the name after it as entered. */
+  reportType: string;
+  orgId: string;
+  orgName: string;
+  studyTitle: string | null;
+  regions: PlaceLabel[];
+  governorates: PlaceLabel[];
+  domain: string | null;
+}
+
 /**
  * One row of the Report Catalog (client change 2026-10-05, bug 9): an
  * approved report another organization could request. Metadata only — the

@@ -216,8 +216,9 @@ describe('SystemLogsService export and purge', () => {
       }),
     ]);
     const csv = await svc.exportCsv({ level: 'error' });
-    const [header, body] = csv.split('\n');
-    expect(header).toContain('"Timestamp"');
+    const [header, body] = csv.slice(1).split('\r\n');
+    expect(csv.charCodeAt(0)).toBe(0xfeff);
+    expect(header).toContain('"Date & time (Riyadh)"');
     expect(body).toContain('"say ""hi"""');
   });
 

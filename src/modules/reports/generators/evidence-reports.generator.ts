@@ -84,8 +84,11 @@ async function buildEvidenceReport(ctx: EvidenceReportCtx): Promise<GeneratedRep
     ...new Set(studyGovernorates.map((sg) => String(sg.governorate.region.code))),
   ];
 
+  // The combined report (RPT16) carries only the documents switched
+  // "Include in Combined Report" on (UAT PRI-03); the evidence report
+  // (RPT17) still lists every document of the study.
   const docs = await tx.evidenceDocument.findMany({
-    where: { studyId, orgId },
+    where: { studyId, orgId, ...(isCombined ? { isIncludedInCombinedReport: true } : {}) },
     include: { summaries: { orderBy: { createdAt: "desc" }, take: 1 } },
     orderBy: { createdAt: "desc" },
   });

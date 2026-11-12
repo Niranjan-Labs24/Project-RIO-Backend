@@ -58,6 +58,8 @@ function setup() {
     question: {
       findMany: vi.fn().mockResolvedValue([]),
       findUnique: vi.fn(),
+      count: vi.fn().mockResolvedValue(0),
+      aggregate: vi.fn().mockResolvedValue({ _max: { version: 1 } }),
       create: vi.fn(),
       update: vi.fn(),
     },
@@ -182,6 +184,16 @@ describe('QuestionsService create', () => {
     );
   });
 
+  it("generates the code from the domain's prefix and sequence, ignoring a typed one (UAT MET-05)", async () => {
+    const { svc, tx } = setup();
+    tx.question.findMany
+      .mockResolvedValueOnce([{ questionId: 'GOV-01' }, { questionId: 'GOV-19' }, { questionId: 'hlt-070' }])
+      .mockResolvedValueOnce([{ questionId: 'GOV-01' }, { questionId: 'GOV-19' }]);
+    tx.question.create.mockResolvedValue(question());
+    await asActor(() => svc.create({ ...input, domain: 'Governance & Services', questionId: 'hlt-070' }));
+    expect(tx.question.create.mock.calls[0]![0].data.questionId).toBe('GOV-20');
+  });
+
   it('maps every answer type to its measurement mode, and open-ended is not scoreable', async () => {
     const { svc, tx } = setup();
     tx.question.create.mockResolvedValue(question());
@@ -254,6 +266,25 @@ describe('QuestionsService changes', () => {
     const data = ctx.tx.question.create.mock.calls[0]![0].data;
     expect(data.answerOptions).toBe(Prisma.JsonNull);
     expect(data.conditionalRule).toBe(Prisma.JsonNull);
+  });
+
+  it('refuses a second change while one awaits approval (UAT MET-01)', async () => {
+    // The pending change is its own row; the approved row looks untouched.
+    ctx.tx.question.count.mockResolvedValue(1);
+    await expect(asActor(() => ctx.svc.deactivate('q1'))).rejects.toMatchObject({
+      response: { error: { code: 'QUESTION_HAS_PENDING_CHANGE' } },
+    });
+    expect(ctx.tx.question.create).not.toHaveBeenCalled();
+  });
+
+  it('numbers a change after a rejected one, instead of colliding with it (UAT MET-01)', async () => {
+    // v1 approved, v2 rejected and still stored: the next change is v3.
+    ctx.tx.question.aggregate.mockResolvedValue({ _max: { version: 2 } });
+    await asActor(() => ctx.svc.deactivate('q1'));
+    expect(ctx.tx.question.create.mock.calls[0]![0].data).toMatchObject({ version: 3, isActive: false });
+    expect(ctx.tx.question.aggregate.mock.calls[0]![0].where).toMatchObject({
+      questionId: question().questionId,
+    });
   });
 
   it('deactivates and reactivates through the same approval path', async () => {
