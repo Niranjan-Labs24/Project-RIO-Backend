@@ -59,6 +59,7 @@ function setup() {
       findMany: vi.fn().mockResolvedValue([]),
       findUnique: vi.fn(),
       count: vi.fn().mockResolvedValue(0),
+      aggregate: vi.fn().mockResolvedValue({ _max: { version: 1 } }),
       create: vi.fn(),
       update: vi.fn(),
     },
@@ -274,6 +275,16 @@ describe('QuestionsService changes', () => {
       response: { error: { code: 'QUESTION_HAS_PENDING_CHANGE' } },
     });
     expect(ctx.tx.question.create).not.toHaveBeenCalled();
+  });
+
+  it('numbers a change after a rejected one, instead of colliding with it (UAT MET-01)', async () => {
+    // v1 approved, v2 rejected and still stored: the next change is v3.
+    ctx.tx.question.aggregate.mockResolvedValue({ _max: { version: 2 } });
+    await asActor(() => ctx.svc.deactivate('q1'));
+    expect(ctx.tx.question.create.mock.calls[0]![0].data).toMatchObject({ version: 3, isActive: false });
+    expect(ctx.tx.question.aggregate.mock.calls[0]![0].where).toMatchObject({
+      questionId: question().questionId,
+    });
   });
 
   it('deactivates and reactivates through the same approval path', async () => {

@@ -107,6 +107,8 @@ export interface PlaceLabel {
 export interface ReportFinderResult {
   id: string;
   title: string;
+  /** Lets the screen show the type in the page language and the name after it as entered. */
+  reportType: string;
   orgId: string;
   orgName: string;
   studyTitle: string | null;

@@ -18,7 +18,20 @@ export function nameMask(keepNames: readonly string[] = []): NameMask {
   const names = [...new Set(keepNames.map((n) => n.trim()).filter((n) => n.length > 1))]
     // Longest first, so "Al Noor Society Riyadh" is masked before "Al Noor".
     .sort((a, b) => b.length - a.length);
-  const used = (text: string): string[] => names.filter((n) => text.includes(n));
+  // The names that will get their own placeholder. A name found only inside a
+  // longer one is masked with it, so it is consumed here too; otherwise unmask
+  // would look for a placeholder mask never wrote and discard a good
+  // translation.
+  const used = (text: string): string[] => {
+    const out: string[] = [];
+    let rest = text;
+    for (const n of names) {
+      if (!rest.includes(n)) continue;
+      out.push(n);
+      rest = rest.split(n).join("\u0000");
+    }
+    return out;
+  };
   const apply = (text: string, list: string[]): string =>
     list.reduce((out, name, i) => out.split(name).join(token(i)), text);
   return {

@@ -964,6 +964,7 @@ describe("ReportSharingService.findReports", () => {
       {
         id: "r1",
         title: "Health report",
+        reportType: "RPT18",
         orgId: "org-owner",
         org: { name: "Owner Org" },
         study: {
@@ -980,10 +981,16 @@ describe("ReportSharingService.findReports", () => {
     const where = reportFindMany.mock.calls[0]![0].where;
     expect(where).toMatchObject({ orgId: { not: "org-me" }, org: { isActive: true } });
     expect(where.study).toBeUndefined();
+    // An organisation's catalog opt-out applies to the finder too.
+    expect(where.OR).toEqual([
+      { catalogVisible: true },
+      { catalogVisible: null, org: { catalogDefaultVisible: true } },
+    ]);
     expect(out).toEqual([
       {
         id: "r1",
         title: "Health report",
+        reportType: "RPT18",
         orgId: "org-owner",
         orgName: "Owner Org",
         studyTitle: "Study A",

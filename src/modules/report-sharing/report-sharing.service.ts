@@ -22,6 +22,14 @@ import type {
 // and released reports across every organization stay in the hundreds.
 const CATALOG_LIMIT = 500;
 
+// A report is discoverable by other organisations when it says so, or — with
+// no override — when its organisation lists reports by default (the default
+// is on). Shared by the catalog and the report finder (UAT SHR-01) so an
+// organisation's opt-out applies to both.
+const CATALOG_VISIBLE = {
+  OR: [{ catalogVisible: true }, { catalogVisible: null, org: { catalogDefaultVisible: true } }],
+} satisfies Prisma.ReportWhereInput;
+
 const SHARING_STATUSES: SharingStatus[] = ["pending", "approved", "rejected", "expired", "withdrawn"];
 
 // report_sharing_requests has no RLS (mirrors sharing_requests — see that
@@ -394,9 +402,7 @@ export class ReportSharingService {
             orgId: { not: orgId },
             status: { in: EXPORTABLE_STATUSES },
             org: { isActive: true },
-            // Listed when the report says so, or — with no override — when its
-            // organisation lists reports by default (the default is on).
-            OR: [{ catalogVisible: true }, { catalogVisible: null, org: { catalogDefaultVisible: true } }],
+            ...CATALOG_VISIBLE,
             // Never listed: village-level Core Needs Reports (internal only).
             ...NOT_INTERNAL_ONLY,
           },
@@ -496,6 +502,7 @@ export class ReportSharingService {
           orgId: { not: orgId },
           org: { isActive: true },
           status: { in: EXPORTABLE_STATUSES },
+          ...CATALOG_VISIBLE,
           ...NOT_INTERNAL_ONLY,
           ...(study.length > 0 ? { study: { AND: study } } : {}),
         },
@@ -504,6 +511,7 @@ export class ReportSharingService {
         select: {
           id: true,
           title: true,
+          reportType: true,
           orgId: true,
           org: { select: { name: true } },
           study: {
@@ -528,6 +536,7 @@ export class ReportSharingService {
       return {
         id: r.id,
         title: r.title,
+        reportType: r.reportType,
         orgId: r.orgId,
         orgName: r.org.name,
         studyTitle: r.study?.title ?? null,

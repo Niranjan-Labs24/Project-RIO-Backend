@@ -99,6 +99,55 @@ const PAIR_SCORE_WITH_REFERENCE_SQL = Prisma.sql`CASE
   ELSE ${PAIR_TEXT_SCORE_SQL}
 END`;
 
+/** A pending pair and its score recomputed from both needs' current text. */
+export interface RescoredPair {
+  id: string;
+  score: number;
+}
+
+/**
+ * Writes scores already computed elsewhere, then dismisses the pairs among
+ * them that are now below the threshold (`threshold` null = each pair's own
+ * stored threshold). The write joins no `needs` rows, so it works under any
+ * org context duplicate_candidates' own policy allows — including the
+ * cross-entity pairs (org_id NULL), whose `needs` join returned no rows under
+ * the app role and so silently refreshed nothing. Fails, and dismisses
+ * nothing, if any score was not written: a pair is never dismissed on a stale
+ * score. Returns how many were dismissed.
+ */
+export async function applyRescoredPairs(
+  tx: Prisma.TransactionClient,
+  pairs: readonly RescoredPair[],
+  threshold: number | null,
+  actorId: string | null,
+  detectorVersion = "literal-v2",
+): Promise<number> {
+  if (pairs.length === 0) return 0;
+  const ids = pairs.map((p) => p.id);
+  const scores = pairs.map((p) => p.score);
+  const written = await tx.$executeRaw`
+    UPDATE duplicate_candidates dc
+       SET score = v.score, detector_version = ${detectorVersion}, updated_at = now()
+      FROM unnest(${ids}::uuid[], ${scores}::float8[]) AS v(id, score)
+     WHERE dc.id = v.id AND dc.method = 'literal' AND dc.status = 'pending'
+  `;
+  if (written !== pairs.length) {
+    throw new Error(
+      `Duplicate re-score wrote ${written} of ${pairs.length} pair(s); nothing was dismissed.`,
+    );
+  }
+  if (!actorId) return 0;
+  const limit = threshold === null ? Prisma.sql`dc.threshold` : Prisma.sql`${threshold}`;
+  return tx.$executeRaw`
+    UPDATE duplicate_candidates dc
+       SET status = 'dismissed', note = ${RESCORED_DISMISS_NOTE},
+           reviewed_by = ${actorId}::uuid, reviewed_at = now(), updated_at = now()
+     WHERE dc.id = ANY(${ids}::uuid[])
+       AND dc.method = 'literal' AND dc.status = 'pending'
+       AND dc.score < ${limit}
+  `;
+}
+
 @Injectable()
 export class DuplicateDetectionService {
   private readonly logger = new Logger(DuplicateDetectionService.name);
@@ -377,15 +426,7 @@ export class DuplicateDetectionService {
     // cross-entity pair below the threshold now (DQ-10's false positives)
     // leaves the queue. Skipped on a truncated run, which saw only part.
     if (!truncated) {
-      await this.tenant.runAsSupervisorWrite((tx) =>
-        this.reconcilePendingLiteral(
-          tx,
-          Prisma.sql`dc.scope = 'cross_org'`,
-          threshold,
-          getOrgStore()?.actorId ?? null,
-          false,
-        ),
-      );
+      await this.reconcileCrossOrgLiteral(threshold, getOrgStore()?.actorId ?? null);
     }
 
     this.logger.log(
@@ -451,6 +492,29 @@ export class DuplicateDetectionService {
   }
 
   /**
+   * Cross-entity half of reconcilePendingLiteral (UAT DQ-10). Its needs live
+   * in two organisations, which the app role can't read together (needs
+   * FORCES row-level security on one org), so the scores are computed with
+   * the read-only supervisor client and written back by pair id. Returns how
+   * many were dismissed.
+   */
+  async reconcileCrossOrgLiteral(threshold: number, actorId: string | null): Promise<number> {
+    const rows = await this.tenant.runAsSupervisor((tx) =>
+      tx.$queryRaw<Array<{ id: string; score: number }>>`
+        SELECT dc.id, (${PAIR_TEXT_SCORE_SQL})::float8 AS score
+          FROM duplicate_candidates dc
+          JOIN needs a ON a.id = dc.need_a_id
+          JOIN needs b ON b.id = dc.need_b_id
+         WHERE dc.method = 'literal' AND dc.status = 'pending' AND dc.scope = 'cross_org'
+      `,
+    );
+    const pairs = rows.map((r) => ({ id: r.id, score: Number(r.score) }));
+    return this.tenant.runAsSupervisorWrite((tx) =>
+      applyRescoredPairs(tx, pairs, threshold, actorId, this.detectorVersion),
+    );
+  }
+
+  /**
    * Re-scores PENDING literal pairs matching `filter` from both needs' current
    * text, and dismisses the ones now below `threshold` with an explanatory
    * note. Decided pairs are never touched: a reviewer's decision is not
@@ -470,7 +534,7 @@ export class DuplicateDetectionService {
     filter: Prisma.Sql,
     threshold: number,
     actorId: string | null,
-    /** Within-entity pairs only; cross-entity pairs are text-only (DQ-10). */
+    /** Within-entity pairs only; cross-entity pairs go through reconcileCrossOrgLiteral. */
     allowReference: boolean,
   ): Promise<number> {
     const scoreSql = allowReference ? PAIR_SCORE_WITH_REFERENCE_SQL : PAIR_TEXT_SCORE_SQL;

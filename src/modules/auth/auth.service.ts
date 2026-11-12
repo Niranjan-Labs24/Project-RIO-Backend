@@ -720,7 +720,8 @@ export class AuthService {
 
     const delivered =
       channel === 'sms'
-        ? await this.sms.sendLoginOtpCode(user.mobileNumber as string, code)
+        ? // In the language of the sign-in page; Arabic when the request didn't say.
+          await this.sms.sendLoginOtpCode(user.mobileNumber as string, code, getOrgStore()?.locale ?? 'ar')
         : await this.mailer.sendLoginOtpEmail(user.email, code, 'ar');
     return {
       ...generic,

@@ -235,6 +235,7 @@ describe('AuthService staff one-time codes', () => {
     expect(sms.sendLoginOtpCode).toHaveBeenCalledWith(
       '+966512345678',
       expect.stringMatching(/^\d{6}$/),
+      'ar',
     );
     await svc.requestLoginOtp({ identifier: 'ANA@demo.org' });
     expect(mailer.sendLoginOtpEmail).toHaveBeenCalledWith(

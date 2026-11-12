@@ -410,23 +410,49 @@ export class QuestionsService {
       ...rest
     } = current;
 
-    const pending = await this.tenant.runAsSupervisorWrite((tx) =>
-      tx.question.create({
-        data: {
-          ...rest,
-          answerOptions: answerOptions === null ? Prisma.JsonNull : answerOptions,
-          answerOptionsAr: answerOptionsAr === null ? Prisma.JsonNull : answerOptionsAr,
-          conditionalRule: conditionalRule === null ? Prisma.JsonNull : conditionalRule,
-          ...overrides,
-          version: version + 1,
-          isCurrentVersion: false,
-          approvalStatus: 'pending_approval',
-          previousVersionId: current.id,
-          submittedBy: actorId,
-          submittedAt: new Date(),
-        },
+    // Numbered after every row this question has ever had, not after the
+    // current one: a rejected change keeps its row (and its number), so
+    // `version + 1` collided with it on the next edit and failed with a 500
+    // (UAT MET-01, after any rejected change).
+    const latest = await this.tenant.runAsSupervisor((tx) =>
+      tx.question.aggregate({
+        where: { methodologyVersionId: current.methodologyVersionId, questionId: current.questionId },
+        _max: { version: true },
       }),
     );
+    const nextVersion = Math.max(version, latest._max.version ?? version) + 1;
+
+    let pending;
+    try {
+      pending = await this.tenant.runAsSupervisorWrite((tx) =>
+        tx.question.create({
+          data: {
+            ...rest,
+            answerOptions: answerOptions === null ? Prisma.JsonNull : answerOptions,
+            answerOptionsAr: answerOptionsAr === null ? Prisma.JsonNull : answerOptionsAr,
+            conditionalRule: conditionalRule === null ? Prisma.JsonNull : conditionalRule,
+            ...overrides,
+            version: nextVersion,
+            isCurrentVersion: false,
+            approvalStatus: 'pending_approval',
+            previousVersionId: current.id,
+            submittedBy: actorId,
+            submittedAt: new Date(),
+          },
+        }),
+      );
+    } catch (err) {
+      // Two changes submitted at the same moment: a clear 409, never a 500.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new ConflictException({
+          error: {
+            code: 'QUESTION_HAS_PENDING_CHANGE',
+            message: 'This question already has a change awaiting approval.',
+          },
+        });
+      }
+      throw err;
+    }
 
     await this.audit.record({
       action: 'edit',

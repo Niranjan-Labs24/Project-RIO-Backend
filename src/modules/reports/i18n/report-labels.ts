@@ -119,11 +119,13 @@ export function keyForEnglish(text: string): ReportLabelKey | null {
  * the AI for these sentences. Same rules as the screen
  * (report-narrative-i18n.ts on the frontend): longest first, a blank at either
  * end takes one token, and sentences shorter than 30 characters without a
- * blank are left to the exact-match lookup.
+ * blank are left to the exact-match lookup; shorter ones with a blank match a
+ * whole string only.
  */
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const SHORT_TEMPLATE = 30;
 const FIXED_SENTENCES = (Object.entries(REPORT_LABELS_EN) as Array<[ReportLabelKey, string]>)
-  .filter(([k, en]) => k.startsWith('fixedText.') && (en.includes('{') || en.length >= 30) && !/,\s*(plural|select)/.test(en))
+  .filter(([k, en]) => k.startsWith('fixedText.') && (en.includes('{') || en.length >= SHORT_TEMPLATE) && !/,\s*(plural|select)/.test(en))
   .sort((a, b) => b[1].length - a[1].length)
   .map(([key, en]) => {
     const names: string[] = [];
@@ -136,7 +138,13 @@ const FIXED_SENTENCES = (Object.entries(REPORT_LABELS_EN) as Array<[ReportLabelK
         return i === 0 || i === parts.length - 1 ? '(\\S+)' : '(.+?)';
       })
       .join('');
-    return { key, re: new RegExp(pattern, 'g'), names };
+    // A short template ("Session {ref}", "{answered} of {total} answered") is
+    // mostly blank, so inside prose it would rewrite a fragment of an
+    // unrelated sentence and leave the rest English. It matches only a whole
+    // string; long templates may still appear mid-paragraph.
+    const fixedWords = en.replace(/\{\w+\}/g, '').length;
+    const re = fixedWords < SHORT_TEMPLATE ? new RegExp(`^${pattern}$`) : new RegExp(pattern, 'g');
+    return { key, re, names };
   });
 
 export function fillFixedSentences(text: string, locale: SupportedLocale): string {

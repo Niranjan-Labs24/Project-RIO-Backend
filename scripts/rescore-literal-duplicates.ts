@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Prisma, PrismaClient } from "../src/generated/prisma";
-import { RESCORED_DISMISS_NOTE } from "../src/modules/data-cleaning/duplicate-detection.service";
+import { applyRescoredPairs } from "../src/modules/data-cleaning/duplicate-detection.service";
 
 /**
  * UAT DQ-06 / DQ-10 — one-off clean-up of the duplicate queue after literal-v2.
@@ -96,25 +96,20 @@ async function main(): Promise<void> {
 
   // duplicate_candidates FORCES row-level security, so each entity's pairs are
   // written under that entity's org context, and cross-entity pairs (org_id
-  // NULL) with the org unset — exactly the paths the application uses.
+  // NULL) with the org unset. The scores written are the ones computed above
+  // with the supervisor client, by pair id — re-joining `needs` here would
+  // see only one org's needs, and for cross-entity pairs none at all (UAT
+  // DQ-10). applyRescoredPairs refuses to dismiss if any score did not land,
+  // so the apply pass can't disagree with the dry run.
   const orgs = [...new Set(rows.map((r) => r.org_id))];
   let dismissed = 0;
   for (const orgId of orgs) {
+    const pairs = rows
+      .filter((r) => r.org_id === orgId)
+      .map((r) => ({ id: r.id, score: Number(r.new_score) }));
     await app.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT set_config('app.current_org_id', ${orgId ?? ""}, true)`;
-      const scope = orgId ? Prisma.sql`dc.org_id = ${orgId}::uuid` : Prisma.sql`dc.org_id IS NULL`;
-      await tx.$executeRaw`
-        UPDATE duplicate_candidates dc
-           SET score = ${SCORE}, detector_version = 'literal-v2', updated_at = now()
-          FROM needs a, needs b
-         WHERE dc.need_a_id = a.id AND dc.need_b_id = b.id
-           AND dc.method = 'literal' AND dc.status = 'pending' AND ${scope}`;
-      dismissed += await tx.$executeRaw`
-        UPDATE duplicate_candidates dc
-           SET status = 'dismissed', note = ${RESCORED_DISMISS_NOTE},
-               reviewed_by = ${reviewer.id}::uuid, reviewed_at = now(), updated_at = now()
-         WHERE dc.method = 'literal' AND dc.status = 'pending'
-           AND dc.score < dc.threshold AND ${scope}`;
+      dismissed += await applyRescoredPairs(tx, pairs, null, reviewer.id);
     });
   }
   console.log(`\nDismissed ${dismissed} pair(s), attributed to ${REVIEWER}.\n`);

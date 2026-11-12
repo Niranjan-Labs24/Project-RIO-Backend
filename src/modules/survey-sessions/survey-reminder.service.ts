@@ -195,7 +195,8 @@ export class SurveyReminderService implements OnModuleInit {
       if (ok) return true;
     }
     if (session.mobile) {
-      return this.sms.sendSurveyReminder(session.mobile, url);
+      // No stored language for the session: Arabic, the platform's primary language.
+      return this.sms.sendSurveyReminder(session.mobile, url, 'ar');
     }
     return false;
   }
