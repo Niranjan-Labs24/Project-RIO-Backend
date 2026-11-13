@@ -79,7 +79,12 @@ describe("Response Quality — RIO-FR-024 sample-size rows", () => {
     const doc = buildReportDoc("water", CONTENT_WITH_SAMPLE_SIZE, []);
     const pdf = renderReportPdf(doc).toString("latin1");
     expect(pdf).toContain("+/-14.4 pts");
-    expect(pdf).not.toContain("??");
+    // Only what the page DRAWS. Searching the whole file used to be the same
+    // thing, because the base-14 fonts embedded no bytes; the identity face
+    // travels with the document now, and two question marks occur inside
+    // ~480KB of TrueType data by sheer chance (27 times, as it happens).
+    const drawn = [...pdf.matchAll(/\((?:[^()\\]|\\.)*\)\s*Tj/g)].map((m) => m[0]).join("\n");
+    expect(drawn).not.toContain("??");
   });
 
   it("omits the three rows entirely for a study with no sample-size data (pre-existing studies)", () => {

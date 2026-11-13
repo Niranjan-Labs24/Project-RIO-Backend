@@ -101,17 +101,32 @@ export function decisionFor(band: ConfidenceBand, severityLabel: string | null):
   return severe ? 'prioritise' : 'monitor';
 }
 
-/** Palette taken from the client's mockup (hex). Used by the PDF renderer;
- *  the frontend keeps the same values in its report stylesheet. */
+/**
+ * Report palette. Used by the PDF renderer; the frontend keeps the same
+ * values in its report stylesheet, so the two must stay in step.
+ *
+ * These were eyedropped from the client's mockup and came out close to the
+ * NCNP codes without matching them — #155463 against #145463, #3b7ca7
+ * against #4080AB, #58a490 against #59A694. The identity usage note of
+ * 10 Nov 2026 allows only the exact codes, so each is now the real one.
+ *
+ *   #145463  dominant    headings, rules, the header band
+ *   #59A694  supporting  dividers, a met-standard bar
+ *   #4080AB  occasional  secondary bars
+ *   #69B2B0  secondary   a hairline, nothing larger
+ *
+ * The severity colours stay as they are: the note reserves red, amber and
+ * green for status meaning, which is exactly what they carry.
+ */
 export const PRESENTATION_PALETTE = {
-  primary: '#155463',
-  primaryText: '#10525d',
-  accent: '#3b7ca7',
-  summaryLabel: '#66b0ad',
-  summaryDivider: '#58a490',
+  primary: '#145463',
+  primaryText: '#145463',
+  accent: '#4080AB',
+  summaryLabel: '#69B2B0',
+  summaryDivider: '#59A694',
   veryLow: '#be3a2a',
   medium: '#ccaa2e',
-  strong: '#59a694',
+  strong: '#59A694',
   danger: '#c94f4b',
   cardBorder: '#e5ebe9',
   panel: '#f5f7f6',

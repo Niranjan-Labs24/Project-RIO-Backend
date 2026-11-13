@@ -26,6 +26,10 @@ function lightModeEmailHead(colors: {
   return `
 <head>
   <meta name="color-scheme" content="light only">
+  <!-- The identity face. Most mail clients drop a web font and fall back to
+       the system stack below it, which is why every rule still names one. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
   <meta name="supported-color-schemes" content="light only">
   <style>
     :root { color-scheme: light only; supported-color-schemes: light only; }
@@ -274,6 +278,33 @@ interface MailAccount {
  * convention, not an error: a missing key leaves the client unset and the
  * send methods return false rather than throwing at boot.
  */
+/**
+ * The masthead every template shares: the official NCNP mark with the
+ * platform's own name beside it, which is what the identity usage note of
+ * 10 Nov 2026 asks for ("use the official SVG file... Show بوصلة clearly
+ * next to it"). It replaced a bare "RIO" wordmark.
+ *
+ * A PNG, not the SVG: Gmail and Outlook drop SVG outright. It is served from
+ * the public app rather than attached, so an ordinary notification carries no
+ * extra payload — and because many clients block remote images by default,
+ * the name beside it is live text, so the header still reads with images off.
+ *
+ * PUBLIC_APP_URL is read from the environment here rather than through
+ * ConfigService: these are free functions, not methods on the service, and
+ * threading the URL through seven signatures to reach one <img> is not worth
+ * the churn. Unset, the mark is skipped and the wordmark stands alone.
+ */
+function emailMasthead(): string {
+  const base = (process.env.PUBLIC_APP_URL ?? process.env.CORS_ORIGIN ?? '').replace(/\/+$/, '');
+  const mark = base
+    ? `<img src="${base}/brand/ncnp-logo-white.png" width="73" height="36" alt="المركز الوطني لتنمية القطاع غير الربحي" style="display:block;border:0;outline:none;text-decoration:none;height:36px;width:73px;">`
+    : '';
+  // A table, not flex or inline-block: Outlook's Word engine lays neither out.
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>${
+    mark ? `<td style="padding-inline-end:12px;vertical-align:middle;">${mark}</td>` : ''
+  }<td style="vertical-align:middle;"><span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;">بوصلة</span></td></tr></table>`;
+}
+
 function buildEmailClient(account: MailAccount): EmailClientLike | undefined {
   if (account.provider === 'twilio') {
     const sid = account.twilioEmailApiKeySid;
@@ -840,19 +871,21 @@ function surveyLinkHtml({ needTitleAr, publicUrl }: SurveyLinkEmailInput): strin
   // read CSS custom properties or oklch(), so these are the literal sRGB
   // hex values those tokens compute to, not a re-derivation of the palette.
   const PRIMARY = "#145463";
-  const SECONDARY_TINT = "#daeee1"; // --palette-secondary-100, light accent behind the QR code
+  // The supporting colour at a light tint — the accent behind the QR code.
+  // It was #daeee1, a green from a palette the identity replaced.
+  const SECONDARY_TINT = "#E6F2EF";
 
   return `
 <!doctype html>
 <html>${lightModeEmailHead({ page: '#f4f5f7', card: '#ffffff', header: PRIMARY, accent: SECONDARY_TINT })}
-  <body class="email-page" style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <body class="email-page" style="margin:0;padding:0;background-color:#f4f5f7;font-family:'IBM Plex Sans Arabic',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f4f5f7" class="email-page" style="background-color:#f4f5f7;padding:32px 16px;">
       <tr>
         <td align="center">
           <table role="presentation" width="480" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
             <tr>
               <td bgcolor="${PRIMARY}" class="email-header" style="background-color:${PRIMARY};padding:24px 32px;">
-                <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
+                ${emailMasthead()}
               </td>
             </tr>
             <tr>
@@ -931,14 +964,14 @@ function contactRequestHtml({ orgName, name, email, region, purpose }: ContactEn
   return `
 <!doctype html>
 <html>${lightModeEmailHead({ page: '#f4f5f7', card: '#ffffff', header: '#145463' })}
-  <body class="email-page" style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <body class="email-page" style="margin:0;padding:0;background-color:#f4f5f7;font-family:'IBM Plex Sans Arabic',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f4f5f7" class="email-page" style="background-color:#f4f5f7;padding:32px 16px;">
       <tr>
         <td align="center">
           <table role="presentation" width="480" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
             <tr>
               <td bgcolor="#145463" class="email-header" style="background-color:#145463;padding:24px 32px;">
-                <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
+                ${emailMasthead()}
               </td>
             </tr>
             <tr>
@@ -1010,14 +1043,14 @@ function passwordResetHtml(
   return `
 <!doctype html>
 <html>${lightModeEmailHead({ page: '#f4f5f7', card: '#ffffff', header: '#145463' })}
-  <body class="email-page" style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <body class="email-page" style="margin:0;padding:0;background-color:#f4f5f7;font-family:'IBM Plex Sans Arabic',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f4f5f7" class="email-page" style="background-color:#f4f5f7;padding:32px 16px;">
       <tr>
         <td align="center">
           <table role="presentation" width="480" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
             <tr>
               <td bgcolor="#145463" class="email-header" style="background-color:#145463;padding:24px 32px;">
-                <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
+                ${emailMasthead()}
               </td>
             </tr>
             <tr>
@@ -1105,14 +1138,14 @@ function temporaryPasswordHtml(
   return `
 <!doctype html>
 <html>${lightModeEmailHead({ page: '#f4f5f7', card: '#ffffff', header: '#145463' })}
-  <body class="email-page" style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <body class="email-page" style="margin:0;padding:0;background-color:#f4f5f7;font-family:'IBM Plex Sans Arabic',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f4f5f7" class="email-page" style="background-color:#f4f5f7;padding:32px 16px;">
       <tr>
         <td align="center">
           <table role="presentation" width="480" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
             <tr>
               <td bgcolor="#145463" class="email-header" style="background-color:#145463;padding:24px 32px;">
-                <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
+                ${emailMasthead()}
               </td>
             </tr>
             <tr>
@@ -1196,14 +1229,14 @@ function surveyReminderHtml({ needTitleAr, publicUrl }: SurveyReminderEmailInput
   return `
 <!doctype html>
 <html>${lightModeEmailHead({ page: '#f4f5f7', card: '#ffffff', header: PRIMARY })}
-  <body class="email-page" style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <body class="email-page" style="margin:0;padding:0;background-color:#f4f5f7;font-family:'IBM Plex Sans Arabic',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f4f5f7" class="email-page" style="background-color:#f4f5f7;padding:32px 16px;">
       <tr>
         <td align="center">
           <table role="presentation" width="480" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
             <tr>
               <td bgcolor="${PRIMARY}" class="email-header" style="background-color:${PRIMARY};padding:24px 32px;">
-                <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
+                ${emailMasthead()}
               </td>
             </tr>
             <tr>
@@ -1260,7 +1293,7 @@ function backupFailureHtml(input: {
 
   return `<!doctype html>
 <html>${lightModeEmailHead({ page: '#f9fafb', card: '#ffffff', header: '#ffffff' })}
-  <body class="email-page" style="margin:0;padding:24px;background-color:#f9fafb;font-family:-apple-system,Segoe UI,Roboto,sans-serif;">
+  <body class="email-page" style="margin:0;padding:24px;background-color:#f9fafb;font-family:'IBM Plex Sans Arabic',-apple-system,Segoe UI,Roboto,sans-serif;">
     <table role="presentation" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:12px;border:1px solid #fecaca;">
       <tr>
         <td dir="rtl" lang="ar" style="padding:24px;text-align:right;">
@@ -1325,14 +1358,14 @@ function sharingRequestCreatedHtml(input: SharingNotificationEmailInput): string
   return `
 <!doctype html>
 <html>${lightModeEmailHead({ page: '#f4f5f7', card: '#ffffff', header: PRIMARY })}
-  <body class="email-page" style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <body class="email-page" style="margin:0;padding:0;background-color:#f4f5f7;font-family:'IBM Plex Sans Arabic',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f4f5f7" class="email-page" style="background-color:#f4f5f7;padding:32px 16px;">
       <tr>
         <td align="center">
           <table role="presentation" width="480" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
             <tr>
               <td bgcolor="${PRIMARY}" class="email-header" style="background-color:${PRIMARY};padding:24px 32px;">
-                <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
+                ${emailMasthead()}
               </td>
             </tr>
             <tr>
@@ -1389,14 +1422,14 @@ function sharingRequestDecidedHtml(
   return `
 <!doctype html>
 <html>${lightModeEmailHead({ page: '#f4f5f7', card: '#ffffff', header: PRIMARY })}
-  <body class="email-page" style="margin:0;padding:0;background-color:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <body class="email-page" style="margin:0;padding:0;background-color:#f4f5f7;font-family:'IBM Plex Sans Arabic',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#f4f5f7" class="email-page" style="background-color:#f4f5f7;padding:32px 16px;">
       <tr>
         <td align="center">
           <table role="presentation" width="480" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
             <tr>
               <td bgcolor="${PRIMARY}" class="email-header" style="background-color:${PRIMARY};padding:24px 32px;">
-                <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
+                ${emailMasthead()}
               </td>
             </tr>
             <tr>

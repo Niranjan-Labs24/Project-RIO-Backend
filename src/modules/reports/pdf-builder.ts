@@ -1,6 +1,6 @@
 import { chapterAnchorId, type CalloutTone, type CellTone, type DocSection, type DocTile, type ReportDoc } from "./report-doc";
 import { PRESENTATION_PALETTE } from "./presentation/presentation.config";
-import { hasArabic, shapeArabicAware, shapedWidth, getArabicFont, glyphUnicode, type ShapedChunk } from "./arabic-text";
+import { hasArabic, shapeArabicAware, shapedWidth, getArabicFont, glyphUnicode, latinWidths, type ShapedChunk } from "./arabic-text";
 import type { SupportedLocale } from "../translation/translation.types";
 import { label } from "./i18n/report-labels";
 
@@ -13,7 +13,8 @@ import { label } from "./i18n/report-labels";
 // punctuation is folded to ASCII first. RIO-NFR-007 (Arabic RTL): any string
 // containing Arabic script is detected in text()/textWidth() below and routed
 // through arabic-text.ts instead — real contextual shaping and correct
-// right-to-left run order via an embedded font (Amiri, SIL OFL), rather than
+// right-to-left run order via an embedded font (IBM Plex Sans Arabic, SIL
+// OFL — the identity face), rather than
 // esc()'s "?" fallback. Everything else in this file (wrap/truncate/table
 // layout/right-align) is unaffected because it all goes through text()/
 // textWidth(), which is the single chokepoint this fix hooks into.
@@ -60,7 +61,12 @@ const EDGE: Record<CalloutTone, string> = {
 const EDGE_LABEL: Record<CalloutTone, string> = { ...EDGE, medium: hex("#a8871a") };
 export const BLACK = "0 0 0";
 export const WHITE = "1 1 1";
-export const PIE_COLORS = ["0.16 0.47 0.84", "0.92 0.41 0.20", "0.10 0.69 0.48", "0.93 0.63 0.00", "0.91 0.48 0.64"];
+/** Chart series, in the identity palette: the three primaries first, then
+ *  two secondary colours as single slices — the one use the usage note of
+ *  10 Nov 2026 allows them. Previously a generic blue/orange/green/yellow/
+ *  pink set that belonged to no brand.
+ *  #145463, #59A694, #4080AB, #E3D680, #69B2B0 */
+export const PIE_COLORS = ["0.078 0.329 0.388", "0.349 0.651 0.58", "0.251 0.502 0.671", "0.89 0.839 0.502", "0.412 0.698 0.69"];
 
 function normalizeAscii(s: string): string {
   return s
@@ -110,45 +116,35 @@ function esc(raw: string): string {
   let out = "";
   for (const ch of normalizeAscii(raw)) {
     const code = ch.codePointAt(0) ?? 0;
-    // Middle dot: a placeholder here, its StandardEncoding code (octal 264)
+    // Middle dot: a placeholder here, its WinAnsi code (octal 267 = 0xB7)
     // after the escaping below, so its backslash is not doubled.
+    // It was octal 264 while Latin text drew in base-14 Helvetica, which has
+    // no /Encoding and therefore uses StandardEncoding, where 264 IS the
+    // middle dot. The embedded face declares WinAnsiEncoding, where 264 is
+    // an acute accent — every separator on the page turned into ´.
     out += ch === "\u00B7" ? "\u0001" : code >= 0x20 && code <= 0x7e ? ch : "?";
   }
   return out
     .replace(/\\/g, "\\\\")
     .replace(/\(/g, "\\(")
     .replace(/\)/g, "\\)")
-    .replace(/\u0001/g, "\\264");
+    .replace(/\u0001/g, "\\267");
 }
 
 // ── Text metrics ────────────────────────────────────────────────────────────
 //
-// Real Helvetica advance widths (1/1000 em, from the base-14 AFMs), for
-// printable ASCII 32-126. A flat "0.52 em per character" average used to stand
-// in for these, and it is wrong in exactly the direction that breaks a layout:
-// capitals are 0.61-0.94 em, so an all-caps cell ("DOMAIN_NOT_ASSESSED") was
-// measured ~25% narrower than it draws and spilled over the next column.
-// Everything that reserves space for text - column widths, truncation, wrapping,
-// right-alignment - goes through these, so measuring right fixes all of them.
-const HELV_W: readonly number[] = [
-  278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278,
-  556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556,
-  1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778,
-  667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556,
-  333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556,
-  556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584,
-];
-const HELV_BOLD_W: readonly number[] = [
-  278, 333, 474, 556, 556, 889, 722, 238, 333, 333, 389, 584, 278, 333, 278, 278,
-  556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 333, 333, 584, 584, 584, 611,
-  975, 722, 722, 722, 722, 667, 611, 778, 722, 278, 556, 722, 611, 833, 722, 778,
-  667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 333, 278, 333, 584, 556,
-  333, 556, 611, 556, 611, 556, 333, 611, 611, 278, 278, 556, 278, 889, 611, 611,
-  611, 611, 389, 556, 333, 611, 556, 778, 556, 556, 500, 389, 280, 389, 584,
-];
+// Advance widths come from the embedded face itself — latinWidths() in
+// arabic-text.ts, read off the TTF. A hardcoded Helvetica table stood here
+// while Latin text drew in base-14 Helvetica; it is in the history if the
+// base-14 path ever comes back. Everything that reserves space for text —
+// column widths, truncation, wrapping, right-alignment — goes through these,
+// so they have to be the metrics of the font that actually draws.
 
 function asciiTextWidth(str: string, size: number, bold = false): number {
-  const table = bold ? HELV_BOLD_W : HELV_W;
+  // From the embedded face, not a hardcoded Helvetica table: Latin text now
+  // draws in IBM Plex Sans Arabic as well, and a layout measured against one
+  // font and drawn in another spills its columns.
+  const table = latinWidths(bold ? "bold" : "regular");
   let units = 0;
   // Measure exactly what esc() draws: the folds widen symbols ("≥" → ">=",
   // "←" → "<-", "±" → "+/-"), and measuring the unfolded character made the
@@ -429,7 +425,7 @@ export class Pdf {
         }
         cursor += asciiTextWidth(chunk.text, size, bold);
       } else {
-        // The font's /W table holds ONE width per glyph, but Amiri's
+        // The font's /W table holds ONE width per glyph, but the face's
         // positioning gives the same glyph a different advance in different
         // words. Overwriting the width with each new context moved letters
         // in every other word that uses the glyph — "الوصول" printed with
@@ -1496,7 +1492,10 @@ function renderSummaryPanel(
   columns.forEach((c, i) => {
     const x = pdf.rx + PAD + i * (colW + GAP);
     pdf.y = colTop;
-    pdf.text(x, 8, true, truncate(c.label.toUpperCase(), 8, colW, true), hex(PRESENTATION_PALETTE.summaryLabel));
+    // The dominant colour, not the secondary teal: that teal measures
+    // 2.4:1 on this panel and the identity reserves it for a hairline or
+    // a chart slice, never for a label.
+    pdf.text(x, 8, true, truncate(c.label.toUpperCase(), 8, colW, true), ACCENT);
     pdf.y += 16;
     const b = bodies[i]!;
     for (const ln of b.lead) {
@@ -2090,13 +2089,44 @@ export interface LayerInfo {
 // wrapper that page Resources reference by name. CIDToGIDMap /Identity is
 // correct because the font is embedded whole (unsubsetted) — CID N is
 // literally glyph N in the file, no remapping table needed.
-function buildArabicFontObjects(weight: "regular" | "bold", used: Map<number, number>, firstObjNum: number): string[] {
+function faceName(weight: "regular" | "bold"): string {
+  return weight === "bold" ? "IBMPlexSansArabic-Bold" : "IBMPlexSansArabic-Regular";
+}
+
+/**
+ * The font program: the TTF bytes and the descriptor that points at them.
+ * Emitted once per weight and shared by both dictionaries below — the simple
+ * TrueType font that draws Latin text and the CID font that draws Arabic.
+ * Embedding it twice would have put ~480KB of duplicate bytes in every
+ * bilingual export.
+ */
+function buildFontProgramObjects(weight: "regular" | "bold", fontFileNum: number): string[] {
   const { font, ttfLatin1, ttfByteLength } = getArabicFont(weight);
   const bbox = font.bbox;
-  const baseFontName = weight === "bold" ? "Amiri-Bold" : "Amiri-Regular";
-  const fontFileNum = firstObjNum;
-  const descNum = firstObjNum + 1;
-  const cidNum = firstObjNum + 2;
+  return [
+    `<< /Length ${Buffer.byteLength(ttfLatin1, "latin1")} /Length1 ${ttfByteLength} >>\nstream\n${ttfLatin1}\nendstream`,
+    `<< /Type /FontDescriptor /FontName /${faceName(weight)} /Flags 4 /FontBBox [${bbox.minX} ${bbox.minY} ${bbox.maxX} ${bbox.maxY}] /ItalicAngle 0 /Ascent ${Math.round(font.ascent)} /Descent ${Math.round(font.descent)} /CapHeight ${Math.round(font.capHeight || font.ascent)} /StemV 80 /FontFile2 ${fontFileNum} 0 R >>`,
+  ];
+}
+
+/**
+ * Latin text, as a simple TrueType font in WinAnsiEncoding.
+ *
+ * Deliberately NOT the Identity-H path the Arabic side uses: that would mean
+ * converting every Latin string to glyph ids and rebuilding the ToUnicode
+ * map, which runs through the bidi and shaping code this file's comments
+ * already record three layout bugs against. WinAnsi keeps every text
+ * operator exactly as it was — `(string) Tj` — so only the face and the
+ * widths change.
+ */
+function buildLatinFontObject(weight: "regular" | "bold", descNum: number): string {
+  const w = latinWidths(weight).join(" ");
+  return `<< /Type /Font /Subtype /TrueType /BaseFont /${faceName(weight)} /FirstChar 32 /LastChar 255 /Widths [${w}] /Encoding /WinAnsiEncoding /FontDescriptor ${descNum} 0 R >>`;
+}
+
+function buildArabicFontObjects(weight: "regular" | "bold", used: Map<number, number>, firstObjNum: number, descNum: number): string[] {
+  const baseFontName = faceName(weight);
+  const cidNum = firstObjNum;
   // Sorted so the /W array reads as ascending CID ranges — not required by
   // the spec, just easier to eyeball while debugging a generated PDF.
   const wEntries = [...used.entries()]
@@ -2115,10 +2145,8 @@ function buildArabicFontObjects(weight: "regular" | "bold", used: Map<number, nu
   for (let i = 0; i < bfchars.length; i += 100) cmapParts.push(`${Math.min(100, bfchars.length - i)} beginbfchar\n${bfchars.slice(i, i + 100).join("\n")}\nendbfchar`);
   const cmap = `/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n/CMapName /Adobe-Identity-UCS def\n/CMapType 2 def\n1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n${cmapParts.join("\n")}\nendcmap\nCMapName currentdict /CMap defineresource pop\nend\nend`;
   return [
-    `<< /Length ${Buffer.byteLength(ttfLatin1, "latin1")} /Length1 ${ttfByteLength} >>\nstream\n${ttfLatin1}\nendstream`,
-    `<< /Type /FontDescriptor /FontName /${baseFontName} /Flags 4 /FontBBox [${bbox.minX} ${bbox.minY} ${bbox.maxX} ${bbox.maxY}] /ItalicAngle 0 /Ascent ${Math.round(font.ascent)} /Descent ${Math.round(font.descent)} /CapHeight ${Math.round(font.capHeight || font.ascent)} /StemV 80 /FontFile2 ${fontFileNum} 0 R >>`,
     `<< /Type /Font /Subtype /CIDFontType2 /BaseFont /${baseFontName} /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor ${descNum} 0 R /CIDToGIDMap /Identity /DW 500${wEntries ? ` /W [${wEntries}]` : ""} >>`,
-    `<< /Type /Font /Subtype /Type0 /BaseFont /${baseFontName} /Encoding /Identity-H /DescendantFonts [${cidNum} 0 R] /ToUnicode ${firstObjNum + 4} 0 R >>`,
+    `<< /Type /Font /Subtype /Type0 /BaseFont /${baseFontName} /Encoding /Identity-H /DescendantFonts [${cidNum} 0 R] /ToUnicode ${firstObjNum + 2} 0 R >>`,
     `<< /Length ${Buffer.byteLength(cmap, "latin1")} >>\nstream\n${cmap}\nendstream`,
   ];
 }
@@ -2139,28 +2167,32 @@ function assemble(
   const pageCount = pageStreams.length || 1;
   if (pageStreams.length === 0) pageStreams.push("");
   const pageObjNums = pageStreams.map((_, i) => 3 + i);
-  const fontBold = 3 + pageCount;
-  const fontReg = fontBold + 1;
-  // Times-Bold/Times-Roman are standard base-14 fonts (no embedding needed,
-  // same as Helvetica above) — used for the serif display title on reports
-  // that want one (e.g. the NCNP Consolidated Report's masthead), unused
-  // resource entries otherwise cost nothing.
-  const fontSerifBold = fontReg + 1;
-  const fontSerifReg = fontSerifBold + 1;
+  // The identity face, embedded once per weight and shared by both the Latin
+  // and the Arabic dictionaries. Latin text used to draw in base-14
+  // Helvetica, which needed no embedding at all; the usage note of
+  // 10 Nov 2026 asks for IBM Plex Sans Arabic across the reports too, and a
+  // face the viewer is not guaranteed to have has to travel with the file.
+  //
+  //   program: FontFile2 + FontDescriptor      (2 objects per weight)
+  //   latin:   simple TrueType, WinAnsi        (1 object per weight)
+  //   arabic:  CIDFontType2 + Type0 + ToUnicode (3 objects per weight, only
+  //            when this document actually drew Arabic)
+  const progRegFirst = 3 + pageCount;
+  const progBoldFirst = progRegFirst + 2;
+  const fontReg = progBoldFirst + 2;
+  const fontBold = fontReg + 1;
+  // One family throughout, so the serif resource names point at the same two
+  // objects rather than at Times. They stay as names because call sites ask
+  // for family: "serif" in a few places (the NCNP masthead among them).
+  const fontSerifBold = fontBold;
+  const fontSerifReg = fontReg;
 
-  // RIO-NFR-007 — the embedded Arabic font (Amiri) is only worth its ~400KB
-  // per weight if this specific document actually drew Arabic text; an
-  // all-English report stays exactly the object count/size it always was.
-  // Each weight needs 4 objects: the raw TTF (FontFile2), its FontDescriptor,
-  // the CIDFontType2 descendant naming that descriptor, and the Type0
-  // wrapper actually referenced from page Resources as /F5 (regular) / /F6
-  // (bold) — see buildArabicFontObjects below.
   const needsArabic = arabicGlyphs.regular.size > 0 || arabicGlyphs.bold.size > 0;
-  const arabicRegularFirst = fontSerifReg + 1;
-  const arabicBoldFirst = arabicRegularFirst + (needsArabic ? 5 : 0);
-  const fontArabicRegularType0 = arabicRegularFirst + 3;
-  const fontArabicBoldType0 = arabicBoldFirst + 3;
-  const firstContent = arabicBoldFirst + (needsArabic ? 5 : 0);
+  const arabicRegularFirst = fontBold + 1;
+  const arabicBoldFirst = arabicRegularFirst + (needsArabic ? 3 : 0);
+  const fontArabicRegularType0 = arabicRegularFirst + 1;
+  const fontArabicBoldType0 = arabicBoldFirst + 1;
+  const firstContent = arabicBoldFirst + (needsArabic ? 3 : 0);
 
   // Annotation objects come after the content streams. Their count is known up
   // front, so the numbering stays a simple offset rather than needing a
@@ -2213,13 +2245,13 @@ function assemble(
       `<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 ${fontBold} 0 R /F2 ${fontReg} 0 R /F3 ${fontSerifBold} 0 R /F4 ${fontSerifReg} 0 R${arabicFontEntry} >> /ExtGState << /GSwm << /ca 0.3 /CA 0.3 >> >>${propsEntry} >> /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] /Contents ${firstContent + i} 0 R${annotsEntry} >>`,
     );
   });
-  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
-  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
-  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Times-Bold >>");
-  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman >>");
+  objects.push(...buildFontProgramObjects("regular", progRegFirst));
+  objects.push(...buildFontProgramObjects("bold", progBoldFirst));
+  objects.push(buildLatinFontObject("regular", progRegFirst + 1));
+  objects.push(buildLatinFontObject("bold", progBoldFirst + 1));
   if (needsArabic) {
-    objects.push(...buildArabicFontObjects("regular", arabicGlyphs.regular, arabicRegularFirst));
-    objects.push(...buildArabicFontObjects("bold", arabicGlyphs.bold, arabicBoldFirst));
+    objects.push(...buildArabicFontObjects("regular", arabicGlyphs.regular, arabicRegularFirst, progRegFirst + 1));
+    objects.push(...buildArabicFontObjects("bold", arabicGlyphs.bold, arabicBoldFirst, progBoldFirst + 1));
   }
   for (const stream of pageStreams) {
     objects.push(`<< /Length ${Buffer.byteLength(stream, "latin1")} >>\nstream\n${stream}\nendstream`);

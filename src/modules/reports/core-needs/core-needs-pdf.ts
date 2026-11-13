@@ -430,7 +430,13 @@ function pageSummary(d: Doc): void {
       }
       d.y = gTop + 9;
       const label = pages ? g.pageLabel.replace('{pages}', pages) : g.title;
-      d.line(x + 8, 8, true, fit(label, 8, gw - 14, true), COLOR.tealText);
+      // Shrink before cutting. The identity face is wider than the one this
+      // strip was laid out against, and the longest Arabic label — "المانحون
+      // والجهات الإشرافية" — measures 129pt in a 110pt box, so fit() alone
+      // took the page number off the end of it, which is the one thing the
+      // label is for.
+      const labelSize = shrinkTo(label, 8, 6.5, gw - 14, true);
+      d.line(x + 8, labelSize, true, fit(label, labelSize, gw - 14, true), COLOR.tealText);
       d.y = gTop + 22;
       d.para(x + 8, gw - 14, g.q, 7.2, false, COLOR.muted, 1.3);
     });
