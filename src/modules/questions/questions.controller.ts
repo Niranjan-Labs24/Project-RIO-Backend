@@ -27,6 +27,14 @@ export class QuestionsController {
     return this.service.getKpiOptions(methodologyVersion);
   }
 
+  // SVB-02 — KPI display codes. Methodology labels only, nothing
+  // tenant-sensitive, and needed by every dashboard that shows a KPI, so it
+  // only requires a signed-in session (same as the study-config pick lists).
+  @Get('kpi-codes')
+  getKpiCodes(@Query('methodologyVersion') methodologyVersion?: string) {
+    return this.service.getKpiCodes(methodologyVersion);
+  }
+
   // Same gate/shape as domain-options/kpi-options — Survey Builder's Sample
   // Description "Target Group" combobox reads this.
   @Get('target-respondent-options')

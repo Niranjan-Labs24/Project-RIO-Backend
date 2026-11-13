@@ -16,7 +16,7 @@ const CONSENTS = [
 
 /** The signup input, minus whatever a given test wants to vary. */
 const BASE_INPUT = {
-  organizationName: 'Org', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test',
+  organizationName: 'Org', ncnpClassificationId: '01a1f000-0000-7000-8000-0000000000b1', purpose: 'p', registrationNumber: 'RN1', email: 'a@b.test',
   passwordHash: 'h', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'],
   consents: CONSENTS,
 };

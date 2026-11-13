@@ -6,6 +6,7 @@ import { AuditService } from "../audit/audit.service";
 import { HistoricalStudiesService } from "../historical-studies/historical-studies.service";
 import { EXPORTABLE_STATUSES } from "../reports/reports.types";
 import type { ArchiveEntry, ListArchiveParams } from "./archive.types";
+import { NcnpClassificationService } from '../ncnp-classification/ncnp-classification.service';
 
 // One filterable read view over Study + Report, not two parallel modules —
 // Study Archive (completed studies) and the Report library (approved
@@ -27,6 +28,7 @@ export class ArchiveService {
     private readonly tenant: TenantPrismaService,
     private readonly audit: AuditService,
     private readonly historicalStudies: HistoricalStudiesService,
+    private readonly classifications: NcnpClassificationService,
   ) {}
 
   async list(params: ListArchiveParams): Promise<ArchiveEntry[]> {
@@ -83,6 +85,13 @@ export class ArchiveService {
     const scopedOrgId = isCrossEntity ? null : requireOrgId();
 
     const orgById = new Map(organisations.map((org) => [org.id, org]));
+    // GEN-07 — every entry carries its owning entity's NCNP classification;
+    // the Archive's classification filter (RIO-FR-013) runs on it.
+    const classificationByLevelB = await this.classifications.resolve(organisations.map((o) => o.ncnpClassificationId));
+    const classificationOfOrg = (orgId: string) => {
+      const id = orgById.get(orgId)?.ncnpClassificationId;
+      return id ? (classificationByLevelB.get(id) ?? null) : null;
+    };
     const studyById = new Map(studies.map((study) => [study.id, study]));
     // RIO-DATA-002 — which archive entries have already been imported into
     // the unified dashboard. `studies` is loaded in full above, so this is a
@@ -182,6 +191,7 @@ export class ArchiveService {
           governorateNames: govNamesByStudyId.get(study.id) ?? [],
           governorateNamesAr: govNamesArByStudyId.get(study.id) ?? [],
           domains: domainsOfStudy(study.id),
+          classification: classificationOfOrg(study.orgId),
         });
       }
     }
@@ -208,6 +218,7 @@ export class ArchiveService {
           governorateNames: report.studyId ? (govNamesByStudyId.get(report.studyId) ?? []) : [],
           governorateNamesAr: report.studyId ? (govNamesArByStudyId.get(report.studyId) ?? []) : [],
           domains: domainsOfStudy(report.studyId),
+          classification: classificationOfOrg(report.orgId),
         });
       }
     }
@@ -247,6 +258,7 @@ export class ArchiveService {
           uploadedByName: hist.uploadedByName,
           uploadedAt: hist.uploadedAt,
           fileName: hist.fileName,
+          classification: classificationOfOrg(hist.orgId),
         });
       }
     }
@@ -257,6 +269,11 @@ export class ArchiveService {
       .filter((entry) => (params.search ? entry.title.toLowerCase().includes(params.search.toLowerCase()) : true))
       .filter((entry) => (params.region ? entry.region.includes(params.region) : true))
       .filter((entry) => (params.sector ? entry.sector === params.sector : true))
+      .filter((entry) => {
+        if (!params.classificationId) return true;
+        const c = entry.classification;
+        return !!c && [c.groupId, c.levelAId, c.levelBId].includes(params.classificationId);
+      })
       .filter((entry) => (params.village ? entry.villages.includes(params.village) : true))
       .filter((entry) =>
         params.governorate ? (entry.governorateNames ?? []).includes(params.governorate) : true,

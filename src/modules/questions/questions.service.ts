@@ -4,6 +4,7 @@ import { AuditService } from '../audit/audit.service';
 import { requireActor } from '../../tenancy/org-context';
 import { auditFieldLabel } from '../audit/audit-field-labels';
 import { Prisma } from '../../generated/prisma';
+import { recomputeKpiCodes } from './kpi-codes';
 
 export interface UpdateQuestionInput {
   questionText?: string;
@@ -144,6 +145,23 @@ export class QuestionsService {
     return rows.map((r) => r.kpi).filter((kpi): kpi is string => Boolean(kpi));
   }
 
+  // SVB-02 — every KPI's display code for the methodology version, keyed by
+  // the KPI text and by its anchor code (the text before " — "). Dashboards
+  // and roll-ups store a KPI by its text, so they relabel through this map.
+  async getKpiCodes(methodologyVersion?: string): Promise<Array<{ kpi: string; kpiKey: string; kpiCode: string }>> {
+    const methodologyVersionId = await this.resolveVersionId(methodologyVersion);
+    const rows = await this.tenant.runAsSupervisor((tx) =>
+      tx.question.findMany({
+        where: { methodologyVersionId, isCurrentVersion: true, kpi: { not: null }, kpiCode: { not: null } },
+        select: { kpi: true, kpiCode: true },
+        distinct: ['kpi'],
+      }),
+    );
+    return rows
+      .filter((r): r is { kpi: string; kpiCode: string } => Boolean(r.kpi && r.kpiCode))
+      .map((r) => ({ kpi: r.kpi, kpiKey: r.kpi.split(' — ')[0]!.trim(), kpiCode: r.kpiCode }));
+  }
+
   // Survey Builder's Sample Description "Target Group" field (RIO-FR-011)
   // used to be free text. It describes the same underlying concept as the
   // Question Bank's per-question `targetRespondent` (METH — Question Bank
@@ -247,6 +265,8 @@ export class QuestionsService {
     subDomain: string;
     indicator: string | null;
     kpi: string | null;
+    indicatorCode?: string | null;
+    kpiCode?: string | null;
     priorityWeight: Prisma.Decimal | null;
     questionText: string;
     // RIO Arabic Localization — Approach 3 (Hybrid, client-confirmed
@@ -289,6 +309,10 @@ export class QuestionsService {
       subDomain: r.subDomain,
       indicator: r.indicator,
       kpi: r.kpi,
+      // SVB-02 — the parent Indicator's code and the KPI's own code
+      // ([indicatorCode]-[n]); display labels only.
+      indicatorCode: r.indicatorCode ?? null,
+      kpiCode: r.kpiCode ?? null,
       // RIO-AI-002: the Domain → Indicator → KPI → Weight linkage needs to
       // be visible wherever a Researcher browses/picks Question Bank
       // entries, not just after they've been added to a survey (see
@@ -467,7 +491,17 @@ export class QuestionsService {
       metadata: { supersedes: current.id, awaitingApproval: true },
     });
 
-    return pending;
+    // SVB-02 — label the pending version too, so the Reviewer sees its code.
+    return this.withKpiCodes(pending);
+  }
+
+  // SVB-02 — recompute the version's indicator/KPI codes after a question
+  // bank change, then re-read the row so its own codes are current.
+  private async withKpiCodes<T extends { id: string; methodologyVersionId: string }>(row: T): Promise<T> {
+    return this.tenant.runAsSupervisorWrite(async (tx) => {
+      await recomputeKpiCodes(tx, row.methodologyVersionId);
+      return ((await tx.question.findUnique({ where: { id: row.id } })) ?? row) as T;
+    });
   }
 
   // RIO-FR-012 (AC3, Q31 client-confirmed) — a genuinely new question, not
@@ -593,7 +627,7 @@ export class QuestionsService {
       metadata: { awaitingApproval: true },
     });
 
-    return this.toQuestionRow(created);
+    return this.toQuestionRow(await this.withKpiCodes(created));
   }
 
   // RIO-FR-012 — admin edit. See createPendingVersion: the edit does not
@@ -647,10 +681,13 @@ export class QuestionsService {
           data: { isCurrentVersion: false },
         });
       }
-      return tx.question.update({
+      const approved = await tx.question.update({
         where: { id },
         data: { approvalStatus: 'approved', isCurrentVersion: true, reviewedBy: actorId, reviewedAt: new Date() },
       });
+      // SVB-02 — an approved edit can move a question to another Indicator/KPI.
+      await recomputeKpiCodes(tx, approved.methodologyVersionId);
+      return approved;
     });
 
     // RIO-FR-007 — before/after pair required for every 'approve' event.

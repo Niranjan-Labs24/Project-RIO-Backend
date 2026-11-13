@@ -1,12 +1,10 @@
 import { registerSchema, T, type Static } from '../../contract/typebox';
 import { ConsentAcceptanceBody } from '../auth/auth.contract';
 
-// Not a fixed enum: `sector` is validated against the live, active Domain
-// list from Methodology Configuration (see OrganizationsService/AuthService
-// — DomainsService.listDomains()), or the literal "other". TypeBox can't
-// express "one of these dynamic values" at the schema level, so this only
-// checks shape/length here; the real check happens in the service.
-const SectorValue = T.String({ minLength: 1, maxLength: 200 });
+// GEN-07 — the entity's NCNP classification, always a Level B item id.
+// Existence, level and active status are checked in the service
+// (NcnpClassificationService#assertSelectableLevelB).
+const ClassificationId = T.String({ format: 'uuid' });
 
 // Shared array-of-strings shape for both `villages` and `region` — an org
 // (or a Need, see needs.contract.ts) can span more than one of either, not
@@ -22,10 +20,7 @@ export const UpdateOrganizationBody = registerSchema(
     name: T.Optional(T.String({ minLength: 1, maxLength: 200 })),
     region: T.Optional(Villages),
     email: T.Optional(T.Union([T.String({ format: 'email', maxLength: 320 }), T.Null()])),
-    sector: T.Optional(T.Union([SectorValue, T.Null()])),
-    // Only meaningful when `sector` is `'other'` — the org's own free-text
-    // description of what that is (see Settings > Organization's
-    // sector/"specify other" pattern, and signup-form.tsx's identical one).
+    ncnpClassificationId: T.Optional(ClassificationId),
     purpose: T.Optional(T.Union([T.String({ maxLength: 500 }), T.Null()])),
     // The frontend currently uploads a logo as a base64 data URI (no object
     // storage yet), not a short hosted URL — 2048 chars fit neither.
@@ -70,7 +65,7 @@ export const CreateOrganizationBody = registerSchema(
     registrationNumber: T.String({ minLength: 1, maxLength: 100 }),
     region: T.Optional(Villages),
     email: T.Optional(T.Union([T.String({ format: 'email', maxLength: 320 }), T.Null()])),
-    sector: SectorValue,
+    ncnpClassificationId: ClassificationId,
     villages: T.Optional(Villages),
     // Required, same as self-signup and same hierarchy checks
     // (GeographyService#validateHierarchy) — a System-Admin-created org must

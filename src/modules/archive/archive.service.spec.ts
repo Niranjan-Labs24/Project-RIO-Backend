@@ -147,7 +147,7 @@ describe('ArchiveService', () => {
       { id: 'n1', studyId: 's1', status: 'survey_published', village: ['Village A'] },
     ];
     const tenant = fakeTenant({ studies, needs });
-    const svc = new ArchiveService(tenant as never, auditStub as never, fakeHistoricalStudiesService() as never);
+    const svc = new ArchiveService(tenant as never, auditStub as never, fakeHistoricalStudiesService() as never, { resolve: async () => new Map() } as never);
 
     const result = await orgContext.run(
       { requestId: 'r1', actorId: 'sys1', role: 'system_admin' },
@@ -182,7 +182,7 @@ describe('ArchiveService', () => {
     ];
 
     const tenant = fakeTenant({ studies: [study], auditLogs });
-    const svc = new ArchiveService(tenant as never, auditStub as never, fakeHistoricalStudiesService() as never);
+    const svc = new ArchiveService(tenant as never, auditStub as never, fakeHistoricalStudiesService() as never, { resolve: async () => new Map() } as never);
 
     const detail = await orgContext.run(
       { requestId: 'r1', actorId: 'sys1', role: 'system_admin' },
@@ -219,6 +219,7 @@ describe('ArchiveService', () => {
       tenant as never,
       auditStub as never,
       fakeHistoricalStudiesService(historicalStudies) as never,
+      { resolve: async () => new Map() } as never,
     );
 
     const entries = await orgContext.run(
@@ -253,6 +254,7 @@ describe('ArchiveService', () => {
       tenant as never,
       auditStub as never,
       fakeHistoricalStudiesService(historicalStudies) as never,
+      { resolve: async () => new Map() } as never,
     );
 
     const entries = await orgContext.run(

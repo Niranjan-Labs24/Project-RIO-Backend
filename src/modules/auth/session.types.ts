@@ -24,7 +24,7 @@ export interface SessionOrg {
   logoUrl: string | null;
   region: string[];
   email: string | null;
-  sector: string | null;
+  ncnpClassificationId: string | null;
   villages: string[];
   regionId: string | null;
   governorateIds: string[];

@@ -193,7 +193,7 @@ function setup() {
   return {
     tx,
     audit,
-    svc: new ArchiveService(tenant as never, audit as never, historical as never),
+    svc: new ArchiveService(tenant as never, audit as never, historical as never, { resolve: async () => new Map() } as never),
   };
 }
 

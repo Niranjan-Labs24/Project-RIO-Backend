@@ -13,6 +13,8 @@ import type { AuditChange } from '../audit/audit.types';
 import { ConsentService } from '../consent/consent.service';
 import { consentPolicyTextFor, DEFAULT_CONSENT_LOCALE, resolveConsentLocale } from '../consent/consent.types';
 import { DomainsService } from '../domains/domains.service';
+import { NcnpClassificationService } from '../ncnp-classification/ncnp-classification.service';
+import type { OrganisationClassification } from '../ncnp-classification/ncnp-classification.types';
 import { GeographyService } from '../geography/geography.service';
 import { NicRegistryService } from '../nic-registry/nic-registry.service';
 import { auditFieldLabel } from '../audit/audit-field-labels';
@@ -23,7 +25,7 @@ import {
 } from './organizations.types';
 
 const DIFF_FIELDS = [
-  'name', 'region', 'email', 'sector', 'purpose', 'logoUrl', 'villages',
+  'name', 'region', 'email', 'ncnpClassificationId', 'purpose', 'logoUrl', 'villages',
   'regionId', 'isActive',
 ] as const;
 
@@ -42,7 +44,7 @@ const PLATFORM_ADMIN_REGISTRATION_NUMBER = '8000000000';
 // plain scalar column now (single-select), so no include/join needed for it.
 type RawOrgWithGeo = {
   id: string; name: string; purpose: string | null; registrationNumber: string | null;
-  logoUrl: string | null; region: string[]; email: string | null; sector: string | null;
+  logoUrl: string | null; region: string[]; email: string | null; ncnpClassificationId: string | null;
   villages: string[]; regionId: string | null; isActive: boolean; approvedAt: Date | null; createdAt: Date;
   catalogDefaultVisible?: boolean;
   orgGovernorates: { governorateId: string }[];
@@ -62,6 +64,7 @@ export class OrganizationsService {
     private readonly mailer: MailerService,
     private readonly nicRegistry: NicRegistryService,
     private readonly consentPolicies: ConsentService,
+    private readonly classifications: NcnpClassificationService,
     // Optional so a unit test that builds the service by hand needs no
     // stub — arabicEntityName() then just keeps the stored name.
     @Optional() private readonly translation?: TranslationService,
@@ -87,12 +90,12 @@ export class OrganizationsService {
       tx.organisation.findFirst({ include: GEO_INCLUDE }),
     );
     if (!row) throw new NotFoundException({ error: { code: 'ORG_NOT_FOUND', message: 'Organization not found' } });
-    return this.toOrganization(this.toOrgRow(row));
+    return this.withClassification(this.toOrgRow(row));
   }
 
   async updateCurrent(patch: UpdateOrganizationPayload): Promise<Organization> {
     const orgId = requireOrgId();
-    if (patch.sector !== undefined) await this.assertValidSector(patch.sector);
+    if (patch.ncnpClassificationId !== undefined) await this.classifications.assertSelectableLevelB(patch.ncnpClassificationId);
 
     const { updated, changes } = await this.tenant.runInOrgContext(async (tx) => {
       const currentRaw = await tx.organisation.findFirst({ include: GEO_INCLUDE });
@@ -112,6 +115,13 @@ export class OrganizationsService {
       });
 
       const changes = this.diff(current, patch, nextGovernorateIds, nextCenterIds);
+      // GEN-07 — record the classification by name, not by id.
+      for (const c of changes) {
+        if (c.field === auditFieldLabel('ncnpClassificationId')) {
+          c.before = await this.classificationLabel(current.ncnpClassificationId);
+          c.after = await this.classificationLabel(patch.ncnpClassificationId ?? null);
+        }
+      }
 
       await tx.organisation.update({ where: { id: orgId }, data: this.buildUpdateData(patch) });
 
@@ -138,7 +148,7 @@ export class OrganizationsService {
     if (changes.length > 0) {
       await this.audit.record({ action: 'edit', entityType: 'organization', entityId: updated.id, entityLabel: updated.name, changes });
     }
-    return this.toOrganization(updated);
+    return this.withClassification(updated);
   }
 
   // System-Admin creates an org + optional first NGO Admin (invited) in one action.
@@ -155,7 +165,7 @@ export class OrganizationsService {
         error: { code: 'INVALID_MOBILE_NUMBER', message: 'Enter a valid Saudi mobile number (e.g. 05XXXXXXXX or +9665XXXXXXXX)' },
       });
     }
-    await this.assertValidSector(payload.sector);
+    await this.classifications.assertSelectableLevelB(payload.ncnpClassificationId);
     // Same NIC-registry gate as public self-signup (AuthService.signup) —
     // a System-Admin-created org can't carry a number nobody checked.
     // Returns the normalized 10-digit form, which is what gets stored.
@@ -195,7 +205,7 @@ export class OrganizationsService {
           data: {
             id: orgId, name: payload.name, purpose: payload.purpose ?? null, registrationNumber,
             region: payload.region ?? [], email: payload.email ?? null,
-            sector: payload.sector, villages: payload.villages ?? [], isActive: true,
+            ncnpClassificationId: payload.ncnpClassificationId, villages: payload.villages ?? [], isActive: true,
             regionId: payload.regionId,
             // Nested under the parent create (orgId implied by the relation),
             // same pattern AuthRepository#createOrganisationAndAdmin uses for
@@ -286,11 +296,11 @@ export class OrganizationsService {
       changes: [
         { field: 'Organization name', before: null, after: org.name },
         { field: 'Registration number', before: null, after: org.registrationNumber },
-        { field: 'Sector', before: null, after: org.sector },
+        { field: 'NCNP classification', before: null, after: await this.classificationLabel(org.ncnpClassificationId) },
         { field: 'Active', before: null, after: org.isActive },
       ],
     });
-    return this.toOrganization(org);
+    return this.withClassification(org);
   }
 
   async listAll(opts: { limit?: number; offset?: number } = {}): Promise<OrganizationSummary[]> {
@@ -342,9 +352,10 @@ export class OrganizationsService {
     const responseCountByOrgId = new Map(responseCounts.map((p) => [p.orgId, p._count._all]));
 
     const lastSignInByOrgId = await this.lastSignInByOrgId(typedRows.map((r) => r.id));
+    const classifications = await this.classifications.resolve(typedRows.map((r) => r.ncnpClassificationId));
 
     return typedRows.map((r) => ({
-      ...this.withLifecycle(this.toOrganization(this.toOrgRow(r)), lastSignInByOrgId.get(r.id) ?? null),
+      ...this.withLifecycle(this.toOrganization(this.toOrgRow(r), classifications), lastSignInByOrgId.get(r.id) ?? null),
       memberCount: r._count.users,
       studyCount: r._count.studies,
       surveyCount: r._count.surveys,
@@ -385,7 +396,7 @@ export class OrganizationsService {
     const lastSignIn = (await this.lastSignInByOrgId([row.id])).get(row.id) ?? null;
 
     return {
-      ...this.withLifecycle(this.toOrganization(this.toOrgRow(row)), lastSignIn),
+      ...this.withLifecycle(await this.withClassification(this.toOrgRow(row)), lastSignIn),
       memberCount: row._count.users,
       studyCount: row._count.studies,
       surveyCount: row._count.surveys,
@@ -437,7 +448,7 @@ export class OrganizationsService {
       action: 'edit', entityType: 'organization', entityId: updated.id, entityLabel: updated.name,
       changes: [{ field: 'Reports listed in catalog by default', before, after: visible }],
     });
-    return this.toOrganization(updated);
+    return this.withClassification(updated);
   }
 
   async updateStatus(id: string, payload: { isActive: boolean; reason?: string | null }): Promise<OrganizationSummary> {
@@ -559,20 +570,6 @@ export class OrganizationsService {
     );
   }
 
-  // Mirrors AuthService's identical check (see auth.service.ts) — `sector`
-  // must match an active Methodology Configuration Domain name or the
-  // literal "other" (paired with `purpose` for free text).
-  private async assertValidSector(sector: string | null | undefined): Promise<void> {
-    if (!sector || sector === 'other') return;
-    const domains = await this.domains.listDomains();
-    const valid = domains.some((d) => d.isActive && d.name === sector);
-    if (!valid) {
-      throw new BadRequestException({
-        error: { code: 'INVALID_SECTOR', message: 'Sector must match an active domain or "other"' },
-      });
-    }
-  }
-
   private assertCrossEntity(): void {
     const roleKey = getOrgStore()?.role;
     if (!roleKey || roleByKey(roleKey)?.crossEntity !== true) {
@@ -585,7 +582,7 @@ export class OrganizationsService {
     if (patch.name !== undefined) data.name = patch.name;
     if (patch.region !== undefined) data.region = patch.region;
     if (patch.email !== undefined) data.email = patch.email;
-    if (patch.sector !== undefined) data.sector = patch.sector ?? null;
+    if (patch.ncnpClassificationId !== undefined) data.ncnpClassificationId = patch.ncnpClassificationId;
     if (patch.purpose !== undefined) data.purpose = patch.purpose;
     if (patch.logoUrl !== undefined) data.logoUrl = patch.logoUrl;
     if (patch.villages !== undefined) data.villages = patch.villages;
@@ -640,7 +637,7 @@ export class OrganizationsService {
   private toOrgRow(raw: RawOrgWithGeo): OrgRow {
     return {
       id: raw.id, name: raw.name, purpose: raw.purpose, registrationNumber: raw.registrationNumber,
-      logoUrl: raw.logoUrl, region: raw.region, email: raw.email, sector: raw.sector,
+      logoUrl: raw.logoUrl, region: raw.region, email: raw.email, ncnpClassificationId: raw.ncnpClassificationId,
       villages: raw.villages, regionId: raw.regionId, isActive: raw.isActive, approvedAt: raw.approvedAt, createdAt: raw.createdAt,
       catalogDefaultVisible: raw.catalogDefaultVisible,
       governorateIds: raw.orgGovernorates.map((g) => g.governorateId),
@@ -648,11 +645,25 @@ export class OrganizationsService {
     };
   }
 
-  private toOrganization(row: OrgRow): Organization {
+  // GEN-07 — the organisation with its NCNP classification resolved
+  // (Group / Level A / Level B names) for display.
+  private async withClassification(row: OrgRow): Promise<Organization> {
+    return this.toOrganization(row, await this.classifications.resolve([row.ncnpClassificationId]));
+  }
+
+  private async classificationLabel(id: string | null): Promise<string | null> {
+    if (!id) return null;
+    const c = (await this.classifications.resolve([id])).get(id);
+    return c ? `${c.groupName} / ${c.levelAName} / ${c.levelBName}` : null;
+  }
+
+  private toOrganization(row: OrgRow, classifications: Map<string, OrganisationClassification>): Organization {
     return {
       id: row.id, name: row.name, purpose: row.purpose, registrationNumber: row.registrationNumber,
       logoUrl: row.logoUrl, region: row.region, email: row.email,
-      sector: row.sector, villages: row.villages,
+      ncnpClassificationId: row.ncnpClassificationId,
+      classification: row.ncnpClassificationId ? classifications.get(row.ncnpClassificationId) ?? null : null,
+      villages: row.villages,
       regionId: row.regionId, governorateIds: row.governorateIds, centerIds: row.centerIds,
       isActive: row.isActive, approvedAt: row.approvedAt ? row.approvedAt.toISOString() : null,
       createdAt: row.createdAt.toISOString(),

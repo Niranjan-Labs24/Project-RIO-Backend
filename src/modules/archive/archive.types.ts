@@ -1,3 +1,5 @@
+import type { OrganisationClassification } from "../ncnp-classification/ncnp-classification.types";
+
 // "historical" — RIO-FR-013 (client Q25) — a study conducted before the
 // platform existed, uploaded as a reference document rather than built up
 // through Study/Need/Survey.
@@ -20,6 +22,9 @@ export interface ArchiveEntry {
    *  domain in master data rather than the handful the loaded rows happen
    *  to mention. Empty where nothing has been classified yet. */
   domains: { name: string; nameAr: string | null }[];
+  /** GEN-07 — the owning entity's NCNP classification (Group / Level A /
+   *  Level B), backing the Archive's classification filter (RIO-FR-013). */
+  classification: OrganisationClassification | null;
   // Structured geography, now filled for all three kinds. It used to be
   // historical-only, and the table's "Governorates" column fell back to
   // `villages` for the other two — so a Study row showed village names
@@ -62,4 +67,7 @@ export interface ListArchiveParams {
   /** Matches against `governorateNames`. `village` still matches the free
    *  text village list, which is a different thing and kept working. */
   governorate?: string;
+  /** GEN-07 — an NCNP classification id at any level (Group, Level A or
+   *  Level B); matches entries whose owning entity falls under it. */
+  classificationId?: string;
 }
