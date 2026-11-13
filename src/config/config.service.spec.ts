@@ -83,7 +83,7 @@ describe('ConfigService', () => {
     });
     expect(config.corsOrigin).toBe('http://localhost:3000');
     expect(config.resendApiKey).toBe('re_test_key');
-    expect(config.mailFrom).toBe('RIO <no-reply@rio.local>');
+    expect(config.mailFrom).toBe('Bosla <no-reply@rio.local>');
     expect(config.csrfEnforce).toBe(true);
   });
 });

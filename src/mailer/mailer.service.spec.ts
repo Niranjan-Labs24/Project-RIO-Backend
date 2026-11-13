@@ -20,7 +20,7 @@ vi.mock('resend', () => ({
 
 function config(over: Partial<Record<string, unknown>> = {}): ConfigService {
   return {
-    resendApiKey: 're_test_key', mailFrom: 'RIO <no-reply@rio.local>',
+    resendApiKey: 're_test_key', mailFrom: 'Bosla <no-reply@rio.local>',
     corsOrigin: 'https://app.rio.example',
     ...over,
   } as unknown as ConfigService;
@@ -84,7 +84,7 @@ describe('MailerService', () => {
       await svc.sendBackupFailureAlert(['ops@rio.test'], {
         kind: 'attachments', error: 'pg_dump: refused', runId: 'run-1', startedAt: new Date('2026-09-30T00:00:00Z'),
       });
-      expect(sent().subject).toBe('فشل النسخ الاحتياطي في RIO — المرفقات');
+      expect(sent().subject).toBe('فشل النسخ الاحتياطي في بوصلة — المرفقات');
       expect(sent().html).toContain('dir="rtl"');
       // The technical error stays verbatim (and left-to-right) for the admin.
       expect(sent().text).toContain('pg_dump: refused');
@@ -96,14 +96,14 @@ describe('MailerService', () => {
       await svc.sendBackupFailureAlert(['ops@rio.test'], {
         kind: 'snapshot', error: 'x', runId: 'run-2', startedAt: new Date('2026-09-30T00:00:00Z'),
       });
-      expect(sent().subject).toBe('فشل النسخ الاحتياطي في RIO — snapshot');
+      expect(sent().subject).toBe('فشل النسخ الاحتياطي في بوصلة — snapshot');
     });
 
     it('sends the citizen survey code in Arabic to an Arabic respondent (UAT DST-06)', async () => {
       send.mockResolvedValue({ data: { id: '1' }, error: null });
       const svc = new MailerService(config());
       await svc.sendCitizenOtpEmail('c@x.test', '123456', 'ar');
-      expect(sent().subject).toBe('رمز التحقق لاستبيان RIO');
+      expect(sent().subject).toBe('رمز التحقق لاستبيان بوصلة');
       expect(sent().text).toContain('123456');
       expect(sent().html).toContain('dir="rtl"');
     });
@@ -114,7 +114,7 @@ describe('MailerService', () => {
       await svc.sendContactRequest(['team@rio.test'], {
         orgName: 'كيان تجريبي', name: 'سارة', email: 's@x.test', region: 'الرياض', purpose: 'تعاون',
       });
-      expect(sent().subject).toBe('استفسار جديد في RIO — سارة (الرياض)');
+      expect(sent().subject).toBe('استفسار جديد في بوصلة — سارة (الرياض)');
       expect(sent().text).toContain('الاسم: سارة');
       expect(sent().html).toContain('dir="rtl"');
     });
@@ -125,7 +125,7 @@ describe('MailerService', () => {
       await svc.sendSurveyReminder('c@x.test', {
         needTitle: 'Water', needTitleAr: 'المياه', publicUrl: 'https://app.rio.example/ar/public/survey/t',
       });
-      expect(sent().subject).toBe('تذكير: لم تكتمل إجابتك على استبيان المياه');
+      expect(sent().subject).toBe('تذكير بإكمال استبيان المياه');
       expect(sent().html).toContain('dir="rtl"');
       expect(sent().html).not.toContain('Finish the survey');
     });

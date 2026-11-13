@@ -44,7 +44,7 @@ export const AGE_BRACKET_LABELS_AR: Record<string, string> = {
   age_45_54: '45–54',
   age_55_64: '55–64',
   age_65_plus: '+65',
-  prefer_not_to_say: 'تفضّل عدم الإفصاح',
+  prefer_not_to_say: 'أفضّل عدم الإفصاح',
 };
 
 /** Display order for AGE_BRACKET_LABELS — matches the Prisma AgeBracket enum's
@@ -72,7 +72,7 @@ export const GENDER_LABELS_AR: Record<string, string> = {
   male: 'ذكر',
   female: 'أنثى',
   other: 'أخرى',
-  prefer_not_to_say: 'تفضّل عدم الإفصاح',
+  prefer_not_to_say: 'أفضّل عدم الإفصاح',
 };
 
 /**
@@ -96,7 +96,7 @@ export const NEED_SOURCE_LABELS: Record<string, string> = {
 export const NEED_SOURCE_LABELS_AR: Record<string, string> = {
   manual_entry: 'استبيان',
   file_upload: 'مستند مرفوع',
-  citizen_input: 'مدخلات المواطن',
+  citizen_input: 'مشاركات المواطنين',
   field_survey: 'استبيان ميداني',
 };
 

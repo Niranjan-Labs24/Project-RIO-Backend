@@ -57,8 +57,8 @@ export class SmsService {
         // UAT DST-06 — in Arabic for a respondent answering in Arabic.
         body:
           locale === 'ar'
-            ? `رمز التحقق لاستبيان RIO هو ${code}. تنتهي صلاحيته خلال 10 دقائق.`
-            : `Your RIO survey verification code is ${code}. It expires in 10 minutes.`,
+            ? `رمز التحقق لاستبيان بوصلة هو ${code}. تنتهي صلاحيته خلال 10 دقائق.`
+            : `Your Bosla survey verification code is ${code}. It expires in 10 minutes.`,
       });
       return true;
     } catch (err) {
@@ -99,8 +99,8 @@ export class SmsService {
         // Unicode encoding and about four SMS segments instead of one.
         body:
           locale === 'ar'
-            ? `رمز التحقق لتسجيل الدخول إلى RIO هو ${code}. تنتهي صلاحيته خلال 10 دقائق. إذا لم تطلب هذا، يُرجى تجاهل هذه الرسالة.`
-            : `Your RIO sign-in verification code is ${code}. It expires in 10 minutes. If you didn't request this, ignore this message.`,
+            ? `رمز التحقق لتسجيل الدخول إلى بوصلة هو ${code}. تنتهي صلاحيته خلال 10 دقائق. إذا لم تطلب الرمز، تجاهل هذه الرسالة.`
+            : `Your Bosla sign-in verification code is ${code}. It expires in 10 minutes. If you didn't request this, ignore this message.`,
       });
       return true;
     } catch (err) {
@@ -138,8 +138,8 @@ export class SmsService {
         // so the caller sends Arabic, the platform's primary language.
         body:
           (locale === 'ar'
-            ? `لقد بدأت الإجابة على استبيان RIO ولكن لم تُكمله. لم تُحفظ إجاباتك السابقة. أكمله من هنا:\n`
-            : `You started a RIO survey but did not submit it. Earlier answers were not saved. Finish it here:\n`) +
+            ? `بدأت الإجابة عن استبيان في بوصلة ولم ترسل إجابتك. لم تُحفظ إجاباتك السابقة. أكمل الاستبيان هنا:\n`
+            : `You started a Bosla survey but did not submit it. Earlier answers were not saved. Finish it here:\n`) +
           publicUrl,
       });
       return true;

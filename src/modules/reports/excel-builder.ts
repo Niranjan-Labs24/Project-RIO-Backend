@@ -159,7 +159,7 @@ export async function renderReportExcel(
   locale: SupportedLocale = "en",
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = "RIO";
+  wb.creator = "Bosla";
   wb.created = new Date();
 
   // The sheet every detail sheet links back to, named in the report's language.
