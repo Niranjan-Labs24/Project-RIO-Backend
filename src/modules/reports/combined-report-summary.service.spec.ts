@@ -57,6 +57,32 @@ describe("CombinedReportSummaryService", () => {
     );
   }
 
+  it("offers only documents switched into the combined report (UAT PRI-03)", async () => {
+    const doc = (id: string, included: boolean) => ({
+      id,
+      title: id,
+      sourceReferenceId: null,
+      documentType: "report",
+      linkedDomainId: null,
+      linkedNeedId: null,
+      isIncludedInCombinedReport: included,
+      summaries: [{ id: `sum-${id}` }],
+    });
+    mockTenant.study.findFirst.mockResolvedValue({
+      id: "s1",
+      title: "Study",
+      cycleNumber: 1,
+      org: { name: "Org", region: [] },
+      methodologyVersion: null,
+      studyGovernorates: [],
+      evidenceDocuments: [doc("kept", true), doc("excluded", false)],
+      aiPrioritySummaries: [],
+      combinedReportSummaries: [],
+    });
+    const ctx = await withContext(() => service.getCombinedReportContext("s1", { localize: false }));
+    expect(ctx.confirmedDocumentSummaries.map((d) => d.documentId)).toEqual(["kept"]);
+  });
+
   describe("generateCombinedSummary prerequisites", () => {
     const scoreSummary = {
       id: "score-1",

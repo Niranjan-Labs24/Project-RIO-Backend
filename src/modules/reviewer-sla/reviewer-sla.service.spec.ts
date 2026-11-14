@@ -64,6 +64,7 @@ function fakeTenant(opts: {
   evidenceDocuments?: FakeEvidenceDocument[];
   needSummaries?: FakeNeedSummary[];
   aiDecisions?: FakeAiDecision[];
+  priorityScores?: Array<{ id: string; needId: string; studyId: string; scoredAt: Date; approvedAt: Date | null; surveyLinkId?: string | null }>;
 }) {
   const tx = {
     survey: { findMany: async () => opts.surveys ?? [] },
@@ -100,6 +101,13 @@ function fakeTenant(opts: {
     needStatementSummary: {
       findMany: async ({ where }: { where: { status: string } }) =>
         (opts.needSummaries ?? []).filter((r) => r.status === where.status),
+    },
+    // Consolidated scores only, newest first — the service's own query.
+    priorityScore: {
+      findMany: async () =>
+        [...(opts.priorityScores ?? [])]
+          .filter((r) => (r.surveyLinkId ?? null) === null)
+          .sort((a, b) => b.scoredAt.getTime() - a.scoredAt.getTime()),
     },
   };
   return {
@@ -271,6 +279,42 @@ describe('ReviewerSlaService', () => {
     expect(summaryAlerts.map((a) => a.id)).toEqual(['sum1', 'sum2']);
     expect(summaryAlerts[0]?.studyTitle).toBe('Water study');
     expect(summaryAlerts[0]?.needId).toBe('n1');
+  });
+
+  it('UAT PRI-01 — the Human Reviewer sees each need whose latest priority score awaits approval', async () => {
+    const t1 = new Date('2026-01-01T00:00:00Z');
+    const t2 = new Date('2026-01-02T00:00:00Z');
+    const svc = makeService(
+      fakeTenant({
+        studies: [{ id: 'st1', title: 'Water study' }],
+        needs: [
+          { id: 'n1', studyId: 'st1', status: 'approved', statement: 'Water need.' } as never,
+          { id: 'n2', studyId: 'st1', status: 'approved', statement: 'Roads need.' } as never,
+        ],
+        priorityScores: [
+          // n1: latest is unapproved -> a to-do.
+          { id: 'p1-new', needId: 'n1', studyId: 'st1', scoredAt: t2, approvedAt: null },
+          { id: 'p1-old', needId: 'n1', studyId: 'st1', scoredAt: t1, approvedAt: t1 },
+          // n2: latest already approved -> nothing to do.
+          { id: 'p2', needId: 'n2', studyId: 'st1', scoredAt: t2, approvedAt: t2 },
+        ],
+      }),
+    );
+    const alerts = await orgContext.run(
+      { requestId: 'r', actorId: 'me', role: 'human_reviewer' },
+      () => svc.listAlerts(),
+    );
+    const priority = alerts.filter((a) => a.type === 'priority_approval');
+    expect(priority.map((a) => a.id)).toEqual(['p1-new']);
+    expect(priority[0]?.needId).toBe('n1');
+    expect(priority[0]?.studyTitle).toBe('Water study');
+
+    // The Data Analyst cannot approve, so gets no such to-do.
+    const analyst = await orgContext.run(
+      { requestId: 'r', actorId: 'me', role: 'data_analyst' },
+      () => svc.listAlerts(),
+    );
+    expect(analyst.some((a) => a.type === 'priority_approval')).toBe(false);
   });
 
   it('RIO-AI-003 — summary alerts carry no SLA clock, so they cannot breach', async () => {

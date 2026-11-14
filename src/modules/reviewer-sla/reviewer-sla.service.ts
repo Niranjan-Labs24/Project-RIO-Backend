@@ -44,7 +44,7 @@ export class ReviewerSlaService {
 
   async listAlerts(): Promise<SlaAlert[]> {
     const role = getOrgStore()?.role;
-    const [surveyAlerts, reportAlerts, evidenceAlerts, summaryAlerts, classificationAlerts] = await Promise.all([
+    const [surveyAlerts, reportAlerts, evidenceAlerts, summaryAlerts, classificationAlerts, priorityAlerts] = await Promise.all([
       can(role, "surveyBuilder", "approve")
         ? this.listSurveyApprovalAlerts()
         : this.listOwnSurveyStatusAlerts(),
@@ -77,12 +77,18 @@ export class ReviewerSlaService {
         : can(role, "aiReview", "write")
           ? this.listAiClassificationDecidedAlerts()
           : Promise.resolve([]),
+      // UAT PRI-01: priority scores awaiting sign-off reach the Human
+      // Reviewer — priorityOverride:approve is exactly who the priority page
+      // offers Approve / Override to.
+      can(role, "priorityOverride", "approve")
+        ? this.listPendingPriorityApprovalAlerts()
+        : Promise.resolve([]),
     ]);
     // Each list is already sorted per its own convention (oldest-first for
     // a still-open queue, newest-first for already-resolved items) —
     // interleave both same-convention lists together rather than imposing
     // one global sort that would mix the two meanings.
-    return [...surveyAlerts, ...reportAlerts, ...evidenceAlerts, ...summaryAlerts, ...classificationAlerts].sort((a, b) => {
+    return [...surveyAlerts, ...reportAlerts, ...evidenceAlerts, ...summaryAlerts, ...classificationAlerts, ...priorityAlerts].sort((a, b) => {
       const aTime = new Date(a.createdAt).getTime();
       const bTime = new Date(b.createdAt).getTime();
       // Not folding priorityScoring:create into this flag: data_analyst
@@ -97,7 +103,8 @@ export class ReviewerSlaService {
       const pendingQueue =
         can(role, "surveyBuilder", "approve") ||
         can(role, "reportsDashboards", "approve") ||
-        can(role, "aiReview", "approve");
+        can(role, "aiReview", "approve") ||
+        can(role, "priorityOverride", "approve");
       return pendingQueue ? aTime - bTime : bTime - aTime;
     });
   }
@@ -249,6 +256,8 @@ export class ReviewerSlaService {
         // comment), so this can't always resolve to a real Study title; the
         // Report's own title is always meaningful either way.
         studyTitle: report.title,
+        // UAT GEN-04: the screen shows the type name in the reader's language.
+        reportType: report.reportType,
         needStatement: report.studyId ? (studyById.get(report.studyId)?.title ?? null) : null,
         touchpoint: "report_approval",
         createdAt: confirmedAt.toISOString(),
@@ -286,6 +295,8 @@ export class ReviewerSlaService {
         surveyId: null,
         reportId: report.id,
         studyTitle: report.title,
+        // UAT GEN-04: the screen shows the type name in the reader's language.
+        reportType: report.reportType,
         needStatement: null,
         touchpoint: isApproved ? "report_released" : "report_rejected",
         createdAt: resolvedAt.toISOString(),
@@ -395,6 +406,48 @@ export class ReviewerSlaService {
       dueAt: row.generatedAt.toISOString(),
       status: "pending" as const,
     }));
+  }
+
+  // Reviewer-facing (UAT PRI-01): each Need's latest consolidated priority
+  // score that nobody has approved yet. Only the latest counts — an older
+  // unapproved score superseded by a recalculation is not a to-do.
+  private async listPendingPriorityApprovalAlerts(): Promise<SlaAlert[]> {
+    const { scores, needs, studies } = await this.tenant.runInOrgContext(async (tx) => {
+      const scores = await tx.priorityScore.findMany({
+        where: { surveyLinkId: null },
+        orderBy: { scoredAt: "desc" },
+        select: { id: true, needId: true, studyId: true, scoredAt: true, approvedAt: true },
+      });
+      const latest = new Map<string, (typeof scores)[number]>();
+      for (const row of scores) if (!latest.has(row.needId)) latest.set(row.needId, row);
+      const pending = [...latest.values()].filter((row) => row.approvedAt === null);
+      const needRows = await tx.need.findMany({
+        where: { id: { in: pending.map((row) => row.needId) } },
+        select: { id: true, statement: true, title: true },
+      });
+      const studyRows = await tx.study.findMany({
+        where: { id: { in: Array.from(new Set(pending.map((row) => row.studyId))) } },
+      });
+      return { scores: pending, needs: needRows, studies: studyRows };
+    });
+    const needById = new Map(needs.map((n) => [n.id, n]));
+    const studyById = new Map(studies.map((s) => [s.id, s]));
+    return scores
+      .sort((a, b) => a.scoredAt.getTime() - b.scoredAt.getTime())
+      .map((row) => ({
+        id: row.id,
+        type: "priority_approval" as const,
+        needId: row.needId,
+        studyId: row.studyId,
+        surveyId: null,
+        reportId: null,
+        studyTitle: studyById.get(row.studyId)?.title ?? row.studyId,
+        needStatement: needById.get(row.needId)?.title || needById.get(row.needId)?.statement || null,
+        touchpoint: "priority_approval",
+        createdAt: row.scoredAt.toISOString(),
+        dueAt: row.scoredAt.toISOString(),
+        status: "pending" as const,
+      }));
   }
 
   // Reviewer-facing: Needs that just finished automatic AI classification

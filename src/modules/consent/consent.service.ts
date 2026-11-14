@@ -246,15 +246,21 @@ export class ConsentService {
   }
 
   /**
-   * Revise a version that has not gone live yet. A published version is
-   * immutable — editing legal text under an acceptance already filed against
-   * it would silently change what those users agreed to, which is the exact
-   * failure the client's "consent record tied to the version active when they
-   * consented" requirement rules out. Supersede it with a new draft instead.
+   * Revise a version that is still a draft. A published version is immutable:
+   * editing legal text under an acceptance already filed against it would
+   * silently change what those users agreed to, which is the exact failure the
+   * client's "consent record tied to the version active when they consented"
+   * requirement rules out. Supersede it with a new draft instead.
    *
-   * Editing something already approved (or awaiting review) invalidates that
-   * review and returns it to draft: the reviewer signed off on wording, not
-   * on a row id.
+   * UAT POL-02: content is also locked once it has been submitted for review
+   * or approved. The System Admin can only publish an approved version, never
+   * change its wording, so what goes live is always exactly what the System
+   * Reviewer signed off. Any change goes through a new version and a new
+   * review. A rejected version is back in `draft` and stays editable.
+   *
+   * The reviewer's fields are kept on a draft edit (UAT POL-03): after a
+   * rejection the System Admin needs the reason in front of them while
+   * revising. The next review overwrites them.
    */
   async updateDraft(
     id: string,
@@ -268,6 +274,17 @@ export class ConsentService {
           code: 'CONSENT_POLICY_PUBLISHED',
           message:
             'A published policy version can no longer be edited. Create a new version instead — existing consents stay tied to the version they were given against.',
+        },
+      });
+    }
+    if (existing.status !== 'draft') {
+      throw new ConflictException({
+        error: {
+          code: 'CONSENT_POLICY_LOCKED',
+          message:
+            existing.status === 'approved'
+              ? 'An approved policy version is locked: it can only be published as approved. To change the wording, publish it and create a new version for review.'
+              : 'This version is awaiting the System Reviewer and is locked until the review is done.',
         },
       });
     }
@@ -298,12 +315,8 @@ export class ConsentService {
           version,
           text,
           textAr,
-          // Any content change re-opens the gate, exactly as
-          // MethodologyConfigService.update() does.
-          status: 'draft',
-          reviewedBy: null,
-          reviewedAt: null,
-          reviewNotes: null,
+          // Only drafts reach here (see the lock above), so the status is
+          // unchanged and the last review, a rejection, stays readable.
           updatedBy: actor,
         },
       });
@@ -330,9 +343,6 @@ export class ConsentService {
         before: existing.textAr ? `${existing.textAr.length} characters` : 'not provided',
         after: row.textAr ? `${row.textAr.length} characters` : 'not provided',
       });
-    }
-    if (row.status !== existing.status) {
-      changes.push({ field: 'Status', before: existing.status, after: row.status });
     }
     await this.audit.record({
       action: 'edit',

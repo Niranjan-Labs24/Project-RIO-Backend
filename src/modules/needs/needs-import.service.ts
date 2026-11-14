@@ -8,7 +8,7 @@ import { DataCleaningService } from '../data-cleaning/data-cleaning.service';
 import { AiDecisionsService } from '../ai-decisions/ai-decisions.service';
 import { NeedSummaryService } from './need-summary.service';
 import { AiService } from '../ai/ai.service';
-import { parseCsvNeeds, parseExcelNeeds, parsePdfNeeds, parseSurveyDocumentNeeds, type ParsedNeedRow } from './needs-import.parser';
+import { parseCsvNeeds, parseDocxNeeds, parseExcelNeeds, parsePdfNeeds, parseSurveyDocumentNeeds, type ParsedNeedRow } from './needs-import.parser';
 import type { BulkImportNeedsPayload, ImportNeedsResult, PdfPreviewResult } from './needs-import.types';
 import { auditFieldLabel } from '../audit/audit-field-labels';
 
@@ -134,14 +134,18 @@ export class NeedsImportService {
     file: { originalname: string; buffer: Buffer },
   ): Promise<PdfPreviewResult> {
     const ext = extname(file.originalname).toLowerCase();
-    if (ext !== '.pdf') {
+    // UAT NED-08 — a Word (.docx) document is previewed exactly like a PDF.
+    if (ext !== '.pdf' && ext !== '.docx') {
       throw new BadRequestException({
-        error: { code: 'UNSUPPORTED_FILE_TYPE', message: 'Only PDF files can be previewed.' },
+        error: { code: 'UNSUPPORTED_FILE_TYPE', message: 'Only PDF and Word (.docx) files can be previewed.' },
       });
     }
 
     try {
-      const rows = await parsePdfNeeds(file.buffer, this.aiService);
+      const rows =
+        ext === '.docx'
+          ? await parseDocxNeeds(file.buffer, this.aiService)
+          : await parsePdfNeeds(file.buffer, this.aiService);
       return {
         totalExtracted: rows.length,
         needs: rows.map((r, idx) => ({
@@ -155,8 +159,13 @@ export class NeedsImportService {
     } catch (err: unknown) {
       throw new BadRequestException({
         error: {
-          code: 'PDF_PARSING_FAILED',
-          message: err instanceof Error ? err.message : 'Failed to parse PDF document.',
+          code: ext === '.docx' ? 'DOCX_PARSING_FAILED' : 'PDF_PARSING_FAILED',
+          message:
+            err instanceof Error
+              ? err.message
+              : ext === '.docx'
+                ? 'Failed to parse the Word document.'
+                : 'Failed to parse PDF document.',
         },
       });
     }

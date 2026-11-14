@@ -43,17 +43,6 @@ export class SharingService {
     return admin?.email ?? null;
   }
 
-  // The email templates' surrounding copy is Arabic, but a study title or
-  // organisation name is free text with no stored Arabic of its own (unlike
-  // Question Bank master data) — resolved live here the same way
-  // PublicSurveysService.shareLinkByEmail does for the Need title, so the
-  // email doesn't read as Arabic wrapped around untranslated English
-  // (client-reported: study/org names stayed English in the decided email).
-  private async translateForEmail(text: string): Promise<string> {
-    const { translatedText } = await this.translation.translate(text, "ar");
-    return translatedText;
-  }
-
   async create(payload: CreateSharingRequestPayload): Promise<SharingRequest> {
     const requestingOrgId = requireOrgId();
     const requestedBy = requireActor();
@@ -119,10 +108,8 @@ export class SharingService {
     // must never undo the request that was already created.
     const ownerAdminEmail = await this.orgAdminEmail(payload.ownerOrgId);
     if (ownerAdminEmail) {
-      const [studyTitleAr, requestingOrgNameAr] = await Promise.all([
-        this.translateForEmail(study.title),
-        this.translateForEmail(requestingOrgName),
-      ]);
+      // UAT GEN-03 — names exactly as entered, in emails too.
+      const [studyTitleAr, requestingOrgNameAr] = [study.title, requestingOrgName];
       await this.mailer.sendSharingRequestCreated(ownerAdminEmail, {
         entityLabel: `الدراسة "${studyTitleAr}"`,
         otherOrgName: requestingOrgNameAr,
@@ -369,10 +356,8 @@ export class SharingService {
     // RIO-FR-014 (client Q28) — the requester learns the outcome.
     const requesterAdminEmail = await this.orgAdminEmail(row.requestingOrgId);
     if (requesterAdminEmail) {
-      const [studyTitleAr, ownerOrgNameAr] = await Promise.all([
-        this.translateForEmail(studyTitle),
-        this.translateForEmail(ownerOrgName),
-      ]);
+      // UAT GEN-03 — names exactly as entered, in emails too.
+      const [studyTitleAr, ownerOrgNameAr] = [studyTitle, ownerOrgName];
       await this.mailer.sendSharingRequestDecided(requesterAdminEmail, {
         entityLabel: `الدراسة "${studyTitleAr}"`,
         otherOrgName: ownerOrgNameAr,

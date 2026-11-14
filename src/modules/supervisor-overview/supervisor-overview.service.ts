@@ -64,6 +64,8 @@ export class SupervisorOverviewService {
         organizationName: org.name,
         activeStudyTitle: activeStudy?.title ?? null,
         latestReportTitle: latestReport?.title ?? null,
+        // UAT GEN-04: lets the screen show the type name in the reader's language.
+        latestReportType: latestReport?.reportType ?? null,
         sharingStatus: sharingRequest?.status ?? null,
         lastActivity: lastStudyActivity.toISOString(),
       };

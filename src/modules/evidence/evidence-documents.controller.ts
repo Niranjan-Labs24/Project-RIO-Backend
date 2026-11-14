@@ -74,7 +74,8 @@ export class EvidenceDocumentsController {
     // with placeholder text. The column is NOT NULL, so an omitted one is
     // stored as an empty string and every screen that shows it already
     // treats blank as "no reference".
-    if (!body.title || !body.documentType || !body.collectedDate) {
+    // Blank-only values count as missing (UAT NED-03).
+    if (!body.title?.trim() || !body.documentType?.trim() || !body.collectedDate?.trim()) {
       throw new BadRequestException({
         error: { code: "MISSING_FIELDS", message: "Title, documentType and collectedDate are required." },
       });

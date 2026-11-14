@@ -1187,7 +1187,7 @@ function renderPages(
   drawPageFrame(pdf);
   pdf.y = TOP;
   pdf.anchor(CONTENTS_ANCHOR);
-  pdf.text(LEFT, 9, true, T('RIO PLATFORM — NATIONAL COUNCIL FOR NGO PARTNERSHIPS'), ACCENT);
+  pdf.text(LEFT, 9, true, T('BOSLA PLATFORM — NATIONAL COUNCIL FOR NGO PARTNERSHIPS'), ACCENT);
 
   // Page badge + report ID pinned top-right, drawn against the eyebrow
   // line's y rather than the left column's flow below — text() positions
@@ -1374,7 +1374,7 @@ function renderPages(
   renderKpiTiles(pdf, [
     { label: T('Active'), value: orgHealth.active },
     { label: T('Inactive'), value: orgHealth.inactive },
-    { label: (PDF_LOCALE === 'ar' ? `خاملة (${orgHealth.dormantDays}+ يومًا)` : `Dormant (${orgHealth.dormantDays}+ days)`), value: orgHealth.dormant },
+    { label: (PDF_LOCALE === 'ar' ? `غير نشطة (${orgHealth.dormantDays}+ يومًا)` : `Dormant (${orgHealth.dormantDays}+ days)`), value: orgHealth.dormant },
   ]);
   pdf.y += 8;
   renderNeedsAttention(pdf, orgHealth.needsAttention, orgHealth.active, locale);

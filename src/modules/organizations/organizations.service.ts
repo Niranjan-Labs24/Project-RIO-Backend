@@ -17,8 +17,9 @@ import { GeographyService } from '../geography/geography.service';
 import { NicRegistryService } from '../nic-registry/nic-registry.service';
 import { auditFieldLabel } from '../audit/audit-field-labels';
 import { toSaudiMobileE164 } from '../../common/validation/saudi-mobile';
-import type {
-  CreateOrganizationPayload, Organization, OrganizationSummary, OrgRow, UpdateOrganizationPayload,
+import {
+  organizationLifecycleStatus,
+  type CreateOrganizationPayload, type Organization, type OrganizationSummary, type OrgRow, type UpdateOrganizationPayload,
 } from './organizations.types';
 
 const DIFF_FIELDS = [
@@ -340,8 +341,10 @@ export class OrganizationsService {
     );
     const responseCountByOrgId = new Map(responseCounts.map((p) => [p.orgId, p._count._all]));
 
+    const lastSignInByOrgId = await this.lastSignInByOrgId(typedRows.map((r) => r.id));
+
     return typedRows.map((r) => ({
-      ...this.toOrganization(this.toOrgRow(r)),
+      ...this.withLifecycle(this.toOrganization(this.toOrgRow(r)), lastSignInByOrgId.get(r.id) ?? null),
       memberCount: r._count.users,
       studyCount: r._count.studies,
       surveyCount: r._count.surveys,
@@ -379,14 +382,42 @@ export class OrganizationsService {
       organizationId: row.id,
     });
 
+    const lastSignIn = (await this.lastSignInByOrgId([row.id])).get(row.id) ?? null;
+
     return {
-      ...this.toOrganization(this.toOrgRow(row)),
+      ...this.withLifecycle(this.toOrganization(this.toOrgRow(row)), lastSignIn),
       memberCount: row._count.users,
       studyCount: row._count.studies,
       surveyCount: row._count.surveys,
       reportCount: row._count.reports,
       ngoAdminName: row.users[0]?.name ?? null,
       ngoAdminEmail: row.users[0]?.email ?? null,
+    };
+  }
+
+  // UAT ORG-10 — latest sign-in per organisation, for the "inactive"
+  // (approved but never used) status. One grouped query, not one per org.
+  private async lastSignInByOrgId(orgIds: string[]): Promise<Map<string, string>> {
+    if (orgIds.length === 0) return new Map();
+    const rows = await this.tenant.runAsSupervisor((tx) =>
+      tx.user.groupBy({
+        by: ['orgId'],
+        where: { orgId: { in: orgIds }, lastLoginAt: { not: null } },
+        _max: { lastLoginAt: true },
+      }),
+    );
+    const out = new Map<string, string>();
+    for (const r of rows) {
+      if (r._max.lastLoginAt) out.set(r.orgId, r._max.lastLoginAt.toISOString());
+    }
+    return out;
+  }
+
+  private withLifecycle<T extends Organization>(org: T, lastSignInAt: string | null) {
+    return {
+      ...org,
+      lastSignInAt,
+      lifecycleStatus: organizationLifecycleStatus({ ...org, lastSignInAt }),
     };
   }
 

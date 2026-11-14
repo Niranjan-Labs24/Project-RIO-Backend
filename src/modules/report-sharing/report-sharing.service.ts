@@ -15,12 +15,20 @@ import { assertShareable, NOT_INTERNAL_ONLY } from "../reports/core-needs/intern
 import type { SharingStatus } from "../sharing/sharing.types";
 import type {
   CreateReportSharingRequestPayload, DecideReportSharingRequestPayload, OrgLookupResult,
-  ReportCatalogItem, ReportLookupResult, ReportSharingRequest, ReportSharingRequestRow, SharedReportSnapshot,
+  PlaceLabel, ReportCatalogItem, ReportFinderFilters, ReportFinderResult, ReportLookupResult, ReportSharingRequest, ReportSharingRequestRow, SharedReportSnapshot,
 } from "./report-sharing.types";
 
 // A ceiling, not paging: the catalog is searched and filtered client-side,
 // and released reports across every organization stay in the hundreds.
 const CATALOG_LIMIT = 500;
+
+// A report is discoverable by other organisations when it says so, or — with
+// no override — when its organisation lists reports by default (the default
+// is on). Shared by the catalog and the report finder (UAT SHR-01) so an
+// organisation's opt-out applies to both.
+const CATALOG_VISIBLE = {
+  OR: [{ catalogVisible: true }, { catalogVisible: null, org: { catalogDefaultVisible: true } }],
+} satisfies Prisma.ReportWhereInput;
 
 const SHARING_STATUSES: SharingStatus[] = ["pending", "approved", "rejected", "expired", "withdrawn"];
 
@@ -58,14 +66,6 @@ export class ReportSharingService {
       tx.user.findFirst({ where: { orgId, roleId: "role_ngo_admin" }, select: { email: true } }),
     );
     return admin?.email ?? null;
-  }
-
-  // Mirrors SharingService.translateForEmail: a report title / org name is
-  // free text with no stored Arabic, so it's resolved live — otherwise the
-  // Arabic email reads as Arabic wrapped around untranslated English.
-  private async translateForEmail(text: string): Promise<string> {
-    const { translatedText } = await this.translation.translate(text, "ar");
-    return translatedText;
   }
 
   async create(payload: CreateReportSharingRequestPayload): Promise<ReportSharingRequest> {
@@ -143,10 +143,8 @@ export class ReportSharingService {
     // RIO-FR-014 (client Q28) — best-effort, mirrors SharingService.create.
     const ownerAdminEmail = await this.orgAdminEmail(payload.ownerOrgId);
     if (ownerAdminEmail) {
-      const [reportTitleAr, requestingOrgNameAr] = await Promise.all([
-        this.translateForEmail(report.title),
-        this.translateForEmail(requestingOrgName),
-      ]);
+      // UAT GEN-03 — names exactly as entered, in emails too.
+      const [reportTitleAr, requestingOrgNameAr] = [report.title, requestingOrgName];
       await this.mailer.sendSharingRequestCreated(ownerAdminEmail, {
         entityLabel: `التقرير "${reportTitleAr}"`,
         otherOrgName: requestingOrgNameAr,
@@ -378,7 +376,11 @@ export class ReportSharingService {
           ...(query ? { name: { contains: query, mode: "insensitive" } } : {}),
         },
         orderBy: { name: "asc" },
-        take: 20,
+        // UAT SHR-01 — the full list (it was cut at 20, so most entities could
+        // never be picked). The dialog filters it in the browser on both the
+        // stored name and the Arabic name it displays, which the server can't
+        // search because organisation names are stored in one language.
+        take: query ? 50 : 1000,
       }),
     );
     return rows.map((r) => ({ id: r.id, name: r.name }));
@@ -400,9 +402,7 @@ export class ReportSharingService {
             orgId: { not: orgId },
             status: { in: EXPORTABLE_STATUSES },
             org: { isActive: true },
-            // Listed when the report says so, or — with no override — when its
-            // organisation lists reports by default (the default is on).
-            OR: [{ catalogVisible: true }, { catalogVisible: null, org: { catalogDefaultVisible: true } }],
+            ...CATALOG_VISIBLE,
             // Never listed: village-level Core Needs Reports (internal only).
             ...NOT_INTERNAL_ONLY,
           },
@@ -469,6 +469,84 @@ export class ReportSharingService {
 
   // Only an org's own APPROVED reports are eligible to be requested for
   // sharing (RIO-FR-014's "sharing only after approval").
+  /**
+   * UAT SHR-01 — find a report to request by WHERE and WHAT it covers rather
+   * than by knowing the owning entity's name first: region → governorate →
+   * centre, and domain → sub-domain, matched on the report's study. Same
+   * eligibility as lookupReportsForOrg (released/archived, not internal-only),
+   * across every other active organisation.
+   */
+  async findReports(filters: ReportFinderFilters): Promise<ReportFinderResult[]> {
+    const orgId = requireOrgId();
+    const uuid = (v: string | undefined) =>
+      v && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) ? v : undefined;
+    const regionId = uuid(filters.regionId);
+    const governorateId = uuid(filters.governorateId);
+    const centerId = uuid(filters.centerId);
+    const domain = filters.domain?.trim() || undefined;
+    const subDomain = filters.subDomain?.trim() || undefined;
+
+    const study: Prisma.StudyWhereInput[] = [];
+    if (centerId) study.push({ studyCenters: { some: { centerId } } });
+    else if (governorateId) study.push({ studyGovernorates: { some: { governorateId } } });
+    else if (regionId) study.push({ studyGovernorates: { some: { governorate: { regionId } } } });
+    if (subDomain) {
+      study.push({ needs: { some: { needDomains: { some: { subDomain, ...(domain ? { domain } : {}) } } } } });
+    } else if (domain) {
+      study.push({ OR: [{ targetSector: domain }, { needs: { some: { needDomains: { some: { domain } } } } }] });
+    }
+
+    const rows = await this.tenant.runAsSupervisor((tx) =>
+      tx.report.findMany({
+        where: {
+          orgId: { not: orgId },
+          org: { isActive: true },
+          status: { in: EXPORTABLE_STATUSES },
+          ...CATALOG_VISIBLE,
+          ...NOT_INTERNAL_ONLY,
+          ...(study.length > 0 ? { study: { AND: study } } : {}),
+        },
+        orderBy: { generatedAt: "desc" },
+        take: 100,
+        select: {
+          id: true,
+          title: true,
+          reportType: true,
+          orgId: true,
+          org: { select: { name: true } },
+          study: {
+            select: {
+              title: true,
+              targetSector: true,
+              studyGovernorates: {
+                select: {
+                  governorate: {
+                    select: { name: true, nameAr: true, region: { select: { name: true, nameAr: true } } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      }),
+    );
+    const unique = (list: PlaceLabel[]) => [...new Map(list.map((p) => [p.name, p])).values()];
+    return rows.map((r) => {
+      const govs = r.study?.studyGovernorates.map((g) => g.governorate) ?? [];
+      return {
+        id: r.id,
+        title: r.title,
+        reportType: r.reportType,
+        orgId: r.orgId,
+        orgName: r.org.name,
+        studyTitle: r.study?.title ?? null,
+        regions: unique(govs.map((g) => ({ name: g.region.name, nameAr: g.region.nameAr }))),
+        governorates: unique(govs.map((g) => ({ name: g.name, nameAr: g.nameAr }))),
+        domain: r.study?.targetSector ?? null,
+      };
+    });
+  }
+
   async lookupReportsForOrg(ownerOrgId: string): Promise<ReportLookupResult[]> {
     const rows = await this.tenant.runAsSupervisor((tx) =>
       tx.report.findMany({
@@ -568,10 +646,8 @@ export class ReportSharingService {
     // RIO-FR-014 (client Q28) — mirrors SharingService.decide.
     const requesterAdminEmail = await this.orgAdminEmail(row.requestingOrgId);
     if (requesterAdminEmail) {
-      const [reportTitleAr, ownerOrgNameAr] = await Promise.all([
-        this.translateForEmail(reportTitle),
-        this.translateForEmail(ownerOrgName),
-      ]);
+      // UAT GEN-03 — names exactly as entered, in emails too.
+      const [reportTitleAr, ownerOrgNameAr] = [reportTitle, ownerOrgName];
       await this.mailer.sendSharingRequestDecided(requesterAdminEmail, {
         entityLabel: `التقرير "${reportTitleAr}"`,
         otherOrgName: ownerOrgNameAr,

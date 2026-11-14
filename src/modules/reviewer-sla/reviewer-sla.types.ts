@@ -76,7 +76,12 @@ export type SlaAlertType =
   //    sitting in DRAFT awaiting confirmation — org-wide, shown to whoever
   //    holds aiReview:approve (human_reviewer). Deliberately has NO SLA clock:
   //    see listPendingNeedSummaryAlerts.
-  | "need_summary_approval";
+  | "need_summary_approval"
+  //  - priority_approval: a computed priority score (the latest consolidated
+  //    one for a Need) still awaiting sign-off (UAT PRI-01) — org-wide, shown
+  //    to whoever holds priorityOverride:approve (human_reviewer), the only
+  //    role offered the Approve / Override buttons. No SLA clock.
+  | "priority_approval";
 
 export interface SlaAlert {
   id: string;
@@ -86,6 +91,8 @@ export interface SlaAlert {
   surveyId: string | null;
   reportId: string | null;
   studyTitle: string;
+  /** report_* alerts only: the report's type code, for a localized title. */
+  reportType?: string;
   needStatement: string | null;
   touchpoint: string;
   createdAt: string;

@@ -21,7 +21,7 @@ export interface NeedClassificationResponse {
  */
 export const NEED_CLASSIFICATION_TASK: AiTask<NeedClassificationResponse> = {
   name: 'need-classification',
-  promptVersion: 'need-classification-v1',
+  promptVersion: 'need-classification-v2',
   model: 'gemini-2.5-flash',
   modelVersion: 'v1',
   temperature: 0,
@@ -31,6 +31,7 @@ export const NEED_CLASSIFICATION_TASK: AiTask<NeedClassificationResponse> = {
 If it does, set classified to true and pick exactly one domain and one sub-domain from the list by their exact "name" — never invent one that is not in the list.
 Whenever classified is true you MUST also return confidence as a number between 0 and 1 expressing how certain you are of that domain/sub-domain pick (1 = certain). Never omit it and never substitute a percentage out of 100.
 If the statement is gibberish, empty of real content, too vague, or does not clearly relate to any listed domain, set classified to false and leave domain/subDomain out — do not guess or pick the closest-sounding domain just to fill the field.
+The rationale explains, in one or two plain sentences, why the need belongs to that domain and sub-domain. Write it about the need itself — never describe translating the statement, its language, or what it "translates to".
 Return valid JSON only.`,
   responseSchema: {
     type: 'OBJECT',
@@ -50,3 +51,23 @@ Return valid JSON only.`,
     required: ['classified', 'confidence', 'rationale'],
   },
 };
+
+/**
+ * UAT GEN-15: the rationale is read in the UI language of whoever created the
+ * need. Arabic appends a language rule; English keeps the prompt as above.
+ * JSON keys and the domain/sub-domain names stay exactly as listed (they are
+ * matched against the configured list), only the rationale is Arabic.
+ */
+export function needClassificationTaskFor(locale: 'en' | 'ar'): AiTask<NeedClassificationResponse> {
+  if (locale !== 'ar') return NEED_CLASSIFICATION_TASK;
+  return {
+    ...NEED_CLASSIFICATION_TASK,
+    promptVersion: 'need-classification-v2-ar',
+    systemPrompt: `${NEED_CLASSIFICATION_TASK.systemPrompt}
+
+OUTPUT LANGUAGE — ARABIC:
+- Write the rationale in Modern Standard Arabic.
+- Keep "domain" and "subDomain" exactly as their English "name" in the list — never translate them.
+- Keep the JSON keys exactly as the schema names them.`,
+  };
+}

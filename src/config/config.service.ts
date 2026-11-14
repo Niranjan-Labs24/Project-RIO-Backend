@@ -156,7 +156,7 @@ export class ConfigService {
     return this.config.SURVEY_OTP_TWILIO_EMAIL_FROM_ADDRESS;
   }
   get surveyOtpTwilioEmailFromName(): string {
-    return this.config.SURVEY_OTP_TWILIO_EMAIL_FROM_NAME ?? 'RIO';
+    return this.config.SURVEY_OTP_TWILIO_EMAIL_FROM_NAME ?? 'Bosla';
   }
   get surveyOtpSendgridApiKey(): string | undefined {
     return this.config.SURVEY_OTP_SENDGRID_API_KEY;
@@ -165,7 +165,7 @@ export class ConfigService {
     return this.config.SURVEY_OTP_SENDGRID_FROM_ADDRESS;
   }
   get surveyOtpSendgridFromName(): string {
-    return this.config.SURVEY_OTP_SENDGRID_FROM_NAME ?? 'RIO';
+    return this.config.SURVEY_OTP_SENDGRID_FROM_NAME ?? 'Bosla';
   }
   get csrfEnforce(): boolean {
     return this.config.CSRF_ENFORCE;

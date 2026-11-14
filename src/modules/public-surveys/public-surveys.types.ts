@@ -80,6 +80,8 @@ export interface SurveyResponseAnswer {
    * free-text/numeric question, which has no fixed option set. */
   answerOptions: string[] | null;
   answer: string | null;
+  /** UAT SVB-07: the respondent's own words when they chose "Other". */
+  otherText?: string | null;
 }
 
 export interface SurveyResponseDetail extends SurveyResponseSummary {
@@ -96,6 +98,8 @@ export interface QuestionResponseRow {
   respondentName: string | null;
   contact: string;
   answer: string | null;
+  /** UAT SVB-07: the respondent's own words when they chose "Other". */
+  otherText?: string | null;
   submittedAt: string;
 }
 

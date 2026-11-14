@@ -5,7 +5,8 @@ type Fn = ReturnType<typeof vi.fn>;
 /**
  * A stand-in for a Prisma client / transaction: every `tx.model.method` is a
  * cached vi.fn() created on first use, so a spec only stubs what it reads.
- * `findMany` resolves to [] and `count` to 0 until a spec says otherwise.
+ * `findMany` and `groupBy` resolve to [] and `count` to 0 until a spec says
+ * otherwise.
  * Typed loosely on purpose — indexing can never be undefined here.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -28,7 +29,11 @@ export function makeFakeTx(extras: Record<string, unknown> = {}): FakeTx {
                   vi
                     .fn()
                     .mockResolvedValue(
-                      method === 'findMany' ? [] : method === 'count' ? 0 : undefined,
+                      method === 'findMany' || method === 'groupBy'
+                        ? []
+                        : method === 'count'
+                          ? 0
+                          : undefined,
                     ),
                 );
               }

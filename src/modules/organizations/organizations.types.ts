@@ -48,6 +48,37 @@ export interface OrganizationSummary extends Organization {
   ngoAdminName?: string | null;
   ngoAdminEmail?: string | null;
   deactivationReason?: string | null;
+  /** Most recent sign-in by any user of this organisation; null = never. */
+  lastSignInAt?: string | null;
+  /** UAT ORG-10 — see organizationLifecycleStatus(). */
+  lifecycleStatus?: OrganizationLifecycleStatus;
+}
+
+/**
+ * UAT ORG-10 — the four organisation statuses shown to System Admin and
+ * System Reviewer, each with one clear meaning and one next action:
+ *
+ * - `pending_approval` — self-registered, never approved. Next: System
+ *   Reviewer approves (this issues the first credentials).
+ * - `suspended` — was approved, then stopped by System Admin (deactivated).
+ *   Nobody in it can sign in. Next: System Admin reactivates.
+ * - `inactive` — approved and enabled, but nobody from the organisation has
+ *   signed in yet. Nothing to approve or activate: the entity signs in with
+ *   the temporary password it was emailed (an invite can be resent).
+ * - `active` — approved, enabled, and in use.
+ *
+ * Derived, not stored: all three inputs already exist, so there's no new
+ * column to keep in sync.
+ */
+export type OrganizationLifecycleStatus = 'active' | 'inactive' | 'pending_approval' | 'suspended';
+
+export function organizationLifecycleStatus(org: {
+  isActive: boolean;
+  approvedAt: Date | string | null;
+  lastSignInAt: Date | string | null;
+}): OrganizationLifecycleStatus {
+  if (!org.isActive) return org.approvedAt ? 'suspended' : 'pending_approval';
+  return org.lastSignInAt ? 'active' : 'inactive';
 }
 
 export interface UpdateOrganizationStatusPayload {

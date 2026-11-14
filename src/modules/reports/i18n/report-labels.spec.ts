@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  fillFixedSentences,
   hasLabel,
   keyForEnglish,
   label,
@@ -177,5 +178,19 @@ describe("numeric phrases", () => {
 
   it("does nothing in English", () => {
     expect(localizeKnownLabel("38 valid", "en")).toBe("38 valid");
+  });
+});
+
+describe('fillFixedSentences — short templates', () => {
+  it('leaves prose that only starts like a short template untouched', () => {
+    expect(fillFixedSentences('Session details and outcomes', 'ar')).toBe('Session details and outcomes');
+    expect(fillFixedSentences('12 of 30 answered correctly by the respondents', 'ar')).toBe(
+      '12 of 30 answered correctly by the respondents',
+    );
+  });
+
+  it('still localizes the whole-string forms', () => {
+    expect(fillFixedSentences('Session ABC-12', 'ar')).toBe('جلسة ABC-12');
+    expect(fillFixedSentences('12 of 30 answered', 'ar')).toBe('أُجيب عن 12 من 30');
   });
 });

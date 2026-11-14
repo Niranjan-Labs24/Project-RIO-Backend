@@ -14,7 +14,6 @@ import {
   type ResetPasswordDto, type SignupDto, type VerifyLoginOtpDto, type VerifyRegistrationNumberDto,
   type VerifyRegistrationNumberView,
 } from './auth.contract';
-import { NicRegistryService } from '../nic-registry/nic-registry.service';
 import { AuthService } from './auth.service';
 import type { SessionContext, SignupPendingApprovalView } from './session.types';
 
@@ -23,7 +22,6 @@ export class AuthController {
   constructor(
     private readonly auth: AuthService,
     private readonly config: ConfigService,
-    private readonly nicRegistry: NicRegistryService,
   ) {}
 
   // Open route (no @RequirePermission): this is how a caller obtains a token.
@@ -69,7 +67,8 @@ export class AuthController {
   //
   // 200 with `verified: false` rather than a 4xx: "that number isn't in the
   // registry" is a successful answer to the question the button asks, and the
-  // form renders it as field state, not as a failed request.
+  // form renders it as field state, not as a failed request. The same holds
+  // for "already registered on the platform" (UAT ORG-01).
   @Post('verify-registration-number')
   @Public()
   @RateLimit(20, 3600, { perIp: { limit: 100, windowSeconds: 3600 } })
@@ -78,7 +77,7 @@ export class AuthController {
   async verifyRegistrationNumber(
     @Body(new TypeBoxValidationPipe(VerifyRegistrationNumberBody)) body: VerifyRegistrationNumberDto,
   ): Promise<VerifyRegistrationNumberView> {
-    const { verified, reason } = await this.nicRegistry.check(body.registrationNumber, body.organizationName);
+    const { verified, reason } = await this.auth.verifyRegistrationNumber(body);
     return reason ? { verified, reason } : { verified };
   }
 

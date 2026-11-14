@@ -236,7 +236,7 @@ describe('CitizenService sessions, duplicates and codes', () => {
     // Client decision 2026-09-30: the code goes to the email address, never
     // to the mobile. The mobile is still collected — it is half of the
     // duplicate check — so it must still reach the session unchanged.
-    expect(mailer.sendCitizenOtpEmail).toHaveBeenCalledWith('a@b.test', expect.stringMatching(/^\d{6}$/));
+    expect(mailer.sendCitizenOtpEmail).toHaveBeenCalledWith('a@b.test', expect.stringMatching(/^\d{6}$/), 'en');
     expect(sms.sendOtpCode).not.toHaveBeenCalled();
     expect(sessions.linkChallenge).toHaveBeenCalledWith('org-1', 'sess', {
       id: 'c1',

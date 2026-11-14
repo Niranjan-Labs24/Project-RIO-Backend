@@ -3,6 +3,7 @@ export interface SupervisorOverviewRow {
   organizationName: string;
   activeStudyTitle: string | null;
   latestReportTitle: string | null;
+  latestReportType: string | null;
   sharingStatus: "pending" | "approved" | "rejected" | "expired" | "withdrawn" | null;
   lastActivity: string;
 }

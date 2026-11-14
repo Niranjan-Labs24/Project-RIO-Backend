@@ -78,7 +78,21 @@ export const SubmitResponseBody = registerSchema(
       contactName: T.Optional(T.String({ maxLength: 200 })),
       gender: T.Optional(Gender),
       ageBracket: AgeBracket,
-      answers: T.Record(T.String(), T.Unknown()),
+      // One entry per question, keyed by question id. UAT SVB-07: the free
+      // text typed after choosing "Other" travels next to its answer under
+      // `<question id>:other` (read back by PublicSurveysService). Bounded like
+      // SubmitSurveyBody, as a payload-size guard.
+      answers: T.Record(
+        T.String({ minLength: 1, maxLength: 100 }),
+        T.Union([
+          T.String({ maxLength: 5000 }),
+          T.Number(),
+          T.Boolean(),
+          T.Null(),
+          T.Array(T.String({ maxLength: 5000 }), { maxItems: 200 }),
+        ]),
+        { maxProperties: 500 },
+      ),
       // The area the respondent picked at registration — one of the
       // `locations.options[].value` the resolved survey offered (client,
       // 19 Oct 2026). "Outside these areas" is recorded separately, through

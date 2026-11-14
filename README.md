@@ -144,6 +144,21 @@ pnpm prisma migrate deploy
 This mirrors local dev, where migrations are always applied the same way regardless of whether the
 api process itself runs on the host or in a container.
 
+### Post-deploy data steps
+
+Run after migrations, once per environment, when the release notes call for it.
+
+- **Duplicate queue re-score (UAT DQ-06 / DQ-10, release `fix/uat-bugfixes-nov`).** Duplicate pairs
+  created before the literal-v2 detector stay in the review queue until each need is saved again.
+  This re-scores every pending pair on the needs' own text and dismisses the ones now below their
+  threshold, with a note saying why. Decided pairs are never touched; it is idempotent.
+  ```bash
+  pnpm dq:rescore-duplicates                                     # dry run, read-only: review the counts
+  pnpm dq:rescore-duplicates --apply --reviewer=<sysadmin email> # apply, attributed to that person
+  ```
+  The apply pass writes the scores the dry run computed and stops without dismissing anything if
+  any of them did not land, so its result matches the dry run.
+
 ## Tenant isolation model (AD-1 / AD-15)
 - Every tenant table has `org_id`; PKs default to PG18 `uuidv7()`.
 - The app connects as **cnap_app** (`NOBYPASSRLS`). Tenant tables are `FORCE ROW LEVEL SECURITY`.

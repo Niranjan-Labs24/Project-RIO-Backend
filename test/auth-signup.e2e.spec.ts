@@ -232,6 +232,60 @@ describe('signup -> pending approval -> System Admin approves -> entity logs in'
       expect(res.body).toEqual({ verified: false, reason: 'NOT_FOUND' });
     });
 
+    // UAT ORG-01 — the duplicate check runs at Verify, before the rest of the
+    // form, not only on the final submit.
+    it('reports ALREADY_REGISTERED for a number an organisation already holds', async () => {
+      const tenant = app.get(TenantPrismaService);
+      const taken = await tenant.runAsSupervisor(async (tx) => {
+        const orgs = await tx.organisation.findMany({
+          where: { registrationNumber: { not: null } },
+          select: { registrationNumber: true },
+        });
+        return tx.nicRegistry.findFirst({
+          where: {
+            nicNumber: { in: orgs.map((o) => o.registrationNumber).filter((n): n is string => n !== null) },
+            nameEn: { not: null },
+          },
+          select: { nicNumber: true, nameEn: true },
+        });
+      });
+      if (!taken?.nameEn) throw new Error('No registered organisation with a NIC number to test against.');
+
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/verify-registration-number')
+        .send({ registrationNumber: taken.nicNumber, organizationName: taken.nameEn })
+        .expect(200);
+      expect(res.body).toEqual({ verified: false, reason: 'ALREADY_REGISTERED' });
+
+      // System Admin dialog path: number only, no name.
+      const byNumber = await request(app.getHttpServer())
+        .post('/api/auth/verify-registration-number')
+        .send({ registrationNumber: taken.nicNumber })
+        .expect(200);
+      expect(byNumber.body).toEqual({ verified: false, reason: 'ALREADY_REGISTERED' });
+    });
+
+    it('checks the name before the duplicate, so a wrong name never learns the number is taken', async () => {
+      const tenant = app.get(TenantPrismaService);
+      const taken = await tenant.runAsSupervisor(async (tx) => {
+        const orgs = await tx.organisation.findMany({
+          where: { registrationNumber: { not: null } },
+          select: { registrationNumber: true },
+        });
+        return tx.nicRegistry.findFirst({
+          where: { nicNumber: { in: orgs.map((o) => o.registrationNumber).filter((n): n is string => n !== null) } },
+          select: { nicNumber: true },
+        });
+      });
+      if (!taken) throw new Error('No registered organisation with a NIC number to test against.');
+
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/verify-registration-number')
+        .send({ registrationNumber: taken.nicNumber, organizationName: 'Definitely Not This Entity' })
+        .expect(200);
+      expect(res.body).toEqual({ verified: false, reason: 'NAME_MISMATCH' });
+    });
+
     it('distinguishes a malformed number from an unknown one', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/auth/verify-registration-number')

@@ -225,7 +225,9 @@ describe('ConsentService — the approval gate', () => {
     expect(rejected.reviewNotes).toBe('Clause 4 conflicts with PDPL.');
   });
 
-  it('re-opens the gate when an approved version is edited before publishing', async () => {
+  // UAT POL-02 — after approval the wording is locked: the System Admin can
+  // only publish it, so nothing unreviewed can go live.
+  it('refuses to edit an approved version, so only the approved wording can be published', async () => {
     const { svc } = makeService([
       row({
         id: 'a',
@@ -237,14 +239,36 @@ describe('ConsentService — the approval gate', () => {
       }),
     ]);
 
-    const edited = await asActor(ADMIN_ID, () =>
-      svc.updateDraft('a', { text: 'Reworded after approval' }),
+    await expect(
+      asActor(ADMIN_ID, () => svc.updateDraft('a', { text: 'Reworded after approval' })),
+    ).rejects.toMatchObject({ response: { error: { code: 'CONSENT_POLICY_LOCKED' } } });
+
+    const published = await asActor(ADMIN_ID, () => svc.publishVersion('a'));
+    expect(published.status).toBe('published');
+    expect(published.text).not.toBe('Reworded after approval');
+  });
+
+  it('refuses to edit a version while it is awaiting review', async () => {
+    const { svc } = makeService([row({ id: 'a', version: 'v2', status: 'pending_approval' })]);
+
+    await expect(
+      asActor(ADMIN_ID, () => svc.updateDraft('a', { text: 'Changed mid-review' })),
+    ).rejects.toMatchObject({ response: { error: { code: 'CONSENT_POLICY_LOCKED' } } });
+  });
+
+  // UAT POL-03 — the rejection reason stays on the draft while it is revised.
+  it('keeps the rejection reason visible while the rejected draft is revised', async () => {
+    const { svc } = makeService([row({ id: 'a', version: 'v2', status: 'pending_approval' })]);
+    await asActor(REVIEWER_ID, () => svc.rejectVersion('a', 'Name the retention period.'));
+
+    const revised = await asActor(ADMIN_ID, () =>
+      svc.updateDraft('a', { text: 'Data is kept for 5 years.' }),
     );
 
-    // The reviewer signed off on wording, not on a row id.
-    expect(edited.status).toBe('draft');
-    expect(edited.reviewNotes).toBeNull();
-    expect(edited.reviewedByName).toBeNull();
+    expect(revised.status).toBe('draft');
+    expect(revised.text).toBe('Data is kept for 5 years.');
+    expect(revised.reviewNotes).toBe('Name the retention period.');
+    expect(revised.reviewedAt).not.toBeNull();
   });
 
   it('refuses to edit a published version — supersede it instead', async () => {

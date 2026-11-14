@@ -92,7 +92,7 @@ export const EnvSchema = Type.Object({
   // mailer is "not configured" and signup falls back to the dev-only
   // temp-password reveal.
   RESEND_API_KEY: Type.Optional(Type.String()),
-  MAIL_FROM: Type.String({ default: 'RIO <no-reply@rio.local>' }),
+  MAIL_FROM: Type.String({ default: 'Bosla <no-reply@rio.local>' }),
   // Which email transport MailerService sends through. 'resend' (default)
   // keeps existing environments working unchanged. 'twilio' routes every
   // send method through Twilio's Emails API (POST comms.twilio.com/v1/Emails)
@@ -122,7 +122,7 @@ export const EnvSchema = Type.Object({
   // every send will be rejected the same way Resend's sandbox mode rejects
   // unverified recipients.
   TWILIO_EMAIL_FROM_ADDRESS: Type.String({ default: 'NoReply@impetus.sa' }),
-  TWILIO_EMAIL_FROM_NAME: Type.String({ default: 'RIO' }),
+  TWILIO_EMAIL_FROM_NAME: Type.String({ default: 'Bosla' }),
   // SendGrid Mail Send API (POST api.sendgrid.com/v3/mail/send) — Bearer
   // token auth, a plain API key (starts "SG."), not the SID/Secret Basic-
   // auth pair the two Twilio-branded options above use. FROM/REPLY-TO must
@@ -131,7 +131,7 @@ export const EnvSchema = Type.Object({
   // unverified-sender case.
   SENDGRID_API_KEY: Type.Optional(Type.String()),
   SENDGRID_FROM_ADDRESS: Type.Optional(Type.String()),
-  SENDGRID_FROM_NAME: Type.String({ default: 'RIO' }),
+  SENDGRID_FROM_NAME: Type.String({ default: 'Bosla' }),
   // Survey-OTP-only email account (optional, off by default).
   //
   // The public survey's OTP is the one email the client wants billed to

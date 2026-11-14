@@ -1,5 +1,6 @@
 import { toJson } from '../../common/prisma/json';
 import type { Prisma } from '../../generated/prisma';
+import { requestLocale } from '../../common/locale/request-locale';
 import { BadRequestException, GoneException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomInt } from 'node:crypto';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
@@ -268,7 +269,7 @@ export class CitizenService {
         mobile,
       });
     }
-    const codeSent = await this.mailer.sendCitizenOtpEmail(contact, code);
+    const codeSent = await this.mailer.sendCitizenOtpEmail(contact, code, requestLocale());
     // Dev only: surface the code in the response itself (below) so
     // local/test runs aren't blocked on real mail delivery — never logged
     // (OTPs, raw phone numbers and addresses must never appear in logs;

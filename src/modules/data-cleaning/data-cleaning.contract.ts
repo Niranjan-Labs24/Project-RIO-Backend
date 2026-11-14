@@ -60,6 +60,10 @@ export const ReviewFlagBody = registerSchema(
       // rule set is the case where a future reader needs to know why, and the
       // message for that reads better as a domain error than a schema error.
       note: T.Optional(T.String({ maxLength: 2000 })),
+      // UAT DQ-01 — on accept, the suggestion the reviewer picked (a Center
+      // code) when a village finding lists several. Checked in the service
+      // against that flag's own suggestions.
+      choice: T.Optional(T.String({ minLength: 1, maxLength: 50 })),
     },
     { additionalProperties: false },
   ),

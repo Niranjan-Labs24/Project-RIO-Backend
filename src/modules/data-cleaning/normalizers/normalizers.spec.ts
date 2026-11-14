@@ -420,3 +420,55 @@ describe("matchPlace", () => {
     expect(matchPlace("", opts).flag?.ruleCode).toBe("MISSING_REQUIRED");
   });
 });
+
+// UAT DQ-03 — Arabic village names against the official Arabic names.
+describe("matchPlace — Arabic variants (UAT DQ-03)", () => {
+  const REF: PlaceReference[] = [
+    { code: "0102-001", name: "Al-Uyaynah wa Al-Jubaylah", nameAr: "العيينة والجبيلة", governorate: "Ad-Diriyah" },
+    { code: "0102-002", name: "Al-Uyaynah", nameAr: "العيينة", governorate: "Ad-Diriyah" },
+    { code: "0306-003", name: "Khaybar", nameAr: "خيبر", governorate: "Khaybar" },
+  ];
+  const opts = {
+    field: "village[0]",
+    required: true,
+    reference: REF,
+    acceptThreshold: 0.92,
+    proposeThreshold: 0.75,
+    maxCandidates: 5,
+    ...DK,
+  };
+
+  it("treats the official Arabic name as already standard", () => {
+    expect(matchPlace("العيينة", opts)).toEqual({ value: "0102-002", changed: false, flag: null });
+  });
+
+  it.each([
+    ["ة/ه", "العيينه"],
+    ["no article", "عيينة"],
+    ["أ/ا and ى/ي", "العيينة"],
+  ])("matches a spelling variant (%s) at 100%% to the same center", (_label, input) => {
+    const result = matchPlace(input, opts);
+    expect(result.value).toBe("0102-002");
+    if (result.flag) {
+      expect(result.flag.ruleCode).toBe("VILLAGE_NEAR_MATCH");
+      expect(result.flag.confidence).toBe(1);
+      expect(result.flag.proposedValue).toBe("0102-002");
+    }
+  });
+
+  it("ignores spacing around the conjunction", () => {
+    const result = matchPlace("العيينه و الجبيله", opts);
+    expect(result.value).toBe("0102-001");
+    expect(result.flag?.confidence).toBe(1);
+  });
+
+  it("still matches Latin spellings against the English name", () => {
+    expect(matchPlace("Al-Uyaynah", opts).value).toBe("0102-002");
+    expect(matchPlace("al uyaynah", opts).flag?.confidence).toBe(1);
+  });
+
+  it("lists the one exact match as a selectable suggestion", () => {
+    const detail = matchPlace("العيينه", opts).flag?.detail as { candidates: { code: string }[] };
+    expect(detail.candidates.map((c) => c.code)).toEqual(["0102-002"]);
+  });
+});

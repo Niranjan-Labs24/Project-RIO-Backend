@@ -1,4 +1,5 @@
 import { calculationBasisArabic } from './calculation-basis-ar';
+import { nameMask, withoutNames } from './keep-names';
 import type { SupportedLocale } from '../../translation/translation.types';
 
 // The free-text half of RIO-NFR-007: the prose in a report that nobody has a
@@ -268,6 +269,8 @@ export async function translateReportContent(
     /** Stop STARTING new translations after this long. For the in-app report
      *  view, which must return promptly; a download has no budget here. */
     budgetMs?: number;
+    /** UAT GEN-03 — names as entered; never translated (see keep-names.ts). */
+    keepNames?: readonly string[];
   } = {},
 ): Promise<TranslateContentResult> {
   // No early return for English any more: a report whose narrative was
@@ -293,6 +296,7 @@ export async function translateReportContent(
   // first-generation report can be hundreds of concurrent calls to the AI
   // provider; cache hits are free, but the misses all land at once.
   const results = new Map<string, string>();
+  const names = nameMask(options.keepNames);
   let failed = 0;
   const limit = Math.max(1, options.concurrency ?? 8);
   let cursor = 0;
@@ -315,7 +319,17 @@ export async function translateReportContent(
         results.set(source, fixed);
         continue;
       }
-      const out = await translator.translate(source, locale);
+      // UAT GEN-03 — a study / organisation / person named in the prose keeps
+      // its name exactly; if the translator loses a placeholder, the sentence
+      // stays as written rather than risk a translated name.
+      const masked = names.mask(source);
+      if (masked.count > 0 && !isTranslatable(withoutNames(masked.text), locale)) {
+        results.set(source, source);
+        continue;
+      }
+      const raw = await translator.translate(masked.text, locale);
+      const restored = masked.count > 0 ? names.unmask(source, raw.translatedText) : raw.translatedText;
+      const out = { translatedText: restored ?? source };
       // `unchanged` covers both "already in the target language" and "the
       // provider failed and we fell back to the source" — TranslationService
       // never throws. Only the second is a degradation, and the two are

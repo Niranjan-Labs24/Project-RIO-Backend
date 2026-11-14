@@ -27,24 +27,18 @@ export class TranslationController {
     return this.translation.translate(body.text, body.targetLocale, body.sourceLocale);
   }
 
-  // A whole screen's strings at once (see TranslateBatchBody). Each entry goes
-  // through exactly the same translate() path — same cache, same quality
-  // checks — just in parallel, a few at a time so a large uncached page
-  // doesn't flood the AI provider. Results keep the input order.
+  // A whole screen's strings at once (see TranslateBatchBody), through
+  // translateMany: every cached answer in one query and the misses in a few
+  // batched provider calls, instead of one provider call per string — the
+  // per-string fan-out was the main cost behind UAT GEN-09 ("slow"). Same
+  // cache and quality rules; results keep the input order. AutoTranslate now
+  // sends a screen's strings here passively, so it sits in the same
+  // screen-load tier as the single-string endpoint above.
   @Post('batch')
-  @RateLimit(30, 60)
+  @RateLimit(300, 60)
   async translateBatch(
     @Body(new TypeBoxValidationPipe(TranslateBatchBody)) body: TranslateBatchDto,
   ): Promise<TranslateContentResult[]> {
-    const results: TranslateContentResult[] = new Array(body.texts.length);
-    let next = 0;
-    const worker = async () => {
-      while (next < body.texts.length) {
-        const i = next++;
-        results[i] = await this.translation.translate(body.texts[i] as string, body.targetLocale);
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(8, body.texts.length) }, worker));
-    return results;
+    return this.translation.translateMany(body.texts, body.targetLocale);
   }
 }

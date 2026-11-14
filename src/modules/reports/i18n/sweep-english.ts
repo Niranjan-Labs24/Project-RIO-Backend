@@ -1,7 +1,8 @@
 import type { DocSection, ReportDoc } from '../report-doc';
 import type { SupportedLocale } from '../../translation/translation.types';
-import { label, localizeKnownLabel } from './report-labels';
+import { fillFixedSentences, label, localizeKnownLabel } from './report-labels';
 import type { MasterDataAliases } from './master-data-names';
+import { nameMask, withoutNames } from './keep-names';
 import type { Translator } from './translate-content';
 import { hasArabic } from '../arabic-text';
 
@@ -85,6 +86,12 @@ const HAS_ENGLISH = /[A-Za-z]{4,}/;
  *  catalogue's Arabic sentence, so neither half is left in English. */
 const PARTIAL_SCOPE =
   /^This study contains (\d+) surveys\. These figures cover ONE of them — "(.+)" — not the study as a whole\. Domain scores from the other (\d+) survey\(s\) are not included in this report\.$/;
+
+/** The data-collection scope notes (load-data-collection-completeness.ts). */
+const STUDY_LEVEL_SCOPE =
+  /^Study-level report\. These completeness figures aggregate all (\d+) survey\(s\) in this study\.$/;
+const SURVEY_LEVEL_SCOPE =
+  /^Survey-level report\. These completeness figures cover one survey of the (\d+) in this study; the other (\d+) are listed as out of scope and are not included in any count below\.$/;
 
 /** "06 Oct 2026" or "06 Oct 2026, 16:28" — the report builders' date stamp. */
 const ENGLISH_STAMP = /^(\d{1,2} [A-Z][a-z]{2} \d{4})(?:, (\d{2}:\d{2}))?$/;
@@ -249,6 +256,11 @@ export async function sweepRemainingEnglish(
     translator: BulkTranslator;
     concurrency?: number;
     budgetMs?: number;
+    /** UAT GEN-03 — names as entered (study titles, organisation and people's
+     *  names). Never translated, in either direction: a string that IS one is
+     *  kept, and inside a longer string each one is masked for the translator
+     *  and put back. */
+    keepNames?: readonly string[];
   },
 ): Promise<SweepResult> {
   const stats: SweepStats = {
@@ -264,22 +276,66 @@ export async function sweepRemainingEnglish(
   const resolved = new Map<string, string>();
   const needsAi = new Set<string>();
   const scopeNotes = new Map<string, RegExpExecArray>();
+  const names = nameMask(deps.keepNames);
+  // What the translator sees for a string containing names.
+  const masked = new Map<string, string>();
+  const unmask = (source: string, translated: string): string | null =>
+    masked.has(source) ? names.unmask(source, translated) : translated;
+  const aiText = (source: string): string => masked.get(source) ?? source;
+  // Masks the names in a string bound for the translator. False when nothing
+  // but names (and punctuation) is left, i.e. there is nothing to translate.
+  const maskForAi = (text: string, stillForeign: (rest: string) => boolean): boolean => {
+    const m = names.mask(text);
+    if (m.count === 0) return true;
+    if (!stillForeign(withoutNames(m.text))) return false;
+    masked.set(text, m.text);
+    return true;
+  };
 
   // Pass 1 — classify every distinct string without changing anything.
   mapDocStrings(doc, (text) => {
     const t = text.trim();
     if (!t || resolved.has(text) || needsAi.has(text)) return text;
+    if (names.isName(t)) {
+      stats.keptAsIs++;
+      return text;
+    }
     // An English export runs the same sweep the other way: data entered in
     // Arabic (a study name, a village) is translated for the English reader,
     // so the document is in one language. Labels are already English there.
     if (locale === 'en') {
-      if (hasArabic(t)) needsAi.add(text);
+      if (hasArabic(t)) {
+        if (maskForAi(text, hasArabic)) needsAi.add(text);
+        else stats.keptAsIs++;
+      }
       return text;
     }
     const scope = PARTIAL_SCOPE.exec(t);
     if (scope) {
       scopeNotes.set(text, scope);
       if (HAS_ENGLISH.test(scope[2]!)) needsAi.add(scope[2]!);
+      return text;
+    }
+    // UAT GEN-04 — fixed catalogue sentences (with or without blanks) get
+    // their catalogue Arabic directly, without the AI.
+    const filled = fillFixedSentences(t, locale);
+    if (filled !== t) {
+      resolved.set(text, filled);
+      stats.byCatalogue++;
+      return text;
+    }
+    // UAT GEN-04 — the data-collection scope note is a fixed sentence too.
+    const studyScope = STUDY_LEVEL_SCOPE.exec(t);
+    if (studyScope) {
+      resolved.set(text, label('fixedText.studyLevelScope', locale, { count: studyScope[1]! }));
+      return text;
+    }
+    const surveyScope = SURVEY_LEVEL_SCOPE.exec(t);
+    if (surveyScope) {
+      resolved.set(
+        text,
+        label('fixedText.surveyLevelScope', locale, { count: surveyScope[1]!, other: surveyScope[2]! }),
+      );
       return text;
     }
     if (!HAS_ENGLISH.test(t)) {
@@ -339,6 +395,10 @@ export async function sweepRemainingEnglish(
       return text;
     }
 
+    if (!maskForAi(text, (rest) => HAS_ENGLISH.test(rest))) {
+      stats.keptAsIs++;
+      return text;
+    }
     needsAi.add(text);
     return text;
   });
@@ -347,11 +407,12 @@ export async function sweepRemainingEnglish(
   // the whole job in one query instead of one round trip per string.
   let pending = [...needsAi];
   if (pending.length > 0 && deps.translator.cachedTranslations) {
-    const cached = await deps.translator.cachedTranslations(pending, locale);
+    const cached = await deps.translator.cachedTranslations(pending.map(aiText), locale);
     const misses: string[] = [];
     for (const source of pending) {
-      const hit = cached.get(source);
-      if (hit === undefined || hit === source) {
+      const raw = cached.get(aiText(source));
+      const hit = raw === undefined || raw === aiText(source) ? undefined : (unmask(source, raw) ?? undefined);
+      if (hit === undefined) {
         misses.push(source);
         continue;
       }
@@ -381,9 +442,10 @@ export async function sweepRemainingEnglish(
           stats.unresolved.push(source);
           continue;
         }
-        const { translatedText } = await deps.translator.translate(source, locale);
+        const { translatedText: raw } = await deps.translator.translate(aiText(source), locale);
+        const translatedText = raw === aiText(source) ? source : unmask(source, raw);
 
-        if (translatedText === source) {
+        if (translatedText === null || translatedText === source) {
           stats.unresolved.push(source);
           continue;
         }

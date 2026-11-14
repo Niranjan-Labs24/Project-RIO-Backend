@@ -123,6 +123,7 @@ describe('SurveyReminderService.sweep', () => {
     expect(sms.sendSurveyReminder).toHaveBeenCalledWith(
       '+966501234567',
       'https://app.rio.example/ar/public/survey/tok1',
+      'ar',
     );
   });
 

@@ -395,6 +395,29 @@ export class DataCleaningService {
 
     const key = (entityId: string | null, field: string, ruleCode: string): string =>
       `${entityId ?? ""}|${field}|${ruleCode}`;
+
+    // UAT DQ-01 — "the decision selected is not being applied". Only PENDING
+    // flags were looked up here, so after a reviewer rejected a finding (the
+    // stored value is right as it is) the next run — any edit to the need —
+    // raised the same finding again as a new pending flag. A rejection is a
+    // decision about that VALUE: the same finding on the same value is not
+    // raised again. If the value changes, it is a new finding.
+    const rejected =
+      input.scope.entityIds.length > 0
+        ? await tx.cleaningFlag.findMany({
+            where: {
+              entityType: input.scope.entityType,
+              entityId: { in: input.scope.entityIds },
+              status: "rejected",
+            },
+            select: { entityId: true, field: true, ruleCode: true, originalValue: true },
+          })
+        : [];
+    const rejectedValue = (entityId: string | null, field: string, ruleCode: string, value: string | null) =>
+      `${key(entityId, field, ruleCode)}|${value ?? ""}`;
+    const rejectedKeys = new Set(
+      rejected.map((r) => rejectedValue(r.entityId, r.field, r.ruleCode, r.originalValue)),
+    );
     const existingByKey = new Map(
       existing.map((row) => [key(row.entityId, row.field, row.ruleCode), row.id]),
     );
@@ -404,6 +427,9 @@ export class DataCleaningService {
 
     for (const flag of input.flags) {
       const flagKey = key(flag.entityId, flag.field, flag.ruleCode);
+      if (rejectedKeys.has(rejectedValue(flag.entityId, flag.field, flag.ruleCode, flag.originalValue))) {
+        continue;
+      }
       stillApplies.add(flagKey);
       const data = {
         runId: input.runId,
