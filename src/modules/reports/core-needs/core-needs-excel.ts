@@ -6,8 +6,14 @@
 import ExcelJS from "exceljs";
 import type { Cell, CoreView } from "./core-needs-view";
 
-const TEAL = "FF155463";
-const TINT = "FFE4EFED";
+// The identity, in ExcelJS's ARGB form. TEAL was FF155463 — one digit off
+// the guide's #145463, the same slip the PDF carried; TINT was a tint of its
+// own and is the report surface the PDF shades its rows with.
+const TEAL = "FF145463";
+const TINT = "FFE7EEEE";
+// 5.9:1 on white. The note's own grey, FF6B7280, measures 4.8:1 — it passes,
+// but this is the value the platform and the PDF use for secondary text.
+const MUTED = "FF5C6670";
 
 function sheet(wb: ExcelJS.Workbook, name: string, v: CoreView): ExcelJS.Worksheet {
   const ws = wb.addWorksheet(name.slice(0, 31).replace(/[\\/?*[\]:]/g, " "));
@@ -23,7 +29,7 @@ function title(ws: ExcelJS.Worksheet, text: string, size = 14): void {
 
 function note(ws: ExcelJS.Worksheet, text: string): void {
   const row = ws.addRow([text]);
-  row.font = { italic: true, size: 9, color: { argb: "FF6B7280" } };
+  row.font = { italic: true, size: 9, color: { argb: MUTED } };
 }
 
 function kv(ws: ExcelJS.Worksheet, rows: Array<{ label: string; value: string }>): void {

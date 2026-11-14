@@ -19,39 +19,63 @@ import type { Cell, CoreView, Tone } from './core-needs-view';
 const hex = (h: string): string =>
   [1, 3, 5].map((i) => (parseInt(h.slice(i, i + 2), 16) / 255).toFixed(3)).join(' ');
 
+/**
+ * The report's palette — the NCNP usage note of 10 Nov 2026, and the same
+ * values the platform paints on screen (src/styles/tokens.css and
+ * src/lib/brand-colors.ts in the frontend), so a report and the screen it
+ * came from say the same thing in the same colours.
+ *
+ * It was eyedropped from the client's mock-up and came out close to the
+ * brand codes without matching them: #155463 for #145463, #3b7ca7 for
+ * #4080AB, and its own set of severity shades. Each is the real code now.
+ *
+ * Every pair below that carries text clears 4.5:1, which the DGA Platforms
+ * Code requires; the ratio is recorded beside the ones that were failing.
+ */
 const COLOR = {
-  teal: hex('#155463'),
-  tealText: hex('#10525d'),
-  tealSoft: hex('#9fd3cf'),
-  chipBorder: hex('#5e8f99'),
-  ink: hex('#1c2125'),
-  muted: hex('#6b7280'),
-  border: hex('#dfe7e5'),
-  panel: hex('#f3f6f6'),
-  tint: hex('#e4efed'),
+  teal: hex('#145463'), //      the dominant colour, exactly as the guide gives it
+  tealText: hex('#145463'), //  headings — was #10525d, a colour of its own
+  tealSoft: hex('#b6d8d0'), //  on the teal band: 5.5:1, derived from #59A694
+  chipBorder: hex('#529988'), // a hairline on the band, not read through
+  ink: hex('#1c2125'), //       body text, 16.2:1 on white
+  muted: hex('#5c6670'), //     secondary text — was #6b7280 at 4.8:1
+  border: hex('#e5ebe9'),
+  panel: hex('#f5f7f6'),
+  tint: hex('#e7eeee'),
   white: '1 1 1',
-  track: hex('#e3e8e6'),
-  gold: hex('#c9a227'),
-  goldBg: hex('#fdf8e6'),
-  blue: hex('#3b7ca7'),
+  track: hex('#e5ebe9'),
+  gold: hex('#c9a227'), //      the medium severity band
+  goldBg: hex('#f9f4e7'),
+  blue: hex('#4080ab'), //      the occasional colour, exactly as given
 };
 // LOW = the v5.0 flag; MEETS = meets the methodology standard; INFO = a
 // component shown for information while no threshold is approved.
+//
+// Each `fg` is its band's hue carried down until it clears 4.5:1 on its own
+// `bg`. The previous values did not: MEETS measured 3.64:1 and INFO 4.01:1.
 const BAND: Record<ConfidenceResult | 'INFO', { fg: string; bg: string; edge: string }> = {
-  LOW: { fg: hex('#be3a2a'), bg: hex('#fbecea'), edge: hex('#e9b4ab') },
-  MEETS: { fg: hex('#3f8a78'), bg: hex('#e8f4f0'), edge: hex('#b5dccf') },
-  INFO: { fg: hex('#3b7ca7'), bg: hex('#eaf2f8'), edge: hex('#bfd5e6') },
+  LOW: { fg: hex('#b4232a'), bg: hex('#f9e7e7'), edge: hex('#ebadb0') }, //   5.48:1
+  MEETS: { fg: hex('#3e7a56'), bg: hex('#ebf5ef'), edge: hex('#bbddc9') }, // 4.57:1
+  INFO: { fg: hex('#387096'), bg: hex('#e5eff5'), edge: hex('#bcd5e6') }, //  4.58:1
 };
+// The five severity bands, as the platform's maps and legends paint them.
 const TONE: Record<Tone, string> = {
-  critical: hex('#be3a2a'),
-  high: hex('#d9822b'),
-  medium: hex('#d8b931'),
-  low: hex('#59a694'),
+  critical: hex('#b4232a'),
+  high: hex('#d9760f'),
+  medium: hex('#c9a227'),
+  low: hex('#3f7d58'), //  was the brand turquoise; green is what the platform
+  //                       and the legend use for the low band, and white on
+  //                       the turquoise measured 2.87:1.
   none: hex('#c9d1d6'),
 };
+// Map chrome — the lines the shapes are drawn over, which must read as
+// behind the data. The same neutrals the platform's own maps use.
+const MAP_OUTLINE = hex('#98a2ae');
+const MAP_INNER = hex('#5c6670');
+const MAP_BACKDROP = hex('#e5ebe9');
 // Drawn over the content at 30% opacity (pdf-builder GSwm): strong enough to
 // stand out on every page, light enough to read the text beneath it.
-const WATERMARK = hex('#c0392b');
+const WATERMARK = hex('#b4232a');
 
 const R = LEFT + CONTENT_W; // right edge of the text area
 const FOOTER_TOP = PAGE_H - 34;
@@ -138,7 +162,11 @@ class Doc {
       size,
       true,
       text,
-      tone === 'medium' || tone === 'none' ? COLOR.ink : COLOR.white,
+      // White on the amber measured 3.21:1 and on the gold 2.42:1, so the
+      // three light fills take the ink instead — 5.1:1, 6.7:1 and 10.5:1.
+      tone === 'high' || tone === 'medium' || tone === 'none'
+        ? COLOR.ink
+        : COLOR.white,
     );
     this.y = keep;
     return w;
@@ -345,7 +373,7 @@ function pageSummary(d: Doc): void {
   d.right(R - 14, 7, false, v.decision.issuedAlone, COLOR.muted);
   d.y = dTop + 32;
   for (const b of blocks) {
-    d.line(LEFT + 14, 8, true, b.q.toUpperCase(), hex('#66b0ad'));
+    d.line(LEFT + 14, 8, true, b.q.toUpperCase(), hex('#69B2B0'));
     d.y += 13;
     d.para(LEFT + 14, textW, b.text, 8.6, false, COLOR.ink);
     d.y += 7;
@@ -621,7 +649,7 @@ function pageWhere(d: Doc): void {
                       ? 40
                       : 10,
               );
-      d.box(lx, ly + 1, 8, 8, sw, hex('#98A2AE'), 1, 0.4);
+      d.box(lx, ly + 1, 8, 8, sw, MAP_OUTLINE, 1, 0.4);
       d.y = ly + 1;
       d.line(lx + 11, 6.6, false, item.label, COLOR.muted);
       lx += lw + 6;
@@ -726,14 +754,14 @@ function drawMap(
   d.pdf.dir = 'ltr';
   d.y = top;
   d.pdf.clipRound(x + shift, w, h, 4);
-  d.box(x + shift, top, w, h, hex('#DDDDDD'), null, 4);
+  d.box(x + shift, top, w, h, MAP_BACKDROP, null, 4);
 
   // Neighbours first, faint, so the study's own units sit on top.
   for (const f of context)
     for (const ring of f.rings) {
       const pts = ring.map(P);
       d.pdf.fillPolygon(pts, hex('#E2E6EA'));
-      d.pdf.strokePath(pts, hex('#98A2AE'), 0.5, true);
+      d.pdf.strokePath(pts, MAP_OUTLINE, 0.5, true);
     }
   for (const { u, f } of units) {
     const fill =
@@ -751,7 +779,7 @@ function drawMap(
   for (const { f } of units)
     for (const ring of f.rings) d.pdf.strokePath(ring.map(P), '1 1 1', 0.8, true);
   for (const { f } of units)
-    for (const ring of f.rings) d.pdf.strokePath(ring.map(P), hex('#4b5b60'), 0.35, true);
+    for (const ring of f.rings) d.pdf.strokePath(ring.map(P), MAP_INNER, 0.35, true);
 
   // Labels on a white backing so they stay readable over any colour. A unit
   // too small to hold its label gets a marker and the label beside it on a
@@ -784,7 +812,7 @@ function drawMap(
           [cx, cy],
           [lx + (lx > cx ? 0 : lw), ly + 9],
         ],
-        hex('#6b7280'),
+        COLOR.muted,
         0.4,
       );
       d.pdf.disc(cx, cy, 2.6, '1 1 1');
@@ -800,7 +828,7 @@ function drawMap(
       );
     }
     haloText(d, lx + (lw - nw) / 2, ly + 1.5, 6.6, true, u.name, COLOR.ink);
-    haloText(d, lx + (lw - cw) / 2, ly + 9.5, 5.8, false, u.caption, hex('#4b5563'));
+    haloText(d, lx + (lw - cw) / 2, ly + 9.5, 5.8, false, u.caption, COLOR.muted);
   }
   d.pdf.unclip();
   d.pdf.dir = rtl ? 'rtl' : 'ltr';
@@ -1280,7 +1308,9 @@ function pageEvidence(d: Doc): void {
   const gx = rx + 12;
   const gw = half - 24;
   const gTop = d.y + 2;
-  const gColors = [COLOR.blue, hex('#3f8a78'), hex('#8a959c')];
+  // Three brand hues, not three picked colours — the same series the
+  // platform charts a breakdown with.
+  const gColors = [COLOR.blue, hex('#59a694'), hex('#145463')];
   let acc = 0;
   // A segment too narrow for its own label is named under the bar instead.
   // Three respondents in thirty-eight is an 8% slice: the label never fitted,
@@ -1402,7 +1432,7 @@ function needCard(d: Doc, card: CoreView['evidence']['cards'][number]): void {
   d.pdf.anchor('part-cards');
   const top = d.y;
   d.box(LEFT, top, CONTENT_W, h, COLOR.goldBg, COLOR.gold, 6, 1);
-  d.bar(LEFT + 1, top + 22, CONTENT_W - 2, 0.6, hex('#efe3b4'));
+  d.bar(LEFT + 1, top + 22, CONTENT_W - 2, 0.6, hex('#ebdcad'));
   d.y = top + 7;
   d.line(LEFT + 12, 10, true, card.title, COLOR.tealText);
   const tw = textWidth(card.title, 10, true);

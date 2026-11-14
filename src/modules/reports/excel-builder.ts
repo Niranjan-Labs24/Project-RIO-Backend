@@ -36,9 +36,23 @@ function newSheet(wb: ExcelJS.Workbook, name: string, locale: SupportedLocale): 
   return sheet;
 }
 
-const ACCENT = "FF1F5A99";
-const LIGHT = "FFE6EEF7";
-const LINK_BLUE = "FF1155CC";
+/**
+ * The identity, in ExcelJS's ARGB form (FF + the hex).
+ *
+ * The NCNP usage note of 10 Nov 2026 asks for the exact codes across
+ * "reports, exports, emails and the landing page", and the export was the
+ * last of the four still on colours of its own: a header blue #1F5A99 that
+ * is no brand code, a blue row tint, and the generic hyperlink blue.
+ *
+ * ACCENT is the dominant colour, which white reads on at 8.5:1. LIGHT is the
+ * report surface the PDF already shades its rows with, so a table exported to
+ * Excel and the same table in the PDF look alike. LINK is the occasional
+ * colour carried down one step: #4080AB itself measures 4.29:1 on white,
+ * just under the 4.5:1 the DGA Platforms Code requires of body text.
+ */
+const ACCENT = "FF145463";
+const LIGHT = "FFF5F7F6";
+const LINK_BLUE = "FF3E7CA5";
 
 /**
  * Sheet name for a drill target.

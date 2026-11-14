@@ -124,13 +124,31 @@ export const PRESENTATION_PALETTE = {
   accent: '#4080AB',
   summaryLabel: '#69B2B0',
   summaryDivider: '#59A694',
-  veryLow: '#be3a2a',
-  medium: '#ccaa2e',
-  strong: '#59A694',
-  danger: '#c94f4b',
+
+  /**
+   * The severity bands, as the platform's own maps and legends paint them
+   * (src/lib/brand-colors.ts in the frontend), so a report and the screen it
+   * came from agree. Red, amber and green, which the identity note reserves
+   * for status meaning.
+   *
+   * Two values each, because one cannot do both jobs: `*Fill` is the band
+   * colour behind something, `*Text` is the same hue carried down until it
+   * clears the 4.5:1 the DGA Platforms Code requires on white. The previous
+   * single values were being used as text and did not: #ccaa2e measured
+   * 2.24:1, #59A694 2.87:1 and #c94f4b 4.46:1.
+   */
+  veryLow: '#b4232a', //      6.53:1 — doubles as its own text colour
+  veryLowText: '#b4232a',
+  medium: '#c9a227', //       the amber fill
+  mediumText: '#8d7118', //   4.66:1
+  strong: '#3f7d58', //       4.90:1 — doubles as its own text colour
+  strongText: '#3f7d58',
+  danger: '#b4232a', //       was #c94f4b at 4.46:1
+
   cardBorder: '#e5ebe9',
   panel: '#f5f7f6',
-  noticeBg: '#f7f5de',
-  noticeBorder: '#e9e0a4',
-  muted: '#6b7280',
+  headerTint: '#e7eeee',
+  noticeBg: '#f9f4e7', //     the amber band's own surface
+  noticeBorder: '#ebdcad',
+  muted: '#5c6670', //        5.85:1 — was #6b7280 at 4.83:1
 } as const;

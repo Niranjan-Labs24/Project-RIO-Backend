@@ -1490,7 +1490,20 @@ Eligible Questions: ${JSON.stringify(
           }
         });
 
-        const colors = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6"];
+        // The three brand hues at three lightness steps, as the platform
+        // charts with (src/lib/brand-colors.ts in the frontend). The set this
+        // replaced was a stock indigo/emerald/amber/red/violet/pink/teal that
+        // belonged to no brand, and the NCNP usage note of 10 Nov 2026 allows
+        // only the identity's own codes.
+        const colors = [
+          "#145463",
+          "#59a694",
+          "#4080ab",
+          "#1b9ab8",
+          "#8ecdbe",
+          "#72add4",
+          "#0b3039",
+        ];
 
         if (dto.answerType === "select" || dto.answerType === "boolean") {
           const options: string[] = dto.answerOptions ?? (dto.answerType === "boolean" ? ["Yes", "No"] : ["Don't know"]);

@@ -39,7 +39,7 @@ const TONE: Record<CellTone, string> = {
   danger: hex(PRESENTATION_PALETTE.danger),
   ok: hex(PRESENTATION_PALETTE.strong),
   strong: hex(PRESENTATION_PALETTE.primaryText),
-  medium: hex("#a8871a"),
+  medium: hex(PRESENTATION_PALETTE.mediumText),
 };
 const BAND_COLOR = {
   VERY_LOW: hex(PRESENTATION_PALETTE.veryLow),
@@ -48,7 +48,7 @@ const BAND_COLOR = {
 } as const;
 const CARD_BORDER = hex(PRESENTATION_PALETTE.cardBorder);
 /** The design's table header: a light teal tint rather than grey. */
-const HEADER_TINT = hex("#e4efed");
+const HEADER_TINT = hex(PRESENTATION_PALETTE.headerTint);
 const MUTED = hex(PRESENTATION_PALETTE.muted);
 const INK = "0.11 0.13 0.15";
 /** Callout edge and label colours by tone (the medium label is darkened so it
@@ -58,7 +58,10 @@ const EDGE: Record<CalloutTone, string> = {
   medium: hex(PRESENTATION_PALETTE.medium),
   danger: hex(PRESENTATION_PALETTE.veryLow),
 };
-const EDGE_LABEL: Record<CalloutTone, string> = { ...EDGE, medium: hex("#a8871a") };
+const EDGE_LABEL: Record<CalloutTone, string> = {
+  ...EDGE,
+  medium: hex(PRESENTATION_PALETTE.mediumText),
+};
 export const BLACK = "0 0 0";
 export const WHITE = "1 1 1";
 /** Chart series, in the identity palette: the three primaries first, then
@@ -1620,8 +1623,10 @@ function renderCard(pdf: Pdf, s: Extract<DocSection, { kind: "card" }>): void {
 
 /** Ring segment colours, one per share (Male, Female, …), as the earlier
  *  pie's distinct colours so every share can be told apart. */
-const RING_COLORS = ["#4a80b4", "#e07a3f", "#59a694", "#dccf6e", "#b05a8c"].map(hex);
-const RING_TRACK = hex("#e3e8e6");
+// The three brand hues at three lightness steps — the same nine series the
+// platform charts with. The set this replaced belonged to no brand.
+const RING_COLORS = ["#145463", "#59a694", "#4080ab", "#1b9ab8", "#8ecdbe"].map(hex);
+const RING_TRACK = hex(PRESENTATION_PALETTE.cardBorder);
 
 /** The design's demographic rings, side by side: each share an arc in its own
  *  colour, the breakdown's name and a coloured legend beneath. */
