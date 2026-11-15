@@ -345,8 +345,9 @@ export class PublicArchiveService {
             region: { select: { name: true, nameAr: true } },
           },
         }),
+        // All options, not only active ones: a retired sector (GEN-07) still
+        // needs its Arabic name on the studies saved with it.
         tx.targetSectorOption.findMany({
-          where: { isActive: true },
           select: { name: true, nameAr: true },
         }),
       ]);

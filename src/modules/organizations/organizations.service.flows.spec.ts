@@ -1,4 +1,3 @@
-import { BadRequestException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { Prisma } from '../../generated/prisma';
 import { makeFakeTx } from '../../../test/support/fake-tx';
@@ -22,15 +21,6 @@ function setup() {
     ]),
   };
   const geography = { validateHierarchy: vi.fn().mockResolvedValue(undefined) };
-  // GEN-07 — only an active Level B classification is accepted.
-  const classifications = {
-    assertSelectableLevelB: vi.fn(async (id: string | null | undefined) => {
-      if (id !== VALID_CLASSIFICATION) {
-        throw new BadRequestException({ error: { code: 'NCNP_CLASSIFICATION_INVALID', message: 'invalid' } });
-      }
-    }),
-    resolve: vi.fn().mockResolvedValue(new Map()),
-  };
   const mailer = { sendTemporaryPassword: vi.fn().mockResolvedValue(true) };
   const nic = { assertRegistered: vi.fn().mockResolvedValue('8123456789') };
   const consent = {
@@ -49,11 +39,9 @@ function setup() {
     mailer as never,
     nic as never,
     consent as never,
-    classifications as never,
   );
-  return { tx, audit, passwords, geography, mailer, nic, consent, classifications, svc };
+  return { tx, audit, passwords, geography, mailer, nic, consent, svc };
 }
-const VALID_CLASSIFICATION = '01a1f000-0000-7000-8000-0000000000b1';
 const as = <T>(role: string | undefined, fn: () => Promise<T>) =>
   orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'u1', role } as never, fn);
 const code = (c: string) =>
@@ -66,7 +54,7 @@ const raw = (over: Record<string, unknown> = {}) => ({
   logoUrl: null,
   region: [],
   email: null,
-  ncnpClassificationId: VALID_CLASSIFICATION,
+  sector: 'Water',
   villages: [],
   regionId: 'r1',
   isActive: true,
@@ -84,7 +72,7 @@ const withStats = (over: Record<string, unknown> = {}) =>
   });
 const payload = (over: Record<string, unknown> = {}) => ({
   name: 'New Org',
-  ncnpClassificationId: VALID_CLASSIFICATION,
+  sector: 'Water',
   registrationNumber: '8123456789',
   regionId: 'r1',
   governorateIds: ['g1'],
@@ -114,7 +102,7 @@ describe('OrganizationsService current organisation', () => {
         name: 'N',
         region: ['x'],
         email: 'e@x.org',
-        ncnpClassificationId: VALID_CLASSIFICATION,
+        sector: 'Water',
         purpose: 'p',
         logoUrl: 'data:new',
         villages: ['v'],
@@ -156,19 +144,23 @@ describe('OrganizationsService current organisation', () => {
     expect(changes).toHaveLength(2);
     expect(changes[0]).toMatchObject({ before: null, after: '(logo)' });
     tx.organisation.findFirst.mockResolvedValue(raw({ logoUrl: 'data:old' }));
-    await as('ngo_admin', () => svc.updateCurrent({ logoUrl: null } as never));
+    await as('ngo_admin', () => svc.updateCurrent({ logoUrl: null, sector: null } as never));
     expect(
       (audit.record.mock.calls[1]![0].changes as Array<{ after: unknown }>)[0]!.after,
     ).toBeNull();
   });
 
-  it('accepts only an active Level B NCNP classification (GEN-07)', async () => {
+  it('rejects an unknown sector but accepts "other" and none', async () => {
     const { svc, tx } = setup();
     tx.organisation.findFirst.mockResolvedValue(raw());
-    await expect(as('ngo_admin', () => svc.updateCurrent({ ncnpClassificationId: 'not-a-level-b' }))).rejects.toThrow(
-      code('NCNP_CLASSIFICATION_INVALID'),
+    await expect(as('ngo_admin', () => svc.updateCurrent({ sector: 'Nope' }))).rejects.toThrow(
+      code('INVALID_SECTOR'),
     );
-    await as('ngo_admin', () => svc.updateCurrent({ ncnpClassificationId: VALID_CLASSIFICATION }));
+    await expect(as('ngo_admin', () => svc.updateCurrent({ sector: 'Old' }))).rejects.toThrow(
+      code('INVALID_SECTOR'),
+    );
+    await as('ngo_admin', () => svc.updateCurrent({ sector: 'other' }));
+    await as('ngo_admin', () => svc.updateCurrent({ sector: '' }));
   });
 });
 

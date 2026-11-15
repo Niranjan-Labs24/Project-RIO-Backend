@@ -26,6 +26,8 @@ export interface QuestionMeta {
   subDomain: string;
   indicator: string | null;
   kpi: string | null;
+  /** SVB-02 — the KPI's display code (HLT-01-02); null when none. */
+  kpiCode?: string | null;
   numeric: boolean;
   /** The methodology's access / availability analytical dimension — the only
    *  items that can be Critical (v5.0 priority tiers). */

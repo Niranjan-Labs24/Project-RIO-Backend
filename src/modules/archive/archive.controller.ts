@@ -22,7 +22,6 @@ export class ArchiveController {
     @Query("village") village?: string,
     @Query("governorate") governorate?: string,
     @Query("domain") domain?: string,
-    @Query("classificationId") classificationId?: string,
     @Query("limit") limit?: string,
     @Query("offset") offset?: string,
   ): Promise<Page<ArchiveEntry>> {
@@ -37,7 +36,6 @@ export class ArchiveController {
       village,
       governorate,
       domain,
-      classificationId,
     }).then((all) => pageOf(all, parsePaging(limit, offset)));
   }
 

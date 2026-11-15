@@ -26,7 +26,7 @@ export interface ConsentAcceptanceInput {
 
 export interface CreateOrgAdminInput {
   organizationName: string;
-  ncnpClassificationId: string;
+  sector?: string;
   purpose?: string;
   registrationNumber: string;
   email: string;
@@ -105,7 +105,7 @@ export class AuthRepository {
         const org = await tx.organisation.create({
           data: {
             id: orgId, name: input.organizationName, purpose: input.purpose,
-            ncnpClassificationId: input.ncnpClassificationId,
+            sector: input.sector ?? null,
             registrationNumber: input.registrationNumber, email: input.email,
             regionId: input.regionId,
             // RIO-FR-010 (client-confirmed): self-registration requires

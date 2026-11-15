@@ -22,7 +22,6 @@ const AUDIT_FIELD_LABELS: Record<string, string> = {
   regionId: 'Region',
   email: 'Email',
   sector: 'Sector',
-  ncnpClassificationId: 'NCNP classification',
   purpose: 'Purpose',
   logoUrl: 'Logo',
   villages: 'Villages',

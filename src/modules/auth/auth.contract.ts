@@ -57,9 +57,11 @@ export const VerifyLoginOtpBody = registerSchema(
 );
 export type VerifyLoginOtpDto = Static<typeof VerifyLoginOtpBody>;
 
-// GEN-07 — the entity's NCNP classification, always a Level B item id;
-// level/active status is checked in AuthService (NcnpClassificationService).
-const ClassificationId = T.String({ format: 'uuid' });
+// Not a fixed enum: `sector` is validated against the live, active Domain
+// list from Methodology Configuration (see AuthService.signup —
+// DomainsService.listDomains()), or the literal "other". Mirrors
+// organizations.contract.ts's own SectorValue.
+const SectorValue = T.String({ minLength: 1, maxLength: 200 });
 
 // The language a consent was rendered in. A closed union rather than a free
 // string: the value ends up on an immutable acceptance record describing what
@@ -107,15 +109,17 @@ export const ConsentAcceptanceBody = T.Object(
  * without them. AuthService.consent() still exists, but now only serves
  * accounts predating this change and re-prompts after a policy version bump.
  *
- * `ncnpClassificationId` (GEN-07) is the entity's NCNP classification at
- * Level B — required to register. `purpose` stays optional free text.
+ * `sector` replaces the old free-text "area of work" field on this form —
+ * `purpose` is now only used to carry the reviewer's own text when
+ * `sector: 'other'` is picked (matches Settings > Organization's own
+ * sector/"specify other" pattern), so it's optional here.
  */
 export const SignupBody = registerSchema(
   'SignupBody',
   T.Object(
     {
       organizationName: T.String({ minLength: 1, maxLength: 200 }),
-      ncnpClassificationId: ClassificationId,
+      sector: T.Optional(SectorValue),
       purpose: T.Optional(T.String({ maxLength: 500 })),
       registrationNumber: T.String({ minLength: 1, maxLength: 100 }),
       email: T.String({ format: 'email' }),

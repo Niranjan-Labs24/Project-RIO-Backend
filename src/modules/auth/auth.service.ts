@@ -8,7 +8,7 @@ import {
   DEFAULT_CONSENT_LOCALE,
   resolveConsentLocale,
 } from '../consent/consent.types';
-import { NcnpClassificationService } from '../ncnp-classification/ncnp-classification.service';
+import { DomainsService } from '../domains/domains.service';
 import { GeographyService } from '../geography/geography.service';
 import { NicRegistryService } from '../nic-registry/nic-registry.service';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
@@ -55,7 +55,7 @@ interface UserWithOrg {
   sessionVersion: number;
   org: {
     id: string; name: string; logoUrl: string | null; region: string[];
-    email: string | null; ncnpClassificationId: string | null; villages: string[]; isActive: boolean; createdAt: Date;
+    email: string | null; sector: string | null; villages: string[]; isActive: boolean; createdAt: Date;
     purpose: string | null; registrationNumber: string | null;
     regionId: string | null;
     orgGovernorates?: { governorateId: string }[];
@@ -81,7 +81,7 @@ export class AuthService {
     private readonly repo: AuthRepository,
     private readonly mailer: MailerService,
     private readonly config: ConfigService,
-    private readonly classifications: NcnpClassificationService,
+    private readonly domains: DomainsService,
     private readonly geography: GeographyService,
     // Signup gate: the registration number must be a NIC number in the
     // published entity registry.
@@ -427,7 +427,7 @@ export class AuthService {
     if (await this.repo.findUserByEmail(dto.email)) {
       throw conflictFor('email');
     }
-    await this.classifications.assertSelectableLevelB(dto.ncnpClassificationId);
+    await this.assertValidSector(dto.sector);
     // Resolved before any write: a stale/unknown consent version must fail
     // the registration outright, not after the org row already exists.
     const consents = await this.resolveSignupConsents(dto.consent);
@@ -444,7 +444,7 @@ export class AuthService {
 
     const { org, user } = await this.repo.createOrganisationAndAdmin({
       organizationName: dto.organizationName,
-      ncnpClassificationId: dto.ncnpClassificationId,
+      sector: dto.sector,
       purpose: dto.purpose,
       // Normalized, not dto.registrationNumber — see assertRegistered.
       registrationNumber,
@@ -478,7 +478,7 @@ export class AuthService {
       changes: [
         { field: 'Organization name', before: null, after: org.name },
         { field: 'Registration number', before: null, after: org.registrationNumber },
-        { field: 'NCNP classification', before: null, after: await this.classificationLabel(org.ncnpClassificationId) },
+        { field: 'Sector', before: null, after: org.sector },
         { field: 'Email', before: null, after: org.email },
         { field: 'Admin account', before: null, after: user.email },
       ],
@@ -779,11 +779,20 @@ export class AuthService {
     return this.buildSession(user, role, token);
   }
 
-  // GEN-07 — the classification recorded in the audit trail by name.
-  private async classificationLabel(id: string | null): Promise<string | null> {
-    if (!id) return null;
-    const c = (await this.classifications.resolve([id])).get(id);
-    return c ? `${c.groupName} / ${c.levelAName} / ${c.levelBName}` : null;
+  // `sector` must match an active Methodology Configuration Domain name
+  // (e.g. "Health", "Water & Sanitation") or the literal "other" (paired
+  // with `purpose` for free text) — never an arbitrary string, since the
+  // whole point is this stays in lockstep with whatever domains are
+  // actually configured there.
+  private async assertValidSector(sector: string | undefined): Promise<void> {
+    if (!sector || sector === 'other') return;
+    const domains = await this.domains.listDomains();
+    const valid = domains.some((d) => d.isActive && d.name === sector);
+    if (!valid) {
+      throw new BadRequestException({
+        error: { code: 'INVALID_SECTOR', message: 'Sector must match an active domain or "other"' },
+      });
+    }
   }
 
   private roleOf(roleId: string): RoleDef {
@@ -833,7 +842,7 @@ export class AuthService {
     };
     const organization: SessionOrg = {
       id: u.org.id, name: u.org.name, logoUrl: u.org.logoUrl, region: u.org.region,
-      email: u.org.email, ncnpClassificationId: u.org.ncnpClassificationId, villages: u.org.villages,
+      email: u.org.email, sector: u.org.sector, villages: u.org.villages,
       regionId: u.org.regionId,
       governorateIds: (u.org.orgGovernorates ?? []).map((g) => g.governorateId),
       centerIds: (u.org.orgCenters ?? []).map((c) => c.centerId),

@@ -148,8 +148,7 @@ export type AuditEntityType =
   // need-theme option changes had no audit trail at all. One shared entity
   // type since all five configurable-list tables in study-config.service.ts
   // go through the same createOption/updateOption/setActive helpers.
-  | 'study_config_option'
-  | 'ncnp_classification';
+  | 'study_config_option';
 
   
   // RIO-AI-003 — one row per suggested summary of a Need's description.

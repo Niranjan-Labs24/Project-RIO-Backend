@@ -18,12 +18,9 @@ const auditStub = { record: async () => {} };
 const repoStub = { findByRegistrationNumber: vi.fn(), findUserByEmail: vi.fn(), createOrganisationAndAdmin: vi.fn() };
 const mailerStub = { sendTemporaryPassword: vi.fn() };
 const configStub = { nodeEnv: 'development' } as unknown as ConfigService;
-// GEN-07 — sign-up requires an active Level B NCNP classification.
 const domainsStub = {
-  assertSelectableLevelB: vi.fn().mockResolvedValue(undefined),
-  resolve: vi.fn().mockResolvedValue(new Map()),
+  listDomains: async () => [{ id: 'd1', code: 'W', name: 'Water & Sanitation', isActive: true }],
 };
-const CLASSIFICATION_FIXTURE = '01a1f000-0000-7000-8000-0000000000b1';
 const geographyStub = { validateHierarchy: vi.fn().mockResolvedValue(undefined) };
 
 // The signup NIC gate. Echoes back whatever it is given (already the
@@ -65,7 +62,7 @@ const smsStub = { sendLoginOtpCode: vi.fn() };
 
 const orgFixture = {
   id: 'o1', name: 'Demo NGO', logoUrl: null, region: ['North'], email: 'admin@demo-ngo.org',
-  ncnpClassificationId: null, villages: ['A'], isActive: true, createdAt: new Date('2026-01-01T00:00:00Z'),
+  sector: 'wash', villages: ['A'], isActive: true, createdAt: new Date('2026-01-01T00:00:00Z'),
   purpose: 'Water access', registrationNumber: 'RN-001',
 };
 
@@ -239,11 +236,11 @@ describe('AuthService.signup', () => {
     repo.findByRegistrationNumber.mockResolvedValue(null);
     repo.findUserByEmail.mockResolvedValue(null);
     repo.createOrganisationAndAdmin.mockResolvedValue({
-      org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: NIC_FIXTURE, logoUrl: null, region: [], email: null, ncnpClassificationId: null, villages: [], isActive: false, approvedAt: null, createdAt: new Date() },
+      org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: NIC_FIXTURE, logoUrl: null, region: [], email: null, sector: null, villages: [], isActive: false, approvedAt: null, createdAt: new Date() },
       user: { id: 'u1', name: 'Org Admin', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h', consentedAt: null, consentedPolicyVersion: null, failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: true },
     });
 
-    const res = await service.signup({ organizationName: 'Org', ncnpClassificationId: CLASSIFICATION_FIXTURE, purpose: 'p', registrationNumber: NIC_FIXTURE, email: 'a@b.test', mobileNumber: '0501234567', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'], consent: VALID_CONSENT });
+    const res = await service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: NIC_FIXTURE, email: 'a@b.test', mobileNumber: '0501234567', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'], consent: VALID_CONSENT });
 
     expect(res).toEqual({ status: 'pending_approval', organizationName: 'Org', email: 'a@b.test' });
     expect(mailer.sendTemporaryPassword).not.toHaveBeenCalled();
@@ -257,15 +254,15 @@ describe('AuthService.signup', () => {
     repo.findByRegistrationNumber.mockResolvedValue(null);
     repo.findUserByEmail.mockResolvedValue(null);
     repo.createOrganisationAndAdmin.mockResolvedValue({
-      org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: NIC_FIXTURE, logoUrl: null, region: [], email: null, ncnpClassificationId: null, villages: [], isActive: false, approvedAt: null, createdAt: new Date() },
+      org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: NIC_FIXTURE, logoUrl: null, region: [], email: null, sector: null, villages: [], isActive: false, approvedAt: null, createdAt: new Date() },
       user: { id: 'u1', name: 'Org Admin', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h', consentedAt: null, consentedPolicyVersion: null, failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: true },
     });
-    await service.signup({ organizationName: 'Org', ncnpClassificationId: CLASSIFICATION_FIXTURE, purpose: 'p', registrationNumber: NIC_FIXTURE, email: 'a@b.test', mobileNumber: '050 123 4567', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'], consent: VALID_CONSENT });
+    await service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: NIC_FIXTURE, email: 'a@b.test', mobileNumber: '050 123 4567', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'], consent: VALID_CONSENT });
     expect(repo.createOrganisationAndAdmin).toHaveBeenCalledWith(expect.objectContaining({ mobileNumber: '+966501234567' }));
   });
 
   it.each(['', '+971501234567', '0112345678', '05012345'])('signup: rejects non-Saudi / malformed mobile %j before any lookup or write', async (mobileNumber) => {
-    await expect(service.signup({ organizationName: 'Org', ncnpClassificationId: CLASSIFICATION_FIXTURE, purpose: 'p', registrationNumber: NIC_FIXTURE, email: 'a@b.test', mobileNumber, regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'], consent: VALID_CONSENT }))
+    await expect(service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: NIC_FIXTURE, email: 'a@b.test', mobileNumber, regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'], consent: VALID_CONSENT }))
       .rejects.toMatchObject({ response: { error: { code: 'INVALID_MOBILE_NUMBER' } } });
     expect(nicRegistryStub.assertRegistered).not.toHaveBeenCalled();
     expect(repo.createOrganisationAndAdmin).not.toHaveBeenCalled();
@@ -273,7 +270,7 @@ describe('AuthService.signup', () => {
 
   it('signup: rejects a duplicate registration number before creating', async () => {
     repo.findByRegistrationNumber.mockResolvedValue({ id: 'existing' });
-    await expect(service.signup({ organizationName: 'Org', ncnpClassificationId: CLASSIFICATION_FIXTURE, purpose: 'p', registrationNumber: NIC_FIXTURE, email: 'a@b.test', mobileNumber: '0501234567', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'], consent: VALID_CONSENT }))
+    await expect(service.signup({ organizationName: 'Org', purpose: 'p', registrationNumber: NIC_FIXTURE, email: 'a@b.test', mobileNumber: '0501234567', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'], consent: VALID_CONSENT }))
       .rejects.toMatchObject({ response: { error: { code: 'ORGANIZATION_ALREADY_REGISTERED' } } });
     expect(repo.createOrganisationAndAdmin).not.toHaveBeenCalled();
   });
@@ -346,14 +343,14 @@ describe('AuthService.signup', () => {
     repo.findByRegistrationNumber.mockResolvedValue(null);
     repo.findUserByEmail.mockResolvedValue(null);
     repo.createOrganisationAndAdmin.mockResolvedValue({
-      org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: NIC_FIXTURE, logoUrl: null, region: [], email: null, ncnpClassificationId: null, villages: [], isActive: true, createdAt: new Date() },
+      org: { id: 'o1', name: 'Org', purpose: 'p', registrationNumber: NIC_FIXTURE, logoUrl: null, region: [], email: null, sector: null, villages: [], isActive: true, createdAt: new Date() },
       user: { id: 'u1', name: 'Org Admin', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h', consentedAt: new Date(), consentedPolicyVersion: 'v1', sharingConsentedAt: new Date(), sharingConsentedPolicyVersion: 'v1', failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: true },
     });
     mailer.sendTemporaryPassword.mockResolvedValue(true);
   }
 
   const signupBody = {
-    organizationName: 'Org', ncnpClassificationId: CLASSIFICATION_FIXTURE, purpose: 'p', registrationNumber: NIC_FIXTURE, email: 'a@b.test',
+    organizationName: 'Org', purpose: 'p', registrationNumber: NIC_FIXTURE, email: 'a@b.test',
     mobileNumber: '0501234567', regionId: 'r1', governorateIds: ['g1'], centerIds: ['c1'],
   };
 
@@ -536,7 +533,7 @@ describe('AuthService.changePassword', () => {
                 id: 'u1', name: 'A', email: 'a@b.test', roleId: 'role_ngo_admin', passwordHash: 'h2',
                 consentedAt: null, consentedPolicyVersion: null, failedLoginAttempts: 0, lockedUntil: null, mustChangePassword: false,
                 org: {
-                  id: 'o1', name: 'Org', logoUrl: null, region: [], email: null, ncnpClassificationId: null, villages: [],
+                  id: 'o1', name: 'Org', logoUrl: null, region: [], email: null, sector: null, villages: [],
                   isActive: true, createdAt: new Date(), purpose: 'p', registrationNumber: 'RN1',
                 },
               };

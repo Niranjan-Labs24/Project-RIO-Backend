@@ -1,5 +1,3 @@
-import type { OrganisationClassification } from '../ncnp-classification/ncnp-classification.types';
-
 export interface Organization {
   id: string;
   name: string;
@@ -11,10 +9,7 @@ export interface Organization {
   logoUrl: string | null;
   region: string[];
   email: string | null;
-  // GEN-07 — NCNP Non-Profit Entity Classification (Level B id) and its
-  // resolved Group / Level A / Level B names. Replaces the old `sector`.
-  ncnpClassificationId: string | null;
-  classification: OrganisationClassification | null;
+  sector: string | null;
   villages: string[];
   // Optional link into the KSA Geographic Reference master data — additive
   // alongside the free-text `region`/`villages` above, not a replacement
@@ -95,7 +90,7 @@ export interface UpdateOrganizationPayload {
   name?: string;
   region?: string[];
   email?: string | null;
-  ncnpClassificationId?: string;
+  sector?: string | null;
   purpose?: string | null;
   logoUrl?: string | null;
   villages?: string[];
@@ -116,7 +111,7 @@ export interface CreateOrganizationPayload {
   registrationNumber: string;
   region?: string[];
   email?: string | null;
-  ncnpClassificationId: string;
+  sector: string;
   villages?: string[];
   // Required, same as self-signup: this is the org's actual operating
   // geography, not decoration — a System Admin can't create an org that
@@ -148,7 +143,7 @@ export interface OrgRow {
   logoUrl: string | null;
   region: string[];
   email: string | null;
-  ncnpClassificationId: string | null;
+  sector: string | null;
   villages: string[];
   regionId: string | null;
   governorateIds: string[];
