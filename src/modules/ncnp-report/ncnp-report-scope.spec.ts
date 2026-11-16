@@ -1,0 +1,121 @@
+import { describe, expect, it } from 'vitest';
+import {
+  byNeed,
+  byStudy,
+  byStudyAndNeed,
+  dataQualityBandFor,
+  intersectIds,
+  isDataQualityBand,
+  needWhere,
+  studyWhere,
+  UNFILTERED,
+  type NcnpReportScope,
+} from './ncnp-report-scope';
+
+describe('dataQualityBandFor', () => {
+  it('bands a study on its coverage of the required sample size', () => {
+    expect(dataQualityBandFor(300, 100)).toBe('excellent'); // 3x
+    expect(dataQualityBandFor(301, 100)).toBe('excellent');
+    expect(dataQualityBandFor(200, 100)).toBe('good'); //      2x
+    expect(dataQualityBandFor(299, 100)).toBe('good');
+    expect(dataQualityBandFor(100, 100)).toBe('adequate'); //  1x, the target met
+    expect(dataQualityBandFor(199, 100)).toBe('adequate');
+    expect(dataQualityBandFor(99, 100)).toBe('below_threshold');
+    expect(dataQualityBandFor(0, 100)).toBe('below_threshold');
+  });
+
+  it('is not_applicable where the study was never given a target', () => {
+    // The schema's own note: the coverage criterion does not apply to some
+    // study types, and those leave requiredSampleSize null. Banding them
+    // below_threshold would fail them against a rule never applied to them.
+    expect(dataQualityBandFor(0, null)).toBe('not_applicable');
+    expect(dataQualityBandFor(5000, null)).toBe('not_applicable');
+    expect(dataQualityBandFor(10, undefined)).toBe('not_applicable');
+    expect(dataQualityBandFor(10, 0)).toBe('not_applicable');
+    expect(dataQualityBandFor(10, -1)).toBe('not_applicable');
+  });
+
+  it('does not divide by a target of zero', () => {
+    expect(Number.isFinite(0 / 0)).toBe(false);
+    expect(dataQualityBandFor(0, 0)).toBe('not_applicable');
+  });
+});
+
+describe('isDataQualityBand', () => {
+  it('accepts the five bands and nothing else', () => {
+    for (const b of ['excellent', 'good', 'adequate', 'below_threshold', 'not_applicable']) {
+      expect(isDataQualityBand(b)).toBe(true);
+    }
+    expect(isDataQualityBand('EXCELLENT')).toBe(false);
+    expect(isDataQualityBand('')).toBe(false);
+    expect(isDataQualityBand('poor')).toBe(false);
+  });
+});
+
+describe('intersectIds', () => {
+  it('treats null as "everything", which is not an empty match', () => {
+    expect(intersectIds(null, null)).toBeNull();
+    expect(intersectIds(['a'], null)).toEqual(['a']);
+    expect(intersectIds(null, ['b'])).toEqual(['b']);
+  });
+
+  it('intersects two lists', () => {
+    expect(intersectIds(['a', 'b', 'c'], ['b', 'c', 'd'])).toEqual(['b', 'c']);
+  });
+
+  it('returns an empty list — not null — when nothing matches', () => {
+    // The distinction the whole scope rests on: [] means the filter matched
+    // nothing, null means there was no filter. Collapsing them would turn a
+    // filter that excludes everything into no filter at all.
+    expect(intersectIds(['a'], ['b'])).toEqual([]);
+    expect(intersectIds(['a'], [])).toEqual([]);
+  });
+});
+
+describe('the prisma where fragments', () => {
+  it('are empty for an unfiltered report, so the queries are unchanged', () => {
+    expect(studyWhere(UNFILTERED)).toEqual({});
+    expect(needWhere(UNFILTERED)).toEqual({});
+    expect(byStudyAndNeed(UNFILTERED)).toEqual({});
+    expect(byNeed(UNFILTERED)).toEqual({});
+    expect(byStudy(UNFILTERED)).toEqual({});
+  });
+
+  it('restrict only the dimension that is filtered', () => {
+    const needsOnly: NcnpReportScope = { studyIds: null, needIds: ['n1'], active: true };
+    expect(studyWhere(needsOnly)).toEqual({});
+    expect(needWhere(needsOnly)).toEqual({ id: { in: ['n1'] } });
+    expect(byStudyAndNeed(needsOnly)).toEqual({ needId: { in: ['n1'] } });
+    expect(byNeed(needsOnly)).toEqual({ needId: { in: ['n1'] } });
+    expect(byStudy(needsOnly)).toEqual({});
+  });
+
+  it('a study filter reaches the needs under those studies', () => {
+    // Filtering by data quality narrows studies, and every need hangs off a
+    // study. Without this the report said "0 studies" and "68 needs" at
+    // once — the bug this assertion exists to keep out.
+    const studiesOnly: NcnpReportScope = { studyIds: ['s1'], needIds: null, active: true };
+    expect(studyWhere(studiesOnly)).toEqual({ id: { in: ['s1'] } });
+    expect(needWhere(studiesOnly)).toEqual({ studyId: { in: ['s1'] } });
+    expect(byStudyAndNeed(studiesOnly)).toEqual({ studyId: { in: ['s1'] } });
+    // NeedDomain and friends carry no studyId, so they reach it by relation.
+    expect(byNeed(studiesOnly)).toEqual({ need: { studyId: { in: ['s1'] } } });
+  });
+
+  it('applies both halves when both filters are set', () => {
+    const both: NcnpReportScope = { studyIds: ['s1'], needIds: ['n1'], active: true };
+    expect(needWhere(both)).toEqual({ id: { in: ['n1'] }, studyId: { in: ['s1'] } });
+    expect(byNeed(both)).toEqual({ needId: { in: ['n1'] }, need: { studyId: { in: ['s1'] } } });
+  });
+
+  it('restrict both when both filters are set', () => {
+    const both: NcnpReportScope = { studyIds: ['s1'], needIds: ['n1'], active: true };
+    expect(byStudyAndNeed(both)).toEqual({ studyId: { in: ['s1'] }, needId: { in: ['n1'] } });
+  });
+
+  it('an empty match restricts to nothing, rather than to everything', () => {
+    const nothing: NcnpReportScope = { studyIds: [], needIds: [], active: true };
+    expect(studyWhere(nothing)).toEqual({ id: { in: [] } });
+    expect(byStudyAndNeed(nothing)).toEqual({ studyId: { in: [] }, needId: { in: [] } });
+  });
+});

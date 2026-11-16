@@ -330,8 +330,28 @@ export interface NcnpDomainRegionIntersection {
   needCount: number;
 }
 
+/**
+ * What the reader is looking at, when it is not the whole platform.
+ *
+ * A filtered report is a different document from an unfiltered one and must
+ * not be mistaken for it: every figure below is drawn from the subset named
+ * here. `studiesInScope` of `studiesTotal` is what makes that legible —
+ * "47 of 310 studies" tells a reader immediately how much of the platform
+ * this is, which a filter name alone does not.
+ */
+export interface NcnpAppliedFilters {
+  indicator: string | null;
+  dataQuality: string | null;
+  studiesInScope: number;
+  studiesTotal: number;
+  needsInScope: number;
+  needsTotal: number;
+}
+
 export interface NcnpReport {
   generatedAt: string;
+  /** Null when the report covers the whole platform. */
+  appliedFilters: NcnpAppliedFilters | null;
   summary: NcnpReportSummary;
   orgHealth: NcnpOrgHealth;
   orgSummary: NcnpOrgSummary;

@@ -96,16 +96,36 @@ export interface ScopeFilters {
   domainKey?: string;
   regionId?: string;
   villageIds?: string[];
+  /**
+   * Amira's two report filters, 13 Nov 2026 — "generate the report by
+   * indicator and data quality, such as including only data rated
+   * Excellent". They join the set here rather than travelling by their own
+   * route because `domainKey` already proves the shape: a content filter
+   * that every scope honours and that the snapshot cache keys on.
+   *
+   * `indicator` is a Question.indicator, matched through the questions the
+   * survey asked. `dataQuality` is a band over the study's coverage of its
+   * required sample size — see ncnp-report-scope.ts, which owns both rules.
+   */
+  indicator?: string;
+  dataQuality?: string;
 }
 
 /** Canonical form for comparing two filter sets — absent, '' and undefined all
- *  mean "not filtered", and `villageIds` order is not part of its meaning. */
+ *  mean "not filtered", and `villageIds` order is not part of its meaning.
+ *
+ *  Every filter that changes the report's content MUST appear here. The
+ *  snapshot cache is keyed on this string, and a filter missing from it
+ *  would let a filtered report serve the unfiltered snapshot that was built
+ *  first — the same fault the villageId-only key already caused once. */
 function canonicalScopeFilters(f: ScopeFilters): string {
   return JSON.stringify({
     villageId: f.villageId || '',
     domainKey: f.domainKey || '',
     regionId: f.regionId || '',
     villageIds: [...(f.villageIds ?? [])].sort(),
+    indicator: f.indicator || '',
+    dataQuality: f.dataQuality || '',
   });
 }
 

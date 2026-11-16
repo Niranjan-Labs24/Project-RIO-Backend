@@ -7,6 +7,7 @@
 // with the v5.0 rules, against a required sample recalculated from the
 // combined population; and each study's share and own result are shown.
 
+import type { DataQualityBand } from '../data-quality-band';
 import { BadRequestException } from "@nestjs/common";
 import { calculateSampleSize } from "../../studies/sample-size";
 import type { ConfidenceResult } from "./core-needs.config";
@@ -28,6 +29,21 @@ export interface NcnpStudyReliability {
   completenessResult: ConfidenceResult;
   overall: ConfidenceResult;
   methodologyVersion: string;
+  /**
+   * Amira, 13 Nov 2026 — "filters ... by indicator and data quality, such as
+   * including only data rated Excellent".
+   *
+   * `dataQualityBand` grades what `overall` already says, finer. overall is
+   * MEETS or LOW, which cannot express "Excellent"; the band is the study's
+   * coverage of its required sample — see ../data-quality-band.ts. The two
+   * agree by construction: anything below `adequate` is LOW.
+   *
+   * `indicators` are the ones this study's survey actually asks about, so
+   * the picker can be filtered to a single indicator without the reader
+   * having to open each study to find out.
+   */
+  dataQualityBand: DataQualityBand;
+  indicators: string[];
 }
 
 /** One set of inputs from several studies' inputs, pooled. */

@@ -23,6 +23,7 @@ import { renderCoreNeedsPdf } from '../reports/core-needs/core-needs-pdf';
 import { renderCoreNeedsExcel } from '../reports/core-needs/core-needs-excel';
 import { requestLocale } from '../../common/locale/request-locale';
 import type { GenerateNcnpNeedsDto } from './ncnp-report-review.contract';
+import { dataQualityBandFor } from '../reports/data-quality-band';
 
 // The NCNP Compiled Report's own review workflow — System Admin generates a
 // frozen snapshot, System Reviewer approves/rejects it with mandatory
@@ -63,10 +64,34 @@ export class NcnpReportReviewService {
         select: { id: true },
         orderBy: { createdAt: 'desc' },
       });
+      // Which indicators each study's surveys ask about. One query for all
+      // of them rather than one per study: `indicator` lives on Question
+      // alone, reached through the survey's questions.
+      const questionRows = await tx.surveyQuestion.findMany({
+        where: {
+          question: { indicator: { not: null } },
+          survey: { studyId: { in: studies.map((st) => st.id) } },
+        },
+        select: { survey: { select: { studyId: true } }, question: { select: { indicator: true } } },
+      });
+      const indicatorsByStudy = new Map<string, Set<string>>();
+      for (const row of questionRows) {
+        const studyId = row.survey.studyId;
+        const indicator = row.question?.indicator;
+        if (!indicator) continue;
+        const set = indicatorsByStudy.get(studyId) ?? new Set<string>();
+        set.add(indicator);
+        indicatorsByStudy.set(studyId, set);
+      }
+
       const out: NcnpStudyReliability[] = [];
       for (const s of studies) {
         const inputs = await this.studyInputs(tx, s.id, scopeLevel, unitId);
-        if (inputs) out.push(this.reliabilityOf(inputs));
+        if (inputs) {
+          out.push(
+            this.reliabilityOf(inputs, [...(indicatorsByStudy.get(s.id) ?? [])].sort((a, b) => a.localeCompare(b))),
+          );
+        }
       }
       return out;
     });
@@ -109,7 +134,27 @@ export class NcnpReportReviewService {
         generatedAt: new Date().toISOString(),
       });
       // Each study's own result, and its share of the pooled valid responses.
-      const studies = list.map((i) => this.reliabilityOf(i));
+      // The generated report records which indicators each study covers, so
+      // a reader of the finished document can see what it was built from
+      // without going back to the picker.
+      const indicatorRows = await tx.surveyQuestion.findMany({
+        where: {
+          question: { indicator: { not: null } },
+          survey: { studyId: { in: list.map((i) => i.study.id) } },
+        },
+        select: { survey: { select: { studyId: true } }, question: { select: { indicator: true } } },
+      });
+      const indicatorsByStudy = new Map<string, Set<string>>();
+      for (const row of indicatorRows) {
+        const indicator = row.question?.indicator;
+        if (!indicator) continue;
+        const set = indicatorsByStudy.get(row.survey.studyId) ?? new Set<string>();
+        set.add(indicator);
+        indicatorsByStudy.set(row.survey.studyId, set);
+      }
+      const studies = list.map((i) =>
+        this.reliabilityOf(i, [...(indicatorsByStudy.get(i.study.id) ?? [])].sort((a, b) => a.localeCompare(b))),
+      );
       const pooled = studies.reduce((t, st) => t + st.valid, 0);
       for (const st of studies) st.sharePct = pooled ? Math.round((st.valid / pooled) * 1000) / 10 : 0;
       return { ...built, header: { ...built.header, isNcnp: true }, studies };
@@ -150,7 +195,7 @@ export class NcnpReportReviewService {
     }
   }
 
-  private reliabilityOf(inputs: CoreInputs): NcnpStudyReliability {
+  private reliabilityOf(inputs: CoreInputs, indicators: string[]): NcnpStudyReliability {
     const c = buildCoreNeedsContent({ inputs, output: 'SUMMARY', domainKeys: null, filters: {}, generatedAt: new Date().toISOString() });
     return {
       studyId: inputs.study.id,
@@ -166,6 +211,10 @@ export class NcnpReportReviewService {
       completenessResult: c.confidence.completeness.result,
       overall: c.confidence.overall,
       methodologyVersion: inputs.study.methodologyVersionLabel,
+      // The same two numbers `overall` is decided from, graded finer — see
+      // NcnpStudyReliability for why MEETS/LOW could not carry "Excellent".
+      dataQualityBand: dataQualityBandFor(c.confidence.sample.valid, c.confidence.sample.required),
+      indicators,
     };
   }
 

@@ -3,7 +3,35 @@ import type { Response } from 'express';
 import { RateLimit } from '../../common/guards/rate-limit.guard';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { NcnpReportService } from './ncnp-report.service';
+import { isDataQualityBand, type NcnpReportFilters } from './ncnp-report-scope';
 import type { NcnpReport } from './ncnp-report.types';
+
+/**
+ * The two filters, off the query string.
+ *
+ * An unknown dataQuality value is a 400 rather than a silent fall-through:
+ * a filter that quietly does nothing is worse than one that refuses, since
+ * the reader would take an unfiltered report for a filtered one. (The
+ * locale param below keeps its fall-back contract — exporting in the wrong
+ * language is a nuisance; reading the wrong population is a mistake.)
+ */
+function parseFilters(indicator?: string, dataQuality?: string): NcnpReportFilters {
+  if (dataQuality != null && dataQuality !== '' && !isDataQualityBand(dataQuality)) {
+    throw new BadRequestException({
+      error: {
+        code: 'INVALID_DATA_QUALITY',
+        message:
+          'dataQuality must be one of: excellent, good, adequate, below_threshold, not_applicable.',
+      },
+    });
+  }
+  return {
+    indicator: indicator && indicator.trim() !== '' ? indicator.trim() : undefined,
+    // Narrowed by the guard above; an empty string fell through it as "no
+    // filter", so it cannot reach here.
+    dataQuality: dataQuality ? dataQuality : undefined,
+  };
+}
 
 @Controller('ncnp-report')
 export class NcnpReportController {
@@ -17,11 +45,24 @@ export class NcnpReportController {
   get(
     @Query('periodDays') periodDays?: string,
     @Query('dormantDays') dormantDays?: string,
+    @Query('indicator') indicator?: string,
+    @Query('dataQuality') dataQuality?: string,
   ): Promise<NcnpReport> {
     return this.ncnpReport.getReport(
       periodDays ? Number(periodDays) : undefined,
       dormantDays ? Number(dormantDays) : undefined,
+      parseFilters(indicator, dataQuality),
     );
+  }
+
+  /**
+   * The indicators the filter can offer. Static path, so it is declared
+   * beside `export` and before any future `:param` route — same reason.
+   */
+  @Get('indicators')
+  @RequirePermission('archiveSharingAudit', 'read')
+  indicators(): Promise<string[]> {
+    return this.ncnpReport.availableIndicators();
   }
 
   // Note the route order: this static path must be registered before any
@@ -35,6 +76,8 @@ export class NcnpReportController {
     @Query('periodDays') periodDays: string | undefined,
     @Query('dormantDays') dormantDays: string | undefined,
     @Query('locale') locale: string | undefined,
+    @Query('indicator') indicator: string | undefined,
+    @Query('dataQuality') dataQuality: string | undefined,
     @Res() res: Response,
   ): Promise<void> {
     if (format !== 'pdf' && format !== 'excel') {
@@ -50,6 +93,7 @@ export class NcnpReportController {
       periodDays ? Number(periodDays) : undefined,
       dormantDays ? Number(dormantDays) : undefined,
       locale === 'ar' ? 'ar' : 'en',
+      parseFilters(indicator, dataQuality),
     );
     res.set({
       'Content-Type': file.contentType,

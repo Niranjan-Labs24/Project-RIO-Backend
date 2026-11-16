@@ -3,6 +3,7 @@ import { BadRequestException, ConflictException, ForbiddenException } from '@nes
 import { NcnpReportReviewService } from './ncnp-report-review.service';
 import { orgContext } from '../../tenancy/org-context';
 import { fakeTx } from '../reports/core-needs/__fixtures__/core-needs-db';
+import { dataQualityBandFor } from '../reports/data-quality-band';
 
 // The NCNP Needs Report (Core Needs Report across organisations): areas,
 // studies with their reliability, generation, the reader's view and export.
@@ -30,6 +31,17 @@ function makeService() {
       findUnique: async ({ where }: { where: { id: string } }) => rows.find((r) => r.id === where.id) ?? null,
     },
     user: { findMany: async () => [{ id: 'admin-1', name: 'System Admin' }] },
+    // Which indicators each study's survey asks about — the picker's
+    // indicator filter reads these (Amira, 13 Nov 2026). Two questions on
+    // s1's survey, one of them without a bank question, so the row with no
+    // indicator is the one that must not reach the list.
+    surveyQuestion: {
+      findMany: async () => [
+        { survey: { studyId: 's1' }, question: { indicator: 'Access to a safe water source' } },
+        { survey: { studyId: 's1' }, question: { indicator: 'Child immunization' } },
+        { survey: { studyId: 's1' }, question: null },
+      ],
+    },
   };
   const tenant = {
     runAsSupervisor: async (fn: (t: unknown) => unknown) => fn(tx),
@@ -53,6 +65,17 @@ describe('NCNP Needs Report', () => {
     const studies = await asAdmin(() => service.needsStudies('KINGDOM', null));
     expect(studies).toHaveLength(1);
     expect(studies[0]).toMatchObject({ studyId: 's1', organization: 'Sample Charity', methodologyVersion: 'v5.0' });
+    // The two filters Amira asked for, 13 Nov 2026. The band grades what
+    // `overall` already says — see data-quality-band.ts — and the
+    // indicators are sorted and de-duplicated, with the hand-written
+    // question (no bank question, so no indicator) left out.
+    expect(studies[0]!.dataQualityBand).toBe(
+      dataQualityBandFor(studies[0]!.valid, studies[0]!.required),
+    );
+    expect(studies[0]!.indicators).toEqual([
+      'Access to a safe water source',
+      'Child immunization',
+    ]);
   });
 
   it('is for NCNP users only', async () => {

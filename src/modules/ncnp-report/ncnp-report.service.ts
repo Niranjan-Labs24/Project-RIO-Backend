@@ -12,6 +12,18 @@ import { TranslationService } from '../translation/translation.service';
 import { loadMasterDataAliases, localizeDataValues, NO_ALIASES } from '../reports/i18n/master-data-names';
 import { sweepRemainingEnglish } from '../reports/i18n/sweep-english';
 import { renderNcnpReportPdf } from './ncnp-report-pdf';
+import {
+  byNeed,
+  byStudy,
+  byStudyAndNeed,
+  dataQualityBandFor,
+  intersectIds,
+  needWhere,
+  studyWhere,
+  UNFILTERED,
+  type NcnpReportFilters,
+  type NcnpReportScope,
+} from './ncnp-report-scope';
 import type {
   NcnpAgeBracketBreakdown,
   NcnpCriticalNeedsOverview,
@@ -90,8 +102,20 @@ export class NcnpReportService {
   async getReport(
     periodDays: number = DEFAULT_PERIOD_DAYS,
     dormantDays: number = DEFAULT_DORMANT_DAYS,
+    filters: NcnpReportFilters = {},
   ): Promise<NcnpReport> {
     this.assertCrossEntity();
+
+    // Resolved once, before anything else runs. Every query below that
+    // reads a study, a need, a survey or a response spreads one of these
+    // fragments into its `where`; each is {} when nothing is filtered, so
+    // an unfiltered report issues exactly the queries it always did.
+    const scope = await this.resolveScope(filters);
+    const sStudyId = studyWhere(scope); // tables keyed by their own id
+    const sNeedId = needWhere(scope);
+    const sBoth = byStudyAndNeed(scope); // tables carrying studyId + needId
+    const sNeed = byNeed(scope);
+    const sStudy = byStudy(scope);
 
     const now = new Date();
     const currentPeriodStart = new Date(now.getTime() - periodDays * 24 * 60 * 60 * 1000);
@@ -129,27 +153,27 @@ export class NcnpReportService {
       this.tenant.runAsSupervisor((tx) =>
         tx.organisation.findMany({ select: { id: true, name: true, isActive: true, updatedAt: true } }),
       ),
-      this.tenant.runAsSupervisor((tx) => tx.study.count()),
-      this.tenant.runAsSupervisor((tx) => tx.study.count({ where: { createdAt: { gte: currentPeriodStart } } })),
+      this.tenant.runAsSupervisor((tx) => tx.study.count({ where: sStudyId })),
+      this.tenant.runAsSupervisor((tx) => tx.study.count({ where: { ...sStudyId, createdAt: { gte: currentPeriodStart } } })),
       this.tenant.runAsSupervisor((tx) =>
-        tx.study.count({ where: { createdAt: { gte: previousPeriodStart, lt: currentPeriodStart } } }),
+        tx.study.count({ where: { ...sStudyId, createdAt: { gte: previousPeriodStart, lt: currentPeriodStart } } }),
       ),
-      this.tenant.runAsSupervisor((tx) => tx.study.groupBy({ by: ['status'], _count: true })),
-      this.tenant.runAsSupervisor((tx) => tx.study.groupBy({ by: ['orgId'], _max: { updatedAt: true } })),
-      this.tenant.runAsSupervisor((tx) => tx.survey.count()),
-      this.tenant.runAsSupervisor((tx) => tx.survey.count({ where: { createdAt: { gte: currentPeriodStart } } })),
+      this.tenant.runAsSupervisor((tx) => tx.study.groupBy({ by: ['status'], where: sStudyId, _count: true })),
+      this.tenant.runAsSupervisor((tx) => tx.study.groupBy({ by: ['orgId'], where: sStudyId, _max: { updatedAt: true } })),
+      this.tenant.runAsSupervisor((tx) => tx.survey.count({ where: sBoth })),
+      this.tenant.runAsSupervisor((tx) => tx.survey.count({ where: { ...sBoth, createdAt: { gte: currentPeriodStart } } })),
       this.tenant.runAsSupervisor((tx) =>
-        tx.survey.count({ where: { createdAt: { gte: previousPeriodStart, lt: currentPeriodStart } } }),
+        tx.survey.count({ where: { ...sBoth, createdAt: { gte: previousPeriodStart, lt: currentPeriodStart } } }),
       ),
-      this.tenant.runAsSupervisor((tx) => tx.survey.groupBy({ by: ['orgId'], _max: { createdAt: true } })),
-      this.tenant.runAsSupervisor((tx) => tx.surveyResponse.count()),
+      this.tenant.runAsSupervisor((tx) => tx.survey.groupBy({ by: ['orgId'], where: sBoth, _max: { createdAt: true } })),
+      this.tenant.runAsSupervisor((tx) => tx.surveyResponse.count({ where: sBoth })),
       this.tenant.runAsSupervisor((tx) =>
-        tx.surveyResponse.count({ where: { submittedAt: { gte: currentPeriodStart } } }),
+        tx.surveyResponse.count({ where: { ...sBoth, submittedAt: { gte: currentPeriodStart } } }),
       ),
       this.tenant.runAsSupervisor((tx) =>
-        tx.surveyResponse.count({ where: { submittedAt: { gte: previousPeriodStart, lt: currentPeriodStart } } }),
+        tx.surveyResponse.count({ where: { ...sBoth, submittedAt: { gte: previousPeriodStart, lt: currentPeriodStart } } }),
       ),
-      this.tenant.runAsSupervisor((tx) => tx.surveyResponse.groupBy({ by: ['orgId'], _max: { submittedAt: true } })),
+      this.tenant.runAsSupervisor((tx) => tx.surveyResponse.groupBy({ by: ['orgId'], where: sBoth, _max: { submittedAt: true } })),
       this.tenant.runAsSupervisor((tx) => tx.organisation.count()),
       this.tenant.runAsSupervisor((tx) => tx.organisation.count({ where: { createdAt: { gte: currentPeriodStart } } })),
       this.tenant.runAsSupervisor((tx) =>
@@ -158,8 +182,8 @@ export class NcnpReportService {
       this.tenant.runAsSupervisor((tx) =>
         tx.domain.findMany({ where: { isActive: true }, orderBy: { displayOrder: 'asc' } }),
       ),
-      this.tenant.runAsSupervisor((tx) => tx.needDomain.groupBy({ by: ['domain'], _count: true })),
-      this.tenant.runAsSupervisor((tx) => tx.publicSurveyLink.groupBy({ by: ['isActive'], _count: true })),
+      this.tenant.runAsSupervisor((tx) => tx.needDomain.groupBy({ by: ['domain'], where: sNeed, _count: true })),
+      this.tenant.runAsSupervisor((tx) => tx.publicSurveyLink.groupBy({ by: ['isActive'], where: sBoth, _count: true })),
     ]);
 
     const lastActivityByOrg = this.mergeLastActivity(
@@ -197,25 +221,25 @@ export class NcnpReportService {
       organisationsByCenterGroups,
       studiesByOrgGroups,
     ] = await Promise.all([
-      this.tenant.runAsSupervisor((tx) => tx.survey.groupBy({ by: ['status'], _count: true })),
-      this.tenant.runAsSupervisor((tx) => tx.survey.groupBy({ by: ['orgId', 'status'], _count: true })),
+      this.tenant.runAsSupervisor((tx) => tx.survey.groupBy({ by: ['status'], where: sBoth, _count: true })),
+      this.tenant.runAsSupervisor((tx) => tx.survey.groupBy({ by: ['orgId', 'status'], where: sBoth, _count: true })),
       this.tenant.runAsSupervisor((tx) => tx.region.findMany({ select: { id: true, code: true, name: true } })),
       this.tenant.runAsSupervisor((tx) =>
         tx.organisation.findMany({ select: { id: true, regionId: true } }),
       ),
       this.tenant.runAsSupervisor((tx) =>
-        tx.survey.groupBy({ by: ['orgId'], where: { status: 'PUBLISHED' }, _count: true }),
+        tx.survey.groupBy({ by: ['orgId'], where: { ...sBoth, status: 'PUBLISHED' }, _count: true }),
       ),
       this.tenant.runAsSupervisor((tx) =>
         tx.surveyResponse.findMany({
           select: { submittedAt: true },
-          where: { submittedAt: { gte: trendStart } },
+          where: { ...sBoth, submittedAt: { gte: trendStart } },
         }),
       ),
-      this.tenant.runAsSupervisor((tx) => tx.surveyResponse.groupBy({ by: ['regionId'], _count: true })),
-      this.tenant.runAsSupervisor((tx) => tx.surveyResponse.groupBy({ by: ['gender'], _count: true })),
-      this.tenant.runAsSupervisor((tx) => tx.surveyResponse.groupBy({ by: ['ageBracket'], _count: true })),
-      this.tenant.runAsSupervisor((tx) => tx.surveyResponse.groupBy({ by: ['orgId'], _count: true })),
+      this.tenant.runAsSupervisor((tx) => tx.surveyResponse.groupBy({ by: ['regionId'], where: sBoth, _count: true })),
+      this.tenant.runAsSupervisor((tx) => tx.surveyResponse.groupBy({ by: ['gender'], where: sBoth, _count: true })),
+      this.tenant.runAsSupervisor((tx) => tx.surveyResponse.groupBy({ by: ['ageBracket'], where: sBoth, _count: true })),
+      this.tenant.runAsSupervisor((tx) => tx.surveyResponse.groupBy({ by: ['orgId'], where: sBoth, _count: true })),
       // Historical rejection *events*, not "surveys currently REJECTED" —
       // Survey.rejectionReasonCode is cleared on resubmit, so a
       // rejected-then-corrected-then-published survey would otherwise vanish
@@ -231,6 +255,7 @@ export class NcnpReportService {
       ),
       this.tenant.runAsSupervisor((tx) =>
         tx.villagePriorityAssessment.findMany({
+          where: sStudy,
           select: {
             studyId: true,
             surveyId: true,
@@ -248,7 +273,7 @@ export class NcnpReportService {
       this.tenant.runAsSupervisor((tx) => tx.organisationGovernorate.groupBy({ by: ['governorateId'], _count: true })),
       this.tenant.runAsSupervisor((tx) => tx.center.findMany({ select: { id: true, code: true, name: true } })),
       this.tenant.runAsSupervisor((tx) => tx.organisationCenter.groupBy({ by: ['centerId'], _count: true })),
-      this.tenant.runAsSupervisor((tx) => tx.study.groupBy({ by: ['orgId'], _count: true })),
+      this.tenant.runAsSupervisor((tx) => tx.study.groupBy({ by: ['orgId'], where: sStudyId, _count: true })),
     ]);
 
     // Region.code is an Int in the schema; stringified here so all three
@@ -317,7 +342,7 @@ export class NcnpReportService {
       duplicateResponseCount,
       surveyQuestionIndicators,
     ] = await Promise.all([
-      this.tenant.runAsSupervisor((tx) => tx.survey.groupBy({ by: ['orgId'], _count: true })),
+      this.tenant.runAsSupervisor((tx) => tx.survey.groupBy({ by: ['orgId'], where: sBoth, _count: true })),
       // Each survey's OWN Need's governorates/centers — NOT the org's
       // broader organisationGovernorate/organisationCenter links (an org
       // can serve several governorates; attributing that org's *entire*
@@ -326,34 +351,35 @@ export class NcnpReportService {
       // Need selects its own specific governorate(s)/center(s), so joining
       // through the Need is the accurate scope for "where was this survey
       // actually run.")
-      this.tenant.runAsSupervisor((tx) => tx.survey.findMany({ select: { id: true, needId: true } })),
-      this.tenant.runAsSupervisor((tx) => tx.needGovernorate.findMany({ select: { needId: true, governorateId: true } })),
-      this.tenant.runAsSupervisor((tx) => tx.needCenter.findMany({ select: { needId: true, centerId: true } })),
+      this.tenant.runAsSupervisor((tx) => tx.survey.findMany({ where: sBoth, select: { id: true, needId: true } })),
+      this.tenant.runAsSupervisor((tx) => tx.needGovernorate.findMany({ where: sNeed, select: { needId: true, governorateId: true } })),
+      this.tenant.runAsSupervisor((tx) => tx.needCenter.findMany({ where: sNeed, select: { needId: true, centerId: true } })),
       this.tenant.runAsSupervisor((tx) =>
-        tx.study.findMany({ select: { createdAt: true }, where: { createdAt: { gte: trendStart } } }),
+        tx.study.findMany({ select: { createdAt: true }, where: { ...sStudyId, createdAt: { gte: trendStart } } }),
       ),
       // Kingdom-wide Needs rollup by region — Needs themselves, not
       // Organizations/Surveys (see NcnpNeedsGeography).
-      this.tenant.runAsSupervisor((tx) => tx.need.groupBy({ by: ['orgId'], _count: true })),
-      this.tenant.runAsSupervisor((tx) => tx.need.count({ where: EXCLUDE_MERGED })),
+      this.tenant.runAsSupervisor((tx) => tx.need.groupBy({ by: ['orgId'], where: sNeedId, _count: true })),
+      this.tenant.runAsSupervisor((tx) => tx.need.count({ where: { ...sNeedId, ...EXCLUDE_MERGED } })),
       // "Unclassified" = never assigned a Domain at all — Need.domain is
       // the authoritative field (always mirrors needDomains[0], see the
       // schema comment on Need.domain), so null here means literally no
       // classification decision has ever been made for this Need.
-      this.tenant.runAsSupervisor((tx) => tx.need.count({ where: { domain: null, ...EXCLUDE_MERGED } })),
-      this.tenant.runAsSupervisor((tx) => tx.needDomain.groupBy({ by: ['domain', 'subDomain'], _count: true })),
+      this.tenant.runAsSupervisor((tx) => tx.need.count({ where: { ...sNeedId, domain: null, ...EXCLUDE_MERGED } })),
+      this.tenant.runAsSupervisor((tx) => tx.needDomain.groupBy({ by: ['domain', 'subDomain'], where: sNeed, _count: true })),
       // orgId is denormalized directly onto NeedDomain (see schema comment),
       // so this is a real (org's region, domain) pair per row without a
       // second join back through Need.
-      this.tenant.runAsSupervisor((tx) => tx.needDomain.findMany({ select: { orgId: true, domain: true } })),
+      this.tenant.runAsSupervisor((tx) => tx.needDomain.findMany({ where: sNeed, select: { orgId: true, domain: true } })),
       this.tenant.runAsSupervisor((tx) =>
         tx.need.findMany({
+          where: sNeedId,
           select: { id: true, title: true, orgId: true, domain: true, subDomain: true, source: true, referenceId: true },
         }),
       ),
-      this.tenant.runAsSupervisor((tx) => tx.evidence.groupBy({ by: ['needId'], _count: true })),
-      this.tenant.runAsSupervisor((tx) => tx.responseQualityResult.groupBy({ by: ['confidenceFlag'], _count: true })),
-      this.tenant.runAsSupervisor((tx) => tx.responseQualityResult.count({ where: { isDuplicate: true } })),
+      this.tenant.runAsSupervisor((tx) => tx.evidence.groupBy({ by: ['needId'], where: sBoth, _count: true })),
+      this.tenant.runAsSupervisor((tx) => tx.responseQualityResult.groupBy({ by: ['confidenceFlag'], where: sBoth, _count: true })),
+      this.tenant.runAsSupervisor((tx) => tx.responseQualityResult.count({ where: { ...sBoth, isDuplicate: true } })),
       // No dedicated Indicator model exists in this schema — Question Bank's
       // own `indicator`/`kpi` free-text fields are the closest real,
       // populated concept (see the Unified Need Record Schema gap analysis,
@@ -367,7 +393,9 @@ export class NcnpReportService {
       // "the first row found" regardless of topic.
       this.tenant.runAsSupervisor((tx) =>
         tx.surveyQuestion.findMany({
-          where: { question: { indicator: { not: null } } },
+          // Scoped through its survey: a survey question has no studyId or
+          // needId of its own.
+          where: { question: { indicator: { not: null } }, survey: sBoth },
           select: { surveyId: true, question: { select: { indicator: true, domain: true, subDomain: true } } },
         }),
       ),
@@ -424,8 +452,34 @@ export class NcnpReportService {
     );
     const domainRegionIntersections = this.buildDomainRegionIntersections(needDomainOrgRows, regionIdByOrg, regionMetaById);
 
+    // The totals a filtered report is a subset OF — fetched unscoped on
+    // purpose, so "47 of 310" can be read off the page. Only queried when
+    // a filter is on; an unfiltered report pays nothing for this.
+    const appliedFilters = scope.active
+      ? await (async () => {
+          const [studiesTotal, needsTotal] = await Promise.all([
+            this.tenant.runAsSupervisor((tx) => tx.study.count()),
+            this.tenant.runAsSupervisor((tx) => tx.need.count()),
+          ]);
+          return {
+            indicator: filters.indicator ?? null,
+            dataQuality: filters.dataQuality ?? null,
+            // The counts the report itself arrived at, not the length of
+            // the id lists: a data-quality filter sets no need ids at all
+            // and reaches the needs through their study, so reading
+            // scope.needIds here said "68 of 68 needs" on a report showing
+            // five of them.
+            studiesInScope: totalStudies,
+            studiesTotal,
+            needsInScope: totalNeeds,
+            needsTotal,
+          };
+        })()
+      : null;
+
     return {
       generatedAt: now.toISOString(),
+      appliedFilters,
       summary: {
         totals: {
           organizations: totalOrganizations,
@@ -519,8 +573,9 @@ export class NcnpReportService {
     periodDays?: number,
     dormantDays?: number,
     locale: SupportedLocale = 'en',
+    filters: NcnpReportFilters = {},
   ): Promise<{ filename: string; contentType: string; body: Buffer }> {
-    const live = await this.getReport(periodDays, dormantDays);
+    const live = await this.getReport(periodDays, dormantDays, filters);
     const report = await this.localizeForExport(live, locale);
     const dateStamp = report.generatedAt.slice(0, 10);
     // Every export is audited with the actor's role (not just their user
@@ -533,7 +588,15 @@ export class NcnpReportService {
       entityType: 'ncnp_report',
       entityId: null,
       entityLabel: `NCNP Compiled Report exported (${format})`,
-      metadata: { format, reviewerRole: role, generatedAt: report.generatedAt },
+      metadata: {
+        format,
+        reviewerRole: role,
+        generatedAt: report.generatedAt,
+        // A filtered export is a different document leaving the platform
+        // from an unfiltered one; the log has to say which was taken.
+        indicator: filters.indicator ?? null,
+        dataQuality: filters.dataQuality ?? null,
+      },
     });
     const actorId = requireActor();
     const actor = await this.tenant.runAsSupervisor((tx) => tx.user.findUnique({ where: { id: actorId }, select: { name: true } }));
@@ -1347,6 +1410,87 @@ export class NcnpReportService {
       .map((c) => ({ regionName: c.regionName, domainName: c.domainName, needCount: c.count }))
       .sort((a, b) => b.needCount - a.needCount)
       .slice(0, DOMAIN_REGION_INTERSECTION_LIMIT);
+  }
+
+  /**
+   * Turn the two filters into the set of studies and needs the report may
+   * draw on. See ncnp-report-scope.ts for why each is derived rather than
+   * stored, and for what null vs [] means here.
+   *
+   * Both lists are resolved in one pass up front rather than per section:
+   * the report is forty queries over the same handful of tables, and
+   * resolving per section would ask the same question forty times and
+   * risk two sections disagreeing about what the filter means.
+   */
+  private async resolveScope(filters: NcnpReportFilters): Promise<NcnpReportScope> {
+    const { indicator, dataQuality } = filters;
+    if (!indicator && !dataQuality) return UNFILTERED;
+
+    let studyIds: string[] | null = null;
+    let needIds: string[] | null = null;
+
+    if (dataQuality) {
+      // Every study with its target and its response count, banded in
+      // memory: the band is a ratio between two columns on different
+      // tables, which Prisma cannot express as a `where`.
+      const [studies, responsesByStudy] = await Promise.all([
+        this.tenant.runAsSupervisor((tx) =>
+          tx.study.findMany({ select: { id: true, requiredSampleSize: true } }),
+        ),
+        this.tenant.runAsSupervisor((tx) =>
+          tx.surveyResponse.groupBy({ by: ['studyId'], _count: true }),
+        ),
+      ]);
+      const countByStudy = new Map(
+        responsesByStudy.map((r) => [r.studyId, typeof r._count === 'number' ? r._count : 0]),
+      );
+      studyIds = studies
+        .filter(
+          (st) => dataQualityBandFor(countByStudy.get(st.id) ?? 0, st.requiredSampleSize) === dataQuality,
+        )
+        .map((st) => st.id);
+    }
+
+    if (indicator) {
+      // Need -> Survey -> SurveyQuestion -> Question.indicator. A question
+      // the builder wrote by hand has no questionId and so no indicator,
+      // which is why the join runs from the question side.
+      const surveys = await this.tenant.runAsSupervisor((tx) =>
+        tx.survey.findMany({
+          where: { surveyQuestions: { some: { question: { indicator } } } },
+          select: { needId: true, studyId: true },
+        }),
+      );
+      needIds = [...new Set(surveys.map((sv) => sv.needId))];
+      // A study is in scope when one of its surveys measures the indicator.
+      // Intersected, not replaced: with both filters set a study must pass
+      // the quality band AND carry the indicator.
+      studyIds = intersectIds(studyIds, [...new Set(surveys.map((sv) => sv.studyId))]);
+    }
+
+    return { studyIds, needIds, active: true };
+  }
+
+  /**
+   * The indicators the filter can actually offer — those a survey somewhere
+   * has a question for. Taken from the data rather than from the question
+   * bank, so the dropdown never lists an indicator that would return an
+   * empty report.
+   */
+  async availableIndicators(): Promise<string[]> {
+    this.assertCrossEntity();
+    const rows = await this.tenant.runAsSupervisor((tx) =>
+      tx.surveyQuestion.findMany({
+        where: { question: { indicator: { not: null } } },
+        select: { question: { select: { indicator: true } } },
+        distinct: ['questionId'],
+      }),
+    );
+    return [
+      ...new Set(
+        rows.map((r) => r.question?.indicator).filter((i): i is string => typeof i === 'string' && i !== ''),
+      ),
+    ].sort((a, b) => a.localeCompare(b));
   }
 
   private assertCrossEntity(): void {
