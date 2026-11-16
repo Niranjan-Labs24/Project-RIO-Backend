@@ -109,6 +109,8 @@ export class SurveysService {
         // was already created.
         indicatorAr: string | null;
         kpiAr: string | null;
+        // SVB-02 — the KPI's own display code ([indicator code]-[n]).
+        kpiCode?: string | null;
         priorityWeight?: Prisma.Decimal | null;
       } | null;
     },
@@ -139,6 +141,7 @@ export class SurveysService {
         subDomain: sq.question.subDomain,
         indicator: sq.question.indicator,
         kpi: sq.question.kpi,
+        kpiCode: sq.question.kpiCode ?? null,
         indicatorAr: sq.question.indicatorAr,
         kpiAr: sq.question.kpiAr,
         priorityWeight: includeWeight ? (sq.question.priorityWeight?.toNumber() ?? null) : undefined,
@@ -168,6 +171,7 @@ export class SurveysService {
       subDomain: sq.subDomain,
       indicator: null,
       kpi: sq.kpi,
+      kpiCode: null,
       // Same reasoning as questionTextAr above — no Arabic column exists
       // for a custom question's indicator/KPI.
       indicatorAr: null,

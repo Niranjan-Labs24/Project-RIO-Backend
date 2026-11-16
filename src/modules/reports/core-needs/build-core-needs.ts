@@ -694,7 +694,7 @@ export function buildCoreNeedsContent(input: BuildCoreNeedsInput): CoreNeedsCont
       const severity = round1(k.severityScore!);
       return {
         rank: i + 1,
-        kpiCode: splitKpi(k.entityId)[0],
+        kpiCode: kpiDisplayCode(k.entityId, inputs.questions),
         kpi: k.entityId,
         domain: meta.domain,
         subDomain: meta.subDomain,
@@ -747,7 +747,7 @@ export function buildCoreNeedsContent(input: BuildCoreNeedsInput): CoreNeedsCont
                 if (!kr) return null;
                 const severity = kr.severityScore != null ? round1(kr.severityScore) : null;
                 return {
-                  code: splitKpi(kpi)[0],
+                  code: kpiDisplayCode(kpi, questions),
                   name: kpi,
                   actual: actualFor(kpi, answers),
                   severity,
@@ -1093,6 +1093,13 @@ function unique<T>(xs: T[]): T[] {
 }
 
 /** "HLT-01 — % of …" → ["HLT-01", "% of …"]; a KPI with no code keeps its name. */
+/** SVB-02 — the KPI's display code (HLT-01-02), falling back to the code
+ *  inside the KPI text for a KPI that has none. */
+function kpiDisplayCode(kpi: string, questions: Map<string, QuestionMeta>): string {
+  for (const q of questions.values()) if (q.kpi === kpi && q.kpiCode) return q.kpiCode;
+  return splitKpi(kpi)[0];
+}
+
 export function splitKpi(kpi: string): [string, string] {
   const m = /^([A-Z]{2,5}-\d{1,3}[a-z]?)\s*[—–-]\s*(.+)$/.exec(kpi.trim());
   return m ? [m[1]!, m[2]!.trim()] : ['', kpi.trim()];

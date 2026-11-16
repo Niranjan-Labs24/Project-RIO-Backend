@@ -2532,6 +2532,12 @@ model Question {
   subDomain        String  @map("sub_domain") @db.VarChar(120)
   indicator        String? @db.VarChar(200)
   kpi              String? @db.VarChar(200)
+  // SVB-02 (UAT v1.4) — the parent Indicator's code (first question code under
+  // that Domain / Sub-domain / Indicator, methodology order) and the KPI's own
+  // display code, [indicatorCode]-[n]. Labels only; recomputed whenever the
+  // question bank changes.
+  indicatorCode    String? @map("indicator_code") @db.VarChar(64)
+  kpiCode          String? @map("kpi_code") @db.VarChar(80)
   questionText     String  @map("question_text")
   answerType       String  @map("answer_type") @db.VarChar(64)
   answerOptions    Json?   @map("answer_options")

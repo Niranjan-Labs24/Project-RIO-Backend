@@ -68,10 +68,16 @@ export class StudiesService {
     }
   }
 
-  private async assertValidTargetSector(value: string | undefined): Promise<void> {
+  private async assertValidTargetSector(
+    value: string | undefined,
+    savedValue?: () => Promise<string | null | undefined>,
+  ): Promise<void> {
     if (value === undefined) return;
     const names = await this.studyConfig.listActiveTargetSectorNames();
     if (names.length > 0 && !names.includes(value)) {
+      // GEN-07 — a study keeps the sector it was saved with even after that
+      // option is retired from the list, so an unchanged value still saves.
+      if (savedValue && (await savedValue()) === value) return;
       throw new BadRequestException({
         error: { code: 'INVALID_TARGET_SECTOR', message: `"${value}" is not a configured Target Sector.` },
       });
@@ -453,7 +459,12 @@ export class StudiesService {
   async update(id: string, payload: UpdateStudyPayload): Promise<Study> {
     const orgId = requireOrgId();
     await this.assertValidStudyType(payload.studyType);
-    await this.assertValidTargetSector(payload.targetSector);
+    await this.assertValidTargetSector(payload.targetSector, async () => {
+      const saved = await this.tenant.runInOrgContext((tx) =>
+        tx.study.findUnique({ where: { id }, select: { targetSector: true } }),
+      );
+      return saved?.targetSector;
+    });
     const { updated, changes } = await this.tenant.runInOrgContext(async (tx) => {
       const currentRaw = (await tx.study.findUnique({ where: { id }, include: GEO_INCLUDE })) as RawStudyWithGeo | null;
       if (!currentRaw) throw new NotFoundException({ error: { code: 'STUDY_NOT_FOUND', message: 'Study not found' } });

@@ -299,15 +299,24 @@ interface MailAccount {
  * threading the URL through seven signatures to reach one <img> is not worth
  * the churn. Unset, the mark is skipped and the wordmark stands alone.
  */
-function emailMasthead(): string {
+function emailMasthead(ar = true): string {
   const base = (process.env.PUBLIC_APP_URL ?? process.env.CORS_ORIGIN ?? '').replace(/\/+$/, '');
   const mark = base
-    ? `<img src="${base}/brand/ncnp-logo-white.png" width="73" height="36" alt="المركز الوطني لتنمية القطاع غير الربحي" style="display:block;border:0;outline:none;text-decoration:none;height:36px;width:73px;">`
+    ? `<img src="${base}/brand/ncnp-logo-white.png" width="73" height="36" alt="${
+        ar
+          ? 'المركز الوطني لتنمية القطاع غير الربحي'
+          : 'National Center for Non-profit Sector Development'
+      }" style="display:block;border:0;outline:none;text-decoration:none;height:36px;width:73px;">`
     : '';
+  // The wordmark follows the email's own language, the way the landing page's
+  // header does: an English email headed بوصلة reads as the wrong product to
+  // someone who cannot read the script. Arabic is the default because most of
+  // these templates are Arabic-only and pass nothing.
+  const wordmark = ar ? 'بوصلة' : 'Bosla';
   // A table, not flex or inline-block: Outlook's Word engine lays neither out.
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>${
     mark ? `<td style="padding-inline-end:12px;vertical-align:middle;">${mark}</td>` : ''
-  }<td style="vertical-align:middle;"><span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;">بوصلة</span></td></tr></table>`;
+  }<td style="vertical-align:middle;"><span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;">${wordmark}</span></td></tr></table>`;
 }
 
 /**
@@ -334,7 +343,7 @@ function otpEmailHtml(ar: boolean, lead: string, code: string, note: string): st
     <table role="presentation" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;">
       <tr>
         <td class="email-header" bgcolor="#145463" style="background-color:#145463;padding:20px 24px;">
-          ${emailMasthead()}
+          ${emailMasthead(ar)}
         </td>
       </tr>
       <tr>
@@ -1127,7 +1136,7 @@ function passwordResetHtml(
           <table role="presentation" width="480" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
             <tr>
               <td bgcolor="#145463" class="email-header" style="background-color:#145463;padding:24px 32px;">
-                ${emailMasthead()}
+                ${emailMasthead(ar)}
               </td>
             </tr>
             <tr>
@@ -1222,7 +1231,7 @@ function temporaryPasswordHtml(
           <table role="presentation" width="480" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
             <tr>
               <td bgcolor="#145463" class="email-header" style="background-color:#145463;padding:24px 32px;">
-                ${emailMasthead()}
+                ${emailMasthead(ar)}
               </td>
             </tr>
             <tr>
