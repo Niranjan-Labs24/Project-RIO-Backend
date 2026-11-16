@@ -25,6 +25,9 @@ const REVIEWED_ANY_SIGNED_IN_ROUTES = new Set([
   'modules/study-config/study-config.controller.ts GET study-config/target-sectors',
   'modules/study-config/study-config.controller.ts GET study-config/gap-types',
   'modules/study-config/study-config.controller.ts GET study-config/decision-types',
+  // SVB-02 — KPI display codes (methodology labels, nothing tenant-specific),
+  // read by every dashboard that shows a KPI, whatever the role.
+  'modules/questions/questions.controller.ts GET question-bank/kpi-codes',
   'modules/surveys/surveys.controller.ts GET surveys/public/:id',
   'modules/surveys/surveys.controller.ts POST surveys/public/:id/submit',
   'modules/translation/translation.controller.ts POST translation',
