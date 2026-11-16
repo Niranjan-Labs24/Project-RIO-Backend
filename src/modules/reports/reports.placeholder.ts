@@ -265,7 +265,7 @@ export function buildPlaceholderReport(reportType: PlaceholderReportType): { tit
         { label: "Data Confidence", value: "92%" },
         { label: "Assessment Coverage", value: "8 Governorates" },
       ],
-      generatedBy: "RIO AI",
+      generatedBy: "Bosla AI",
       generatedAt: new Date().toISOString(),
       isPlaceholder: true,
     },

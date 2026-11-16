@@ -54,6 +54,8 @@ function question(over: Record<string, unknown> = {}) {
 
 function setup() {
   const tx = {
+    // SVB-02 — KPI codes are recomputed after each question bank change.
+    $executeRaw: vi.fn().mockResolvedValue(0),
     methodologyVersion: { findFirst: vi.fn().mockResolvedValue({ id: 'mv-1' }) },
     question: {
       findMany: vi.fn().mockResolvedValue([]),
@@ -244,6 +246,14 @@ describe('QuestionsService changes', () => {
   });
 
   it('turns an edit into a pending new version with an audit trail', async () => {
+    // After the KPI-code recompute (SVB-02) the pending row is read back by id.
+    ctx.tx.question.findUnique.mockImplementation(({ where }: { where: { id: string } }) =>
+      Promise.resolve(
+        where.id === 'pending'
+          ? question({ id: 'pending', approvalStatus: 'pending_approval' })
+          : question(),
+      ),
+    );
     const pending = await asActor(() => ctx.svc.update('q1', { questionText: 'New text' }));
     expect(pending.id).toBe('pending');
     const data = ctx.tx.question.create.mock.calls[0]![0].data;

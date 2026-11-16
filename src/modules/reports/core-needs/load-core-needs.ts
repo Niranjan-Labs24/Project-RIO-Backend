@@ -463,7 +463,7 @@ export async function loadCoreNeedsInputs(tx: Tx, q: CoreQuery): Promise<CoreInp
     // The cross-domain "facts" items sit outside the nine-domain index in the
     // methodology, so they are not a domain of this report either.
     where: { methodologyVersionId: mv.id, usedInMvp: true, excludedFromNineDomainIndex: false },
-    select: { questionId: true, domain: true, subDomain: true, indicator: true, kpi: true, answerType: true, measurementMode: true, analyticalCategory: true, rosterScope: true, answerOptions: true },
+    select: { questionId: true, domain: true, subDomain: true, indicator: true, kpi: true, kpiCode: true, answerType: true, measurementMode: true, analyticalCategory: true, rosterScope: true, answerOptions: true },
   });
   // A domain any of whose items sit outside the nine-domain index (the
   // cross-domain "facts" group) is not a domain of this report.
@@ -485,6 +485,7 @@ export async function loadCoreNeedsInputs(tx: Tx, q: CoreQuery): Promise<CoreInp
       subDomain: row.subDomain,
       indicator: row.indicator,
       kpi: row.kpi,
+      kpiCode: row.kpiCode,
       numeric: /numeric/i.test(row.measurementMode) || /numeric/i.test(row.answerType),
       accessDimension: /^(access|availability)$/i.test((row.analyticalCategory ?? "").trim()),
       unit: unitOfRoster(row.rosterScope),

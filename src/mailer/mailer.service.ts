@@ -377,7 +377,7 @@ export class MailerService {
       from: this.config.mailFrom,
       to: email,
       subject:
-        locale === 'ar' ? `مرحبًا بك في RIO — ${orgName}` : `Welcome to RIO — ${orgName}`,
+        locale === 'ar' ? `مرحبًا بك في بوصلة — ${orgName}` : `Welcome to Bosla — ${orgName}`,
       text: temporaryPasswordText({ orgName, email, tempPassword, signInUrl }, locale),
       html: temporaryPasswordHtml({ orgName, email, tempPassword, signInUrl }, locale),
     };
@@ -421,7 +421,7 @@ export class MailerService {
       const { error } = await this.client.emails.send({
         from: this.config.mailFrom,
         to: email,
-        subject: locale === 'ar' ? 'إعادة تعيين كلمة مرور RIO الخاصة بك' : 'Reset your RIO password',
+        subject: locale === 'ar' ? 'إعادة تعيين كلمة مرور بوصلة' : 'Reset your Bosla password',
         text: passwordResetText({ resetUrl }, locale),
         html: passwordResetHtml({ resetUrl }, locale),
       });
@@ -467,15 +467,15 @@ export class MailerService {
       const { error } = await this.client.emails.send({
         from: this.config.mailFrom,
         to: email,
-        subject: locale === 'ar' ? 'رمز تسجيل الدخول الخاص بك في RIO' : 'Your RIO sign-in code',
+        subject: locale === 'ar' ? 'رمز تسجيل الدخول إلى بوصلة' : 'Your Bosla sign-in code',
         text:
           locale === 'ar'
-            ? `رمز التحقق لتسجيل الدخول إلى RIO الخاص بك هو ${code}. تنتهي صلاحيته خلال 10 دقائق. إذا لم تطلب هذا، يُرجى تجاهل هذا البريد الإلكتروني.`
-            : `Your RIO sign-in verification code is ${code}. It expires in 10 minutes. If you didn't request this, ignore this email.`,
+            ? `رمز التحقق لتسجيل الدخول إلى بوصلة هو ${code}. تنتهي صلاحيته خلال 10 دقائق. إذا لم تطلب الرمز، تجاهل هذه الرسالة.`
+            : `Your Bosla sign-in verification code is ${code}. It expires in 10 minutes. If you didn't request this, ignore this email.`,
         html:
           locale === 'ar'
-            ? `<div dir="rtl" lang="ar"><p>رمز التحقق لتسجيل الدخول إلى RIO الخاص بك هو <strong>${code}</strong>. تنتهي صلاحيته خلال 10 دقائق.</p><p>إذا لم تطلب هذا، يُرجى تجاهل هذا البريد الإلكتروني.</p></div>`
-            : `<p>Your RIO sign-in verification code is <strong>${code}</strong>. It expires in 10 minutes.</p><p>If you didn't request this, ignore this email.</p>`,
+            ? `<div dir="rtl" lang="ar"><p>رمز التحقق لتسجيل الدخول إلى بوصلة هو <strong>${code}</strong>. تنتهي صلاحيته خلال 10 دقائق.</p><p>إذا لم تطلب الرمز، تجاهل هذه الرسالة.</p></div>`
+            : `<p>Your Bosla sign-in verification code is <strong>${code}</strong>. It expires in 10 minutes.</p><p>If you didn't request this, ignore this email.</p>`,
       });
       if (error) {
         this.logger.error(`Failed to email login OTP code to ${redactEmail(email)}: ${error.name} ${error.message}`);
@@ -516,14 +516,14 @@ export class MailerService {
         from,
         to: email,
         // UAT DST-06 — in Arabic for a respondent answering in Arabic.
-        subject: locale === 'ar' ? 'رمز التحقق لاستبيان RIO' : 'Your RIO survey verification code',
+        subject: locale === 'ar' ? 'رمز التحقق لاستبيان بوصلة' : 'Your Bosla survey verification code',
         text:
           locale === 'ar'
-            ? `رمز التحقق الخاص بك هو ${code}. أدخله لإرسال إجابتك على الاستبيان. تنتهي صلاحيته خلال 10 دقائق. إذا لم تطلب هذا الرمز، يُرجى تجاهل هذه الرسالة.`
+            ? `رمز التحقق هو ${code}. أدخله لإرسال إجابتك على الاستبيان. تنتهي صلاحيته خلال 10 دقائق. إذا لم تطلب الرمز، تجاهل هذه الرسالة.`
             : `Your verification code is ${code}. Enter it to submit your survey response. It expires in 10 minutes. If you did not request this, ignore this email.`,
         html:
           locale === 'ar'
-            ? `<div dir="rtl" lang="ar"><p>رمز التحقق الخاص بك هو <strong>${code}</strong>. أدخله لإرسال إجابتك على الاستبيان.</p><p>تنتهي صلاحيته خلال 10 دقائق. إذا لم تطلب هذا الرمز، يُرجى تجاهل هذه الرسالة.</p></div>`
+            ? `<div dir="rtl" lang="ar"><p>رمز التحقق هو <strong>${code}</strong>. أدخله لإرسال إجابتك على الاستبيان.</p><p>تنتهي صلاحيته خلال 10 دقائق. إذا لم تطلب الرمز، تجاهل هذه الرسالة.</p></div>`
             : `<p>Your verification code is <strong>${code}</strong>. Enter it to submit your survey response.</p><p>It expires in 10 minutes. If you did not request this, ignore this email.</p>`,
       });
       if (error) {
@@ -556,7 +556,7 @@ export class MailerService {
         to: this.config.mailFrom,
         bcc: recipients,
         replyTo: enquiry.email,
-        subject: `استفسار جديد في RIO — ${enquiry.name} (${enquiry.region})`,
+        subject: `استفسار جديد في بوصلة — ${enquiry.name} (${enquiry.region})`,
         text: contactRequestText(enquiry),
         html: contactRequestHtml(enquiry),
       });
@@ -627,7 +627,7 @@ export class MailerService {
       const { error } = await this.client.emails.send({
         from: this.config.mailFrom,
         to: email,
-        subject: `تذكير: لم تكتمل إجابتك على استبيان ${input.needTitleAr}`,
+        subject: `تذكير بإكمال استبيان ${input.needTitleAr}`,
         text: surveyReminderText(input),
         html: surveyReminderHtml(input),
       });
@@ -664,7 +664,7 @@ export class MailerService {
       const { error } = await this.client.emails.send({
         from: this.config.mailFrom,
         to: email,
-        subject: 'طلب مشاركة جديد في RIO',
+        subject: 'طلب مشاركة جديد في بوصلة',
         text: sharingRequestCreatedText(withUrl),
         html: sharingRequestCreatedHtml(withUrl),
       });
@@ -696,7 +696,7 @@ export class MailerService {
         from: this.config.mailFrom,
         to: email,
         subject:
-          input.status === 'approved' ? 'تمت الموافقة على طلب المشاركة' : 'تم رفض طلب المشاركة',
+          input.status === 'approved' ? 'الموافقة على طلب المشاركة' : 'رفض طلب المشاركة',
         text: sharingRequestDecidedText(withUrl),
         html: sharingRequestDecidedHtml(withUrl),
       });
@@ -737,7 +737,7 @@ export class MailerService {
     // The run id, timestamp and pg_dump error stay as-is — they're technical
     // values an administrator searches for, not copy.
     const kindAr = BACKUP_KIND_AR[input.kind] ?? input.kind;
-    const subject = `فشل النسخ الاحتياطي في RIO — ${kindAr}`;
+    const subject = `فشل النسخ الاحتياطي في بوصلة — ${kindAr}`;
     // The error text is included in full. It is written by pg_dump or by this
     // module, carries no tenant data, and the first question an administrator
     // asks is "why" — sending them to a screen to find out wastes the alert.
@@ -827,9 +827,9 @@ interface SurveyLinkEmailInput {
 // before being treated as final.
 function surveyLinkText({ needTitleAr, publicUrl }: SurveyLinkEmailInput): string {
   return (
-    `تم إرسال رابط استبيان لك بخصوص "${needTitleAr}".\n\n` +
+    `هذا رابط استبيان «${needTitleAr}».\n\n` +
     `فتح الاستبيان: ${publicUrl}\n\n` +
-    `يمكنك أيضًا مسح رمز QR المرفق باستخدام كاميرا الهاتف لفتحه مباشرة.`
+    `يمكنك أيضًا فتح الاستبيان بمسح رمز QR المرفق بكاميرا هاتفك.`
   );
 }
 
@@ -863,7 +863,7 @@ function surveyLinkHtml({ needTitleAr, publicUrl }: SurveyLinkEmailInput): strin
           <table role="presentation" width="480" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
             <tr>
               <td bgcolor="${PRIMARY}" class="email-header" style="background-color:${PRIMARY};padding:24px 32px;">
-                <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
+                <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">بوصلة</span>
               </td>
             </tr>
             <tr>
@@ -875,8 +875,8 @@ function surveyLinkHtml({ needTitleAr, publicUrl }: SurveyLinkEmailInput): strin
                 <div dir="rtl" lang="ar" style="text-align:right;">
                   <h1 style="margin:0 0 12px;font-size:20px;color:#111827;">${esc(needTitleAr)}</h1>
                   <p style="margin:0 0 24px;font-size:14px;line-height:1.8;color:#4b5563;">
-                    تم إرسال رابط استبيان لك. افتحه مباشرة، أو امسح
-                    رمز QR أدناه باستخدام كاميرا الهاتف.
+                    هذا رابط الاستبيان. افتحه مباشرة، أو افتحه بمسح
+                    رمز QR أدناه بكاميرا هاتفك.
                   </p>
                   <table role="presentation" cellpadding="0" cellspacing="0" align="right" style="margin-bottom:24px;">
                     <tr>
@@ -949,7 +949,7 @@ function contactRequestHtml({ orgName, name, email, region, purpose }: ContactEn
           <table role="presentation" width="480" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
             <tr>
               <td bgcolor="#145463" class="email-header" style="background-color:#145463;padding:24px 32px;">
-                <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
+                <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">بوصلة</span>
               </td>
             </tr>
             <tr>
@@ -959,7 +959,7 @@ function contactRequestHtml({ orgName, name, email, region, purpose }: ContactEn
                   <h1 style="margin:0 0 12px;font-size:20px;color:#111827;">استفسار تواصل جديد</h1>
                   <p style="margin:0 0 24px;font-size:14px;line-height:1.8;color:#4b5563;">
                     تواصل أحد الأشخاص مع ${esc(orgName)} من خلال صفحة تسجيل
-                    الدخول في RIO.
+                    الدخول في بوصلة.
                   </p>
                   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:24px;">
                     <tr>
@@ -996,13 +996,13 @@ interface PasswordResetEmailInput {
 function passwordResetText({ resetUrl }: PasswordResetEmailInput, locale: SupportedLocale): string {
   if (locale === 'ar') {
     return (
-      `تلقينا طلبًا لإعادة تعيين كلمة مرور RIO الخاصة بك.\n\n` +
+      `تلقّينا طلبًا لإعادة تعيين كلمة مرور حسابك في بوصلة.\n\n` +
       `إعادة تعيين كلمة المرور: ${resetUrl}\n\n` +
-      `تنتهي صلاحية هذا الرابط خلال 30 دقيقة. إذا لم تطلب ذلك، يمكنك تجاهل هذا البريد الإلكتروني بأمان.`
+      `تنتهي صلاحية الرابط خلال 30 دقيقة. إذا لم تطلب إعادة التعيين، تجاهل هذه الرسالة.`
     );
   }
   return (
-    `We received a request to reset your RIO password.\n\n` +
+    `We received a request to reset your Bosla password.\n\n` +
     `Reset your password: ${resetUrl}\n\n` +
     `This link expires in 30 minutes. If you didn't request this, you can safely ignore this email.`
   );
@@ -1028,7 +1028,7 @@ function passwordResetHtml(
           <table role="presentation" width="480" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
             <tr>
               <td bgcolor="#145463" class="email-header" style="background-color:#145463;padding:24px 32px;">
-                <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
+                <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">${ar ? 'بوصلة' : 'Bosla'}</span>
               </td>
             </tr>
             <tr>
@@ -1037,8 +1037,8 @@ function passwordResetHtml(
                 <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#4b5563;">
                   ${
                     ar
-                      ? 'تلقينا طلبًا لإعادة تعيين كلمة مرور RIO الخاصة بك. اضغط على الزر أدناه لاختيار كلمة مرور جديدة. تنتهي صلاحية هذا الرابط خلال 30 دقيقة.'
-                      : "We received a request to reset your RIO password. Click the button below to choose a new one. This link expires in 30 minutes."
+                      ? 'تلقّينا طلبًا لإعادة تعيين كلمة مرور حسابك في بوصلة. اضغط على الزر أدناه لاختيار كلمة مرور جديدة. تنتهي صلاحية الرابط خلال 30 دقيقة.'
+                      : "We received a request to reset your Bosla password. Click the button below to choose a new one. This link expires in 30 minutes."
                   }
                 </p>
                 <table role="presentation" cellpadding="0" cellspacing="0">
@@ -1051,7 +1051,7 @@ function passwordResetHtml(
                   </tr>
                 </table>
                 <p style="margin:24px 0 0;font-size:12px;line-height:1.6;color:#9ca3af;">
-                  ${ar ? 'إذا لم تطلب ذلك، يمكنك تجاهل هذا البريد الإلكتروني بأمان.' : "If you didn't request this, you can safely ignore this email."}
+                  ${ar ? 'إذا لم تطلب إعادة التعيين، تجاهل هذه الرسالة.' : "If you didn't request this, you can safely ignore this email."}
                 </p>
               </td>
             </tr>
@@ -1076,17 +1076,17 @@ function temporaryPasswordText(
 ): string {
   if (locale === 'ar') {
     return (
-      `مرحبًا بك في RIO، ${orgName}!\n\n` +
-      `تم إنشاء حساب لكيانك. استخدم البيانات أدناه لتسجيل الدخول، ثم قم بتعيين كلمة المرور الخاصة بك.\n\n` +
+      `مرحبًا بك في بوصلة، ${orgName}!\n\n` +
+      `أنشأنا حسابًا لكيانك. استخدم البيانات التالية لتسجيل الدخول.\n\n` +
       `مساحة العمل: ${orgName}\n` +
       `البريد الإلكتروني: ${email}\n` +
       `كلمة المرور المؤقتة: ${tempPassword}\n\n` +
       `تسجيل الدخول: ${signInUrl}\n\n` +
-      `سيُطلب منك تغيير كلمة المرور هذه عند أول تسجيل دخول.`
+      `سيُطلب منك تغيير كلمة المرور عند تسجيل الدخول لأول مرة.`
     );
   }
   return (
-    `Welcome to RIO, ${orgName}!\n\n` +
+    `Welcome to Bosla, ${orgName}!\n\n` +
     `An account has been created for your organization. Use the credentials ` +
     `below to sign in, then set your own password.\n\n` +
     `Workspace: ${orgName}\n` +
@@ -1123,16 +1123,16 @@ function temporaryPasswordHtml(
           <table role="presentation" width="480" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
             <tr>
               <td bgcolor="#145463" class="email-header" style="background-color:#145463;padding:24px 32px;">
-                <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
+                <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">${ar ? 'بوصلة' : 'Bosla'}</span>
               </td>
             </tr>
             <tr>
               <td style="padding:32px;" dir="${ar ? 'rtl' : 'ltr'}" lang="${ar ? 'ar' : 'en'}">
-                <h1 style="margin:0 0 12px;font-size:20px;color:#111827;">${ar ? `مرحبًا بك في RIO، ${esc(orgName)}!` : `Welcome to RIO, ${esc(orgName)}!`}</h1>
+                <h1 style="margin:0 0 12px;font-size:20px;color:#111827;">${ar ? `مرحبًا بك في بوصلة، ${esc(orgName)}!` : `Welcome to Bosla, ${esc(orgName)}!`}</h1>
                 <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#4b5563;">
                   ${
                     ar
-                      ? 'تم إنشاء حساب لكيانك. استخدم البيانات أدناه لتسجيل الدخول، ثم سيُطلب منك تعيين كلمة المرور الخاصة بك.'
+                      ? 'أنشأنا حسابًا لكيانك. استخدم البيانات التالية لتسجيل الدخول.'
                       : "An account has been created for your organization. Use the credentials below to sign in, then you'll be asked to set your own password."
                   }
                 </p>
@@ -1152,7 +1152,7 @@ function temporaryPasswordHtml(
                   <tr>
                     <td style="border-radius:8px;background-color:#145463;">
                       <a href="${esc(signInUrl)}" style="display:inline-block;padding:12px 24px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">
-                        ${ar ? 'تسجيل الدخول إلى RIO' : 'Sign in to RIO'}
+                        ${ar ? 'تسجيل الدخول إلى بوصلة' : 'Sign in to Bosla'}
                       </a>
                     </td>
                   </tr>
@@ -1160,7 +1160,7 @@ function temporaryPasswordHtml(
                 <p style="margin:24px 0 0;font-size:12px;line-height:1.6;color:#9ca3af;">
                   ${
                     ar
-                      ? 'سيُطلب منك تغيير كلمة المرور هذه عند أول تسجيل دخول. إذا لم تكن تتوقع هذا البريد الإلكتروني، يمكنك تجاهله بأمان.'
+                      ? 'سيُطلب منك تغيير كلمة المرور عند تسجيل الدخول لأول مرة. إذا لم تكن تتوقع هذه الرسالة، تجاهلها.'
                       : "You'll be asked to change this password the first time you sign in. If you weren't expecting this email, you can safely ignore it."
                   }
                 </p>
@@ -1188,11 +1188,10 @@ interface SurveyReminderEmailInput {
 // translation review, same as surveyLinkText.
 function surveyReminderText({ needTitleAr, publicUrl }: SurveyReminderEmailInput): string {
   return (
-    `لقد بدأت الإجابة على استبيان "${needTitleAr}" ولكن لم تُكمله.\n\n` +
-    `افتح الاستبيان مرة أخرى: ${publicUrl}\n\n` +
-    `لم تُحفظ إجاباتك السابقة، لذلك ستبدأ الأسئلة من البداية. ` +
-    `لا تُحتسب الإجابة إلا بعد إرسالها.\n\n` +
-    `إذا كنت لا ترغب في المشاركة، فلا يلزمك أي إجراء — لن نرسل لك تذكيرًا آخر بعد هذه الرسالة.`
+    `بدأت الإجابة عن استبيان «${needTitleAr}» ولم ترسل إجابتك.\n\n` +
+    `فتح الاستبيان: ${publicUrl}\n\n` +
+    `لم تُحفظ إجاباتك السابقة. أجب عن الأسئلة من البداية، ثم أرسل إجابتك لتُحتسب.\n\n` +
+    `إذا لم ترغب في المشاركة، فلا يلزمك أي إجراء. لن نرسل تذكيرًا آخر.`
   );
 }
 
@@ -1214,7 +1213,7 @@ function surveyReminderHtml({ needTitleAr, publicUrl }: SurveyReminderEmailInput
           <table role="presentation" width="480" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
             <tr>
               <td bgcolor="${PRIMARY}" class="email-header" style="background-color:${PRIMARY};padding:24px 32px;">
-                <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
+                <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">بوصلة</span>
               </td>
             </tr>
             <tr>
@@ -1223,9 +1222,9 @@ function surveyReminderHtml({ needTitleAr, publicUrl }: SurveyReminderEmailInput
                 <div dir="rtl" lang="ar" style="text-align:right;">
                   <h1 style="margin:0 0 12px;font-size:20px;color:#111827;">${esc(needTitleAr)}</h1>
                   <p style="margin:0 0 24px;font-size:14px;line-height:1.8;color:#4b5563;">
-                    لقد بدأت الإجابة على هذا الاستبيان ولكن لم تُكمله. لم تُحفظ
-                    إجاباتك السابقة، لذلك ستبدأ الأسئلة من البداية &mdash;
-                    لا تُحتسب الإجابة إلا بعد إرسالها.
+                    بدأت الإجابة عن هذا الاستبيان ولم ترسل إجابتك. لم تُحفظ
+                    إجاباتك السابقة. أجب عن الأسئلة من البداية، ثم أرسل
+                    إجابتك لتُحتسب.
                   </p>
                   <table role="presentation" cellpadding="0" cellspacing="0" align="right" style="margin-bottom:24px;">
                     <tr>
@@ -1237,7 +1236,7 @@ function surveyReminderHtml({ needTitleAr, publicUrl }: SurveyReminderEmailInput
                     </tr>
                   </table>
                   <p style="clear:both;margin:0;font-size:12px;line-height:1.8;color:#6b7280;">
-                    إذا كنت لا ترغب في المشاركة، فلا يلزمك أي إجراء.
+                    إذا لم ترغب في المشاركة، فلا يلزمك أي إجراء. لن نرسل تذكيرًا آخر.
                   </p>
                 </div>
               </td>
@@ -1343,7 +1342,7 @@ function sharingRequestCreatedHtml(input: SharingNotificationEmailInput): string
           <table role="presentation" width="480" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
             <tr>
               <td bgcolor="${PRIMARY}" class="email-header" style="background-color:${PRIMARY};padding:24px 32px;">
-                <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
+                <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">بوصلة</span>
               </td>
             </tr>
             <tr>
@@ -1351,7 +1350,7 @@ function sharingRequestCreatedHtml(input: SharingNotificationEmailInput): string
                 <h1 style="margin:0 0 12px;font-size:20px;color:#111827;">طلب مشاركة جديد</h1>
                 <p style="margin:0 0 24px;font-size:14px;line-height:1.8;color:#4b5563;">
                   تلقيت طلب مشاركة جديدًا بخصوص ${esc(input.entityLabel)} من ${esc(input.otherOrgName)}.
-                  يمكنك مراجعة الطلب والموافقة عليه أو رفضه من داخل منصة RIO.
+                  يمكنك مراجعة الطلب والموافقة عليه أو رفضه من داخل منصة بوصلة.
                 </p>
                 <table role="presentation" cellpadding="0" cellspacing="0" align="right">
                   <tr>
@@ -1379,10 +1378,12 @@ function sharingRequestDecidedText({
   status,
   decisionNote,
 }: SharingNotificationEmailInput & { status: 'approved' | 'rejected'; decisionNote?: string | null }): string {
-  const verdict = status === 'approved' ? 'تمت الموافقة على' : 'تم رفض';
-  const base = `${verdict} طلب المشاركة الخاص بك بخصوص ${entityLabel} من ${otherOrgName}.`;
-  const withNote = decisionNote ? `${base}\n\nملاحظة: ${decisionNote}` : base;
-  return `${withNote}\n\nفتح في RIO: ${reviewUrl}`;
+  const approved = status === 'approved';
+  const base = approved
+    ? `وافق ${otherOrgName} على طلبك لمشاركة ${entityLabel}.`
+    : `رُفض طلبك لمشاركة ${entityLabel} من ${otherOrgName}.`;
+  const withNote = decisionNote ? `${base}\n\n${approved ? 'ملاحظة' : 'السبب'}: ${decisionNote}` : base;
+  return `${withNote}\n\nفتح في بوصلة: ${reviewUrl}`;
 }
 
 function sharingRequestDecidedHtml(
@@ -1407,14 +1408,18 @@ function sharingRequestDecidedHtml(
           <table role="presentation" width="480" cellpadding="0" cellspacing="0" bgcolor="#ffffff" class="email-card" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
             <tr>
               <td bgcolor="${PRIMARY}" class="email-header" style="background-color:${PRIMARY};padding:24px 32px;">
-                <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">RIO</span>
+                <span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">بوصلة</span>
               </td>
             </tr>
             <tr>
               <td style="padding:32px;" dir="rtl" lang="ar">
                 <h1 style="margin:0 0 12px;font-size:20px;color:${approved ? '#111827' : '#b91c1c'};">${verdict}</h1>
                 <p style="margin:0 0 16px;font-size:14px;line-height:1.8;color:#4b5563;">
-                  ${verdict} بخصوص ${esc(input.entityLabel)} من ${esc(input.otherOrgName)}.
+                  ${
+                    approved
+                      ? `وافق ${esc(input.otherOrgName)} على طلبك لمشاركة ${esc(input.entityLabel)}.`
+                      : `رُفض طلبك لمشاركة ${esc(input.entityLabel)} من ${esc(input.otherOrgName)}.`
+                  }
                 </p>
                 ${
                   input.decisionNote
@@ -1425,7 +1430,7 @@ function sharingRequestDecidedHtml(
                   <tr>
                     <td style="border-radius:8px;background-color:${PRIMARY};">
                       <a href="${esc(input.reviewUrl)}" style="display:inline-block;padding:12px 24px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:8px;">
-                        فتح في RIO
+                        فتح في بوصلة
                       </a>
                     </td>
                   </tr>

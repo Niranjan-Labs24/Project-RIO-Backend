@@ -460,7 +460,7 @@ export class PublicSurveysService {
         },
       });
       const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({ stream: sink, useStyles: true });
-      workbook.creator = 'RIO';
+      workbook.creator = 'Bosla';
       workbook.created = new Date();
       const sheet = workbook.addWorksheet(labels.sheet, locale === 'ar' ? { views: [{ rightToLeft: true }] } : undefined);
       sheet.columns = [

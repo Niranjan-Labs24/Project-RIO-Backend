@@ -108,7 +108,7 @@ describe('SmsService', () => {
   it('texts the citizen OTP in Arabic when asked (UAT DST-06)', async () => {
     createMock.mockResolvedValue({ sid: 'SM123' });
     await new SmsService(makeConfig()).sendOtpCode('+15559876543', '123456', 'ar');
-    expect(createMock.mock.calls[0]![0].body).toBe('رمز التحقق لاستبيان RIO هو 123456. تنتهي صلاحيته خلال 10 دقائق.');
+    expect(createMock.mock.calls[0]![0].body).toBe('رمز التحقق لاستبيان بوصلة هو 123456. تنتهي صلاحيته خلال 10 دقائق.');
   });
 
   it('sends the sign-in code and the reminder in one language each', async () => {
@@ -120,7 +120,7 @@ describe('SmsService', () => {
     const [ar, en, reminder] = createMock.mock.calls.map((c) => c[0].body as string);
     expect(ar).toContain('123456');
     expect(ar).not.toContain('verification');
-    expect(en).toMatch(/^Your RIO sign-in verification code is 123456/);
+    expect(en).toMatch(/^Your Bosla sign-in verification code is 123456/);
     expect(en).not.toMatch(/[\u0600-\u06FF]/);
     expect(reminder).not.toContain('You started');
     expect(reminder).toContain('https://x.test/s');
