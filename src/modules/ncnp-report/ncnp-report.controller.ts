@@ -3,7 +3,7 @@ import type { Response } from 'express';
 import { RateLimit } from '../../common/guards/rate-limit.guard';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { NcnpReportService } from './ncnp-report.service';
-import { isDataQualityBand, type NcnpReportFilters } from './ncnp-report-scope';
+import { isDataQualityFilter, type NcnpReportFilters } from './ncnp-report-scope';
 import type { NcnpReport } from './ncnp-report.types';
 
 /**
@@ -16,12 +16,11 @@ import type { NcnpReport } from './ncnp-report.types';
  * language is a nuisance; reading the wrong population is a mistake.)
  */
 function parseFilters(indicator?: string, dataQuality?: string): NcnpReportFilters {
-  if (dataQuality != null && dataQuality !== '' && !isDataQualityBand(dataQuality)) {
+  if (dataQuality != null && dataQuality !== '' && !isDataQualityFilter(dataQuality)) {
     throw new BadRequestException({
       error: {
         code: 'INVALID_DATA_QUALITY',
-        message:
-          'dataQuality must be one of: excellent, good, adequate, below_threshold, not_applicable.',
+        message: 'dataQuality must be one of: excellent, low.',
       },
     });
   }

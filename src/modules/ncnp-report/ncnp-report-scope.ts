@@ -41,10 +41,12 @@
  */
 export {
   DATA_QUALITY_BANDS,
-  DATA_QUALITY_THRESHOLDS,
+  DATA_QUALITY_FILTERS,
+  DATA_QUALITY_EXCELLENT_MIN_RATIO,
   dataQualityBandFor,
   describeBand,
   isDataQualityBand,
+  isDataQualityFilter,
   type DataQualityBand as NcnpDataQualityBand,
 } from '../reports/data-quality-band';
 import { dataQualityBandFor as _band, type DataQualityBand } from '../reports/data-quality-band';
