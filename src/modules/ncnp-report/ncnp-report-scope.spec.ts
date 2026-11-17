@@ -3,7 +3,11 @@ import {
   byNeed,
   byStudy,
   byStudyAndNeed,
+  DATA_QUALITY_BANDS,
+  DATA_QUALITY_EXCELLENT_MIN_RATIO,
+  DATA_QUALITY_FILTERS,
   dataQualityBandFor,
+  describeBand,
   intersectIds,
   isDataQualityBand,
   isDataQualityFilter,
@@ -68,6 +72,40 @@ describe('isDataQualityFilter', () => {
     // rule cannot speak for is not a quality question.
     expect(isDataQualityFilter('not_applicable')).toBe(false);
     expect(isDataQualityFilter('good')).toBe(false);
+  });
+});
+
+describe('the band lists and their prose', () => {
+  it('offers the filters as a subset of the bands', () => {
+    expect([...DATA_QUALITY_BANDS]).toEqual(['excellent', 'low', 'not_applicable']);
+    expect([...DATA_QUALITY_FILTERS]).toEqual(['excellent', 'low']);
+    for (const f of DATA_QUALITY_FILTERS) {
+      expect(DATA_QUALITY_BANDS as readonly string[]).toContain(f);
+    }
+  });
+
+  it('describes every band, and names the threshold in each', () => {
+    // describeBand feeds a message a person reads, so a band added later
+    // without a sentence of its own would otherwise fall through the switch
+    // and return undefined at runtime.
+    for (const band of DATA_QUALITY_BANDS) {
+      const text = describeBand(band);
+      expect(text).toBeTruthy();
+      expect(text.toLowerCase()).toContain('sample');
+    }
+    expect(describeBand('excellent')).toContain('met or exceeded');
+    expect(describeBand('low')).toContain('not met');
+    expect(describeBand('not_applicable')).toContain('no required sample size');
+  });
+
+  it('puts the excellent boundary at exactly the required sample', () => {
+    // The constant and the function must not drift: the ratio the constant
+    // names is the same one dataQualityBandFor compares against.
+    expect(DATA_QUALITY_EXCELLENT_MIN_RATIO).toBe(1);
+    const required = 80;
+    const atBoundary = required * DATA_QUALITY_EXCELLENT_MIN_RATIO;
+    expect(dataQualityBandFor(atBoundary, required)).toBe('excellent');
+    expect(dataQualityBandFor(atBoundary - 1, required)).toBe('low');
   });
 });
 
