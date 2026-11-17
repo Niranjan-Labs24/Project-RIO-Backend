@@ -316,7 +316,7 @@ function emailMasthead(ar = true): string {
   // A table, not flex or inline-block: Outlook's Word engine lays neither out.
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>${
     mark ? `<td style="padding-inline-end:12px;vertical-align:middle;">${mark}</td>` : ''
-  }<td style="vertical-align:middle;"><span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;">${wordmark}</span></td></tr></table>`;
+  }<td style="vertical-align:middle;"><span class="email-header-text" style="color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.5px;">${wordmark}</span></td></tr></table>`;
 }
 
 /**
