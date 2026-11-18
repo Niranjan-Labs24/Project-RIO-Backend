@@ -221,6 +221,30 @@ export class AuditService {
     return this.tenant.runInOrgContext((tx) => runQuery(tx, filters));
   }
 
+  /**
+   * UAT AUD-02 — everyone who appears as an actor in the audit log the caller
+   * can see (own organization, or across organizations for cross-entity
+   * roles, optionally narrowed to one organization), for the "User" filter.
+   * Taken from the log itself rather than the user list so platform staff
+   * who acted inside an organization are listed too.
+   */
+  async listActors(organizationId?: string): Promise<{ id: string; name: string; email: string }[]> {
+    const run = async (tx: Prisma.TransactionClient, where: Record<string, unknown>) => {
+      const rows = await tx.auditLog.findMany({
+        where: { ...where, actorUserId: { not: null } },
+        distinct: ['actorUserId'],
+        select: { actorUserId: true },
+      });
+      return this.loadActors(rows);
+    };
+    const actors = this.isCrossEntity()
+      ? await this.tenant.runAsSupervisor((tx) =>
+          run(tx, organizationId ? { organisationId: organizationId } : {}),
+        )
+      : await this.tenant.runInOrgContext((tx) => run(tx, {}));
+    return [...actors].sort((a, b) => a.name.localeCompare(b.name));
+  }
+
   /** Ids of users whose name or email matches the free-text search term. */
   private async findActorIdsMatching(_tx: Prisma.TransactionClient, search: string): Promise<string[]> {
     // Cross-org lookup (see loadActors below) — a search term must match an
@@ -249,7 +273,7 @@ export class AuditService {
   // person performed the action — this bypasses that, the same way
   // `organisationId`/entity names on these cross-org events are already
   // resolved via runAsSupervisor elsewhere (see ReportSharingService).
-  private async loadActors(logs: AuditRow[]): Promise<ActorRow[]> {
+  private async loadActors(logs: { actorUserId: string | null }[]): Promise<ActorRow[]> {
     const ids = [...new Set(logs.map((l) => l.actorUserId).filter((v): v is string => Boolean(v)))];
     if (ids.length === 0) return [];
     return this.tenant.runAsSupervisor((tx) =>
