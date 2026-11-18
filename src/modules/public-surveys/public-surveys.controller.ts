@@ -9,10 +9,13 @@ import { parseIntParam } from '../../common/http/query.util';
 import {
   CreateSurveyLinkBody,
   ShareSurveyLinkEmailBody,
+  ShareSurveyLinkEmailBulkBody,
+  type ShareSurveyLinkEmailBulkDto,
   type ShareSurveyLinkEmailDto,
 } from './public-surveys.contract';
 import { PublicSurveysService } from './public-surveys.service';
 import type {
+  BulkShareResult,
   CreateSurveyLinkPayload,
   PublicSurveyLink,
   QuestionResponseListResult,
@@ -61,6 +64,19 @@ export class PublicSurveysController {
     @Body(new TypeBoxValidationPipe(ShareSurveyLinkEmailBody)) body: ShareSurveyLinkEmailDto,
   ): Promise<void> {
     return this.surveys.shareLinkByEmail(needId, linkId, body.email);
+  }
+
+  // UAT DST-01 — the same email to many addresses at once (max 200). Rate
+  // limited: each call can send up to 200 emails.
+  @Post('survey-links/:linkId/share-email-bulk')
+  @RateLimit(10, 60, { failOpenOnOutage: true })
+  @RequirePermission('studySurvey', 'read')
+  shareLinkByEmailBulk(
+    @Param('needId', new UuidParamPipe()) needId: string,
+    @Param('linkId', new UuidParamPipe()) linkId: string,
+    @Body(new TypeBoxValidationPipe(ShareSurveyLinkEmailBulkBody)) body: ShareSurveyLinkEmailBulkDto,
+  ): Promise<BulkShareResult> {
+    return this.surveys.shareLinkByEmailBulk(needId, linkId, body.emails);
   }
 
   @Get('survey-responses')

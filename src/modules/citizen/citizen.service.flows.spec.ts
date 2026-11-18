@@ -190,6 +190,18 @@ describe('CitizenService.resolveSurvey', () => {
     await expect(svc.resolveSurvey('tok')).rejects.toMatchObject({
       response: { error: { code: 'SURVEY_LINK_EXPIRED' } },
     });
+    // UAT DST-04 — a link with a future start date is not open yet, and says when it opens.
+    const opensAt = new Date(Date.now() + 86_400_000);
+    tx.publicSurveyLink.findUnique.mockResolvedValueOnce(link({ startsAt: opensAt }));
+    await expect(svc.resolveSurvey('tok')).rejects.toMatchObject({
+      response: { error: { code: 'SURVEY_LINK_NOT_OPEN_YET', details: { opensAt: opensAt.toISOString() } } },
+    });
+    // Open since its start date: it passes the link checks (and here stops
+    // at the next one, because this fixture has no published survey).
+    tx.publicSurveyLink.findUnique.mockResolvedValueOnce(link({ startsAt: new Date(Date.now() - 1000) }));
+    await expect(svc.resolveSurvey('tok')).rejects.toMatchObject({
+      response: { error: { code: 'SURVEY_NOT_PUBLISHED' } },
+    });
   });
 });
 

@@ -2,7 +2,7 @@ import { ConflictException, NotFoundException, ServiceUnavailableException } fro
 import { describe, expect, it, vi } from 'vitest';
 import { Prisma } from '../../generated/prisma';
 import { orgContext } from '../../tenancy/org-context';
-import { PublicSurveysService } from './public-surveys.service';
+import { linkWindow, PublicSurveysService } from './public-surveys.service';
 
 vi.mock('qrcode', () => ({ default: { toBuffer: vi.fn().mockResolvedValue(Buffer.from('png')) } }));
 
@@ -149,27 +149,27 @@ describe('PublicSurveysService links', () => {
     });
   });
 
-  it('creates a link with an expiry and audits it', async () => {
+  // UAT DST-04 — start and end dates are mandatory.
+  it('creates a link open from the start of its start date to the end of its end date, and audits it', async () => {
     const { svc, tx, audit } = setup();
     tx.publicSurveyLink.create.mockResolvedValue(
-      linkRow({ expiresAt: new Date('2026-02-01T00:00:00Z') }),
+      linkRow({ startsAt: new Date('2099-01-01T00:00:00+03:00'), expiresAt: new Date('2099-01-31T23:59:59.999+03:00') }),
     );
     const link = await asActor(() =>
-      svc.createLink('n1', { label: '  Wave 1 ', expiresInDays: 7 } as never),
+      svc.createLink('n1', { label: '  Wave 1 ', startsOn: '2099-01-01', endsOn: '2099-01-31' }),
     );
-    expect(link.expiresAt).toBe('2026-02-01T00:00:00.000Z');
+    expect(link.startsAt).toBe('2098-12-31T21:00:00.000Z');
     const data = tx.publicSurveyLink.create.mock.calls[0]![0].data;
     expect(data).toMatchObject({ label: 'Wave 1', orgId: 'org-1', createdBy: 'u1', needId: 'n1' });
-    expect(data.expiresAt).toBeInstanceOf(Date);
+    expect(data.startsAt.toISOString()).toBe('2098-12-31T21:00:00.000Z');
+    expect(data.expiresAt.toISOString()).toBe('2099-01-31T20:59:59.999Z');
     expect(audit.record).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'create', entityType: 'survey' }),
+      expect.objectContaining({
+        action: 'create',
+        entityType: 'survey',
+        changes: expect.arrayContaining([{ field: 'Opens', before: null, after: '2099-01-01' }]),
+      }),
     );
-  });
-
-  it('creates a link that never expires when no lifetime is given', async () => {
-    const { svc, tx } = setup();
-    await asActor(() => svc.createLink('n1', { label: 'L' } as never));
-    expect(tx.publicSurveyLink.create.mock.calls[0]![0].data.expiresAt).toBeNull();
   });
 
   it('maps a duplicate label to a conflict and rethrows other failures', async () => {
@@ -178,10 +178,10 @@ describe('PublicSurveysService links', () => {
       new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: 'x' }),
     );
     await expect(
-      asActor(() => svc.createLink('n1', { label: 'L' } as never)),
+      asActor(() => svc.createLink('n1', { label: 'L', startsOn: '2099-01-01', endsOn: '2099-01-02' })),
     ).rejects.toBeInstanceOf(ConflictException);
     tx.publicSurveyLink.create.mockRejectedValueOnce(new Error('db'));
-    await expect(asActor(() => svc.createLink('n1', { label: 'L' } as never))).rejects.toThrow(
+    await expect(asActor(() => svc.createLink('n1', { label: 'L', startsOn: '2099-01-01', endsOn: '2099-01-02' }))).rejects.toThrow(
       'db',
     );
   });
@@ -216,6 +216,59 @@ describe('PublicSurveysService links', () => {
     await expect(svc.shareLinkByEmail('n1', 'l1', 'a@b.test')).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+
+  // UAT DST-01 — the same email to many addresses at once.
+  it('emails many addresses, skipping invalid and repeated ones, reporting failures, with one audit entry', async () => {
+    const { svc, mailer, audit } = setup();
+    mailer.sendSurveyLink.mockImplementation(async (email: string) => email !== 'down@b.test');
+    const result = await svc.shareLinkByEmailBulk('n1', 'l1', [
+      ' one@b.test ',
+      'not-an-email',
+      'ONE@b.test',
+      'down@b.test',
+      '',
+      'two@b.test',
+    ]);
+    expect(result).toEqual({
+      sent: ['one@b.test', 'two@b.test'],
+      invalid: ['not-an-email'],
+      failed: ['down@b.test'],
+      duplicates: ['ONE@b.test'],
+    });
+    expect(mailer.sendSurveyLink).toHaveBeenCalledTimes(3);
+    expect(audit.record).toHaveBeenCalledTimes(1);
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'share', metadata: { channel: 'email', bulk: true } }),
+    );
+  });
+});
+
+describe('linkWindow (UAT DST-04)', () => {
+  const now = new Date('2026-11-18T10:00:00Z'); // 18 Nov in Riyadh
+
+  it('opens at midnight Riyadh time on the start date and closes at the end of the end date', () => {
+    const { startsAt, expiresAt } = linkWindow('2026-11-18', '2026-11-30', now);
+    expect(startsAt.toISOString()).toBe('2026-11-17T21:00:00.000Z');
+    expect(expiresAt.toISOString()).toBe('2026-11-30T20:59:59.999Z');
+  });
+
+  it.each([
+    ['a past start date', '2026-11-17', '2026-11-30', 'past'],
+    ['an end before the start', '2026-11-20', '2026-11-19', 'on or after'],
+    ['a window over a year', '2026-11-18', '2027-11-20', 'one year'],
+    ['an impossible date', '2026-02-30', '2026-03-05', 'real'],
+  ])('refuses %s', (_name, startsOn, endsOn, message) => {
+    let error: unknown;
+    try {
+      linkWindow(startsOn, endsOn, now);
+    } catch (e) {
+      error = e;
+    }
+    expect((error as { response: { error: { code: string; message: string } } }).response.error).toMatchObject({
+      code: 'SURVEY_LINK_DATES_INVALID',
+      message: expect.stringContaining(message),
+    });
   });
 });
 

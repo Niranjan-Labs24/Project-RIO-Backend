@@ -5,6 +5,7 @@ export interface PublicSurveyLinkRow {
   studyId: string;
   token: string;
   createdBy: string;
+  startsAt: Date | null;
   expiresAt: Date | null;
   isActive: boolean;
   createdAt: Date;

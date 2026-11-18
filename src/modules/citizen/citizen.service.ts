@@ -1,7 +1,7 @@
 import { toJson } from '../../common/prisma/json';
 import type { Prisma } from '../../generated/prisma';
 import { requestLocale } from '../../common/locale/request-locale';
-import { BadRequestException, GoneException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, GoneException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { randomInt } from 'node:crypto';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { PasswordService } from '../../auth/password.service';
@@ -646,6 +646,17 @@ export class CitizenService {
     }
     if (link.expiresAt && link.expiresAt.getTime() < Date.now()) {
       throw new GoneException({ error: { code: 'SURVEY_LINK_EXPIRED', message: 'This survey link has expired.' } });
+    }
+    // UAT DST-04 — a link with a future start date is not open yet.
+    if (link.startsAt && link.startsAt.getTime() > Date.now()) {
+      throw new ForbiddenException({
+        error: {
+          code: 'SURVEY_LINK_NOT_OPEN_YET',
+          message: 'This survey is not open yet.',
+          // In `details`, where the client reads extra error data.
+          details: { opensAt: link.startsAt.toISOString() },
+        },
+      });
     }
     return link;
   }
