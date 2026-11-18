@@ -302,7 +302,7 @@ export class OrganizationsService {
         where: { registrationNumber: { not: PLATFORM_ADMIN_REGISTRATION_NUMBER } },
         include: {
           ...GEO_INCLUDE,
-          users: { where: { roleId: 'role_ngo_admin' }, take: 1, select: { name: true, email: true } },
+          users: { where: { roleId: 'role_ngo_admin' }, take: 1, select: { name: true, email: true, mobileNumber: true } },
           _count: { select: { users: true, studies: true, surveys: true, reports: true } },
         },
         orderBy: { createdAt: 'desc' },
@@ -311,7 +311,7 @@ export class OrganizationsService {
       }),
     );
     const typedRows = rows as (RawOrgWithGeo & {
-      users: { name: string; email: string }[];
+      users: { name: string; email: string; mobileNumber: string | null }[];
       _count: { users: number; studies: number; surveys: number; reports: number };
     })[];
 
@@ -353,6 +353,7 @@ export class OrganizationsService {
       responseCount: responseCountByOrgId.get(r.id) ?? 0,
       ngoAdminName: r.users[0]?.name ?? null,
       ngoAdminEmail: r.users[0]?.email ?? null,
+      ngoAdminMobile: r.users[0]?.mobileNumber ?? null,
     }));
   }
 
@@ -363,12 +364,12 @@ export class OrganizationsService {
         where: { id },
         include: {
           ...GEO_INCLUDE,
-          users: { where: { roleId: 'role_ngo_admin' }, take: 1, select: { name: true, email: true } },
+          users: { where: { roleId: 'role_ngo_admin' }, take: 1, select: { name: true, email: true, mobileNumber: true } },
           _count: { select: { users: true, studies: true, surveys: true, reports: true } },
         },
       }),
     )) as (RawOrgWithGeo & {
-      users: { name: string; email: string }[];
+      users: { name: string; email: string; mobileNumber: string | null }[];
       _count: { users: number; studies: number; surveys: number; reports: number };
     }) | null;
 
@@ -392,6 +393,9 @@ export class OrganizationsService {
       reportCount: row._count.reports,
       ngoAdminName: row.users[0]?.name ?? null,
       ngoAdminEmail: row.users[0]?.email ?? null,
+      // UAT ORG-08 — the approval screen shows every submitted detail,
+      // including the admin's mobile captured at registration.
+      ngoAdminMobile: row.users[0]?.mobileNumber ?? null,
     };
   }
 
