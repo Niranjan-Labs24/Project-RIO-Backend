@@ -12,7 +12,7 @@ import type { BulkImportNeedsPayload, ImportNeedsResult, PdfPreviewResult } from
 import { NeedsService } from './needs.service';
 import { NeedThemesService } from './need-themes.service';
 import { SetNeedUrgencyBody, type SetNeedUrgencyDto } from '../priority/priority.contract';
-import type { CreateNeedPayload, Need, UpdateNeedPayload } from './needs.types';
+import type { CreateNeedPayload, MergedNeed, Need, UpdateNeedPayload } from './needs.types';
 
 const MAX_IMPORT_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
@@ -42,6 +42,13 @@ export class NeedsController {
   @RequirePermission('dataCollection', 'read')
   listByStudyId(@Param('studyId', new UuidParamPipe()) studyId: string): Promise<Need[]> {
     return this.needs.listByStudyId(studyId);
+  }
+
+  // UAT DQ-08 — merged needs, shown greyed in their study. Read-only.
+  @Get('studies/:studyId/needs/merged')
+  @RequirePermission('dataCollection', 'read')
+  listMergedByStudyId(@Param('studyId', new UuidParamPipe()) studyId: string): Promise<MergedNeed[]> {
+    return this.needs.listMergedByStudyId(studyId);
   }
 
   // CSV/XLSX direct import — one Need per row.

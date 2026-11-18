@@ -15,7 +15,7 @@ import { DataCleaningService } from '../data-cleaning/data-cleaning.service';
 import { NeedThemesService } from './need-themes.service';
 import { NeedSummaryService } from './need-summary.service';
 import { auditFieldLabel } from '../audit/audit-field-labels';
-import { NEED_EDITABLE_STATUSES, type CreateNeedPayload, type Need, type NeedRow, type UpdateNeedPayload } from './needs.types';
+import { NEED_EDITABLE_STATUSES, type CreateNeedPayload, type MergedNeed, type Need, type NeedRow, type UpdateNeedPayload } from './needs.types';
 
 
 const DIFF_FIELDS = ['title', 'statement', 'village', 'referenceId', 'affectedPeople', 'affectedHouseholds','affectedPopulation'] as const;
@@ -322,6 +322,57 @@ export class NeedsService {
     return rows.map((row) =>
       this.toNeed(this.toNeedRow(row), names.get(row.createdBy) ?? null, confidences.get(row.id) ?? null),
     );
+  }
+
+  /**
+   * UAT DQ-08 — the study's merged (retired) needs, for display only. A
+   * deliberate exception to EXCLUDE_MERGED (see need-visibility.ts): the
+   * point is to show what was merged and into what. Nothing here counts,
+   * scores or reports — those keep reading listByStudyId.
+   */
+  async listMergedByStudyId(studyId: string): Promise<MergedNeed[]> {
+    const store = getOrgStore();
+    const isCrossOrgReader =
+      store?.role === ROLE_KEYS.systemAdmin ||
+      store?.role === ROLE_KEYS.systemReviewer ||
+      store?.role === ROLE_KEYS.centerSupervisor;
+    const read = async (tx: Prisma.TransactionClient): Promise<MergedNeed[]> => {
+      const retired = await tx.need.findMany({
+        where: { studyId, mergedIntoNeedId: { not: null } },
+        orderBy: { internalRefSeq: 'asc' },
+        select: { id: true, internalRefSeq: true, title: true, mergedIntoNeedId: true },
+      });
+      if (retired.length === 0) return [];
+      const [survivors, merges] = await Promise.all([
+        tx.need.findMany({
+          where: { id: { in: retired.map((n) => n.mergedIntoNeedId!) } },
+          select: { id: true, internalRefSeq: true, title: true },
+        }),
+        tx.needMerge.findMany({
+          where: { retiredNeedId: { in: retired.map((n) => n.id) }, undoneAt: null },
+          orderBy: { decidedAt: 'desc' },
+          select: { retiredNeedId: true, decidedAt: true },
+        }),
+      ]);
+      const survivorById = new Map(survivors.map((s) => [s.id, s]));
+      const mergedAt = new Map<string, Date>();
+      for (const m of merges) if (!mergedAt.has(m.retiredNeedId)) mergedAt.set(m.retiredNeedId, m.decidedAt);
+      return retired.map((n) => {
+        const survivor = survivorById.get(n.mergedIntoNeedId!);
+        return {
+          id: n.id,
+          internalReferenceId: formatInternalReferenceId(n.internalRefSeq),
+          title: n.title,
+          mergedIntoNeedId: n.mergedIntoNeedId!,
+          mergedIntoReferenceId: survivor ? formatInternalReferenceId(survivor.internalRefSeq) : null,
+          mergedIntoTitle: survivor?.title ?? null,
+          mergedAt: mergedAt.get(n.id)?.toISOString() ?? null,
+        };
+      });
+    };
+    return isCrossOrgReader
+      ? this.tenant.runAsSupervisor(read)
+      : this.tenant.runInOrgContext(read);
   }
 
   async getById(needId: string): Promise<Need> {

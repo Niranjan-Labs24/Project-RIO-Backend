@@ -64,6 +64,10 @@ export const ReviewFlagBody = registerSchema(
       // code) when a village finding lists several. Checked in the service
       // against that flag's own suggestions.
       choice: T.Optional(T.String({ minLength: 1, maxLength: 50 })),
+      // UAT DQ-02 — on accept, the value the reviewer typed in themselves,
+      // instead of the system's proposal (e.g. the right mobile number or
+      // village name). Only for findings the list marks `editable`.
+      correctedValue: T.Optional(T.String({ minLength: 1, maxLength: 2000 })),
     },
     { additionalProperties: false },
   ),
