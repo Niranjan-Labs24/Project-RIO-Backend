@@ -231,9 +231,24 @@ describe('CitizenService sessions, duplicates and codes', () => {
       { mobile: '+966512345678' },
     ]);
     tx.surveyResponse.findFirst.mockResolvedValue({ id: 'r' });
-    expect(await svc.checkDuplicate('tok', { contact: 'a@b.test', mobile: '1' } as never)).toEqual({
+    expect(await svc.checkDuplicate('tok', { contact: 'a@b.test', mobile: '0512345678' } as never)).toEqual({
       isDuplicate: true,
     });
+  });
+
+  // UAT RSP-01 — only a Saudi mobile is accepted, in any common spelling.
+  it.each(['05 1234 5678', '512345678', '009665 1234 5678'])('stores %j as +966512345678', async (mobile) => {
+    const { svc, tx } = setup();
+    await svc.checkDuplicate('tok', { contact: 'a@b.test', mobile } as never);
+    expect(tx.surveyResponse.findFirst.mock.calls[0]![0].where.OR).toContainEqual({ mobile: '+966512345678' });
+  });
+
+  it.each(['1', '+971501234567', '0112345678', 'abc'])('refuses %j before any code is sent', async (mobile) => {
+    const { svc, mailer } = setup();
+    await expect(svc.requestOtp('tok', { contact: 'a@b.test', mobile } as never)).rejects.toMatchObject({
+      response: { error: { code: 'INVALID_MOBILE_NUMBER' } },
+    });
+    expect(mailer.sendCitizenOtpEmail).not.toHaveBeenCalled();
   });
 
   it('emails the code to the contact, links it to the session, and reveals it only when delivery failed outside production', async () => {
@@ -267,7 +282,7 @@ describe('CitizenService sessions, duplicates and codes', () => {
     const prod = setup({ nodeEnv: 'production' });
     prod.mailer.sendCitizenOtpEmail.mockResolvedValue(false);
     expect(
-      (await prod.svc.requestOtp('tok', { contact: 'a@b.test', mobile: '1' } as never)).code,
+      (await prod.svc.requestOtp('tok', { contact: 'a@b.test', mobile: '0512345678' } as never)).code,
     ).toBeUndefined();
   });
 });
@@ -381,9 +396,21 @@ describe('CitizenService.submitResponse', () => {
     expect(ctx.rollup.calculateRollups).toHaveBeenCalledTimes(2);
   });
 
+  // UAT RSP-02 — letters only, at least 2; checked before the code is used.
+  it('stores a tidied name and refuses one with digits or symbols, without using the code', async () => {
+    const ok = await submit({ contactName: '  Sara   Al Harbi ' });
+    expect(ok.ctx.tx.surveyResponse.create.mock.calls[0]![0].data.contactName).toBe('Sara Al Harbi');
+    for (const contactName of ['A1', 'S', 'Sara!']) {
+      const bad = await submit({ contactName });
+      expect(bad.result).toMatchObject({ response: { error: { code: 'INVALID_CONTACT_NAME' } } });
+      expect(bad.ctx.tx.surveyResponse.create).not.toHaveBeenCalled();
+      expect(bad.ctx.tx.citizenOtpChallenge.updateMany).not.toHaveBeenCalled();
+    }
+  });
+
   it('works without optional fields, and with a need or organization that has no details', async () => {
     const { ctx, result } = await submit(
-      { contactName: undefined, gender: undefined, sessionId: undefined },
+      { contactName: undefined, gender: 'female', sessionId: undefined },
       ({ tx }) => {
         tx.need.findUnique.mockResolvedValue(null);
         tx.organisation.findUnique.mockResolvedValue(null);
@@ -392,7 +419,7 @@ describe('CitizenService.submitResponse', () => {
     expect(result.id).toBe('r1');
     expect(ctx.tx.surveyResponse.create.mock.calls[0]![0].data).toMatchObject({
       contactName: null,
-      gender: null,
+      gender: 'female',
       regionId: null,
       // Placed by the area the respondent picked, even when the Need has none.
       governorateIds: ['g1'],
