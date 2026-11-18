@@ -59,6 +59,30 @@ export interface SharedNeedSnapshot {
   statement: string;
   village: string[];
   status: string;
+  // UAT SHR-04 — the full read-only study view.
+  internalReferenceId: string;
+  title: string;
+  domain: string | null;
+  subDomain: string | null;
+  affectedPopulation: number | null;
+}
+
+/** UAT SHR-04 — an evidence file's description; the file itself is not shared. */
+export interface SharedEvidenceSnapshot {
+  id: string;
+  title: string | null;
+  fileName: string;
+  fileType: string;
+  needId: string;
+  uploadedAt: string;
+}
+
+/** UAT SHR-04 — a released report of the shared study, viewable read-only. */
+export interface SharedStudyReportSummary {
+  id: string;
+  title: string;
+  reportType: string;
+  generatedAt: string;
 }
 
 export interface SharedStudySnapshot {
@@ -67,6 +91,17 @@ export interface SharedStudySnapshot {
   // A Study can hold many Needs — sharing the whole Study shares all of them.
   needs: SharedNeedSnapshot[];
   evidenceCount: number;
+  // UAT SHR-04 — "View full study": the study's own details, its evidence
+  // list and its released reports, all read-only.
+  ownerOrgName: string;
+  studyType: string | null;
+  targetSector: string | null;
+  population: number | null;
+  requiredSampleSize: number | null;
+  createdAt: string;
+  governorates: { name: string; nameAr: string | null }[];
+  evidence: SharedEvidenceSnapshot[];
+  reports: SharedStudyReportSummary[];
 }
 
 // Lookup rows for the "search organization → pick its completed study"

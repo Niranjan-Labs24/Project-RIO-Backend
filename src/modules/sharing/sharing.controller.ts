@@ -9,6 +9,7 @@ import type {
   CreateSharingRequestPayload, DecideSharingRequestPayload, OrgLookupResult, SharedStudySnapshot,
   SharingRequest, StudyLookupResult,
 } from "./sharing.types";
+import type { SharedReportSnapshot } from "../report-sharing/report-sharing.types";
 
 // Under archiveSharingAudit — currently read-only for most roles; ngo_admin
 // (fullAccess) already has create/approve, matching the plan's "safe to add
@@ -79,5 +80,15 @@ export class SharingController {
   @RequirePermission("archiveSharingAudit", "read")
   getSharedSnapshot(@Param("id", new UuidParamPipe()) id: string): Promise<SharedStudySnapshot> {
     return this.sharing.getSharedSnapshot(id);
+  }
+
+  // UAT SHR-04 — one of the shared study's released reports, read-only.
+  @Get(":id/shared-study/reports/:reportId")
+  @RequirePermission("archiveSharingAudit", "read")
+  getSharedStudyReport(
+    @Param("id", new UuidParamPipe()) id: string,
+    @Param("reportId", new UuidParamPipe()) reportId: string,
+  ): Promise<SharedReportSnapshot> {
+    return this.sharing.getSharedStudyReport(id, reportId);
   }
 }
