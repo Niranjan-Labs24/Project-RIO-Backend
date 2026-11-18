@@ -222,11 +222,11 @@ export class SharingService {
       const [needs, evidence, reports] = await Promise.all([
         tx.need.findMany({
           where: { studyId: row.studyId, ...EXCLUDE_MERGED },
-          orderBy: { createdAt: "asc" },
+          orderBy: { createdAt: "desc" }, // UAT GEN-08 — newest first
         }),
         tx.evidence.findMany({
           where: { studyId: row.studyId },
-          orderBy: { uploadedAt: "asc" },
+          orderBy: { uploadedAt: "desc" },
           select: { id: true, title: true, fileName: true, fileType: true, needId: true, uploadedAt: true },
         }),
         // UAT SHR-04 — "through to its report": the study's released reports,

@@ -310,10 +310,10 @@ export class NeedsService {
       store?.role === ROLE_KEYS.centerSupervisor;
     const rows = (isCrossOrgReader
       ? await this.tenant.runAsSupervisor((tx) =>
-          tx.need.findMany({ where: { studyId, ...EXCLUDE_MERGED }, orderBy: { createdAt: 'asc' }, include: GEO_INCLUDE }),
+          tx.need.findMany({ where: { studyId, ...EXCLUDE_MERGED }, orderBy: { createdAt: 'desc' }, include: GEO_INCLUDE }), // UAT GEN-08 — newest first
         )
       : await this.tenant.runInOrgContext((tx) =>
-          tx.need.findMany({ where: { studyId, ...EXCLUDE_MERGED }, orderBy: { createdAt: 'asc' }, include: GEO_INCLUDE }),
+          tx.need.findMany({ where: { studyId, ...EXCLUDE_MERGED }, orderBy: { createdAt: 'desc' }, include: GEO_INCLUDE }), // UAT GEN-08 — newest first
         )) as RawNeedWithGeo[];
     const [names, confidences] = await Promise.all([
       this.resolveUserNames(rows.map((r) => r.createdBy)),
