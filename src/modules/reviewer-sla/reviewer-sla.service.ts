@@ -29,6 +29,12 @@ import { EXCLUDE_DELETED } from "../needs/need-visibility";
 // the topbar bell's poll + severity-driven color (see useReviewerSlaBadge
 // on the frontend) is the full "fires ahead of breach" mechanism for the
 // Approver queue, not a placeholder for a future email channel.
+/** UAT NED-02 — lists show the need's title, not its full statement. The
+ * statement is only a fallback for an old need saved without a title. */
+function needTitleOrStatement(need: { title?: string | null; statement?: string | null } | null | undefined): string | null {
+  return need?.title?.trim() || need?.statement || null;
+}
+
 @Injectable()
 export class ReviewerSlaService {
   constructor(
@@ -155,7 +161,7 @@ export class ReviewerSlaService {
         surveyId: survey.id,
         reportId: null,
         studyTitle: studyById.get(survey.studyId)?.title ?? survey.studyId,
-        needStatement: needById.get(survey.needId)?.statement ?? null,
+        needStatement: needTitleOrStatement(needById.get(survey.needId)),
         touchpoint: "survey_approval",
         createdAt: submittedAt.toISOString(),
         dueAt: dueAt.toISOString(),
@@ -204,7 +210,7 @@ export class ReviewerSlaService {
         surveyId: survey.id,
         reportId: null,
         studyTitle: studyById.get(survey.studyId)?.title ?? survey.studyId,
-        needStatement: needById.get(survey.needId)?.statement ?? null,
+        needStatement: needTitleOrStatement(needById.get(survey.needId)),
         touchpoint: isApproved ? "survey_ready_to_publish" : "survey_rejected",
         createdAt: resolvedAt.toISOString(),
         dueAt: resolvedAt.toISOString(),
@@ -352,7 +358,7 @@ export class ReviewerSlaService {
       surveyId: null,
       reportId: null,
       studyTitle: studyById.get(doc.studyId)?.title ?? doc.studyId,
-      needStatement: doc.linkedNeedId ? (needById.get(doc.linkedNeedId)?.statement ?? null) : null,
+      needStatement: doc.linkedNeedId ? needTitleOrStatement(needById.get(doc.linkedNeedId)) : null,
       touchpoint: "evidence_document_uploaded",
       createdAt: doc.createdAt.toISOString(),
       dueAt: doc.createdAt.toISOString(),
@@ -384,7 +390,7 @@ export class ReviewerSlaService {
       const pending = await tx.needStatementSummary.findMany({
         where: { status: "DRAFT" },
         orderBy: { generatedAt: "asc" },
-        include: { need: { select: { statement: true } } },
+        include: { need: { select: { statement: true, title: true } } },
       });
       const studyIds = Array.from(new Set(pending.map((row) => row.studyId)));
       const studyRows = await tx.study.findMany({ where: { id: { in: studyIds } } });
@@ -401,7 +407,7 @@ export class ReviewerSlaService {
       surveyId: null,
       reportId: null,
       studyTitle: studyById.get(row.studyId)?.title ?? row.studyId,
-      needStatement: row.need?.statement ?? null,
+      needStatement: needTitleOrStatement(row.need),
       touchpoint: "need_summary_approval",
       createdAt: row.generatedAt.toISOString(),
       dueAt: row.generatedAt.toISOString(),
@@ -443,7 +449,7 @@ export class ReviewerSlaService {
         surveyId: null,
         reportId: null,
         studyTitle: studyById.get(row.studyId)?.title ?? row.studyId,
-        needStatement: needById.get(row.needId)?.title || needById.get(row.needId)?.statement || null,
+        needStatement: needTitleOrStatement(needById.get(row.needId)),
         touchpoint: "priority_approval",
         createdAt: row.scoredAt.toISOString(),
         dueAt: row.scoredAt.toISOString(),
@@ -479,7 +485,7 @@ export class ReviewerSlaService {
       surveyId: null,
       reportId: null,
       studyTitle: studyById.get(need.studyId)?.title ?? need.studyId,
-      needStatement: need.statement,
+      needStatement: needTitleOrStatement(need),
       touchpoint: "ai_classification",
       // classifiedAt is always set once a Need reaches ai_classified (see
       // AiDecisionsService.runAndPersistClassification) — the `?? now`
@@ -527,7 +533,7 @@ export class ReviewerSlaService {
         surveyId: null,
         reportId: null,
         studyTitle: studyById.get(row.studyId)?.title ?? row.studyId,
-        needStatement: needById.get(row.needId)?.statement ?? null,
+        needStatement: needTitleOrStatement(needById.get(row.needId)),
         touchpoint: isRejected ? "ai_classification_rejected" : "ai_classification_approved",
         createdAt: row.decidedAt!.toISOString(),
         dueAt: row.decidedAt!.toISOString(),

@@ -232,7 +232,7 @@ export class GeographicDashboardService {
           .map(([name, studies]): GeoMapOrgSummary => ({ name, studyCount: studies.size }))
           .sort((x, y) => y.studyCount - x.studyCount)
           .slice(0, MAX_INITIATIVES_PER_POINT),
-        villages: [...b.villages].sort(),
+        villages: uniqueVillageNames(b.villages),
         // UAT RPT-01 — the most severe indicators here: each indicator's mean
         // severity across the published surveys of this place's needs.
         topIndicators: topIndicatorsFor(b.surveyIds, indicatorsBySurvey),
@@ -682,6 +682,21 @@ export class GeographicDashboardService {
       publishedSurveyId: n.surveys?.[0]?.id ?? null,
     }));
   }
+}
+
+/** UAT RPT-01 — the place panel lists each village once. Names are typed in
+ * by hand, so "AL-JAFR", "al jafr" and "Al Jafr" are the same village: they
+ * are compared ignoring case, spaces and hyphens, and the first spelling
+ * seen is the one shown. */
+function uniqueVillageNames(names: Iterable<string>): string[] {
+  const byKey = new Map<string, string>();
+  for (const name of names) {
+    const trimmed = name.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase().replace(/[\s\-_]+/g, '');
+    if (!byKey.has(key)) byKey.set(key, trimmed);
+  }
+  return [...byKey.values()].sort((a, b) => a.localeCompare(b));
 }
 
 /** UAT RPT-01 — how many indicators a place panel lists. */

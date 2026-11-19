@@ -33,7 +33,7 @@ const STUDY = {
   methodologyVersion: { version: 'v5.0' },
 };
 
-function fakeTenant(survey: FakeSurvey | null, questionCount = 1) {
+function fakeTenant(survey: FakeSurvey | null, questionCount = 1, needStatus = 'reviewer_approved') {
   // A local clone, mutated in place as `update` is called — isolates each
   // makeService() call's state even when tests share a fixture object
   // literal, and lets a later getSurveyByNeedId (its own separate
@@ -69,6 +69,7 @@ function fakeTenant(survey: FakeSurvey | null, questionCount = 1) {
     // resolve.
     need: {
       update: async () => undefined,
+      findUnique: async () => ({ status: needStatus }),
     },
   };
   return {
@@ -78,12 +79,12 @@ function fakeTenant(survey: FakeSurvey | null, questionCount = 1) {
   };
 }
 
-function makeService(survey: FakeSurvey | null, questionCount = 1) {
+function makeService(survey: FakeSurvey | null, questionCount = 1, needStatus = 'reviewer_approved') {
   const audit = { record: async () => undefined };
   // These tests never touch ai/methodologyConfig — undefined stand-ins are
   // enough, matching this file's narrow scope (rejectSurvey, submitForApproval,
   // setSampleDescription — none of them call either dependency).
-  return new SurveysService(fakeTenant(survey, questionCount) as never, audit as never, undefined as never, undefined as never);
+  return new SurveysService(fakeTenant(survey, questionCount, needStatus) as never, audit as never, undefined as never, undefined as never);
 }
 
 function runAsApprover<T>(fn: () => Promise<T>): Promise<T> {
@@ -304,6 +305,13 @@ describe('SurveysService.submitForApproval', () => {
     const service = makeService({ ...complete });
     const result = (await runAsApprover(() => service.submitForApproval('sv1'))) as FakeSurvey;
     expect(result.status).toBe('SUBMITTED');
+  });
+
+  it('UAT SVB-12: refuses while the need\'s AI classification is still awaiting approval', async () => {
+    const service = makeService({ ...complete }, 1, 'ai_classified');
+    await expect(runAsApprover(() => service.submitForApproval('sv1'))).rejects.toMatchObject({
+      response: { error: { code: 'AI_CLASSIFICATION_NOT_APPROVED' } },
+    });
   });
 });
 

@@ -1194,6 +1194,14 @@ Eligible Questions: ${JSON.stringify(
         error: { code: 'SURVEY_NOT_SUBMITTABLE', message: 'Only a draft or rejected survey can be submitted for approval.' },
       });
     }
+    // UAT SVB-12 — a survey is built from the need's approved domain, so it
+    // can't go for review while the AI classification is still waiting. The
+    // reviewer's one-step "approve classification and survey" approves the
+    // classification first, so it still passes here.
+    const need = await this.tenant.runRead((tx) =>
+      tx.need.findUnique({ where: { id: survey.needId }, select: { status: true } }),
+    );
+    if (need) this.assertClassificationApproved(need.status);
     // Same "nothing for a citizen to answer" guard publishing already had —
     // still applies, just moved one step earlier in the flow.
     const questionCount = await this.tenant.runRead((tx) => tx.surveyQuestion.count({ where: { surveyId } }));
