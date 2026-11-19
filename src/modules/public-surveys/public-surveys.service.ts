@@ -806,7 +806,9 @@ export class PublicSurveysService {
         questionText: q.questionText,
         answerType: q.answerType,
         answerOptions: q.answerOptions,
-        answer: rawAnswers[q.questionId] ?? null,
+        // A pick-several answer is stored as a list; the screen expects text
+        // ("a, b"), same as the export and the list view (UAT DST-05).
+        answer: this.resolveAnswerAcrossVersions(rawAnswers, [q.questionId]),
         otherText: this.resolveOtherAcrossVersions(rawAnswers, [q.questionId]),
       }));
     return { ...this.toResponseSummary(row), answers };

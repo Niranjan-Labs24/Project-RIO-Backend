@@ -311,6 +311,14 @@ describe('PublicSurveysService responses', () => {
     expect(detail!.answers.find((a) => a.questionId === 'q2')!.answerOptions).toEqual(['a', 'b']);
   });
 
+  it('returns a pick-several answer stored as a list as text, like the export (UAT DST-05)', async () => {
+    const { svc, tx } = setup();
+    tx.surveyResponse.findMany.mockResolvedValue([response({ answers: { q1: 'Ana', q2: ['a', 'b'] } })]);
+    const [detail] = await svc.listResponsesWithAnswers('n1', 'l1');
+    expect(detail!.answers.find((a) => a.questionId === 'q2')!.answer).toBe('a, b');
+    expect(detail!.answers.find((a) => a.questionId === 'q1')!.answer).toBe('Ana');
+  });
+
   it("shows one question's answers across every version that copied it", async () => {
     const { svc, tx } = setup();
     tx.surveyResponse.findMany.mockResolvedValue([
