@@ -176,27 +176,40 @@ export class SemanticDuplicateService {
     const { settings } = await this.context.load();
     const threshold = settings.semanticDuplicateThreshold;
 
-    const embedded = await this.refreshEmbeddings(orgId);
-    const { compared, proposed, blocked } = await this.proposePairs(orgId, actor, threshold);
+    const { embedded, needs, failed } = await this.refreshEmbeddings(orgId);
 
     // Nothing to compare is not the same as nothing found, and the difference
     // matters: a platform-wide role signed in to an entity that holds no needs
     // gets zeros for a reason that has nothing to do with the scan. Saying so
     // costs one field and saves the reviewer guessing.
-    if (compared === 0) {
-      return {
-        embedded,
-        compared,
-        proposed,
-        skippedReason: embedded === 0 ? 'NO_NEEDS_IN_SCOPE' : 'NOT_ENOUGH_NEEDS_TO_COMPARE',
-      };
+    //
+    // Decided on the NEED count, not on `compared` or `embedded`: a failed
+    // embedding call also leaves `embedded` at 0, and the indexed path counts
+    // only pairs above the threshold, so either used to report "no needs" /
+    // "only one need" for an entity that had plenty (UAT, The Vision: 12).
+    if (needs === 0) {
+      return { embedded, compared: 0, proposed: 0, skippedReason: 'NO_NEEDS_IN_SCOPE' };
+    }
+    if (needs === 1) {
+      return { embedded, compared: 0, proposed: 0, skippedReason: 'NOT_ENOUGH_NEEDS_TO_COMPARE' };
     }
 
+    // Pairs among needs that already have a vector are still compared when the
+    // provider fails — they are as valid as they were on the last run — but
+    // the reviewer is told that new or edited needs were left out.
+    const { compared, proposed, blocked } = await this.proposePairs(orgId, actor, threshold);
+
     this.logger.log(
-      `Semantic pass: ${embedded} embedded, ${compared} pairs compared ` +
-        `(${blocked} blocked by the structural gate), ${proposed} proposed at >= ${threshold}.`,
+      `Semantic pass: ${embedded} embedded${failed ? ' (embedding call FAILED)' : ''}, ` +
+        `${compared} pairs compared (${blocked} blocked by the structural gate), ` +
+        `${proposed} proposed at >= ${threshold}.`,
     );
-    return { embedded, compared, proposed, skippedReason: null };
+    return {
+      embedded,
+      compared,
+      proposed,
+      skippedReason: failed ? 'SEMANTIC_PROVIDER_FAILED' : null,
+    };
   }
 
   /**
@@ -207,7 +220,9 @@ export class SemanticDuplicateService {
    * the per-edit cost Q48 flagged, kept to the minimum: no hash change, no API
    * call.
    */
-  private async refreshEmbeddings(orgId: string): Promise<number> {
+  private async refreshEmbeddings(
+    orgId: string,
+  ): Promise<{ embedded: number; needs: number; failed: boolean }> {
     const rows = await this.tenant.runAsOrg(orgId, (tx) =>
       tx.need.findMany({
         where: { mergedIntoNeedId: null },
@@ -239,13 +254,15 @@ export class SemanticDuplicateService {
     const stale = wanted
       .filter((n) => current.get(n.id) !== hashes.get(n.id))
       .slice(0, MAX_EMBEDDINGS_PER_RUN);
-    if (stale.length === 0) return 0;
+    if (stale.length === 0) return { embedded: 0, needs: rows.length, failed: false };
 
     const vectors = await this.embeddings.embed(stale.map((n) => n.text));
     // The provider returns [] on any failure rather than throwing, and refuses
     // to return a misaligned batch — so this is "the call did not succeed",
     // not "some needs silently got the wrong vector".
-    if (vectors.length !== stale.length) return 0;
+    if (vectors.length !== stale.length) {
+      return { embedded: 0, needs: rows.length, failed: true };
+    }
 
     await this.tenant.runAsOrg(orgId, async (tx) => {
       for (let i = 0; i < stale.length; i++) {
@@ -297,7 +314,7 @@ export class SemanticDuplicateService {
       );
     }
 
-    return stale.length;
+    return { embedded: stale.length, needs: rows.length, failed: false };
   }
 
   /**
