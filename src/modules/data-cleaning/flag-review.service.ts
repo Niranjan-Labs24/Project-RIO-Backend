@@ -52,7 +52,14 @@ export interface FlagListItem {
   createdAt: Date;
   /** False when accepting is impossible — nothing to write. */
   acceptable: boolean;
+  /** UAT DQ-02 — the reviewer may type the corrected value themselves. */
+  editable: boolean;
 }
+
+/** Need columns a reviewer may correct by typing the value (UAT DQ-02).
+ * Domain and sub-domain are not here: they must match the methodology's
+ * own names, so only a proposal from the reference can set them. */
+const EDITABLE_NEED_FIELDS = new Set(["title", "statement"]);
 
 @Injectable()
 export class FlagReviewService {
@@ -136,6 +143,7 @@ export class FlagReviewService {
           reviewedAt: row.reviewedAt,
           createdAt: row.createdAt,
           acceptable: this.isAcceptable(row),
+          editable: this.isEditable(row),
         })),
       };
     });
@@ -202,6 +210,12 @@ export class FlagReviewService {
      * candidates; anything else is refused.
      */
     choice?: string,
+    /**
+     * UAT DQ-02 — the value the reviewer typed in, written instead of the
+     * proposal. Only for an `editable` finding, and checked like the field
+     * itself would be (a mobile must be a real number).
+     */
+    correctedValue?: string,
   ): Promise<FlagListItem> {
     const orgId = requireOrgId();
     const actor = requireActor();
@@ -243,7 +257,15 @@ export class FlagReviewService {
       }
 
       let applied: { field: string; before: string | null; after: string } | null = null;
-      if (decision === "accept") {
+      const typed = correctedValue?.trim();
+      if (decision === "accept" && typed) {
+        applied = await this.applyTypedValue(
+          tx,
+          existing,
+          typed,
+          context.settings.phoneDefaultRegion,
+        );
+      } else if (decision === "accept") {
         applied = await this.applyProposal(
           tx,
           { ...existing, proposedValue: this.chosenValue(existing, choice) },
@@ -293,6 +315,9 @@ export class FlagReviewService {
         { field: "Decision", before: "pending", after: decision === "accept" ? "accepted" : "rejected" },
         { field: "Rule", before: null, after: flag.ruleCode },
         { field: "Note", before: null, after: note?.trim() ?? null },
+        ...(decision === "accept" && correctedValue?.trim()
+          ? [{ field: "Correction", before: null, after: "Value entered by the reviewer" }]
+          : []),
       ],
     });
 
@@ -348,6 +373,7 @@ export class FlagReviewService {
       createdAt: flag.createdAt,
       // A decided flag is never acceptable again.
       acceptable: false,
+      editable: false,
     };
   }
 
@@ -513,6 +539,123 @@ export class FlagReviewService {
     // A redacted PII flag carries no proposal by design — the value is
     // recomputed at accept time instead. See survey-response.rules.ts.
     return this.isRedacted(detail) && entityType === "survey_response" && field === "mobile";
+  }
+
+  /**
+   * UAT DQ-02 — whether the reviewer may type the corrected value. Only where
+   * the value is free text on a real record: a need's title, statement or
+   * village, a response's mobile, village or one of its answers. Never an import row
+   * (the value lives in the uploader's file) and never domain/sub-domain.
+   */
+  private isEditable(flag: {
+    entityType: string;
+    entityId: string | null;
+    field: string;
+    detail: unknown;
+  }): boolean {
+    if (!flag.entityId) return false;
+    if (flag.entityType === "need") {
+      return EDITABLE_NEED_FIELDS.has(flag.field) || VILLAGE_FIELD.test(flag.field);
+    }
+    if (flag.entityType === "survey_response") {
+      if (flag.field === "mobile" || VILLAGE_FIELD.test(flag.field)) return true;
+      const detail = (flag.detail ?? {}) as { surveyQuestionId?: unknown };
+      return ANSWER_FIELD.test(flag.field) && typeof detail.surveyQuestionId === "string";
+    }
+    return false;
+  }
+
+  /** UAT DQ-02 — write the value the reviewer typed onto the record. */
+  private async applyTypedValue(
+    tx: Prisma.TransactionClient,
+    flag: { entityType: string; entityId: string | null; field: string; detail: unknown },
+    value: string,
+    phoneRegion: string,
+  ): Promise<{ field: string; before: string | null; after: string }> {
+    if (!this.isEditable(flag)) {
+      throw new BadRequestException({
+        error: {
+          code: "VALUE_NOT_EDITABLE",
+          message: "This value cannot be typed in by hand — accept the proposal or reject the finding.",
+        },
+      });
+    }
+    const entityId = flag.entityId!;
+
+    if (flag.entityType === "need") {
+      const need = await tx.need.findUnique({
+        where: { id: entityId },
+        select: { id: true, title: true, statement: true, village: true },
+      });
+      if (!need) {
+        throw new NotFoundException({
+          error: { code: "NEED_NOT_FOUND", message: "The need this finding refers to no longer exists." },
+        });
+      }
+      const villageMatch = VILLAGE_FIELD.exec(flag.field);
+      if (villageMatch) {
+        const index = Number(villageMatch[1]);
+        const before = need.village[index] ?? null;
+        const village = [...need.village];
+        village[index] = value;
+        await tx.need.update({ where: { id: entityId }, data: { village } });
+        return { field: flag.field, before, after: value };
+      }
+      const before = (need as unknown as Record<string, string | null>)[flag.field] ?? null;
+      await tx.need.update({ where: { id: entityId }, data: { [flag.field]: value } });
+      return { field: flag.field, before, after: value };
+    }
+
+    if (flag.field === "mobile") {
+      const normalized = normalizePhone(value, {
+        field: "mobile",
+        required: true,
+        dontKnowTreatment: "excluded_answer",
+        defaultRegion: phoneRegion,
+      });
+      if (normalized.value === null) {
+        throw new BadRequestException({
+          error: {
+            code: "INVALID_CORRECTED_VALUE",
+            message: "Enter a valid mobile number (e.g. 05XXXXXXXX or +9665XXXXXXXX).",
+          },
+        });
+      }
+      const exists = await tx.surveyResponse.findUnique({
+        where: { id: entityId },
+        select: { id: true },
+      });
+      if (!exists) {
+        throw new NotFoundException({
+          error: { code: "RESPONSE_NOT_FOUND", message: "The response this finding refers to no longer exists." },
+        });
+      }
+      await tx.surveyResponse.update({ where: { id: entityId }, data: { mobile: normalized.value } });
+      // Same as an accepted proposal: the audit keeps the shape, not the number.
+      return { field: "mobile", before: "(as submitted)", after: "(corrected by reviewer)" };
+    }
+
+    const responseVillage = VILLAGE_FIELD.exec(flag.field);
+    if (responseVillage) {
+      const response = await tx.surveyResponse.findUnique({
+        where: { id: entityId },
+        select: { village: true },
+      });
+      if (!response) {
+        throw new NotFoundException({
+          error: { code: "RESPONSE_NOT_FOUND", message: "The response this finding refers to no longer exists." },
+        });
+      }
+      const index = Number(responseVillage[1]);
+      const before = response.village[index] ?? null;
+      const village = [...response.village];
+      village[index] = value;
+      await tx.surveyResponse.update({ where: { id: entityId }, data: { village } });
+      return { field: flag.field, before, after: value };
+    }
+
+    // An answer: the same write-back as an accepted proposal, with the typed value.
+    return this.applyToAnswer(tx, entityId, { ...flag, proposedValue: value });
   }
 
   private isRedacted(detail: unknown): boolean {

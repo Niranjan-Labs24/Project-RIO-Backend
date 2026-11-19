@@ -100,6 +100,17 @@ function fakeMailer() {
   };
 }
 
+// UAT SHR-04 — the shared study's released reports.
+function fakeReports(reports: Record<string, Record<string, unknown>> = {}) {
+  return {
+    findAcrossOrgsOrThrow: async (id: string) => {
+      const report = reports[id];
+      if (!report) throw Object.assign(new Error("not found"), { response: { error: { code: "REPORT_NOT_FOUND" } } });
+      return report;
+    },
+  };
+}
+
 function fakeTranslation() {
   return { translate: async (text: string) => ({ translatedText: text, unchanged: false }) };
 }
@@ -116,7 +127,7 @@ function runAsOrg<T>(orgId: string, actorId: string, fn: () => Promise<T>): Prom
 
 describe("SharingService.create", () => {
   it("rejects requesting your own org's study", async () => {
-    const svc = new SharingService(fakeTenant([STUDY], ORGS) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never);
+    const svc = new SharingService(fakeTenant([STUDY], ORGS) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never, fakeReports() as never);
     await expect(
       runAsOrg("org-owner", "user-1", () =>
         svc.create({ ownerOrgId: "org-owner", studyId: STUDY.id, note: "why" }),
@@ -127,7 +138,7 @@ describe("SharingService.create", () => {
   it("rejects when the study doesn't belong to the claimed owner org", async () => {
     // STUDY actually belongs to org-owner — claiming it belongs to a
     // different org must 404, not silently resolve to the real owner.
-    const svc = new SharingService(fakeTenant([STUDY], ORGS) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never);
+    const svc = new SharingService(fakeTenant([STUDY], ORGS) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never, fakeReports() as never);
     await expect(
       runAsOrg("org-requester", "user-1", () =>
         svc.create({ ownerOrgId: "org-third-party", studyId: STUDY.id, note: "why" }),
@@ -137,7 +148,7 @@ describe("SharingService.create", () => {
 
   it("creates a pending request and writes one audit entry per org (FR-014: logs maintained)", async () => {
     const audit = fakeAudit();
-    const svc = new SharingService(fakeTenant([STUDY], ORGS) as never, audit as never, fakeMailer() as never, fakeTranslation() as never);
+    const svc = new SharingService(fakeTenant([STUDY], ORGS) as never, audit as never, fakeMailer() as never, fakeTranslation() as never, fakeReports() as never);
     const result = await runAsOrg("org-requester", "user-1", () =>
       svc.create({ ownerOrgId: "org-owner", studyId: STUDY.id, note: "For a similar assessment" }),
     );
@@ -179,14 +190,14 @@ describe("SharingService.decide (approve/reject)", () => {
   }
 
   it("only the owning org can decide", async () => {
-    const svc = new SharingService(fakeTenant([STUDY], ORGS, [seedPending()]) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never);
+    const svc = new SharingService(fakeTenant([STUDY], ORGS, [seedPending()]) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never, fakeReports() as never);
     await expect(
       runAsOrg("org-requester", "user-2", () => svc.approve("sr-1")),
     ).rejects.toMatchObject({ response: { error: { code: "FORBIDDEN" } } });
   });
 
   it("rejecting without a reason is refused (reject reason is mandatory)", async () => {
-    const svc = new SharingService(fakeTenant([STUDY], ORGS, [seedPending()]) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never);
+    const svc = new SharingService(fakeTenant([STUDY], ORGS, [seedPending()]) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never, fakeReports() as never);
     await expect(
       runAsOrg("org-owner", "user-2", () => svc.reject("sr-1", {})),
     ).rejects.toMatchObject({ response: { error: { code: "REJECT_REASON_REQUIRED" } } });
@@ -194,7 +205,7 @@ describe("SharingService.decide (approve/reject)", () => {
 
   it("cannot decide an already-decided request", async () => {
     const row = { ...seedPending(), status: "approved" as const, decidedAt: new Date(), decidedBy: "user-2" };
-    const svc = new SharingService(fakeTenant([STUDY], ORGS, [row]) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never);
+    const svc = new SharingService(fakeTenant([STUDY], ORGS, [row]) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never, fakeReports() as never);
     await expect(
       runAsOrg("org-owner", "user-2", () => svc.approve("sr-1")),
     ).rejects.toMatchObject({ response: { error: { code: "SHARING_REQUEST_ALREADY_DECIDED" } } });
@@ -202,7 +213,7 @@ describe("SharingService.decide (approve/reject)", () => {
 
   it("approve writes a dual-org audit entry with action 'approve'", async () => {
     const audit = fakeAudit();
-    const svc = new SharingService(fakeTenant([STUDY], ORGS, [seedPending()]) as never, audit as never, fakeMailer() as never, fakeTranslation() as never);
+    const svc = new SharingService(fakeTenant([STUDY], ORGS, [seedPending()]) as never, audit as never, fakeMailer() as never, fakeTranslation() as never, fakeReports() as never);
     const result = await runAsOrg("org-owner", "user-2", () => svc.approve("sr-1"));
 
     expect(result.status).toBe("approved");
@@ -213,7 +224,7 @@ describe("SharingService.decide (approve/reject)", () => {
 
   it("reject with a reason writes a dual-org audit entry including the reason", async () => {
     const audit = fakeAudit();
-    const svc = new SharingService(fakeTenant([STUDY], ORGS, [seedPending()]) as never, audit as never, fakeMailer() as never, fakeTranslation() as never);
+    const svc = new SharingService(fakeTenant([STUDY], ORGS, [seedPending()]) as never, audit as never, fakeMailer() as never, fakeTranslation() as never, fakeReports() as never);
     const result = await runAsOrg("org-owner", "user-2", () =>
       svc.reject("sr-1", { note: "Not relevant to your current work" }),
     );
@@ -242,14 +253,14 @@ describe("SharingService.approve — optional expiry (RIO-FR-014, Q30)", () => {
   }
 
   it("approving with no expiresAt leaves access open-ended", async () => {
-    const svc = new SharingService(fakeTenant([STUDY], ORGS, [seedPending()]) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never);
+    const svc = new SharingService(fakeTenant([STUDY], ORGS, [seedPending()]) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never, fakeReports() as never);
     const result = await runAsOrg("org-owner", "user-2", () => svc.approve("sr-1"));
     expect(result.status).toBe("approved");
     expect(result.expiresAt).toBeNull();
   });
 
   it("approving with an expiresAt stores it", async () => {
-    const svc = new SharingService(fakeTenant([STUDY], ORGS, [seedPending()]) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never);
+    const svc = new SharingService(fakeTenant([STUDY], ORGS, [seedPending()]) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never, fakeReports() as never);
     const result = await runAsOrg("org-owner", "user-2", () =>
       svc.approve("sr-1", { expiresAt: "2027-01-01T00:00:00.000Z" }),
     );
@@ -257,7 +268,7 @@ describe("SharingService.approve — optional expiry (RIO-FR-014, Q30)", () => {
   });
 
   it("rejects an unparsable expiry date", async () => {
-    const svc = new SharingService(fakeTenant([STUDY], ORGS, [seedPending()]) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never);
+    const svc = new SharingService(fakeTenant([STUDY], ORGS, [seedPending()]) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never, fakeReports() as never);
     await expect(
       runAsOrg("org-owner", "user-2", () => svc.approve("sr-1", { expiresAt: "not-a-date" })),
     ).rejects.toMatchObject({ response: { error: { code: "INVALID_EXPIRY_DATE" } } });
@@ -274,7 +285,7 @@ describe("SharingService.withdraw (RIO-FR-014, Q30)", () => {
   }
 
   it("only the owning org can withdraw", async () => {
-    const svc = new SharingService(fakeTenant([STUDY], ORGS, [seedApproved()]) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never);
+    const svc = new SharingService(fakeTenant([STUDY], ORGS, [seedApproved()]) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never, fakeReports() as never);
     await expect(
       runAsOrg("org-requester", "user-1", () => svc.withdraw("sr-1")),
     ).rejects.toMatchObject({ response: { error: { code: "FORBIDDEN" } } });
@@ -282,7 +293,7 @@ describe("SharingService.withdraw (RIO-FR-014, Q30)", () => {
 
   it("cannot withdraw a request that was never approved", async () => {
     const row = { ...seedApproved(), status: "pending" as const, decidedBy: null, decidedAt: null };
-    const svc = new SharingService(fakeTenant([STUDY], ORGS, [row]) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never);
+    const svc = new SharingService(fakeTenant([STUDY], ORGS, [row]) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never, fakeReports() as never);
     await expect(
       runAsOrg("org-owner", "user-2", () => svc.withdraw("sr-1")),
     ).rejects.toMatchObject({ response: { error: { code: "SHARING_NOT_APPROVED" } } });
@@ -290,7 +301,7 @@ describe("SharingService.withdraw (RIO-FR-014, Q30)", () => {
 
   it("withdraws approved access, stamps who/when, and audits both orgs", async () => {
     const audit = fakeAudit();
-    const svc = new SharingService(fakeTenant([STUDY], ORGS, [seedApproved()]) as never, audit as never, fakeMailer() as never, fakeTranslation() as never);
+    const svc = new SharingService(fakeTenant([STUDY], ORGS, [seedApproved()]) as never, audit as never, fakeMailer() as never, fakeTranslation() as never, fakeReports() as never);
     const result = await runAsOrg("org-owner", "user-3", () => svc.withdraw("sr-1"));
 
     expect(result.status).toBe("withdrawn");
@@ -302,7 +313,7 @@ describe("SharingService.withdraw (RIO-FR-014, Q30)", () => {
 
   it("a withdrawn request can no longer be viewed via getSharedSnapshot", async () => {
     const row = { ...seedApproved(), status: "withdrawn" as const, withdrawnBy: "user-3", withdrawnAt: new Date() };
-    const svc = new SharingService(fakeTenant([STUDY], ORGS, [row]) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never);
+    const svc = new SharingService(fakeTenant([STUDY], ORGS, [row]) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never, fakeReports() as never);
     await expect(
       runAsOrg("org-requester", "user-1", () => svc.getSharedSnapshot("sr-1")),
     ).rejects.toMatchObject({ response: { error: { code: "SHARING_NOT_APPROVED" } } });
@@ -310,15 +321,50 @@ describe("SharingService.withdraw (RIO-FR-014, Q30)", () => {
 });
 
 describe("SharingService.getSharedSnapshot", () => {
+  const needWhere: Record<string, unknown>[] = [];
+  const reportWhere: Record<string, unknown>[] = [];
   function fakeTenantWithNeeds(initialRows: FakeRow[] = []) {
     const base = fakeTenant([STUDY], ORGS, initialRows);
     return {
       ...base,
       runAsSupervisor: async (fn: (tx: unknown) => unknown) =>
         fn({
-          study: { findUnique: async () => STUDY },
-          need: { findMany: async () => [{ id: "n1", statement: "Need water", village: ["V1"], status: "reviewer_approved" }] },
-          evidence: { count: async () => 2 },
+          study: {
+            findUnique: async () => ({
+              ...STUDY,
+              org: { name: "Owner NGO" },
+              studyGovernorates: [{ governorate: { name: "Afif", nameAr: "عفيف" } }],
+              studyType: "baseline",
+              targetSector: null,
+              population: 1200,
+              requiredSampleSize: 292,
+              createdAt: new Date("2026-09-16T00:00:00Z"),
+            }),
+          },
+          need: {
+            findMany: async (args: { where: Record<string, unknown> }) => {
+              needWhere.push(args.where);
+              return [
+                {
+                  id: "n1", statement: "Need water", village: ["V1"], status: "reviewer_approved",
+                  internalRefSeq: 12, title: "Water", domain: "Water", subDomain: null, affectedPopulation: 40,
+                },
+              ];
+            },
+          },
+          evidence: {
+            findMany: async () => [
+              { id: "e1", title: "Photo", fileName: "a.jpg", fileType: "image/jpeg", needId: "n1", uploadedAt: new Date("2026-09-17T00:00:00Z") },
+              { id: "e2", title: null, fileName: "b.pdf", fileType: "application/pdf", needId: "n1", uploadedAt: new Date("2026-09-18T00:00:00Z") },
+            ],
+          },
+          report: {
+            findMany: async (args: { where: Record<string, unknown> }) => {
+              reportWhere.push(args.where);
+              return [{ id: "rep-1", title: "Core needs", reportType: "RPT18", generatedAt: new Date("2026-10-01T00:00:00Z") }];
+            },
+          },
+          organisation: { findUnique: async () => ({ name: "Owner NGO" }) },
         }),
     };
   }
@@ -329,7 +375,7 @@ describe("SharingService.getSharedSnapshot", () => {
       status: "pending", requestedBy: "user-1", requestedAt: new Date(),
       decidedBy: null, decidedAt: null, note: null, decisionNote: null,
     };
-    const svc = new SharingService(fakeTenantWithNeeds([row]) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never);
+    const svc = new SharingService(fakeTenantWithNeeds([row]) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never, fakeReports() as never);
     await expect(
       runAsOrg("org-requester", "user-1", () => svc.getSharedSnapshot("sr-1")),
     ).rejects.toMatchObject({ response: { error: { code: "SHARING_NOT_APPROVED" } } });
@@ -341,7 +387,7 @@ describe("SharingService.getSharedSnapshot", () => {
       status: "approved", requestedBy: "user-1", requestedAt: new Date(),
       decidedBy: "user-2", decidedAt: new Date(), note: null, decisionNote: null,
     };
-    const svc = new SharingService(fakeTenantWithNeeds([row]) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never);
+    const svc = new SharingService(fakeTenantWithNeeds([row]) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never, fakeReports() as never);
     await expect(
       runAsOrg("org-owner", "user-2", () => svc.getSharedSnapshot("sr-1")),
     ).rejects.toMatchObject({ response: { error: { code: "FORBIDDEN" } } });
@@ -354,7 +400,7 @@ describe("SharingService.getSharedSnapshot", () => {
       decidedBy: "user-2", decidedAt: new Date(), note: null, decisionNote: null,
       expiresAt: new Date("2020-01-01T00:00:00.000Z"),
     };
-    const svc = new SharingService(fakeTenantWithNeeds([row]) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never);
+    const svc = new SharingService(fakeTenantWithNeeds([row]) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never, fakeReports() as never);
     await expect(
       runAsOrg("org-requester", "user-1", () => svc.getSharedSnapshot("sr-1")),
     ).rejects.toMatchObject({ response: { error: { code: "SHARING_EXPIRED" } } });
@@ -366,10 +412,87 @@ describe("SharingService.getSharedSnapshot", () => {
       status: "approved", requestedBy: "user-1", requestedAt: new Date(),
       decidedBy: "user-2", decidedAt: new Date(), note: null, decisionNote: null,
     };
-    const svc = new SharingService(fakeTenantWithNeeds([row]) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never);
+    const svc = new SharingService(fakeTenantWithNeeds([row]) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never, fakeReports() as never);
     const snapshot = await runAsOrg("org-requester", "user-1", () => svc.getSharedSnapshot("sr-1"));
     expect(snapshot.title).toBe(STUDY.title);
     expect(snapshot.needs).toHaveLength(1);
     expect(snapshot.evidenceCount).toBe(2);
+  });
+
+  // UAT SHR-04 — "View full study": details, evidence list and released reports.
+  it("returns the full read-only study: details, needs with their IDs, evidence and released reports", async () => {
+    const row: FakeRow = {
+      id: "sr-1", ownerOrgId: "org-owner", requestingOrgId: "org-requester", studyId: STUDY.id,
+      status: "approved", requestedBy: "user-1", requestedAt: new Date(),
+      decidedBy: "user-2", decidedAt: new Date(), note: null, decisionNote: null,
+    };
+    const svc = new SharingService(fakeTenantWithNeeds([row]) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never, fakeReports() as never);
+    const snapshot = await runAsOrg("org-requester", "user-1", () => svc.getSharedSnapshot("sr-1"));
+
+    expect(snapshot).toMatchObject({
+      ownerOrgName: "Owner NGO",
+      studyType: "baseline",
+      population: 1200,
+      requiredSampleSize: 292,
+      governorates: [{ name: "Afif", nameAr: "عفيف" }],
+    });
+    expect(snapshot.needs[0]).toMatchObject({ internalReferenceId: "NEED-000012", title: "Water", affectedPopulation: 40 });
+    expect(snapshot.evidence.map((e) => e.fileName)).toEqual(["a.jpg", "b.pdf"]);
+    expect(snapshot.reports).toEqual([
+      { id: "rep-1", title: "Core needs", reportType: "RPT18", generatedAt: "2026-10-01T00:00:00.000Z" },
+    ]);
+    // Merged needs are not part of the study; only released reports are listed.
+    expect(needWhere.at(-1)).toMatchObject({ mergedIntoNeedId: null });
+    expect(reportWhere.at(-1)).toMatchObject({ status: { in: ["released", "archived"] } });
+  });
+});
+
+describe("SharingService.getSharedStudyReport (UAT SHR-04)", () => {
+  const approved: FakeRow = {
+    id: "sr-1", ownerOrgId: "org-owner", requestingOrgId: "org-requester", studyId: STUDY.id,
+    status: "approved", requestedBy: "user-1", requestedAt: new Date(),
+    decidedBy: "user-2", decidedAt: new Date(), note: null, decisionNote: null,
+  };
+  const report = (over: Record<string, unknown> = {}) => ({
+    id: "rep-1", studyId: STUDY.id, status: "released", reportType: "RPT01", filters: {},
+    title: "Collective report", content: { blocks: [] }, generatedAt: "2026-10-01T00:00:00.000Z",
+    generatedByName: "Sarah", officerConfirmedBy: null, officerConfirmedByName: null, officerConfirmedAt: null,
+    reviewedBy: null, reviewedByName: null, reviewedByRole: null, reviewedAt: null,
+    ...over,
+  });
+  const svcWith = (reports: Record<string, Record<string, unknown>>, rows: FakeRow[] = [approved]) =>
+    new SharingService(fakeTenant([STUDY], ORGS, rows) as never, fakeAudit() as never, fakeMailer() as never, fakeTranslation() as never, fakeReports(reports) as never);
+
+  it("shows a released report of the shared study, read-only, in the shared-report shape", async () => {
+    const svc = svcWith({ "rep-1": report() });
+    const snapshot = await runAsOrg("org-requester", "user-1", () => svc.getSharedStudyReport("sr-1", "rep-1"));
+    expect(snapshot).toMatchObject({ reportId: "rep-1", title: "Collective report", ownerOrgName: "Owner NGO", generatedByName: "Sarah" });
+  });
+
+  it("refuses a report of another study, or one that is not released", async () => {
+    for (const over of [{ studyId: "study-2" }, { status: "draft" }, { status: "submitted" }]) {
+      const svc = svcWith({ "rep-1": report(over) });
+      await expect(
+        runAsOrg("org-requester", "user-1", () => svc.getSharedStudyReport("sr-1", "rep-1")),
+      ).rejects.toMatchObject({ response: { error: { code: "REPORT_NOT_FOUND" } } });
+    }
+  });
+
+  it("refuses a village-level (internal-only) report", async () => {
+    const svc = svcWith({ "rep-1": report({ reportType: "RPT18", filters: { scopeLevel: "VILLAGE" } }) });
+    await expect(
+      runAsOrg("org-requester", "user-1", () => svc.getSharedStudyReport("sr-1", "rep-1")),
+    ).rejects.toMatchObject({ response: { error: { code: "VILLAGE_REPORT_INTERNAL" } } });
+  });
+
+  it("follows the same rules as the study itself: approved, unexpired, requester only", async () => {
+    const svc = svcWith({ "rep-1": report() }, [{ ...approved, status: "pending" }]);
+    await expect(
+      runAsOrg("org-requester", "user-1", () => svc.getSharedStudyReport("sr-1", "rep-1")),
+    ).rejects.toMatchObject({ response: { error: { code: "SHARING_NOT_APPROVED" } } });
+    const svc2 = svcWith({ "rep-1": report() });
+    await expect(
+      runAsOrg("org-owner", "user-2", () => svc2.getSharedStudyReport("sr-1", "rep-1")),
+    ).rejects.toMatchObject({ response: { error: { code: "FORBIDDEN" } } });
   });
 });

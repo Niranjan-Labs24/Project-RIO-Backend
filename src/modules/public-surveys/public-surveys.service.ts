@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { formatRiyadhTime, toCsv, type ExportCell } from '../../common/export/tabular-export';
 import { randomBytes } from 'node:crypto';
 import { Writable } from 'node:stream';
@@ -16,6 +16,7 @@ import { sanitizeForSpreadsheet } from '../../common/security/spreadsheet-saniti
 import { auditFieldLabel } from '../audit/audit-field-labels';
 import { DeterministicScoringService } from '../priority/scoring.service';
 import type {
+  BulkShareResult,
   CreateSurveyLinkPayload,
   PublicSurveyLink,
   PublicSurveyLinkRow,
@@ -144,9 +145,7 @@ export class PublicSurveysService {
     const orgId = requireOrgId();
     const actorId = requireActor();
     const token = randomBytes(24).toString('base64url');
-    const expiresAt = payload.expiresInDays
-      ? new Date(Date.now() + payload.expiresInDays * 24 * 60 * 60 * 1000)
-      : null;
+    const { startsAt, expiresAt } = linkWindow(payload.startsOn, payload.endsOn);
     // Contract-level `pattern: '\S'` already rejects an all-whitespace body,
     // so trimming here can only shrink a valid label, never produce a blank
     // one — no need to re-check blankness after trim.
@@ -156,7 +155,7 @@ export class PublicSurveysService {
     try {
       row = await this.tenant.runInOrgContext((tx) =>
         tx.publicSurveyLink.create({
-          data: { orgId, needId, studyId: need.studyId, label, token, createdBy: actorId, expiresAt },
+          data: { orgId, needId, studyId: need.studyId, label, token, createdBy: actorId, startsAt, expiresAt },
           include: { _count: { select: { responses: true } } },
         }),
       );
@@ -173,6 +172,8 @@ export class PublicSurveysService {
       changes: [
         { field: 'Link label', before: null, after: label },
         { field: 'Linked need', before: null, after: need.title },
+        { field: 'Opens', before: null, after: payload.startsOn },
+        { field: 'Closes', before: null, after: payload.endsOn },
         { field: 'Active', before: null, after: row.isActive },
       ],
     });
@@ -201,6 +202,74 @@ export class PublicSurveysService {
   // formatted email — a mailto: link can't carry an attached image at all,
   // so this is the only way to actually deliver "link + QR code" together.
   async shareLinkByEmail(needId: string, linkId: string, email: string): Promise<void> {
+    const prepared = await this.prepareLinkEmail(needId, linkId);
+    const sent = await this.mailer.sendSurveyLink(email, prepared.content);
+    if (!sent) {
+      throw new ServiceUnavailableException({
+        error: { code: 'SURVEY_LINK_EMAIL_FAILED', message: 'Could not send the survey link by email. Please try again.' },
+      });
+    }
+    await this.audit.record({
+      action: 'share',
+      entityType: 'survey',
+      entityId: prepared.link.id,
+      entityLabel: prepared.link.label,
+      metadata: { channel: 'email' },
+      // A share mutates nothing on the link, so the pair records what was
+      // sent and to whom rather than a field transition.
+      changes: [
+        { field: 'Shared via', before: null, after: 'email' },
+        { field: 'Recipient', before: null, after: email },
+        { field: 'Survey link', before: null, after: prepared.link.label },
+      ],
+    });
+  }
+
+  /**
+   * UAT DST-01 — the same email as shareLinkByEmail, to many addresses at
+   * once (typed in, or read from a CSV/Excel file by the screen). Invalid
+   * addresses are reported, not sent to, and never stop the others; a
+   * repeated address is sent once. One audit entry for the whole send.
+   */
+  async shareLinkByEmailBulk(needId: string, linkId: string, emails: string[]): Promise<BulkShareResult> {
+    const prepared = await this.prepareLinkEmail(needId, linkId);
+    const result: BulkShareResult = { sent: [], invalid: [], failed: [], duplicates: [] };
+    const seen = new Set<string>();
+    const toSend: string[] = [];
+    for (const raw of emails) {
+      const email = raw.trim();
+      if (!email) continue;
+      const key = email.toLowerCase();
+      if (seen.has(key)) {
+        if (!result.duplicates.includes(email)) result.duplicates.push(email);
+        continue;
+      }
+      seen.add(key);
+      if (!EMAIL_SHAPE.test(email)) result.invalid.push(email);
+      else toSend.push(email);
+    }
+    for (const email of toSend) {
+      const sent = await this.mailer.sendSurveyLink(email, prepared.content);
+      (sent ? result.sent : result.failed).push(email);
+    }
+    await this.audit.record({
+      action: 'share',
+      entityType: 'survey',
+      entityId: prepared.link.id,
+      entityLabel: prepared.link.label,
+      metadata: { channel: 'email', bulk: true },
+      changes: [
+        { field: 'Shared via', before: null, after: 'email (bulk)' },
+        { field: 'Recipients', before: null, after: result.sent.join(', ') || '—' },
+        { field: 'Not sent', before: null, after: [...result.invalid, ...result.failed].join(', ') || '—' },
+        { field: 'Survey link', before: null, after: prepared.link.label },
+      ],
+    });
+    return result;
+  }
+
+  /** What every survey-link email carries: the link, its QR code, the need. */
+  private async prepareLinkEmail(needId: string, linkId: string) {
     const need = await this.findNeedOrThrow(needId);
     const link = await this.tenant.runInOrgContext(async (tx) => {
       const existing = await tx.publicSurveyLink.findUnique({ where: { id: linkId } });
@@ -226,32 +295,10 @@ export class PublicSurveysService {
     // template text was already bilingual).
     const { translatedText: needTitleAr } = await this.translation.translate(need.title, 'ar');
 
-    const sent = await this.mailer.sendSurveyLink(email, {
-      needTitle: need.title,
-      needTitleAr,
-      linkLabel: link.label,
-      publicUrl,
-      qrCodePng,
-    });
-    if (!sent) {
-      throw new ServiceUnavailableException({
-        error: { code: 'SURVEY_LINK_EMAIL_FAILED', message: 'Could not send the survey link by email. Please try again.' },
-      });
-    }
-    await this.audit.record({
-      action: 'share',
-      entityType: 'survey',
-      entityId: link.id,
-      entityLabel: link.label,
-      metadata: { channel: 'email' },
-      // A share mutates nothing on the link, so the pair records what was
-      // sent and to whom rather than a field transition.
-      changes: [
-        { field: 'Shared via', before: null, after: 'email' },
-        { field: 'Recipient', before: null, after: email },
-        { field: 'Survey link', before: null, after: link.label },
-      ],
-    });
+    return {
+      link,
+      content: { needTitle: need.title, needTitleAr, linkLabel: link.label, publicUrl, qrCodePng },
+    };
   }
 
   // Survey Responses — Name/Email/Submitted Date list, single-response
@@ -779,6 +826,7 @@ export class PublicSurveysService {
       label: row.label,
       token: row.token,
       publicUrl: `${this.config.publicAppUrl}/ar/public/survey/${row.token}`, // UAT-02 — see comment above
+      startsAt: row.startsAt ? row.startsAt.toISOString() : null,
       expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
       isActive: row.isActive,
       createdAt: row.createdAt.toISOString(),
@@ -787,5 +835,31 @@ export class PublicSurveysService {
   }
 }
 
+/** A plain email shape; the mail server is the final judge. */
+const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/** Today's date in Riyadh, YYYY-MM-DD. */
+function riyadhToday(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh' }).format(now);
+}
 
+/**
+ * UAT DST-04 — a link's window from its two calendar dates (Riyadh time, UTC+3
+ * all year): it opens at 00:00 on startsOn and closes at the end of endsOn.
+ * Not in the past, ending on or after it starts, and at most a year long
+ * (the old 365-day expiry limit).
+ */
+export function linkWindow(startsOn: string, endsOn: string, now: Date = new Date()): { startsAt: Date; expiresAt: Date } {
+  const startsAt = new Date(`${startsOn}T00:00:00.000+03:00`);
+  const expiresAt = new Date(`${endsOn}T23:59:59.999+03:00`);
+  const real = (d: Date, s: string) => !Number.isNaN(d.getTime()) && riyadhToday(d) === s;
+  const fail = (message: string) =>
+    new BadRequestException({ error: { code: 'SURVEY_LINK_DATES_INVALID', message } });
+  if (!real(startsAt, startsOn) || !real(expiresAt, endsOn)) throw fail('Enter real start and end dates.');
+  if (startsOn < riyadhToday(now)) throw fail('The start date cannot be in the past.');
+  if (endsOn < startsOn) throw fail('The end date must be on or after the start date.');
+  if (expiresAt.getTime() - startsAt.getTime() > 366 * 24 * 60 * 60 * 1000) {
+    throw fail('A survey link can stay open for at most one year.');
+  }
+  return { startsAt, expiresAt };
+}

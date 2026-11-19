@@ -32,9 +32,9 @@ dotenv.config();
 const region = process.env.OCI_GENAI_REGION ?? 'me-riyadh-1';
 const apiKey = process.env.OCI_GENAI_API_KEY;
 const compartmentId = process.env.OCI_GENAI_COMPARTMENT_ID;
-const modelId = process.env.OCI_GENAI_EMBED_MODEL_ID ?? 'cohere.embed-multilingual-v3.0';
+const modelId = process.env.OCI_GENAI_EMBED_MODEL_ID ?? 'cohere.embed-v4.0';
 const servingType = process.env.OCI_GENAI_SERVING_TYPE ?? 'ON_DEMAND';
-const expectedDimensions = Number(process.env.OCI_GENAI_EMBED_DIMENSIONS ?? 1024);
+const expectedDimensions = Number(process.env.OCI_GENAI_EMBED_DIMENSIONS ?? 1536);
 const url = `https://inference.generativeai.${region}.oci.oraclecloud.com/20231130/actions/embedText`;
 
 function fail(message: string): never {

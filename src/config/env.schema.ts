@@ -261,14 +261,23 @@ export const EnvSchema = Type.Object({
   // Verify both values with `npm run ai:oci-embed-smoke` before relying on
   // them: which models a tenancy serves ON_DEMAND varies by region, and the
   // script reports the width the model actually returns.
-  OCI_GENAI_EMBED_MODEL_ID: Type.String({ default: 'cohere.embed-multilingual-v3.0' }),
+  //
+  // cohere.embed-v4.0 (multilingual) rather than embed-multilingual-v3.0: in
+  // me-riyadh-1 the v3 model answers 404 "Entity with key … not found", so no
+  // need was ever embedded and every semantic scan found nothing (UAT, 19 Nov
+  // 2026). v4.0 answers there with the same key; smoke test: EN vs AR twin
+  // 0.675, unrelated 0.230.
+  OCI_GENAI_EMBED_MODEL_ID: Type.String({ default: 'cohere.embed-v4.0' }),
   // Must match what the model returns; the adapter refuses a batch whose width
   // disagrees rather than storing vectors nothing can compare.
   //
   // Also matches need_embeddings.embedding's declared width — see migration
   // 20260911000000. A mismatch is not an error: SemanticDuplicateService
   // detects it and compares in the application instead of against the index.
-  OCI_GENAI_EMBED_DIMENSIONS: Type.Number({ default: 1024, minimum: 1, maximum: 4096 }),
+  // cohere.embed-v4.0 returns 1536. The column is still vector(1024) (migration
+  // 20260911000000), so a pgvector server compares in the application until a
+  // migration widens it — slower, not broken.
+  OCI_GENAI_EMBED_DIMENSIONS: Type.Number({ default: 1536, minimum: 1, maximum: 4096 }),
   // RIO-AI-004 / Q10 — the switch that lets need text leave the platform.
   //
   // Semantic duplicate detection embeds need titles and statements with an

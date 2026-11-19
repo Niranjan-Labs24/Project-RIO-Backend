@@ -1,7 +1,9 @@
 import { toJson } from '../../common/prisma/json';
 import type { Prisma } from '../../generated/prisma';
 import { requestLocale } from '../../common/locale/request-locale';
-import { BadRequestException, GoneException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, GoneException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import { toSaudiMobileE164 } from '../../common/validation/saudi-mobile';
+import { normalizePersonName } from '../../common/validation/person-name';
 import { randomInt } from 'node:crypto';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { PasswordService } from '../../auth/password.service';
@@ -328,6 +330,8 @@ export class CitizenService {
 
   async submitResponse(token: string, payload: SubmitResponsePayload): Promise<SubmitResponseResult> {
     const link = await this.findActiveLinkOrThrow(token);
+    // UAT RSP-02 — checked first, so a bad name never burns the code.
+    const contactName = this.validContactName(payload.contactName);
     const challenge = await this.findChallengeOrThrow(link, payload.challengeId);
     if (!challenge.verifiedAt) {
       throw new BadRequestException({ error: { code: 'OTP_NOT_VERIFIED', message: 'Verify the OTP code before submitting a response.' } });
@@ -474,8 +478,8 @@ export class CitizenService {
           surveyLinkId: link.id,
           contact: challenge.contact,
           mobile: challenge.mobile,
-          contactName: payload.contactName ?? null,
-          gender: payload.gender ?? null,
+          contactName,
+          gender: payload.gender,
           ageBracket: payload.ageBracket,
           regionId: org?.regionId ?? null,
           // Placed exactly where the respondent said they live (client, 19
@@ -590,6 +594,7 @@ export class CitizenService {
   // the same consent and one-per-contact rules as a submission.
   async recordOutside(token: string, payload: RecordOutsidePayload): Promise<SubmitResponseResult> {
     const link = await this.findActiveLinkOrThrow(token);
+    const contactName = this.validContactName(payload.contactName);
     const activeConsent = await this.consent.getActiveCitizenPolicy();
     if (activeConsent.version !== payload.consent.version) {
       throw new BadRequestException({
@@ -622,8 +627,8 @@ export class CitizenService {
           surveyLinkId: link.id,
           contact,
           mobile,
-          contactName: payload.contactName ?? null,
-          gender: payload.gender ?? null,
+          contactName,
+          gender: payload.gender,
           ageBracket: payload.ageBracket,
           regionId: org?.regionId ?? null,
           answers: toJson({}),
@@ -661,6 +666,17 @@ export class CitizenService {
     if (link.expiresAt && link.expiresAt.getTime() < Date.now()) {
       throw new GoneException({ error: { code: 'SURVEY_LINK_EXPIRED', message: 'This survey link has expired.' } });
     }
+    // UAT DST-04 — a link with a future start date is not open yet.
+    if (link.startsAt && link.startsAt.getTime() > Date.now()) {
+      throw new ForbiddenException({
+        error: {
+          code: 'SURVEY_LINK_NOT_OPEN_YET',
+          message: 'This survey is not open yet.',
+          // In `details`, where the client reads extra error data.
+          details: { opensAt: link.startsAt.toISOString() },
+        },
+      });
+    }
     return link;
   }
 
@@ -676,12 +692,39 @@ export class CitizenService {
     return contact.trim().toLowerCase();
   }
 
-  // Strips phone punctuation (spaces, dashes, parens) but keeps the
-  // leading '+' and digits — good enough for exact-match dedup/lookup
-  // without a full E.164 validator; genuinely malformed numbers just fail
-  // at the Unifonic call and soft-fail like any other delivery error.
+  // UAT RSP-01 — a respondent's mobile must be a Saudi mobile (05XXXXXXXX,
+  // 5XXXXXXXX, +9665XXXXXXXX or 009665XXXXXXXX), stored in one form
+  // ("+9665XXXXXXXX") so duplicate checks compare like with like. Anything
+  // else is refused before any code is sent. Same rule and error code as
+  // staff sign-up (toSaudiMobileE164).
   private normalizeMobile(mobile: string): string {
-    return mobile.trim().replace(/[\s\-()]/g, '');
+    const e164 = toSaudiMobileE164(mobile);
+    if (!e164) {
+      throw new BadRequestException({
+        error: {
+          code: 'INVALID_MOBILE_NUMBER',
+          message: 'Enter a valid Saudi mobile number (e.g. 05XXXXXXXX or +9665XXXXXXXX)',
+        },
+      });
+    }
+    return e164;
+  }
+
+  // UAT RSP-02 — letters only (Arabic or English), at least 2; stored trimmed
+  // with single spaces. Optional in the contract for older callers, but a
+  // name that is given must follow the rule.
+  private validContactName(contactName: string | undefined): string | null {
+    if (contactName === undefined || contactName.trim() === '') return null;
+    const name = normalizePersonName(contactName);
+    if (!name) {
+      throw new BadRequestException({
+        error: {
+          code: 'INVALID_CONTACT_NAME',
+          message: 'Enter your name using letters only (Arabic or English), at least 2 letters.',
+        },
+      });
+    }
+    return name;
   }
 }
 

@@ -36,8 +36,8 @@ import type { EmbeddingProvider } from './embedding-provider';
  * ─── Model and width are configuration, not constants ───────────────────────
  * Which embedding models a tenancy serves ON_DEMAND varies by region, so both
  * are env vars and `npm run ai:oci-embed-smoke` reports what the live tenancy
- * actually answers with. The default is `cohere.embed-multilingual-v3.0` at
- * 1024 — multilingual because an Arabic need and its English twin score 0.000
+ * actually answers with. The default is `cohere.embed-v4.0` at 1536 (it was
+ * `cohere.embed-multilingual-v3.0` at 1024, which me-riyadh-1 does not serve) — multilingual because an Arabic need and its English twin score 0.000
  * on the literal pass, which is the entire reason the semantic pass exists.
  */
 
@@ -77,7 +77,7 @@ export class OciCohereEmbeddingProvider implements EmbeddingProvider {
    * invisible in the other two.
    *
    * Stored in a varchar(64); the default reads
-   * `cohere.embed-multilingual-v3.0-1024-v1` at 38 characters.
+   * `cohere.embed-v4.0-1536-v1` at 25 characters.
    */
   get embeddingVersion(): string {
     return `${this.modelName}-${this.dimensions}-v1`;

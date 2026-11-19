@@ -58,7 +58,7 @@ export class UsersService {
 
   async list(opts: { limit?: number; offset?: number } = {}): Promise<OrgUser[]> {
     const { take, skip } = this.page(opts);
-    const rows = (await this.tenant.runInOrgContext((tx) => tx.user.findMany({ orderBy: { createdAt: 'asc' }, take, skip }))) as UserRow[];
+    const rows = (await this.tenant.runInOrgContext((tx) => tx.user.findMany({ orderBy: { createdAt: 'desc' }, take, skip }) /* UAT GEN-08 — newest first */)) as UserRow[];
     return rows.map((r) => this.toOrgUser(r));
   }
 
@@ -214,7 +214,7 @@ export class UsersService {
     const { take, skip } = this.page(opts);
     const [rows, org] = (await this.tenant.runAsSupervisor((tx) =>
       Promise.all([
-        tx.user.findMany({ where: { orgId: organizationId }, orderBy: { createdAt: 'asc' }, take, skip }),
+        tx.user.findMany({ where: { orgId: organizationId }, orderBy: { createdAt: 'desc' }, take, skip }), // UAT GEN-08 — newest first
         tx.organisation.findUnique({ where: { id: organizationId }, select: { name: true } }),
       ]),
     )) as [UserRow[], { name: string } | null];

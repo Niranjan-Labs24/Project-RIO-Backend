@@ -11,9 +11,11 @@ export const CreateSurveyLinkBody = registerSchema(
       // PublicSurveyLink.@@unique([studyId, label]) schema comment) — a
       // TypeBox schema has no notion of "unique within this Study".
       label: T.String({ minLength: 1, maxLength: 150, pattern: '\\S' }),
-      // Omitted = no expiry. RIO-NFR-014-style configurability: callers pick
-      // the window per link rather than a single hardcoded TTL.
-      expiresInDays: T.Optional(T.Integer({ minimum: 1, maximum: 365 })),
+      // UAT DST-04 — both mandatory, as calendar dates (YYYY-MM-DD) in Riyadh
+      // time: the link opens at the start of startsOn and closes at the end
+      // of endsOn. Checked against each other and today in the service.
+      startsOn: T.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$' }),
+      endsOn: T.String({ pattern: '^\\d{4}-\\d{2}-\\d{2}$' }),
     },
     { additionalProperties: false },
   ),
@@ -28,3 +30,14 @@ export const ShareSurveyLinkEmailBody = registerSchema(
   ),
 );
 export type ShareSurveyLinkEmailDto = Static<typeof ShareSurveyLinkEmailBody>;
+
+// UAT DST-01 — send the link to many addresses at once. Each address is
+// checked in the service, so one typo is reported instead of failing the lot.
+export const ShareSurveyLinkEmailBulkBody = registerSchema(
+  'ShareSurveyLinkEmailBulkBody',
+  T.Object(
+    { emails: T.Array(T.String({ maxLength: 320 }), { minItems: 1, maxItems: 200 }) },
+    { additionalProperties: false },
+  ),
+);
+export type ShareSurveyLinkEmailBulkDto = Static<typeof ShareSurveyLinkEmailBulkBody>;
