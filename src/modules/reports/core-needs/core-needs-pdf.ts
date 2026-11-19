@@ -238,8 +238,12 @@ class Doc {
       if (v.watermark) this.watermark();
       this.bar(LEFT, FOOTER_TOP - 8, CONTENT_W, 0.6, COLOR.border);
       this.y = FOOTER_TOP;
-      if (i === 0)
+      if (i === 0) {
         this.line(LEFT, 7.5, true, fit(v.approval, 7.5, CONTENT_W - 90, true), COLOR.tealText);
+        // UAT RPT-05 — page 1 carries the issuer line too, under the approval.
+        this.y = FOOTER_TOP + 10;
+        this.line(LEFT, 7, false, fit(v.footer.left, 7, CONTENT_W - 90), COLOR.muted);
+      }
       else {
         const left =
           i === count - 1 && v.output === 'FULL'

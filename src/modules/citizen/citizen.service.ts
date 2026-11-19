@@ -1,7 +1,7 @@
 import { toJson } from '../../common/prisma/json';
 import type { Prisma } from '../../generated/prisma';
 import { requestLocale } from '../../common/locale/request-locale';
-import { BadRequestException, GoneException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, GoneException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { randomInt } from 'node:crypto';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { PasswordService } from '../../auth/password.service';
@@ -13,6 +13,8 @@ import { DataCleaningService } from '../data-cleaning/data-cleaning.service';
 import { SurveysService } from '../surveys/surveys.service';
 import { DeterministicScoringService } from '../priority/scoring.service';
 import { ScoreRollupService } from '../priority/rollup.service';
+import { PriorityService } from '../priority/priority.service';
+import { orgContext } from '../../tenancy/org-context';
 import { SurveySessionsService } from '../survey-sessions/survey-sessions.service';
 import { ConsentService } from '../consent/consent.service';
 import { resolveConsentLocale } from '../consent/consent.types';
@@ -64,6 +66,9 @@ export class CitizenService {
     // session tracking above.
     private readonly dataCleaning: DataCleaningService,
     private readonly config: ConfigService,
+    // UAT PRI-04 — the need's priority score is recomputed after each
+    // response. Optional so unit tests that build the service by hand still work.
+    @Optional() private readonly priority?: PriorityService,
   ) {}
 
   // The published Survey Builder survey is the only source of questions for
@@ -560,6 +565,15 @@ export class CitizenService {
           const villageId = resp.need.village?.[0] || null;
           await this.rollupService.calculateRollups(studyId, survey.id, villageId, { orgId });
           await this.rollupService.calculateRollups(studyId, survey.id, null, { orgId });
+          // UAT PRI-04 — no manual "Recalculate": the need's explainable
+          // priority score follows the data. Runs in the response's own org,
+          // as there is no signed-in user on a citizen submission.
+          if (this.priority) {
+            const priority = this.priority;
+            await orgContext.run({ requestId: `auto-priority-${row.id}`, orgId }, () =>
+              priority.score(resp.needId),
+            );
+          }
         }
       }
     }).catch((err: Error) => {

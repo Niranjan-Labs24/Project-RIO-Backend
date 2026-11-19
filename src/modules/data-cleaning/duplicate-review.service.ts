@@ -152,8 +152,8 @@ export class DuplicateReviewService {
       // second of two gates, the same reasoning applied to cross-entity reads.
       // Without it a single missed close path puts an undecidable pair in front
       // of a reviewer, who gets ALREADY_MERGED and no way forward.
-      needA: { mergedIntoNeedId: null },
-      needB: { mergedIntoNeedId: null },
+      needA: { mergedIntoNeedId: null, deletedAt: null },
+      needB: { mergedIntoNeedId: null, deletedAt: null },
     };
 
     // Same oversight read as the findings queue. Note this does NOT widen Q9:
@@ -233,8 +233,8 @@ export class DuplicateReviewService {
       // the Center/NCNP reviewer can look back at what was ruled on.
       status: query.status ?? "pending",
       // As above: a retired need has no decision left to make.
-      needA: { mergedIntoNeedId: null },
-      needB: { mergedIntoNeedId: null },
+      needA: { mergedIntoNeedId: null, deletedAt: null },
+      needB: { mergedIntoNeedId: null, deletedAt: null },
     };
 
     return this.tenant.runAsSupervisor(async (tx) => {

@@ -26,6 +26,10 @@ const InitiativeFields = {
   name: T.String({ minLength: 1, maxLength: 300 }),
   domain: T.Optional(T.String({ maxLength: 120 })),
   geography: T.Optional(T.String({ maxLength: 2000 })),
+  // UAT INI-01 — picked from the Region > Governorate > Centre reference.
+  regionIds: T.Optional(T.Array(T.String({ format: 'uuid' }), { maxItems: 50 })),
+  governorateIds: T.Optional(T.Array(T.String({ format: 'uuid' }), { maxItems: 500 })),
+  centerIds: T.Optional(T.Array(T.String({ format: 'uuid' }), { maxItems: 2000 })),
   startDate: T.Optional(T.String({ format: 'date' })),
   expectedEndDate: T.Optional(T.String({ format: 'date' })),
   status: T.Optional(T.String({ maxLength: 30 })),

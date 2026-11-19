@@ -6,6 +6,7 @@ import { roleByKey } from "../../rbac/role-matrix";
 import { AuditService } from "../audit/audit.service";
 import { MailerService } from "../../mailer/mailer.service";
 import { TranslationService } from "../translation/translation.service";
+import { EXCLUDE_DELETED } from "../needs/need-visibility";
 import type {
   CreateSharingRequestPayload, DecideSharingRequestPayload, OrgLookupResult, SharedStudySnapshot,
   SharingRequest, SharingRequestRow, StudyLookupResult,
@@ -223,12 +224,23 @@ export class SharingService {
       if (!study) throw new NotFoundException({ error: { code: "STUDY_NOT_FOUND", message: "Study not found" } });
       // A Study can hold many Needs now — sharing the whole Study means
       // sharing all of them, not "the" one.
-      const needs = await tx.need.findMany({ where: { studyId: row.studyId }, orderBy: { createdAt: "asc" } });
+      // UAT NED-01: a deleted need is hidden here too.
+      const needs = await tx.need.findMany({
+        where: { studyId: row.studyId, ...EXCLUDE_DELETED },
+        orderBy: { createdAt: "asc" },
+      });
       const evidenceCount = await tx.evidence.count({ where: { studyId: row.studyId } });
       return {
         studyId: study.id,
         title: study.title,
-        needs: needs.map((n) => ({ id: n.id, statement: n.statement, village: n.village, status: n.status })),
+        // UAT NED-02: the list leads with the need title, not the statement.
+        needs: needs.map((n) => ({
+          id: n.id,
+          title: n.title,
+          statement: n.statement,
+          village: n.village,
+          status: n.status,
+        })),
         evidenceCount,
       };
     });

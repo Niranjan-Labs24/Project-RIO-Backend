@@ -56,6 +56,10 @@ function fakeTenant(survey: FakeSurvey | null, questionCount = 1) {
     },
     surveyQuestion: {
       count: async () => questionCount,
+      // UAT SVB-08 — publish appends the final open question.
+      findMany: async () => [],
+      create: async () => ({}),
+      update: async () => ({}),
     },
     user: {
       findMany: async () => [],

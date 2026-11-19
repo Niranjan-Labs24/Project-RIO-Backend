@@ -56,6 +56,7 @@ export interface CreateSharingRequestPayload {
 
 export interface SharedNeedSnapshot {
   id: string;
+  title: string;
   statement: string;
   village: string[];
   status: string;

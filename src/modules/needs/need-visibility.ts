@@ -16,7 +16,10 @@
 //   * the Archive — an archive that hides retired records is not an archive
 //   * NeedMergeService — it has to read the need it is retiring
 //   * reference/alias lookup — resolving a retired number is the point
-export const EXCLUDE_MERGED = { mergedIntoNeedId: null } as const;
+/** UAT NED-01 — a deleted need is soft-deleted (kept, with its audit
+ * trail) and hidden everywhere a merged one is. */
+export const EXCLUDE_DELETED = { deletedAt: null } as const;
+export const EXCLUDE_MERGED = { mergedIntoNeedId: null, ...EXCLUDE_DELETED } as const;
 
 /** The SQL form, for the raw candidate query in duplicate detection. */
-export const EXCLUDE_MERGED_SQL = 'n.merged_into_need_id IS NULL';
+export const EXCLUDE_MERGED_SQL = 'n.merged_into_need_id IS NULL AND n.deleted_at IS NULL';

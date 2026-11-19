@@ -8,6 +8,7 @@ import {
   type GeoLevel,
   type GeoMapFilters,
   type GeoMapPoint,
+  type GeoMapIndicator,
   type GeoMapInitiative,
   type GeoMapOrgSummary,
   type GeoMapResponse,
@@ -42,6 +43,9 @@ interface MapNeed {
   // point would re-run the whole tenant-scoped read to answer a click.
   title: string;
   studyTitle: string;
+  /** UAT RPT-01 — the need's published survey, whose indicator results feed
+   *  the place panel. Null until a survey is published. */
+  publishedSurveyId: string | null;
 }
 
 /** One plottable place, whatever level it came from. */
@@ -130,6 +134,8 @@ export class GeographicDashboardService {
         villages: Set<string>;
         centers: Set<string>;
         published: number;
+        /** UAT RPT-01 — published surveys of the needs here. */
+        surveyIds: Set<string>;
       }
     >();
 
@@ -155,6 +161,7 @@ export class GeographicDashboardService {
             villages: new Set(),
             centers: new Set(),
             published: 0,
+            surveyIds: new Set(),
           };
           buckets.set(id, b);
         }
@@ -162,6 +169,7 @@ export class GeographicDashboardService {
         // answers "where is there a need", not "how do we divide it up".
         if (!b.needIds.has(need.id)) {
           b.needIds.add(need.id);
+          if (need.publishedSurveyId) b.surveyIds.add(need.publishedSurveyId);
           b.counts[need.band ?? 'unscored']++;
           for (const i of need.initiatives) b.initiatives.set(i.id, i);
           b.studyIds.add(need.studyId);
@@ -184,6 +192,11 @@ export class GeographicDashboardService {
       }
       if (placedOnce) plotted++;
     }
+
+    // UAT RPT-01 — indicator results for every survey on the map, once.
+    const indicatorsBySurvey = await this.loadIndicatorResults([
+      ...new Set([...buckets.values()].flatMap((b) => [...b.surveyIds])),
+    ]);
 
     const points: GeoMapPoint[] = [];
     for (const [id, b] of buckets) {
@@ -220,6 +233,9 @@ export class GeographicDashboardService {
           .sort((x, y) => y.studyCount - x.studyCount)
           .slice(0, MAX_INITIATIVES_PER_POINT),
         villages: [...b.villages].sort(),
+        // UAT RPT-01 — the most severe indicators here: each indicator's mean
+        // severity across the published surveys of this place's needs.
+        topIndicators: topIndicatorsFor(b.surveyIds, indicatorsBySurvey),
         centers: [...b.centers].sort(),
         // Distinct public survey links across every study at this place.
         // Deliberately not the same as publishedCount, which counts needs
@@ -553,6 +569,52 @@ export class GeographicDashboardService {
    * Every need the caller may see, with just enough joined on to place,
    * filter and colour it.
    */
+  /**
+   * UAT RPT-01 — each published survey's indicator results (survey-wide
+   * rollups, villageId ''), with the indicator's official Arabic name from
+   * the question bank. Keyed by survey id.
+   */
+  private async loadIndicatorResults(
+    surveyIds: string[],
+  ): Promise<Map<string, Array<{ name: string; nameAr: string | null; severity: number }>>> {
+    const bySurvey = new Map<string, Array<{ name: string; nameAr: string | null; severity: number }>>();
+    if (surveyIds.length === 0) return bySurvey;
+    const run = this.isCrossEntity()
+      ? this.tenant.runAsSupervisor.bind(this.tenant)
+      : this.tenant.runInOrgContext.bind(this.tenant);
+    const [rows, names] = await Promise.all([
+      run((tx) =>
+        tx.scoreRollup.findMany({
+          where: {
+            surveyId: { in: surveyIds },
+            rollupLevel: 'INDICATOR',
+            villageId: '',
+            severityScore: { not: null },
+          },
+          select: { surveyId: true, entityNameSnapshot: true, severityScore: true },
+        }),
+      ),
+      this.tenant.runAsSupervisor((tx) =>
+        tx.question.findMany({
+          where: { indicator: { not: null }, indicatorAr: { not: null } },
+          select: { indicator: true, indicatorAr: true },
+          distinct: ['indicator'],
+        }),
+      ),
+    ]);
+    const arabic = new Map(names.map((q) => [q.indicator as string, q.indicatorAr as string]));
+    for (const r of rows) {
+      const list = bySurvey.get(r.surveyId) ?? [];
+      list.push({
+        name: r.entityNameSnapshot,
+        nameAr: arabic.get(r.entityNameSnapshot) ?? null,
+        severity: Number(r.severityScore),
+      });
+      bySurvey.set(r.surveyId, list);
+    }
+    return bySurvey;
+  }
+
   private async loadNeeds(): Promise<MapNeed[]> {
     const run = this.isCrossEntity()
       ? this.tenant.runAsSupervisor.bind(this.tenant)
@@ -562,7 +624,8 @@ export class GeographicDashboardService {
       tx.need.findMany({
         // A retired duplicate must not be counted twice on the map
         // (RIO-AI-004).
-        where: { mergedIntoNeedId: null },
+        // UAT NED-01: a soft-deleted need is gone from the map too.
+        where: { mergedIntoNeedId: null, deletedAt: null },
         select: {
           id: true,
           title: true,
@@ -577,6 +640,7 @@ export class GeographicDashboardService {
             select: { governorateId: true, governorate: { select: { regionId: true } } },
           },
           needCenters: { select: { centerId: true } },
+          surveys: { where: { status: 'PUBLISHED' }, select: { id: true }, take: 1 },
           // Latest score decides the band; earlier ones are history.
           priorityScores: {
             select: { level: true, scoredAt: true },
@@ -615,6 +679,35 @@ export class GeographicDashboardService {
       isPublished: n.status === 'reviewer_approved',
       title: n.title,
       studyTitle: n.study.title,
+      publishedSurveyId: n.surveys?.[0]?.id ?? null,
     }));
   }
+}
+
+/** UAT RPT-01 — how many indicators a place panel lists. */
+const MAX_INDICATORS_PER_POINT = 5;
+
+function topIndicatorsFor(
+  surveyIds: Set<string>,
+  bySurvey: Map<string, Array<{ name: string; nameAr: string | null; severity: number }>>,
+): GeoMapIndicator[] {
+  const acc = new Map<string, { nameAr: string | null; sum: number; count: number; surveys: number }>();
+  for (const sid of surveyIds) {
+    for (const r of bySurvey.get(sid) ?? []) {
+      const a = acc.get(r.name) ?? { nameAr: r.nameAr, sum: 0, count: 0, surveys: 0 };
+      a.sum += r.severity;
+      a.count += 1;
+      a.surveys += 1;
+      acc.set(r.name, a);
+    }
+  }
+  return [...acc.entries()]
+    .map(([name, a]) => ({
+      name,
+      nameAr: a.nameAr,
+      severity: Math.round((a.sum / a.count) * 10) / 10,
+      surveyCount: a.surveys,
+    }))
+    .sort((x, y) => y.severity - x.severity)
+    .slice(0, MAX_INDICATORS_PER_POINT);
 }

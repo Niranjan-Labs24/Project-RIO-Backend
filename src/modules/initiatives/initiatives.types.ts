@@ -29,6 +29,9 @@ export interface InitiativeRow {
   name: string;
   domain: string | null;
   geography: string | null;
+  regionIds: string[];
+  governorateIds: string[];
+  centerIds: string[];
   startDate: Date | null;
   expectedEndDate: Date | null;
   status: string;
@@ -49,6 +52,9 @@ export interface Initiative {
   name: string;
   domain: string | null;
   geography: string | null;
+  regionIds: string[];
+  governorateIds: string[];
+  centerIds: string[];
   startDate: string | null;
   expectedEndDate: string | null;
   status: string;
@@ -67,6 +73,9 @@ export interface CreateInitiativePayload {
   name: string;
   domain?: string;
   geography?: string;
+  regionIds?: string[];
+  governorateIds?: string[];
+  centerIds?: string[];
   startDate?: string;
   expectedEndDate?: string;
   status?: string;

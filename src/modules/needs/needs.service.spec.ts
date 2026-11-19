@@ -65,6 +65,8 @@ function fakeTenant(opts: {
   onNeedCreate?: (data: Record<string, unknown>) => void;
   onNeedUpdate?: (data: Record<string, unknown>) => void;
   onNeedDelete?: (where: unknown) => void;
+  /** UAT NED-02 — an existing need with the same title in the study. */
+  titleClash?: { id: string } | null;
   centerCount?: number;
   /** Every Center of the governorates in play — backs allowedNeedCenterIds. */
   centers?: { id: string; governorateId: string }[];
@@ -83,6 +85,8 @@ function fakeTenant(opts: {
       // whatever onNeedUpdate mutated it to, same as a real transaction.
       findUnique: async () => (opts.need ? withGeo(opts.need) : null),
       findMany: async () => (opts.needs ?? []).map(withGeo),
+      // UAT NED-02 — the duplicate-title check; no clash unless a test says so.
+      findFirst: async () => opts.titleClash ?? null,
       create: async ({ data }: { data: Record<string, unknown> }) => {
         opts.onNeedCreate?.(data);
         return { id: 'need-new', createdAt: new Date('2026-01-01T00:00:00Z'), updatedAt: new Date('2026-01-01T00:00:00Z'), ...data };
@@ -123,6 +127,7 @@ function fakeTenant(opts: {
     },
     aiDecision: {
       findMany: async () => opts.aiDecisions ?? [],
+      findFirst: async () => (opts.aiDecisions ?? []).at(-1) ?? null,
     },
   };
   return { runInOrgContext: async (fn: (tx: unknown) => unknown) => fn(tx), runRead: async (fn: (tx: unknown) => unknown) => fn(tx) };
@@ -556,13 +561,22 @@ describe('NeedsService', () => {
       await expect(orgContext.run(ctx, () => svc.remove('need-1'))).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('deletes and records an audit event while still draft', async () => {
-      let deletedWhere: unknown;
+    it('soft-deletes (UAT NED-01) and records an audit event while still draft', async () => {
+      let hardDeleted = false;
+      let updated: Record<string, unknown> | undefined;
       const recorded: unknown[] = [];
       const audit = { record: async (i: unknown) => { recorded.push(i); } };
-      const svc = makeService(fakeTenant({ need: makeRow(), onNeedDelete: (w) => { deletedWhere = w; } }), audit);
+      const svc = makeService(
+        fakeTenant({
+          need: makeRow(),
+          onNeedDelete: () => { hardDeleted = true; },
+          onNeedUpdate: (d) => { updated = d; },
+        }),
+        audit,
+      );
       await orgContext.run(ctx, () => svc.remove('need-1'));
-      expect(deletedWhere).toEqual({ id: 'need-1' });
+      expect(hardDeleted).toBe(false);
+      expect(updated?.deletedAt).toBeInstanceOf(Date);
       expect(recorded[0]).toMatchObject({ action: 'delete', entityType: 'need', entityId: 'need-1' });
     });
 
@@ -575,6 +589,19 @@ describe('NeedsService', () => {
         expect(deleted).toBe(false);
       },
     );
+
+    it('UAT NED-01: soft-deletes an ai_classified need whose classification is 0% (no reviewer approval yet)', async () => {
+      let updateData: Record<string, unknown> | undefined;
+      const svc = makeService(
+        fakeTenant({
+          need: makeRow({ status: 'ai_classified' }),
+          aiDecisions: [{ needId: 'need-1', confidence: 0 }],
+          onNeedUpdate: (d) => { updateData = d; },
+        }),
+      );
+      await orgContext.run(ctx, () => svc.remove('need-1'));
+      expect(updateData?.deletedAt).toBeInstanceOf(Date);
+    });
   });
 
   // Gap Types (client correction 2026-08-27, superseding RIO-FR-005 Q12's

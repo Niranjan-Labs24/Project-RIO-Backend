@@ -33,6 +33,8 @@ export function isPlaceholderReportType(code: ReportTypeCode): code is Placehold
 // studyTitle is null for org-wide/non-study-scoped report types (see
 // REPORT_TYPE_META.requiresStudyId).
 export interface ExportAuditMeta {
+  /** UAT RPT-05 — the entity that issued the report. */
+  issuedBy?: string | null;
   generatedAt: string;
   status: string;
   studyTitle: string | null;
@@ -123,6 +125,8 @@ export async function buildExportStub(
     buildReportDoc(report.title, report.content, auditRows, locale),
     aliases,
   );
+  // Set after the localisation passes: the entity's name is shown as entered.
+  if (meta.issuedBy) doc = { ...doc, issuedBy: meta.issuedBy };
 
   // Last layer before rendering. The three passes above are precise and only
   // cover what was declared; this catches the rest, cheapest source first, so

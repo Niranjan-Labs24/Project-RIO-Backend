@@ -66,6 +66,8 @@ export async function renderCoreNeedsExcel(v: CoreView): Promise<Buffer> {
   s.getColumn(1).width = 34;
   s.getColumn(2).width = 90;
   title(s, `${v.header.title} — ${v.header.study}`, 16);
+  // UAT RPT-05 — fixed issuer line under the title (and in every sheet's footer).
+  note(s, v.footer.left);
   kv(s, [
     { label: v.header.organization, value: v.header.platformOwner },
     ...v.header.chips.map((c) => ({ label: "", value: c })),
@@ -205,5 +207,10 @@ export async function renderCoreNeedsExcel(v: CoreView): Promise<Buffer> {
         }),
       ),
     );
+  // UAT RPT-05 — the issuer in every sheet's printed footer.
+  const issuer = v.footer.left.replace(/&/g, "&&");
+  wb.eachSheet((ws) => {
+    ws.headerFooter.oddFooter = `&C${issuer}`;
+  });
   return Buffer.from(await wb.xlsx.writeBuffer());
 }

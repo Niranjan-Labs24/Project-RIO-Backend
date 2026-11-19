@@ -51,6 +51,10 @@ export const GenerateNcnpNeedsBody = registerSchema(
       unitId: T.Optional(T.Union([T.String({ minLength: 1, maxLength: 200 }), T.Null()])),
       domainKeys: T.Optional(T.Array(T.String({ minLength: 1, maxLength: 120 }), { maxItems: 20 })),
       studyIds: T.Array(T.String({ format: 'uuid' }), { minItems: 1, maxItems: 50 }),
+      // UAT RPT-02 — optional need filter: report on these needs of the
+      // selected studies. A study with none of them picked uses its latest
+      // published survey, as before.
+      needIds: T.Optional(T.Array(T.String({ format: 'uuid' }), { maxItems: 500 })),
       output: T.Optional(T.Union([T.Literal('FULL'), T.Literal('SUMMARY')])),
     },
     { additionalProperties: false },

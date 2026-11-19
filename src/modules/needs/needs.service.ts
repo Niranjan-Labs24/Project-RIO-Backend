@@ -79,12 +79,14 @@ export class NeedsService {
   async create(studyId: string, payload: CreateNeedPayload): Promise<Need> {
     const orgId = requireOrgId();
     const createdBy = requireActor();
-    // Title is optional on the create form — a Need still needs something
-    // to show as its display title everywhere (Needs table, workspace page
-    // header, audit log), so fall back to a snippet of the Statement rather
-    // than allowing an empty string through.
-    const title = payload.title?.trim() || payload.statement.trim().slice(0, 80);
+    // UAT NED-02 — the title is mandatory and unique within its study; it is
+    // what every needs list shows (the statement stays on the need page).
+    const title = payload.title?.trim() ?? '';
+    if (!title) {
+      throw new BadRequestException({ error: { code: 'NEED_TITLE_REQUIRED', message: 'Need title is required.' } });
+    }
     const created = await this.tenant.runInOrgContext(async (tx) => {
+      await this.assertTitleUniqueInStudy(tx, studyId, title);
       const study = await tx.study.findUnique({
         where: { id: studyId },
         include: { studyGovernorates: true, studyCenters: true },
@@ -317,7 +319,7 @@ export class NeedsService {
         )) as RawNeedWithGeo[];
     const [names, confidences] = await Promise.all([
       this.resolveUserNames(rows.map((r) => r.createdBy)),
-      this.resolveAiConfidence(rows.map((r) => r.id)),
+      this.resolveAiConfidence(rows.map((r) => r.id), isCrossOrgReader),
     ]);
     return rows.map((row) =>
       this.toNeed(this.toNeedRow(row), names.get(row.createdBy) ?? null, confidences.get(row.id) ?? null),
@@ -341,19 +343,51 @@ export class NeedsService {
       ? await this.tenant.runAsSupervisor((tx) => tx.need.findUnique({ where: { id: needId }, include: GEO_INCLUDE }))
       : await this.tenant.runInOrgContext((tx) => tx.need.findUnique({ where: { id: needId }, include: GEO_INCLUDE }))
     ) as RawNeedWithGeo | null;
-    if (!row) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+    // UAT NED-01 — a soft-deleted need no longer exists for anyone.
+    if (!row || (row as { deletedAt?: Date | null }).deletedAt) {
+      throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+    }
     const [createdByName, confidences] = await Promise.all([
       this.resolveUserName(row.createdBy, isCrossOrgReader),
-      this.resolveAiConfidence([row.id]),
+      this.resolveAiConfidence([row.id], isCrossOrgReader),
     ]);
     return this.toNeed(this.toNeedRow(row), createdByName, confidences.get(row.id) ?? null);
+  }
+
+  /**
+   * UAT NED-02 — no two needs in the same study share a title (compared
+   * case-insensitively, ignoring surrounding spaces). Merged-away needs are
+   * retired and don't count.
+   */
+  private async assertTitleUniqueInStudy(
+    tx: { need: { findFirst: (args: object) => Promise<{ id: string } | null> } },
+    studyId: string,
+    title: string,
+    excludeNeedId?: string,
+  ): Promise<void> {
+    const clash = await tx.need.findFirst({
+      where: {
+        studyId,
+        ...EXCLUDE_MERGED,
+        title: { equals: title, mode: 'insensitive' },
+        ...(excludeNeedId ? { id: { not: excludeNeedId } } : {}),
+      },
+      select: { id: true },
+    });
+    if (clash) {
+      throw new ConflictException({
+        error: { code: 'NEED_TITLE_DUPLICATE', message: 'A need with this title already exists in this study.' },
+      });
+    }
   }
 
   async update(needId: string, patch: UpdateNeedPayload): Promise<Need> {
     const orgId = requireOrgId();
     const { updated, changes } = await this.tenant.runInOrgContext(async (tx) => {
       const currentRaw = (await tx.need.findUnique({ where: { id: needId }, include: GEO_INCLUDE })) as RawNeedWithGeo | null;
-      if (!currentRaw) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+      if (!currentRaw || (currentRaw as { deletedAt?: Date | null }).deletedAt) {
+        throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+      }
       const current = this.toNeedRow(currentRaw);
       if (!NEED_EDITABLE_STATUSES.includes(current.status)) {
         throw new ConflictException({ error: { code: 'NEED_NOT_EDITABLE', message: 'This need can no longer be edited once AI Classification has run; reject it on the AI Review screen to make changes' } });
@@ -363,6 +397,14 @@ export class NeedsService {
       if (patch.governorateIds !== undefined || patch.centerIds !== undefined) {
         const studyCenterIds = await this.assertGeographyInStudyScope(tx, current.studyId, nextGovernorateIds, nextCenterIds);
         await this.assertGovernorateAndCenterRequired(tx, studyCenterIds, nextGovernorateIds, nextCenterIds);
+      }
+      // UAT NED-02 — a renamed need still needs a unique, non-empty title.
+      if (patch.title !== undefined) {
+        patch = { ...patch, title: patch.title.trim() };
+        if (!patch.title) {
+          throw new BadRequestException({ error: { code: 'NEED_TITLE_REQUIRED', message: 'Need title is required.' } });
+        }
+        await this.assertTitleUniqueInStudy(tx, current.studyId, patch.title, needId);
       }
       const changes = this.diff(current, patch, nextGovernorateIds, nextCenterIds);
       await tx.need.update({
@@ -477,7 +519,9 @@ export class NeedsService {
     await this.assertValidGapType(gapType);
     const updated = await this.tenant.runInOrgContext(async (tx) => {
       const currentRaw = (await tx.need.findUnique({ where: { id: needId }, include: GEO_INCLUDE })) as RawNeedWithGeo | null;
-      if (!currentRaw) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+      if (!currentRaw || (currentRaw as { deletedAt?: Date | null }).deletedAt) {
+        throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+      }
       const before = currentRaw.gapType;
       const updatedRaw = (await tx.need.update({
         where: { id: needId },
@@ -511,7 +555,9 @@ export class NeedsService {
   async setUrgency(needId: string, urgency: string | null): Promise<Need> {
     const updated = await this.tenant.runInOrgContext(async (tx) => {
       const currentRaw = (await tx.need.findUnique({ where: { id: needId }, include: GEO_INCLUDE })) as RawNeedWithGeo | null;
-      if (!currentRaw) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+      if (!currentRaw || (currentRaw as { deletedAt?: Date | null }).deletedAt) {
+        throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+      }
       const before = currentRaw.urgency;
       const updatedRaw = (await tx.need.update({
         where: { id: needId },
@@ -540,12 +586,32 @@ export class NeedsService {
   // this is deliberately not offered once a Need has moved past draft.
   async remove(needId: string): Promise<void> {
     const removed = await this.tenant.runInOrgContext(async (tx) => {
-      const existing = (await tx.need.findUnique({ where: { id: needId } })) as NeedRow | null;
-      if (!existing) throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
-      if (!NEED_EDITABLE_STATUSES.includes(existing.status)) {
+      const existing = (await tx.need.findUnique({ where: { id: needId } })) as
+        | (NeedRow & { deletedAt: Date | null })
+        | null;
+      if (!existing || existing.deletedAt) {
+        throw new NotFoundException({ error: { code: 'NEED_NOT_FOUND', message: 'Need not found' } });
+      }
+      // UAT NED-01: also deletable when the AI classified it at 0% confidence
+      // ("مصنفًا 0%") and no reviewer has approved it yet (still ai_classified).
+      let zeroConfidenceClassified = false;
+      if (existing.status === 'ai_classified') {
+        const latest = await tx.aiDecision.findFirst({
+          where: { needId, touchpoint: 'need_classification' },
+          orderBy: { createdAt: 'desc' },
+          select: { confidence: true },
+        });
+        zeroConfidenceClassified = latest?.confidence != null && Number(latest.confidence) === 0;
+      }
+      if (!NEED_EDITABLE_STATUSES.includes(existing.status) && !zeroConfidenceClassified) {
         throw new ConflictException({ error: { code: 'NEED_NOT_DELETABLE', message: 'This need can no longer be deleted once AI Classification has run' } });
       }
-      await tx.need.delete({ where: { id: needId } });
+      // UAT NED-01 — soft delete: the row and its evidence are kept, hidden
+      // everywhere by EXCLUDE_MERGED, and the audit entry below records it.
+      await tx.need.update({
+        where: { id: needId },
+        data: { deletedAt: new Date(), deletedBy: requireActor() },
+      });
       return existing;
     });
     await this.audit.record({
@@ -623,13 +689,19 @@ export class NeedsService {
    */
   private async resolveAiConfidence(
     needIds: string[],
+    // A cross-org reader (System Admin, System Reviewer, Center Supervisor)
+    // reads another org's AI decisions; RLS in their own org context hid
+    // them, so the confidence showed "—" (and the 0% delete never showed).
+    crossOrg = false,
   ): Promise<Map<string, { confidence: number | null; band: ConfidenceBand }>> {
     const distinct = [...new Set(needIds)];
     const out = new Map<string, { confidence: number | null; band: ConfidenceBand }>();
     if (distinct.length === 0) return out;
 
     const [rows, settings] = await Promise.all([
-      this.tenant.runInOrgContext((tx) =>
+      (crossOrg
+        ? this.tenant.runAsSupervisor.bind(this.tenant)
+        : this.tenant.runInOrgContext.bind(this.tenant))((tx: Prisma.TransactionClient) =>
         tx.aiDecision.findMany({
           where: { needId: { in: distinct }, touchpoint: 'need_classification' },
           orderBy: { createdAt: 'asc' },

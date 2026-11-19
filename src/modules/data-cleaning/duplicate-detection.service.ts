@@ -94,7 +94,7 @@ const PAIR_SCORE_WITH_REFERENCE_SQL = Prisma.sql`CASE
   WHEN a.reference_id IS NOT NULL AND btrim(a.reference_id) <> '' AND a.reference_id = b.reference_id
    AND (SELECT count(*) FROM needs r
          WHERE r.org_id = a.org_id AND r.reference_id = a.reference_id
-           AND r.merged_into_need_id IS NULL) <= ${MAX_NEEDS_PER_DISTINCTIVE_REFERENCE}
+           AND r.merged_into_need_id IS NULL AND r.deleted_at IS NULL) <= ${MAX_NEEDS_PER_DISTINCTIVE_REFERENCE}
   THEN 1
   ELSE ${PAIR_TEXT_SCORE_SQL}
 END`;
@@ -284,7 +284,7 @@ export class DuplicateDetectionService {
           (
             await tx.$queryRaw<{ c: bigint }[]>`
               SELECT count(*) AS c FROM needs
-               WHERE reference_id = ${reference} AND merged_into_need_id IS NULL`
+               WHERE reference_id = ${reference} AND merged_into_need_id IS NULL AND deleted_at IS NULL`
           )[0]?.c ?? 0,
         ) <= MAX_NEEDS_PER_DISTINCTIVE_REFERENCE
       : false;

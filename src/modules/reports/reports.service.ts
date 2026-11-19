@@ -1087,13 +1087,16 @@ export class ReportsService {
     const userIds = [row.generatedBy, row.officerConfirmedBy, row.reviewedBy].filter(
       (id): id is string => id !== null,
     );
-    const [users, study] = await Promise.all([
+    const [users, study, orgNames] = await Promise.all([
       userIds.length === 0 ? Promise.resolve([]) : tx.user.findMany({ where: { id: { in: userIds } } }),
       row.studyId ? tx.study.findUnique({ where: { id: row.studyId } }) : Promise.resolve(null),
+      // UAT RPT-05 — the issuing entity, read as platform reference data.
+      this.orgNamesFor([row]),
     ]);
     const nameById = new Map(users.map((u) => [u.id, u.name]));
     const roleById = new Map(users.map((u) => [u.id, roleNameById.get(u.roleId) ?? null]));
     return {
+      issuedBy: orgNames.get(row.orgId) ?? null,
       generatedAt: row.generatedAt.toISOString(),
       status: row.status,
       studyTitle: study?.title ?? null,
@@ -1274,11 +1277,12 @@ export class ReportsService {
   // do `toReport(row, await this.namesFor([row]))` by hand, which meant each new
   // lookup had to be threaded through nine places.
   private async hydrate(rows: ReportRow[], crossOrg = false): Promise<Report[]> {
-    const [nameById, surveyTitleById] = await Promise.all([
+    const [nameById, surveyTitleById, orgNameById] = await Promise.all([
       this.namesFor(rows, crossOrg),
       this.surveyTitlesFor(rows, crossOrg),
+      this.orgNamesFor(rows),
     ]);
-    return rows.map((r) => this.toReport(r, nameById, surveyTitleById));
+    return rows.map((r) => this.toReport(r, nameById, surveyTitleById, orgNameById));
   }
 
   private async hydrateOne(row: ReportRow, crossOrg = false): Promise<Report> {
@@ -1290,10 +1294,13 @@ export class ReportsService {
     row: ReportRow,
     nameById: Map<string, { name: string; role: string | null }> = new Map(),
     surveyTitleById: Map<string, string> = new Map(),
+    orgNameById: Map<string, string> = new Map(),
   ): Report {
     const meta = REPORT_TYPE_META[row.reportType];
     return {
       id: row.id,
+      // UAT RPT-05 — the issuing entity, stamped on the report.
+      issuedBy: orgNameById.get(row.orgId) ?? null,
       reportType: row.reportType,
       status: row.status,
       title: row.title,
@@ -1341,6 +1348,23 @@ export class ReportsService {
   // Survey titles for survey-scoped rows (RPT01/RPT15), so the reports list can
   // show WHICH survey a report came from. Same batching + cross-org convention
   // as namesFor above; rows with no surveyId cost nothing.
+  // UAT RPT-05 — organisation names are platform reference data, read the
+  // same way for the owner and for a cross-org reader.
+  private async orgNamesFor(rows: ReportRow[]): Promise<Map<string, string>> {
+    const orgIds = [...new Set(rows.map((r) => r.orgId))];
+    if (orgIds.length === 0) return new Map();
+    // Display-only (the issuer stamp): a failed lookup must never fail the
+    // report itself, it just leaves the stamp off.
+    try {
+      const orgs = await this.tenant.runAsSupervisor((tx) =>
+        tx.organisation.findMany({ where: { id: { in: orgIds } }, select: { id: true, name: true } }),
+      );
+      return new Map(orgs.map((o) => [o.id, o.name]));
+    } catch {
+      return new Map();
+    }
+  }
+
   private async surveyTitlesFor(rows: ReportRow[], crossOrg = false): Promise<Map<string, string>> {
     const surveyIds = [...new Set(rows.map((r) => r.surveyId).filter((id): id is string => id !== null))];
     if (surveyIds.length === 0) return new Map();

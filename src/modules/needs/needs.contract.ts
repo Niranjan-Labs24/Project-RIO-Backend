@@ -25,10 +25,9 @@ export const CreateNeedBody = registerSchema(
   'CreateNeedBody',
   T.Object(
     {
-      // Optional — NeedsService.create() derives a fallback from the
-      // statement when omitted/blank, so a Need never ends up with no
-      // display title even though the field itself isn't mandatory.
-      title: T.Optional(T.String({ maxLength: 300 })),
+      // UAT NED-02 — mandatory (checked again after trimming in
+      // NeedsService.create) and unique within the study.
+      title: T.String({ minLength: 1, maxLength: 300 }),
       statement: T.String({ minLength: 1, maxLength: 5000 }),
       village: T.Optional(Villages),
       governorateIds: T.Optional(GovernorateIds),

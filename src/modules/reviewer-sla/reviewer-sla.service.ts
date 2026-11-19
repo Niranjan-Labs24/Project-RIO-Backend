@@ -4,6 +4,7 @@ import { TenantPrismaService } from "../../tenancy/tenant-prisma.service";
 import { getOrgStore, requireActor } from "../../tenancy/org-context";
 import { can } from "../../rbac/role-matrix";
 import type { SlaAlert, SlaConfig } from "./reviewer-sla.types";
+import { EXCLUDE_DELETED } from "../needs/need-visibility";
 
 // A real queue, not a placeholder table — computed rather than stored, for
 // both directions this now serves:
@@ -459,7 +460,8 @@ export class ReviewerSlaService {
   private async listPendingAiClassificationAlerts(): Promise<SlaAlert[]> {
     const { pending, studies } = await this.tenant.runInOrgContext(async (tx) => {
       const pending = await tx.need.findMany({
-        where: { status: "ai_classified" },
+        // UAT NED-01: a deleted (0% classified) need no longer raises an alert.
+        where: { status: "ai_classified", ...EXCLUDE_DELETED },
         orderBy: { classifiedAt: "asc" },
       });
       const studyIds = Array.from(new Set(pending.map((n) => n.studyId)));

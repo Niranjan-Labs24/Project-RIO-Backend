@@ -210,7 +210,7 @@ export class SemanticDuplicateService {
   private async refreshEmbeddings(orgId: string): Promise<number> {
     const rows = await this.tenant.runAsOrg(orgId, (tx) =>
       tx.need.findMany({
-        where: { mergedIntoNeedId: null },
+        where: { mergedIntoNeedId: null, deletedAt: null },
         select: { id: true, title: true, statement: true },
         orderBy: { internalRefSeq: 'asc' },
       }),
@@ -444,6 +444,7 @@ export class SemanticDuplicateService {
          WHERE e.embedding_version = ${this.embeddings.embeddingVersion}
            AND e.embedding IS NOT NULL
            AND n.merged_into_need_id IS NULL
+           AND n.deleted_at IS NULL
          ORDER BY n.internal_ref_seq ASC
       `,
     );
@@ -466,6 +467,7 @@ export class SemanticDuplicateService {
              AND b.embedding IS NOT NULL
              AND b.need_id > ${seed.need_id}::uuid
              AND nb.merged_into_need_id IS NULL
+             AND nb.deleted_at IS NULL
              -- Gate 1, pushed down. NULL fails OPEN on either side: a missing
              -- domain is not evidence of difference.
              AND (na.domain IS NULL OR nb.domain IS NULL OR na.domain = nb.domain)

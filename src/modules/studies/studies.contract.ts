@@ -60,6 +60,8 @@ export const UpdateStudyBody = registerSchema(
       methodologyVersionId: T.Optional(MethodologyVersionId),
       studyType: T.Optional(T.String({ minLength: 1, maxLength: 100 })),
       targetSector: T.Optional(T.String({ minLength: 1, maxLength: 100 })),
+      // UAT STU-04 — editable; the required sample size is recalculated from it.
+      population: T.Optional(Population),
     },
     { additionalProperties: false },
   ),
