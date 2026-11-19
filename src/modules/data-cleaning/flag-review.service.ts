@@ -61,6 +61,10 @@ export interface FlagListItem {
  * own names, so only a proposal from the reference can set them. */
 const EDITABLE_NEED_FIELDS = new Set(["title", "statement"]);
 
+/** Most serious first (UAT GEN-01): no value at all, then a value the
+ * reference doesn't know, then a value in the wrong form. */
+const SEVERITY_RANK = ["missing", "out_of_vocabulary", "non_standard"] as const;
+
 @Injectable()
 export class FlagReviewService {
   private readonly logger = new Logger(FlagReviewService.name);
@@ -94,15 +98,41 @@ export class FlagReviewService {
       : this.tenant.runInOrgContext.bind(this.tenant);
 
     return run(async (tx) => {
-      const [rows, total] = await Promise.all([
-        tx.cleaningFlag.findMany({
-          where,
-          orderBy: [{ severity: "asc" }, { createdAt: "asc" }],
-          skip: (page - 1) * pageSize,
-          take: pageSize,
-        }),
-        tx.cleaningFlag.count({ where }),
-      ]);
+      // UAT GEN-01 — the most serious findings first, newest first within
+      // each severity. Severity is stored as text, so a database sort would be
+      // alphabetical; instead each severity is one bucket, in rank order, and
+      // the page is taken across the buckets.
+      const buckets: Prisma.CleaningFlagWhereInput[] = [
+        ...SEVERITY_RANK.filter((s) => !where.severity || where.severity === s).map((s) => ({
+          ...where,
+          severity: s,
+        })),
+        // Any severity outside the known three still shows, last.
+        ...(where.severity ? [] : [{ ...where, severity: { notIn: [...SEVERITY_RANK] } }]),
+      ];
+      const counts = await Promise.all(buckets.map((b) => tx.cleaningFlag.count({ where: b })));
+      const total = counts.reduce((sum, n) => sum + n, 0);
+
+      const rows: Awaited<ReturnType<typeof tx.cleaningFlag.findMany>> = [];
+      let skip = (page - 1) * pageSize;
+      let take = pageSize;
+      for (let i = 0; i < buckets.length && take > 0; i++) {
+        const inBucket = counts[i] ?? 0;
+        if (skip >= inBucket) {
+          skip -= inBucket;
+          continue;
+        }
+        const want = Math.min(take, inBucket - skip);
+        const part = await tx.cleaningFlag.findMany({
+          where: buckets[i],
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          skip,
+          take: want,
+        });
+        rows.push(...part);
+        take -= want;
+        skip = 0;
+      }
 
       // Label the records so the queue reads as "NEED-000042, village" rather
       // than as a list of uuids. One extra query for the page, not one per row.

@@ -115,7 +115,7 @@ describe('FlagReviewService.list and summary', () => {
       }),
       flag({ id: 'f', entityType: 'need', entityId: 'unknown' }),
     ]);
-    tx.cleaningFlag.count.mockResolvedValue(6);
+    tx.cleaningFlag.count.mockResolvedValueOnce(6);
     tx.need.findMany.mockResolvedValue([{ id: 'n1', internalRefSeq: 12, title: 'Wells' }]);
     const result = await asOrg(() => svc.list({}));
     expect(result.total).toBe(6);
@@ -139,6 +139,7 @@ describe('FlagReviewService.list and summary', () => {
 
   it('applies every filter and paging, and reads across organizations for a supervisor', async () => {
     const { svc, tx } = setup();
+    tx.cleaningFlag.count.mockResolvedValue(20);
     await run({ role: 'system_admin' }, () =>
       svc.list({
         status: 'accepted',
@@ -163,11 +164,38 @@ describe('FlagReviewService.list and summary', () => {
     });
     expect(tx.need.findMany).not.toHaveBeenCalled();
     await asOrg(() => svc.list({}));
+    // UAT GEN-01 — most serious first, newest first within each severity:
+    // the 25-row page takes all 20 "missing", then 5 "out_of_vocabulary".
     expect(tx.cleaningFlag.findMany.mock.calls[1]![0]).toMatchObject({
-      where: { status: 'pending' },
+      where: { status: 'pending', severity: 'missing' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       skip: 0,
-      take: 25,
+      take: 20,
     });
+    expect(tx.cleaningFlag.findMany.mock.calls[2]![0]).toMatchObject({
+      where: { status: 'pending', severity: 'out_of_vocabulary' },
+      skip: 0,
+      take: 5,
+    });
+    expect(tx.cleaningFlag.findMany).toHaveBeenCalledTimes(3);
+  });
+
+  it('pages across severities: page 2 starts inside the second severity (UAT GEN-01)', async () => {
+    const { svc, tx } = setup();
+    // missing 3, out_of_vocabulary 10, non_standard 10, other 0
+    tx.cleaningFlag.count
+      .mockResolvedValueOnce(3)
+      .mockResolvedValueOnce(10)
+      .mockResolvedValueOnce(10)
+      .mockResolvedValueOnce(0);
+    const result = await asOrg(() => svc.list({ page: 2, pageSize: 5 }));
+    expect(result.total).toBe(23);
+    expect(tx.cleaningFlag.findMany.mock.calls[0]![0]).toMatchObject({
+      where: { severity: 'out_of_vocabulary' },
+      skip: 2,
+      take: 5,
+    });
+    expect(tx.cleaningFlag.findMany).toHaveBeenCalledTimes(1);
   });
 
   it('summarises flags by source and rule, most common first, with the last run time', async () => {
@@ -288,7 +316,7 @@ describe('FlagReviewService.review', () => {
       flag({ id: 'v', field: 'village[0]', ruleCode: 'VILLAGE_NEAR_MATCH', proposedValue: null, detail: { candidates: [{ code: 'C-01' }] } }),
       flag({ id: 'p', entityType: 'survey_response', field: 'mobile', ruleCode: 'PHONE_UNPARSEABLE', proposedValue: null, detail: { redacted: true } }),
     ]);
-    tx.cleaningFlag.count.mockResolvedValue(2);
+    tx.cleaningFlag.count.mockResolvedValueOnce(2);
     const page = await asOrg(() => svc.list({}));
     expect(page.items.map((i) => [i.id, i.acceptable])).toEqual([
       ['v', true],
