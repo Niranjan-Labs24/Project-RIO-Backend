@@ -91,29 +91,12 @@ export class ReviewerSlaService {
         ? this.listPendingPriorityApprovalAlerts()
         : Promise.resolve([]),
     ]);
-    // Each list is already sorted per its own convention (oldest-first for
-    // a still-open queue, newest-first for already-resolved items) —
-    // interleave both same-convention lists together rather than imposing
-    // one global sort that would mix the two meanings.
-    return [...surveyAlerts, ...reportAlerts, ...evidenceAlerts, ...summaryAlerts, ...classificationAlerts, ...priorityAlerts].sort((a, b) => {
-      const aTime = new Date(a.createdAt).getTime();
-      const bTime = new Date(b.createdAt).getTime();
-      // Not folding priorityScoring:create into this flag: data_analyst
-      // also holds reportsDashboards:write (they generate reports too, per
-      // this session's Data Analyst/Research Officer rebalance), so it
-      // already receives listOwnReportStatusAlerts' newest-first "your own
-      // resolved reports" queue alongside its evidence to-do queue — a role
-      // that gets both an open to-do list AND an already-resolved list has
-      // no single correct global direction either way (same limitation the
-      // comment above already accepts), so this stays keyed only to the two
-      // still-open-queue permissions it always meant.
-      const pendingQueue =
-        can(role, "surveyBuilder", "approve") ||
-        can(role, "reportsDashboards", "approve") ||
-        can(role, "aiReview", "approve") ||
-        can(role, "priorityOverride", "approve");
-      return pendingQueue ? aTime - bTime : bTime - aTime;
-    });
+    // UAT GEN-08 — newest first for every role, open to-do queues included
+    // (they used to be oldest first). An item close to or past its due time
+    // still stands out by its status colour and due date.
+    return [...surveyAlerts, ...reportAlerts, ...evidenceAlerts, ...summaryAlerts, ...classificationAlerts, ...priorityAlerts].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
   }
 
   // Approver-facing: Surveys awaiting THEIR decision, org-wide.
