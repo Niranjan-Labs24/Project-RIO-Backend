@@ -81,7 +81,9 @@ export class NeedsService {
     const createdBy = requireActor();
     // UAT NED-02 — the title is mandatory and unique within its study; it is
     // what every needs list shows (the statement stays on the need page).
-    const title = payload.title?.trim() ?? '';
+    // Repeated spaces are squashed, so "Water  supply" and "Water supply" are
+    // the same title for the duplicate check below.
+    const title = payload.title?.trim().replace(/\s+/g, ' ') ?? '';
     if (!title) {
       throw new BadRequestException({ error: { code: 'NEED_TITLE_REQUIRED', message: 'Need title is required.' } });
     }
@@ -407,7 +409,7 @@ export class NeedsService {
 
   /**
    * UAT NED-02 — no two needs in the same study share a title (compared
-   * case-insensitively, ignoring surrounding spaces). Merged-away needs are
+   * case-insensitively; callers trim and squash repeated spaces first). Merged-away needs are
    * retired and don't count.
    */
   private async assertTitleUniqueInStudy(
@@ -451,7 +453,7 @@ export class NeedsService {
       }
       // UAT NED-02 — a renamed need still needs a unique, non-empty title.
       if (patch.title !== undefined) {
-        patch = { ...patch, title: patch.title.trim() };
+        patch = { ...patch, title: patch.title.trim().replace(/\s+/g, ' ') };
         if (!patch.title) {
           throw new BadRequestException({ error: { code: 'NEED_TITLE_REQUIRED', message: 'Need title is required.' } });
         }
