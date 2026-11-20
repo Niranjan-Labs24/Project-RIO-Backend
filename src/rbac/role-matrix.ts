@@ -427,7 +427,10 @@ export const ROLE_MATRIX: RoleDef[] = [
     perm('archiveSharingAudit', { read: true, export: true }),
     // `read` added per the confirmed matrix (Center Supervisor/Surveys: V) —
     // this role previously had zero access to Survey Builder, not even view.
-    perm('surveyBuilder', RO), perm('ncnpReport'),
+    perm('surveyBuilder', RO),
+    // UAT RPT-06 — the Kingdom-wide read view includes the NCNP collective
+    // (Needs) report: view only, never generate or approve.
+    perm('ncnpReport', RO),
     // RIO-FR-009 (client Q15) — NCNP/Center sees every Initiative by
     // default, read-only, same cross-entity oversight pattern as everything
     // else this role holds.
