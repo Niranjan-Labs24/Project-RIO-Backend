@@ -90,6 +90,13 @@ export class AuditController {
       : toCsv(table);
   }
 
+  // UAT AUD-02 — options for the "User" filter on the Audit Log pages.
+  @Get('actors')
+  @RequirePermission('archiveSharingAudit', 'read')
+  listActors(@Query('organizationId') organizationId?: string) {
+    return this.audit.listActors(organizationId || undefined);
+  }
+
   @Get('summary')
   @RequirePermission('archiveSharingAudit', 'read')
   getSummary() {

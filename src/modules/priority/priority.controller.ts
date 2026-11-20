@@ -164,12 +164,15 @@ export class PriorityDashboardController {
   // Gap Type classification matches exactly one of the five fixed values.
   @Get()
   @RequirePermission("priorityScoring", "read")
-  list(
+  async list(
     @Query("gapType") gapType?: string,
     @Query("level") level?: string,
     @Query("limit") limit?: string,
     @Query("offset") offset?: string,
   ): Promise<PriorityDashboardPage> {
+    // UAT PRI-04 — score any need that has responses but no score yet, so
+    // the list never waits on a manual "Recalculate".
+    await this.priorityV2.fillMissingScores((needId) => this.priority.score(needId));
     return this.priorityV2.listPage({ gapType, level }, parsePaging(limit, offset));
   }
 

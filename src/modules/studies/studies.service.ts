@@ -370,9 +370,10 @@ export class StudiesService {
             },
           }),
           tx.evidence.count({ where: { studyId: id } }),
-          tx.need.count({ where: { studyId: id } }),
+          // UAT NED-01 — soft-deleted needs no longer count.
+          tx.need.count({ where: { studyId: id, deletedAt: null } }),
           tx.need.findMany({
-            where: { studyId: id },
+            where: { studyId: id, deletedAt: null },
             orderBy: { createdAt: 'desc' },
             include: {
               surveys: { include: { _count: { select: { surveyQuestions: true } } } },
@@ -410,9 +411,10 @@ export class StudiesService {
             },
           }),
           tx.evidence.count({ where: { studyId: id } }),
-          tx.need.count({ where: { studyId: id } }),
+          // UAT NED-01 — soft-deleted needs no longer count.
+          tx.need.count({ where: { studyId: id, deletedAt: null } }),
           tx.need.findMany({
-            where: { studyId: id },
+            where: { studyId: id, deletedAt: null },
             orderBy: { createdAt: 'desc' },
             include: {
               surveys: { include: { _count: { select: { surveyQuestions: true } } } },
@@ -483,6 +485,16 @@ export class StudiesService {
       const changes = await this.withPlaceNames(
         this.diff(current, payload, nextGovernorateIds, nextCenterIds),
       );
+      // UAT STU-04 — the population sizes the sample, so a new population
+      // recalculates it with the study's own margin of error.
+      const populationChanged =
+        payload.population !== undefined && payload.population !== current.population;
+      const resized = populationChanged
+        ? calculateSampleSize(payload.population!, current.marginOfError ?? DEFAULT_MARGIN_OF_ERROR)
+        : null;
+      if (populationChanged) {
+        changes.push({ field: auditFieldLabel('population'), before: current.population, after: payload.population });
+      }
 
       await tx.study.update({
         where: { id },
@@ -492,6 +504,13 @@ export class StudiesService {
           ...(payload.methodologyVersionId !== undefined ? { methodologyVersionId: payload.methodologyVersionId } : {}),
           ...(payload.studyType !== undefined ? { studyType: payload.studyType } : {}),
           ...(payload.targetSector !== undefined ? { targetSector: payload.targetSector } : {}),
+          ...(resized
+            ? {
+                population: payload.population,
+                requiredSampleSize: resized.requiredSampleSize,
+                minimumDetectableEffect: resized.minimumDetectableEffect,
+              }
+            : {}),
         },
       });
 

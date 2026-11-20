@@ -4,6 +4,7 @@ import { ConfigService } from '../../config/config.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { TenancyModule } from '../../tenancy/tenancy.module';
 import { AuditModule } from '../audit/audit.module';
+import { MethodologyConfigModule } from '../methodology-config/methodology-config.module';
 import { PriorityModule } from '../priority/priority.module';
 import { CleaningContextService } from './cleaning-context.service';
 import { CleaningSettingsService } from './cleaning-settings.service';
@@ -17,6 +18,7 @@ import { GeminiEmbeddingProvider } from './gemini-embedding-provider';
 import { OciCohereEmbeddingProvider } from './oci-cohere-embedding-provider';
 import { NeedMergeService } from './need-merge.service';
 import { SemanticDuplicateService } from './semantic-duplicate.service';
+import { SurveyQualityService } from './survey-quality.service';
 
 /**
  * RIO-FR-002. Two halves, deliberately in separate classes:
@@ -37,7 +39,7 @@ import { SemanticDuplicateService } from './semantic-duplicate.service';
 @Module({
   // PriorityModule for DeterministicScoringService — accepting a corrected
   // numeric answer re-scores the response it belongs to.
-  imports: [PrismaModule, TenancyModule, AuditModule, PriorityModule, ConfigModule],
+  imports: [PrismaModule, TenancyModule, AuditModule, PriorityModule, ConfigModule, MethodologyConfigModule],
   controllers: [DataCleaningController],
   providers: [
     DataCleaningService,
@@ -48,6 +50,8 @@ import { SemanticDuplicateService } from './semantic-duplicate.service';
     NeedMergeService,
     CleaningSettingsService,
     SemanticDuplicateService,
+    // UAT DQ-05 — per-survey response quality.
+    SurveyQualityService,
     // RIO-AI-004 — the swap point, and where Q10's answer lands.
     //
     // Q10 named OCI Cohere, so embedding follows AI_PROVIDER rather than

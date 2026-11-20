@@ -14,6 +14,11 @@ import { computeQuestionWeights } from '../questions/question-weight.util';
 import { parseNumericAnswer } from './numeric-answer.util';
 import { loadStudyInheritance, loadStudyMethodologyVersion, parseInheritedSnapshot, summarizeGeography } from './survey-inheritance';
 
+/** UAT SVB-08 — the final optional open question on every published survey.
+ * Kept in English as the stored marker; the survey form localizes it. */
+export const FINAL_OPEN_QUESTION_TEXT = 'Anything else you would like to add?';
+export const FINAL_OPEN_QUESTION_TEXT_AR = 'هل هناك أي شيء آخر تود إضافته؟';
+
 @Injectable()
 export class SurveysService {
   // TEMP diagnostic logging (RIO-debug: research-officer override ->
@@ -158,8 +163,10 @@ export class SurveysService {
       // No manually-entered Arabic column exists for a custom/additional
       // question (see SurveyQuestion's schema comment) — always null here;
       // the frontend falls back to AI-translating the English text on
-      // demand for these, same as Need titles.
-      questionTextAr: null,
+      // demand for these, same as Need titles. UAT SVB-08: the fixed final
+      // question carries its approved Arabic wording.
+      questionTextAr:
+        sq.customText === FINAL_OPEN_QUESTION_TEXT ? FINAL_OPEN_QUESTION_TEXT_AR : null,
       answerType: sq.customAnswerType ?? 'long_text',
       answerOptions:
         typeof sq.customOptions === 'string' ? JSON.parse(sq.customOptions) : (sq.customOptions ?? null),
@@ -1187,6 +1194,14 @@ Eligible Questions: ${JSON.stringify(
         error: { code: 'SURVEY_NOT_SUBMITTABLE', message: 'Only a draft or rejected survey can be submitted for approval.' },
       });
     }
+    // UAT SVB-12 — a survey is built from the need's approved domain, so it
+    // can't go for review while the AI classification is still waiting. The
+    // reviewer's one-step "approve classification and survey" approves the
+    // classification first, so it still passes here.
+    const need = await this.tenant.runRead((tx) =>
+      tx.need.findUnique({ where: { id: survey.needId }, select: { status: true } }),
+    );
+    if (need) this.assertClassificationApproved(need.status);
     // Same "nothing for a citizen to answer" guard publishing already had —
     // still applies, just moved one step earlier in the flow.
     const questionCount = await this.tenant.runRead((tx) => tx.surveyQuestion.count({ where: { surveyId } }));
@@ -1293,6 +1308,44 @@ Eligible Questions: ${JSON.stringify(
   // System Admin, Field Researcher): the actual go-live step, once the
   // Approver has already approved. No reviewer notes here — that decision
   // was already recorded by approveSurvey; this is just "make it live."
+  /**
+   * UAT SVB-08 — every published survey ends with one optional open-ended
+   * question ("Anything else you would like to add?"). Added on publish if
+   * it is missing and moved to the end if questions were added after it, so
+   * it is always last and never duplicated across versions. Stored as a
+   * custom long-text question (the Question Bank's open-ended type); its
+   * Arabic wording comes back as questionTextAr (see the DTO mapping).
+   */
+  private async ensureFinalOpenQuestion(
+    tx: Prisma.TransactionClient,
+    surveyId: string,
+  ): Promise<void> {
+    const questions =
+      (await tx.surveyQuestion.findMany({
+        where: { surveyId },
+        select: { id: true, order: true, customText: true },
+        orderBy: { order: 'asc' },
+      })) ?? [];
+    const lastOrder = questions.reduce((max, q) => Math.max(max, q.order), 0);
+    const existing = questions.find((q) => q.customText === FINAL_OPEN_QUESTION_TEXT);
+    if (!existing) {
+      await tx.surveyQuestion.create({
+        data: {
+          surveyId,
+          customText: FINAL_OPEN_QUESTION_TEXT,
+          customAnswerType: 'long_text',
+          order: lastOrder + 1,
+          isRequired: false,
+        },
+      });
+    } else if (existing.order !== lastOrder) {
+      await tx.surveyQuestion.update({
+        where: { id: existing.id },
+        data: { order: lastOrder + 1, isRequired: false },
+      });
+    }
+  }
+
   async publishSurvey(surveyId: string) {
     const survey = await this.tenant.runRead((tx) => tx.survey.findUnique({ where: { id: surveyId } }));
     if (!survey) {
@@ -1327,6 +1380,7 @@ Eligible Questions: ${JSON.stringify(
         },
       });
       await tx.need.update({ where: { id: survey.needId }, data: { status: 'survey_published' } });
+      await this.ensureFinalOpenQuestion(tx, surveyId);
 
       // RIO-FR-011: publishing a new version supersedes the version it was
       // created from — without this, both rows would sit at PUBLISHED for

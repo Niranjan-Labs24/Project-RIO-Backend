@@ -112,6 +112,8 @@ export interface Report {
   // Resolved display name for surveyId, so the reports list can show which
   // survey a survey-scoped report came from without a second round-trip.
   surveyTitle: string | null;
+  /** UAT RPT-05 — the issuing entity's name. */
+  issuedBy: string | null;
   filters: Record<string, unknown>;
   content: Record<string, unknown>;
   generatedBy: string;

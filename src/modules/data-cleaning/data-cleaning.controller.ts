@@ -33,6 +33,7 @@ import {
 } from './cleaning-settings.service';
 import { isCrossOrgReader } from './cross-org-reader';
 import { FlagReviewService, type FlagListItem } from './flag-review.service';
+import { SurveyQualityService, type SurveyQualityRow } from './survey-quality.service';
 import { SemanticDuplicateService } from './semantic-duplicate.service';
 import {
   NeedMergeService,
@@ -71,6 +72,7 @@ export class DataCleaningController {
     private readonly settings: CleaningSettingsService,
     private readonly detection: DuplicateDetectionService,
     private readonly semantic: SemanticDuplicateService,
+    private readonly surveyQuality: SurveyQualityService,
   ) {}
 
   @Get('flags')
@@ -88,6 +90,16 @@ export class DataCleaningController {
     });
   }
 
+  /**
+   * UAT DQ-05 — one row per published survey: completeness, anomalies and
+   * the confidence flag of its responses. Optional ?studyId= narrows it.
+   */
+  @Get('surveys')
+  @RequirePermission('dataQuality', 'read')
+  surveys(@Query('studyId') studyId?: string): Promise<SurveyQualityRow[]> {
+    return this.surveyQuality.list(studyId || undefined);
+  }
+
   /** Q14's "report per source showing what was flagged". */
   @Get('summary')
   @RequirePermission('dataQuality', 'read')
@@ -101,7 +113,13 @@ export class DataCleaningController {
     @Param('flagId', new UuidParamPipe()) flagId: string,
     @Body(new TypeBoxValidationPipe(ReviewFlagBody)) body: ReviewFlagDto,
   ): Promise<FlagListItem> {
-    return this.review.review(flagId, body.decision, body.note, body.choice);
+    return this.review.review(
+      flagId,
+      body.decision,
+      body.note,
+      body.choice,
+      body.correctedValue,
+    );
   }
 
   @Post('flags/bulk-accept')

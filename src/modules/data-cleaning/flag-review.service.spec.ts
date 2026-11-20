@@ -115,7 +115,7 @@ describe('FlagReviewService.list and summary', () => {
       }),
       flag({ id: 'f', entityType: 'need', entityId: 'unknown' }),
     ]);
-    tx.cleaningFlag.count.mockResolvedValue(6);
+    tx.cleaningFlag.count.mockResolvedValueOnce(6);
     tx.need.findMany.mockResolvedValue([{ id: 'n1', internalRefSeq: 12, title: 'Wells' }]);
     const result = await asOrg(() => svc.list({}));
     expect(result.total).toBe(6);
@@ -130,10 +130,16 @@ describe('FlagReviewService.list and summary', () => {
     expect(by.d!.acceptable).toBe(true);
     expect(by.e!.acceptable).toBe(false);
     expect(by.f!.entityLabel).toBeNull();
+    // UAT DQ-02 — which values the reviewer may type in by hand.
+    expect(by.a!.editable).toBe(true); // a need title
+    expect(by.b!.editable).toBe(false); // an import row
+    expect(by.d!.editable).toBe(true); // a mobile
+    expect(by.e!.editable).toBe(false); // an answer with no question link
   });
 
   it('applies every filter and paging, and reads across organizations for a supervisor', async () => {
     const { svc, tx } = setup();
+    tx.cleaningFlag.count.mockResolvedValue(20);
     await run({ role: 'system_admin' }, () =>
       svc.list({
         status: 'accepted',
@@ -158,11 +164,38 @@ describe('FlagReviewService.list and summary', () => {
     });
     expect(tx.need.findMany).not.toHaveBeenCalled();
     await asOrg(() => svc.list({}));
+    // UAT GEN-01 — most serious first, newest first within each severity:
+    // the 25-row page takes all 20 "missing", then 5 "out_of_vocabulary".
     expect(tx.cleaningFlag.findMany.mock.calls[1]![0]).toMatchObject({
-      where: { status: 'pending' },
+      where: { status: 'pending', severity: 'missing' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       skip: 0,
-      take: 25,
+      take: 20,
     });
+    expect(tx.cleaningFlag.findMany.mock.calls[2]![0]).toMatchObject({
+      where: { status: 'pending', severity: 'out_of_vocabulary' },
+      skip: 0,
+      take: 5,
+    });
+    expect(tx.cleaningFlag.findMany).toHaveBeenCalledTimes(3);
+  });
+
+  it('pages across severities: page 2 starts inside the second severity (UAT GEN-01)', async () => {
+    const { svc, tx } = setup();
+    // missing 3, out_of_vocabulary 10, non_standard 10, other 0
+    tx.cleaningFlag.count
+      .mockResolvedValueOnce(3)
+      .mockResolvedValueOnce(10)
+      .mockResolvedValueOnce(10)
+      .mockResolvedValueOnce(0);
+    const result = await asOrg(() => svc.list({ page: 2, pageSize: 5 }));
+    expect(result.total).toBe(23);
+    expect(tx.cleaningFlag.findMany.mock.calls[0]![0]).toMatchObject({
+      where: { severity: 'out_of_vocabulary' },
+      skip: 2,
+      take: 5,
+    });
+    expect(tx.cleaningFlag.findMany).toHaveBeenCalledTimes(1);
   });
 
   it('summarises flags by source and rule, most common first, with the last run time', async () => {
@@ -283,7 +316,7 @@ describe('FlagReviewService.review', () => {
       flag({ id: 'v', field: 'village[0]', ruleCode: 'VILLAGE_NEAR_MATCH', proposedValue: null, detail: { candidates: [{ code: 'C-01' }] } }),
       flag({ id: 'p', entityType: 'survey_response', field: 'mobile', ruleCode: 'PHONE_UNPARSEABLE', proposedValue: null, detail: { redacted: true } }),
     ]);
-    tx.cleaningFlag.count.mockResolvedValue(2);
+    tx.cleaningFlag.count.mockResolvedValueOnce(2);
     const page = await asOrg(() => svc.list({}));
     expect(page.items.map((i) => [i.id, i.acceptable])).toEqual([
       ['v', true],
@@ -418,6 +451,72 @@ describe('FlagReviewService.review', () => {
       .mockResolvedValueOnce({ answers: { sq1: null } });
     await attempt({});
     expect(tx.surveyResponse.update).toHaveBeenCalled();
+  });
+
+  // UAT DQ-02 — the reviewer corrects the value themselves.
+  it('writes the value the reviewer typed onto a need field or village', async () => {
+    const { svc, tx, audit } = setup();
+    await asOrg(() => svc.review('f1', 'accept', undefined, undefined, '  Clean water  '));
+    expect(tx.need.update).toHaveBeenCalledWith({ where: { id: 'n1' }, data: { title: 'Clean water' } });
+    expect(audit.record.mock.calls[0]![0].changes).toContainEqual({
+      field: 'Correction',
+      before: null,
+      after: 'Value entered by the reviewer',
+    });
+
+    tx.cleaningFlag.findUnique.mockResolvedValue(flag({ field: 'village[1]', proposedValue: null }));
+    await asOrg(() => svc.review('f1', 'accept', undefined, undefined, 'Al Noor'));
+    expect(tx.need.update).toHaveBeenLastCalledWith({
+      where: { id: 'n1' },
+      data: { village: ['A', 'Al Noor'] },
+    });
+  });
+
+  it('writes a typed mobile only when it is a valid number, and never logs the number', async () => {
+    const { svc, tx, audit } = setup();
+    tx.cleaningFlag.findUnique.mockResolvedValue(
+      flag({ entityType: 'survey_response', entityId: 'r1', field: 'mobile', ruleCode: 'PHONE_UNPARSEABLE', proposedValue: null }),
+    );
+    await asOrg(() => svc.review('f1', 'accept', undefined, undefined, '0501234567'));
+    expect(tx.surveyResponse.update).toHaveBeenCalledWith({ where: { id: 'r1' }, data: { mobile: '+966501234567' } });
+    expect(JSON.stringify(audit.record.mock.calls)).not.toContain('0501234567');
+
+    phone.result = { value: null, changed: false };
+    await expect(
+      asOrg(() => svc.review('f1', 'accept', undefined, undefined, '123')),
+    ).rejects.toMatchObject({ response: { error: { code: 'INVALID_CORRECTED_VALUE' } } });
+    phone.result = { value: '+966501234567', changed: true };
+  });
+
+  it('writes a typed village onto a survey response', async () => {
+    const { svc, tx } = setup();
+    tx.surveyResponse.findUnique.mockResolvedValue({ id: 'r1', village: ['Al Malqaa'] });
+    tx.cleaningFlag.findUnique.mockResolvedValue(
+      flag({ entityType: 'survey_response', entityId: 'r1', field: 'village[0]', proposedValue: null }),
+    );
+    await asOrg(() => svc.review('f1', 'accept', undefined, undefined, 'Al Malqa'));
+    expect(tx.surveyResponse.update).toHaveBeenCalledWith({ where: { id: 'r1' }, data: { village: ['Al Malqa'] } });
+  });
+
+  it('writes a typed answer and re-scores the response', async () => {
+    const { svc, tx, scoring } = setup();
+    tx.cleaningFlag.findUnique.mockResolvedValue(
+      flag({ entityType: 'survey_response', entityId: 'r1', field: 'answers[sq1]', proposedValue: null, detail: { surveyQuestionId: 'sq1' } }),
+    );
+    await asOrg(() => svc.review('f1', 'accept', undefined, undefined, '42'));
+    expect(tx.surveyResponse.update).toHaveBeenCalledWith({ where: { id: 'r1' }, data: { answers: { sq1: '42' } } });
+    expect(scoring.scoreResponse).toHaveBeenCalledWith('r1', 'org-1');
+  });
+
+  it('refuses a typed value where only a proposal may be written', async () => {
+    const { svc, tx } = setup();
+    for (const over of [{ field: 'domain' }, { entityType: 'import_row', entityId: null }]) {
+      tx.cleaningFlag.findUnique.mockResolvedValueOnce(flag(over));
+      await expect(
+        asOrg(() => svc.review('f1', 'accept', undefined, undefined, 'Anything')),
+      ).rejects.toMatchObject({ response: { error: { code: 'VALUE_NOT_EDITABLE' } } });
+    }
+    expect(tx.need.update).not.toHaveBeenCalled();
   });
 
   it("finds the flag's own organization for a supervisor", async () => {

@@ -6,7 +6,7 @@ import { pageOf } from '../../common/http/query.util';
 import type { PriorityDashboardPage } from './priority.types';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { Prisma } from '../../generated/prisma';
-import { getOrgStore, requireOrgId } from '../../tenancy/org-context';
+import { getOrgStore, orgContext, requireOrgId } from '../../tenancy/org-context';
 import { DEFAULT_THRESHOLDS, mapPriorityLevel, type ScoringThresholds } from './scoring';
 
 /**
@@ -334,6 +334,70 @@ export class PriorityV2Service {
   // sliced here — the response carries one page instead of every need, and the
   // level counts are computed over the whole set so the summary cards do not
   // change with the filters.
+  /**
+   * UAT PRI-04 — there is no manual "Recalculate". Scores follow each new
+   * survey response (CitizenService), but a need whose responses came in
+   * before that, and so was never scored, would stay "Not scored yet" for
+   * good. The dashboard calls this first: each visible need with a published
+   * survey and responses but no priority assessment gets its survey's
+   * priority assessment and its own score computed once, in its own
+   * organisation (as the response path does). Failures are logged and
+   * skipped so the dashboard still loads.
+   */
+  async fillMissingScores(
+    scoreNeed: (needId: string) => Promise<unknown>,
+    limit = 25,
+  ): Promise<number> {
+    const store = getOrgStore();
+    const isCrossOrgReader =
+      store?.role === ROLE_KEYS.systemAdmin ||
+      store?.role === ROLE_KEYS.systemReviewer ||
+      store?.role === ROLE_KEYS.centerSupervisor;
+    const runner = isCrossOrgReader
+      ? this.tenant.runAsSupervisor.bind(this.tenant)
+      : this.tenant.runInOrgContext.bind(this.tenant);
+    const missing = await runner(async (tx) => {
+      const [surveys, assessments, answered] = await Promise.all([
+        tx.survey.findMany({
+          where: { status: 'PUBLISHED', need: { ...EXCLUDE_MERGED } },
+          select: { id: true, needId: true, studyId: true, orgId: true },
+        }),
+        tx.villagePriorityAssessment.findMany({
+          where: { villageId: '' },
+          select: { surveyId: true },
+          distinct: ['surveyId'],
+        }),
+        tx.surveyResponse.findMany({ select: { needId: true }, distinct: ['needId'] }),
+      ]);
+      const assessed = new Set(assessments.map((a) => a.surveyId));
+      const hasResponses = new Set(answered.map((r) => r.needId));
+      return surveys
+        .filter((s) => !assessed.has(s.id) && hasResponses.has(s.needId))
+        .slice(0, limit);
+    });
+    let done = 0;
+    for (const survey of missing) {
+      try {
+        await orgContext.run(
+          { requestId: `auto-priority-${survey.needId}`, orgId: survey.orgId },
+          async () => {
+            // A reason back means nothing could be computed yet (e.g. no
+            // results on the published version) — leave it unscored.
+            const reason = await this.calculateVillagePriority(survey.studyId, survey.id, '');
+            if (reason) return;
+            await scoreNeed(survey.needId);
+          },
+        );
+        done += 1;
+      } catch (err) {
+        this.logger.warn(
+          `Automatic priority score failed for need ${survey.needId}: ${(err as Error).message}`,
+        );
+      }
+    }
+    return done;
+  }
+
   async listPage(
     filters: { gapType?: string; level?: string },
     paging: { limit: number; offset: number },

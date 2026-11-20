@@ -113,6 +113,9 @@ describe('ROLE_MATRIX', () => {
     // actually gates on (see ncnp-report.controller.ts) — without this the
     // old ncnp_user role could never reach its own report.
     expect(can('center_supervisor', 'archiveSharingAudit', 'read')).toBe(true);
+    // UAT RPT-06 — reads the NCNP collective (Needs) report, never writes it.
+    expect(can('center_supervisor', 'ncnpReport', 'read')).toBe(true);
+    expect(can('center_supervisor', 'ncnpReport', 'write')).toBe(false);
     expect(ROLE_MATRIX.find((r) => r.key === 'ncnp_user')).toBeUndefined();
   });
 

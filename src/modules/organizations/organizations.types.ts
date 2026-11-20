@@ -47,6 +47,7 @@ export interface OrganizationSummary extends Organization {
   responseCount?: number;
   ngoAdminName?: string | null;
   ngoAdminEmail?: string | null;
+  ngoAdminMobile?: string | null;
   deactivationReason?: string | null;
   /** Most recent sign-in by any user of this organisation; null = never. */
   lastSignInAt?: string | null;

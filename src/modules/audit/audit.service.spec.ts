@@ -588,3 +588,40 @@ describe('AuditService.exportCsv (RIO-FR-007 — System Admin download)', () => 
     expect(rows[0]?.metadata).toBeUndefined();
   });
 });
+
+// UAT AUD-02 — the "User" filter lists the actors of the log the caller sees.
+describe('AuditService.listActors', () => {
+  it("lists each actor once, scoped to the caller's own organization", async () => {
+    const { tenant, calls, used } = queryTenant();
+    const svc = new AuditService(tenant as never);
+    const actors = await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'u1', role: 'ngo_admin' }, () =>
+      svc.listActors('o2'),
+    );
+
+    expect(used).toEqual(['org', 'supervisor']);
+    expect(calls[0]).toMatchObject({ where: { actorUserId: { not: null } }, distinct: ['actorUserId'] });
+    // An org role cannot widen the scope to another organization.
+    expect(calls[0]?.where).not.toHaveProperty('organisationId');
+    expect(actors).toEqual([{ id: 'u1', name: 'Admin User', email: 'admin@demo.org' }]);
+  });
+
+  it('lets a cross-entity role narrow the list to one organization', async () => {
+    const { tenant, calls, used } = queryTenant();
+    const svc = new AuditService(tenant as never);
+    await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'u1', role: 'system_admin' }, () =>
+      svc.listActors('o2'),
+    );
+
+    expect(used[0]).toBe('supervisor');
+    expect(calls[0]?.where).toEqual({ organisationId: 'o2', actorUserId: { not: null } });
+  });
+
+  it('returns nobody when the log has no actors', async () => {
+    const { tenant } = queryTenant([]);
+    const svc = new AuditService(tenant as never);
+    const actors = await orgContext.run({ requestId: 'r', orgId: 'o1', actorId: 'u1', role: 'ngo_admin' }, () =>
+      svc.listActors(),
+    );
+    expect(actors).toEqual([]);
+  });
+});

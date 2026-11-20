@@ -14,7 +14,8 @@ import { AuditController } from './audit.controller';
  * developer who did not read the requirement.
  */
 
-const HANDLERS = ['list', 'export', 'getSummary', 'getById'] as const;
+// listActors (UAT AUD-02) feeds the "User" filter — read-only like the rest.
+const HANDLERS = ['list', 'export', 'getSummary', 'getById', 'listActors'] as const;
 
 function routeMethod(name: string): number | undefined {
   const handler = (AuditController.prototype as unknown as Record<string, unknown>)[name];
@@ -41,7 +42,7 @@ function decoratedHandlers(): string[] {
 }
 
 describe('AuditController route surface (RIO-FR-007 AC2 — no deletion path)', () => {
-  it('exposes exactly the four read routes and nothing else', () => {
+  it('exposes exactly the five read routes and nothing else', () => {
     expect(decoratedHandlers().sort()).toEqual([...HANDLERS].sort());
   });
 
@@ -78,6 +79,7 @@ describe('AuditController permission gating (RIO-FR-007)', () => {
     ['list', 'read'],
     ['getSummary', 'read'],
     ['getById', 'read'],
+    ['listActors', 'read'],
   ])('%s requires archiveSharingAudit:%s', (handler, action) => {
     expect(routePermission(handler)).toEqual({ module: 'archiveSharingAudit', action });
   });

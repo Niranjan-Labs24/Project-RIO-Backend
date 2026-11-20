@@ -858,6 +858,10 @@ model Need {
   // `mergedIntoNeedId IS NOT NULL`. The survivor keeps the retired need's
   // reference ids so DATA-003 lookups still resolve after a merge.
   mergedIntoNeedId     String?  @map("merged_into_need_id") @db.Uuid
+  // UAT NED-01 — soft delete: a draft/unclassified need the user deletes is
+  // kept (with its evidence and audit trail) and hidden like a merged one.
+  deletedAt            DateTime? @map("deleted_at") @db.Timestamptz(6)
+  deletedBy            String?   @map("deleted_by") @db.Uuid
   absorbedReferenceIds String[] @default([]) @map("absorbed_reference_ids")
   createdBy String     @map("created_by") @db.Uuid
   createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -972,6 +976,11 @@ model Initiative {
   // client wants map-level initiative plotting (client Q39 explicitly
   // deferred this out of the FR-008 map for Sprint 3).
   geography           String?
+  // UAT INI-01 — the scope picked from the geographic reference (same as a
+  // Study). `geography` above keeps the readable names for display.
+  regionIds           String[]  @default([]) @map("region_ids") @db.Uuid
+  governorateIds      String[]  @default([]) @map("governorate_ids") @db.Uuid
+  centerIds           String[]  @default([]) @map("center_ids") @db.Uuid
   startDate           DateTime? @map("start_date") @db.Date
   expectedEndDate     DateTime? @map("expected_end_date") @db.Date
   status              String    @default("active") @db.VarChar(30)
@@ -1625,6 +1634,9 @@ model PublicSurveyLink {
   // id, so a citizen link can be revoked/rotated independently of the Study.
   token     String    @unique @db.VarChar(64)
   createdBy String    @map("created_by") @db.Uuid
+  // UAT DST-04 — when the link opens (start of its start date, Riyadh time).
+  // Null on links created before start dates existed: open since creation.
+  startsAt  DateTime? @map("starts_at") @db.Timestamptz(6)
   expiresAt DateTime? @map("expires_at") @db.Timestamptz(6)
   isActive  Boolean   @default(true) @map("is_active")
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)

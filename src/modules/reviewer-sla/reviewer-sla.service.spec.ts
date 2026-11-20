@@ -122,7 +122,7 @@ function makeService(tenant: ReturnType<typeof fakeTenant>) {
 }
 
 describe('ReviewerSlaService', () => {
-  it('Approver (human_reviewer) sees both pending survey_approval and report_approval alerts, oldest first', async () => {
+  it('Approver (human_reviewer) sees both pending survey_approval and report_approval alerts, newest first (UAT GEN-08)', async () => {
     const older = new Date('2026-01-01T00:00:00Z');
     const newer = new Date('2026-01-02T00:00:00Z');
     const svc = makeService(
@@ -141,13 +141,13 @@ describe('ReviewerSlaService', () => {
     const alerts = await orgContext.run({ requestId: 'r', role: 'human_reviewer' }, () => svc.listAlerts());
 
     expect(alerts).toHaveLength(2);
-    // Oldest-first for the still-open queue — the report (confirmed 2026-01-01) precedes the survey (submitted 2026-01-02).
-    expect(alerts[0]?.type).toBe('report_approval');
-    expect(alerts[0]?.reportId).toBe('r1');
-    expect(alerts[0]?.studyTitle).toBe('Village Report');
-    expect(alerts[0]?.status).toBe('pending');
-    expect(alerts[1]?.type).toBe('survey_approval');
-    expect(alerts[1]?.surveyId).toBe('s1');
+    // Newest first (UAT GEN-08) — the survey (submitted 2026-01-02) precedes the report (confirmed 2026-01-01).
+    expect(alerts[0]?.type).toBe('survey_approval');
+    expect(alerts[0]?.surveyId).toBe('s1');
+    expect(alerts[1]?.type).toBe('report_approval');
+    expect(alerts[1]?.reportId).toBe('r1');
+    expect(alerts[1]?.studyTitle).toBe('Village Report');
+    expect(alerts[1]?.status).toBe('pending');
   });
 
   // RIO-RBAC-001 matrix (Aug 11, client-confirmed): ngo_admin no longer
@@ -255,7 +255,7 @@ describe('ReviewerSlaService', () => {
     expect(alerts.some((a) => a.type === 'evidence_document_uploaded')).toBe(false);
   });
 
-  it('RIO-AI-003 — the Reviewer sees DRAFT need summaries as one queue entry each, oldest first', async () => {
+  it('RIO-AI-003 — the Reviewer sees DRAFT need summaries as one queue entry each, newest first (UAT GEN-08)', async () => {
     const older = new Date('2026-01-01T00:00:00Z');
     const newer = new Date('2026-01-02T00:00:00Z');
     const svc = makeService(
@@ -276,9 +276,9 @@ describe('ReviewerSlaService', () => {
     );
     const summaryAlerts = alerts.filter((a) => a.type === 'need_summary_approval');
 
-    expect(summaryAlerts.map((a) => a.id)).toEqual(['sum1', 'sum2']);
+    expect(summaryAlerts.map((a) => a.id)).toEqual(['sum2', 'sum1']);
     expect(summaryAlerts[0]?.studyTitle).toBe('Water study');
-    expect(summaryAlerts[0]?.needId).toBe('n1');
+    expect(summaryAlerts[0]?.needId).toBe('n2');
   });
 
   it('UAT PRI-01 — the Human Reviewer sees each need whose latest priority score awaits approval', async () => {

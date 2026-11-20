@@ -6,6 +6,7 @@ export interface PublicSurveyLinkRow {
   label: string;
   token: string;
   createdBy: string;
+  startsAt: Date | null;
   expiresAt: Date | null;
   isActive: boolean;
   createdAt: Date;
@@ -23,6 +24,8 @@ export interface PublicSurveyLink {
   // The plain public URL the frontend renders as a QR code client-side —
   // no server-generated image, see the plan's "Publish Survey + QR" note.
   publicUrl: string;
+  /** UAT DST-04 — null on links created before start dates existed. */
+  startsAt: string | null;
   expiresAt: string | null;
   isActive: boolean;
   createdAt: string;
@@ -31,7 +34,20 @@ export interface PublicSurveyLink {
 
 export interface CreateSurveyLinkPayload {
   label: string;
-  expiresInDays?: number;
+  /** UAT DST-04 — YYYY-MM-DD, Riyadh time; both mandatory. */
+  startsOn: string;
+  endsOn: string;
+}
+
+/** UAT DST-01 — what happened to each address of a bulk send. */
+export interface BulkShareResult {
+  sent: string[];
+  /** Not a valid email address — nothing was sent. */
+  invalid: string[];
+  /** A valid address the mail server did not accept. */
+  failed: string[];
+  /** Listed more than once; sent once. */
+  duplicates: string[];
 }
 
 /** One row in the Survey Responses list — Name/Email/Submitted Date, the

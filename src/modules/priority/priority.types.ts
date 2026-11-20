@@ -165,6 +165,11 @@ export interface KpiSeverityEntry {
  *  travel as labels in `villages`. See CenterAggregationService's comment for
  *  the full reasoning, including why the score is the mean of the Needs' own
  *  PriorityScores rather than a second separately-computed figure. */
+/** One Sub-domain's mean within a Centre (UAT PRI-08); same fields as a Domain's. */
+export interface CenterSubDomainBreakdown extends CenterDomainBreakdown {
+  subDomain: string;
+}
+
 export interface CenterComparisonEntry {
   centerId: string;
   /** Display value for a single-line caption — every Centre name joined,
@@ -209,4 +214,6 @@ export interface CenterComparisonEntry {
   // fabricated 0 — see CenterAggregationService.aggregateByCenter.
   affectedPeople: number | null;
   affectedHouseholds: number | null;
+  /** UAT PRI-08 — the same comparison one level down the methodology tree. */
+  subDomainBreakdown: CenterSubDomainBreakdown[];
 }

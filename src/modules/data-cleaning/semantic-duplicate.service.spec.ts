@@ -21,32 +21,39 @@ function serviceWith(opts: {
   enabled: boolean;
   vectors?: number[][];
   existingCandidate?: { id: string; status: string } | null;
+  needs?: { id: string; title: string; statement: string }[];
+  /** Vectors already stored from an earlier run (the comparison read). */
+  stored?: { needId: string; vector: number[] }[];
 }) {
   const created = { suggestions: [] as unknown[], candidates: [] as unknown[] };
   const tx = {
     need: {
-      findMany: vi.fn(async () => [
-        { id: "need-a", title: "Water shortage", statement: "No reliable water" },
-        { id: "need-b", title: "Unreliable water supply", statement: "Water is intermittent" },
-      ]),
+      findMany: vi.fn(
+        async () =>
+          opts.needs ?? [
+            { id: "need-a", title: "Water shortage", statement: "No reliable water" },
+            {
+              id: "need-b",
+              title: "Unreliable water supply",
+              statement: "Water is intermittent",
+            },
+          ],
+      ),
     },
     needEmbedding: {
       findMany: vi.fn(async ({ select }: { select: Record<string, unknown> }) =>
         // The second call (the comparison read) asks for `vector`; the first
         // (the freshness check) does not.
         "vector" in select
-          ? [
-              {
-                needId: "need-a",
-                vector: [1, 0, 0],
-                need: { studyId: "study-1", mergedIntoNeedId: null },
-              },
-              {
-                needId: "need-b",
-                vector: [1, 0, 0],
-                need: { studyId: "study-1", mergedIntoNeedId: null },
-              },
-            ]
+          ? (
+              opts.stored ?? [
+                { needId: "need-a", vector: [1, 0, 0] },
+                { needId: "need-b", vector: [1, 0, 0] },
+              ]
+            ).map((v) => ({
+              ...v,
+              need: { studyId: "study-1", mergedIntoNeedId: null },
+            }))
           : [],
       ),
       upsert: vi.fn(async () => ({})),
@@ -169,5 +176,64 @@ describe("SemanticDuplicateService", () => {
 
     expect(result.embedded).toBe(0);
     expect(tx.needEmbedding.upsert).not.toHaveBeenCalled();
+  });
+
+  // UAT (The Vision, 19 Nov): the OCI model answered 404, every scan embedded
+  // nothing, and the reviewer was told the entity had no needs.
+  it("says the matching service failed — not 'no needs' — when embedding fails", async () => {
+    const { service } = serviceWith({ enabled: true, vectors: [], stored: [] });
+
+    const result = await orgContext.run(CTX, () => service.runSemanticPass());
+
+    expect(result).toMatchObject({
+      embedded: 0,
+      proposed: 0,
+      skippedReason: "SEMANTIC_PROVIDER_FAILED",
+    });
+  });
+
+  it("still compares the needs embedded earlier when the provider fails", async () => {
+    const { service, created } = serviceWith({ enabled: true, vectors: [] });
+
+    const result = await orgContext.run(CTX, () => service.runSemanticPass());
+
+    expect(result.skippedReason).toBe("SEMANTIC_PROVIDER_FAILED");
+    expect(result.proposed).toBe(1);
+    expect(created.candidates).toHaveLength(1);
+  });
+
+  it("reports a clean run with no matches as a result, not 'only one need'", async () => {
+    const { service } = serviceWith({
+      enabled: true,
+      vectors: [
+        [1, 0, 0],
+        [0, 1, 0],
+      ],
+      stored: [
+        { needId: "need-a", vector: [1, 0, 0] },
+        { needId: "need-b", vector: [0, 1, 0] },
+      ],
+    });
+
+    const result = await orgContext.run(CTX, () => service.runSemanticPass());
+
+    expect(result).toEqual({ embedded: 2, compared: 1, proposed: 0, skippedReason: null });
+  });
+
+  it("names the real reason when the entity has no needs, or only one", async () => {
+    const none = serviceWith({ enabled: true, needs: [], stored: [] });
+    const one = serviceWith({
+      enabled: true,
+      needs: [{ id: "need-a", title: "Water", statement: "No water" }],
+      vectors: [[1, 0, 0]],
+      stored: [{ needId: "need-a", vector: [1, 0, 0] }],
+    });
+
+    expect(
+      (await orgContext.run(CTX, () => none.service.runSemanticPass())).skippedReason,
+    ).toBe("NO_NEEDS_IN_SCOPE");
+    expect(
+      (await orgContext.run(CTX, () => one.service.runSemanticPass())).skippedReason,
+    ).toBe("NOT_ENOUGH_NEEDS_TO_COMPARE");
   });
 });

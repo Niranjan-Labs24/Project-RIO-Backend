@@ -6,6 +6,10 @@ import { roleByKey } from "../../rbac/role-matrix";
 import { AuditService } from "../audit/audit.service";
 import { MailerService } from "../../mailer/mailer.service";
 import { TranslationService } from "../translation/translation.service";
+import { ReportsService } from "../reports/reports.service";
+import { assertShareable, NOT_INTERNAL_ONLY } from "../reports/core-needs/internal-only";
+import { EXCLUDE_MERGED } from "../needs/need-visibility";
+import type { SharedReportSnapshot } from "../report-sharing/report-sharing.types";
 import type {
   CreateSharingRequestPayload, DecideSharingRequestPayload, OrgLookupResult, SharedStudySnapshot,
   SharingRequest, SharingRequestRow, StudyLookupResult,
@@ -22,6 +26,7 @@ export class SharingService {
     private readonly audit: AuditService,
     private readonly mailer: MailerService,
     private readonly translation: TranslationService,
+    private readonly reports: ReportsService,
   ) {}
 
   private isCrossEntity(): boolean {
@@ -200,6 +205,104 @@ export class SharingService {
   }
 
   async getSharedSnapshot(id: string): Promise<SharedStudySnapshot> {
+    const row = await this.approvedForRequesterOrThrow(id);
+
+    return this.tenant.runAsSupervisor(async (tx) => {
+      const study = await tx.study.findUnique({
+        where: { id: row.studyId },
+        include: {
+          org: { select: { name: true } },
+          studyGovernorates: { include: { governorate: { select: { name: true, nameAr: true } } } },
+        },
+      });
+      if (!study) throw new NotFoundException({ error: { code: "STUDY_NOT_FOUND", message: "Study not found" } });
+      // A Study can hold many Needs now — sharing the whole Study means
+      // sharing all of them, not "the" one. A need merged into another one
+      // is not part of what the study says (see need-visibility.ts).
+      const [needs, evidence, reports] = await Promise.all([
+        tx.need.findMany({
+          where: { studyId: row.studyId, ...EXCLUDE_MERGED },
+          orderBy: { createdAt: "desc" }, // UAT GEN-08 — newest first
+        }),
+        tx.evidence.findMany({
+          where: { studyId: row.studyId },
+          orderBy: { uploadedAt: "desc" },
+          select: { id: true, title: true, fileName: true, fileType: true, needId: true, uploadedAt: true },
+        }),
+        // UAT SHR-04 — "through to its report": the study's released reports,
+        // never a draft, never a village-level (internal-only) one.
+        tx.report.findMany({
+          where: { studyId: row.studyId, status: { in: ["released", "archived"] }, ...NOT_INTERNAL_ONLY },
+          orderBy: { generatedAt: "desc" },
+          select: { id: true, title: true, reportType: true, generatedAt: true },
+        }),
+      ]);
+      return {
+        studyId: study.id,
+        title: study.title,
+        needs: needs.map((n) => ({
+          id: n.id,
+          statement: n.statement,
+          village: n.village,
+          status: n.status,
+          internalReferenceId: `NEED-${String(n.internalRefSeq).padStart(6, "0")}`,
+          title: n.title,
+          domain: n.domain,
+          subDomain: n.subDomain,
+          affectedPopulation: n.affectedPopulation,
+        })),
+        evidenceCount: evidence.length,
+        ownerOrgName: study.org.name,
+        studyType: study.studyType,
+        targetSector: study.targetSector,
+        population: study.population,
+        requiredSampleSize: study.requiredSampleSize,
+        createdAt: study.createdAt.toISOString(),
+        governorates: study.studyGovernorates.map((g) => ({
+          name: g.governorate.name,
+          nameAr: g.governorate.nameAr,
+        })),
+        evidence: evidence.map((e) => ({ ...e, uploadedAt: e.uploadedAt.toISOString() })),
+        reports: reports.map((r) => ({ ...r, generatedAt: r.generatedAt.toISOString() })),
+      };
+    });
+  }
+
+  /**
+   * UAT SHR-04 — one released report of a shared study, read-only, in the
+   * same shape a shared report has (so the same viewer renders it). Only a
+   * report of THIS study, released or archived, and not internal-only.
+   */
+  async getSharedStudyReport(id: string, reportId: string): Promise<SharedReportSnapshot> {
+    const row = await this.approvedForRequesterOrThrow(id);
+    const report = await this.reports.findAcrossOrgsOrThrow(reportId);
+    if (report.studyId !== row.studyId || !["released", "archived"].includes(report.status)) {
+      throw new NotFoundException({ error: { code: "REPORT_NOT_FOUND", message: "Report not found" } });
+    }
+    assertShareable(report);
+    const ownerOrg = await this.tenant.runAsSupervisor((tx) =>
+      tx.organisation.findUnique({ where: { id: row.ownerOrgId }, select: { name: true } }),
+    );
+    return {
+      reportId: report.id,
+      title: report.title,
+      reportType: report.reportType,
+      content: report.content,
+      generatedAt: report.generatedAt,
+      ownerOrgName: ownerOrg?.name ?? row.ownerOrgId,
+      generatedByName: report.generatedByName,
+      officerConfirmedBy: report.officerConfirmedBy,
+      officerConfirmedByName: report.officerConfirmedByName,
+      officerConfirmedAt: report.officerConfirmedAt,
+      reviewedBy: report.reviewedBy,
+      reviewedByName: report.reviewedByName,
+      reviewedByRole: report.reviewedByRole,
+      reviewedAt: report.reviewedAt,
+    };
+  }
+
+  /** An approved, unexpired request, seen by its requesting organization. */
+  private async approvedForRequesterOrThrow(id: string) {
     const row = await this.findVisibleOrThrow(id);
     const orgId = requireOrgId();
     if (row.status !== "approved") {
@@ -217,21 +320,7 @@ export class SharingService {
         error: { code: "FORBIDDEN", message: "Only the requesting organisation can view the shared study." },
       });
     }
-
-    return this.tenant.runAsSupervisor(async (tx) => {
-      const study = await tx.study.findUnique({ where: { id: row.studyId } });
-      if (!study) throw new NotFoundException({ error: { code: "STUDY_NOT_FOUND", message: "Study not found" } });
-      // A Study can hold many Needs now — sharing the whole Study means
-      // sharing all of them, not "the" one.
-      const needs = await tx.need.findMany({ where: { studyId: row.studyId }, orderBy: { createdAt: "asc" } });
-      const evidenceCount = await tx.evidence.count({ where: { studyId: row.studyId } });
-      return {
-        studyId: study.id,
-        title: study.title,
-        needs: needs.map((n) => ({ id: n.id, statement: n.statement, village: n.village, status: n.status })),
-        evidenceCount,
-      };
-    });
+    return row;
   }
 
   // Organizations searchable for a new sharing request — name-only, active

@@ -70,6 +70,23 @@ export interface NeedRow {
   updatedAt: Date;
 }
 
+/**
+ * UAT DQ-08 — a need that was merged into another one. It stays visible in
+ * its study (greyed, marked "Merged into NEED-xxx") with its own reference
+ * kept for traceability; it is never counted, scored or reported on.
+ */
+export interface MergedNeed {
+  id: string;
+  internalReferenceId: string;
+  title: string;
+  mergedIntoNeedId: string;
+  /** The surviving need's reference, e.g. "NEED-000042". */
+  mergedIntoReferenceId: string | null;
+  mergedIntoTitle: string | null;
+  /** When the merge was confirmed (the latest one, if it was ever redone). */
+  mergedAt: string | null;
+}
+
 export interface Need {
   id: string;
   studyId: string;

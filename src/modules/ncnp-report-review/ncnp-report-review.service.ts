@@ -116,8 +116,32 @@ export class NcnpReportReviewService {
           })
         ).map((st) => st.id),
       );
+      // UAT RPT-02 — the published surveys of the needs picked, per study.
+      const pickedSurveys = new Map<string, string[]>();
+      if (body.needIds?.length) {
+        const rows = await tx.survey.findMany({
+          where: {
+            needId: { in: body.needIds },
+            studyId: { in: [...active] },
+            status: 'PUBLISHED',
+            need: { mergedIntoNeedId: null, deletedAt: null },
+          },
+          select: { id: true, studyId: true },
+        });
+        for (const r of rows) pickedSurveys.set(r.studyId, [...(pickedSurveys.get(r.studyId) ?? []), r.id]);
+      }
       // In the order chosen: the first study is the base the others are compared with.
       for (const id of [...new Set(body.studyIds)].filter((x) => active.has(x))) {
+        const surveys = pickedSurveys.get(id);
+        if (surveys?.length) {
+          const perNeed: CoreInputs[] = [];
+          for (const surveyId of surveys) {
+            const one = await this.studyInputs(tx, id, body.scopeLevel, unitId, surveyId);
+            if (one) perNeed.push(one);
+          }
+          if (perNeed.length) list.push(mergeCoreInputs(perNeed));
+          continue;
+        }
         const inputs = await this.studyInputs(tx, id, body.scopeLevel, unitId);
         if (inputs) list.push(inputs);
       }
@@ -125,7 +149,7 @@ export class NcnpReportReviewService {
         throw new ConflictException({ error: { code: 'STUDY_NOT_SCORED', message: 'None of the selected studies has scored data in this area.' } });
       }
       const merged = mergeCoreInputs(list);
-      const filters = { kind: 'NEEDS', scopeLevel: body.scopeLevel, unitId, domainKeys: body.domainKeys ?? [], studyIds: body.studyIds, output: body.output ?? 'FULL' };
+      const filters = { kind: 'NEEDS', scopeLevel: body.scopeLevel, unitId, domainKeys: body.domainKeys ?? [], studyIds: body.studyIds, needIds: body.needIds ?? [], output: body.output ?? 'FULL' };
       const built: CoreNeedsContent = buildCoreNeedsContent({
         inputs: merged,
         output: body.output === 'SUMMARY' ? 'SUMMARY' : 'FULL',
@@ -183,8 +207,10 @@ export class NcnpReportReviewService {
     studyId: string,
     scopeLevel: ScopeLevel,
     unitId: string | null,
+    /** UAT RPT-02 — a specific need's survey; otherwise the study's latest. */
+    forSurveyId?: string,
   ): Promise<CoreInputs | null> {
-    const surveyId = await resolveStudySurveyId(tx, studyId);
+    const surveyId = forSurveyId ?? (await resolveStudySurveyId(tx, studyId));
     if (!surveyId) return null;
     try {
       const inputs = await loadCoreNeedsInputs(tx, { studyId, surveyId, scopeLevel, unitId });

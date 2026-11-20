@@ -190,6 +190,14 @@ export async function renderReportExcel(
   titleCell.value = doc.title;
   titleCell.font = { bold: true, size: 14, color: { argb: "FFFFFFFF" } };
   titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: ACCENT } };
+  // UAT RPT-05 — the issuer, fixed under the title.
+  if (doc.issuedBy) {
+    summary.mergeCells("A2:B2");
+    const issuer = summary.getCell("A2");
+    issuer.value = `${label("pdf.issuedBy", locale)} ${doc.issuedBy}`;
+    issuer.font = { bold: true, color: { argb: "FF555555" } };
+    issuer.alignment = arabicAlignment(issuer.value);
+  }
   summary.addRow([]);
 
   const kv = (label: string, value: string, shaded = false) => {
@@ -450,6 +458,13 @@ export async function renderReportExcel(
     for (const a of doc.audit) kv(a.label, a.value, true);
   }
 
+  // UAT RPT-05 — and in every sheet's printed footer.
+  if (doc.issuedBy) {
+    const footer = `${label("pdf.issuedBy", locale)} ${doc.issuedBy}`.replace(/&/g, "&&");
+    wb.eachSheet((sheet) => {
+      sheet.headerFooter.oddFooter = `&C${footer}`;
+    });
+  }
   const buf = await wb.xlsx.writeBuffer();
   return Buffer.from(buf);
 }

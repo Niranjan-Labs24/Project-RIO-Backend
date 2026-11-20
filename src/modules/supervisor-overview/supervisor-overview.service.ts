@@ -24,7 +24,7 @@ export class SupervisorOverviewService {
     const [organisations, studies, needs, reports, sharingRequests] = await Promise.all([
       this.tenant.runAsSupervisor((tx) => tx.organisation.findMany({ orderBy: { name: "asc" } })),
       this.tenant.runAsSupervisor((tx) => tx.study.findMany({ orderBy: { updatedAt: "desc" } })),
-      this.tenant.runAsSupervisor((tx) => tx.need.findMany()),
+      this.tenant.runAsSupervisor((tx) => tx.need.findMany({ where: { deletedAt: null } })),
       this.tenant.runAsSupervisor((tx) => tx.report.findMany({ where: { status: { in: EXPORTABLE_STATUSES } }, orderBy: { generatedAt: "desc" } })),
       this.tenant.runAsSupervisor((tx) => tx.sharingRequest.findMany({ orderBy: { requestedAt: "desc" } })),
     ]);

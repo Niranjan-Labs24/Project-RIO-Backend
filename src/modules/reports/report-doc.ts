@@ -177,6 +177,11 @@ export interface ReportDoc {
   badge?: string;
   /** Draw every section in the client's design (cards, design tables). */
   design?: boolean;
+  /**
+   * UAT RPT-05 — the issuing entity's name, stamped as a fixed line on every
+   * PDF page and on every Excel sheet. Not part of the editable content.
+   */
+  issuedBy?: string;
 }
 
 function titleCase(key: string): string {

@@ -1125,7 +1125,8 @@ export function buildCoreView(input: CoreViewInput): CoreView {
     // ever rendered.
     running: { left: running, usage: t(`usage.${conf.overall}`).toUpperCase() },
     footer: {
-      left: `${org} · ${t('platformShort')}`,
+      // UAT RPT-05 — fixed issuer line on every page's footer.
+      left: `${t('issuedBy')} ${org} · ${t('platformShort')}`,
       pageOf: t('pageOf', { page: '{page}', count: '{count}' }),
       methodology: t('methodology', { version: name(h.methodologyVersion) }),
     },

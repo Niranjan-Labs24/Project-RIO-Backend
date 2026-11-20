@@ -388,6 +388,19 @@ export class Pdf {
   private py(fromTop: number): number {
     return PAGE_H - fromTop;
   }
+  /** UAT RPT-05 — one fixed line in the bottom margin of every page. */
+  stampEveryPage(str: string): void {
+    const ops = this.ops;
+    const y = this.y;
+    for (const page of this.pages) {
+      this.ops = page;
+      this.y = PAGE_H - BOTTOM + 14;
+      this.text(LEFT, 8, true, str, GRAY);
+    }
+    this.ops = ops;
+    this.y = y;
+  }
+
   text(x: number, size: number, bold: boolean, str: string, color = BLACK, family: "sans" | "serif" = "sans"): void {
     // `y` is the TOP of the text line — put the baseline ~0.76em below it so
     // text and rects/rules share one top-down origin (otherwise divider rules
@@ -2069,12 +2082,16 @@ export function renderReportPdf(
   // that the first does not is the ">" drill affordance, which is placed at the
   // current y and advances nothing. So the anchor positions the second pass
   // records are the positions the emitted pages actually have.
+  const stamp = (pdf: Pdf): Pdf => {
+    if (doc.issuedBy) pdf.stampEveryPage(`${label("pdf.issuedBy", locale)} ${doc.issuedBy}`);
+    return pdf;
+  };
   const discovery = renderPass(doc, undefined, mode, locale);
   const ids = discovery.anchorIds();
   // Nothing drillable — skip the second pass entirely rather than paying for it
   // on every ordinary report.
-  if (ids.size === 0) return discovery.build();
-  return renderPass(doc, ids, mode, locale).build();
+  if (ids.size === 0) return stamp(discovery).build();
+  return stamp(renderPass(doc, ids, mode, locale)).build();
 }
 
 export interface LayerInfo {

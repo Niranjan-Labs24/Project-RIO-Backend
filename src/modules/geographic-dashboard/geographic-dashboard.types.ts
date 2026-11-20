@@ -43,6 +43,15 @@ export interface GeoMapOrgSummary {
   studyCount: number;
 }
 
+/** UAT RPT-01 — one indicator's result at a place (0–100, higher = more severe). */
+export interface GeoMapIndicator {
+  name: string;
+  nameAr: string | null;
+  severity: number;
+  /** How many published surveys at this place measured it. */
+  surveyCount: number;
+}
+
 export interface GeoMapPoint {
   id: string;
   code: string;
@@ -93,6 +102,8 @@ export interface GeoMapPoint {
   /** Organisations working here, biggest first. Capped like initiatives. */
   workingOrgs: GeoMapOrgSummary[];
   /** Free-text village names recorded on this place's needs. */
+  /** UAT RPT-01 — the most severe indicators measured here. */
+  topIndicators: GeoMapIndicator[];
   villages: string[];
   /**
    * Names of the centres this place's needs are linked to. Unlike `villages`,

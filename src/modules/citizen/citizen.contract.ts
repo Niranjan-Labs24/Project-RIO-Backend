@@ -48,14 +48,10 @@ export const VerifyOtpBody = registerSchema(
 );
 export type VerifyOtpDto = Static<typeof VerifyOtpBody>;
 
-// Self-reported, fixed vocabulary — see the Gender enum in schema.prisma.
-// Optional: a respondent may decline to answer.
-const Gender = T.Union([
-  T.Literal('male'),
-  T.Literal('female'),
-  T.Literal('other'),
-  T.Literal('prefer_not_to_say'),
-]);
+// UAT RSP-04 — Male or Female only, and mandatory. The Gender enum in
+// schema.prisma keeps 'other' and 'prefer_not_to_say' so responses given
+// before this change still read back; a new response can't use them.
+const Gender = T.Union([T.Literal('male'), T.Literal('female')]);
 
 // Self-reported age bracket, never exact age/DOB — see the AgeBracket enum
 // in schema.prisma. Mandatory (unlike Gender): "prefer_not_to_say" is the
@@ -75,8 +71,9 @@ export const SubmitResponseBody = registerSchema(
   T.Object(
     {
       challengeId: T.String({ format: 'uuid' }),
+      // UAT RSP-02 — checked in the service (letters only, at least 2).
       contactName: T.Optional(T.String({ maxLength: 200 })),
-      gender: T.Optional(Gender),
+      gender: Gender,
       ageBracket: AgeBracket,
       // One entry per question, keyed by question id. UAT SVB-07: the free
       // text typed after choosing "Other" travels next to its answer under
@@ -130,7 +127,7 @@ export const RecordOutsideBody = registerSchema(
       contact: T.String({ format: 'email' }),
       mobile: T.String({ minLength: 3, maxLength: 32 }),
       contactName: T.Optional(T.String({ maxLength: 200 })),
-      gender: T.Optional(Gender),
+      gender: Gender,
       ageBracket: AgeBracket,
       sessionId: T.Optional(T.String({ format: 'uuid' })),
       consent: T.Object(

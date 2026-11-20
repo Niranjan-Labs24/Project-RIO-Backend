@@ -304,6 +304,7 @@ export const REPORT_LABELS_EN = {
   "core.hierarchy.title": "Needs hierarchy: domain › sub-domain › indicator › KPI",
   "core.hierarchy.versionNote": "Measured differently between methodology versions, so shown separately per version: {kpis}.",
   "core.indexBandCriticalProvisional": "critical (provisional)",
+  "core.issuedBy": "Issued by",
   "core.kingdom": "Kingdom of Saudi Arabia",
   "core.level.CENTRE": "Centre",
   "core.level.GOVERNORATE": "Governorate",
@@ -703,6 +704,7 @@ export const REPORT_LABELS_EN = {
   "pdf.contents": "Contents",
   "pdf.contentsHint": "Click a box to open that section. Each section has a link back to this page.",
   "pdf.contentsHintLayers": "Click a box to open that section; Close returns here. Sections stay hidden until opened, which requires Adobe Acrobat Reader — a browser's built-in PDF viewer cannot open them.",
+  "pdf.issuedBy": "Issued by",
   "pdf.open": "Open >",
   "pdf.viewDetail": "View detail >",
   "performanceLabel": "Performance",
@@ -1262,6 +1264,7 @@ export const REPORT_LABELS_AR: Record<ReportLabelKey, string> = {
   "core.hierarchy.title": "هرم الاحتياج: المجال / المجال الفرعي / المؤشر / المؤشر الفرعي",
   "core.hierarchy.versionNote": "قِيست بشكل مختلف بين إصدارات المنهجية، لذا تُعرض منفصلة لكل إصدار: {kpis}.",
   "core.indexBandCriticalProvisional": "حرج (مؤقت)",
+  "core.issuedBy": "صادر عن",
   "core.kingdom": "المملكة العربية السعودية",
   "core.level.CENTRE": "المركز",
   "core.level.GOVERNORATE": "المحافظة",
@@ -1661,6 +1664,7 @@ export const REPORT_LABELS_AR: Record<ReportLabelKey, string> = {
   "pdf.contents": "المحتويات",
   "pdf.contentsHint": "انقر على أي مربع لفتح ذلك القسم. يحتوي كل قسم على رابط للعودة إلى هذه الصفحة.",
   "pdf.contentsHintLayers": "انقر على أي مربع لفتح ذلك القسم؛ ويعيدك زر الإغلاق إلى هنا. تبقى الأقسام مخفية حتى تُفتح، وهو ما يتطلب برنامج Adobe Acrobat Reader — إذ لا يستطيع عارض PDF المدمج في المتصفح فتحها.",
+  "pdf.issuedBy": "صادر عن",
   "pdf.open": "< افتح",
   "pdf.viewDetail": "‹ عرض التفاصيل",
   "performanceLabel": "الأداء",
@@ -1927,4 +1931,4 @@ export const REPORT_LABELS_AR: Record<ReportLabelKey, string> = {
 };
 
 /** Fingerprint of the source namespace, for the drift check. */
-export const REPORT_LABELS_CHECKSUM = "067759b3640c908f";
+export const REPORT_LABELS_CHECKSUM = "439ee5df32e50cec";

@@ -197,7 +197,7 @@ export interface VerifyRegistrationNumberView {
 
 /**
  * Complexity policy for a password the user *sets*: at least 8 characters,
- * with one capital letter, one digit and one special character (anything
+ * with one capital letter, one small letter, one digit and one special character (anything
  * that isn't a letter, digit or whitespace). Mirrored on the frontend in
  * `src/lib/password-policy.ts` — keep the two in step.
  *
@@ -207,7 +207,7 @@ export interface VerifyRegistrationNumberView {
 const NewPassword = T.String({
   minLength: 8,
   maxLength: 200,
-  pattern: '^(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9\\s]).{8,}$',
+  pattern: '^(?=.*[A-Z])(?=.*[a-z])(?=.*[0-9])(?=.*[^A-Za-z0-9\\s]).{8,}$',
 });
 
 export const ChangePasswordBody = registerSchema(

@@ -20,7 +20,7 @@ describe('ReviewerSlaService', () => {
     expect(setup().svc.getConfig()).toEqual({ slaHours: 10, pollIntervalMs: 5000 });
   });
 
-  it('gives an approver the open queues, oldest first, with SLA status for surveys', async () => {
+  it('gives an approver the open queues, newest first (UAT GEN-08), with SLA status for surveys', async () => {
     const { svc, tx } = setup();
     tx.survey.findMany.mockResolvedValue([
       { id: 'sv1', studyId: 's1', needId: 'n1', submittedAt: hoursAgo(20), updatedAt: new Date() },
@@ -55,16 +55,16 @@ describe('ReviewerSlaService', () => {
     ]);
     const out = await as('human_reviewer', () => svc.listAlerts());
     const survey = out.filter((a) => a.type === 'survey_approval');
-    expect(survey.map((a) => a.status)).toEqual(['breached', 'at_risk', 'pending']);
+    expect(survey.map((a) => a.status)).toEqual(['pending', 'at_risk', 'breached']);
     expect(survey[1]).toMatchObject({ studyTitle: 'gone', needStatement: null });
     expect(out.filter((a) => a.type === 'report_approval').map((a) => a.needStatement)).toEqual([
-      'Study',
       null,
+      'Study',
     ]);
     expect(out.filter((a) => a.type === 'need_summary_approval')).toHaveLength(2);
     expect(out.filter((a) => a.type === 'ai_classification')).toHaveLength(3);
     const times = out.map((a) => new Date(a.createdAt).getTime());
-    expect(times).toEqual([...times].sort((a, b) => a - b));
+    expect(times).toEqual([...times].sort((a, b) => b - a));
   });
 
   it('gives a research officer their own resolved surveys, reports and classification decisions, newest first', async () => {
