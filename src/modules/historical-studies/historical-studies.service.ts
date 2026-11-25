@@ -7,6 +7,11 @@ import { getOrgStore, requireActor, requireOrgId } from '../../tenancy/org-conte
 import { roleByKey } from '../../rbac/role-matrix';
 import { StudyConfigService } from '../study-config/study-config.service';
 import { EvidenceStorageService } from '../evidence/evidence.storage.service';
+import { isPreviewable, readSpreadsheetPreview, type SpreadsheetPreview } from './spreadsheet-preview';
+import { DOCUMENT_PREVIEW_EXTENSIONS, readDocumentPreview, type DocumentPreview } from './document-preview';
+
+/** What the Archive page's Preview shows: a spreadsheet's rows or a Word document. */
+export type FilePreview = SpreadsheetPreview | ({ kind: 'document'; fileName: string } & DocumentPreview);
 import { NeedsImportService } from '../needs/needs-import.service';
 import type { ImportNeedsResult } from '../needs/needs-import.types';
 import {
@@ -140,6 +145,32 @@ export class HistoricalStudiesService {
     }
     const buffer = await this.storage.read(row.storageKey);
     return { row, buffer };
+  }
+
+  /**
+   * UAT 26 Nov — the rows of an archived spreadsheet for the Archive page's
+   * Preview, read on the server so nothing is downloaded. Same access as
+   * Download (getFile).
+   */
+  async previewFile(id: string): Promise<FilePreview> {
+    const { row, buffer } = await this.getFile(id);
+    const ext = extname(row.fileName).toLowerCase();
+    let preview: FilePreview | null = null;
+    if (isPreviewable(row.fileName)) {
+      preview = await readSpreadsheetPreview(row.fileName, buffer);
+    } else if ((DOCUMENT_PREVIEW_EXTENSIONS as readonly string[]).includes(ext)) {
+      const doc = await readDocumentPreview(buffer);
+      if (doc) preview = { kind: 'document', fileName: row.fileName, ...doc };
+    }
+    if (!preview) {
+      throw new BadRequestException({
+        error: {
+          code: 'PREVIEW_NOT_SUPPORTED',
+          message: `"${row.fileName}" cannot be previewed. Use Download to open it.`,
+        },
+      });
+    }
+    return preview;
   }
 
   // RIO-DATA-002 / FR-17 — import an archived pre-platform study into the
