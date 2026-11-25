@@ -29,6 +29,7 @@ export class ResponseQualityService {
       const assessments = assessResponseQuality(
         responses.map((r) => ({ id: r.id, answers: r.answers as Record<string, unknown>, contact: r.contact })),
         confidenceFlagSettings,
+        need.study?.requiredSampleSize ?? null,
       );
       const created = [];
       for (const assessment of assessments) {
@@ -67,7 +68,9 @@ export class ResponseQualityService {
   }
 
   private async findNeedOrThrow(needId: string) {
-    const need = await this.tenant.runRead((tx) => tx.need.findUnique({ where: { id: needId } }));
+    const need = await this.tenant.runRead((tx) =>
+      tx.need.findUnique({ where: { id: needId }, include: { study: { select: { requiredSampleSize: true } } } }),
+    );
     if (!need) throw new NotFoundException({ error: { code: "NEED_NOT_FOUND", message: "Need not found" } });
     return need;
   }

@@ -925,7 +925,7 @@
       "indicator": "Household income band",
       "kpi": "LIV-21 — Household income band",
       "questionText": "What was the household's approximate total income from all sources in a typical month over the past three months?",
-      "responseOptions": "Less than SAR 5,000 / More than SAR 5,000 / No income / Irregular — cannot be estimated / Prefer not to answer"
+      "responseOptions": "Less than SAR 2,000 / SAR 2,000–3,999 / SAR 4,000–5,999 / SAR 6,000–7,999 / SAR 8,000–11,999 / SAR 12,000 or more / No income / Irregular — cannot be estimated / Prefer not to answer"
     },
     {
       "qCode": "LIV-22",
@@ -2664,7 +2664,7 @@
       "indicator": "شريحة دخل الأسرة",
       "kpi": "LIV-21 — شريحة دخل الأسرة",
       "questionText": "ما إجمالي الدخل التقريبي للأسرة من جميع المصادر في الشهر العادي خلال الأشهر الثلاثة الماضية؟",
-      "responseOptions": "أقل من 5,000 ريال / أكثر من 5,000 ريال / لا يوجد دخل / غير منتظم — يتعذر التقدير / أفضّل عدم الإجابة"
+      "responseOptions": "أقل من 2,000 ريال / 2,000–3,999 ريال / 4,000–5,999 ريال / 6,000–7,999 ريال / 8,000–11,999 ريال / 12,000 ريال أو أكثر / لا يوجد دخل / غير منتظم — يتعذر التقدير / أفضّل عدم الإجابة"
     },
     {
       "qCode": "LIV-22",

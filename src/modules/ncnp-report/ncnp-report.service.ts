@@ -1307,7 +1307,7 @@ export class NcnpReportService {
     // the v2 priority methodology already computes and stores (as JSON).
     function equityFlagFrom(domainComponents: unknown): boolean {
       const components = Array.isArray(domainComponents) ? (domainComponents as DomainComponent[]) : [];
-      return components.some((c) => c.isCriticalDomain === true && c.triggeredOverride === true);
+      return components.some((c) => c.triggeredOverride === true);
     }
 
     // Consolidated (villageId="") row wins when a Need's survey has one;

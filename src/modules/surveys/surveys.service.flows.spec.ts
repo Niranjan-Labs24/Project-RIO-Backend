@@ -446,6 +446,8 @@ describe('SurveysService.updateQuestions', () => {
   it('saves bank and custom items and audits removals with their reasons', async () => {
     const { svc, tx, audit } = setup();
     tx.survey.findUnique.mockResolvedValue(surveyRow({ status: 'SUBMITTED' }));
+    // Every bank question sent is active, current and approved (UAT MET-01 check).
+    tx.question.count.mockImplementation(async ({ where }: any) => where.id.in.length);
     tx.surveyQuestion.findMany.mockResolvedValue([
       { id: 'keep', customText: null, question: { questionText: 'Q' } },
       { id: 'gone1', customText: null, question: { questionText: 'Bank text' } },

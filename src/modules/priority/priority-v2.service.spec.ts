@@ -187,6 +187,14 @@ describe('Critical domain override', () => {
     expect(h.triggeredOverride).toBe(true);
   });
 
+  // Methodology Settings fix: no Health / Water restriction (agreed 4 Aug).
+  it('a domain not flagged critical (Education 6.9) also triggers the override', () => {
+    const result = computeVillagePriority(criticalConfig, new Map([['HEALTH', 50], ['EDUCATION', 93.1]]));
+    expect(result.priorityStatus).toBe('HIGH');
+    expect(result.overrideApplied).toBe(true);
+    expect(result.overrideReason).toContain('Education');
+  });
+
   it('overrideReason contains domain name, score, and threshold', () => {
     const scores = new Map([['HEALTH', 80], ['EDUCATION', 0]]); // HEALTH perf=20
     const result = computeVillagePriority(criticalConfig, scores);

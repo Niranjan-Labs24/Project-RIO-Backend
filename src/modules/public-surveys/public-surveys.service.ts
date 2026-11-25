@@ -55,13 +55,16 @@ function parseOptionList(raw: unknown): string[] | null {
   return Array.isArray(raw) ? (raw as string[]) : null;
 }
 
+/** Same value citizen.service writes for an "Outside these areas" respondent. */
+const OUTSIDE_STUDY_GEOGRAPHY = 'OUTSIDE_STUDY_GEOGRAPHY';
+
 // Fixed wording of the responses export, per language. Answers, names and
 // emails are data; only these labels and the choice options (from the
 // question bank's Arabic columns) change with the export language.
-const EXPORT_LABELS: Record<SupportedLocale, { sheet: string; name: string; email: string; submitted: string; version: string; unknown: string; versionLabel: (v: number, status: string) => string }> = {
-  en: { sheet: 'Survey Responses', name: 'Name', email: 'Email', submitted: 'Submitted Date', version: 'Survey Version', unknown: 'Unknown', versionLabel: (v, status) => `v${v} (${status})` },
+const EXPORT_LABELS: Record<SupportedLocale, { sheet: string; name: string; email: string; submitted: string; version: string; unknown: string; outOfArea: string; versionLabel: (v: number, status: string) => string }> = {
+  en: { sheet: 'Survey Responses', name: 'Name', email: 'Email', submitted: 'Submitted Date', version: 'Survey Version', unknown: 'Unknown', outOfArea: 'Out of area – not counted', versionLabel: (v, status) => `v${v} (${status})` },
   ar: {
-    sheet: 'استجابات الاستبيان', name: 'الاسم', email: 'البريد الإلكتروني', submitted: 'تاريخ الإرسال', version: 'إصدار الاستبيان', unknown: 'غير معروف',
+    sheet: 'استجابات الاستبيان', name: 'الاسم', email: 'البريد الإلكتروني', submitted: 'تاريخ الإرسال', version: 'إصدار الاستبيان', unknown: 'غير معروف', outOfArea: 'خارج نطاق الدراسة – غير محتسبة',
     versionLabel: (v, status) => `الإصدار ${v} (${({ PUBLISHED: 'منشور', DRAFT: 'مسودة', ARCHIVED: 'مؤرشف', SUPERSEDED: 'مستبدَل', APPROVED: 'معتمد' } as Record<string, string>)[status] ?? status})`,
   },
 };
@@ -412,7 +415,7 @@ export class PublicSurveysService {
               sanitizeForSpreadsheet(row.contactName ?? ''),
               sanitizeForSpreadsheet(row.contact),
               formatRiyadhTime(row.submittedAt.toISOString()),
-              this.resolveResponseVersion(answers, versionMap, locale),
+              this.responseVersionCell(row, answers, versionMap, locale),
               ...questions.map((q) =>
                 sanitizeForSpreadsheet(
                   withOtherText(
@@ -480,7 +483,7 @@ export class PublicSurveysService {
             name: sanitizeForSpreadsheet(row.contactName ?? ''),
             email: sanitizeForSpreadsheet(row.contact),
             submittedAt: row.submittedAt.toISOString(),
-            surveyVersion: this.resolveResponseVersion(answers, versionMap, locale),
+            surveyVersion: this.responseVersionCell(row, answers, versionMap, locale),
             ...Object.fromEntries(
               questions.map((q) => [
                 q.questionId,
@@ -610,6 +613,21 @@ export class PublicSurveysService {
     }));
   }
 
+  // UAT 26 Nov (client, via Bhavya): a respondent who picked "Outside these
+  // areas" is kept in the responses report but labelled, not removed. They
+  // answered no questions, so the version column said "Unknown"; it now says
+  // they were out of area and not counted (they are already left out of
+  // every score, count and completeness figure).
+  private responseVersionCell(
+    row: { exclusionReason: string | null },
+    answers: Record<string, string>,
+    versionMap: Array<{ version: number; status: string; questionIds: Set<string> }>,
+    locale: SupportedLocale,
+  ): string {
+    if (row.exclusionReason === OUTSIDE_STUDY_GEOGRAPHY) return EXPORT_LABELS[locale].outOfArea;
+    return this.resolveResponseVersion(answers, versionMap, locale);
+  }
+
   private resolveResponseVersion(
     rawAnswers: Record<string, string>,
     versionMap: Array<{ version: number; status: string; questionIds: Set<string> }>,
@@ -718,6 +736,7 @@ export class PublicSurveysService {
     contactName: string | null;
     contact: string;
     submittedAt: Date;
+    exclusionReason?: string | null;
   }): SurveyResponseSummary {
     return {
       id: row.id,
@@ -726,6 +745,7 @@ export class PublicSurveysService {
       contactName: row.contactName,
       contact: row.contact,
       submittedAt: row.submittedAt.toISOString(),
+      outOfArea: row.exclusionReason === OUTSIDE_STUDY_GEOGRAPHY,
     };
   }
 
@@ -738,6 +758,7 @@ export class PublicSurveysService {
       contact: string;
       submittedAt: Date;
       answers: unknown;
+      exclusionReason?: string | null;
     },
     questionMap: Map<string, MappedQuestion>,
   ): SurveyResponseDetail {

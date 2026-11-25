@@ -868,6 +868,31 @@ Eligible Questions: ${JSON.stringify(
       // Counted before the wholesale delete below, for the audit pair.
       previousQuestionCount = existing.length;
 
+      // UAT MET-01 — a deactivated question, a replaced version or a change
+      // still awaiting approval can't be added to a survey. The Survey
+      // Builder never offers them; this stops a request that sends one
+      // anyway. Questions already on the survey stay (they keep the exact
+      // version they were added with).
+      const alreadyOnSurvey = new Set(existing.map((sq) => sq.questionId).filter(Boolean));
+      const added = [
+        ...new Set(
+          questions.map((q) => q.questionId).filter((id): id is string => Boolean(id) && !alreadyOnSurvey.has(id!)),
+        ),
+      ];
+      if (added.length > 0) {
+        const selectable = await tx.question.count({
+          where: { id: { in: added }, isActive: true, isCurrentVersion: true, approvalStatus: 'approved' },
+        });
+        if (selectable !== added.length) {
+          throw new BadRequestException({
+            error: {
+              code: 'QUESTION_NOT_SELECTABLE',
+              message: 'This question is inactive or not approved, so it cannot be added to a survey.',
+            },
+          });
+        }
+      }
+
       // Client-confirmed (Aug 13 call): a question the Reviewer removes
       // during their review must carry a reason. Scoped to SUBMITTED only —
       // that's precisely the Approver's curation window (see
