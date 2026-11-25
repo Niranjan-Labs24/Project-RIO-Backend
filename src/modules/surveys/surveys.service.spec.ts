@@ -204,7 +204,7 @@ describe('SurveysService.updateQuestions — removal reasons', () => {
     question: { questionText: string } | null;
   }
 
-  function makeQuestionsService(status: string, existingQuestions: FakeSurveyQuestion[]) {
+  function makeQuestionsService(status: string, existingQuestions: FakeSurveyQuestion[], selectable?: number) {
     const tx = {
       survey: {
         findUnique: async () => ({ id: 'sv1', needId: 'n1', status }),
@@ -218,6 +218,8 @@ describe('SurveysService.updateQuestions — removal reasons', () => {
         deleteMany: async () => undefined,
         createMany: async () => undefined,
       },
+      // Every bank question sent is active, current and approved (UAT MET-01 check).
+      question: { count: async ({ where }: { where: { id: { in: string[] } } }) => selectable ?? where.id.in.length },
     };
     const tenant = { runInOrgContext: async (fn: (tx: unknown) => unknown) => fn(tx), runRead: async (fn: (tx: unknown) => unknown) => fn(tx) };
     const audit = { record: async () => undefined };
@@ -265,6 +267,28 @@ describe('SurveysService.updateQuestions — removal reasons', () => {
           ],
           {},
         ),
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  // UAT MET-01 — a deactivated question was accepted when sent directly.
+  it('refuses a newly added question that is inactive or not approved, but keeps existing ones', async () => {
+    const service = makeQuestionsService('SUBMITTED', existing, 0);
+    await expect(
+      runAsApprover(() =>
+        service.updateQuestions('sv1', [
+          { id: 'sq1', questionId: 'q1', order: 1, isRequired: true },
+          { id: 'sq2', customText: 'Any other comments?', order: 2, isRequired: false },
+          { questionId: 'inactive-q', order: 3, isRequired: true },
+        ], {}),
+      ),
+    ).rejects.toMatchObject({ response: { error: { code: 'QUESTION_NOT_SELECTABLE' } } });
+    await expect(
+      runAsApprover(() =>
+        service.updateQuestions('sv1', [
+          { id: 'sq1', questionId: 'q1', order: 1, isRequired: true },
+          { id: 'sq2', customText: 'Any other comments?', order: 2, isRequired: false },
+        ], {}),
       ),
     ).resolves.toBeDefined();
   });

@@ -95,8 +95,11 @@ export function computeVillagePriority(
     const performanceScore = 100 - severityScore;
     const weight = Number(cfg.weight);
     const weightedContribution = performanceScore * weight;
-    const triggeredOverride =
-      cfg.isCriticalDomain && performanceScore < cfg.criticalPerformanceThreshold;
+    // Methodology Settings fix — the agreed rule (4 Aug) has no domain
+    // restriction: a domain below the critical threshold triggers the
+    // override whichever domain it is, not only Health / Water & Sanitation.
+    // The config row's isCriticalDomain flag no longer limits the rule.
+    const triggeredOverride = performanceScore < cfg.criticalPerformanceThreshold;
 
     components.push({
       domainKey: cfg.domainKey,
@@ -105,7 +108,7 @@ export function computeVillagePriority(
       domainPerformanceScore: performanceScore,
       domainWeight: weight,
       weightedContribution,
-      isCriticalDomain: cfg.isCriticalDomain,
+      isCriticalDomain: true,
       criticalThreshold: cfg.criticalPerformanceThreshold,
       triggeredOverride,
     });

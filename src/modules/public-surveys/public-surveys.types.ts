@@ -45,6 +45,8 @@ export interface SurveyResponseSummary {
   contactName: string | null;
   contact: string;
   submittedAt: string;
+  /** Picked "Outside these areas": kept and labelled, never counted. */
+  outOfArea: boolean;
 }
 
 /** A survey can collect thousands of public responses — the list view is

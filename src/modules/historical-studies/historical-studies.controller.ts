@@ -18,7 +18,7 @@ import { parsePaging, type Page } from '../../common/http/query.util';
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { MAX_EVIDENCE_FILE_SIZE_BYTES } from '../evidence/evidence.storage.service';
-import { HistoricalStudiesService } from './historical-studies.service';
+import { HistoricalStudiesService, type FilePreview } from './historical-studies.service';
 import type { HistoricalStudy, HistoricalStudyImportResult } from './historical-studies.types';
 
 interface CreateHistoricalStudyBody {
@@ -103,6 +103,13 @@ export class HistoricalStudiesController {
     @Param('id', new UuidParamPipe()) id: string,
   ): Promise<HistoricalStudyImportResult> {
     return this.historicalStudies.importToDashboard(id);
+  }
+
+  // UAT 26 Nov — spreadsheet rows or a Word document for the Archive page's Preview pop-up.
+  @Get(':id/preview')
+  @RequirePermission('archiveSharingAudit', 'read')
+  preview(@Param('id', new UuidParamPipe()) id: string): Promise<FilePreview> {
+    return this.historicalStudies.previewFile(id);
   }
 
   @Get(':id/file')

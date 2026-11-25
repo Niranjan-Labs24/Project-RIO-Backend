@@ -8,6 +8,7 @@ describe("CombinedReportSummaryService", () => {
   let mockTenant: any;
   let mockAi: any;
   let mockAudit: any;
+  let mockReportSummary: any;
 
   beforeEach(() => {
     mockTenant = {
@@ -47,7 +48,29 @@ describe("CombinedReportSummaryService", () => {
       record: vi.fn().mockResolvedValue(undefined),
     };
 
-    service = new CombinedReportSummaryService(mockTenant, mockAi, mockAudit);
+    // The scoring engine's figures for the score summary's scope.
+    mockReportSummary = {
+      buildReportDataSnapshot: vi.fn().mockResolvedValue({
+        snapshot: {
+          snapshotId: "snap-now",
+          responseQuality: { validResponseCount: 6, confidenceLevel: "LOW", dontKnowRate: 4.76 },
+          severity: {
+            overallVillageNeedsIndex: 35.24,
+            domainSeverityScores: [{ domainKey: "health", confidenceLevel: "LOW" }],
+            topKpis: [{ kpiName: "HLT-03", severityScore: 76.14 }],
+          },
+          priority: {
+            villagePriorityScore: 22,
+            priorityStatus: "LOW",
+            domainPerformanceScores: [
+              { domainKey: "health", domainName: "Health", severityScore: 35.24, performanceScore: 64.76, weight: 1 },
+            ],
+          },
+        },
+      }),
+    };
+
+    service = new CombinedReportSummaryService(mockTenant, mockAi, mockAudit, mockReportSummary);
   });
 
   function withContext<T>(fn: () => Promise<T>): Promise<T> {
@@ -87,6 +110,8 @@ describe("CombinedReportSummaryService", () => {
     const scoreSummary = {
       id: "score-1",
       status: "OFFICER_CONFIRMED",
+      surveyId: "survey-1",
+      summaryScope: "VILLAGE",
       reportDataSnapshotId: "snap-1",
       aiOutputJson: {},
       generatedAt: new Date(),
@@ -149,6 +174,61 @@ describe("CombinedReportSummaryService", () => {
 
       // Nothing may be persisted from a failed generation.
       expect(mockTenant.combinedReportSummary.create).not.toHaveBeenCalled();
+    });
+
+    // UAT PRI-03 — the AI returned a different priority score on every run.
+    it("takes every figure from the scoring engine and keeps only included documents as sources", async () => {
+      vi.spyOn(service, "getCombinedReportContext").mockResolvedValueOnce({
+        study: { id: "s1", title: "Study", cycleNumber: 1, orgName: "Org", methodologyVersion: "v1.0", region: "R", governorate: "G", documentCount: 1 },
+        availableScoreSummaries: [scoreSummary],
+        confirmedScoreSummary: scoreSummary,
+        confirmedDocumentSummaries: [
+          { documentId: "doc-1", documentTitle: "Field Report", sourceReferenceId: "REF-1", documentType: "FIELD_REPORT", confirmedSummary: { id: "doc-sum-1", aiOutputJson: {} } },
+        ],
+        latestCombinedSummary: null,
+      } as any);
+      mockTenant.combinedReportSummary.create.mockImplementation(({ data }: any) => data);
+      mockAi.run.mockResolvedValueOnce({
+        response: {
+          scoreBasedFindings: { priorityScore: 76.14, priorityStatus: "HIGH", overallSeverityScore: 4.2 },
+          documentBasedEvidence: [
+            { documentTitle: "تقرير ميداني", sourceKey: "DOC-1", sourceReferenceId: "", keyEvidenceFinding: "Kept" },
+            { documentTitle: "Some other report", sourceReferenceId: "REF-001", keyEvidenceFinding: "Dropped" },
+          ],
+          recommendations: [{ intervention: "Do it", priority: "عالية" }],
+          auditMetadata: { includedDocumentSummaryIds: ["doc-summary-id-1", "doc-summary-id-2"] },
+        },
+      });
+
+      const created: any = await withContext(() => service.generateCombinedSummary("s1", ["doc-sum-1", "excluded-sum"]));
+      const out = created.aiOutputJson;
+      expect(out.scoreBasedFindings).toMatchObject({ priorityScore: 22, priorityStatus: "LOW", overallSeverityScore: 35.24 });
+      expect(out.responseQuality).toMatchObject({ validResponseCount: 6, dontKnowRate: 4.76 });
+      expect(out.documentBasedEvidence).toEqual([
+        expect.objectContaining({ documentTitle: "Field Report", sourceReferenceId: "REF-1", keyEvidenceFinding: "Kept" }),
+      ]);
+      expect(out.recommendations[0].priority).toBe("HIGH");
+      expect(out.auditMetadata.includedDocumentSummaryIds).toEqual(["doc-sum-1"]);
+    });
+
+    it("refuses a draft score summary and a selection with no included document", async () => {
+      const ctx = (summary: any, docs: any[]) =>
+        ({
+          study: { id: "s1", title: "Study", cycleNumber: 1, orgName: "Org", methodologyVersion: "v1.0", region: "R", governorate: "G", documentCount: 1 },
+          availableScoreSummaries: [summary],
+          confirmedScoreSummary: summary,
+          confirmedDocumentSummaries: docs,
+          latestCombinedSummary: null,
+        }) as any;
+      vi.spyOn(service, "getCombinedReportContext").mockResolvedValueOnce(ctx({ ...scoreSummary, status: "DRAFT" }, []));
+      await expect(withContext(() => service.generateCombinedSummary("s1", ["doc-sum-1"]))).rejects.toMatchObject({
+        response: { error: { code: "SCORE_SUMMARY_NOT_CONFIRMED" } },
+      });
+      vi.spyOn(service, "getCombinedReportContext").mockResolvedValueOnce(ctx(scoreSummary, []));
+      await expect(withContext(() => service.generateCombinedSummary("s1", ["switched-off-sum"]))).rejects.toMatchObject({
+        response: { error: { code: "NO_DOCUMENTS_SELECTED" } },
+      });
+      expect(mockAi.run).not.toHaveBeenCalled();
     });
 
     it("should throw if the chosen score summary does not belong to the study", async () => {

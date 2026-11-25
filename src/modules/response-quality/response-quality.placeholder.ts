@@ -25,12 +25,22 @@ export interface ConfidenceFlagSettings {
 // Flag). `settings` comes from the Methodology Configuration screen
 // (MethodologyConfigService), never hardcoded here. Duplicates are exact
 // matches on (contact, serialized answers) within the same batch.
+//
+// Methodology Settings fix: also "low" when the batch is below the study's
+// required sample (Cochran + finite population correction, sample_size_rule
+// in the Build Pack), the same rule the scoring engine's confidence level
+// already applies (RollupService.isLowConfidence). Null for studies created
+// before the sample size was stored, in which case only the two rules above
+// apply.
 export function assessResponseQuality(
   responses: ResponseSubject[],
   settings: ConfidenceFlagSettings,
+  requiredSampleSize: number | null = null,
 ): QualityAssessment[] {
   const seen = new Map<string, string>();
-  const lowRespondentCount = responses.length < settings.minRespondentsForStandardConfidence;
+  const lowRespondentCount =
+    responses.length < settings.minRespondentsForStandardConfidence ||
+    (requiredSampleSize != null && responses.length < requiredSampleSize);
 
   return responses.map((response) => {
     const answerValues = Object.values(response.answers);

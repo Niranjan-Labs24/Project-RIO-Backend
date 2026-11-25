@@ -15,7 +15,8 @@ import type { CombinedReportOutputJson } from '../../reports/combined-report-sum
  */
 export const COMBINED_REPORT_SUMMARY_TASK: AiTask<CombinedReportOutputJson> = {
   name: 'combined-report-summary',
-  promptVersion: 'combined-report-summary-v1',
+  // v2 (UAT PRI-03): figures come from the scoring engine; each finding carries its document's sourceKey.
+  promptVersion: 'combined-report-summary-v2',
   model: 'gemini-2.5-flash',
   modelVersion: 'v1',
   temperature: 0.2,
@@ -79,6 +80,7 @@ RULES:
         items: {
           type: 'OBJECT',
           properties: {
+            sourceKey: { type: 'STRING' },
             documentTitle: { type: 'STRING' },
             sourceReferenceId: { type: 'STRING' },
             documentType: { type: 'STRING' },
@@ -87,6 +89,7 @@ RULES:
             sourcePageOrSection: { type: 'STRING' },
           },
           required: [
+            'sourceKey',
             'documentTitle',
             'sourceReferenceId',
             'documentType',

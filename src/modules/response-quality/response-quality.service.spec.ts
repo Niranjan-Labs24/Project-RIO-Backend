@@ -35,7 +35,7 @@ const stored = () => ({
 describe('ResponseQualityService', () => {
   it('assesses the responses of a need and stores one result per response', async () => {
     const { svc, tx, config } = setup();
-    tx.need.findUnique.mockResolvedValue({ id: 'n1', studyId: 's1' });
+    tx.need.findUnique.mockResolvedValue({ id: 'n1', studyId: 's1', study: { requiredSampleSize: 33 } });
     tx.surveyResponse.findMany.mockResolvedValue([{ id: 'sr', answers: {}, contact: null }]);
     assess.mockReturnValue([
       {
@@ -50,7 +50,7 @@ describe('ResponseQualityService', () => {
     tx.responseQualityResult.create.mockResolvedValue(stored());
     const out = await as(() => svc.assess('n1'));
     expect(out[0]).toMatchObject({ id: 'r1', assessedAt: '2026-01-01T00:00:00.000Z' });
-    expect(assess).toHaveBeenCalledWith([{ id: 'sr', answers: {}, contact: null }], { a: 1 });
+    expect(assess).toHaveBeenCalledWith([{ id: 'sr', answers: {}, contact: null }], { a: 1 }, 33);
     expect(config.getRaw).toHaveBeenCalled();
   });
 

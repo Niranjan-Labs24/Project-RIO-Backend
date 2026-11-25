@@ -72,7 +72,7 @@ function cellsToRow(cells: string[], index: Partial<Record<keyof ParsedNeedRow, 
   };
 }
 
-function detectDelimiter(firstLine: string): string {
+export function detectDelimiter(firstLine: string): string {
   const commaCount = (firstLine.match(/,/g) || []).length;
   const semicolonCount = (firstLine.match(/;/g) || []).length;
   const tabCount = (firstLine.match(/\t/g) || []).length;
@@ -82,7 +82,7 @@ function detectDelimiter(firstLine: string): string {
   return ',';
 }
 
-function parseCsvRows(text: string, delimiter: string): string[][] {
+export function parseCsvRows(text: string, delimiter: string): string[][] {
   const rows: string[][] = [];
   let currentRow: string[] = [];
   let currentCell = '';

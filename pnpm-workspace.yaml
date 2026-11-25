@@ -55,12 +55,33 @@ overrides:
   # expansion 5.x's changed export shape). glob>minimatch pulls in a
   # self-consistent, already-patched minimatch+brace-expansion pair instead
   # of mismatching an old minimatch against a new brace-expansion.
-  glob>minimatch: '^10.0.0'
+  #
+  # minimatch below 11.0.1 has a ReDoS via globparts amplification
+  # (GHSA-g3hv-75wg-m249). glob 7 cannot take minimatch 11: every wildcard
+  # pattern throws "Cannot read properties of undefined (reading 'charAt')".
+  # So the two production users of glob 7, both inside exceljs, are moved
+  # off it instead:
+  # - archiver-utils moves to glob 14. 14.0.2+ also fixes glob's own
+  #   AbortSignal advisory (GHSA-3g3m-2fjr-6pw4). glob 14 depends on
+  #   minimatch 11 and still has glob.sync(pattern, options), the only call
+  #   archiver-utils makes.
+  # - rimraf 2 (exceljs > unzipper > fstream > rimraf) moves to glob 14 too.
+  #   rimraf only calls glob for a path that contains wildcards AND does not
+  #   exist. fstream is only used by unzipper's Extract(), which neither
+  #   exceljs nor this app calls. Moving unzipper to 0.12 (which drops
+  #   fstream) would also clear it, but means running exceljs on an unzipper
+  #   major outside its own ^0.10.11 range; this override touches less.
+  archiver-utils>glob: '>=14.0.2 <15.0.0'
+  rimraf@2>glob: '>=14.0.2 <15.0.0'
   # readdir-glob (also part of exceljs's archiver chain) depends on
   # minimatch directly rather than via "glob" — same reasoning as above.
-  readdir-glob>minimatch: '^10.0.0'
+  readdir-glob>minimatch: '>=11.0.1 <12.0.0'
   # express (via @nestjs/platform-express) and magicast (via prisma's own
   # config tooling) haven't picked up the patched releases yet. Both fixes
   # are within the current major, capped there for the same reason as above.
   proxy-addr: '>=2.0.8 <3.0.0'
   source-map-js: '>=1.2.2 <2.0.0'
+  # prisma's own config loader (@prisma/config) pins effect 3.20.0, which has
+  # a ReDoS in Schema.TemplateLiteral (GHSA-7589-6fvf-x4pw). Fixed in 3.22.1;
+  # scoped to @prisma/config's own edge and capped at 3.x, as above.
+  '@prisma/config>effect': '>=3.22.1 <4.0.0'

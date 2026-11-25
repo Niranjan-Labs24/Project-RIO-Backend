@@ -16,6 +16,8 @@ import { withOutputLanguage } from "../ai/prompts/output-language";
 import { requestLocale } from "../../common/locale/request-locale";
 import { localizeSummaryOutput } from "../translation/summary-localization";
 import { Prisma } from "../../generated/prisma";
+import { ReportSummaryService, type ScopeFilters, type SummaryScopeType } from "./report-summary.service";
+import { calculatedFigures, keepCalculatedFigures, withCalculatedFigures } from "./combined-report-figures";
 
 export interface CombinedReportOutputJson {
   header: {
@@ -81,6 +83,7 @@ export class CombinedReportSummaryService {
     private readonly tenant: TenantPrismaService,
     private readonly ai: AiService,
     private readonly audit: AuditService,
+    private readonly reportSummary: ReportSummaryService,
   ) {}
 
   async getCombinedReportContext(studyId: string, options: { localize?: boolean } = {}) {
@@ -104,7 +107,10 @@ export class CombinedReportSummaryService {
       evidenceDocuments: {
         where: { studyId },
         include: {
+          // UAT PRI-03 — the latest CONFIRMED summary, never a draft: only a
+          // confirmed document summary may feed the combined report.
           summaries: {
+            where: { status: "OFFICER_CONFIRMED" as const },
             orderBy: { createdAt: "desc" as const },
             take: 1,
           },
@@ -147,6 +153,7 @@ export class CombinedReportSummaryService {
     const availableScoreSummaries = study.aiPrioritySummaries.map((summary) => ({
       id: summary.id,
       status: summary.status,
+      surveyId: summary.surveyId,
       summaryScope: summary.summaryScope,
       scopeFilters: summary.scopeFilters,
       reportDataSnapshotId: summary.reportDataSnapshotId,
@@ -275,6 +282,17 @@ export class CombinedReportSummaryService {
       });
     }
 
+    // UAT PRI-03 — the screen already requires a confirmed score summary; the
+    // server now does too, so a draft one is never combined.
+    if (scoreSummary.status !== "OFFICER_CONFIRMED") {
+      throw new BadRequestException({
+        error: {
+          code: "SCORE_SUMMARY_NOT_CONFIRMED",
+          message: "Confirm the Score-Based Summary before generating a Combined Summary.",
+        },
+      });
+    }
+
     if (!documentSummaryIds || documentSummaryIds.length === 0) {
       throw new BadRequestException({
         error: {
@@ -284,15 +302,37 @@ export class CombinedReportSummaryService {
       });
     }
 
+    // Only documents switched on for the combined report with a confirmed
+    // summary are in this list, so anything else that was sent is ignored.
     const selectedDocSummaries = context.confirmedDocumentSummaries.filter(
       (d) => d.confirmedSummary && documentSummaryIds.includes(d.confirmedSummary.id),
     );
+    if (selectedDocSummaries.length === 0) {
+      throw new BadRequestException({
+        error: {
+          code: "NO_DOCUMENTS_SELECTED",
+          message:
+            "None of the selected documents is included in the combined report. Switch on \"Include in Combined Report\" for at least one document with a confirmed summary.",
+        },
+      });
+    }
 
     const scoreSummaryOutput = (scoreSummary.officerEditedOutputJson ||
       scoreSummary.aiOutputJson) as Record<string, unknown>;
 
+    // UAT PRI-03 — every figure in the report comes from the scoring engine's
+    // own data for this score summary's scope, never from the AI.
+    const { snapshot } = await this.reportSummary.buildReportDataSnapshot(
+      studyId,
+      scoreSummary.surveyId,
+      scoreSummary.summaryScope as SummaryScopeType,
+      (scoreSummary.scopeFilters ?? {}) as ScopeFilters,
+    );
+    const figures = calculatedFigures(snapshot);
+
     const inputDataToHash = JSON.stringify({
       scoreSummaryId: scoreSummary.id,
+      figures,
       scoreOutput: scoreSummaryOutput,
       documentSummaries: selectedDocSummaries.map((d) => ({
         id: d.confirmedSummary!.id,
@@ -309,7 +349,11 @@ export class CombinedReportSummaryService {
     const { promptVersion, modelVersion } = COMBINED_REPORT_SUMMARY_TASK;
     const modelName = this.ai.resolveModelName(COMBINED_REPORT_SUMMARY_TASK);
 
-    const docSummariesFormatted = selectedDocSummaries.map((s) => ({
+    // Each document gets a fixed key the AI copies into sourceKey, so a finding
+    // is traced to its document even when the AI translates the title or the
+    // document has no reference number (UAT PRI-03 source attribution).
+    const docSummariesFormatted = selectedDocSummaries.map((s, i) => ({
+      sourceKey: `DOC-${i + 1}`,
       title: s.documentTitle,
       type: s.documentType,
       refId: s.sourceReferenceId,
@@ -324,73 +368,16 @@ export class CombinedReportSummaryService {
 - Region: ${context.study.region}
 - Governorate: ${context.study.governorate}
 
-Score-Based Summary Inputs:
+Calculated Figures from the scoring engine (use these numbers exactly; do not change, round, average or add to them):
+${JSON.stringify(figures, null, 2)}
+
+Score-Based Summary Inputs (wording only — the numbers above are the authority):
 ${JSON.stringify(scoreSummaryOutput, null, 2)}
 
-Selected Confirmed Document Summaries (${selectedDocSummaries.length}):
+Selected Confirmed Document Summaries (${selectedDocSummaries.length}). Use only these documents as evidence. For every documentBasedEvidence entry, copy the document's sourceKey into "sourceKey" and its refId into "sourceReferenceId" exactly:
 ${JSON.stringify(docSummariesFormatted, null, 2)}
 
-Generate JSON conforming to:
-{
-  "header": {
-    "studyName": "${context.study.title}",
-    "entityName": "${context.study.orgName}",
-    "methodologyVersion": "${context.study.methodologyVersion}",
-    "cycleNumber": ${context.study.cycleNumber},
-    "generatedAt": "${new Date().toISOString()}"
-  },
-  "geography": {
-    "region": "${context.study.region}",
-    "governorate": "${context.study.governorate}"
-  },
-  "executiveSummary": "Unified executive overview",
-  "scoreBasedFindings": {
-    "overallSeverityScore": ${scoreSummaryOutput?.overallSeverityScore || 4.2},
-    "priorityScore": ${scoreSummaryOutput?.priorityScore || 78.5},
-    "priorityStatus": "${scoreSummaryOutput?.priorityStatus || "HIGH"}",
-    "topDomainsOrKpis": [{"name": "Health", "score": 85}],
-    "confidenceDataQualityNote": "High statistical confidence."
-  },
-  "documentBasedEvidence": [
-    {
-      "documentTitle": "${selectedDocSummaries[0]?.documentTitle || "Field Report"}",
-      "sourceReferenceId": "${selectedDocSummaries[0]?.sourceReferenceId || "REF-001"}",
-      "documentType": "${selectedDocSummaries[0]?.documentType || "Field Study"}",
-      "linkedNeedOrDomain": "${selectedDocSummaries[0]?.linkedDomainId || "Health"}",
-      "keyEvidenceFinding": "Field evidence confirms health facility shortages.",
-      "sourcePageOrSection": "Section 1"
-    }
-  ],
-  "domainKpiResults": [
-    {
-      "domainName": "Health",
-      "severity": 4.2,
-      "performance": 35.0,
-      "weight": 0.35,
-      "confidence": "HIGH",
-      "typeLabel": "SCORING_OUTPUT"
-    }
-  ],
-  "responseQuality": {
-    "validResponseCount": 120,
-    "confidenceLevel": "HIGH",
-    "dontKnowRate": 0.04
-  },
-  "recommendations": [
-    {
-      "intervention": "Deploy urgent medical supplies.",
-      "priority": "HIGH",
-      "statusLabel": "DRAFT_UNTIL_CONFIRMATION"
-    }
-  ],
-  "auditMetadata": {
-    "scoreSummaryId": "${scoreSummary.id}",
-    "includedDocumentSummaryIds": ${JSON.stringify(documentSummaryIds)},
-    "aiModel": "${modelName}",
-    "promptVersion": "${promptVersion}",
-    "generatedTimestamp": "${new Date().toISOString()}"
-  }
-}`;
+Generate JSON with these sections: header (studyName, entityName, methodologyVersion, cycleNumber, generatedAt), geography (region, governorate), executiveSummary, scoreBasedFindings (the calculated figures above plus confidenceDataQualityNote), documentBasedEvidence (one entry per finding: documentTitle, sourceReferenceId, documentType, linkedNeedOrDomain, keyEvidenceFinding, sourcePageOrSection), domainKpiResults (the calculated figures above), responseQuality (the calculated figures above), recommendations (intervention, priority as HIGH, MEDIUM or LOW, statusLabel "DRAFT_UNTIL_CONFIRMATION") and auditMetadata.`;
 
     // No fallback content. This used to catch every AI failure and substitute a
     // hand-written report — invented severity/priority figures, invented domain
@@ -403,14 +390,33 @@ Generate JSON conforming to:
       ...COMBINED_REPORT_SUMMARY_TASK,
       systemPrompt: withOutputLanguage(COMBINED_REPORT_SUMMARY_TASK.systemPrompt, outputLocale),
     };
-    const { response: aiOutputJson } = await this.ai.run(task, prompt);
+    const { response: aiResponse } = await this.ai.run(task, prompt);
+    const includedDocumentSummaryIds = selectedDocSummaries.map((d) => d.confirmedSummary!.id);
+    const aiOutputJson = withCalculatedFigures(
+      aiResponse,
+      figures,
+      selectedDocSummaries.map((d, i) => ({
+        sourceKey: `DOC-${i + 1}`,
+        documentTitle: d.documentTitle,
+        sourceReferenceId: d.sourceReferenceId,
+        documentType: d.documentType,
+      })),
+      {
+        scoreSummaryId: scoreSummary.id,
+        reportDataSnapshotId: snapshot.snapshotId,
+        includedDocumentSummaryIds,
+        aiModel: modelName,
+        promptVersion,
+        generatedTimestamp: new Date().toISOString(),
+      },
+    );
 
     const created = await this.tenant.runInOrgContext(async (tx) => {
       const summary = await tx.combinedReportSummary.create({
         data: {
           studyId,
           orgId,
-          reportDataSnapshotId: scoreSummary.reportDataSnapshotId,
+          reportDataSnapshotId: snapshot.snapshotId,
           scoreSummaryId: scoreSummary.id,
           status: "DRAFT",
           promptVersion,
@@ -452,11 +458,13 @@ Generate JSON conforming to:
     );
     if (!summary) throw new NotFoundException(`Combined summary ${summaryId} not found.`);
 
+    // UAT PRI-03 — an edit changes the wording, never the calculated figures.
+    const edited = keepCalculatedFigures(editedOutputJson, summary.aiOutputJson);
     return this.tenant.runInOrgContext((tx) =>
       tx.combinedReportSummary.update({
         where: { id: summaryId },
         data: {
-          officerEditedOutputJson: toJson(editedOutputJson),
+          officerEditedOutputJson: toJson(edited),
           status: "DRAFT",
         },
       }),
