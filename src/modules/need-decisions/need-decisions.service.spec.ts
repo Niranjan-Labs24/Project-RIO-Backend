@@ -208,3 +208,69 @@ describe("NeedDecisionsService.updateStatus", () => {
     ).rejects.toMatchObject({ response: { error: { code: "DECISION_ALREADY_TERMINAL" } } });
   });
 });
+
+// UAT PRI-06 — editing a decision after it is logged.
+describe("NeedDecisionsService.update", () => {
+  function build() {
+    const audit = fakeAudit();
+    const svc = new NeedDecisionsService(
+      fakeTenant([NEED], [{ id: "score-1", needId: NEED.id, surveyLinkId: null, approvedAt: new Date() }]) as never,
+      audit as never,
+      fakeStudyConfig(["Intervention", "Escalation"]) as never,
+    );
+    return { svc, audit };
+  }
+  const create = (svc: NeedDecisionsService) =>
+    runAsOrg("org-1", "user-1", () =>
+      svc.create(NEED.id, { decisionType: "Intervention", responsibleParty: "Ministry of Health", decisionDate: "2026-08-22", notes: "First note" }),
+    );
+
+  it("updates the given fields, keeps status and history, and audits only what changed", async () => {
+    const { svc, audit } = build();
+    const created = await create(svc);
+    const updated = await runAsOrg("org-1", "user-2", () =>
+      svc.update(NEED.id, created.id, { decisionType: "Escalation", responsibleParty: "  Riyadh branch  ", decisionDate: "2026-08-22" }),
+    );
+    expect(updated).toMatchObject({
+      decisionType: "Escalation",
+      responsibleParty: "Riyadh branch",
+      decisionDate: "2026-08-22",
+      notes: "First note",
+      status: "open",
+    });
+    expect(updated.history).toHaveLength(1);
+    expect(audit.records.at(-1)).toMatchObject({
+      action: "edit",
+      entityType: "need_decision",
+      changes: [
+        { field: "Decision Type", before: "Intervention", after: "Escalation" },
+        { field: "Responsible Party", before: "Ministry of Health", after: "Riyadh branch" },
+      ],
+    });
+  });
+
+  it("clears the notes with null and records nothing when nothing changes", async () => {
+    const { svc, audit } = build();
+    const created = await create(svc);
+    const cleared = await runAsOrg("org-1", "user-1", () => svc.update(NEED.id, created.id, { notes: null }));
+    expect(cleared.notes).toBeNull();
+    const count = audit.records.length;
+    await runAsOrg("org-1", "user-1", () => svc.update(NEED.id, created.id, { decisionDate: "2026-08-22" }));
+    expect(audit.records).toHaveLength(count);
+  });
+
+  it("rejects an unconfigured type, a closed decision, and a decision of another need", async () => {
+    const { svc } = build();
+    const created = await create(svc);
+    await expect(
+      runAsOrg("org-1", "user-1", () => svc.update(NEED.id, created.id, { decisionType: "Unknown" })),
+    ).rejects.toMatchObject({ response: { error: { code: "INVALID_DECISION_TYPE" } } });
+    await expect(
+      runAsOrg("org-1", "user-1", () => svc.update("other-need", created.id, { notes: "x" })),
+    ).rejects.toMatchObject({ response: { error: { code: "DECISION_NOT_FOUND" } } });
+    await runAsOrg("org-1", "user-1", () => svc.updateStatus(created.id, { status: "cancelled" }));
+    await expect(
+      runAsOrg("org-1", "user-1", () => svc.update(NEED.id, created.id, { notes: "late" })),
+    ).rejects.toMatchObject({ response: { error: { code: "DECISION_ALREADY_TERMINAL" } } });
+  });
+});
