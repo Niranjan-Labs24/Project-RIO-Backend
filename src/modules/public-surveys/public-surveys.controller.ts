@@ -63,6 +63,26 @@ export class PublicSurveysController {
     return this.surveys.shareLinkByEmail(needId, linkId, body.email);
   }
 
+  // UAT DST-03: the link's QR code as a PDF to print or share. Same
+  // permission as viewing the link (and its on-screen QR).
+  @Get('survey-links/:linkId/qr.pdf')
+  @RequirePermission('studySurvey', 'read')
+  async linkQrPdf(
+    @Res() res: Response,
+    @Param('needId', new UuidParamPipe()) needId: string,
+    @Param('linkId', new UuidParamPipe()) linkId: string,
+    @Query('locale') localeParam?: string,
+  ): Promise<void> {
+    const locale = parseLocale(localeParam) ?? requestLocale();
+    const body = await this.surveys.linkQrPdf(needId, linkId, locale);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': 'attachment; filename="survey-link-qr.pdf"',
+      'Content-Length': String(body.length),
+    });
+    res.end(body);
+  }
+
   @Get('survey-responses')
   @RequirePermission('studySurvey', 'read')
   listResponses(

@@ -15,6 +15,7 @@ import type { SupportedLocale } from '../translation/translation.types';
 import { sanitizeForSpreadsheet } from '../../common/security/spreadsheet-sanitize';
 import { auditFieldLabel } from '../audit/audit-field-labels';
 import { DeterministicScoringService } from '../priority/scoring.service';
+import { BLACK, CONTENT_W, GRAY, LEFT, PAGE_H, Pdf, TOP, textWidth, wrap } from '../reports/pdf-builder';
 import type {
   CreateSurveyLinkPayload,
   PublicSurveyLink,
@@ -203,6 +204,67 @@ export class PublicSurveysService {
   // server-side rather than trusting a client-supplied image) as a real,
   // formatted email — a mailto: link can't carry an attached image at all,
   // so this is the only way to actually deliver "link + QR code" together.
+  // UAT DST-03: the link's QR code as a printable PDF — the need's title,
+  // the link label, the QR itself and the link as text. Built with the same
+  // PDF writer as the reports, so Arabic titles shape correctly. The QR is
+  // drawn as filled squares (no image), from the same URL the email and
+  // the on-screen QR encode.
+  async linkQrPdf(needId: string, linkId: string, locale: SupportedLocale): Promise<Buffer> {
+    const need = await this.findNeedOrThrow(needId);
+    const link = await this.tenant.runRead(async (tx) => {
+      const existing = await tx.publicSurveyLink.findUnique({ where: { id: linkId } });
+      if (!existing || existing.needId !== needId) {
+        throw new NotFoundException({ error: { code: 'SURVEY_LINK_NOT_FOUND', message: 'Survey link not found' } });
+      }
+      return existing;
+    });
+    const publicUrl = `${this.config.publicAppUrl}/ar/public/survey/${link.token}`;
+    const ar = locale === 'ar';
+    const title = ar ? (await this.translation.translate(need.title, 'ar')).translatedText || need.title : need.title;
+    const text = {
+      link: ar ? 'رابط الاستبيان' : 'Survey link',
+      scan: ar ? 'امسح الرمز بكاميرا الهاتف لفتح الاستبيان.' : 'Scan the code with a phone camera to open the survey.',
+    };
+
+    const pdf = new Pdf();
+    pdf.dir = ar ? 'rtl' : 'ltr';
+    const centred = (size: number, bold: boolean, line: string, color: string) => {
+      pdf.text(LEFT + Math.max(0, (CONTENT_W - textWidth(line, size, bold)) / 2), size, bold, line, color);
+      pdf.y += size * 1.35;
+    };
+
+    pdf.y = TOP + 20;
+    for (const line of wrap(title, 20, CONTENT_W, true)) centred(20, true, line, BLACK);
+    pdf.y += 6;
+    for (const line of wrap(`${text.link}: ${link.label}`, 12, CONTENT_W)) centred(12, false, line, GRAY);
+    pdf.y += 24;
+
+    // The QR is never mirrored: drawn left-to-right even on an Arabic page.
+    const qr = QRCode.create(publicUrl, { errorCorrectionLevel: 'M' });
+    const n = qr.modules.size;
+    const quiet = 4;
+    const side = 300;
+    const cell = side / (n + quiet * 2);
+    const x0 = LEFT + (CONTENT_W - side) / 2;
+    const top = pdf.y;
+    const pageDir = pdf.dir;
+    pdf.dir = 'ltr';
+    for (let r = 0; r < n; r++) {
+      pdf.y = top + (r + quiet) * cell;
+      for (let c = 0; c < n; c++) {
+        if (qr.modules.get(r, c)) pdf.rect(x0 + (c + quiet) * cell, cell + 0.05, cell + 0.05, BLACK);
+      }
+    }
+    pdf.dir = pageDir;
+    pdf.y = Math.min(top + side + 24, PAGE_H - 120);
+
+    for (const line of wrap(text.scan, 12, CONTENT_W)) centred(12, false, line, BLACK);
+    pdf.y += 8;
+    // The address itself, for anyone who prefers to type it.
+    for (const line of wrap(publicUrl, 9, CONTENT_W)) centred(9, false, line, GRAY);
+    return pdf.build();
+  }
+
   async shareLinkByEmail(needId: string, linkId: string, email: string): Promise<void> {
     const need = await this.findNeedOrThrow(needId);
     const link = await this.tenant.runInOrgContext(async (tx) => {
