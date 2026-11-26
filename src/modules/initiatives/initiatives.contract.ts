@@ -41,7 +41,16 @@ const InitiativeFields = {
 
 export const CreateInitiativeBody = registerSchema(
   'CreateInitiativeBody',
-  T.Object({ ...InitiativeFields, name: InitiativeFields.name }, { additionalProperties: false }),
+  T.Object(
+    {
+      ...InitiativeFields,
+      name: InitiativeFields.name,
+      // UAT INI-02: the entity's own needs to link while creating, instead
+      // of creating first and linking from each need afterwards.
+      needIds: T.Optional(T.Array(T.String({ format: 'uuid' }), { maxItems: 50, uniqueItems: true })),
+    },
+    { additionalProperties: false },
+  ),
 );
 export type CreateInitiativeDto = Static<typeof CreateInitiativeBody>;
 
