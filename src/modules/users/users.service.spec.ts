@@ -12,6 +12,7 @@ function fakeTenant(opts: { rows?: UserRow[]; current?: UserRow | null; onDelete
       findMany: async () => opts.rows ?? [],
       create: async ({ data }: { data: Record<string, unknown> }) => ({ id: 'new', createdAt: new Date('2026-01-01T00:00:00Z'), ...data }),
       findUnique: async () => opts.current ?? null,
+      findFirst: async () => null,
       update: async ({ data }: { data: Record<string, unknown> }) => ({ ...(opts.current as object), ...data }),
       delete: async ({ where }: { where: unknown }) => { opts.onDelete?.(where); return opts.current; },
     },
@@ -19,6 +20,7 @@ function fakeTenant(opts: { rows?: UserRow[]; current?: UserRow | null; onDelete
   return {
     runInOrgContext: async (fn: (tx: unknown) => unknown) => fn(tx),
     runAsOrg: async (_orgId: string, fn: (tx: unknown) => unknown) => fn(tx),
+    runAsSupervisor: async (fn: (tx: unknown) => unknown) => fn(tx),
   };
 }
 

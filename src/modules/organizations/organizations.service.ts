@@ -90,7 +90,12 @@ export class OrganizationsService {
     return this.toOrganization(this.toOrgRow(row));
   }
 
-  async updateCurrent(patch: UpdateOrganizationPayload): Promise<Organization> {
+  async updateCurrent(input: UpdateOrganizationPayload): Promise<Organization> {
+    // UAT ORG-12 — an organisation's Active/Inactive status is the System
+    // Admin's call (PATCH /organizations/:id/status). The organisation's own
+    // edit screen no longer offers it, and a status sent here is ignored so
+    // an NGO admin can't switch their own organisation on or off.
+    const { isActive: _ignoredStatus, ...patch } = input;
     const orgId = requireOrgId();
     if (patch.sector !== undefined) await this.assertValidSector(patch.sector);
 

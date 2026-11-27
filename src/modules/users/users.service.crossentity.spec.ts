@@ -25,6 +25,7 @@ function setup() {
     user: {
       findMany: vi.fn().mockResolvedValue([user()]),
       findUnique: vi.fn().mockResolvedValue(user()),
+      findFirst: vi.fn().mockResolvedValue(null),
       create: vi
         .fn()
         .mockImplementation(async ({ data }: { data: Record<string, unknown> }) =>
@@ -346,6 +347,27 @@ describe('UsersService.resendInviteForOrg and createForOrg', () => {
         } as never),
       ),
     ).rejects.toThrow('db');
+  });
+
+  it('UAT USR-01: blocks a duplicate email whatever its case, and warns on a same-name user until confirmed', async () => {
+    const { svc, tx } = setup();
+    const base = { organizationId: 'org-1', name: 'Sara Ali', email: 'SARA@x.org', roleId: 'role_ngo_research_officer' };
+
+    tx.user.findFirst.mockResolvedValueOnce({ id: 'existing' });
+    await expect(asAdmin(() => svc.createForOrg(base))).rejects.toMatchObject({
+      response: { error: { code: 'EMAIL_TAKEN' } },
+    });
+    expect(tx.user.findFirst.mock.calls[0]![0].where.email).toEqual({ equals: 'SARA@x.org', mode: 'insensitive' });
+
+    tx.user.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'same-name' });
+    await expect(asAdmin(() => svc.createForOrg(base))).rejects.toMatchObject({
+      response: { error: { code: 'DUPLICATE_USER_NAME' } },
+    });
+    expect(tx.user.create).not.toHaveBeenCalled();
+
+    tx.user.findFirst.mockResolvedValueOnce(null);
+    await asAdmin(() => svc.createForOrg({ ...base, confirmDuplicateName: true }));
+    expect(tx.user.create).toHaveBeenCalledTimes(1);
   });
 
   it('only lets a cross-entity caller assign a cross-entity role', async () => {

@@ -27,6 +27,8 @@ function normalizeMobile(mobile: string): string {
   return mobile.trim().replace(/[\s\-()]/g, '');
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 @Injectable()
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
@@ -72,6 +74,7 @@ export class UsersService {
     const role = this.validateRole(payload.roleId);
     if (role.id === NGO_ADMIN_ROLE_ID) this.assertCanManageNgoAdmin();
     const orgId = requireOrgId();
+    await this.assertNotDuplicate(orgId, payload);
     const { created, orgName } = await this.createUser(() =>
       this.tenant.runInOrgContext(async (tx) => {
         const org = await tx.organisation.findUnique({ where: { id: orgId } });
@@ -249,14 +252,22 @@ export class UsersService {
   // organization" (the picker's previous approach): with 200+ organizations in a long-lived
   // environment that becomes ~100 concurrent requests, and a single one failing silently empties the
   // whole picker even though the account being searched for loaded fine.
-  async searchCenterSupervisors(search?: string): Promise<Array<OrgUser & { organizationId: string; organizationName: string }>> {
+  async searchCenterSupervisors(
+    search?: string,
+    organizationId?: string,
+  ): Promise<Array<OrgUser & { organizationId: string; organizationName: string }>> {
     this.assertCrossEntity();
     const q = search?.trim();
+    // UAT USR-03 — optional Organization filter. A malformed id would only
+    // make Postgres reject the uuid comparison, so it is treated as no match.
+    const orgId = organizationId?.trim();
+    if (orgId && !UUID_RE.test(orgId)) return [];
     const rows = await this.tenant.runAsSupervisor((tx) =>
       tx.user.findMany({
         where: {
           roleId: 'role_center_supervisor',
           ...(q ? { name: { contains: q, mode: 'insensitive' as const } } : {}),
+          ...(orgId ? { orgId } : {}),
         },
         include: { org: { select: { name: true } } },
         orderBy: { name: 'asc' },
@@ -268,6 +279,19 @@ export class UsersService {
       organizationId: r.orgId,
       organizationName: r.org.name,
     }));
+  }
+
+  /** UAT USR-03 — distinct organisations that have at least one Center Supervisor. */
+  async centerSupervisorOrganizations(): Promise<Array<{ id: string; name: string }>> {
+    this.assertCrossEntity();
+    const rows = await this.tenant.runAsSupervisor((tx) =>
+      tx.user.findMany({
+        where: { roleId: 'role_center_supervisor' },
+        select: { org: { select: { id: true, name: true } } },
+        distinct: ['orgId'],
+      }),
+    );
+    return rows.map((r) => r.org).sort((a, b) => a.name.localeCompare(b.name));
   }
 
   // System-Admin Assign / Change NGO Admin for an organization.
@@ -553,6 +577,7 @@ export class UsersService {
   async createForOrg(payload: CreateForOrgPayload): Promise<InviteUserResponse> {
     this.assertCrossEntity();
     const role = this.validateRole(payload.roleId);
+    await this.assertNotDuplicate(payload.organizationId, payload);
     const { created, orgName } = await this.createUser(() =>
       this.tenant.runAsOrg(payload.organizationId, async (tx) => {
         const org = await tx.organisation.findUnique({ where: { id: payload.organizationId } });
@@ -645,6 +670,41 @@ export class UsersService {
       }
     }
     return role;
+  }
+
+  /**
+   * UAT USR-01 — duplicate user check before an account is created.
+   *
+   * Email: blocked. The unique index already refuses an exact repeat, but it
+   * is case-sensitive, so "Sara@x.org" slipped past an existing "sara@x.org".
+   * Checked across every organisation (an email signs in to exactly one
+   * account), hence the supervisor read.
+   *
+   * Name: two people can share a name, so a match within the same
+   * organisation is only a warning — refused with DUPLICATE_USER_NAME until
+   * the admin confirms and the request comes back with confirmDuplicateName.
+   */
+  private async assertNotDuplicate(orgId: string, payload: InviteUserPayload): Promise<void> {
+    const email = payload.email.trim();
+    const emailOwner = await this.tenant.runAsSupervisor((tx) =>
+      tx.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' } }, select: { id: true } }),
+    );
+    if (emailOwner) {
+      throw new ConflictException({ error: { code: 'EMAIL_TAKEN', message: 'A user with this email already exists' } });
+    }
+    if (payload.confirmDuplicateName) return;
+    const name = payload.name.trim();
+    const sameName = await this.tenant.runAsOrg(orgId, (tx) =>
+      tx.user.findFirst({
+        where: { orgId, name: { equals: name, mode: 'insensitive' } },
+        select: { id: true },
+      }),
+    );
+    if (sameName) {
+      throw new ConflictException({
+        error: { code: 'DUPLICATE_USER_NAME', message: 'A user with this name already exists in this organization' },
+      });
+    }
   }
 
   // Runs a user-creating transaction, translating a duplicate-email unique

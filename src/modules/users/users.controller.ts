@@ -27,8 +27,16 @@ export class UsersController {
   // instead of fetching every organization's users to filter client-side.
   @Get('center-supervisors')
   @RequirePermission('rolesPermissions', 'read')
-  searchCenterSupervisors(@Query('search') search?: string) {
-    return this.users.searchCenterSupervisors(search);
+  searchCenterSupervisors(@Query('search') search?: string, @Query('organizationId') organizationId?: string) {
+    return this.users.searchCenterSupervisors(search, organizationId);
+  }
+
+  // UAT USR-03 — the organisations that have a Center Supervisor, for the
+  // grantee picker's Organization filter.
+  @Get('center-supervisors/organizations')
+  @RequirePermission('rolesPermissions', 'read')
+  centerSupervisorOrganizations() {
+    return this.users.centerSupervisorOrganizations();
   }
 
   @Post()
