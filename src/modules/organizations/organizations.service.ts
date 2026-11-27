@@ -12,7 +12,7 @@ import { AuditService } from '../audit/audit.service';
 import type { AuditChange } from '../audit/audit.types';
 import { ConsentService } from '../consent/consent.service';
 import { consentPolicyTextFor, DEFAULT_CONSENT_LOCALE, resolveConsentLocale } from '../consent/consent.types';
-import { DomainsService } from '../domains/domains.service';
+import { StudyConfigService } from '../study-config/study-config.service';
 import { GeographyService } from '../geography/geography.service';
 import { NicRegistryService } from '../nic-registry/nic-registry.service';
 import { auditFieldLabel } from '../audit/audit-field-labels';
@@ -57,7 +57,7 @@ export class OrganizationsService {
     private readonly tenant: TenantPrismaService,
     private readonly audit: AuditService,
     private readonly passwords: PasswordService,
-    private readonly domains: DomainsService,
+    private readonly sectors: StudyConfigService,
     private readonly geography: GeographyService,
     private readonly mailer: MailerService,
     private readonly nicRegistry: NicRegistryService,
@@ -97,12 +97,16 @@ export class OrganizationsService {
     // an NGO admin can't switch their own organisation on or off.
     const { isActive: _ignoredStatus, ...patch } = input;
     const orgId = requireOrgId();
-    if (patch.sector !== undefined) await this.assertValidSector(patch.sector);
-
     const { updated, changes } = await this.tenant.runInOrgContext(async (tx) => {
       const currentRaw = await tx.organisation.findFirst({ include: GEO_INCLUDE });
       if (!currentRaw) throw new NotFoundException({ error: { code: 'ORG_NOT_FOUND', message: 'Organization not found' } });
       const current = this.toOrgRow(currentRaw);
+      // An organisation saved before GEN-07 may still hold an older sector
+      // that is no longer in the list; keeping it unchanged must not block
+      // editing the rest of the profile. A new choice is validated.
+      if (patch.sector !== undefined && patch.sector !== current.sector) {
+        await this.assertValidSector(patch.sector);
+      }
 
       // A patch that omits regionId/governorateIds/centerIds leaves that
       // value unchanged — validate against whatever the *final* state will
@@ -565,15 +569,15 @@ export class OrganizationsService {
   }
 
   // Mirrors AuthService's identical check (see auth.service.ts) — `sector`
-  // must match an active Methodology Configuration Domain name or the
-  // literal "other" (paired with `purpose` for free text).
+  // must match an active Target Sector group (UAT GEN-07, client 27 Nov:
+  // the organisation Sector uses the same 10 groups as a study's Target
+  // Sector) or the literal "other" (paired with `purpose` for free text).
   private async assertValidSector(sector: string | null | undefined): Promise<void> {
     if (!sector || sector === 'other') return;
-    const domains = await this.domains.listDomains();
-    const valid = domains.some((d) => d.isActive && d.name === sector);
+    const valid = (await this.sectors.listActiveTargetSectorNames()).includes(sector);
     if (!valid) {
       throw new BadRequestException({
-        error: { code: 'INVALID_SECTOR', message: 'Sector must match an active domain or "other"' },
+        error: { code: 'INVALID_SECTOR', message: 'Sector must match an active Target Sector group or "other"' },
       });
     }
   }
