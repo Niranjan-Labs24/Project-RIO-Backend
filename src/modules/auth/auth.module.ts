@@ -5,7 +5,7 @@ import { AuthRepository } from './auth.repository';
 import { PasswordService } from '../../auth/password.service';
 import { TokenService } from '../../auth/token.service';
 import { MailerModule } from '../../mailer/mailer.module';
-import { StudyConfigModule } from '../study-config/study-config.module';
+import { DomainsModule } from '../domains/domains.module';
 import { GeographyModule } from '../geography/geography.module';
 import { NicRegistryModule } from '../nic-registry/nic-registry.module';
 import { ConsentModule } from '../consent/consent.module';
@@ -17,7 +17,7 @@ import { SmsModule } from '../../sms/sms.module';
 @Module({
   imports: [
     MailerModule,
-    StudyConfigModule,
+    DomainsModule,
     GeographyModule,
     NicRegistryModule,
     ConsentModule,

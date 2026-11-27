@@ -53,7 +53,7 @@ function fakeTenant(initial: OrgRow) {
 }
 
 const domainsStub = {
-  listActiveTargetSectorNames: async () => ['Water & Sanitation'],
+  listDomains: async () => [{ id: 'd1', code: 'W', name: 'Water & Sanitation', isActive: true }],
 };
 
 const geographyStub = {
