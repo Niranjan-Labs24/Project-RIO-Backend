@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { OrganizationsController } from './organizations.controller';
 import { OrganizationsService } from './organizations.service';
 import { PasswordService } from '../../auth/password.service';
-import { DomainsModule } from '../domains/domains.module';
+import { StudyConfigModule } from '../study-config/study-config.module';
 import { GeographyModule } from '../geography/geography.module';
 import { UsersModule } from '../users/users.module';
 import { MailerModule } from '../../mailer/mailer.module';
@@ -11,7 +11,7 @@ import { ConsentModule } from '../consent/consent.module';
 import { TranslationModule } from '../translation/translation.module';
 
 @Module({
-  imports: [DomainsModule, GeographyModule, UsersModule, MailerModule, NicRegistryModule, ConsentModule, TranslationModule],
+  imports: [StudyConfigModule, GeographyModule, UsersModule, MailerModule, NicRegistryModule, ConsentModule, TranslationModule],
   controllers: [OrganizationsController],
   providers: [OrganizationsService, PasswordService],
 })

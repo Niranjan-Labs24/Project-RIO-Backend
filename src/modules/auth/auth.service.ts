@@ -8,7 +8,7 @@ import {
   DEFAULT_CONSENT_LOCALE,
   resolveConsentLocale,
 } from '../consent/consent.types';
-import { DomainsService } from '../domains/domains.service';
+import { StudyConfigService } from '../study-config/study-config.service';
 import { GeographyService } from '../geography/geography.service';
 import { NicRegistryService } from '../nic-registry/nic-registry.service';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
@@ -81,7 +81,7 @@ export class AuthService {
     private readonly repo: AuthRepository,
     private readonly mailer: MailerService,
     private readonly config: ConfigService,
-    private readonly domains: DomainsService,
+    private readonly sectors: StudyConfigService,
     private readonly geography: GeographyService,
     // Signup gate: the registration number must be a NIC number in the
     // published entity registry.
@@ -779,18 +779,17 @@ export class AuthService {
     return this.buildSession(user, role, token);
   }
 
-  // `sector` must match an active Methodology Configuration Domain name
-  // (e.g. "Health", "Water & Sanitation") or the literal "other" (paired
-  // with `purpose` for free text) — never an arbitrary string, since the
-  // whole point is this stays in lockstep with whatever domains are
-  // actually configured there.
+  // `sector` must match an active Target Sector group (UAT GEN-07, client
+  // 27 Nov: the same 10 groups as a study's Target Sector, e.g. "Health",
+  // "Social Services") or the literal "other" (paired with `purpose` for
+  // free text) — never an arbitrary string, so it stays in lockstep with
+  // the list System Admin manages under Methodology Configuration.
   private async assertValidSector(sector: string | undefined): Promise<void> {
     if (!sector || sector === 'other') return;
-    const domains = await this.domains.listDomains();
-    const valid = domains.some((d) => d.isActive && d.name === sector);
+    const valid = (await this.sectors.listActiveTargetSectorNames()).includes(sector);
     if (!valid) {
       throw new BadRequestException({
-        error: { code: 'INVALID_SECTOR', message: 'Sector must match an active domain or "other"' },
+        error: { code: 'INVALID_SECTOR', message: 'Sector must match an active Target Sector group or "other"' },
       });
     }
   }

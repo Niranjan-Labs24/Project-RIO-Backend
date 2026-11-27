@@ -90,6 +90,16 @@ export class StudyConfigService {
     return rows.map((r) => this.toOption(r));
   }
 
+  /** Active Target Sector groups as name + Arabic name — backs the public
+   * organisation Sector dropdown (sign-up is reached before login). */
+  async listActiveTargetSectorOptions(): Promise<{ name: string; nameAr: string | null }[]> {
+    return this.prisma.targetSectorOption.findMany({
+      where: { isActive: true },
+      orderBy: { displayOrder: 'asc' },
+      select: { name: true, nameAr: true },
+    });
+  }
+
   async listActiveTargetSectorNames(): Promise<string[]> {
     const rows = await this.prisma.targetSectorOption.findMany({
       where: { isActive: true },

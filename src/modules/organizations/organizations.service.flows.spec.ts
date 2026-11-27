@@ -15,10 +15,8 @@ function setup() {
   const audit = { record: vi.fn().mockResolvedValue(undefined) };
   const passwords = { hash: vi.fn().mockResolvedValue('hash') };
   const domains = {
-    listDomains: vi.fn().mockResolvedValue([
-      { name: 'Water', isActive: true },
-      { name: 'Old', isActive: false },
-    ]),
+    // Active Target Sector groups only ('Old' is inactive, so not listed).
+    listActiveTargetSectorNames: vi.fn().mockResolvedValue(['Water']),
   };
   const geography = { validateHierarchy: vi.fn().mockResolvedValue(undefined) };
   const mailer = { sendTemporaryPassword: vi.fn().mockResolvedValue(true) };
