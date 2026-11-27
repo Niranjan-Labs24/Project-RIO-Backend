@@ -57,9 +57,9 @@ export const VerifyLoginOtpBody = registerSchema(
 );
 export type VerifyLoginOtpDto = Static<typeof VerifyLoginOtpBody>;
 
-// Not a fixed enum: `sector` is validated against the live, active Target
-// Sector groups from Methodology Configuration (see AuthService.signup —
-// StudyConfigService.listActiveTargetSectorNames()), or the literal "other". Mirrors
+// Not a fixed enum: `sector` is validated against the live, active Domain
+// list from Methodology Configuration (see AuthService.signup —
+// DomainsService.listDomains()), or the literal "other". Mirrors
 // organizations.contract.ts's own SectorValue.
 const SectorValue = T.String({ minLength: 1, maxLength: 200 });
 

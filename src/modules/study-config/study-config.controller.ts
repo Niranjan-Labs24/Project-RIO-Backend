@@ -1,7 +1,5 @@
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
-import { CsrfExempt } from '../../common/guards/csrf.guard';
-import { Public } from '../../auth/public.decorator';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import { CreateStudyConfigOptionBody, UpdateStudyConfigOptionBody } from './study-config.contract';
@@ -71,17 +69,6 @@ export class StudyConfigController {
   @Get('target-sectors')
   listTargetSectors(): Promise<StudyConfigOption[]> {
     return this.studyConfig.listTargetSectors();
-  }
-
-  // UAT GEN-07 (client, 27 Nov): an organisation's Sector is one of the
-  // same Target Sector groups. Sign-up needs the list before anyone can sign
-  // in, so — like GET /domains/public — this is @Public, @CsrfExempt and
-  // returns active names only.
-  @Get('target-sectors/public')
-  @CsrfExempt()
-  @Public()
-  listPublicTargetSectors(): Promise<{ name: string; nameAr: string | null }[]> {
-    return this.studyConfig.listActiveTargetSectorOptions();
   }
 
   @Post('target-sectors')

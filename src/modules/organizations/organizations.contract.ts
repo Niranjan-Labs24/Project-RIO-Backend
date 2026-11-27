@@ -1,10 +1,9 @@
 import { registerSchema, T, type Static } from '../../contract/typebox';
 import { ConsentAcceptanceBody } from '../auth/auth.contract';
 
-// Not a fixed enum: `sector` is validated against the live, active Target
-// Sector groups from Methodology Configuration (see OrganizationsService/
-// AuthService — StudyConfigService.listActiveTargetSectorNames()), or the
-// literal "other". TypeBox can't
+// Not a fixed enum: `sector` is validated against the live, active Domain
+// list from Methodology Configuration (see OrganizationsService/AuthService
+// — DomainsService.listDomains()), or the literal "other". TypeBox can't
 // express "one of these dynamic values" at the schema level, so this only
 // checks shape/length here; the real check happens in the service.
 const SectorValue = T.String({ minLength: 1, maxLength: 200 });

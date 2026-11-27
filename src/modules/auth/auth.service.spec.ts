@@ -19,7 +19,7 @@ const repoStub = { findByRegistrationNumber: vi.fn(), findUserByEmail: vi.fn(), 
 const mailerStub = { sendTemporaryPassword: vi.fn() };
 const configStub = { nodeEnv: 'development' } as unknown as ConfigService;
 const domainsStub = {
-  listActiveTargetSectorNames: async () => ['Water & Sanitation'],
+  listDomains: async () => [{ id: 'd1', code: 'W', name: 'Water & Sanitation', isActive: true }],
 };
 const geographyStub = { validateHierarchy: vi.fn().mockResolvedValue(undefined) };
 
