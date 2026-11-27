@@ -1,7 +1,7 @@
 import { fromJson, toJson } from '../../common/prisma/json';
 import { CONFIDENCE_BAND_INSTRUCTION, withConfidenceBands } from './presentation/ai-confidence-bands';
 import { ROLE_KEYS } from '../../rbac/role-keys';
-import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, NotFoundException, Optional } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { TenantPrismaService } from '../../tenancy/tenant-prisma.service';
 import { Prisma } from '../../generated/prisma';
@@ -38,6 +38,21 @@ import {
   COMBINED_REPORT_SUMMARY_SYSTEM_PROMPT,
 } from '../ai/prompts/combined-report-summary.system';
 import { normalizeDomainKey, type DomainPriorityComponent } from '../priority/priority-v2.service';
+import { computeRollups } from '../priority/rollup-compute';
+import {
+  DEFAULT_CONFIDENCE_FLAG_SETTINGS,
+  MethodologyConfigService,
+} from '../methodology-config/methodology-config.service';
+import {
+  areaFilterOf,
+  areaPriorityAssessment,
+  dedupeResponseScores,
+  listSummaryAreas,
+  loadSummaryArea,
+  responseAreaWhere,
+  toScoreRollups,
+  topKpiRollups,
+} from './summary-area';
 import { aggregateDemographics } from './providers/aggregate-demographics';
 import { resolveKpiDomain } from './providers/survey-report-derivations';
 import {
@@ -109,6 +124,14 @@ export interface ScopeFilters {
    */
   indicator?: string;
   dataQuality?: string;
+  /**
+   * UAT PRI-07 — Governorate / Centre beside Village (VILLAGE scope only).
+   * They filter the summary to the respondents who said they live there; see
+   * summary-area.ts. A centre is narrower and wins over a governorate, and a
+   * village pick ignores both.
+   */
+  governorateId?: string;
+  centerId?: string;
 }
 
 /** Canonical form for comparing two filter sets — absent, '' and undefined all
@@ -126,6 +149,8 @@ function canonicalScopeFilters(f: ScopeFilters): string {
     villageIds: [...(f.villageIds ?? [])].sort(),
     indicator: f.indicator || '',
     dataQuality: f.dataQuality || '',
+    governorateId: f.governorateId || '',
+    centerId: f.centerId || '',
   });
 }
 
@@ -308,6 +333,9 @@ export class ReportSummaryService {
   constructor(
     private readonly tenant: TenantPrismaService,
     private readonly aiService: AiService,
+    // Optional so a hand-built service (the flows spec) still constructs; the
+    // defaults are the same ones the config service falls back to.
+    @Optional() private readonly methodologyConfig?: MethodologyConfigService,
   ) {}
 
   // Each scope carries its own system prompt AND response schema — a narrative
@@ -448,9 +476,21 @@ export class ReportSummaryService {
       });
       if (!survey) throw new NotFoundException('Survey not found');
 
+      // UAT PRI-07: a governorate/centre pick narrows the respondents.
+      const areaFilter = areaFilterOf(scope, scopeFilters);
+      const area = areaFilter ? await loadSummaryArea(tx, areaFilter) : null;
+
       const responses = await tx.surveyResponse.findMany({
-        where: { needId: survey.needId, exclusionReason: null },
+        where: { needId: survey.needId, exclusionReason: null, ...(area ? responseAreaWhere(area) : {}) },
       });
+      if (area && responses.length === 0) {
+        throw new BadRequestException({
+          error: {
+            code: 'SUMMARY_NO_SCORED_DATA',
+            message: `No responses from respondents in "${area.name}". Choose another ${area.kind === 'CENTER' ? 'centre' : 'governorate'}.`,
+          },
+        });
+      }
 
       const mv = await tx.methodologyVersion.findFirst({
         where: survey.methodologyVersion ? { version: survey.methodologyVersion } : { status: 'PUBLISHED' },
@@ -471,7 +511,34 @@ export class ReportSummaryService {
       // Priority Dashboard rather than double-counting against it.
       const rollupVillageId = villageId || '';
 
-      const overallRollup = await tx.scoreRollup.findFirst({
+      // UAT PRI-07: an area is scored here, from its own respondents, with the
+      // same maths the stored rollups use — nothing is written. Every level
+      // below reads these rows instead of the stored ones.
+      const rollupIds = { orgId: study.orgId, studyId, surveyId, methodologyVersionId: mv.id };
+      const areaRollups = area
+        ? toScoreRollups(
+            computeRollups(
+              dedupeResponseScores(
+                await tx.responseSeverityScore.findMany({
+                  where: {
+                    studyId,
+                    surveyId,
+                    methodologyVersionId: mv.id,
+                    surveyResponseId: { in: responses.map((r) => r.id) },
+                  },
+                  orderBy: [{ surveyResponseId: 'asc' }, { questionId: 'asc' }],
+                }),
+              ),
+              await tx.question.findMany({ where: { methodologyVersionId: mv.id, usedInMvp: true } }),
+              study.requiredSampleSize,
+              (await this.methodologyConfig?.getRaw())?.confidenceFlagSettings ?? DEFAULT_CONFIDENCE_FLAG_SETTINGS,
+            ),
+            rollupIds,
+          )
+        : null;
+      const areaLevel = (level: string) => (areaRollups ?? []).filter((r) => r.rollupLevel === level);
+
+      const overallRollup = areaRollups ? (areaLevel('OVERALL')[0] ?? null) : await tx.scoreRollup.findFirst({
         where: {
           studyId,
           surveyId,
@@ -481,7 +548,7 @@ export class ReportSummaryService {
         },
       });
 
-      let domainRollups = await tx.scoreRollup.findMany({
+      let domainRollups = areaRollups ? areaLevel('DOMAIN') : await tx.scoreRollup.findMany({
         where: {
           studyId,
           surveyId,
@@ -551,13 +618,21 @@ export class ReportSummaryService {
         unitGeo = buildUnitGeo({
           needVillages: need?.village ?? [],
           studyVillages: study.villages ?? [],
-          governorates: governorateLinks.map((g) => ({
-            id: g.governorateId,
-            name: g.governorate.name,
-            regionId: g.governorate.regionId,
-            regionName: g.governorate.region.name,
-          })),
-          centers: centerLinks.map((c) => ({ id: c.centerId, name: c.center.name })),
+          // UAT PRI-07: an area summary names that area, not the need's
+          // whole geography.
+          governorates: area
+            ? [area.governorate]
+            : governorateLinks.map((g) => ({
+                id: g.governorateId,
+                name: g.governorate.name,
+                regionId: g.governorate.regionId,
+                regionName: g.governorate.region.name,
+              })),
+          centers: area?.center
+            ? [area.center]
+            : centerLinks
+                .filter((c) => !area || c.center.governorateId === area.governorate.id)
+                .map((c) => ({ id: c.centerId, name: c.center.name })),
           villageId: villageId || undefined,
         });
       } else {
@@ -637,7 +712,13 @@ export class ReportSummaryService {
       // The two intermediate rollup levels. Mirrors the DOMAIN query exactly —
       // same villageId filter, or these duplicate per village the way the KPI
       // query used to.
-      const [allSubDomainRollups, allIndicatorRollups, everyKpiRollup] = await Promise.all([
+      const [allSubDomainRollups, allIndicatorRollups, everyKpiRollup] = areaRollups
+        ? [
+            areaLevel('SUB_DOMAIN'),
+            areaLevel('INDICATOR'),
+            areaLevel('KPI').sort((a, b) => (a.entityId < b.entityId ? -1 : a.entityId > b.entityId ? 1 : 0)),
+          ]
+        : await Promise.all([
         tx.scoreRollup.findMany({
           where: {
             studyId,
@@ -674,7 +755,7 @@ export class ReportSummaryService {
       const indicatorRollups = allIndicatorRollups.filter(inSector(sector?.indicators));
       const allKpiRollups = everyKpiRollup.filter(inSector(sector?.kpis));
 
-      const kpiRollups = await tx.scoreRollup.findMany({
+      const kpiRollups = areaRollups ? topKpiRollups(areaLevel('KPI'), sector?.kpis ?? null) : await tx.scoreRollup.findMany({
         where: {
           studyId,
           surveyId,
@@ -695,7 +776,13 @@ export class ReportSummaryService {
         take: 10,
       });
 
-      const priorityAssessment = await tx.villagePriorityAssessment.findFirst({
+      const priorityAssessment = areaRollups
+        ? areaPriorityAssessment(
+            await tx.domainPriorityConfig.findMany({ where: { methodologyVersionId: mv.id } }),
+            areaLevel('DOMAIN'),
+            rollupIds,
+          )
+        : await tx.villagePriorityAssessment.findFirst({
         where: {
           studyId,
           surveyId,
@@ -765,7 +852,7 @@ export class ReportSummaryService {
           // Consolidated (no single village) scope label aligns with the agreed
           // Region → Governorate hierarchy: "Consolidated Governorates" rather
           // than "Villages". A specific villageId keeps its own identity.
-          villageName: villageId || 'Consolidated Governorates',
+          villageName: villageId || area?.name || 'Consolidated Governorates',
           assessmentCycle: study.cycleNumber,
           organizationName: study.org.name,
           methodologyVersionId: mv.id,
@@ -911,6 +998,27 @@ export class ReportSummaryService {
   }
 
   /**
+   * UAT PRI-07 — the governorates and centres this survey's respondents live
+   * in, for the Generate-summary dialog. Same cross-org reader rule as
+   * buildReportDataSnapshot.
+   */
+  async listSummaryAreas(studyId: string, surveyId: string) {
+    const store = getOrgStore();
+    const isCrossOrgReader =
+      store?.role === ROLE_KEYS.systemAdmin ||
+      store?.role === ROLE_KEYS.systemReviewer ||
+      store?.role === ROLE_KEYS.centerSupervisor;
+    const runner = isCrossOrgReader
+      ? this.tenant.runAsSupervisor.bind(this.tenant)
+      : this.tenant.runInOrgContext.bind(this.tenant);
+    return runner(async (tx) => {
+      const survey = await tx.survey.findUnique({ where: { id: surveyId } });
+      if (!survey || survey.studyId !== studyId) throw new NotFoundException('Survey not found');
+      return listSummaryAreas(tx, survey.needId);
+    });
+  }
+
+  /**
    * Preview included data before calling Gemini.
    */
   async previewSnapshot(
@@ -954,9 +1062,15 @@ export class ReportSummaryService {
       snapshot.responseQuality.submittedResponseCount === 0 ||
       snapshot.severity.overallVillageNeedsIndex === null
     ) {
-      throw new BadRequestException(
-        `Cannot generate AI Summary: No valid survey responses or scoring data available for the selected village/scope (${snapshot.study.villageName}). Please collect survey responses and calculate priority scores first.`,
-      );
+      // A coded error, so the dialog shows a clear translated message rather
+      // than its generic "Failed to generate AI summary" (UAT PRI-07: an
+      // area with respondents but no scored answer lands here).
+      throw new BadRequestException({
+        error: {
+          code: 'SUMMARY_NO_SCORED_DATA',
+          message: `Cannot generate AI Summary: No valid survey responses or scoring data available for the selected village/scope (${snapshot.study.villageName}). Please collect survey responses and calculate priority scores first.`,
+        },
+      });
     }
 
     // Written in the language the requester is viewing the app in. The prompt

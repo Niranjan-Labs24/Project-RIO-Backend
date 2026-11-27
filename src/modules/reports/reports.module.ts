@@ -13,6 +13,7 @@ import { ReportSharingModule } from "../report-sharing/report-sharing.module";
 import { ReviewerSlaModule } from "../reviewer-sla/reviewer-sla.module";
 import { SurveySessionsModule } from '../survey-sessions/survey-sessions.module';
 import { NeedsModule } from '../needs/needs.module';
+import { MethodologyConfigModule } from '../methodology-config/methodology-config.module';
 import { TranslationModule } from '../translation/translation.module';
 
 @Module({
@@ -29,6 +30,9 @@ import { TranslationModule } from '../translation/translation.module';
     // RIO-NFR-007: the export path translates a report's free prose (AI
     // narrative, recommendations, reviewer notes) on the way out.
     TranslationModule,
+    // UAT PRI-07: an area summary scores its respondents with the configured
+    // confidence thresholds (see summary-area.ts).
+    MethodologyConfigModule,
   ],
   controllers: [ReportsController, PrioritySummaryController, CombinedReportSummaryController],
   providers: [

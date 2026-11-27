@@ -10,6 +10,9 @@ const ScopeFiltersSchema = T.Object(
     domainKey: T.Optional(T.String({ maxLength: 200 })),
     regionId: T.Optional(T.String({ maxLength: 200 })),
     villageIds: T.Optional(T.Array(T.String({ maxLength: 200 }), { maxItems: 500 })),
+    // UAT PRI-07 — respondent-location filters (VILLAGE scope).
+    governorateId: T.Optional(T.String({ format: 'uuid' })),
+    centerId: T.Optional(T.String({ format: 'uuid' })),
   },
   { additionalProperties: false },
 );

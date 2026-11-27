@@ -72,6 +72,8 @@ export class PrioritySummaryController {
     @Query('domainKey') domainKey?: string,
     @Query('regionId') regionId?: string,
     @Query('villageIds') villageIds?: string,
+    @Query('governorateId') governorateId?: string,
+    @Query('centerId') centerId?: string,
   ) {
     // The filters are part of a summary's identity (see getSummary). Reading
     // only villageId meant a SECTOR, REGION or EXECUTIVE summary could never be
@@ -81,7 +83,20 @@ export class PrioritySummaryController {
       domainKey: domainKey || undefined,
       regionId: regionId || undefined,
       villageIds: parseVillageIds(villageIds),
+      governorateId: governorateId || undefined,
+      centerId: centerId || undefined,
     }, { newestIfUnspecified: true });
+  }
+
+  // UAT PRI-07 — the governorates and centres respondents of this survey
+  // live in, offered by the Generate-summary dialog beside Village.
+  @Get('studies/:studyId/surveys/:surveyId/priority-summary/areas')
+  @RequirePermission('priorityScoring', 'read')
+  async listSummaryAreas(
+    @Param('studyId', new UuidParamPipe()) studyId: string,
+    @Param('surveyId', new UuidParamPipe()) surveyId: string,
+  ) {
+    return this.summaryService.listSummaryAreas(studyId, surveyId);
   }
 
   @Patch('priority-summaries/:summaryId')

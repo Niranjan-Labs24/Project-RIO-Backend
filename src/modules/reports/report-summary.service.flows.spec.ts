@@ -429,14 +429,14 @@ describe('ReportSummaryService.generatePrioritySummary', () => {
   it('refuses to summarise when there are no responses or no scoring', async () => {
     const { svc, tx } = setup();
     seed(tx, { overall: null });
-    await expect(as(undefined, () => svc.generatePrioritySummary('st', 'sv'))).rejects.toThrow(
-      'Cannot generate AI Summary',
-    );
+    await expect(as(undefined, () => svc.generatePrioritySummary('st', 'sv'))).rejects.toMatchObject({
+      response: { error: { code: 'SUMMARY_NO_SCORED_DATA' } },
+    });
     seed(tx);
     tx.surveyResponse.findMany.mockResolvedValue([]);
-    await expect(as(undefined, () => svc.generatePrioritySummary('st', 'sv'))).rejects.toThrow(
-      'Cannot generate AI Summary',
-    );
+    await expect(as(undefined, () => svc.generatePrioritySummary('st', 'sv'))).rejects.toMatchObject({
+      response: { error: { code: 'SUMMARY_NO_SCORED_DATA' } },
+    });
   });
 });
 
