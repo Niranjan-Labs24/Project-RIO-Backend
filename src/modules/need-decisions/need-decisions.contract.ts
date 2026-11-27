@@ -18,6 +18,23 @@ export const CreateNeedDecisionBody = registerSchema(
 );
 export type CreateNeedDecisionDto = Static<typeof CreateNeedDecisionBody>;
 
+// UAT PRI-06: edit a decision after it is logged. Status is NOT here — it
+// keeps its own route and history (updateStatus). At least one field.
+export const UpdateNeedDecisionBody = registerSchema(
+  'UpdateNeedDecisionBody',
+  T.Object(
+    {
+      decisionType: T.Optional(T.String({ minLength: 1, maxLength: 100 })),
+      responsibleParty: T.Optional(T.String({ minLength: 1, maxLength: 300 })),
+      decisionDate: T.Optional(T.String({ format: 'date' })),
+      // null or '' clears the notes.
+      notes: T.Optional(T.Union([T.String({ maxLength: 5000 }), T.Null()])),
+    },
+    { additionalProperties: false, minProperties: 1 },
+  ),
+);
+export type UpdateNeedDecisionDto = Static<typeof UpdateNeedDecisionBody>;
+
 export const UpdateNeedDecisionStatusBody = registerSchema(
   'UpdateNeedDecisionStatusBody',
   T.Object(

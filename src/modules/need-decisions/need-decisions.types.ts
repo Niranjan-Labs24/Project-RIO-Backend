@@ -58,6 +58,13 @@ export interface CreateNeedDecisionPayload {
   notes?: string;
 }
 
+export interface UpdateNeedDecisionPayload {
+  decisionType?: string;
+  responsibleParty?: string;
+  decisionDate?: string;
+  notes?: string | null;
+}
+
 export interface UpdateNeedDecisionStatusPayload {
   status: DecisionStatus;
   note?: string;

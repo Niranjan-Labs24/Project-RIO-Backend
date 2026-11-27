@@ -2,8 +2,8 @@ import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
-import { CreateNeedDecisionBody, UpdateNeedDecisionStatusBody } from './need-decisions.contract';
-import type { CreateNeedDecisionDto, UpdateNeedDecisionStatusDto } from './need-decisions.contract';
+import { CreateNeedDecisionBody, UpdateNeedDecisionBody, UpdateNeedDecisionStatusBody } from './need-decisions.contract';
+import type { CreateNeedDecisionDto, UpdateNeedDecisionDto, UpdateNeedDecisionStatusDto } from './need-decisions.contract';
 import { NeedDecisionsService } from './need-decisions.service';
 import type { NeedDecision } from './need-decisions.types';
 
@@ -30,6 +30,18 @@ export class NeedDecisionsController {
     @Body(new TypeBoxValidationPipe(CreateNeedDecisionBody)) body: CreateNeedDecisionDto,
   ): Promise<NeedDecision> {
     return this.decisions.create(needId, body);
+  }
+
+  // UAT PRI-06: edit type, responsible party, date or notes. Same
+  // permission as logging a decision or changing its status.
+  @Patch(':decisionId')
+  @RequirePermission('priorityScoring', 'create')
+  update(
+    @Param('needId', new UuidParamPipe()) needId: string,
+    @Param('decisionId', new UuidParamPipe()) decisionId: string,
+    @Body(new TypeBoxValidationPipe(UpdateNeedDecisionBody)) body: UpdateNeedDecisionDto,
+  ): Promise<NeedDecision> {
+    return this.decisions.update(needId, decisionId, body);
   }
 
   @Patch(':decisionId/status')

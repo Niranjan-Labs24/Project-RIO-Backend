@@ -1,11 +1,11 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { UuidParamPipe } from '../../common/pipes/uuid-param.pipe';
 import { RequirePermission } from '../../common/guards/permission.guard';
 import { TypeBoxValidationPipe } from '../../contract/validation.pipe';
 import { CreateInitiativeBody, SetAnalyticalStatusBody, UpdateInitiativeBody } from './initiatives.contract';
 import type { CreateInitiativeDto, SetAnalyticalStatusDto, UpdateInitiativeDto } from './initiatives.contract';
 import { InitiativesService } from './initiatives.service';
-import type { Initiative, NeedAnalyticalStatusEvent } from './initiatives.types';
+import type { Initiative, LinkableNeed, NeedAnalyticalStatusEvent } from './initiatives.types';
 
 @Controller('initiatives')
 export class InitiativesController {
@@ -15,6 +15,14 @@ export class InitiativesController {
   @RequirePermission('initiatives', 'read')
   list(): Promise<Initiative[]> {
     return this.initiatives.list();
+  }
+
+  // UAT INI-02: needs for the Create Initiative picker. Declared before
+  // ':id' so this path is not read as an initiative id.
+  @Get('linkable-needs')
+  @RequirePermission('initiatives', 'create')
+  linkableNeeds(@Query('search') search?: string): Promise<LinkableNeed[]> {
+    return this.initiatives.searchLinkableNeeds(search);
   }
 
   @Get(':id')

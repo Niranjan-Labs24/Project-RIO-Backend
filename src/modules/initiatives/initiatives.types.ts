@@ -42,6 +42,14 @@ export interface InitiativeRow {
   updatedAt: Date;
 }
 
+/** UAT INI-02 — a need offered in the Create Initiative picker. */
+export interface LinkableNeed {
+  id: string;
+  reference: string;
+  title: string;
+  studyTitle: string;
+}
+
 export interface Initiative {
   id: string;
   orgId: string;
@@ -65,6 +73,8 @@ export interface Initiative {
 
 export interface CreateInitiativePayload {
   name: string;
+  /** UAT INI-02 — needs to link on creation. */
+  needIds?: string[];
   domain?: string;
   geography?: string;
   startDate?: string;

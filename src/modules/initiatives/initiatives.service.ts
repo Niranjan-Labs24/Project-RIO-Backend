@@ -7,6 +7,7 @@ import type {
   CreateInitiativePayload,
   Initiative,
   InitiativeRow,
+  LinkableNeed,
   NeedAnalyticalStatusEvent,
   UpdateInitiativePayload,
 } from './initiatives.types';
@@ -49,6 +50,21 @@ export class InitiativesService {
       });
     }
 
+    // UAT INI-02: every need to link must be the entity's own, checked
+    // before anything is written so a bad id doesn't leave a half-made
+    // initiative behind.
+    const needIds = payload.needIds ?? [];
+    if (needIds.length > 0) {
+      const found = await this.tenant.runInOrgContext((tx) =>
+        tx.need.count({ where: { id: { in: needIds }, orgId } }),
+      );
+      if (found !== needIds.length) {
+        throw new BadRequestException({
+          error: { code: 'NEED_NOT_FOUND', message: 'One or more of the selected needs could not be found.' },
+        });
+      }
+    }
+
     const row = await this.tenant.runInOrgContext((tx) =>
       tx.initiative.create({
         data: {
@@ -77,7 +93,47 @@ export class InitiativesService {
       changes: [{ field: 'Name', before: null, after: row.name }],
     });
 
+    // Same path as linking from a need's page: sets each need to "Linked to
+    // initiative", writes its status history and an audit entry.
+    for (const needId of needIds) {
+      await this.linkNeed(needId, row.id);
+    }
+
     return this.get(row.id);
+  }
+
+  // UAT INI-02: the entity's own needs for the Create Initiative picker,
+  // searched by title, the submitter's reference or the NEED-000123
+  // reference, newest first.
+  async searchLinkableNeeds(search: string | undefined): Promise<LinkableNeed[]> {
+    const orgId = requireOrgId();
+    const q = (search ?? '').trim();
+    const refMatch = /^(?:need-)?0*(\d{1,9})$/i.exec(q);
+    const rows = await this.tenant.runInOrgContext((tx) =>
+      tx.need.findMany({
+        where: {
+          orgId,
+          ...(q
+            ? {
+                OR: [
+                  { title: { contains: q, mode: 'insensitive' } },
+                  { referenceId: { contains: q, mode: 'insensitive' } },
+                  ...(refMatch ? [{ internalRefSeq: Number(refMatch[1]) }] : []),
+                ],
+              }
+            : {}),
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 30,
+        select: { id: true, title: true, internalRefSeq: true, study: { select: { title: true } } },
+      }),
+    );
+    return rows.map((n) => ({
+      id: n.id,
+      reference: `NEED-${String(n.internalRefSeq).padStart(6, '0')}`,
+      title: n.title,
+      studyTitle: n.study.title,
+    }));
   }
 
   async update(id: string, payload: UpdateInitiativePayload): Promise<Initiative> {

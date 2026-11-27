@@ -12,6 +12,7 @@ import {
   type NeedDecisionRow,
   type NeedDecisionStatusEvent,
   type NeedDecisionStatusEventRow,
+  type UpdateNeedDecisionPayload,
   type UpdateNeedDecisionStatusPayload,
 } from './need-decisions.types';
 
@@ -105,6 +106,82 @@ export class NeedDecisionsService {
     });
 
     return this.get(created.row.id);
+  }
+
+  // UAT PRI-06: correct a decision after it was logged — type, responsible
+  // party, date and notes. Status is changed only through updateStatus (it
+  // has its own history). A completed or cancelled decision is closed and
+  // can no longer be edited. Every changed field is recorded in the audit
+  // log with its value before and after.
+  async update(needId: string, id: string, payload: UpdateNeedDecisionPayload): Promise<NeedDecision> {
+    if (payload.decisionType !== undefined) {
+      const activeTypes = await this.studyConfig.listActiveDecisionTypeNames();
+      if (activeTypes.length > 0 && !activeTypes.includes(payload.decisionType)) {
+        throw new BadRequestException({
+          error: { code: 'INVALID_DECISION_TYPE', message: `"${payload.decisionType}" is not a configured Decision Type.` },
+        });
+      }
+    }
+
+    const result = await this.tenant.runInOrgContext(async (tx) => {
+      const current = await tx.needDecision.findUnique({ where: { id } });
+      if (!current || current.needId !== needId) {
+        throw new NotFoundException({ error: { code: 'DECISION_NOT_FOUND', message: 'Decision not found' } });
+      }
+      if (TERMINAL_STATUSES.includes(current.status as DecisionStatus)) {
+        throw new ForbiddenException({
+          error: {
+            code: 'DECISION_ALREADY_TERMINAL',
+            message: `This decision is already ${current.status} and can no longer be edited.`,
+          },
+        });
+      }
+      const before = {
+        decisionType: current.decisionType,
+        responsibleParty: current.responsibleParty,
+        decisionDate: current.decisionDate.toISOString().slice(0, 10),
+        notes: current.notes,
+      };
+      const after = {
+        decisionType: payload.decisionType ?? before.decisionType,
+        responsibleParty: payload.responsibleParty?.trim() || before.responsibleParty,
+        decisionDate: payload.decisionDate ?? before.decisionDate,
+        notes:
+          payload.notes === undefined ? before.notes : payload.notes === null ? null : payload.notes.trim() || null,
+      };
+      const labels: Record<keyof typeof before, string> = {
+        decisionType: 'Decision Type',
+        responsibleParty: 'Responsible Party',
+        decisionDate: 'Decision Date',
+        notes: 'Notes',
+      };
+      const changes = (Object.keys(before) as Array<keyof typeof before>)
+        .filter((k) => before[k] !== after[k])
+        .map((k) => ({ field: labels[k], before: before[k], after: after[k] }));
+      if (changes.length > 0) {
+        await tx.needDecision.update({
+          where: { id },
+          data: {
+            decisionType: after.decisionType,
+            responsibleParty: after.responsibleParty,
+            decisionDate: parseDateParam(after.decisionDate, 'decisionDate'),
+            notes: after.notes,
+          },
+        });
+      }
+      return { changes, label: after.decisionType };
+    });
+
+    if (result.changes.length > 0) {
+      await this.audit.record({
+        action: 'edit',
+        entityType: 'need_decision',
+        entityId: id,
+        entityLabel: `Decision edited — ${result.label}`,
+        changes: result.changes,
+      });
+    }
+    return this.get(id);
   }
 
   async updateStatus(id: string, payload: UpdateNeedDecisionStatusPayload): Promise<NeedDecision> {

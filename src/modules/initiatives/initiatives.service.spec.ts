@@ -104,6 +104,8 @@ function fakeTenant(seed: {
       },
       need: {
         findUnique: async ({ where }: { where: { id: string } }) => needs.find((n) => n.id === where.id) ?? null,
+        count: async ({ where }: { where: { id: { in: string[] }; orgId: string } }) =>
+          needs.filter((n) => where.id.in.includes(n.id) && n.orgId === where.orgId).length,
         update: async ({ where, data }: { where: { id: string }; data: Partial<FakeNeed> }) => {
           const idx = needs.findIndex((n) => n.id === where.id);
           needs[idx] = { ...needs[idx], ...data } as FakeNeed;
@@ -348,5 +350,37 @@ describe('InitiativesService.listLinkedInitiatives', () => {
     const result = await runAsOrg('org-a', 'user-1', () => svc.listLinkedInitiatives('need-1'));
 
     expect(result).toEqual([]);
+  });
+});
+
+// UAT INI-02 — linking needs while creating the initiative.
+describe('InitiativesService.create with needIds (UAT INI-02)', () => {
+  const needs = (): FakeNeed[] => [
+    { id: 'need-1', orgId: 'org-a', analyticalStatus: 'open_gap', title: 'Clinic access' },
+    { id: 'need-2', orgId: 'org-a', analyticalStatus: 'observed', title: 'School transport' },
+    { id: 'need-b', orgId: 'org-b', analyticalStatus: 'open_gap', title: 'Other org need' },
+  ];
+
+  it('links every selected need, sets each to linked_to_initiative and audits each link', async () => {
+    const tenant = fakeTenant({ orgs: ORGS, needs: needs() });
+    const audit = fakeAudit();
+    const svc = new InitiativesService(tenant as never, audit as never);
+    const created = await runAsOrg('org-a', 'user-1', () =>
+      svc.create({ name: 'Mobile clinic', needIds: ['need-1', 'need-2'] }),
+    );
+    expect(created.linkedNeedCount).toBe(2);
+    expect(tenant.links.map((l) => l.needId).sort()).toEqual(['need-1', 'need-2']);
+    expect(tenant.needs.filter((n) => n.orgId === 'org-a').every((n) => n.analyticalStatus === 'linked_to_initiative')).toBe(true);
+    expect(audit.calls.filter((c) => c.entityType === 'need')).toHaveLength(2);
+  });
+
+  it("refuses another entity's need and creates nothing", async () => {
+    const tenant = fakeTenant({ orgs: ORGS, needs: needs() });
+    const svc = new InitiativesService(tenant as never, fakeAudit() as never);
+    await expect(
+      runAsOrg('org-a', 'user-1', () => svc.create({ name: 'Mobile clinic', needIds: ['need-1', 'need-b'] })),
+    ).rejects.toMatchObject({ response: { error: { code: 'NEED_NOT_FOUND' } } });
+    expect(tenant.initiatives).toHaveLength(0);
+    expect(tenant.links).toHaveLength(0);
   });
 });
